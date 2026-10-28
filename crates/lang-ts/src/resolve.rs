@@ -3,11 +3,11 @@
 //! generator will write cannot be told from one that is missing.
 
 use gsttt_core::fact::{Import, ImportKind, Resolution, UnresolvedReason};
+use gsttt_core::tree::Value;
 use gsttt_core::{FileId, RepoPath};
 
 use crate::builtins::is_builtin;
 use crate::config::Effective;
-use crate::json::Json;
 use crate::manifest::Manifest;
 use crate::pathing::{
     ancestors, is_config_name, is_json, is_relative, join_file, split_package, strip_dir,
@@ -464,7 +464,7 @@ fn subpath_import(
 
 /// The target of `subpath` in a package's `exports`: `.` for the package, `./name` below it. `None` when the map leaves
 /// the subpath out, blocks it with `null`, or has no active condition for it.
-fn exports_target(exports: &Json, subpath: &str, conditions: &Conditions<'_>) -> Option<String> {
+fn exports_target(exports: &Value, subpath: &str, conditions: &Conditions<'_>) -> Option<String> {
     let key = if subpath.is_empty() {
         ".".to_owned()
     } else {
@@ -487,7 +487,7 @@ fn exports_target(exports: &Json, subpath: &str, conditions: &Conditions<'_>) ->
 
 /// The target of `key` in a map of subpaths: an exact key, else the pattern with the longest prefix and the first listed
 /// of equals.
-fn pattern_target(map: &Json, key: &str, conditions: &Conditions<'_>) -> Option<String> {
+fn pattern_target(map: &Value, key: &str, conditions: &Conditions<'_>) -> Option<String> {
     let entries = map.entries();
     if let Some(entry) = entries.iter().find(|entry| entry.key == key) {
         return pick_target(&entry.value, conditions)
@@ -525,23 +525,24 @@ impl<'j> Picked<'j> {
 
 /// The first target of a conditional value, in the order its keys are written, whose condition is active; a string is
 /// its own target and `null` closes the path. An object with no active key leaves the choice to what follows it.
-fn pick_target<'j>(value: &'j Json, conditions: &Conditions<'_>) -> Option<Picked<'j>> {
+fn pick_target<'j>(value: &'j Value, conditions: &Conditions<'_>) -> Option<Picked<'j>> {
     match value {
-        Json::Str(target) => Some(Picked::Path(target.as_str())),
-        Json::Null => Some(Picked::Blocked),
-        Json::Array(items) => items.iter().find_map(|item| pick_target(item, conditions)),
-        Json::Object(entries) => entries.iter().find_map(|entry| {
+        Value::Str(target) => Some(Picked::Path(target.as_str())),
+        Value::Null => Some(Picked::Blocked),
+        Value::Seq(items) => items.iter().find_map(|item| pick_target(item, conditions)),
+        Value::Map(entries) => entries.iter().find_map(|entry| {
             conditions
                 .holds(&entry.key)
                 .then(|| pick_target(&entry.value, conditions))
                 .flatten()
         }),
-        Json::Other => None,
+        Value::Other => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use gsttt_core::tree::parse_json;
     use proptest::prelude::*;
 
     use super::*;
@@ -630,7 +631,7 @@ mod tests {
 
     #[test]
     fn the_first_active_condition_decides_even_when_it_is_null() {
-        let map = crate::json::parse(r#"{"import": null, "default": "./x.js"}"#).unwrap();
+        let map = parse_json(r#"{"import": null, "default": "./x.js"}"#).unwrap();
         let configured = ["default".to_owned()];
         let import = Conditions {
             configured: &configured,

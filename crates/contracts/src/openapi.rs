@@ -16,13 +16,12 @@ use gsttt_core::fact::{ContractFact, FileFacts, Import, ImportKind, Line, Resolu
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
+use gsttt_core::tree::{SyntaxError, Value, parse_json};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{
-    SyntaxError, any_claimed, http_site, provide, resolve_relative, syntax_failure,
-};
-use crate::tree::{Value, parse_json, parse_yaml};
+use crate::common::{any_claimed, http_site, provide, resolve_relative, syntax_failure};
+use crate::tree::parse_yaml;
 
 const VIA: &str = "openapi";
 
@@ -250,7 +249,7 @@ impl Project for OpenApiProject {
                 },
                 extra: read.extra,
             },
-            Err(error) => Parsed::new(syntax_failure(error.line, error.message)),
+            Err(error) => Parsed::new(syntax_failure(error)),
         }
     }
 

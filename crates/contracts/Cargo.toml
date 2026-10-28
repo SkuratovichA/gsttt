@@ -12,7 +12,6 @@ publish.workspace = true
 gsttt-core.workspace = true
 apollo-parser.workspace = true
 globset.workspace = true
-jsonc-parser.workspace = true
 protox-parse.workspace = true
 saphyr.workspace = true
 schemars.workspace = true

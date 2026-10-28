@@ -17,11 +17,12 @@ use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
 use gsttt_core::text::LineIndex;
+use gsttt_core::tree::{SyntaxError, Value};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{SyntaxError, any_claimed, http_site, provide, site, syntax_failure};
-use crate::tree::{Value, parse_yaml};
+use crate::common::{any_claimed, http_site, provide, site, syntax_failure};
+use crate::tree::parse_yaml;
 
 const VIA: &str = "proto";
 
@@ -124,7 +125,7 @@ impl Project for ProtoProject {
                 contracts: read.facts,
                 ..FileFacts::default()
             }),
-            Err(error) => Parsed::new(syntax_failure(error.line, error.message)),
+            Err(error) => Parsed::new(syntax_failure(error)),
         }
     }
 

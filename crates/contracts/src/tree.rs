@@ -1,71 +1,12 @@
-//! A small tree for YAML and JSON documents that remembers the line of every key, so OpenAPI documents and buf
-//! configs are read in one way whichever syntax they are written in.
+//! The YAML reader of the tree that OpenAPI documents and buf configs are read into: it builds the `gsttt_core::tree` that a JSON document is read into, so a document is read in one way whichever syntax it is written in.
 
 use std::collections::HashSet;
 
-use gsttt_core::fact::Line;
-use gsttt_core::text::LineIndex;
-use jsonc_parser::common::Ranged;
-use jsonc_parser::{CollectOptions, ParseOptions, ast, parse_to_ast};
+use gsttt_core::tree::{Entry, MAX_DEPTH, SyntaxError, Value};
 use saphyr::{LoadableYamlNode, MarkedYaml};
-
-use crate::common::SyntaxError;
-
-/// Documents nested deeper than this read as [`Value::Other`] below that level, so hostile input cannot exhaust the
-/// stack of the readers that walk the tree.
-pub(crate) const MAX_DEPTH: usize = 64;
 
 /// The YAML key whose value, a mapping or a sequence of mappings, is merged into the mapping that holds the key.
 const MERGE_KEY: &str = "<<";
-
-/// A YAML or JSON value; scalars other than strings are not told apart because no reader needs them.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Value {
-    Map(Vec<Entry>),
-    Seq(Vec<Value>),
-    Str(String),
-    Other,
-}
-
-/// One key of a map with the line it is written on.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Entry {
-    pub(crate) key: String,
-    pub(crate) line: Line,
-    pub(crate) value: Value,
-}
-
-impl Value {
-    /// The entries of a map; empty for any other value.
-    pub(crate) fn entries(&self) -> &[Entry] {
-        match self {
-            Self::Map(entries) => entries,
-            _ => &[],
-        }
-    }
-
-    /// The items of a sequence; empty for any other value.
-    pub(crate) fn items(&self) -> &[Value] {
-        match self {
-            Self::Seq(items) => items,
-            _ => &[],
-        }
-    }
-
-    pub(crate) fn get(&self, key: &str) -> Option<&Value> {
-        self.entries()
-            .iter()
-            .find(|entry| entry.key == key)
-            .map(|entry| &entry.value)
-    }
-
-    pub(crate) fn as_str(&self) -> Option<&str> {
-        match self {
-            Self::Str(text) => Some(text),
-            _ => None,
-        }
-    }
-}
 
 /// Reads the first document of a YAML text.
 pub(crate) fn parse_yaml(text: &str) -> Result<Value, SyntaxError> {
@@ -78,21 +19,6 @@ pub(crate) fn parse_yaml(text: &str) -> Result<Value, SyntaxError> {
     Ok(documents
         .first()
         .map_or(Value::Other, |document| from_yaml(document, 0)))
-}
-
-/// Reads a JSON text, comments and trailing commas included.
-pub(crate) fn parse_json(text: &str) -> Result<Value, SyntaxError> {
-    let parsed = parse_to_ast(text, &CollectOptions::default(), &ParseOptions::default()).map_err(
-        |error| SyntaxError {
-            line: u32::try_from(error.line_display()).unwrap_or(u32::MAX),
-            message: error.to_string(),
-        },
-    )?;
-    let lines = LineIndex::new(text);
-    Ok(parsed
-        .value
-        .as_ref()
-        .map_or(Value::Other, |value| from_json(value, &lines, 0)))
 }
 
 fn from_yaml(node: &MarkedYaml<'_>, depth: usize) -> Value {
@@ -122,6 +48,9 @@ fn from_yaml(node: &MarkedYaml<'_>, depth: usize) -> Value {
                 .map(|item| from_yaml(item, depth + 1))
                 .collect(),
         );
+    }
+    if node.data.is_null() {
+        return Value::Null;
     }
     node.data
         .as_str()
@@ -166,36 +95,9 @@ fn merge_keys(entries: Vec<Entry>) -> Vec<Entry> {
     own
 }
 
-fn from_json(value: &ast::Value<'_>, lines: &LineIndex, depth: usize) -> Value {
-    if depth > MAX_DEPTH {
-        return Value::Other;
-    }
-    match value {
-        ast::Value::Object(object) => Value::Map(
-            object
-                .properties
-                .iter()
-                .map(|property| Entry {
-                    key: property.name.as_str().to_owned(),
-                    line: lines.line_at(property.name.range().start),
-                    value: from_json(&property.value, lines, depth + 1),
-                })
-                .collect(),
-        ),
-        ast::Value::Array(array) => Value::Seq(
-            array
-                .elements
-                .iter()
-                .map(|item| from_json(item, lines, depth + 1))
-                .collect(),
-        ),
-        ast::Value::StringLit(text) => Value::Str(text.value.to_string()),
-        _ => Value::Other,
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use gsttt_core::fact::Line;
     use proptest::prelude::*;
 
     use super::*;
@@ -209,7 +111,7 @@ mod tests {
                 }
             }
             Value::Seq(items) => items.iter().for_each(|item| lines_of(item, out)),
-            Value::Str(_) | Value::Other => {}
+            Value::Str(_) | Value::Null | Value::Other => {}
         }
     }
 
@@ -270,33 +172,28 @@ mod tests {
     }
 
     #[test]
-    fn json_keys_remember_their_lines_and_comments_are_allowed() {
-        let tree = parse_json("{\n  // note\n  \"paths\": {\n    \"/a\": {},\n  }\n}").unwrap();
-        let paths = tree.get("paths").unwrap();
-        assert_eq!(paths.entries()[0].line, 4);
-    }
-
-    #[test]
-    fn deep_documents_are_cut_instead_of_walked_to_the_bottom() {
-        let depth = MAX_DEPTH * 4;
-        let text = format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
-        let mut value = parse_json(&text).unwrap();
-        let mut levels = 0;
-        while let Value::Seq(items) = value {
-            levels += 1;
-            value = items.into_iter().next().unwrap_or(Value::Other);
-        }
-        assert!(levels <= MAX_DEPTH + 1, "{levels} levels were kept");
+    fn a_null_reads_as_null_whichever_way_it_is_written() {
+        let tree = parse_yaml("a: null\nb: ~\nc:\nd: text\ne: 1\n").unwrap();
+        let values: Vec<&Value> = tree.entries().iter().map(|entry| &entry.value).collect();
+        assert_eq!(
+            values,
+            [
+                &Value::Null,
+                &Value::Null,
+                &Value::Null,
+                &Value::Str("text".to_owned()),
+                &Value::Other,
+            ]
+        );
     }
 
     proptest! {
         #[test]
-        fn lines_stay_inside_the_document(
-            text in "[a-z0-9:\\-\\[\\]{}\", \n#&*<]{0,120}",
-            json in any::<bool>(),
-        ) {
-            let count = u32::try_from(text.lines().count()).unwrap_or(u32::MAX).saturating_add(1);
-            match if json { parse_json(&text) } else { parse_yaml(&text) } {
+        fn lines_stay_inside_the_document(text in "[a-z0-9:\\-\\[\\]{}\", \n#&*<]{0,120}") {
+            let count = Line::try_from(text.lines().count())
+                .unwrap_or(Line::MAX)
+                .saturating_add(1);
+            match parse_yaml(&text) {
                 Ok(tree) => {
                     let mut lines = Vec::new();
                     lines_of(&tree, &mut lines);
@@ -312,7 +209,6 @@ mod tests {
         #[test]
         fn arbitrary_text_never_panics(text in "\\PC*") {
             drop(parse_yaml(&text));
-            drop(parse_json(&text));
         }
     }
 }
