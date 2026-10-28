@@ -1,0 +1,51 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"guarded.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "typing",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "TYPE_CHECKING"
+      ],
+      "to": "builtin"
+    },
+    {
+      "spec": "a",
+      "kind": "static",
+      "line": 4,
+      "flags": 4,
+      "names": [],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    },
+    {
+      "spec": "b",
+      "kind": "static",
+      "line": 7,
+      "flags": 2,
+      "names": [],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "guarded.py",
+  "project": "python ."
+}

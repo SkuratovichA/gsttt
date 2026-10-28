@@ -1,0 +1,40 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[\"linked\"] })"
+---
+{
+  "app": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "flask",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [
+          "Blueprint"
+        ],
+        "to": {
+          "external": "flask"
+        }
+      }
+    ],
+    "contracts": [],
+    "embedded": [],
+    "unresolved": [],
+    "path": "app.py",
+    "project": "python ."
+  },
+  "linked": [
+    {
+      "key": "http DELETE /bookings/{}",
+      "role": "serves",
+      "line": 6,
+      "via": "flask",
+      "file": "app.py"
+    }
+  ]
+}

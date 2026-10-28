@@ -1,0 +1,38 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"sqlalchemy_name.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "sqlalchemy",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "text"
+      ],
+      "to": {
+        "external": "sqlalchemy"
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [
+    {
+      "lang": "sql",
+      "line": 5,
+      "text": "SELECT id FROM bookings WHERE id = :id",
+      "via": "sqlalchemy",
+      "read_by": null,
+      "contracts": []
+    }
+  ],
+  "unresolved": [],
+  "path": "sqlalchemy_name.py",
+  "project": "python ."
+}

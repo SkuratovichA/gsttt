@@ -12,7 +12,8 @@ gsttt reads a repository into a graph of files and contracts and answers one fam
 | `gsttt-config` | `.gsttt/config.toml` and `.gsttt/packs/*.toml` → `Setup`, the JSON Schemas of both, external connectors | core |
 | `gsttt-mcp` | MCP server over the queries | core |
 | `gsttt` | The binary: connector registry, CLI, hook, output | everything |
-| `gsttt-spec`, `gsttt-scenario`, `xtask` | Spec parser, `#[scenario]`, the spec gate | — |
+| `gsttt-spec`, `gsttt-scenario` | Spec parser, `#[scenario]` | — |
+| `xtask` | The spec gate (`xtask/src/spec/`), and the build and checks of a release: `cargo xtask package`, `check`, `notes`, `version` (`xtask/src/dist/`) | — |
 
 A module crate never depends on another module crate; the binary wires them. Libraries never print; they return values and log with `tracing`.
 
@@ -66,6 +67,8 @@ A contract is a seam between files that imports do not show. Its key is `<kind> 
 | `env` | `env DATABASE_URL` | upper case: pydantic settings read `database_url` from `DATABASE_URL`, and no project tells two variables apart by case alone |
 | other | `<kind> <key>` | kinds a pack or an external connector introduces; trimmed |
 
+An origin, which `path_after_origin` reads in one place, may be written with placeholders: a placeholder scheme and host as in `${}://${}/v1/x`, or a placeholder, `//` and a host that holds a placeholder as in `${}//${}/v1/x`, which is what a protocol that holds its own colon leaves. Every segment of an HTTP path is trimmed of whitespace, so `/bookings /{id}` and `/bookings/{id}` are one key.
+
 Every site has a role. `declares`: a schema or spec defines it (OpenAPI, `.proto`, GraphQL SDL, a Prisma model, a migration, `.env.example`). `serves`: code implements it (a controller, a resolver). `calls`: code uses it (a fetch, a query, an env read). A Prisma model declares both its model name and its mapped table, so `prisma.bookingItem` and `FROM booking_items` meet at the schema.
 
 Keys meet by equality, except HTTP: a call and a route meet when the methods are equal or either is `*`, and the paths, after `Setup.http_prefixes` is stripped from either side, have the same number of segments, each equal or `{}` on either side. `GET /api/bookings/me` meets `GET /bookings/{}` under the prefix `/api`.
@@ -113,7 +116,7 @@ Global flags: `-C <dir>`, `--json`, `--all`, `--no-refresh`. `--changed` takes t
 
 **Hook.** `gsttt hook session-start` reads the snapshot header with `peek` and prints one line (`gsttt: 4,213 files indexed at a1b2c3d (3 dirty), 2 h ago; use the gsttt tools for impact before changing shared code`) or nothing when there is no snapshot. It runs no git command and finishes in under 10 ms.
 
-**Plugin.** `plugin/` is a Claude Code plugin: `.claude-plugin/plugin.json`, `.mcp.json` starting `gsttt mcp`, `hooks/hooks.json` running the hook on `SessionStart`, and a skill that says when to ask gsttt. The repository root carries `.claude-plugin/marketplace.json`, so `/plugin marketplace add SkuratovichA/gsttt` installs it. The plugin expects `gsttt` on `PATH`, and its hook prints an install hint when the binary is missing.
+**Plugin.** `plugin/` is a Claude Code plugin: `.claude-plugin/plugin.json`, which declares the MCP server (`gsttt mcp`) and the hook that runs on `SessionStart` inline, `scripts/gsttt.sh`, which runs both, and a skill that says when to ask gsttt. The repository root carries `.claude-plugin/marketplace.json`, so `/plugin marketplace add SkuratovichA/gsttt` installs it. The wrapper finds `gsttt` on `PATH` or in the directory `install.sh` puts it in, and when it is in neither, the hook prints an install hint for the user and still ends with status 0, so a missing binary never breaks a session.
 
 ## Configuration
 

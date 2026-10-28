@@ -6,11 +6,11 @@ use std::sync::Arc;
 use gsttt_core::connector::{LinkInput, LinkedFact, Parsed, Project, Provide, SourceFile, salt_of};
 use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseFailure, Resolution};
 use gsttt_core::rules::Pack;
+use gsttt_core::tree;
 use gsttt_core::{RepoPath, RepoView};
 
 use crate::config::extends_of;
 use crate::extra::TsExtra;
-use crate::json;
 use crate::options::TypeScriptOptions;
 use crate::pathing::{has_segment, is_config_name, is_json};
 use crate::shared::Shared;
@@ -119,7 +119,7 @@ impl Project for TsProject {
 /// A `package.json` or a tsconfig: tagged as a manifest, and a tsconfig's `extends` are its imports. A file that is not
 /// JSON fails alone.
 fn parse_json(path: &RepoPath, text: &str, tags: FileTags) -> Parsed<TsExtra> {
-    let mut facts = match json::parse(text) {
+    let mut facts = match tree::parse_json(text) {
         Ok(json) => {
             let mut facts = FileFacts::default();
             if is_config_name(path.file_name()) {

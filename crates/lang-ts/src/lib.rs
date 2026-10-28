@@ -6,7 +6,6 @@ mod builtins;
 mod config;
 mod connector;
 pub mod extra;
-mod json;
 mod link;
 mod manifest;
 mod options;

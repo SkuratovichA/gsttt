@@ -1,0 +1,4 @@
+[project]
+name = "everything"
+version = "0.1.0"
+dependencies = ["flask>=3", "django>=5", "sqlalchemy>=2"]

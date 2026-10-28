@@ -9,13 +9,16 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-pulldown-cmark.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+proc-macro2.workspace = true
+syn.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-insta.workspace = true
+gsttt-scenario.workspace = true
+# Span positions let the tests check that an error points at the arguments.
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+proptest.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

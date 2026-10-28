@@ -632,7 +632,6 @@ mod tests {
     use crate::connector::Erased;
     use crate::contract::ContractKey;
     use crate::engine::changes::ChangeKind;
-    #[cfg(unix)]
     use crate::engine::testing::Locked;
     use crate::engine::testing::{
         Counters, Graphs, Notes, add_worktree, git, init_repo, touch, write,
@@ -812,7 +811,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[gsttt_scenario::scenario("indexing", "An old file that did not change is not read again")]
     #[test]
     fn an_old_file_that_did_not_change_is_not_read_again() {
@@ -1495,7 +1493,6 @@ mod tests {
         assert_eq!(imports_of(&third.index, "a.txt"), 1);
     }
 
-    #[cfg(unix)]
     #[gsttt_scenario::scenario("indexing", "A file above the size limit does not stop a no-op")]
     #[test]
     fn a_file_above_the_limit_does_not_stop_a_no_op() {
@@ -1689,7 +1686,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[gsttt_scenario::scenario(
         "indexing",
         "A tracked directory that cannot be read does not fail the run"
@@ -1723,7 +1719,6 @@ mod tests {
     /// Indexes a tree outside git whose directory `locked` has the permissions `mode`: the run succeeds, the index
     /// leaves `locked/b.txt` out and the coverage names `locked`. A process that can reach the directory anyway
     /// checks nothing.
-    #[cfg(unix)]
     fn assert_directory_reported_outside_git(mode: u32) {
         let rig = Rig::new();
         let plain = tempfile::tempdir().unwrap();
@@ -1749,7 +1744,6 @@ mod tests {
     /// Indexes a repository, gives its tracked directory `locked` the permissions `mode` and indexes it again: the
     /// files of `locked` have left the index, they count as removed from HEAD and the coverage names `locked`. A
     /// process that can reach the directory anyway checks nothing.
-    #[cfg(unix)]
     fn assert_tracked_files_removed(mode: u32) {
         let rig = Rig::new();
         let dir = init_repo(&[("a.txt", ""), ("locked/b.txt", "")]);
@@ -1783,7 +1777,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[gsttt_scenario::scenario(
         "indexing",
         "A directory outside git that cannot be read does not fail the run"
@@ -1793,7 +1786,6 @@ mod tests {
         assert_directory_reported_outside_git(0o000);
     }
 
-    #[cfg(unix)]
     #[gsttt_scenario::scenario(
         "indexing",
         "A directory that can be listed but not searched is reported"
@@ -1803,13 +1795,11 @@ mod tests {
         assert_directory_reported_outside_git(0o444);
     }
 
-    #[cfg(unix)]
     #[test]
     fn the_tracked_files_of_a_directory_that_cannot_be_read_count_as_removed() {
         assert_tracked_files_removed(0o000);
     }
 
-    #[cfg(unix)]
     #[test]
     fn the_tracked_files_of_a_directory_that_can_be_listed_but_not_searched_count_as_removed() {
         assert_tracked_files_removed(0o444);

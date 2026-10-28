@@ -6,3 +6,32 @@ extend-exclude = [
   "**/snapshots/**",
   "openspec/changes/archive/**",
 ]
+
+[default]
+# Test data that is misspelled or encoded on purpose, and names that a dependency chose, allowed where they stand and nowhere else, so that "exlude", "caf" or "ba" anywhere else is still reported.
+extend-ignore-re = [
+  # The config spec and its tests set up misspelled keys to check that they are rejected: `exlude` for `exclude` in the config, `comand` for `command` in an external and `languge` for `language` in a pack.
+  'exlude = \[',
+  'naming `exlude`',
+  'sets `comand`',
+  'names `comand`',
+  '"languge ="',
+  # The spec of the `add-lua-config` change sets up the same misspelled key as a table. It is excluded from this check once that change is archived, and the pattern goes with it.
+  'exlude = \{',
+  # The config tests assert that the message names that key.
+  'contains\("`(exlude|comand|languge)`"\)',
+  # "café" as the bytes of Latin-1, in the engine test of a file that is not UTF-8.
+  'b"caf\\xe9',
+  # The Python linker test has router "a" include router "b" under the prefix "/ba", and "b" include "a" under "/ab"; the prefixes are made of the two names and are not words.
+  'mount\("a", "b", "/ba"\)',
+  # The TypeScript resolver test checks that the pattern "ab*ba" does not match "aba", where its prefix and suffix would overlap; the letters are not words.
+  'capture\("ab\*ba", "aba"\)',
+  # gix names the path of a directory entry `rela_path`, short for relative.
+  'entry\.rela_path',
+]
+
+[default.extend-words]
+# The engine's `Excluder` compiles the `exclude` patterns of the setup and is the matcher that excludes; the word is English, and typos does not know it.
+excluder = "excluder"
+# `Failure::Unparseable` is the variant for a line that an external process sent and that is not a message; the word is English, and typos does not know it.
+unparseable = "unparseable"

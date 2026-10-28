@@ -513,6 +513,19 @@ mod tests {
         assert_eq!(salt_of(&["a"]), 14_372_996_823_028_516_049);
     }
 
+    proptest::proptest! {
+        #[test]
+        fn moving_the_boundary_between_parts_changes_the_salt(
+            first in "\\PC{0,12}",
+            middle in "\\PC{1,12}",
+            last in "\\PC{0,12}",
+        ) {
+            let left = format!("{first}{middle}");
+            let right = format!("{middle}{last}");
+            proptest::prop_assert_ne!(salt_of(&[&left, &last]), salt_of(&[&first, &right]));
+        }
+    }
+
     fn served(key: &str, line: u32, via: &str) -> ContractFact {
         ContractFact {
             key: ContractKey::parse(key).unwrap(),

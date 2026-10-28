@@ -1,0 +1,45 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"tests/test_api.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 1,
+  "imports": [
+    {
+      "spec": "booking.api",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "files": [
+          "src/booking/__init__.py",
+          "src/booking/api.py"
+        ]
+      }
+    },
+    {
+      "spec": "booking.api",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "handler"
+      ],
+      "to": {
+        "files": [
+          "src/booking/__init__.py",
+          "src/booking/api.py"
+        ]
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "tests/test_api.py",
+  "project": "python ."
+}

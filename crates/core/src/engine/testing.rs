@@ -102,10 +102,8 @@ pub(crate) fn write(dir: &Path, path: &str, text: &str) {
 
 /// A directory that the process cannot open until the value is dropped, which puts the permissions back: the
 /// temporary directory it is in can be removed even when the test fails first.
-#[cfg(unix)]
 pub(crate) struct Locked(PathBuf);
 
-#[cfg(unix)]
 impl Locked {
     /// Takes every permission off `dir`, so that it can be neither listed nor searched.
     pub(crate) fn new(dir: &Path) -> Option<Self> {
@@ -125,7 +123,6 @@ impl Locked {
     }
 }
 
-#[cfg(unix)]
 impl Drop for Locked {
     fn drop(&mut self) {
         use std::os::unix::fs::PermissionsExt;

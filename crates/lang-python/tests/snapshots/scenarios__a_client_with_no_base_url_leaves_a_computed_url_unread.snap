@@ -1,0 +1,65 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"client.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "httpx",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "external": "httpx"
+      }
+    },
+    {
+      "spec": "requests",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "external": "requests"
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "http GET /v1/bookings",
+      "role": "calls",
+      "line": 16,
+      "via": "httpx"
+    },
+    {
+      "key": "http GET /bookings/1",
+      "role": "calls",
+      "line": 21,
+      "via": "requests"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [
+    {
+      "line": 7,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "session.get"
+    },
+    {
+      "line": 11,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "?.get"
+    }
+  ],
+  "path": "client.py",
+  "project": "python ."
+}

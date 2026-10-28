@@ -1,0 +1,62 @@
+---
+source: crates/lang-rust/tests/rust/modules.rs
+expression: "out.file(\"src/lib.rs\")[\"imports\"]"
+---
+[
+  {
+    "flags": 0,
+    "kind": "module",
+    "line": 1,
+    "names": [],
+    "spec": "a",
+    "to": {
+      "file": "src/a.rs"
+    }
+  },
+  {
+    "flags": 0,
+    "kind": "module",
+    "line": 2,
+    "names": [],
+    "spec": "b",
+    "to": {
+      "file": "src/b/mod.rs"
+    }
+  },
+  {
+    "flags": 0,
+    "kind": "module",
+    "line": 4,
+    "names": [
+      "generated/schema.rs"
+    ],
+    "spec": "schema",
+    "to": {
+      "file": "src/generated/schema.rs"
+    }
+  },
+  {
+    "flags": 0,
+    "kind": "module",
+    "line": 5,
+    "names": [],
+    "spec": "gone",
+    "to": {
+      "unresolved": {
+        "reason": "not-found"
+      }
+    }
+  },
+  {
+    "flags": 0,
+    "kind": "static",
+    "line": 7,
+    "names": [
+      "Thing"
+    ],
+    "spec": "crate::a::c::Thing",
+    "to": {
+      "file": "src/a/c.rs"
+    }
+  }
+]

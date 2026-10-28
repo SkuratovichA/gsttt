@@ -1,0 +1,4 @@
+[project]
+name = "resolution"
+version = "0.1.0"
+dependencies = ["PyYAML>=6", "fastapi>=0.110"]

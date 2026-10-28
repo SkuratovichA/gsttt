@@ -1,0 +1,54 @@
+---
+source: crates/contracts/tests/contracts/proto.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "proto",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "grpc things.v1.ThingService/GetThing",
+          "role": "declares",
+          "line": 6,
+          "via": "proto"
+        },
+        {
+          "key": "http GET /v1/things/{}",
+          "role": "declares",
+          "line": 7,
+          "via": "proto"
+        },
+        {
+          "key": "grpc things.v1.ThingService/DropThing",
+          "role": "declares",
+          "line": 9,
+          "via": "proto"
+        },
+        {
+          "key": "http DELETE /v1/things/{}",
+          "role": "declares",
+          "line": 10,
+          "via": "proto"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "things.proto",
+      "project": "proto ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

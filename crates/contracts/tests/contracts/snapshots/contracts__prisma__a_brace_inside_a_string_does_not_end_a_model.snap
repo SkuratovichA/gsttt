@@ -1,0 +1,54 @@
+---
+source: crates/contracts/tests/contracts/prisma.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "prisma",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "env DATABASE_URL",
+          "role": "calls",
+          "line": 3,
+          "via": "prisma"
+        },
+        {
+          "key": "table booking",
+          "role": "declares",
+          "line": 6,
+          "via": "prisma"
+        },
+        {
+          "key": "table bookings",
+          "role": "declares",
+          "line": 10,
+          "via": "prisma"
+        },
+        {
+          "key": "table cart",
+          "role": "declares",
+          "line": 13,
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "prisma/schema.prisma",
+      "project": "prisma ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

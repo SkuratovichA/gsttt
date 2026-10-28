@@ -1,0 +1,64 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"config.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "os",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": "builtin"
+    },
+    {
+      "spec": "pydantic_settings",
+      "kind": "static",
+      "line": 3,
+      "flags": 0,
+      "names": [
+        "BaseSettings"
+      ],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "env A",
+      "role": "calls",
+      "line": 5,
+      "via": "env"
+    },
+    {
+      "key": "env B",
+      "role": "calls",
+      "line": 6,
+      "via": "env"
+    },
+    {
+      "key": "env C",
+      "role": "calls",
+      "line": 7,
+      "via": "env"
+    },
+    {
+      "key": "env DATABASE_URL",
+      "role": "calls",
+      "line": 11,
+      "via": "env"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [],
+  "path": "config.py",
+  "project": "python ."
+}
