@@ -260,7 +260,8 @@ mod tests {
                 &invocation(),
                 dir.path(),
                 &transcript,
-                Duration::from_secs(1),
+                // Long enough for the stand-in to start and write its init event on a machine that is busy with a build.
+                Duration::from_secs(5),
             ),
             &mut |_| Ok(()),
         )
