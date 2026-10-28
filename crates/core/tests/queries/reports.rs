@@ -130,7 +130,7 @@ fn coverage_gives_the_resolved_share_from_the_counts() {
 fn coverage_names_the_projects_and_what_a_connector_provides() {
     let mut index = Tree::new().imports("b.ts", "a.ts").build();
     let ts = &mut index.coverage.connectors[0];
-    ts.projects = vec![String::new(), "apps/web".to_owned()];
+    ts.projects = vec![".".to_owned(), "apps/web".to_owned()];
     ts.provides = vec![Provide {
         kind: ContractKind::Http,
         role: Role::Calls,
@@ -314,21 +314,6 @@ fn a_parse_status_without_skipped_files_does_not_mention_them() {
     let text = coverage(&troubled(), Freshness::Fresh).to_string();
 
     assert!(!text.contains("skipped"), "{text}");
-}
-
-#[test]
-fn a_project_at_the_root_is_named_the_repository_root_however_the_index_writes_it() {
-    for root in ["", "."] {
-        let mut index = Tree::new().imports("b.ts", "a.ts").build();
-        index.coverage.connectors[0].projects = vec![root.to_owned()];
-
-        let text = coverage(&index, Freshness::Fresh).to_string();
-
-        assert!(
-            text.starts_with("ts: 2 files in the repository root\n"),
-            "root {root:?}:\n{text}"
-        );
-    }
 }
 
 #[test]

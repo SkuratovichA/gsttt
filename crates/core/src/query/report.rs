@@ -50,8 +50,7 @@ pub struct Reasons {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ConnectorReport {
     pub connector: String,
-    /// The roots of its projects as the index holds them. The repository root is `.` as the engine writes it, or `""`
-    /// as the coverage model documents it, and the text names both "the repository root".
+    /// The roots of its projects as the index holds them; the repository root is `.`, which the text spells out.
     pub projects: Vec<String>,
     /// Files it owns.
     pub files: u32,
@@ -219,7 +218,7 @@ impl ConnectorReport {
                 .projects
                 .iter()
                 .map(|root| {
-                    if matches!(root.as_str(), "" | ".") {
+                    if root == "." {
                         "the repository root".to_owned()
                     } else {
                         root.clone()
