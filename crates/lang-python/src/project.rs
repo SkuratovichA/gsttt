@@ -3,13 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::connector::{
-    ConnectorError, LinkInput, LinkedFact, Parsed, Project, Provide, SourceFile,
+    ConnectorError, LinkInput, LinkedFact, Parsed, Project, Provide, SourceFile, salt_of,
 };
 use gsttt_core::fact::{Import, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
-use xxhash_rust::xxh3::Xxh3;
 
 use crate::PythonOptions;
 use crate::extra::PyExtra;
@@ -245,18 +244,6 @@ fn packs_salt(positions: impl Iterator<Item = usize>) -> u64 {
     salt_of(&parts)
 }
 
-/// A hash of `parts` in which each part is taken with its length, so `["ab", "c"]` and `["a", "bc"]` are two salts.
-/// The indexing change adds this function, with the same framing, to core as `gsttt_core::connector::salt_of`; this
-/// copy goes when the two meet, and no salt changes with it.
-fn salt_of(parts: &[&str]) -> u64 {
-    let mut hasher = Xxh3::new();
-    for part in parts {
-        hasher.update(&u64::try_from(part.len()).unwrap_or(u64::MAX).to_le_bytes());
-        hasher.update(part.as_bytes());
-    }
-    hasher.digest()
-}
-
 fn push_unique(roots: &mut Vec<String>, dir: String) {
     if !roots.contains(&dir) {
         roots.push(dir);
@@ -373,17 +360,7 @@ impl Project for PythonProject {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-
     use super::*;
-
-    #[test]
-    fn a_part_is_taken_with_its_length() {
-        assert_ne!(salt_of(&["ab", "c"]), salt_of(&["a", "bc"]));
-        assert_ne!(salt_of(&["a", ""]), salt_of(&["a"]));
-        assert_ne!(salt_of(&[]), salt_of(&[""]));
-        assert_eq!(salt_of(&["0", "2"]), salt_of(&["0", "2"]));
-    }
 
     #[test]
     fn the_packs_in_force_are_told_by_position() {
@@ -437,18 +414,5 @@ mod tests {
         // `shared` is a's own root, so it is no sibling's. `lib` is the root of c and of d, and is listed where c has it.
         assert_eq!(sibling_roots("a"), ["b", "lib", "c", "d"]);
         assert_eq!(sibling_roots("b"), Vec::<&str>::new());
-    }
-
-    proptest! {
-        #[test]
-        fn moving_the_boundary_between_parts_changes_the_salt(
-            first in "\\PC{0,12}",
-            middle in "\\PC{1,12}",
-            last in "\\PC{0,12}",
-        ) {
-            let left = format!("{first}{middle}");
-            let right = format!("{middle}{last}");
-            prop_assert_ne!(salt_of(&[&left, &last]), salt_of(&[&first, &right]));
-        }
     }
 }

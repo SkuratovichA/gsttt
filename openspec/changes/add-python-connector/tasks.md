@@ -80,3 +80,4 @@
 
 - [x] 7.1 `link` returns its routes as new facts that name no parsed fact (`LinkedFact::found`), because the engine now drops only the own facts a linked fact names and a router's routes are no facts of their file, so what the link returns is what it returned before
 - [x] 7.2 The source roots and the manifests of a project are joined to its directory with `RepoPath::join_dir` of the core, which names the repository root as `""` where `RepoPath::join` fails, so the connector no longer has a copy of it
+- [x] 7.3 The salt of a project is made with `salt_of` of the core, in place of a copy with the same framing, so no salt changes and the crate no longer needs `xxhash-rust`; the property that moving the boundary between two parts changes the salt is tested in the core, beside the function
