@@ -196,6 +196,7 @@ fn releases_follow_green_pushes_to_main() {
     }
 }
 
+#[gsttt_scenario::scenario("distribution", "The release build is given its version")]
 #[test]
 fn the_release_build_is_given_its_version() {
     let workflow = workflow();

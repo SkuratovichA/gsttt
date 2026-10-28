@@ -28,11 +28,15 @@ Every action in every workflow SHALL be pinned by a full commit id, and `cargo x
 - **THEN** `cargo xtask check` exits non-zero and names the workflow file and line
 
 ### Requirement: Versions
-The version of a release SHALL be `<major>.<minor>.<n>`, with `<major>` and `<minor>` from `[workspace.package] version` and `<n>` the number of commits in the history of the released commit, and `cargo xtask version` SHALL print it. A release build SHALL report that version in `gsttt --version`.
+The version of a release SHALL be `<major>.<minor>.<n>`, with `<major>` and `<minor>` from `[workspace.package] version` and `<n>` the number of commits in the history of the released commit, and `cargo xtask version` SHALL print it. A release build SHALL be given that version as the environment variable `GSTTT_VERSION` at compile time, for the `gsttt` binary to report.
 
 #### Scenario: The version counts commits
 - **WHEN** the workspace version is `0.1.0` and the released commit has 42 commits in its history
 - **THEN** `cargo xtask version` prints `0.1.42`
+
+#### Scenario: The release build is given its version
+- **WHEN** `.github/workflows/ci.yml` is parsed
+- **THEN** the step that builds with the `dist` profile has `GSTTT_VERSION` set to the output of `cargo xtask version`
 
 ### Requirement: Releases
 When the checks pass on a push to `main`, a release SHALL be built for `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin` and `aarch64-apple-darwin`. A push made by the archive workflow SHALL start no release. Pull requests SHALL NOT build for macOS.
