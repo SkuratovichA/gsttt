@@ -25,9 +25,13 @@ use crate::site::join_prefixes;
 /// stack. Routers that mount each other end sooner, at the first router seen twice.
 pub(crate) const MAX_DEPTH: usize = 32;
 
-/// How many ways up are followed from one router, whole or cut. Mounts shared at every level multiply the ways, and
+/// How many ways up are kept for one router: the first by path. Mounts shared at every level multiply the ways, and
 /// a router mounted in dozens of places is unlike any real application.
 pub(crate) const MAX_WAYS: usize = 64;
+
+/// How many ways up the walk from one router ends, whole or cut, before it stops. The ways kept are the first by path
+/// among these, so that moving a mount in a file changes them only when it adds or removes a way.
+const MAX_WALKED: usize = 16 * MAX_WAYS;
 
 /// How many imports are followed from the name a mount writes to the module that makes the router. A re-export is one
 /// or two imports deep, and modules that import each other's names end at the bound.
@@ -46,7 +50,9 @@ struct Names<'i, 'a> {
     module_file: ModuleFile<'i>,
 }
 
-/// A mount seen from the router it mounts.
+/// A mount seen from the router it mounts. The order is by content, so that the walk goes through the mounts of a
+/// router in an order the files do not decide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Parent<'a> {
     /// The router the mount is called on: `app` in `app.include_router(…)`.
     router: Router<'a>,
@@ -65,13 +71,14 @@ enum Why {
     /// The way came back to a router it had passed: routers mounted into each other.
     Cycle,
     TooDeep,
+    /// The walk reached its bound, or the way was one of those beyond the ones kept.
     TooMany,
     /// The mount gives a prefix that is not a literal, so the path behind it is not known.
     Prefix,
 }
 
 /// A mount that a way up from a router stopped at. Coverage should count it as a site `link` could not read.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Cut<'a> {
     file: FileId,
     line: Line,
@@ -173,6 +180,9 @@ impl<'a> Mounts<'a> {
                 own.insert((file.id, router.var.as_str()), router.prefix.as_str());
             }
         }
+        for mounts in parents.values_mut() {
+            mounts.sort_unstable();
+        }
         Self { parents, own }
     }
 
@@ -181,25 +191,32 @@ impl<'a> Mounts<'a> {
     }
 
     /// Every prefix `start` is served behind, sorted: one for each way up through the mounts to a router nobody
-    /// mounts. A router that no mount reaches is served behind its own prefix. One whose every way up is cut is
-    /// mounted, by a mount that cannot be followed to its end, so it is served behind no prefix that is known.
+    /// mounts, the first [`MAX_WAYS`] by path when there are more. A router that no mount reaches is served behind its
+    /// own prefix. One whose every way up is cut is mounted, by a mount that cannot be followed to its end, so it is
+    /// served behind no prefix that is known.
     fn prefixes(&self, start: Router<'a>, cuts: &mut BTreeSet<Cut<'a>>) -> Vec<String> {
         let mut climb = Climb {
             mounts: self,
-            ways: BTreeSet::new(),
+            ways: BTreeMap::new(),
             ended: 0,
             cuts,
         };
-        climb.up(start, "", &mut vec![start]);
-        climb.ways.into_iter().collect()
+        climb.up(start, "", &mut vec![start], None);
+        if let Some(first_beyond) = climb.ways.keys().nth(MAX_WAYS).cloned() {
+            for mount in climb.ways.split_off(&first_beyond).into_values().flatten() {
+                climb.cuts.insert(mount);
+            }
+        }
+        climb.ways.into_keys().collect()
     }
 }
 
 /// One climb from a router to the routers above it.
 struct Climb<'m, 'a, 'c> {
     mounts: &'m Mounts<'a>,
-    /// The prefix of each way that reached a router nobody mounts.
-    ways: BTreeSet<String>,
+    /// The prefix of each way that reached a router nobody mounts, with the last mount the way passed, which is the
+    /// one to name when the way is not among those kept.
+    ways: BTreeMap<String, Option<Cut<'a>>>,
     /// Ways ended so far, whole or cut.
     ended: usize,
     cuts: &'c mut BTreeSet<Cut<'a>>,
@@ -208,17 +225,29 @@ struct Climb<'m, 'a, 'c> {
 impl<'a> Climb<'_, 'a, '_> {
     /// Climbs from `node`. `below` is the path between `node` and the route: everything the routers and mounts
     /// below `node` put in front of it, except `node`'s own prefix, which a replacing mount may drop. `trail` holds
-    /// the routers passed, `node` last.
-    fn up(&mut self, node: Router<'a>, below: &str, trail: &mut Vec<Router<'a>>) {
+    /// the routers passed, `node` last, and `via` the mount that led to `node`.
+    fn up(
+        &mut self,
+        node: Router<'a>,
+        below: &str,
+        trail: &mut Vec<Router<'a>>,
+        via: Option<Cut<'a>>,
+    ) {
         let own = self.mounts.own_prefix(node);
         let Some(parents) = self.mounts.parents.get(&node) else {
             self.ended += 1;
             self.ways
-                .insert(join_prefixes(&ContractKind::Http, own, below));
+                .insert(join_prefixes(&ContractKind::Http, own, below), via);
             return;
         };
         for parent in parents {
-            let why = if self.ended >= MAX_WAYS {
+            let mount = Cut {
+                file: parent.file,
+                line: parent.line,
+                router: node.1,
+                why: Why::TooMany,
+            };
+            let why = if self.ended >= MAX_WALKED {
                 Some(Why::TooMany)
             } else if trail.contains(&parent.router) {
                 Some(Why::Cycle)
@@ -231,12 +260,7 @@ impl<'a> Climb<'_, 'a, '_> {
             };
             if let Some(why) = why {
                 self.ended += 1;
-                self.cuts.insert(Cut {
-                    file: parent.file,
-                    line: parent.line,
-                    router: node.1,
-                    why,
-                });
+                self.cuts.insert(Cut { why, ..mount });
                 continue;
             }
             // FastAPI and Django put the mount's prefix in front of the router's own; Flask's registration prefix
@@ -249,7 +273,7 @@ impl<'a> Climb<'_, 'a, '_> {
             };
             let below = join_prefixes(&ContractKind::Http, &local, below);
             trail.push(parent.router);
-            self.up(parent.router, &below, trail);
+            self.up(parent.router, &below, trail, Some(mount));
             trail.pop();
         }
     }
@@ -317,6 +341,8 @@ fn submodule_spec(spec: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use gsttt_core::contract::{ContractKey, Role};
+    use std::fmt::Write;
+
     use gsttt_core::fact::FileFacts;
 
     use super::*;
@@ -464,26 +490,75 @@ mod tests {
         assert_eq!(cuts, [(7, Why::Prefix)]);
     }
 
-    #[test]
-    fn the_ways_up_from_one_router_are_capped() {
-        // Seven layers of two routers, each router mounted into both routers of the layer above: 2^7 ways up.
-        let mut project = Project::new();
-        for layer in 0..7 {
+    /// `count` layers of two routers, each router mounted into both routers of the layer above, so that `a0` is
+    /// reached in 2^`count` ways and has the route `/leaf`. The mounts are written from the lowest layer up, or the
+    /// other way round.
+    fn layers(count: usize, reversed: bool) -> Project {
+        let mut mounts = Vec::new();
+        for layer in 0..count {
             for from in ["a", "b"] {
                 for to in ["a", "b"] {
-                    project.mount(
-                        &format!("{to}{}", layer + 1),
-                        &format!("{from}{layer}"),
-                        &format!("/{layer}{from}{to}"),
-                    );
+                    mounts.push((
+                        format!("{to}{}", layer + 1),
+                        format!("{from}{layer}"),
+                        format!("/{layer}{from}{to}"),
+                    ));
                 }
             }
         }
+        if reversed {
+            mounts.reverse();
+        }
+        let mut project = Project::new();
+        for (parent, child, prefix) in &mounts {
+            project.mount(parent, child, prefix);
+        }
         project.route("a0", "/leaf");
+        project
+    }
+
+    #[test]
+    fn the_ways_up_from_one_router_are_capped() {
+        let project = layers(7, false);
         let composed = project.compose();
         assert_eq!(composed.facts.len(), MAX_WAYS);
         assert!(!composed.cuts.is_empty());
         assert!(composed.cuts.iter().all(|cut| cut.why == Why::TooMany));
+    }
+
+    #[test]
+    fn the_ways_kept_are_the_first_by_path_whatever_the_order_of_the_mounts() {
+        // A way is the choice of one of the two routers at each layer, the lowest layer in the lowest bit.
+        let letter = |choice: u32, layer: usize| if (choice >> layer) & 1 == 0 { 'a' } else { 'b' };
+        let mut every: Vec<String> = (0..1_u32 << 7)
+            .map(|choice| {
+                let mut path = String::new();
+                for layer in (0..7).rev() {
+                    let from = if layer == 0 {
+                        'a'
+                    } else {
+                        letter(choice, layer - 1)
+                    };
+                    write!(path, "/{layer}{from}{}", letter(choice, layer)).unwrap();
+                }
+                format!("GET {path}/leaf")
+            })
+            .collect();
+        every.sort();
+        every.truncate(MAX_WAYS);
+        let (straight, reversed) = (layers(7, false), layers(7, true));
+        assert_eq!(keys(&straight.compose()), every);
+        assert_eq!(keys(&reversed.compose()), every);
+    }
+
+    #[test]
+    fn the_walk_up_from_one_router_stops_at_its_bound_whatever_the_order_of_the_mounts() {
+        // 2^11 ways up are more than the walk follows.
+        let (straight, reversed) = (layers(11, false), layers(11, true));
+        let (straight, reversed) = (straight.compose(), reversed.compose());
+        assert_eq!(straight.facts.len(), MAX_WAYS);
+        assert!(straight.cuts.iter().all(|cut| cut.why == Why::TooMany));
+        assert_eq!(keys(&straight), keys(&reversed));
     }
 
     #[test]

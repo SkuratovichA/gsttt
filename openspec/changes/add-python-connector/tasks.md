@@ -64,3 +64,4 @@
 - [x] 6.11 A name that two imports bind stands for the second from its statement on, each call going with the import above it, and the provides of the client packs name a client library imported under one name in `try` and in `except`
 - [x] 6.12 A `setup.py` keyword is read only when its bracket follows the `=` directly, so a name or a call as the value and the bracket of a later keyword give nothing, and a backslash keeps the next character in its string
 - [x] 6.13 A hit made of stub files alone loses to a distribution the project declares for the module, and a stub beside its source, or a source package with a stub in it, stays the project's own
+- [x] 6.14 A router that more than 64 chains of mounts reach is served by the 64 whose paths sort first, among the first 1024 chains found, and the mounts are walked in an order of their own content, so that moving a mount in a file changes nothing

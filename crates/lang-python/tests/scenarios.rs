@@ -6,6 +6,7 @@
 #![cfg(test)]
 
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use gsttt_config::pack::builtin_packs;
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
@@ -1887,4 +1888,71 @@ fn a_stub_without_its_source_loses_to_a_declared_distribution() {
         tree.target("app.py", "mixed.only", &[]),
         "mixed/__init__.py + mixed/only.pyi"
     );
+}
+
+/// A file with seven layers of two routers, each router included in both routers of the layer above, so that `a0`
+/// is reached in 128 ways. The `include_router` calls come from the lowest layer up, or the other way round.
+fn layered_routers(reversed: bool) -> String {
+    let mut text = String::from("from fastapi import APIRouter\n\n");
+    for layer in 0..=7 {
+        for name in ["a", "b"] {
+            writeln!(text, "{name}{layer} = APIRouter()").unwrap();
+        }
+    }
+    text.push_str("\n\n@a0.get(\"/leaf\")\ndef leaf():\n    return {}\n\n\n");
+    let mut includes = Vec::new();
+    for layer in 0..7 {
+        for from in ["a", "b"] {
+            for to in ["a", "b"] {
+                includes.push(format!(
+                    "{to}{}.include_router({from}{layer}, prefix=\"/{layer}{from}{to}\")\n",
+                    layer + 1
+                ));
+            }
+        }
+    }
+    if reversed {
+        includes.reverse();
+    }
+    text.extend(includes);
+    text
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A router reached in more than 64 ways is served in the first 64 by path"
+)]
+#[test]
+fn a_router_reached_in_more_than_64_ways_is_served_in_the_first_64_by_path() {
+    let (straight, reversed) = (layered_routers(false), layered_routers(true));
+    let line = straight
+        .lines()
+        .position(|line| line.starts_with("@a0.get"))
+        .unwrap()
+        + 1;
+    // A way is the choice of one of the two routers at each layer, the lowest layer in the lowest bit.
+    let letter = |choice: u32, layer: usize| if (choice >> layer) & 1 == 0 { 'a' } else { 'b' };
+    let mut every: Vec<String> = (0..1_u32 << 7)
+        .map(|choice| {
+            let mut path = String::new();
+            for layer in (0..7).rev() {
+                let from = if layer == 0 {
+                    'a'
+                } else {
+                    letter(choice, layer - 1)
+                };
+                write!(path, "/{layer}{from}{}", letter(choice, layer)).unwrap();
+            }
+            format!("serves http GET {path}/leaf@{line}")
+        })
+        .collect();
+    every.sort();
+    every.truncate(64);
+    for text in [&straight, &reversed] {
+        let tree = index_files(&[
+            ("pyproject.toml", FASTAPI_PROJECT),
+            ("app.py", text.as_str()),
+        ]);
+        assert_eq!(tree.linked("app.py"), every);
+    }
 }

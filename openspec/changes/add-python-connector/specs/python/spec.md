@@ -238,6 +238,14 @@ A call that includes a router without a `prefix` SHALL add no second copy of its
 - **THEN** `app/items.py` serves `http GET /v2/items/{}` and no other path
 - **AND** the call with `prefix=PREFIX` is an unread site of `app/main.py`
 
+### Requirement: Ways kept for a router
+A router that more than 64 chains of mounts reach SHALL be served by the 64 whose paths sort first, among the first 1024 chains found, and the order of the mounts in the files SHALL not change which ones.
+
+#### Scenario: A router reached in more than 64 ways is served in the first 64 by path
+- **WHEN** a project that declares `fastapi` has seven layers of two routers, each included in both routers of the layer above with `prefix="/<layer><from><to>"`, so that the lowest router is reached in 128 ways, and `@a0.get("/leaf")` on the lowest router
+- **THEN** that router serves the 64 first of the 128 paths in sorted order, the first being `http GET /6aa/5aa/4aa/3aa/2aa/1aa/0aa/leaf`
+- **AND** it serves the same 64 when the calls are written in the opposite order
+
 ### Requirement: Mounts that are not followed
 The provides of a project SHALL name, as one blind spot of the routes it serves, the mounts of a router that it does not follow: by a file of another Python project, in a cycle, deeper than 32 routers, in more than 64 ways, with a prefix held in a variable, through an import that cannot be resolved or through a name that a module other than a package's `__init__.py` re-exports. With the `fastapi` pack it SHALL name applications mounted under a path with `mount` as another.
 
