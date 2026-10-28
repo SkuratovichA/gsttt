@@ -94,9 +94,12 @@ pub fn join_and(names: &[String]) -> String {
     }
 }
 
-/// Names for a heading: the first three as [`join_and`] writes them, then a count of the rest.
+/// How many names a line of an answer shows before it counts the rest.
+pub const NAMES_SHOWN: usize = 3;
+
+/// Names for a heading: the first [`NAMES_SHOWN`] as [`join_and`] writes them, then a count of the rest.
 pub fn summary(names: &[String]) -> String {
-    match names.split_at_checked(3) {
+    match names.split_at_checked(NAMES_SHOWN) {
         Some((shown, rest)) if !rest.is_empty() => {
             format!("{} and {} more", shown.join(", "), thousands(rest.len()))
         }

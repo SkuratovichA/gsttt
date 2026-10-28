@@ -18,7 +18,7 @@
 
 ## The data
 
-- Facts: `FileFacts.exports: Option<Vec<String>>` holds the names a file exports itself, sorted, and `None` when they are unknown; `Import.exported: Vec<String>` holds, for a named re-export, the name each entry of `names` is exported as. Both are left out of the cached bytes when empty, the way `TsExtra` does it.
+- Facts: `FileFacts.exports: Option<Vec<String>>` holds the names a file exports itself, sorted, and `None` when they are unknown; `Import.exported: Vec<String>` holds, for a named re-export, the name each entry of `names` is exported as. Both are left out of the JSON when empty, the way `TsExtra` does it; the cached bytes are rkyv, which carries every field, so `FACT_FORMAT` 2 is what keeps an old cache from being read.
 - Graph: names are interned once, in byte order. Each edge has a binding: `uses`, which is all or a sorted set of names that may be empty; `passes`, sorted pairs of the name exported as and the source name; and `star`, whether the edge re-exports everything. Each file has its own exports, or unknown. A binding merges with its edge: `uses` by union with all absorbing every set, `passes` by union, `star` by or.
 - The binding of one import: a named re-export passes its names under their aliases and uses nothing; `export * as ns` passes `ns` for `*`; `export *` sets `star` and uses nothing; an import whose names are known and hold no `*` uses those names; every other import uses all, which is what every import of a connector that records no names becomes.
 

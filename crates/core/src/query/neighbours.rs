@@ -6,13 +6,13 @@ use std::fmt;
 use serde::Serialize;
 
 use crate::fact::{ImportKind, Line, ParseStatus, Resolution};
-use crate::graph::{Edge, Graph};
+use crate::graph::{Edge, Graph, Uses};
 use crate::ids::FileId;
 use crate::index::{Freshness, Index};
 use crate::text::noun;
 
 use super::lookup::{Miss, find, possible_misses};
-use super::render::{Answer, Entries, Footer, Searched, display_as_text, list};
+use super::render::{Answer, Entries, Footer, Searched, display_as_text, list, name_list};
 
 /// A file at the other end of an import edge, with how the imports between the two files were written.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -22,6 +22,9 @@ pub struct Neighbour {
     pub kinds: Vec<ImportKind>,
     /// Whether nothing behind the edge exists at run time.
     pub type_only: bool,
+    /// The names the importer takes by name or re-exports by name, in byte order and without `*`. Empty, and left out of the JSON, when it takes everything the file exports or only re-exports everything of it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
 }
 
 impl Neighbour {
@@ -30,13 +33,12 @@ impl Neighbour {
             path: graph.path(file)?.to_string(),
             kinds: edge.kinds().collect(),
             type_only: edge.type_only(),
+            names: names_taken(graph, edge),
         })
     }
-}
 
-/// `b.ts  static import`, `c.ts  re-export of everything`, `d.ts  static import (types only)`.
-impl fmt::Display for Neighbour {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    /// Writes the line of the neighbour, with `entries` of its names.
+    fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         write!(f, "{}  ", self.path)?;
         for (position, kind) in self.kinds.iter().enumerate() {
             if position > 0 {
@@ -47,7 +49,37 @@ impl fmt::Display for Neighbour {
         if self.type_only {
             f.write_str(" (types only)")?;
         }
-        Ok(())
+        if self.names.is_empty() {
+            return Ok(());
+        }
+        write!(f, "  {}", name_list(&self.names, entries))
+    }
+}
+
+/// The names the importer of `edge` uses and re-exports, as the file it imports names them. An importer of everything takes no name in particular, so it has none.
+fn names_taken(graph: &Graph, edge: Edge) -> Vec<String> {
+    let binding = graph.binding(edge);
+    let Uses::Names(used) = binding.uses else {
+        return Vec::new();
+    };
+    let passed = binding.passes.iter().map(|&(_, source)| source);
+    let mut names: Vec<String> = used
+        .iter()
+        .copied()
+        .chain(passed)
+        .filter_map(|id| graph.name(id))
+        .filter(|name| *name != "*")
+        .map(str::to_owned)
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
+/// `b.ts  static import`, `c.ts  re-export of everything`, `d.ts  static import (types only)`, `e.ts  static import  useBar, useFoo`, with the names cut after three.
+impl fmt::Display for Neighbour {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write(f, Entries::Capped)
     }
 }
 
@@ -137,7 +169,7 @@ impl Answer for Dependents {
         } else {
             let heading = format!("dependents of {}", self.path);
             list(f, &heading, &self.files, entries, |f, file| {
-                write!(f, "{file}")
+                file.write(f, entries)
             })?;
         }
         self.footer.write(f)
@@ -305,7 +337,7 @@ impl Answer for Dependencies {
                 writeln!(f, "{caveat}")?;
             }
             list(f, "files", &self.files, entries, |f, file| {
-                write!(f, "{file}")
+                file.write(f, entries)
             })?;
             let sites = |f: &mut fmt::Formatter<'_>, external: &External| {
                 write!(f, "{}  ", external.name)?;

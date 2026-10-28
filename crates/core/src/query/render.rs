@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::coverage::ConnectorCoverage;
 use crate::ids::FileId;
 use crate::index::{Freshness, Index};
-use crate::text::{join_and, noun, percent, short, thousands};
+use crate::text::{NAMES_SHOWN, join_and, noun, percent, short, summary, thousands};
 
 /// How many entries of a list the text of an answer shows unless every entry is asked for.
 pub const LIST_CAP: usize = 30;
@@ -282,6 +282,15 @@ pub(super) fn moved(added: u32, removed: u32, changed: u32) -> String {
     join_and(&parts)
 }
 
+/// The names of a line of an answer, written as they come: separated by commas, and with `entries` capped the first [`NAMES_SHOWN`] followed by `and N more` when there are more.
+pub(super) fn name_list(names: &[String], entries: Entries) -> String {
+    if entries == Entries::Capped && names.len() > NAMES_SHOWN {
+        summary(names)
+    } else {
+        names.join(", ")
+    }
+}
+
 /// Writes `heading` with the count of `items`, then one line per item as `each` writes it, then `… N more` for the items `entries` leaves out. An empty list writes nothing.
 pub(super) fn list<T>(
     f: &mut fmt::Formatter<'_>,
@@ -321,6 +330,25 @@ pub(super) fn rows<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_are_cut_after_three_unless_every_entry_is_asked_for() {
+        let names = |count: usize| -> Vec<String> {
+            ["four", "one", "three", "two"]
+                .iter()
+                .take(count)
+                .map(|&name| name.to_owned())
+                .collect()
+        };
+        assert_eq!(name_list(&names(0), Entries::Capped), "");
+        assert_eq!(name_list(&names(2), Entries::Capped), "four, one");
+        assert_eq!(name_list(&names(3), Entries::Capped), "four, one, three");
+        assert_eq!(
+            name_list(&names(4), Entries::Capped),
+            "four, one, three and 1 more"
+        );
+        assert_eq!(name_list(&names(4), Entries::All), "four, one, three, two");
+    }
 
     #[test]
     fn the_all_flag_asks_for_every_entry() {

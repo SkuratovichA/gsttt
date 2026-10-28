@@ -70,7 +70,7 @@ pub enum Response {
     Facts {
         /// The path of the file, as it was asked.
         path: String,
-        /// What the process read out of the file: a `FileFacts` in the serde form of the core type, with `status`, `tags`, `imports`, `contracts`, `embedded` and `unresolved`.
+        /// What the process read out of the file: a `FileFacts` in the serde form of the core type, with `status`, `tags`, `imports`, `contracts`, `embedded` and `unresolved`, and optionally `exports`, the names the file exports itself, and in each import `exported`, the names a named re-export exports its `names` as.
         #[schemars(with = "serde_json::Value")]
         facts: FileFacts,
     },

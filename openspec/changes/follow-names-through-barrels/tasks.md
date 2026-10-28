@@ -2,17 +2,17 @@
 
 ## 1. Facts
 
-- [ ] 1.1 `FileFacts.exports` and `Import.exported`, left out of the cached bytes when empty; `FACT_FORMAT` 2
+- [x] 1.1 `FileFacts.exports` and `Import.exported`, left out of the JSON when empty; `FACT_FORMAT` 2
 - [ ] 1.2 The TypeScript connector records a file's own exports, the aliases of its named re-exports, and unknown exports for CommonJS, `export =` and files read past errors; connector version 2; snapshots reviewed
 
 ## 2. Graph
 
-- [ ] 2.1 Interned names, a binding per edge that merges with it, and each file's own exports; snapshot layout 5
-- [ ] 2.2 The build fills them from the resolved imports, and the testing `Tree` can give an import its names and a file its exports
+- [x] 2.1 Interned names, a binding per edge that merges with it, and each file's own exports; snapshot layout 5
+- [x] 2.2 The build fills them from the resolved imports, and the testing `Tree` can give an import its names and a file its exports
 
 ## 3. Neighbours
 
-- [ ] 3.1 `dependents` and `dependencies` carry the names taken, in text and in JSON, with the cut after three names
+- [x] 3.1 `dependents` and `dependencies` carry the names taken, in text and in JSON, with the cut after three names
 
 ## 4. Impact
 

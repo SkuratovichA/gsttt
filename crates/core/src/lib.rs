@@ -37,7 +37,7 @@ pub use connector::{
 };
 pub use contract::{ContractKey, ContractKind, Role};
 pub use graph::Graph;
-pub use ids::{ContractId, FileId, Id, ProjectId};
+pub use ids::{ContractId, FileId, Id, NameId, ProjectId};
 pub use index::{Freshness, Index, Loaded};
 pub use path::{RepoPath, Target};
 pub use repo::RepoView;

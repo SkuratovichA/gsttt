@@ -9,7 +9,7 @@ use super::pipeline::{Output, display_root};
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{Line, ParseStatus, UnresolvedReason, UnresolvedSite};
-use crate::graph::{ContractSite, Edge, GraphBuilder};
+use crate::graph::{ContractSite, GraphBuilder};
 use crate::ids::{FileId, Id};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
 use crate::repo::RepoView;
@@ -95,12 +95,12 @@ pub fn build_index(
             status => entry.count_file(file.id, status),
         }
         graph.tag(file.id, file.facts.tags);
+        graph.exports(file.id, file.facts.exports.as_deref());
 
         for resolved in &file.imports {
             entry.count_import(file.id, resolved);
             for &target in resolved.to.files() {
-                let edge = Edge::new(resolved.import.kind, resolved.import.flags);
-                graph.edge(file.id, target, edge);
+                graph.import(file.id, target, &resolved.import);
             }
         }
         let mut unresolved = file.facts.unresolved.clone();

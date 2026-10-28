@@ -93,6 +93,7 @@ fn assemble(text: &str, analysis: Analysis, status: ParseStatus) -> Parsed<TsExt
             contracts: analysis.contracts,
             embedded: analysis.embedded,
             unresolved: analysis.unresolved,
+            exports: None,
         },
         extra: analysis.extra,
     }

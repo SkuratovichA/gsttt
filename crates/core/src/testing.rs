@@ -15,7 +15,7 @@ use crate::fact::{
     FileTags, Import, ImportKind, ParseFailure, ParseStatus, Resolution, ResolvedImport,
     UnresolvedReason, UnresolvedSite,
 };
-use crate::graph::{ContractSite, Edge, GraphBuilder};
+use crate::graph::{ContractSite, GraphBuilder};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
 use crate::{FileId, ProjectId, RepoPath};
 
@@ -105,6 +105,8 @@ struct Entry {
     tags: FileTags,
     status: ParseStatus,
     imports: Vec<(Import, To)>,
+    /// The names the file exports itself, `None` when the connector cannot tell.
+    exports: Option<Vec<String>>,
     sites: Vec<(ContractKey, Role, u32)>,
     blind: Vec<UnresolvedSite>,
 }
@@ -116,10 +118,16 @@ impl Entry {
             tags: FileTags::NONE,
             status: ParseStatus::Ok,
             imports: Vec::new(),
+            exports: None,
             sites: Vec::new(),
             blind: Vec::new(),
         }
     }
+}
+
+/// Names as a connector records them.
+fn owned(names: &[&str]) -> Vec<String> {
+    names.iter().map(|&name| name.to_owned()).collect()
 }
 
 /// A tree of files, their imports and their contract sites, built the way the engine builds an index from the facts of a connector: a file keeps its imports in the order they were given, which is the order of its facts and not a sorted one, a file the engine puts aside is owned and counted apart, and a project is named `.` at the repository root.
@@ -192,9 +200,52 @@ impl Tree {
         self
     }
 
-    /// `from` imports the file `to` with a static import on line 1.
+    /// `from` imports the file `to` with a static import on line 1 that names nothing, so it takes everything the file exports.
     pub fn imports(self, from: &str, to: &str) -> Self {
         self.import(from, Import::new(to, ImportKind::Static, 1), file(to))
+    }
+
+    /// `from` imports only `names` of the file `to`, as `import { a, b } from 'to'` does.
+    pub fn imports_names(self, from: &str, to: &str, names: &[&str]) -> Self {
+        let import = Import {
+            names: owned(names),
+            ..Import::new(to, ImportKind::Static, 1)
+        };
+        self.import(from, import, file(to))
+    }
+
+    /// `from` imports the namespace of the file `to`, as `import * as ns from 'to'` does.
+    pub fn imports_namespace(self, from: &str, to: &str) -> Self {
+        self.imports_names(from, to, &["*"])
+    }
+
+    /// `from` imports the file `to` for its effects only, as `import 'to'` does.
+    pub fn imports_for_effect(self, from: &str, to: &str) -> Self {
+        self.import(from, Import::new(to, ImportKind::SideEffect, 1), file(to))
+    }
+
+    /// `from` re-exports names of the file `to`, as `export { source as exported } from 'to'` does, one `(exported, source)` pair per name. `("ns", "*")` is `export * as ns from 'to'`.
+    pub fn re_exports(self, from: &str, to: &str, pairs: &[(&str, &str)]) -> Self {
+        let import = Import {
+            names: pairs.iter().map(|&(_, source)| source.to_owned()).collect(),
+            exported: pairs
+                .iter()
+                .map(|&(exported, _)| exported.to_owned())
+                .collect(),
+            ..Import::new(to, ImportKind::ReExport, 1)
+        };
+        self.import(from, import, file(to))
+    }
+
+    /// `from` re-exports everything the file `to` exports, as `export * from 'to'` does.
+    pub fn re_exports_all(self, from: &str, to: &str) -> Self {
+        self.import(from, Import::new(to, ImportKind::ReExportAll, 1), file(to))
+    }
+
+    /// `path` exports exactly `names` itself, and none when the list is empty, as a barrel made only of `export *` does. A file the tree says nothing about exports names that are unknown.
+    pub fn exports(mut self, path: &str, names: &[&str]) -> Self {
+        self.entry(path).exports = Some(owned(names));
+        self
     }
 
     /// `from` has `import`, which points at `to`.
@@ -298,9 +349,10 @@ impl Tree {
         for (path, entry) in &self.files {
             let from = ids[path];
             graph.tag(from, entry.tags);
+            graph.exports(from, entry.exports.as_deref());
             for (import, to) in &entry.imports {
                 for target in to.paths() {
-                    graph.edge(from, ids[target], Edge::new(import.kind, import.flags));
+                    graph.import(from, ids[target], import);
                 }
             }
             for (key, role, line) in &entry.sites {
