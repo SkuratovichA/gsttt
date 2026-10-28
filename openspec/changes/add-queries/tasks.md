@@ -37,3 +37,5 @@
 - [x] 5.10 The tie-breaks of `impact` and `path` are written into the spec and pinned by tests: the smallest path first, an import before a contract from one file, contracts in key order and a file's first site by line
 - [x] 5.11 A file that serves and calls one contract, and a declarer or a caller reached after a server, are pinned by tests in both walks
 - [x] 5.12 `contract` returns an error for a blank query in place of listing every contract
+- [x] 5.13 The test fixture builds an index as the engine does: real file counts in place of a stated one, projects listed with the root as `.`, a rule per site in place of one constant, and a file the engine puts aside owned and listed as skipped
+- [x] 5.14 A skipped file counts as owned and not as read in the footer, the empty answer and the coverage answer, which gives its count beside the failed files, and a project at the repository root is named so whether the index writes it `.` or `""`

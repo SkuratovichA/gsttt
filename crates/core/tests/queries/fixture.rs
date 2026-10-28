@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use gsttt_core::contract::{ContractKey, Role};
-use gsttt_core::coverage::{ConnectorCoverage, Coverage};
+use gsttt_core::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use gsttt_core::fact::{
     FileTags, Import, ImportKind, ParseFailure, ParseStatus, Resolution, ResolvedImport,
     UnresolvedReason, UnresolvedSite,
@@ -14,6 +14,17 @@ use gsttt_core::{FileId, ProjectId, RepoPath};
 
 /// The connector that reads a file unless a test says otherwise.
 const DEFAULT_CONNECTOR: &str = "ts";
+
+/// The rule that found a site of `role`, as a connector names it: an OpenAPI document declares a route, a NestJS
+/// controller serves it and a `fetch` calls it. Each role has its own rule, so that a test sees an answer that takes
+/// the rule from another site.
+fn via(role: Role) -> &'static str {
+    match role {
+        Role::Declares => "openapi",
+        Role::Serves => "nestjs",
+        Role::Calls => "fetch",
+    }
+}
 
 /// Where an import of a test tree points.
 #[derive(Clone, Debug)]
@@ -99,7 +110,9 @@ impl Entry {
     }
 }
 
-/// A tree of files, their imports and their contract sites.
+/// A tree of files, their imports and their contract sites, built the way the engine builds an index from the facts of
+/// a connector: a file keeps its imports in the order they were given, which is the order of its facts and not a sorted
+/// one, a file the engine puts aside is owned and counted apart, and a project is named `.` at the repository root.
 #[derive(Debug, Default)]
 pub(crate) struct Tree {
     files: BTreeMap<String, Entry>,
@@ -144,6 +157,24 @@ impl Tree {
         self
     }
 
+    /// Adds files that `connector` read until it owns `total` of them, so that a test can put the few files it looks
+    /// at in a tree of the size of a real one.
+    pub(crate) fn padded(mut self, connector: &str, total: usize) -> Self {
+        self.register(connector);
+        let owned = self
+            .files
+            .values()
+            .filter(|entry| entry.connector.as_deref() == Some(connector))
+            .count();
+        for number in owned..total {
+            self.files.insert(
+                format!("padding/{connector}/{number}"),
+                Entry::new(Some(connector)),
+            );
+        }
+        self
+    }
+
     pub(crate) fn tag(mut self, path: &str, tags: FileTags) -> Self {
         self.entry(path).tags = tags;
         self
@@ -181,7 +212,9 @@ impl Tree {
         self.site(path, key, Role::Calls, 1)
     }
 
-    /// A file its connector could not read at all.
+    /// A file its connector could not read at all. A file over the size limit, not UTF-8 or unreadable is the engine's
+    /// to put aside: it is owned, counted in the files of its connector and listed as skipped, and it is not a failure
+    /// of the connector.
     pub(crate) fn failed(mut self, path: &str, failure: ParseFailure) -> Self {
         self.entry(path).status = ParseStatus::Failed(failure);
         self
@@ -258,7 +291,7 @@ impl Tree {
                         file: from,
                         line: *line,
                         role: *role,
-                        via: "test".to_owned(),
+                        via: via(*role).to_owned(),
                     },
                 );
             }
@@ -276,7 +309,10 @@ impl Tree {
             connectors: self
                 .connectors
                 .iter()
-                .map(|connector| ConnectorCoverage::new(connector))
+                .map(|connector| ConnectorCoverage {
+                    projects: vec![".".to_owned()],
+                    ..ConnectorCoverage::new(connector)
+                })
                 .collect(),
             ..Coverage::default()
         };
@@ -298,7 +334,20 @@ impl Tree {
                     .position(|known| known == connector)
                     .unwrap();
                 let counted = &mut coverage.connectors[project];
-                counted.count_file(file, &entry.status);
+                match &entry.status {
+                    ParseStatus::Failed(
+                        failure @ (ParseFailure::TooLarge { .. }
+                        | ParseFailure::NotUtf8
+                        | ParseFailure::Unreadable { .. }),
+                    ) => {
+                        counted.files += 1;
+                        coverage.skipped.push(FailedFile {
+                            file,
+                            failure: failure.clone(),
+                        });
+                    }
+                    status => counted.count_file(file, status),
+                }
                 for import in &imports {
                     counted.count_import(file, import);
                 }
@@ -333,15 +382,4 @@ impl Tree {
             http_prefixes: self.prefixes,
         }
     }
-}
-
-/// Makes the coverage of `connector` say it owns `files` files, so that a small tree can stand for a large one.
-pub(crate) fn own(index: &mut Index, connector: &str, files: u32) {
-    let coverage = index
-        .coverage
-        .connectors
-        .iter_mut()
-        .find(|coverage| coverage.connector == connector)
-        .unwrap();
-    coverage.files = files;
 }

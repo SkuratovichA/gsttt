@@ -64,7 +64,7 @@ pub struct ConnectorShare {
     pub connector: String,
     /// Files the connector owns.
     pub files: u32,
-    /// Files it read, including those it read past syntax errors.
+    /// Files it read, including those it read past syntax errors and not those it failed on or skipped.
     pub read: u32,
     /// Imports it found.
     pub imports: u32,
@@ -76,11 +76,11 @@ pub struct ConnectorShare {
 }
 
 impl ConnectorShare {
-    fn of(coverage: &ConnectorCoverage) -> Self {
+    fn of(index: &Index, coverage: &ConnectorCoverage) -> Self {
         Self {
             connector: coverage.connector.clone(),
             files: coverage.files,
-            read: read_files(coverage),
+            read: read_files(index, coverage),
             imports: coverage.imports,
             resolved_imports: coverage.internal.saturating_add(coverage.external),
             resolved: coverage.resolved_share(),
@@ -134,20 +134,16 @@ impl Footer {
             .collect();
         let involved =
             |coverage: &&ConnectorCoverage| owners.contains(&coverage.connector.as_str());
+        let share = |coverage: &ConnectorCoverage| ConnectorShare::of(index, coverage);
         let mut coverage: Vec<ConnectorShare> = index
             .coverage
             .connectors
             .iter()
             .filter(involved)
-            .map(ConnectorShare::of)
+            .map(share)
             .collect();
         if coverage.is_empty() {
-            coverage = index
-                .coverage
-                .connectors
-                .iter()
-                .map(ConnectorShare::of)
-                .collect();
+            coverage = index.coverage.connectors.iter().map(share).collect();
         }
         Self {
             coverage,
@@ -191,10 +187,26 @@ impl Footer {
     }
 }
 
-/// The files a connector owns and read: a file it could not read at all holds no imports to search.
-fn read_files(coverage: &ConnectorCoverage) -> u32 {
+/// The files `coverage`'s connector owns and left out before it read them: over the size limit, not UTF-8,
+/// unreadable. The engine counts them in `files` and lists them in `Coverage::skipped`, which holds the files of every
+/// connector, so the owner of each is looked up.
+pub(super) fn skipped_files(index: &Index, coverage: &ConnectorCoverage) -> u32 {
+    let owned = index.coverage.skipped.iter().filter(|skipped| {
+        index
+            .project_of(skipped.file)
+            .is_some_and(|project| project.connector == coverage.connector)
+    });
+    u32::try_from(owned.count()).unwrap_or(u32::MAX)
+}
+
+/// The files a connector owns and read: a file it could not read at all, or never saw, holds no imports to search. The
+/// engine puts a file in `failed` or in `skipped` and never in both, so the two are taken off the count once each.
+pub(super) fn read_files(index: &Index, coverage: &ConnectorCoverage) -> u32 {
     let failed = u32::try_from(coverage.failed.len()).unwrap_or(u32::MAX);
-    coverage.files.saturating_sub(failed)
+    coverage
+        .files
+        .saturating_sub(failed)
+        .saturating_sub(skipped_files(index, coverage))
 }
 
 /// What an answer searched, for the answers that find nothing.
@@ -213,10 +225,12 @@ impl Searched {
                 .coverage
                 .connectors
                 .iter()
-                .filter(|coverage| read_files(coverage) > 0)
+                .filter(|coverage| read_files(index, coverage) > 0)
         };
         Self {
-            files: readers().fold(0, |sum, coverage| sum.saturating_add(read_files(coverage))),
+            files: readers().fold(0, |sum, coverage| {
+                sum.saturating_add(read_files(index, coverage))
+            }),
             connectors: readers()
                 .map(|coverage| coverage.connector.clone())
                 .collect(),

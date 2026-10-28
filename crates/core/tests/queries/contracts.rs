@@ -66,11 +66,11 @@ fn a_route_lists_its_callers() {
     );
     assert_eq!(places(&calls), [("app.ts", 1, "http GET /bookings/me")]);
     assert!(
-        text.contains("serves (1):\nbookings.controller.ts:1  via test\n"),
+        text.contains("serves (1):\nbookings.controller.ts:1  via nestjs\n"),
         "{text}"
     );
     assert!(
-        text.contains("calls (1):\napp.ts:1  http GET /bookings/me  via test\n"),
+        text.contains("calls (1):\napp.ts:1  http GET /bookings/me  via fetch\n"),
         "{text}"
     );
 }

@@ -2,7 +2,6 @@
 
 use gsttt_core::connector::Provide;
 use gsttt_core::contract::{ContractKind, Role};
-use gsttt_core::coverage::FailedFile;
 use gsttt_core::fact::{Import, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index, Timings};
 use gsttt_core::query::{
@@ -29,6 +28,13 @@ fn syntax_error() -> ParseFailure {
     ParseFailure::Syntax {
         line: 3,
         message: "unexpected token".to_owned(),
+    }
+}
+
+fn too_large() -> ParseFailure {
+    ParseFailure::TooLarge {
+        bytes: 3_000_000,
+        limit: 1_048_576,
     }
 }
 
@@ -93,7 +99,10 @@ fn coverage_names_failures_and_blind_spots() {
 fn coverage_counts_files_by_parse_status_and_imports_by_outcome() {
     let text = coverage(&troubled(), Freshness::Fresh).to_string();
 
-    assert!(text.starts_with("ts: 3 files\n"), "{text}");
+    assert!(
+        text.starts_with("ts: 3 files in the repository root\n"),
+        "{text}"
+    );
     assert!(
         text.contains("ts parse status: 2 read cleanly, 0 read past syntax errors, 1 failed\n"),
         "{text}"
@@ -220,34 +229,106 @@ fn several_extensions_of_one_language_are_one_line() {
 
 #[test]
 fn coverage_lists_the_files_skipped_before_any_connector_read_them() {
-    let mut index = Tree::new()
+    let index = Tree::new()
         .imports("b.ts", "a.ts")
-        .unread("big.json")
+        .failed("bundle.js", too_large())
         .build();
-    let file = index.graph.file_id("big.json").unwrap();
-    index.coverage.skipped.push(FailedFile {
-        file,
-        failure: ParseFailure::TooLarge {
-            bytes: 3_000_000,
-            limit: 1_048_576,
-        },
-    });
 
     let report = coverage(&index, Freshness::Fresh);
 
     assert_eq!(
         report.skipped,
         [Failure {
-            path: "big.json".to_owned(),
-            failure: ParseFailure::TooLarge {
-                bytes: 3_000_000,
-                limit: 1_048_576
-            }
+            path: "bundle.js".to_owned(),
+            failure: too_large()
         }]
     );
     assert!(report.to_string().contains(
-        "files skipped before any connector read them (1):\nbig.json  3,000,000 bytes, over the limit of 1,048,576\n"
+        "files skipped before any connector read them (1):\nbundle.js  3,000,000 bytes, over the limit of 1,048,576\n"
     ));
+}
+
+#[scenario("queries", "A skipped file is owned and not read")]
+#[test]
+fn a_skipped_file_is_owned_and_not_read() {
+    let index = Tree::new()
+        .imports("b.ts", "a.ts")
+        .failed("bundle.js", too_large())
+        .failed("data.ts", ParseFailure::NotUtf8)
+        .build();
+
+    let report = coverage(&index, Freshness::Fresh);
+
+    let [ts] = report.connectors.as_slice() else {
+        panic!("one connector, got {:?}", report.connectors);
+    };
+    assert_eq!(
+        (
+            ts.files,
+            ts.parsed,
+            ts.recovered,
+            ts.failed.len(),
+            ts.skipped
+        ),
+        (4, 2, 0, 0, 2)
+    );
+    let text = report.to_string();
+    assert!(
+        text.contains(
+            "ts parse status: 2 read cleanly, 0 read past syntax errors, 0 failed, 2 skipped\n"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("coverage: ts read 2 of 4 files, 100% of imports resolved\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_file_is_skipped_for_the_connector_that_owns_it_and_no_other() {
+    let index = Tree::new()
+        .read_by("python", "tools/p.py")
+        .failed("src/bundle.ts", too_large())
+        .build();
+
+    let report = coverage(&index, Freshness::Fresh);
+
+    let counts: Vec<(&str, u32, u32, u32)> = report
+        .connectors
+        .iter()
+        .map(|connector| {
+            (
+                connector.connector.as_str(),
+                connector.files,
+                connector.parsed,
+                connector.skipped,
+            )
+        })
+        .collect();
+    assert_eq!(counts, [("python", 1, 1, 0), ("ts", 1, 0, 1)]);
+}
+
+#[test]
+fn a_parse_status_without_skipped_files_does_not_mention_them() {
+    let text = coverage(&troubled(), Freshness::Fresh).to_string();
+
+    assert!(!text.contains("skipped"), "{text}");
+}
+
+#[test]
+fn a_project_at_the_root_is_named_the_repository_root_however_the_index_writes_it() {
+    for root in ["", "."] {
+        let mut index = Tree::new().imports("b.ts", "a.ts").build();
+        index.coverage.connectors[0].projects = vec![root.to_owned()];
+
+        let text = coverage(&index, Freshness::Fresh).to_string();
+
+        assert!(
+            text.starts_with("ts: 2 files in the repository root\n"),
+            "root {root:?}:\n{text}"
+        );
+    }
 }
 
 #[test]

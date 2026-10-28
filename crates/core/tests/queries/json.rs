@@ -213,11 +213,17 @@ fn json_of_coverage_keeps_failures_reasons_and_unclaimed_files() {
             "fetch(url)",
         )
         .unread("src/main.kt")
+        .failed("dist/bundle.js", ParseFailure::NotUtf8)
         .build();
 
     let value = to_value(coverage(&index, Freshness::Fresh)).unwrap();
 
     let ts = &value["connectors"][0];
+    assert_eq!((&ts["parsed"], &ts["skipped"]), (&json!(2), &json!(1)));
+    assert_eq!(
+        value["skipped"],
+        json!([{"path": "dist/bundle.js", "failure": "not-utf8"}])
+    );
     assert_eq!(
         ts["failed"],
         json!([{"path": "src/broken.ts", "failure": "syntax", "line": 3, "message": "unexpected token"}])

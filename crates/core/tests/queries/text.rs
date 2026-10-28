@@ -1,6 +1,6 @@
 //! What every answer shares: cut lists, what was searched, and the footer.
 
-use gsttt_core::fact::{Import, ImportKind, UnresolvedReason};
+use gsttt_core::fact::{Import, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{
     Answer, Entries, ImpactRequest, contract, coverage, dependencies, dependents, impact, path,
@@ -8,7 +8,7 @@ use gsttt_core::query::{
 };
 use gsttt_scenario::scenario;
 
-use crate::fixture::{To, Tree, own, package, resolving};
+use crate::fixture::{To, Tree, package, resolving};
 
 /// A tree where `count` files import `src/hub.ts`.
 fn hub(count: usize) -> Index {
@@ -87,7 +87,7 @@ fn every_list_of_an_answer_is_cut_on_its_own() {
 #[scenario("queries", "An empty answer says what was searched")]
 #[test]
 fn an_empty_answer_says_what_was_searched() {
-    let mut index = Tree::new()
+    let index = Tree::new()
         .read_by("ts", "src/x.ts")
         .read_by("python", "tools/p.py")
         .import(
@@ -95,9 +95,9 @@ fn an_empty_answer_says_what_was_searched() {
             Import::new("./x", ImportKind::Static, 2),
             To::Missing(UnresolvedReason::NotFound),
         )
+        .padded("ts", 4_000)
+        .padded("python", 213)
         .build();
-    own(&mut index, "ts", 4_000);
-    own(&mut index, "python", 213);
 
     let text = dependents(&index, Freshness::Fresh, "src/x.ts").to_string();
 
@@ -107,6 +107,27 @@ fn an_empty_answer_says_what_was_searched() {
     );
     assert!(
         text.contains("src/y.ts:2 imports ./x (no such file)\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_empty_answer_counts_neither_the_files_that_failed_nor_the_files_skipped() {
+    let index = Tree::new()
+        .read_by("ts", "src/x.ts")
+        .failed(
+            "src/broken.ts",
+            ParseFailure::Panicked {
+                message: "boom".to_owned(),
+            },
+        )
+        .failed("dist/bundle.js", ParseFailure::NotUtf8)
+        .build();
+
+    let text = dependents(&index, Freshness::Fresh, "src/x.ts").to_string();
+
+    assert!(
+        text.starts_with("nothing imports src/x.ts among 1 file read by ts\n"),
         "{text}"
     );
 }

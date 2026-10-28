@@ -11,7 +11,9 @@ use crate::graph::Graph;
 use crate::index::{Freshness, Index, Timings};
 use crate::text::{duration, join_and, noun, percent, short, thousands};
 
-use super::render::{Answer, Entries, Footer, display_as_text, list, moved};
+use super::render::{
+    Answer, Entries, Footer, display_as_text, list, moved, read_files, skipped_files,
+};
 
 /// A line of a file, written `path:line`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -48,7 +50,8 @@ pub struct Reasons {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ConnectorReport {
     pub connector: String,
-    /// The roots of its projects, `""` for the repository root.
+    /// The roots of its projects as the index holds them. The repository root is `.` as the engine writes it, or `""`
+    /// as the coverage model documents it, and the text names both "the repository root".
     pub projects: Vec<String>,
     /// Files it owns.
     pub files: u32,
@@ -58,6 +61,9 @@ pub struct ConnectorReport {
     pub recovered: u32,
     /// Files it could not read.
     pub failed: Vec<Failure>,
+    /// Files it owns that were left out before it read them: over the size limit, not UTF-8, unreadable. They are
+    /// listed in [`CoverageReport::skipped`], with the files of the other connectors.
+    pub skipped: u32,
     pub imports: u32,
     /// Imports that point at files of the repository.
     pub internal: u32,
@@ -145,7 +151,7 @@ pub fn coverage(index: &Index, freshness: Freshness) -> CoverageReport {
         connectors: counted
             .connectors
             .iter()
-            .map(|connector| connector_report(graph, connector))
+            .map(|connector| connector_report(index, connector))
             .collect(),
         languages,
         other_extensions,
@@ -154,18 +160,16 @@ pub fn coverage(index: &Index, freshness: Freshness) -> CoverageReport {
     }
 }
 
-fn connector_report(graph: &Graph, connector: &ConnectorCoverage) -> ConnectorReport {
-    let failed = u32::try_from(connector.failed.len()).unwrap_or(u32::MAX);
+fn connector_report(index: &Index, connector: &ConnectorCoverage) -> ConnectorReport {
+    let graph = &index.graph;
     ConnectorReport {
         connector: connector.connector.clone(),
         projects: connector.projects.clone(),
         files: connector.files,
-        parsed: connector
-            .files
-            .saturating_sub(connector.recovered)
-            .saturating_sub(failed),
+        parsed: read_files(index, connector).saturating_sub(connector.recovered),
         recovered: connector.recovered,
         failed: failures(graph, &connector.failed),
+        skipped: skipped_files(index, connector),
         imports: connector.imports,
         internal: connector.internal,
         external: connector.external,
@@ -215,7 +219,7 @@ impl ConnectorReport {
                 .projects
                 .iter()
                 .map(|root| {
-                    if root.is_empty() {
+                    if matches!(root.as_str(), "" | ".") {
                         "the repository root".to_owned()
                     } else {
                         root.clone()
@@ -225,13 +229,17 @@ impl ConnectorReport {
             write!(f, " in {}", join_and(&roots))?;
         }
         writeln!(f)?;
-        writeln!(
+        write!(
             f,
             "{name} parse status: {} read cleanly, {} read past syntax errors, {} failed",
             thousands(self.parsed),
             thousands(self.recovered),
             thousands(self.failed.len())
         )?;
+        if self.skipped > 0 {
+            write!(f, ", {} skipped", thousands(self.skipped))?;
+        }
+        writeln!(f)?;
         if self.imports == 0 {
             writeln!(f, "{name} imports: none")?;
         } else {

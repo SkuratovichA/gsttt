@@ -159,11 +159,16 @@ Two HTTP keys SHALL meet when their methods are equal or either is `*`, and thei
 - **THEN** both comparisons give the same result
 
 ### Requirement: Coverage answer
-`coverage` SHALL list, per connector, its projects, its files by parse status, the share of imports resolved, the unresolved imports and unread sites by reason with the first place of each, and what it provides with its blind spots, followed by the unclaimed files by language and the files skipped before any connector read them.
+`coverage` SHALL list, per connector, its projects, its files by parse status (read cleanly, read past syntax errors, failed, skipped), the share of imports resolved, the unresolved imports and unread sites by reason with the first place of each, and what it provides with its blind spots, followed by the unclaimed files by language and the files skipped before any connector read them.
 
 #### Scenario: Coverage names failures and blind spots
 - **WHEN** an index has a TypeScript file that failed to parse, an unresolved import and a `fetch` with a computed URL
 - **THEN** the coverage answer names the failed file with its failure, the import's reason with its first place and the unread site's reason with its first place
+
+#### Scenario: A skipped file is owned and not read
+- **WHEN** `ts` owns four files, of which one is over the size limit and one is not UTF-8, so that the engine lists both as skipped
+- **THEN** the coverage answer gives for `ts` 2 files read cleanly, 0 read past syntax errors, 0 failed and 2 skipped
+- **AND** its coverage line says `ts read 2 of 4 files`
 
 ### Requirement: Status answer
 `status` SHALL say which gsttt version built the index, at which commit, how many files it holds, how many were dirty, how many were parsed and how many reused, how long each phase took, and how fresh it is.
