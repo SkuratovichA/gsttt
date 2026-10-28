@@ -838,6 +838,17 @@ fn a_process_that_sends_a_line_that_is_not_a_message_fails_the_files_it_did_not_
 }
 
 #[test]
+fn a_line_that_is_not_a_message_cannot_put_a_control_character_in_the_failure() {
+    // The failure quotes the line, which the process wrote and which may hold anything, and it reaches the terminal: the escape is dropped and the rest of the line stays.
+    let (_, b, _) = fails_on_b(r"printf '\033[31mred\n'");
+    assert!(
+        b.contains("`kotlin`") && b.contains("not a message") && b.contains("[31mred"),
+        "{b:?}"
+    );
+    assert!(!b.contains('\u{1b}'), "{b:?}");
+}
+
+#[test]
 fn a_process_that_leaves_in_the_middle_of_a_line_fails_the_files_it_did_not_answer() {
     let (run, b, c) = fails_on_b(r#"printf '{"type":"facts","pa'; exit 0"#);
     assert!(
