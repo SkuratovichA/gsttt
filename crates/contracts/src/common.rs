@@ -59,11 +59,6 @@ pub(crate) fn line_number(index: usize) -> Line {
     u32::try_from(index.saturating_add(1)).unwrap_or(u32::MAX)
 }
 
-/// A byte offset as the `u32` that [`gsttt_core::text::LineIndex`] takes.
-pub(crate) fn byte_offset(offset: usize) -> u32 {
-    u32::try_from(offset).unwrap_or(u32::MAX)
-}
-
 /// Whether the repository holds a file that `claims` takes.
 pub(crate) fn any_claimed(repo: &RepoView, claims: fn(&RepoPath) -> bool) -> bool {
     repo.files().any(|(_, path)| claims(path))

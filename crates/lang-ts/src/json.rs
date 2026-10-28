@@ -76,7 +76,7 @@ fn convert(value: &Value<'_>, lines: &LineIndex, depth: usize) -> Json {
                 .map(|property| Entry {
                     key: key_text(&property.name),
                     value: convert(&property.value, lines, depth + 1),
-                    line: lines.line(u32::try_from(property.name.range().start).unwrap_or(0)),
+                    line: lines.line_at(property.name.range().start),
                 })
                 .collect(),
         ),

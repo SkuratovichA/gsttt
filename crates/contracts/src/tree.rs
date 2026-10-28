@@ -9,7 +9,7 @@ use jsonc_parser::common::Ranged;
 use jsonc_parser::{CollectOptions, ParseOptions, ast, parse_to_ast};
 use saphyr::{LoadableYamlNode, MarkedYaml};
 
-use crate::common::{SyntaxError, byte_offset};
+use crate::common::SyntaxError;
 
 /// Documents nested deeper than this read as [`Value::Other`] below that level, so hostile input cannot exhaust the
 /// stack of the readers that walk the tree.
@@ -177,7 +177,7 @@ fn from_json(value: &ast::Value<'_>, lines: &LineIndex, depth: usize) -> Value {
                 .iter()
                 .map(|property| Entry {
                     key: property.name.as_str().to_owned(),
-                    line: lines.line(byte_offset(property.name.range().start)),
+                    line: lines.line_at(property.name.range().start),
                     value: from_json(&property.value, lines, depth + 1),
                 })
                 .collect(),
