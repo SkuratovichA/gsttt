@@ -21,6 +21,7 @@
 - [x] 2.6 Tell the model to fix a config that does not read and ask again, and keep an `[[external]]` connector that no one trusted from starting when the server refreshes
 - [x] 2.7 List `mcp` among the commands of the `cli` capability, in a delta of the requirement `Commands`
 - [x] 2.8 End the text of a tool error in a step for a model wherever the command line prints a help line for the failure, and keep the two in step with a test
+- [x] 2.9 Put the step after a config that does not read after `; ` like the others, and keep one copy of its sentence for the code and its tests
 
 ## 3. Gates
 

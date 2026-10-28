@@ -321,7 +321,7 @@ fn fails_until_fixed(broken: &str, fixed: &str) -> Reply {
 
     assert!(failed.is_error, "{failed:?}");
     assert!(
-        failed.text.contains("Fix the config and ask again"),
+        failed.text.contains("; fix the config and ask again"),
         "{}",
         failed.text
     );

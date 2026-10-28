@@ -124,11 +124,11 @@ stdout SHALL carry only protocol messages, with logs on stderr. The server SHALL
 
 #### Scenario: A config that does not read fails the call, not the server
 - **WHEN** `gsttt mcp` is started in a repository whose `.gsttt/config.toml` has a syntax error on line 3, `coverage` is called, the file is fixed, and `coverage` is called again
-- **THEN** `initialize` succeeded, the first result has `isError` set and its text names `.gsttt/config.toml:3` and says to fix the config and ask again, `tools/list` still answers, and the second result is the coverage report
+- **THEN** `initialize` succeeded, the first result has `isError` set and its text names `.gsttt/config.toml:3` and ends, after `; `, in a step to fix the config and ask again, `tools/list` still answers, and the second result is the coverage report
 
 #### Scenario: Options a module cannot read fail the call, not the server
 - **WHEN** `gsttt mcp` is started in a repository whose `.gsttt/config.toml` gives `ts` an option it does not have, `coverage` is called, the file is fixed, and `coverage` is called again
-- **THEN** the first result has `isError` set and its text names `ts` and the option and says to fix the config and ask again, and the second result is the coverage report
+- **THEN** the first result has `isError` set and its text names `ts` and the option and ends, after `; `, in a step to fix the config and ask again, and the second result is the coverage report
 
 #### Scenario: gsttt mcp refuses the flags of the command line
 - **WHEN** `gsttt mcp` runs with `--json`, with `--all` or with `--no-refresh`
@@ -136,7 +136,7 @@ stdout SHALL carry only protocol messages, with logs on stderr. The server SHALL
 
 ### Requirement: A failed call ends in a step for the model
 
-The text of a call that fails because of the repository SHALL be the sentence the CLI prints for the failure. Where the CLI prints a help line for the failure, the text SHALL end, after `; `, in a step worded for a model: it passes arguments, and it cannot change the root the server was started in.
+The text of a call that fails because of the repository SHALL be the sentence the CLI prints for the failure. Where the CLI prints a help line for it, and where the config does not read, the text SHALL end, after `; `, in a step worded for a model: it passes arguments, and it cannot change the root the server was started in.
 
 #### Scenario: A failure the command line gives a help line for ends in a step for the model
 - **WHEN** `gsttt mcp` is started in the home directory and `coverage` is called, and in a repository `dependents` is called with a path outside it and `impact` with `changed` set to true and a `base` that is no revision, and outside git `impact` is called with `changed` set to true

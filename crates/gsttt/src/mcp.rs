@@ -61,7 +61,8 @@ impl IndexSource for Source {
 }
 
 /// What a model can do about a config that does not read, which the command line leaves to the person at the terminal. The repository is opened again on every call, so a fix takes effect on the next one.
-const FIX_THE_CONFIG: &str = "Fix the config and ask again: the server reads it again on every call, so it needs no restart.";
+const FIX_THE_CONFIG: &str =
+    "fix the config and ask again: the server reads it again on every call, so it needs no restart";
 
 /// The root is one gsttt refuses, and the server keeps the root it was started in, so the step goes to the person who starts it.
 const START_IN_A_PROJECT: &str = "the server cannot leave the directory it was started in, so ask the person to start `gsttt mcp` inside a project, or to name one with `-C <dir>`";
@@ -78,7 +79,7 @@ const NAME_THE_FILES: &str = "name the files to ask about in `paths` and leave `
 /// A `base` the history of the repository does not have, or does not share with HEAD.
 const NAME_A_BASE: &str = "`base` takes a branch, a tag or a commit of this repository that shares history with HEAD, so name one, or leave `base` out to compare with HEAD";
 
-/// What a model can do about `error`, worded for a model: it passes arguments, and it cannot change the root the server was started in. The command line prints a help line for these failures, and `None` is a failure it prints none for. No arm is a wildcard, so a new failure of the repository has to be sorted here.
+/// What a model can do about `error`, worded for a model: it passes arguments, and it cannot change the root the server was started in. Each failure the command line prints a help line for has a step, and so has a config that does not read, which the command line leaves to the person at the terminal. No arm is a wildcard, so a new failure of the repository has to be sorted here.
 fn next_step(error: &RepositoryError) -> Option<&'static str> {
     match error {
         RepositoryError::Root(RootError::Directory { .. }) => Some(NAME_A_DIRECTORY),
@@ -90,6 +91,9 @@ fn next_step(error: &RepositoryError) -> Option<&'static str> {
         RepositoryError::Index(IndexError::Changes(
             ChangesError::Revision { .. } | ChangesError::NoMergeBase { .. },
         )) => Some(NAME_A_BASE),
+        RepositoryError::Config(_) | RepositoryError::External(_) | RepositoryError::Options(_) => {
+            Some(FIX_THE_CONFIG)
+        }
         RepositoryError::Root(RootError::CurrentDirectory { .. } | RootError::Workspace(_))
         | RepositoryError::Packs(_)
         | RepositoryError::Index(
@@ -97,33 +101,19 @@ fn next_step(error: &RepositoryError) -> Option<&'static str> {
             | IndexError::Workspace(_)
             | IndexError::Files(_)
             | IndexError::Connector(_),
-        )
-        | RepositoryError::Config(_)
-        | RepositoryError::External(_)
-        | RepositoryError::Options(_) => None,
+        ) => None,
     }
 }
 
 impl From<RepositoryError> for SourceError {
-    /// The failure as the sentence the command line prints, which the model reads as it is, and after it the step to take, where the command line prints a help line for it. After a failure of the config, which the command line leaves to the person at the terminal, comes the line that says what to do about it.
+    /// The failure as the sentence the command line prints, which the model reads as it is, and after it, where there is one, the step to take.
     fn from(error: RepositoryError) -> Self {
-        match error {
-            RepositoryError::Config(_)
-            | RepositoryError::External(_)
-            | RepositoryError::Options(_) => Self::new(format!("{error}\n{FIX_THE_CONFIG}")),
-            RepositoryError::Root(_)
-            | RepositoryError::Packs(_)
-            | RepositoryError::Path(_)
-            | RepositoryError::NoGit { .. }
-            | RepositoryError::Index(_) => {
-                let step = next_step(&error);
-                let sentence = CliError::from(error).to_string();
-                Self::new(match step {
-                    Some(step) => format!("{sentence}; {step}"),
-                    None => sentence,
-                })
-            }
-        }
+        let step = next_step(&error);
+        let sentence = CliError::from(error).to_string();
+        Self::new(match step {
+            Some(step) => format!("{sentence}; {step}"),
+            None => sentence,
+        })
     }
 }
 
@@ -147,7 +137,7 @@ mod tests {
     use serde_json::json;
     use tokio::io::{AsyncWriteExt, DuplexStream};
 
-    use super::{NAME_THE_FILES, RepositoryError, block_on};
+    use super::{FIX_THE_CONFIG, NAME_THE_FILES, RepositoryError, block_on};
     use crate::error::CliError;
     use crate::root::RootError;
 
@@ -239,9 +229,6 @@ mod tests {
         assert!(result.is_ok(), "{result:?}");
     }
 
-    /// What a model reads after a failure of the config, which the command line leaves to the person at the terminal.
-    const FIX_THE_CONFIG: &str = "Fix the config and ask again: the server reads it again on every call, so it needs no restart.";
-
     /// A module that cannot read an option of its own.
     fn unreadable_option() -> ConnectorError {
         ConnectorError::Options {
@@ -264,7 +251,7 @@ mod tests {
         for failure in failures {
             let printed = failure.to_string();
             let message = SourceError::from(failure).message;
-            assert_eq!(message, format!("{printed}\n{FIX_THE_CONFIG}"));
+            assert_eq!(message, format!("{printed}; {FIX_THE_CONFIG}"));
         }
     }
 
