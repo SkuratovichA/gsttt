@@ -34,3 +34,4 @@
 - [x] 5.9 The plugin README says that the install line needs a public repository, gives the `gh api` line for a private one, says that adding the marketplace needs git access, and says what the checksum guards against
 - [x] 5.10 The form of `skills` and of the inline hooks was settled with `claude plugin validate` (2.1.312), which accepts both as they are
 - [x] 5.11 `cargo xtask check` fails for a program that a plugin command runs without an executable bit, and for a manifest path that does not start with `./`
+- [x] 5.12 `cargo xtask check` also reads composite actions, accepts a Docker image pinned by digest, finds a `uses` in a flow mapping or behind a quoted key, ignores the text of a `run` script, and fails for a repository without workflows or a workflow that is not YAML

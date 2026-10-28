@@ -8,11 +8,17 @@ use crate::support::{git, printed, set_mode, workspace_root, write, write_execut
 
 const PINNED: &str = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
 
-fn workflow(reference: &str) -> String {
-    format!(
-        "name: ci\non: push\njobs:\n  checks:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: {reference}\n"
-    )
+/// A workflow whose only job has `steps`, written as YAML indented for the list of steps. The first step is on line 7.
+fn workflow_with_steps(steps: &str) -> String {
+    format!("name: ci\non: push\njobs:\n  checks:\n    runs-on: ubuntu-latest\n    steps:\n{steps}")
 }
+
+/// A workflow with one step, `uses: <reference>`.
+fn workflow(reference: &str) -> String {
+    workflow_with_steps(&format!("      - uses: {reference}\n"))
+}
+
+const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn plugin_manifest(skills: &str) -> String {
     format!(
@@ -75,6 +81,165 @@ fn an_unpinned_action_fails_the_check() {
         "{problems}"
     );
     assert!(problems.contains("actions/checkout@v4"), "{problems}");
+}
+
+#[gsttt_scenario::scenario(
+    "distribution",
+    "An unpinned action in a composite action fails the check"
+)]
+#[test]
+fn an_unpinned_action_in_a_composite_action_fails_the_check() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        ".github/actions/setup/action.yml",
+        "name: setup\nruns:\n  using: composite\n  steps:\n    - uses: actions/cache@v4\n",
+    );
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains(".github/actions/setup/action.yml:5:"),
+        "{problems}"
+    );
+    assert!(problems.contains("actions/cache@v4"), "{problems}");
+}
+
+#[test]
+fn a_composite_action_pinned_by_a_commit_id_passes() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        ".github/actions/setup/action.yaml",
+        &format!("name: setup\nruns:\n  using: composite\n  steps:\n    - uses: {PINNED}\n"),
+    );
+
+    assert_eq!(problems(repo.path()), None);
+}
+
+#[gsttt_scenario::scenario("distribution", "A Docker image pinned by its digest passes the check")]
+#[test]
+fn a_docker_image_pinned_by_its_digest_passes_the_check() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        ".github/workflows/ci.yml",
+        &workflow(&format!("docker://alpine@{DIGEST}")),
+    );
+
+    assert_eq!(problems(repo.path()), None);
+}
+
+#[test]
+fn a_docker_image_pinned_by_a_tag_fails_the_check() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        ".github/workflows/ci.yml",
+        &workflow("docker://alpine:3.19"),
+    );
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains(".github/workflows/ci.yml:7:"),
+        "{problems}"
+    );
+    assert!(problems.contains("docker://alpine:3.19"), "{problems}");
+}
+
+#[gsttt_scenario::scenario("distribution", "A uses line in a script is not an action")]
+#[test]
+fn a_uses_line_in_a_script_is_not_an_action() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        ".github/workflows/ci.yml",
+        &workflow_with_steps(&format!(
+            "      - uses: {PINNED}\n      - run: |\n          cat <<'EOF'\n          uses: actions/checkout@v4\n          EOF\n"
+        )),
+    );
+
+    assert_eq!(problems(repo.path()), None);
+}
+
+#[test]
+fn a_step_written_as_a_flow_mapping_is_checked() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        ".github/workflows/ci.yml",
+        &workflow_with_steps("      - { name: checkout, uses: actions/checkout@v4 }\n"),
+    );
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains(".github/workflows/ci.yml:7:"),
+        "{problems}"
+    );
+}
+
+#[test]
+fn a_quoted_key_is_checked() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        ".github/workflows/ci.yml",
+        &workflow_with_steps("      - \"uses\": actions/checkout@v4\n"),
+    );
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains(".github/workflows/ci.yml:7:"),
+        "{problems}"
+    );
+}
+
+#[test]
+fn an_unpinned_action_is_reported_even_when_its_line_cannot_be_found() {
+    let repo = clean_repository();
+    // The value is on the line after its key, which the scan of lines does not follow.
+    write(
+        repo.path(),
+        ".github/workflows/ci.yml",
+        &workflow_with_steps("      - uses:\n          actions/checkout@v4\n"),
+    );
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains(".github/workflows/ci.yml: `uses: actions/checkout@v4` is not pinned"),
+        "{problems}"
+    );
+}
+
+#[gsttt_scenario::scenario("distribution", "A repository without workflows fails the check")]
+#[test]
+fn a_repository_without_workflows_fails_the_check() {
+    let repo = clean_repository();
+    std::fs::remove_dir_all(repo.path().join(".github")).unwrap();
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains(".github/workflows: the directory is missing"),
+        "{problems}"
+    );
+}
+
+#[test]
+fn a_workflow_that_is_not_yaml_fails_the_check() {
+    let repo = clean_repository();
+    write(repo.path(), ".github/workflows/ci.yml", "jobs: [unclosed\n");
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains(".github/workflows/ci.yml: is not valid YAML"),
+        "{problems}"
+    );
 }
 
 #[gsttt_scenario::scenario("distribution", "A manifest naming a missing file fails the check")]

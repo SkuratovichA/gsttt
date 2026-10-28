@@ -21,11 +21,27 @@ Clippy, the tests and the release build SHALL run with `--locked`, so a `Cargo.l
 - **THEN** the clippy and test commands and the release build command pass `--locked`
 
 ### Requirement: Pinned actions
-Every action in every workflow SHALL be pinned by a full commit id, and `cargo xtask check` SHALL fail naming the workflow and line of any action that is not.
+Every action in every workflow and in every composite action under `.github/actions` SHALL be pinned by a full commit id, and every Docker image by a `sha256` digest. `cargo xtask check` SHALL fail naming the file and line of any that is not, and when `.github/workflows` is missing.
 
 #### Scenario: An unpinned action fails the check
 - **WHEN** a workflow has `uses: actions/checkout@v4`
 - **THEN** `cargo xtask check` exits non-zero and names the workflow file and line
+
+#### Scenario: An unpinned action in a composite action fails the check
+- **WHEN** `.github/actions/setup/action.yml` has `uses: actions/cache@v4` in a step
+- **THEN** `cargo xtask check` exits non-zero and names that file and line
+
+#### Scenario: A Docker image pinned by its digest passes the check
+- **WHEN** a workflow has `uses: docker://alpine@sha256:` followed by 64 hexadecimal digits
+- **THEN** `cargo xtask check` reports no problem
+
+#### Scenario: A uses line in a script is not an action
+- **WHEN** a `run: |` script of a workflow has a line `uses: actions/checkout@v4`
+- **THEN** `cargo xtask check` reports no problem
+
+#### Scenario: A repository without workflows fails the check
+- **WHEN** the repository has no `.github/workflows` directory
+- **THEN** `cargo xtask check` exits non-zero and names the directory
 
 ### Requirement: Versions
 The version of a release SHALL be `<major>.<minor>.<n>`, with `<major>` and `<minor>` from `[workspace.package] version` and `<n>` the number of commits in the history of the released commit, and `cargo xtask version` SHALL print it. A release build SHALL be given that version as the environment variable `GSTTT_VERSION` at compile time, for the `gsttt` binary to report.

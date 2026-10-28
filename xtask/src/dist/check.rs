@@ -1,7 +1,7 @@
 //! `cargo xtask check`: checks of the repository that no other tool makes.
 //!
-//! - Every action a workflow uses is pinned by a full commit id (`actions`).
-//! - The plugin marketplace and the manifests of the plugins it lists parse, and every path they name exists (`plugin`).
+//! - Every action that a workflow or a composite action uses is pinned by a full commit id, and every Docker image by a digest (`actions`).
+//! - The plugin marketplace and the manifests of the plugins it lists parse, every path they name starts with `./` and exists, and every program they run is executable (`plugin`).
 
 mod actions;
 mod plugin;
