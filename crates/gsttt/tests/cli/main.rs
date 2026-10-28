@@ -6,6 +6,7 @@ mod hook;
 mod impact;
 mod index;
 mod logs;
+mod mcp;
 mod panics;
 mod paths;
 mod questions;

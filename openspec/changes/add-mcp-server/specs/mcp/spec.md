@@ -96,6 +96,10 @@ stdout SHALL carry only protocol messages, with logs on stderr. The server SHALL
 - **WHEN** the client closes the server's input after `initialize`
 - **THEN** `serve` returns without an error
 
+#### Scenario: gsttt mcp exits 0 when its input closes
+- **WHEN** the client closes the input of `gsttt mcp` after `initialize`
+- **THEN** it exits 0 within 10 seconds
+
 #### Scenario: stdout carries only the protocol
 - **WHEN** `gsttt mcp` runs with `GSTTT_LOG=debug` through `initialize`, `tools/list` and one tool call
 - **THEN** every line on stdout parses as a JSON-RPC message
