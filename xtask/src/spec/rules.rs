@@ -12,6 +12,7 @@ use std::path::Path;
 use gsttt_spec::{Change, Delta, OpenSpec, Requirement, Scenario};
 
 use super::proofs::{Claim, Marks, Site};
+use super::purpose;
 
 /// Where a scenario is written.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -241,6 +242,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
             changes: Vec::new(),
         });
     }
+    failures.extend(purpose::failures(openspec));
 
     entries.sort_by(|a, b| {
         (&a.capability, &a.source, &a.site).cmp(&(&b.capability, &b.source, &b.site))

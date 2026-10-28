@@ -566,3 +566,50 @@ proptest! {
         prop_assert_eq!(found, expected);
     }
 }
+
+#[test]
+fn a_purpose_is_the_prose_of_its_section_and_the_line_it_starts_on() {
+    let spec = parse_spec("queries", Path::new("spec.md"), SPEC).unwrap();
+    let purpose = spec.purpose.unwrap();
+    assert_eq!(
+        (purpose.text.as_str(), purpose.line),
+        ("Impact queries.", 4)
+    );
+    let delta = parse_delta("queries", Path::new("delta.md"), DELTA).unwrap();
+    let purpose = delta.purpose.unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("Changes.", 4));
+
+    // Blank lines and fenced code are no prose; the lines that remain are trimmed and joined.
+    let text = "# Spec\n\n## Purpose\n\n  First line.\n```\nnot prose\n```\n\nSecond line.\n\n## Requirements\n";
+    let purpose = parse_spec("queries", Path::new("spec.md"), text)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!(
+        (purpose.text.as_str(), purpose.line),
+        ("First line.\nSecond line.", 5)
+    );
+
+    // No section, or one with no prose, is no purpose.
+    for text in [
+        "# Spec\n\n## Requirements\n",
+        "# Spec\n\n## Purpose\n\n## Requirements\n",
+    ] {
+        let spec = parse_spec("queries", Path::new("spec.md"), text).unwrap();
+        assert_eq!(spec.purpose, None);
+    }
+}
+
+#[test]
+fn a_delta_with_a_purpose_and_no_section_is_still_an_error() {
+    let text = "# Spec Delta\n\n## Purpose\nChanges.\n";
+    let error = parse_delta("queries", Path::new("delta.md"), text).unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Format {
+            line: 1,
+            problem: Problem::NoDeltaSection,
+            ..
+        }
+    ));
+}

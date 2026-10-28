@@ -25,6 +25,15 @@ pub struct Requirement {
     pub scenarios: Vec<Scenario>,
 }
 
+/// The prose of a `## Purpose` section: what a capability is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Purpose {
+    /// The lines of the section that are not blank and not fenced code, trimmed and joined with `\n`.
+    pub text: String,
+    /// The line of the first of them, counted from 1.
+    pub line: usize,
+}
+
 /// The requirements of one capability, read from `openspec/specs/<capability>/spec.md`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spec {
@@ -32,6 +41,8 @@ pub struct Spec {
     pub capability: String,
     /// The file, relative to the repository root, as it appears in messages.
     pub file: PathBuf,
+    /// The `## Purpose` section; `None` when the spec has none or it holds no prose.
+    pub purpose: Option<Purpose>,
     /// The requirements in the order they are written.
     pub requirements: Vec<Requirement>,
 }
@@ -63,6 +74,9 @@ pub struct Delta {
     pub capability: String,
     /// The file, relative to the repository root, as it appears in messages.
     pub file: PathBuf,
+    /// The `## Purpose` section, which OpenSpec reads only when the delta creates the capability; `None`
+    /// when the delta has none or it holds no prose.
+    pub purpose: Option<Purpose>,
     /// The requirements of the `ADDED` section.
     pub added: Vec<Requirement>,
     /// The requirements of the `MODIFIED` section, each replacing the main requirement of that name.
@@ -83,6 +97,7 @@ pub fn parse_spec(capability: &str, file: &Path, text: &str) -> Result<Spec, Err
     Ok(Spec {
         capability: capability.to_owned(),
         file: file.to_path_buf(),
+        purpose: parser.purpose,
         requirements: parser.requirements,
     })
 }
@@ -98,6 +113,7 @@ pub fn parse_delta(capability: &str, file: &Path, text: &str) -> Result<Delta, E
     Ok(Delta {
         capability: capability.to_owned(),
         file: file.to_path_buf(),
+        purpose: parser.purpose,
         added: parser.added,
         modified: parser.modified,
         removed: parser.removed,
@@ -115,6 +131,9 @@ enum Kind {
 impl Kind {
     /// The section a `## ` heading opens in this kind of file.
     fn section(self, title: &str) -> Section {
+        if title.eq_ignore_ascii_case("Purpose") {
+            return Section::Purpose;
+        }
         match self {
             Self::Spec if title.eq_ignore_ascii_case("Requirements") => Section::Requirements,
             Self::Spec => Section::Other,
@@ -156,7 +175,9 @@ enum Section {
     Modified,
     Removed,
     Renamed,
-    /// `## Purpose` or any other heading, whose content the gate does not read.
+    /// `## Purpose`, whose prose the reader keeps.
+    Purpose,
+    /// Any other heading, whose content the gate does not read.
     Other,
 }
 
@@ -180,6 +201,7 @@ struct Parser<'a> {
     scenario: Option<OpenScenario>,
     /// A `FROM` entry still waiting for its `TO`, with its line.
     from: Option<(String, usize)>,
+    purpose: Option<Purpose>,
     requirements: Vec<Requirement>,
     added: Vec<Requirement>,
     modified: Vec<Requirement>,
@@ -197,6 +219,7 @@ impl<'a> Parser<'a> {
             current: None,
             scenario: None,
             from: None,
+            purpose: None,
             requirements: Vec::new(),
             added: Vec::new(),
             modified: Vec::new(),
@@ -253,7 +276,8 @@ impl<'a> Parser<'a> {
         match level {
             2 => {
                 self.section = self.kind.section(title);
-                self.saw_section |= self.kind == Kind::Delta && self.section != Section::Other;
+                self.saw_section |= self.kind == Kind::Delta
+                    && !matches!(self.section, Section::Other | Section::Purpose);
                 Ok(())
             }
             3 => self.requirement_heading(title, line),
@@ -350,7 +374,31 @@ impl<'a> Parser<'a> {
                 Ok(())
             }
             Section::Renamed => self.rename_entry(text, line),
+            Section::Purpose => {
+                self.purpose_line(text, line);
+                Ok(())
+            }
             Section::Other => Ok(()),
+        }
+    }
+
+    /// Adds a line of the `## Purpose` section to the prose; a blank line is no prose.
+    fn purpose_line(&mut self, text: &str, line: usize) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        match &mut self.purpose {
+            Some(purpose) => {
+                purpose.text.push('\n');
+                purpose.text.push_str(text);
+            }
+            None => {
+                self.purpose = Some(Purpose {
+                    text: text.to_owned(),
+                    line,
+                });
+            }
         }
     }
 
@@ -443,7 +491,7 @@ impl<'a> Parser<'a> {
             Section::Requirements => self.requirements.push(requirement),
             Section::Added => self.added.push(requirement),
             Section::Modified => self.modified.push(requirement),
-            Section::Removed | Section::Renamed | Section::Other => {}
+            Section::Removed | Section::Renamed | Section::Purpose | Section::Other => {}
         }
     }
 }

@@ -102,16 +102,30 @@ impl Tree {
     }
 }
 
-/// A main spec with the given requirements.
-fn main_spec(requirements: &[String]) -> String {
+/// A main spec with the given purpose and requirements.
+fn spec_with_purpose(purpose: &str, requirements: &[String]) -> String {
     format!(
-        "# Queries Specification\n\n## Purpose\nA purpose.\n\n## Requirements\n\n{}",
+        "# Queries Specification\n\n## Purpose\n{purpose}\n\n## Requirements\n\n{}",
         requirements.join("\n")
     )
 }
 
-/// A delta with one section: `ADDED`, `MODIFIED` or `REMOVED`.
+/// A main spec with the given requirements.
+fn main_spec(requirements: &[String]) -> String {
+    spec_with_purpose("A purpose.", requirements)
+}
+
+/// A delta with one section, `ADDED`, `MODIFIED` or `REMOVED`, under the purpose that a delta
+/// needs when it creates a capability.
 fn delta(section: &str, requirements: &[String]) -> String {
+    format!(
+        "# Spec Delta\n\n## Purpose\nA purpose.\n\n## {section} Requirements\n\n{}",
+        requirements.join("\n")
+    )
+}
+
+/// A delta with one section and no purpose.
+fn bare_delta(section: &str, requirements: &[String]) -> String {
     format!(
         "# Spec Delta\n\n## {section} Requirements\n\n{}",
         requirements.join("\n")
@@ -644,6 +658,111 @@ fn a_change_that_a_failure_names_is_not_ready() {
         tree.try_run(Mode::Ready).unwrap().output,
         "removes-wormholes\n"
     );
+}
+
+/// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine`
+/// with the `## Purpose` taken out of its delta.
+const PLACEHOLDER: &str =
+    "TBD - created by archiving change add-indexing-engine. Update Purpose after archive.";
+
+#[gsttt_scenario::scenario("spec-gate", "A placeholder purpose fails")]
+#[test]
+fn a_placeholder_purpose_fails() {
+    let requirements = [requirement("Matching", &["HTTP matching is symmetric"])];
+    let placeholder = spec_with_purpose(PLACEHOLDER, &requirements);
+    let tree = Tree::new();
+    tree.spec("queries", &placeholder).source(
+        "tests/matching.rs",
+        &proof("queries", "HTTP matching is symmetric"),
+    );
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/specs/queries/spec.md:{}: capability `queries` has the placeholder purpose that `openspec archive` writes when a delta gives none; write what the capability is for",
+        line_of(&placeholder, "TBD - created")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+
+    tree.spec(
+        "queries",
+        &spec_with_purpose("Impact queries.", &requirements),
+    );
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+}
+
+#[gsttt_scenario::scenario("spec-gate", "A change that creates a capability needs a purpose")]
+#[test]
+fn a_change_that_creates_a_capability_needs_a_purpose() {
+    let requirements = [requirement("Matching", &["HTTP matching is symmetric"])];
+    let bare = bare_delta("ADDED", &requirements);
+    let tree = Tree::new();
+    tree.change("add-matching", TICKED, &[("queries", &bare)])
+        .source(
+            "tests/matching.rs",
+            &proof("queries", "HTTP matching is symmetric"),
+        );
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/add-matching/specs/queries/spec.md:{}: change `add-matching` creates capability `queries` and its delta has no `## Purpose`, so archiving it would write the placeholder purpose; add one above the first section",
+        line_of(&bare, "Requirement: Matching")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+
+    tree.change(
+        "add-matching",
+        TICKED,
+        &[("queries", &delta("ADDED", &requirements))],
+    );
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "add-matching\n");
+}
+
+#[test]
+fn a_delta_that_creates_no_capability_needs_no_purpose() {
+    let tree = Tree::new();
+    // `queries` has a main spec, so adding to it creates nothing. `fresh` is created by
+    // `add-fresh`, which gives the purpose; `tune-fresh` only modifies what that one adds.
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["HTTP matching is symmetric"])]),
+    )
+    .change(
+        "add-wormholes",
+        OPEN,
+        &[(
+            "queries",
+            &bare_delta(
+                "ADDED",
+                &[requirement("Wormholes", &["Impact goes through wormholes"])],
+            ),
+        )],
+    )
+    .change(
+        "add-fresh",
+        OPEN,
+        &[(
+            "fresh",
+            &delta("ADDED", &[requirement("Fresh", &["Fresh works"])]),
+        )],
+    )
+    .change(
+        "tune-fresh",
+        OPEN,
+        &[(
+            "fresh",
+            &bare_delta("MODIFIED", &[requirement("Fresh", &["Fresh still works"])]),
+        )],
+    )
+    .source(
+        "tests/matching.rs",
+        &proof("queries", "HTTP matching is symmetric"),
+    );
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
 }
 
 #[test]

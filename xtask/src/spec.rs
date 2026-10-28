@@ -3,10 +3,12 @@
 //!
 //! - [`workspace`] asks cargo which targets the workspace has.
 //! - [`proofs`] finds the `#[scenario]` attributes in the sources those targets compile.
+//! - [`purpose`] holds back a spec with the placeholder purpose and the change that would leave one.
 //! - [`rules`] decides which scenarios exist, which are proven and what fails.
 //! - [`report`] prints the verdict.
 
 mod proofs;
+mod purpose;
 mod report;
 mod rules;
 #[cfg(test)]

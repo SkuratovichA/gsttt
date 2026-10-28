@@ -14,7 +14,7 @@ mod tree;
 
 pub use attribute::{expand_scenario, scenario_args};
 pub use capability::{
-    Delta, Removed, Renamed, Requirement, Scenario, Spec, parse_delta, parse_spec,
+    Delta, Purpose, Removed, Renamed, Requirement, Scenario, Spec, parse_delta, parse_spec,
 };
 pub use error::{Error, Problem};
 pub use tasks::{Task, parse_tasks};

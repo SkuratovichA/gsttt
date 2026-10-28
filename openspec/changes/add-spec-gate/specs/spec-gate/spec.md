@@ -132,3 +132,14 @@ The report SHALL list, per capability, the scenarios proven, pending and failing
 #### Scenario: A change that a failure names is not ready
 - **WHEN** a change with every task ticked removes a requirement and a test still claims one of its scenarios
 - **THEN** `--ready` does not print the change until the test stops claiming the scenario
+
+### Requirement: Purposes
+A spec whose `## Purpose` is the placeholder that `openspec archive` writes when a delta gives none (`TBD - created by archiving change <name>. Update Purpose after archive.`) SHALL fail the gate at the line of the placeholder, and so SHALL an open change whose delta adds requirements to a capability that `openspec/specs/` lacks and has no `## Purpose`, at the line of its first requirement; `--ready` SHALL NOT print that change.
+
+#### Scenario: A placeholder purpose fails
+- **WHEN** a spec in `openspec/specs/` has the purpose `TBD - created by archiving change add-indexing-engine. Update Purpose after archive.`
+- **THEN** the gate exits non-zero and names the spec's file and the line of the placeholder
+
+#### Scenario: A change that creates a capability needs a purpose
+- **WHEN** a finished and proven change adds requirements to a capability that `openspec/specs/` lacks and its delta has no `## Purpose`
+- **THEN** the gate exits non-zero and names the delta's file and the line of its first requirement, and `--ready` does not print the change until the delta has a purpose
