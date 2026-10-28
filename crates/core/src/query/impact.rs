@@ -8,14 +8,14 @@ use serde::Serialize;
 use crate::contract::Role;
 use crate::fact::FileTags;
 use crate::graph::Graph;
-use crate::ids::{FileId, IdSet};
+use crate::ids::{FileId, IdSet, NameId};
 use crate::index::{Freshness, Index};
 use crate::path::RepoPath;
 use crate::text::{noun, summary};
 
 use super::cross::Crossing;
 use super::lookup::{Miss, find, possible_misses};
-use super::render::{Answer, Entries, Footer, Searched, display_as_text, list};
+use super::render::{Answer, Entries, Footer, Searched, display_as_text, list, name_list};
 use super::walk::{Cause, reach};
 
 /// What a change is asked about.
@@ -65,19 +65,41 @@ pub struct Affected {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "via", rename_all = "kebab-case")]
 pub enum Reason {
-    /// The file imports `file`, which the walk had reached.
-    Imports { file: String },
+    /// The file imports `file`, which the walk had reached. `names` are the names it imports that the change can reach, in byte order, and are left out when it takes every name of `file`.
+    Imports {
+        file: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        names: Vec<String>,
+    },
+    /// The file re-exports `names` of `file`, which the walk had reached, in byte order. They are left out when `file` does not list what it exports, so the walk could not tell which names it passes on.
+    ReExports {
+        file: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        names: Vec<String>,
+    },
     /// The file has a site with `role` in the contract `key`, which joins a contract of a file the walk had reached.
     Contract { role: Role, key: String },
 }
 
-/// `imports src/a.ts`, `calls http GET /bookings/{}`.
+impl Reason {
+    /// `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `imports src/a.ts`, `calls http GET /bookings/{}`. Names are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
+        let (verb, file, names) = match self {
+            Self::Imports { file, names } => ("imports", file, names),
+            Self::ReExports { file, names } => ("re-exports", file, names),
+            Self::Contract { role, key } => return write!(f, "{role} {key}"),
+        };
+        if names.is_empty() {
+            write!(f, "{verb} {file}")
+        } else {
+            write!(f, "{verb} {} from {file}", name_list(names, entries))
+        }
+    }
+}
+
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Imports { file } => write!(f, "imports {file}"),
-            Self::Contract { role, key } => write!(f, "{role} {key}"),
-        }
+        self.write(f, Entries::Capped)
     }
 }
 
@@ -121,7 +143,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     let mut affected = Vec::new();
     let mut tests = Vec::new();
     for reached in &reached {
-        let (Some(path), Some(reason)) = (graph.path(reached.file), reason(graph, reached.cause))
+        let (Some(path), Some(reason)) = (graph.path(reached.file), reason(graph, &reached.cause))
         else {
             continue;
         };
@@ -195,16 +217,28 @@ fn in_asked_order(absent: BTreeMap<String, (usize, bool)>) -> Vec<(String, bool)
         .collect()
 }
 
-fn reason(graph: &Graph, cause: Cause) -> Option<Reason> {
+fn reason(graph: &Graph, cause: &Cause) -> Option<Reason> {
     match cause {
-        Cause::Imports(file) => Some(Reason::Imports {
-            file: graph.path(file)?.to_string(),
+        Cause::Imports { file, names } => Some(Reason::Imports {
+            file: graph.path(*file)?.to_string(),
+            names: spell(graph, names)?,
+        }),
+        Cause::ReExports { file, names } => Some(Reason::ReExports {
+            file: graph.path(*file)?.to_string(),
+            names: spell(graph, names)?,
         }),
         Cause::Contract { role, contract } => Some(Reason::Contract {
-            role,
-            key: graph.contract(contract)?.to_string(),
+            role: *role,
+            key: graph.contract(*contract)?.to_string(),
         }),
     }
+}
+
+/// The names behind `ids`. Ids are numbered in byte order, so they come out sorted.
+fn spell(graph: &Graph, ids: &[NameId]) -> Option<Vec<String>> {
+    ids.iter()
+        .map(|&id| graph.name(id).map(str::to_owned))
+        .collect()
 }
 
 impl Answer for Impact {
@@ -223,11 +257,8 @@ impl Answer for Impact {
         f.write_str("\n")?;
 
         let affected_line = |f: &mut fmt::Formatter<'_>, affected: &Affected| {
-            write!(
-                f,
-                "{}  distance {}  {}",
-                affected.path, affected.distance, affected.reason
-            )
+            write!(f, "{}  distance {}  ", affected.path, affected.distance)?;
+            affected.reason.write(f, entries)
         };
         list(f, "affected files", &self.affected, entries, affected_line)?;
         list(f, "tests", &self.tests, entries, affected_line)?;

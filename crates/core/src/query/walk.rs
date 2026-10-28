@@ -1,22 +1,31 @@
 //! The fixpoint behind `impact`: every file a change reaches, how many hops away, and the first way it got there.
 
+mod exports;
+
+use std::collections::{BTreeSet, HashMap};
+use std::rc::Rc;
+
+use foldhash::fast::RandomState;
+
 use crate::contract::Role;
-use crate::graph::Graph;
-use crate::ids::{ContractId, FileId, IdSet};
+use crate::graph::{Edge, Graph, Uses};
+use crate::ids::{ContractId, FileId, IdSet, NameId};
 
 use super::cross::{Crossed, Crossing, Direction};
 
 /// How the walk got to a file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Cause {
-    /// The file imports the file the walk came from.
-    Imports(FileId),
+    /// The file imports the file the walk came from. `names` are the names it imports that the change can reach, sorted, and none when it takes every name.
+    Imports { file: FileId, names: Vec<NameId> },
+    /// The file re-exports `names` of the file the walk came from, sorted. None when the walk could not tell which, because the file it came from does not list what it exports.
+    ReExports { file: FileId, names: Vec<NameId> },
     /// The file has a site with `role` in `contract`, which joins a contract of the file the walk came from.
     Contract { role: Role, contract: ContractId },
 }
 
 /// A file the walk reached.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Reached {
     pub(super) file: FileId,
     /// Hops from the nearest changed file.
@@ -25,9 +34,28 @@ pub(super) struct Reached {
     pub(super) cause: Cause,
 }
 
+/// The names of a file that the walk meets for the first time in a layer, which is what its importers are measured against.
+enum Delta {
+    /// Every name: the file is changed, or the walk has just found it affected in all its names.
+    All,
+    /// Only these names, sorted: the file is a barrel that passes them on.
+    Names(Vec<NameId>),
+}
+
+/// The names of a barrel the walk has reached while the barrel is not yet affected in all its names.
+#[derive(Default)]
+struct Held {
+    /// A(file): every name of the barrel that the change may reach.
+    names: BTreeSet<NameId>,
+    /// The names that joined `names` since the layer was cut, in the order they came.
+    growth: Vec<NameId>,
+}
+
 /// Every file that reaches one of `changed` within `depth` hops, ordered by distance and then by file.
 ///
 /// A hop goes from a file to the files that import it, except where the import is only a Rust `mod` declaration, which owns the child file and uses nothing from it; or across a contract: a file that declares one reaches the files that serve or call it, and a file that serves one reaches the files that call it. The changed files are never reached.
+///
+/// An import that records names is followed by name. A file that uses a name the change can reach is reached in all its names. A file that only re-exports is reached in the names it passes on, and passes on those and no others, so an `export *` barrel stops fanning out to importers of names the change cannot touch. A file whose names do not grow is not visited again.
 pub(super) fn reach(
     graph: &Graph,
     crossing: &Crossing<'_>,
@@ -39,22 +67,28 @@ pub(super) fn reach(
         crossing,
         crossed: Crossed::new(Direction::ToCallers, graph),
         seen: IdSet::with_universe(graph.file_count()),
+        whole: IdSet::with_universe(graph.file_count()),
+        held: HashMap::default(),
+        exported: HashMap::default(),
+        default: graph.name_id("default"),
+        star: graph.name_id("*"),
         distance: 0,
         reached: Vec::new(),
         next: Vec::new(),
     };
-    let mut frontier = changed.to_vec();
-    frontier.sort_unstable();
-    frontier.dedup();
-    walk.seen.extend(frontier.iter().copied());
+    let mut changed = changed.to_vec();
+    changed.sort_unstable();
+    changed.dedup();
+    walk.seen.extend(changed.iter().copied());
+    walk.whole.extend(changed.iter().copied());
+    let mut frontier: Vec<(FileId, Delta)> =
+        changed.into_iter().map(|file| (file, Delta::All)).collect();
     while !frontier.is_empty() && depth.is_none_or(|limit| walk.distance < limit) {
         walk.distance += 1;
-        for &file in &frontier {
-            walk.expand(file);
+        for (file, delta) in &frontier {
+            walk.expand(*file, delta);
         }
-        frontier = std::mem::take(&mut walk.next);
-        // Ascending files make the first cause found the same on every run.
-        frontier.sort_unstable();
+        frontier = walk.cut();
     }
     walk.reached
         .sort_unstable_by_key(|reached| (reached.distance, reached.file));
@@ -66,40 +100,204 @@ struct Walk<'a> {
     crossing: &'a Crossing<'a>,
     /// The contracts crossed so far, from declarers and servers towards callers.
     crossed: Crossed,
+    /// The files reached in at least one name, and the changed files.
     seen: IdSet<FileId>,
+    /// The files reached in every name: the changed files, and those that use an affected name or sit across a contract. Only these cross contracts.
+    whole: IdSet<FileId>,
+    /// The seen files that are not whole. Probed and never iterated, so the order of a hash map cannot reach the output.
+    held: HashMap<FileId, Held, RandomState>,
+    /// X(file) per file that was asked for, kept because a barrel is asked about once per layer that grows it.
+    exported: HashMap<FileId, Option<Rc<[NameId]>>, RandomState>,
+    /// The ids of the names `export *` never forwards and `export * as ns` takes, when the graph holds them.
+    default: Option<NameId>,
+    star: Option<NameId>,
     /// The distance of the files being reached now.
     distance: u32,
     reached: Vec<Reached>,
+    /// The files whose names grew in this layer, once for each time they grew.
     next: Vec<FileId>,
 }
 
 impl Walk<'_> {
-    fn expand(&mut self, file: FileId) {
+    fn expand(&mut self, file: FileId, delta: &Delta) {
         let graph = self.graph;
         for &(importer, edge) in graph.dependents(file) {
-            if !edge.is_structural() {
-                self.visit(importer, Cause::Imports(file));
+            if edge.is_structural() || self.whole.contains(importer) {
+                continue;
+            }
+            if edge.is_plain() {
+                // Every import of a connector that records no names lands here, at the cost of a bit per file.
+                self.take_all(
+                    importer,
+                    Cause::Imports {
+                        file,
+                        names: Vec::new(),
+                    },
+                );
+            } else {
+                self.follow(importer, file, edge, delta);
             }
         }
-        for &contract in graph.contracts_of(file) {
-            for (meeting, site) in self.crossing.cross(&mut self.crossed, file, contract) {
-                let cause = Cause::Contract {
-                    role: site.role,
-                    contract: meeting,
-                };
-                self.visit(site.file, cause);
+        // A file reached in some names only has not been shown to touch its contracts.
+        if matches!(delta, Delta::All) {
+            for &contract in graph.contracts_of(file) {
+                for (meeting, site) in self.crossing.cross(&mut self.crossed, file, contract) {
+                    let cause = Cause::Contract {
+                        role: site.role,
+                        contract: meeting,
+                    };
+                    self.take_all(site.file, cause);
+                }
             }
         }
     }
 
-    fn visit(&mut self, file: FileId, cause: Cause) {
+    /// What the importer gets from the new names of `file` over `edge`. A use comes before a pass, so the first way a file is found over one edge is the import.
+    fn follow(&mut self, importer: FileId, file: FileId, edge: Edge, delta: &Delta) {
+        let graph = self.graph;
+        let binding = graph.binding(edge);
+
+        // The names the importer uses itself. One of them is enough to affect it in all of its names.
+        let mut used = Vec::new();
+        let uses_all = match (binding.uses, delta) {
+            (Uses::All, _) => true,
+            (Uses::Names(wanted), Delta::All) => {
+                used.extend_from_slice(wanted);
+                false
+            }
+            (Uses::Names(wanted), Delta::Names(fresh)) => {
+                // A name the file does not export is kept, because the import may be the very thing the change breaks or mends.
+                let exported = self.exported_by(file);
+                used.extend(wanted.iter().copied().filter(|&name| {
+                    holds(fresh, name) || exported.as_deref().is_none_or(|all| !holds(all, name))
+                }));
+                false
+            }
+        };
+        if uses_all || !used.is_empty() {
+            self.take_all(importer, Cause::Imports { file, names: used });
+            return;
+        }
+
+        // The names it passes on, which affect it only in those names.
+        let mut passed = Vec::new();
+        for &(exported_as, taken) in binding.passes {
+            let reached = match delta {
+                Delta::All => true,
+                Delta::Names(fresh) => Some(taken) == self.star || holds(fresh, taken),
+            };
+            if reached {
+                passed.push(exported_as);
+            }
+        }
+        let mut unlisted = false;
+        if binding.star {
+            match delta {
+                Delta::Names(fresh) => passed.extend(
+                    fresh
+                        .iter()
+                        .copied()
+                        .filter(|&name| Some(name) != self.default),
+                ),
+                Delta::All => match self.exported_by(file) {
+                    Some(all) => passed.extend(
+                        all.iter()
+                            .copied()
+                            .filter(|&name| Some(name) != self.default),
+                    ),
+                    None => unlisted = true,
+                },
+            }
+        }
+        passed.sort_unstable();
+        passed.dedup();
+        if passed.is_empty() && !unlisted {
+            return;
+        }
+        // A file that does not list what it exports could pass on any of its names.
+        if unlisted || graph.exports(importer).is_none() {
+            self.take_all(
+                importer,
+                Cause::ReExports {
+                    file,
+                    names: passed,
+                },
+            );
+            return;
+        }
+        let first = self.seen.insert(importer);
+        let held = self.held.entry(importer).or_default();
+        let before = held.growth.len();
+        for &name in &passed {
+            if held.names.insert(name) {
+                held.growth.push(name);
+            }
+        }
+        let grew = held.growth.len() > before;
+        if first {
+            self.reached.push(Reached {
+                file: importer,
+                distance: self.distance,
+                cause: Cause::ReExports {
+                    file,
+                    names: passed,
+                },
+            });
+        }
+        if grew {
+            self.next.push(importer);
+        }
+    }
+
+    /// Makes `file` affected in all its names. A file already reached in some names keeps the distance and cause it first had.
+    fn take_all(&mut self, file: FileId, cause: Cause) {
+        if !self.whole.insert(file) {
+            return;
+        }
         if self.seen.insert(file) {
             self.reached.push(Reached {
                 file,
                 distance: self.distance,
                 cause,
             });
-            self.next.push(file);
+        } else {
+            self.held.remove(&file);
         }
+        self.next.push(file);
     }
+
+    /// X(file), worked out once.
+    fn exported_by(&mut self, file: FileId) -> Option<Rc<[NameId]>> {
+        let (graph, default) = (self.graph, self.default);
+        self.exported
+            .entry(file)
+            .or_insert_with(|| exports::exported(graph, file, default).map(Rc::from))
+            .as_ref()
+            .map(Rc::clone)
+    }
+
+    /// Ends the layer: the files that grew, in file order, with what each gained. The gain is fixed here and not when the file is expanded, so a file that becomes whole while its layer is expanded is still met with the names it had when the layer began and its importers sit one hop further out.
+    fn cut(&mut self) -> Vec<(FileId, Delta)> {
+        let mut grown = std::mem::take(&mut self.next);
+        grown.sort_unstable();
+        grown.dedup();
+        let mut frontier = Vec::with_capacity(grown.len());
+        for file in grown {
+            if self.whole.contains(file) {
+                frontier.push((file, Delta::All));
+            } else if let Some(held) = self.held.get_mut(&file) {
+                let mut gained = std::mem::take(&mut held.growth);
+                if !gained.is_empty() {
+                    gained.sort_unstable();
+                    frontier.push((file, Delta::Names(gained)));
+                }
+            }
+        }
+        frontier
+    }
+}
+
+/// Whether `name` is among `sorted`.
+fn holds(sorted: &[NameId], name: NameId) -> bool {
+    sorted.binary_search(&name).is_ok()
 }

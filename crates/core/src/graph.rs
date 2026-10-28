@@ -74,6 +74,11 @@ impl Edge {
         self.kinds == ImportKind::Module.bit()
     }
 
+    /// Whether the importer takes everything the file exports and passes nothing on, as every import of a connector that records no names does. Those edges share one binding row, so a walk tells them apart without reading the binding.
+    pub const fn is_plain(self) -> bool {
+        self.binding == 0
+    }
+
     pub fn kinds(self) -> impl Iterator<Item = ImportKind> {
         ImportKind::ALL
             .into_iter()
