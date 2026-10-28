@@ -5,6 +5,8 @@
 
 #![cfg(test)]
 
+use std::collections::HashMap;
+
 use gsttt_config::pack::builtin_packs;
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
 use gsttt_core::fact::{
@@ -12,6 +14,7 @@ use gsttt_core::fact::{
 };
 use gsttt_core::ids::FileId;
 use gsttt_core::repo::RepoView;
+use gsttt_core::rules::Pack;
 use gsttt_lang_python::{PACKS, PYTHON};
 use serde_json::{Value, json};
 
@@ -26,12 +29,17 @@ struct Tree {
 }
 
 fn index(fixture: &str) -> Tree {
+    index_with(fixture, builtin_packs(PACKS).unwrap())
+}
+
+/// Like [`index`], with `packs` in place of the built-in ones.
+fn index_with(fixture: &str, packs: Vec<Pack>) -> Tree {
     let root = format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"));
     let repo = RepoView::scan(root).unwrap();
     let modules = [Module {
         connector: &PYTHON,
         options: Value::Null,
-        packs: builtin_packs(PACKS).unwrap(),
+        packs,
     }];
     let output = pipeline::run(&repo, &modules, MAX_FILE_BYTES).unwrap();
     let json = output.to_json(&repo);
@@ -991,6 +999,38 @@ fn packs_follow_the_manifest() {
     assert!(via.contains(&"flask"), "{via:?}");
     assert!(!via.contains(&"fastapi"), "{via:?}");
     insta::assert_json_snapshot!("packs_follow_the_manifest", tree.file_json("app.py"));
+}
+
+/// The salt of each project of the tree, by its root.
+fn salts(tree: &Tree) -> HashMap<&str, u64> {
+    tree.output
+        .projects
+        .iter()
+        .map(|project| (project.root.as_str(), project.salt))
+        .collect()
+}
+
+#[test]
+fn the_salt_of_a_project_follows_the_packs_its_manifest_switches_on() {
+    // `a` and `c` depend on FastAPI and `b` on Flask, so a file of `b` is not read the way the same file of `a` is.
+    let tree = index("pack_selection");
+    let salts = salts(&tree);
+    assert_eq!(salts["a"], salts["c"], "{salts:?}");
+    assert_ne!(salts["a"], salts["b"], "{salts:?}");
+}
+
+#[test]
+fn two_packs_of_one_name_are_told_apart_by_the_salt() {
+    let pack = |detect: &str| -> Pack {
+        serde_json::from_value(
+            json!({ "name": "shared", "language": "python", "detect": [detect] }),
+        )
+        .unwrap()
+    };
+    let tree = index_with("pack_selection", vec![pack("fastapi"), pack("flask")]);
+    let salts = salts(&tree);
+    assert_eq!(salts["a"], salts["c"], "{salts:?}");
+    assert_ne!(salts["a"], salts["b"], "{salts:?}");
 }
 
 #[gsttt_scenario::scenario("python", "Blind spots are reported")]

@@ -9,7 +9,7 @@ use gsttt_core::fact::{Import, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
-use xxhash_rust::xxh3::xxh3_64;
+use xxhash_rust::xxh3::Xxh3;
 
 use crate::PythonOptions;
 use crate::extra::PyExtra;
@@ -124,16 +124,16 @@ fn open_project(
     }
     push_unique(&mut source_roots, root.to_owned());
 
-    let packs: Vec<Pack> = packs
+    let in_force: Vec<(usize, &Pack)> = packs
         .iter()
-        .filter(|pack| {
+        .enumerate()
+        .filter(|(_, pack)| {
             pack.language == "python"
                 && pack.applies_to(manifest.dependencies.iter().map(String::as_str))
         })
-        .cloned()
         .collect();
-    // Parsing depends on the packs in force and on nothing else the project holds.
-    let salt = xxh3_64(serde_json::to_string(&packs).unwrap_or_default().as_bytes());
+    let salt = packs_salt(in_force.iter().map(|&(position, _)| position));
+    let packs = in_force.into_iter().map(|(_, pack)| pack.clone()).collect();
     Ok(PythonProject {
         root: root.to_owned(),
         source_roots,
@@ -143,6 +143,29 @@ fn open_project(
         repo: repo.clone(),
         sibling_roots: Vec::new(),
     })
+}
+
+/// The salt of a project whose manifests switch on the packs at `positions` in the list the connector was given.
+///
+/// Parsing depends on those packs and on nothing else the project holds. The engine's key for a file already holds the
+/// options and every pack the connector was given, in order, so what it cannot tell is which of them are in force
+/// here, and the manifests decide that. A pack is named by its position because two packs may share a name.
+fn packs_salt(positions: impl Iterator<Item = usize>) -> u64 {
+    let positions: Vec<String> = positions.map(|position| position.to_string()).collect();
+    let parts: Vec<&str> = positions.iter().map(String::as_str).collect();
+    salt_of(&parts)
+}
+
+/// A hash of `parts` in which each part is taken with its length, so `["ab", "c"]` and `["a", "bc"]` are two salts.
+/// The indexing change adds this function, with the same framing, to core as `gsttt_core::connector::salt_of`; this copy
+/// goes when the two meet, and no salt changes with it.
+fn salt_of(parts: &[&str]) -> u64 {
+    let mut hasher = Xxh3::new();
+    for part in parts {
+        hasher.update(&u64::try_from(part.len()).unwrap_or(u64::MAX).to_le_bytes());
+        hasher.update(part.as_bytes());
+    }
+    hasher.digest()
 }
 
 fn push_unique(roots: &mut Vec<String>, dir: String) {
@@ -218,5 +241,43 @@ impl Project for PythonProject {
 
     fn link(&self, input: &LinkInput<'_, PyExtra>) -> Vec<LinkedFact> {
         crate::link::link(self, input)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn a_part_is_taken_with_its_length() {
+        assert_ne!(salt_of(&["ab", "c"]), salt_of(&["a", "bc"]));
+        assert_ne!(salt_of(&["a", ""]), salt_of(&["a"]));
+        assert_ne!(salt_of(&[]), salt_of(&[""]));
+        assert_eq!(salt_of(&["0", "2"]), salt_of(&["0", "2"]));
+    }
+
+    #[test]
+    fn the_packs_in_force_are_told_by_position() {
+        assert_ne!(packs_salt([0].into_iter()), packs_salt([1].into_iter()));
+        assert_ne!(packs_salt([1, 2].into_iter()), packs_salt([12].into_iter()));
+        assert_eq!(
+            packs_salt([3, 5].into_iter()),
+            packs_salt([3, 5].into_iter())
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn moving_the_boundary_between_parts_changes_the_salt(
+            first in "\\PC{0,12}",
+            middle in "\\PC{1,12}",
+            last in "\\PC{0,12}",
+        ) {
+            let left = format!("{first}{middle}");
+            let right = format!("{middle}{last}");
+            prop_assert_ne!(salt_of(&[&left, &last]), salt_of(&[&first, &right]));
+        }
     }
 }
