@@ -53,11 +53,13 @@ fn the_home_directory_is_refused() {
     }
 }
 
-/// The commands about the config find their root the way `index` does, so they refuse the home directory too.
+/// `init` and the commands about the config find their root the way `index` does, so they refuse the home
+/// directory too.
 #[test]
-fn the_commands_about_the_config_refuse_the_home_directory() {
+fn init_and_the_commands_about_the_config_refuse_the_home_directory() {
     let sandbox = Sandbox::new();
     for args in [
+        &["init"][..],
         &["config", "check"][..],
         &["config", "show"][..],
         &["config", "untrust"][..],

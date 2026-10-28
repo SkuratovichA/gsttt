@@ -70,6 +70,16 @@ pub(crate) enum CliError {
     #[error(transparent)]
     Store(#[from] StoreError),
 
+    /// A file that `gsttt init` writes cannot be written, or the folder above it cannot be made.
+    #[error("cannot write `{path}`")]
+    #[diagnostic(help(
+        "`gsttt init` writes into `.gsttt/` at the root of the repository; check that it can be written to"
+    ))]
+    Init {
+        path: Utf8PathBuf,
+        source: io::Error,
+    },
+
     #[error("the contract query is empty")]
     #[diagnostic(help(
         "ask for a contract key such as `http GET /bookings/{{id}}`, or for part of one"
@@ -113,6 +123,7 @@ impl CliError {
             | Self::NotBuilt { .. }
             | Self::Key(_)
             | Self::Store(_)
+            | Self::Init { .. }
             | Self::Root(RootError::Workspace(_) | RootError::CurrentDirectory { .. }) => {
                 Outcome::Failed
             }

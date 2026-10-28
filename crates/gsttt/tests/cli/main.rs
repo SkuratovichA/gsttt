@@ -6,6 +6,7 @@ mod config;
 mod hook;
 mod impact;
 mod index;
+mod init;
 mod logs;
 mod panics;
 mod paths;

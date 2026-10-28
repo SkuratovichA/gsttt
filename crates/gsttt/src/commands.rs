@@ -12,6 +12,7 @@ use crate::{hook, root};
 mod config;
 mod impact;
 mod index;
+mod init;
 mod print;
 mod questions;
 
@@ -53,10 +54,7 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
         Command::Config(ConfigCommand::Untrust) => config::untrust(flags, io),
         Command::Config(ConfigCommand::Check) => config::check(&Session::open(flags)?, io),
         Command::Config(ConfigCommand::Show) => config::show(&Session::open(flags)?, io),
-        Command::Init => {
-            root::locate(&root::start(flags.directory.as_deref())?)?;
-            Err(not_built(command))
-        }
+        Command::Init => init::init(flags, io),
         Command::Impact(args) => impact::impact(&Session::open(flags)?, args, io),
         Command::Index => index::index(&Session::open(flags)?, io),
         Command::Status => index::status(&Session::open(flags)?, io),

@@ -207,10 +207,12 @@ pub fn session_line(header: &Header, now: jiff::Timestamp) -> Option<String>;
 
 ### Init
 
-- `init` finds the root like the other commands and does not read the config, so it works beside a config that does not parse.
-- It learns which connectors find a project from `Engine::detected`, the method `config show` uses, over the same listing a refresh uses, and passes their names to `gsttt_config::starter`.
-- It writes `.gsttt/config.toml` only when it is missing. The first line of the starter names the config schema.
-- It always writes `.gsttt/schema/config.json` and `.gsttt/schema/pack.json`, the schemas generated from the registry. Each holds a top-level `$comment` that says `gsttt init` generated the file and that edits to it are lost.
+- `init` finds the root like the other commands and does not read the config, so it works beside a config that does not parse and in a repository that has none.
+- It learns which connectors find a project from `Engine::detected`, the method `config show` uses, over the same listing a refresh uses. It asks the built-in connectors under the default setup, because the config is not read and an external connector is not one the user has trusted yet, and it passes their names to `gsttt_config::starter`.
+- It writes `.gsttt/config.toml` only when it is missing, by creating it with `create_new`, so that a file made between the check and the write is never overwritten. The first line of the starter names the config schema.
+- It always writes `.gsttt/schema/config.json` and `.gsttt/schema/pack.json`, the schemas generated from the registry. Each holds a top-level `$comment`, placed first, that says `gsttt init` generated the file and that edits to it are lost. They are indented with two spaces and end in a line break, so that the same registry gives the same bytes.
+- A schema that is there is removed and created again. A link in its place is removed and not written through, so that a repository cannot make `init` overwrite a file outside it, and the new file has the permissions the user's umask gives any file.
+- It prints `wrote <path>` or `kept <path>` for each file as it goes, in the order config, config schema, pack schema, so that a failure on the third still shows the first two. A file or folder it cannot make ends the run with exit code 1 and the path. It prints text under `--json` too, because the list of files is all it has to say.
 
 ## Risks
 
