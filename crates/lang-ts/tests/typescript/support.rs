@@ -43,8 +43,8 @@ pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
 }
 
 /// Every site of the graph the engine builds from the output for `fixture`, as `<role> <key> @<line> in <path>`, in
-/// byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own facts of its
-/// line, role and kind, so it is what a query would answer from.
+/// byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own fact it names,
+/// so it is what a query would answer from.
 pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let (repo, output) = pipeline_of(fixture)?;
     let index = build_index(&repo, &output, &["ts"], &[], IndexInfo::default());
