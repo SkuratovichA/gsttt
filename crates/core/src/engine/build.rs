@@ -160,8 +160,6 @@ pub fn build_index(
         }
     }
     coverage.problems = output.problems.iter().map(ToString::to_string).collect();
-    coverage.problems.sort();
-    coverage.problems.dedup();
     coverage.finish();
 
     let graph = graph.build();

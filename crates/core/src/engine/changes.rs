@@ -66,13 +66,39 @@ pub fn diff(from: &Listing, to: &Listing) -> Vec<Change> {
     changes
 }
 
+/// The commit HEAD points at, `None` before the first commit. A HEAD git cannot resolve is an error: it is not
+/// the same as a branch without commits.
+pub fn head_commit(root: &Utf8Path) -> Result<Option<String>, ChangesError> {
+    let repo = open(root)?;
+    let commit = head_commit_of(&repo, root)?;
+    Ok(commit.map(|commit| commit.id.to_string()))
+}
+
 /// The files of the tree HEAD points at, `None` before the first commit.
 pub fn head_tree(root: &Utf8Path, excluder: &Excluder) -> Result<Option<Listing>, ChangesError> {
     let repo = open(root)?;
-    let Ok(commit) = repo.head_commit() else {
-        return Ok(None);
+    match head_commit_of(&repo, root)? {
+        Some(commit) => flatten(root, &commit, excluder).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// The commit HEAD points at, `None` while the branch it names has no commits.
+fn head_commit_of<'r>(
+    repo: &'r gix::Repository,
+    root: &Utf8Path,
+) -> Result<Option<gix::Commit<'r>>, ChangesError> {
+    let history = |message: String| ChangesError::History {
+        root: root.to_string(),
+        message,
     };
-    flatten(root, &commit, excluder).map(Some)
+    let mut head = repo.head().map_err(|error| history(error.to_string()))?;
+    if head.is_unborn() {
+        return Ok(None);
+    }
+    head.peel_to_commit()
+        .map(Some)
+        .map_err(|error| history(error.to_string()))
 }
 
 /// The files of the tree of the best common ancestor of HEAD and `revision`.

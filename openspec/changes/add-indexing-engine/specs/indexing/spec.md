@@ -132,7 +132,7 @@ Indexing the same tree with the same setup SHALL give equal indexes apart from `
 - **THEN** the two indexes are equal apart from `IndexInfo`
 
 ### Requirement: Snapshot
-The engine SHALL store the index, every file's key, content id, size, modification time, facts and connector extra in `<state dir>/snapshot.gsttt`, written to a temporary file and renamed. The file SHALL start with the magic `GSTTSNAP`, a format version and a JSON header, followed by a validated rkyv body. A snapshot with another magic, format or `built_by`, or one that fails validation, SHALL be treated as absent. `peek` SHALL read the header without reading the body. A snapshot that cannot be written SHALL be logged and SHALL NOT fail the run.
+The engine SHALL store the index, every file's key, content id, size, modification time, facts and connector extra in `<state dir>/snapshot.gsttt`, written to a temporary file and renamed. The file SHALL start with the magic `GSTTSNAP`, a format version and a JSON header, followed by a validated rkyv body. A snapshot with another magic, format or `built_by`, or one that fails validation, SHALL be treated as absent. `peek` SHALL read the header without reading the body.
 
 #### Scenario: A stored index loads back equal
 - **WHEN** an index is stored and loaded
@@ -143,14 +143,17 @@ The engine SHALL store the index, every file's key, content id, size, modificati
 - **THEN** loading returns no index
 - **AND** the next refresh rebuilds and replaces the snapshot
 
+#### Scenario: Peek reads only the header
+- **WHEN** `peek` runs on a snapshot whose body bytes are garbage
+- **THEN** it returns the header with `built_by`, `head`, `dirty` and `files`
+
+### Requirement: Snapshot write failure
+A snapshot that cannot be written SHALL be logged and SHALL NOT fail the run.
+
 #### Scenario: A snapshot that cannot be written does not fail the run
 - **WHEN** the state directory cannot be created
 - **THEN** the refresh still returns the index it built
 - **AND** no snapshot exists afterwards
-
-#### Scenario: Peek reads only the header
-- **WHEN** `peek` runs on a snapshot whose body bytes are garbage
-- **THEN** it returns the header with `built_by`, `head`, `dirty` and `files`
 
 ### Requirement: Unchanged trees answer from the snapshot
 A refresh whose file set, content id of every file, keys, setup fingerprint, HEAD commit and gsttt version all match the snapshot SHALL return the stored index without calling `parse`, `prepare`, `resolve` or `link`. A refresh that differs in any of them SHALL rebuild the index and store it.
@@ -189,6 +192,19 @@ The engine SHALL list the files of the work tree that differ from `HEAD` as modi
 #### Scenario: An unknown base is an error
 - **WHEN** the base revision is `no-such-branch`
 - **THEN** listing changed files fails with an error naming `no-such-branch`
+
+### Requirement: Unreadable history
+A HEAD or a history git cannot read SHALL NOT fail an index run. The index SHALL then record no head or no dirty count, and its coverage SHALL carry a line saying what git could not tell. A repository without commits SHALL have no head and no such line.
+
+#### Scenario: A HEAD git cannot read is a coverage line
+- **WHEN** the checked-out branch points at a commit the repository does not hold
+- **THEN** the run finishes with no head and no dirty count
+- **AND** the coverage has a line naming HEAD
+
+#### Scenario: A history git cannot read is a coverage line
+- **WHEN** the tree of the HEAD commit is missing from the repository
+- **THEN** the run finishes with the head and no dirty count
+- **AND** the coverage has a line saying the files that differ from HEAD are not counted
 
 ### Requirement: Pack merging
 The engine SHALL hand each connector the built-in packs of its language without those named in `Setup.disable_packs`, with each pack of `Setup.packs` replacing the built-in pack of the same name or adding to them when no built-in has that name.

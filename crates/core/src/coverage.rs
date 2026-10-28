@@ -238,8 +238,10 @@ impl Coverage {
         }
     }
 
-    /// Puts every list in the order answers show it.
+    /// Puts every list in the order answers show it. Run it again after adding a line to `problems`.
     pub fn finish(&mut self) {
+        self.problems.sort();
+        self.problems.dedup();
         self.unclaimed.sort_unstable_by(|a, b| {
             b.files
                 .cmp(&a.files)

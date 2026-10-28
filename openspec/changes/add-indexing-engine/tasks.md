@@ -30,3 +30,4 @@
 - [x] 5.1 A refresh answers from the snapshot only when the content id of every file and the HEAD commit match too, so an edit to a file no connector reads and a new commit rebuild the index
 - [x] 5.2 A file in a merge or rebase conflict stays in the file set, hashed as it is in the work tree
 - [x] 5.3 A snapshot that cannot be written is logged and the built index is returned
+- [x] 5.4 A HEAD or a history git cannot read becomes a coverage line instead of a silent unborn branch or a dirty count of 0

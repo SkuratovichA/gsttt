@@ -7,8 +7,6 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use camino::Utf8Path;
-
 use super::build::build_index;
 use super::changes::{self, Change, ChangesError, Listing};
 use super::files::{self, ContentId, Excluder, FileState, FilesError, Stamp};
@@ -182,11 +180,12 @@ impl<'a> Engine<'a> {
             }
         }
         let config = keys::config_fingerprint(self.setup, self.connectors, self.builtin_packs);
-        let head = head_commit(self.workspace.root());
+        let (head, problems) = self.head();
 
         match previous {
             Some(stored)
                 if !unverifiable
+                    && problems.is_empty()
                     && is_current(
                         &stored,
                         config,
@@ -203,7 +202,7 @@ impl<'a> Engine<'a> {
                     parsed: 0,
                 })
             }
-            own => self.rebuild(Rebuild {
+            own => Ok(self.rebuild(Rebuild {
                 repo: &repo,
                 modules: &ran,
                 assigned,
@@ -212,15 +211,16 @@ impl<'a> Engine<'a> {
                 file_keys,
                 config,
                 head,
+                problems,
                 own,
                 started,
                 listed,
-            }),
+            })),
         }
     }
 
     /// Runs the pipeline over the files that have no facts yet and writes the snapshot.
-    fn rebuild(&self, run: Rebuild<'_, '_>) -> Result<Refresh, IndexError> {
+    fn rebuild(&self, run: Rebuild<'_, '_>) -> Refresh {
         let Rebuild {
             repo,
             modules,
@@ -230,6 +230,7 @@ impl<'a> Engine<'a> {
             file_keys,
             config,
             head,
+            mut problems,
             own,
             started,
             listed,
@@ -240,9 +241,7 @@ impl<'a> Engine<'a> {
         let (output, phases) = pipeline::execute(assigned, repo, max, seeds);
         let reused = output.files.iter().filter(|file| file.reused).count();
         let parsed = output.files.len().saturating_sub(reused);
-        let dirty = self
-            .changes_since(&states, None)
-            .map_or(0, |changes| to_u32(changes.len()));
+        let dirty = self.dirty(&states, &mut problems);
         let info = IndexInfo {
             built_by: snapshot::VERSION.to_owned(),
             head,
@@ -260,6 +259,8 @@ impl<'a> Engine<'a> {
         };
         let mut index = build_index(repo, &output, modules, &self.setup.http_prefixes, info);
         index.info.timings.total = micros(started.elapsed());
+        index.coverage.problems.extend(problems);
+        index.coverage.finish();
 
         let header = Header {
             built_by: snapshot::VERSION.to_owned(),
@@ -282,12 +283,12 @@ impl<'a> Engine<'a> {
             tracing::warn!(%error, "the snapshot was not stored; the index is returned without it");
         }
         let Stored { index, .. } = stored;
-        Ok(Refresh {
+        Refresh {
             index,
             unchanged: false,
             parsed: to_u32(parsed),
             reused: to_u32(reused),
-        })
+        }
     }
 
     /// The facts a snapshot already holds for each claimed file, from this work tree's snapshot first and then from
@@ -342,6 +343,35 @@ impl<'a> Engine<'a> {
             .collect()
     }
 
+    /// The commit HEAD points at, and a line saying why it is unknown when git cannot tell. Outside git there is
+    /// neither a commit nor a problem.
+    fn head(&self) -> (Option<String>, Vec<String>) {
+        if self.workspace.git().is_none() {
+            return (None, Vec::new());
+        }
+        match changes::head_commit(self.workspace.root()) {
+            Ok(head) => (head, Vec::new()),
+            Err(error) => (None, vec![format!("HEAD is not known: {error}")]),
+        }
+    }
+
+    /// How many files differ from HEAD. When git cannot say, the count is 0 and `problems` gets a line; outside git
+    /// nothing is counted, and neither is anything when HEAD itself could not be read, which already has its line.
+    fn dirty(&self, states: &[FileState], problems: &mut Vec<String>) -> u32 {
+        if self.workspace.git().is_none() || !problems.is_empty() {
+            return 0;
+        }
+        match self.changes_since(states, None) {
+            Ok(changes) => to_u32(changes.len()),
+            Err(error) => {
+                problems.push(format!(
+                    "the files that differ from HEAD are not counted: {error}"
+                ));
+                0
+            }
+        }
+    }
+
     /// The files of the work tree, with the stamps of the previous snapshot to spare hashing what did not change.
     fn listing(&self, previous: Option<&Stored>) -> Result<Vec<FileState>, FilesError> {
         let stamps: HashMap<&RepoPath, Stamp> = previous
@@ -383,6 +413,8 @@ struct Rebuild<'r, 'a> {
     file_keys: Vec<Option<FactKey>>,
     config: u128,
     head: Option<String>,
+    /// Lines for the coverage about what git could not tell.
+    problems: Vec<String>,
     own: Option<Stored>,
     started: Instant,
     listed: Duration,
@@ -457,13 +489,6 @@ fn stored_files(
             }
         })
         .collect()
-}
-
-/// The commit HEAD points at, `None` outside git and before the first commit.
-fn head_commit(root: &Utf8Path) -> Option<String> {
-    let repo = gix::open(root.as_std_path()).ok()?;
-    let id = repo.head_id().ok()?;
-    Some(id.to_string())
 }
 
 /// The coverage in one line, for the header of the snapshot.
@@ -1000,6 +1025,77 @@ mod tests {
                 ("d.txt".to_owned(), ChangeKind::Added),
             ]
         );
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A HEAD git cannot read is a coverage line")]
+    #[test]
+    fn a_head_git_cannot_read_is_a_coverage_line() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "")]);
+        // A branch that points at a commit the object database does not hold.
+        let branch = dir
+            .path()
+            .join(".git")
+            .join("refs")
+            .join("heads")
+            .join("main");
+        fs::write(branch, format!("{}\n", "1".repeat(40))).unwrap();
+        let setup = Setup::default();
+        let connectors = rig.connectors();
+        let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
+        for _ in 0..2 {
+            let run = engine.refresh().unwrap();
+            assert!(!run.unchanged);
+            assert_eq!(
+                (run.index.info.head.as_deref(), run.index.info.dirty),
+                (None, 0)
+            );
+            let problems = &run.index.coverage.problems;
+            assert!(
+                problems.iter().any(|line| line.contains("HEAD")),
+                "{problems:?}"
+            );
+        }
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A history git cannot read is a coverage line")]
+    #[test]
+    fn a_history_git_cannot_read_is_a_coverage_line() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "")]);
+        let tree = git(dir.path(), &["rev-parse", "HEAD^{tree}"]);
+        let (fan_out, rest) = tree.trim().split_at(2);
+        let object = dir
+            .path()
+            .join(".git")
+            .join("objects")
+            .join(fan_out)
+            .join(rest);
+        fs::remove_file(object).unwrap();
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert!(run.index.info.head.is_some());
+        assert_eq!(run.index.info.dirty, 0);
+        let problems = &run.index.coverage.problems;
+        assert!(
+            problems
+                .iter()
+                .any(|line| line.contains("differ from HEAD")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_repository_without_commits_has_no_head_and_no_problem() {
+        let rig = Rig::new();
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q", "-b", "main"]);
+        write(dir.path(), "a.txt", "one\n");
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(
+            (run.index.info.head.as_deref(), run.index.info.dirty),
+            (None, 1)
+        );
+        assert_eq!(run.index.coverage.problems, Vec::<String>::new());
     }
 
     #[gsttt_scenario::scenario("indexing", "A base revision adds committed changes")]
