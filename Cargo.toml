@@ -48,6 +48,8 @@ saphyr = "0.3.3"
 serde_norway = "0.9.42"
 jsonc-parser = { version = "0.34.0", features = ["serde"] }
 toml = "0.9.8"
+# The events of a TOML file, for counting its nesting before `toml` builds values from it.
+toml_parser = "1.1.5"
 pulldown-cmark = { version = "0.13.5", default-features = false }
 regex = "1.13.1"
 
@@ -83,7 +85,6 @@ serde_json = { version = "1.0.154", features = ["preserve_order"] }
 serde_path_to_error = "0.1.20"
 rmcp = { version = "3.8.0", default-features = false }
 tokio = { version = "1.54.1", default-features = false }
-mlua = { version = "0.12.2", features = ["lua54", "vendored", "serialize"] }
 miette = "7.6.0"
 thiserror = "2.0.21"
 tracing = "0.1.44"

@@ -12,8 +12,8 @@ Under construction. The first release covers TypeScript, Python and Rust, and na
 
 - Languages: TypeScript and JavaScript, Python, Rust.
 - Contracts: OpenAPI, GraphQL, protobuf, Prisma, SQL, `.env` files.
-- Framework knowledge lives in Lua rule packs, and any other language can join as an external connector that speaks JSON lines.
-- Configuration is Lua, in `.gsttt/init.lua`, with LuaLS types for the editor.
+- Framework knowledge lives in TOML rule packs, and any other language can join as an external connector that speaks JSON lines.
+- Configuration is TOML, in `.gsttt/config.toml`, with a JSON Schema that checks it in the editor.
 
 ## Surfaces
 
