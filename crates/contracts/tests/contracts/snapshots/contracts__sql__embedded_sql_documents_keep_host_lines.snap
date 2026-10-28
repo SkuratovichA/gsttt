@@ -3,57 +3,6 @@ source: crates/contracts/tests/contracts/sql.rs
 expression: run.snapshot()
 ---
 {
-  "files": [
-    {
-      "contracts": [],
-      "embedded": [
-        {
-          "contracts": [
-            {
-              "key": "table bookings",
-              "line": 7,
-              "role": "calls",
-              "via": "sql"
-            }
-          ],
-          "lang": "sql",
-          "line": 7,
-          "read_by": "sql",
-          "text": "SELECT id FROM bookings",
-          "via": "host"
-        }
-      ],
-      "imports": [],
-      "path": "app/repo.py",
-      "project": "host .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [
-        {
-          "key": "table bookings",
-          "line": 1,
-          "role": "declares",
-          "via": "sql"
-        }
-      ],
-      "embedded": [],
-      "imports": [],
-      "path": "migrations/001_init.sql",
-      "project": "sql .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    }
-  ],
-  "linked": [],
-  "problems": [],
   "projects": [
     {
       "connector": "host",
@@ -64,5 +13,56 @@ expression: run.snapshot()
       "root": "."
     }
   ],
-  "unclaimed": []
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [
+        {
+          "lang": "sql",
+          "line": 7,
+          "text": "SELECT id FROM bookings",
+          "via": "host",
+          "read_by": "sql",
+          "contracts": [
+            {
+              "key": "table bookings",
+              "role": "calls",
+              "line": 7,
+              "via": "sql"
+            }
+          ]
+        }
+      ],
+      "unresolved": [],
+      "path": "app/repo.py",
+      "project": "host ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "table bookings",
+          "role": "declares",
+          "line": 1,
+          "via": "sql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "migrations/001_init.sql",
+      "project": "sql ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
 }

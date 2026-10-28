@@ -3,40 +3,40 @@ source: crates/contracts/tests/contracts/openapi.rs
 expression: run.snapshot()
 ---
 {
-  "files": [
-    {
-      "contracts": [
-        {
-          "key": "http GET /v1/bookings/{}",
-          "line": 9,
-          "role": "declares",
-          "via": "openapi"
-        },
-        {
-          "key": "http DELETE /v1/bookings/{}",
-          "line": 13,
-          "role": "declares",
-          "via": "openapi"
-        }
-      ],
-      "embedded": [],
-      "imports": [],
-      "path": "openapi.yaml",
-      "project": "openapi .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    }
-  ],
-  "linked": [],
-  "problems": [],
   "projects": [
     {
       "connector": "openapi",
       "root": "."
     }
   ],
-  "unclaimed": []
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "http GET /v1/bookings/{}",
+          "role": "declares",
+          "line": 9,
+          "via": "openapi"
+        },
+        {
+          "key": "http DELETE /v1/bookings/{}",
+          "role": "declares",
+          "line": 13,
+          "via": "openapi"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "openapi.yaml",
+      "project": "openapi ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
 }

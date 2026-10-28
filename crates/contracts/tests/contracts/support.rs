@@ -1,8 +1,6 @@
 //! Shared pieces of the connector tests: fixture trees, a pipeline run over one, the answers the tests read out
 //! of it, and a host connector that embeds documents the way a language connector does.
 
-use std::collections::BTreeMap;
-
 use gsttt_contracts::{ENV, GRAPHQL, OPENAPI, PRISMA, PROTO, SQL};
 use gsttt_core::connector::{
     Connector, ConnectorError, DynConnector, Erased, Meta, Parsed, Project, Provide, SourceFile,
@@ -156,7 +154,7 @@ impl Run {
                 }
             }
         }
-        sorted(json)
+        json
     }
 
     fn target(&self, to: &Resolution) -> String {
@@ -168,23 +166,6 @@ impl Run {
             }
             other => format!("{other:?}"),
         }
-    }
-}
-
-/// The same JSON with the keys of every object in alphabetical order. Another crate of the workspace may turn on
-/// the `preserve_order` feature of `serde_json`, which keeps keys in the order they were built in and would change
-/// every snapshot depending on which crates are compiled together.
-pub(crate) fn sorted(value: Value) -> Value {
-    match value {
-        Value::Object(map) => {
-            let ordered: BTreeMap<String, Value> = map
-                .into_iter()
-                .map(|(key, value)| (key, sorted(value)))
-                .collect();
-            Value::Object(ordered.into_iter().collect())
-        }
-        Value::Array(items) => Value::Array(items.into_iter().map(sorted).collect()),
-        other => other,
     }
 }
 

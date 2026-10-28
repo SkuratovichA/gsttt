@@ -3,35 +3,43 @@ source: crates/contracts/tests/contracts/proto.rs
 expression: run.snapshot()
 ---
 {
+  "projects": [
+    {
+      "connector": "proto",
+      "root": "."
+    }
+  ],
   "files": [
     {
-      "contracts": [],
-      "embedded": [],
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
       "imports": [
         {
-          "flags": 0,
+          "spec": "booking/v1/types.proto",
           "kind": "static",
           "line": 5,
+          "flags": 0,
           "names": [],
-          "spec": "booking/v1/types.proto",
           "to": {
             "file": "proto/booking/v1/types.proto"
           }
         },
         {
-          "flags": 0,
+          "spec": "google/protobuf/timestamp.proto",
           "kind": "static",
           "line": 6,
+          "flags": 0,
           "names": [],
-          "spec": "google/protobuf/timestamp.proto",
           "to": "builtin"
         },
         {
-          "flags": 0,
+          "spec": "google/api/annotations.proto",
           "kind": "static",
           "line": 7,
+          "flags": 0,
           "names": [],
-          "spec": "google/api/annotations.proto",
           "to": {
             "unresolved": {
               "reason": "unknown-package"
@@ -39,34 +47,26 @@ expression: run.snapshot()
           }
         }
       ],
-      "path": "proto/booking/v1/booking.proto",
-      "project": "proto .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
       "contracts": [],
       "embedded": [],
-      "imports": [],
-      "path": "proto/booking/v1/types.proto",
-      "project": "proto .",
+      "unresolved": [],
+      "path": "proto/booking/v1/booking.proto",
+      "project": "proto ."
+    },
+    {
       "status": {
         "status": "ok"
       },
       "tags": 0,
-      "unresolved": []
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "proto/booking/v1/types.proto",
+      "project": "proto ."
     }
   ],
   "linked": [],
-  "problems": [],
-  "projects": [
-    {
-      "connector": "proto",
-      "root": "."
-    }
-  ],
-  "unclaimed": []
+  "unclaimed": [],
+  "problems": []
 }

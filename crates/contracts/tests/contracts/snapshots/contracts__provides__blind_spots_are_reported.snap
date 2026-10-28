@@ -7,14 +7,14 @@ expression: provides
     "connector": "openapi",
     "provides": [
       {
-        "blind_spots": [
-          "schemas generated at build time",
-          "path items that refer to another place in the same document"
-        ],
         "kind": "http",
         "role": "declares",
         "via": [
           "OpenAPI 3 and Swagger 2 operations"
+        ],
+        "blind_spots": [
+          "schemas generated at build time",
+          "path items that refer to another place in the same document"
         ]
       }
     ]
@@ -23,24 +23,24 @@ expression: provides
     "connector": "graphql",
     "provides": [
       {
-        "blind_spots": [
-          "schemas generated at build time"
-        ],
         "kind": "graphql",
         "role": "declares",
         "via": [
           "schema definitions and their extensions"
+        ],
+        "blind_spots": [
+          "schemas generated at build time"
         ]
       },
       {
-        "blind_spots": [
-          "GraphQL fragments spread from other files"
-        ],
         "kind": "graphql",
         "role": "calls",
         "via": [
           "operation documents",
           "documents embedded in code"
+        ],
+        "blind_spots": [
+          "GraphQL fragments spread from other files"
         ]
       }
     ]
@@ -49,23 +49,23 @@ expression: provides
     "connector": "proto",
     "provides": [
       {
-        "blind_spots": [
-          "schemas generated at build time"
-        ],
         "kind": "grpc",
         "role": "declares",
         "via": [
           "protobuf services"
+        ],
+        "blind_spots": [
+          "schemas generated at build time"
         ]
       },
       {
-        "blind_spots": [
-          "HTTP rules written in a gRPC service config file"
-        ],
         "kind": "http",
         "role": "declares",
         "via": [
           "google.api.http options"
+        ],
+        "blind_spots": [
+          "HTTP rules written in a gRPC service config file"
         ]
       }
     ]
@@ -74,23 +74,23 @@ expression: provides
     "connector": "prisma",
     "provides": [
       {
-        "blind_spots": [
-          "schemas generated at build time"
-        ],
         "kind": "table",
         "role": "declares",
         "via": [
           "Prisma models"
+        ],
+        "blind_spots": [
+          "schemas generated at build time"
         ]
       },
       {
-        "blind_spots": [
-          "environment variables read outside the datasource block"
-        ],
         "kind": "env",
         "role": "calls",
         "via": [
           "Prisma datasource properties"
+        ],
+        "blind_spots": [
+          "environment variables read outside the datasource block"
         ]
       }
     ]
@@ -99,27 +99,27 @@ expression: provides
     "connector": "sql",
     "provides": [
       {
-        "blind_spots": [
-          "tables created by ORM migrations written in code",
-          "tables created inside stored procedures"
-        ],
         "kind": "table",
         "role": "declares",
         "via": [
           "CREATE, ALTER and DROP of tables and views",
           "CREATE INDEX"
+        ],
+        "blind_spots": [
+          "tables created by ORM migrations written in code",
+          "tables created inside stored procedures"
         ]
       },
       {
-        "blind_spots": [
-          "SQL built from strings at run time",
-          "statements the SQL parser does not read"
-        ],
         "kind": "table",
         "role": "calls",
         "via": [
           "SQL files",
           "SQL embedded in code"
+        ],
+        "blind_spots": [
+          "SQL built from strings at run time",
+          "statements the SQL parser does not read"
         ]
       }
     ]
@@ -128,14 +128,14 @@ expression: provides
     "connector": "env",
     "provides": [
       {
-        "blind_spots": [
-          "environment variables set in compose files",
-          "CI and deployment manifests"
-        ],
         "kind": "env",
         "role": "declares",
         "via": [
           "env files"
+        ],
+        "blind_spots": [
+          "environment variables set in compose files",
+          "CI and deployment manifests"
         ]
       }
     ]

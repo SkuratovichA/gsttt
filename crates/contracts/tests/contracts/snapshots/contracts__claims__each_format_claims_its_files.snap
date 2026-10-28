@@ -3,187 +3,6 @@ source: crates/contracts/tests/contracts/claims.rs
 expression: run.snapshot()
 ---
 {
-  "files": [
-    {
-      "contracts": [
-        {
-          "key": "env DATABASE_URL",
-          "line": 1,
-          "role": "declares",
-          "via": "env"
-        }
-      ],
-      "embedded": [],
-      "imports": [],
-      "path": ".env.example",
-      "project": "env .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [
-        {
-          "key": "http GET /v1/health",
-          "line": 11,
-          "role": "declares",
-          "via": "openapi"
-        }
-      ],
-      "embedded": [],
-      "imports": [
-        {
-          "flags": 0,
-          "kind": "reference",
-          "line": 9,
-          "names": [],
-          "spec": "./paths/bookings.yaml",
-          "to": {
-            "file": "api/paths/bookings.yaml"
-          }
-        }
-      ],
-      "path": "api/openapi.yaml",
-      "project": "openapi .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [],
-      "embedded": [],
-      "imports": [],
-      "path": "api/paths/bookings.yaml",
-      "project": "openapi .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [
-        {
-          "key": "table bookings",
-          "line": 1,
-          "role": "declares",
-          "via": "sql"
-        }
-      ],
-      "embedded": [],
-      "imports": [],
-      "path": "migrations/001_init.sql",
-      "project": "sql .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [
-        {
-          "key": "env DATABASE_URL",
-          "line": 3,
-          "role": "calls",
-          "via": "prisma"
-        },
-        {
-          "key": "table booking",
-          "line": 6,
-          "role": "declares",
-          "via": "prisma"
-        }
-      ],
-      "embedded": [],
-      "imports": [],
-      "path": "prisma/schema.prisma",
-      "project": "prisma .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [
-        {
-          "key": "grpc booking.v1.BookingService/GetBooking",
-          "line": 8,
-          "role": "declares",
-          "via": "proto"
-        },
-        {
-          "key": "http GET /v1/bookings/{}",
-          "line": 9,
-          "role": "declares",
-          "via": "proto"
-        }
-      ],
-      "embedded": [],
-      "imports": [
-        {
-          "flags": 0,
-          "kind": "static",
-          "line": 5,
-          "names": [],
-          "spec": "google/api/annotations.proto",
-          "to": {
-            "unresolved": {
-              "reason": "unknown-package"
-            }
-          }
-        }
-      ],
-      "path": "proto/booking/v1/booking.proto",
-      "project": "proto .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [
-        {
-          "key": "graphql Query.bookings",
-          "line": 2,
-          "role": "declares",
-          "via": "graphql"
-        }
-      ],
-      "embedded": [],
-      "imports": [],
-      "path": "schema.graphql",
-      "project": "graphql .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    }
-  ],
-  "linked": [
-    {
-      "file": "api/paths/bookings.yaml",
-      "key": "http GET /v1/bookings",
-      "line": 1,
-      "role": "declares",
-      "via": "openapi"
-    },
-    {
-      "file": "api/paths/bookings.yaml",
-      "key": "http POST /v1/bookings",
-      "line": 5,
-      "role": "declares",
-      "via": "openapi"
-    }
-  ],
-  "problems": [],
   "projects": [
     {
       "connector": "openapi",
@@ -210,7 +29,188 @@ expression: run.snapshot()
       "root": "."
     }
   ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "env DATABASE_URL",
+          "role": "declares",
+          "line": 1,
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": ".env.example",
+      "project": "env ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "./paths/bookings.yaml",
+          "kind": "reference",
+          "line": 9,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "file": "api/paths/bookings.yaml"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "http GET /v1/health",
+          "role": "declares",
+          "line": 11,
+          "via": "openapi"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/openapi.yaml",
+      "project": "openapi ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/paths/bookings.yaml",
+      "project": "openapi ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "table bookings",
+          "role": "declares",
+          "line": 1,
+          "via": "sql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "migrations/001_init.sql",
+      "project": "sql ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "env DATABASE_URL",
+          "role": "calls",
+          "line": 3,
+          "via": "prisma"
+        },
+        {
+          "key": "table booking",
+          "role": "declares",
+          "line": 6,
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "prisma/schema.prisma",
+      "project": "prisma ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "google/api/annotations.proto",
+          "kind": "static",
+          "line": 5,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "unresolved": {
+              "reason": "unknown-package"
+            }
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "grpc booking.v1.BookingService/GetBooking",
+          "role": "declares",
+          "line": 8,
+          "via": "proto"
+        },
+        {
+          "key": "http GET /v1/bookings/{}",
+          "role": "declares",
+          "line": 9,
+          "via": "proto"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "proto/booking/v1/booking.proto",
+      "project": "proto ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "graphql Query.bookings",
+          "role": "declares",
+          "line": 2,
+          "via": "graphql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "schema.graphql",
+      "project": "graphql ."
+    }
+  ],
+  "linked": [
+    {
+      "key": "http GET /v1/bookings",
+      "role": "declares",
+      "line": 1,
+      "via": "openapi",
+      "file": "api/paths/bookings.yaml"
+    },
+    {
+      "key": "http POST /v1/bookings",
+      "role": "declares",
+      "line": 5,
+      "via": "openapi",
+      "file": "api/paths/bookings.yaml"
+    }
+  ],
   "unclaimed": [
     "config/app.yaml"
-  ]
+  ],
+  "problems": []
 }

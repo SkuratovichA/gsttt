@@ -3,57 +3,57 @@ source: crates/contracts/tests/contracts/graphql.rs
 expression: run.snapshot()
 ---
 {
-  "files": [
-    {
-      "contracts": [
-        {
-          "key": "graphql Query.booking",
-          "line": 4,
-          "role": "declares",
-          "via": "graphql"
-        }
-      ],
-      "embedded": [],
-      "imports": [
-        {
-          "flags": 0,
-          "kind": "include",
-          "line": 1,
-          "names": [],
-          "spec": "./types/booking.graphql",
-          "to": {
-            "file": "api/types/booking.graphql"
-          }
-        }
-      ],
-      "path": "api/schema.graphql",
-      "project": "graphql .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [],
-      "embedded": [],
-      "imports": [],
-      "path": "api/types/booking.graphql",
-      "project": "graphql .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    }
-  ],
-  "linked": [],
-  "problems": [],
   "projects": [
     {
       "connector": "graphql",
       "root": "."
     }
   ],
-  "unclaimed": []
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "./types/booking.graphql",
+          "kind": "include",
+          "line": 1,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "file": "api/types/booking.graphql"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "graphql Query.booking",
+          "role": "declares",
+          "line": 4,
+          "via": "graphql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/schema.graphql",
+      "project": "graphql ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/types/booking.graphql",
+      "project": "graphql ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
 }

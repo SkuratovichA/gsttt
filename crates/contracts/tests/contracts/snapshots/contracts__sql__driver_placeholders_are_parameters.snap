@@ -3,58 +3,58 @@ source: crates/contracts/tests/contracts/sql.rs
 expression: run.snapshot()
 ---
 {
-  "files": [
-    {
-      "contracts": [
-        {
-          "key": "table bookings",
-          "line": 1,
-          "role": "calls",
-          "via": "sql"
-        },
-        {
-          "key": "table bookings",
-          "line": 2,
-          "role": "calls",
-          "via": "sql"
-        },
-        {
-          "key": "table bookings",
-          "line": 3,
-          "role": "calls",
-          "via": "sql"
-        },
-        {
-          "key": "table bookings",
-          "line": 4,
-          "role": "calls",
-          "via": "sql"
-        },
-        {
-          "key": "table bookings",
-          "line": 5,
-          "role": "calls",
-          "via": "sql"
-        }
-      ],
-      "embedded": [],
-      "imports": [],
-      "path": "queries.sql",
-      "project": "sql .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    }
-  ],
-  "linked": [],
-  "problems": [],
   "projects": [
     {
       "connector": "sql",
       "root": "."
     }
   ],
-  "unclaimed": []
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "table bookings",
+          "role": "calls",
+          "line": 1,
+          "via": "sql"
+        },
+        {
+          "key": "table bookings",
+          "role": "calls",
+          "line": 2,
+          "via": "sql"
+        },
+        {
+          "key": "table bookings",
+          "role": "calls",
+          "line": 3,
+          "via": "sql"
+        },
+        {
+          "key": "table bookings",
+          "role": "calls",
+          "line": 4,
+          "via": "sql"
+        },
+        {
+          "key": "table bookings",
+          "role": "calls",
+          "line": 5,
+          "via": "sql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "queries.sql",
+      "project": "sql ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
 }

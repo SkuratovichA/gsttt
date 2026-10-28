@@ -3,57 +3,6 @@ source: crates/contracts/tests/contracts/graphql.rs
 expression: run.snapshot()
 ---
 {
-  "files": [
-    {
-      "contracts": [
-        {
-          "key": "graphql Query.bookings",
-          "line": 2,
-          "role": "declares",
-          "via": "graphql"
-        }
-      ],
-      "embedded": [],
-      "imports": [],
-      "path": "schema.graphql",
-      "project": "graphql .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [],
-      "embedded": [
-        {
-          "contracts": [
-            {
-              "key": "graphql Query.bookings",
-              "line": 5,
-              "role": "calls",
-              "via": "graphql"
-            }
-          ],
-          "lang": "graphql",
-          "line": 5,
-          "read_by": "graphql",
-          "text": "query { bookings { id } }",
-          "via": "host"
-        }
-      ],
-      "imports": [],
-      "path": "src/client.ts",
-      "project": "host .",
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "unresolved": []
-    }
-  ],
-  "linked": [],
-  "problems": [],
   "projects": [
     {
       "connector": "host",
@@ -64,5 +13,56 @@ expression: run.snapshot()
       "root": "."
     }
   ],
-  "unclaimed": []
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "graphql Query.bookings",
+          "role": "declares",
+          "line": 2,
+          "via": "graphql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "schema.graphql",
+      "project": "graphql ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [
+        {
+          "lang": "graphql",
+          "line": 5,
+          "text": "query { bookings { id } }",
+          "via": "host",
+          "read_by": "graphql",
+          "contracts": [
+            {
+              "key": "graphql Query.bookings",
+              "role": "calls",
+              "line": 5,
+              "via": "graphql"
+            }
+          ]
+        }
+      ],
+      "unresolved": [],
+      "path": "src/client.ts",
+      "project": "host ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
 }

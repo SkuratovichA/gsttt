@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-use crate::support::{Run, all_modules, sorted};
+use crate::support::{Run, all_modules};
 
 #[gsttt_scenario::scenario("contract-formats", "Blind spots are reported")]
 #[test]
@@ -36,5 +36,5 @@ fn blind_spots_are_reported() {
         .iter()
         .map(|project| json!({ "connector": project.connector.name, "provides": project.provides }))
         .collect();
-    insta::assert_json_snapshot!(sorted(Value::Array(provides)));
+    insta::assert_json_snapshot!(provides);
 }
