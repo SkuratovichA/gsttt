@@ -576,7 +576,10 @@ fn a_change_comes_after_the_change_that_adds_what_it_modifies() {
             TICKED,
             &[(
                 "c",
-                &delta("MODIFIED", &[requirement("R", &["R works better"])]),
+                &delta(
+                    "MODIFIED",
+                    &[requirement("R", &["R works", "R works better"])],
+                ),
             )],
         )
         .source("tests/works.rs", &proof("c", "R works"))
@@ -671,7 +674,7 @@ fn a_change_that_names_a_requirement_main_lacks_is_not_ready() {
 #[test]
 fn a_change_that_modifies_a_requirement_comes_before_the_change_that_removes_it() {
     let tree = Tree::new();
-    // `a-removes` sorts first, but once it is archived `openspec archive` finds no requirement for `b-modifies` to modify.
+    // `a-removes` sorts first, but once it is archived `openspec archive` finds no requirement for `b-modifies` to modify. Nothing is left of `R` after both, so no scenario of it has a proof.
     tree.spec("queries", &main_spec(&[requirement("R", &["R works"])]))
         .change(
             "a-removes",
@@ -683,10 +686,12 @@ fn a_change_that_modifies_a_requirement_comes_before_the_change_that_removes_it(
             TICKED,
             &[(
                 "queries",
-                &delta("MODIFIED", &[requirement("R", &["R works better"])]),
+                &delta(
+                    "MODIFIED",
+                    &[requirement("R", &["R works", "R works better"])],
+                ),
             )],
-        )
-        .source("tests/better.rs", &proof("queries", "R works better"));
+        );
     assert!(tree.gate().passed);
     assert_eq!(
         tree.try_run(Mode::Ready).unwrap().output,
@@ -713,9 +718,13 @@ fn a_change_that_modifies_a_requirement_comes_before_the_change_that_renames_it(
             TICKED,
             &[(
                 "queries",
-                &delta("MODIFIED", &[requirement("R", &["R works better"])]),
+                &delta(
+                    "MODIFIED",
+                    &[requirement("R", &["R works", "R works better"])],
+                ),
             )],
         )
+        .source("tests/works.rs", &proof("queries", "R works"))
         .source("tests/better.rs", &proof("queries", "R works better"));
     assert!(tree.gate().passed);
     assert_eq!(
@@ -738,7 +747,10 @@ fn a_change_that_modifies_a_renamed_requirement_comes_after_the_rename() {
             TICKED,
             &[(
                 "queries",
-                &delta("MODIFIED", &[requirement("R2", &["R2 works better"])]),
+                &delta(
+                    "MODIFIED",
+                    &[requirement("R2", &["R works", "R2 works better"])],
+                ),
             )],
         )
         .change(
@@ -822,6 +834,351 @@ fn a_change_that_a_failure_names_is_not_ready() {
         tree.try_run(Mode::Ready).unwrap().output,
         "removes-wormholes\n"
     );
+}
+
+#[gsttt_scenario::scenario("spec-gate", "A title that a later change keeps counts once")]
+#[test]
+fn a_title_that_a_later_change_keeps_counts_once() {
+    let tree = Tree::new();
+    // `a-modifies` sorts first but is archived after `b-adds`: it replaces `R` as `b-adds` adds it, keeping `R works` and adding `R works better`.
+    let adds = delta("ADDED", &[requirement("R", &["R works"])]);
+    let modifies = delta(
+        "MODIFIED",
+        &[requirement("R", &["R works", "R works better"])],
+    );
+    tree.change("b-adds", TICKED, &[("queries", &adds)])
+        .change("a-modifies", TICKED, &[("queries", &modifies)])
+        .source("tests/works.rs", &proof("queries", "R works"))
+        .source("tests/better.rs", &proof("queries", "R works better"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert!(
+        outcome
+            .output
+            .contains("queries: 2 proven, 0 pending, 0 failing"),
+        "{}",
+        outcome.output
+    );
+    let kept = format!(
+        "proven   R works  (openspec/changes/a-modifies/specs/queries/spec.md:{})",
+        line_of(&modifies, "Scenario: R works")
+    );
+    assert!(outcome.output.contains(&kept), "{}", outcome.output);
+
+    // The title is the later change's in its status too: with that change open and no proof, it is pending on it.
+    tree.change("a-modifies", OPEN, &[("queries", &modifies)]);
+    fs::remove_file(tree.dir.path().join("crates/app/tests/works.rs")).unwrap();
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    let pending = format!(
+        "pending  R works  (openspec/changes/a-modifies/specs/queries/spec.md:{})  change `a-modifies` still has unticked tasks",
+        line_of(&modifies, "Scenario: R works")
+    );
+    assert!(outcome.output.contains(&pending), "{}", outcome.output);
+}
+
+#[gsttt_scenario::scenario(
+    "spec-gate",
+    "A requirement that a later change removes needs no proof"
+)]
+#[test]
+fn a_requirement_that_a_later_change_removes_needs_no_proof() {
+    let tree = Tree::new();
+    // `a-removes` sorts first, but `openspec archive` can remove `R` only once `b-adds` has added it.
+    tree.change(
+        "b-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R works"])]),
+        )],
+    )
+    .change(
+        "a-removes",
+        TICKED,
+        &[("queries", &delta("REMOVED", &[removal("R")]))],
+    );
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert!(
+        outcome.output.contains("spec gate passed: 0 scenarios"),
+        "{}",
+        outcome.output
+    );
+    // Neither change waits for the scenario that the other takes away.
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "b-adds\na-removes\n"
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "spec-gate",
+    "Scenarios that a later change removes may not be claimed"
+)]
+#[test]
+fn scenarios_that_a_later_change_removes_may_not_be_claimed() {
+    let claim = proof("queries", "R works");
+    let tree = Tree::new();
+    tree.change(
+        "b-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R works"])]),
+        )],
+    )
+    .change(
+        "a-removes",
+        TICKED,
+        &[("queries", &delta("REMOVED", &[removal("R")]))],
+    )
+    .source("tests/works.rs", &claim);
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "crates/app/tests/works.rs:{}: `proof` claims scenario `R works` of capability `queries`, but change `a-removes` removes its requirement `R`",
+        line_of(&claim, "fn proof")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    // The change that removes the requirement waits until the claim is gone; the change that adds it does not.
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "b-adds\n");
+}
+
+#[gsttt_scenario::scenario("spec-gate", "A renamed requirement is found under its new name")]
+#[test]
+fn a_renamed_requirement_is_found_under_its_new_name() {
+    let tree = Tree::new();
+    // Archived as `c-adds`, `b-renames`, `a-modifies`, the reverse of the order of their names: `a-modifies` names `R2`, which `b-renames` makes of the `R` that `c-adds` adds.
+    let modifies = delta(
+        "MODIFIED",
+        &[requirement("R2", &["R holds", "R2 works better"])],
+    );
+    tree.change(
+        "c-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R holds"])]),
+        )],
+    )
+    .change(
+        "b-renames",
+        TICKED,
+        &[("queries", &delta("RENAMED", &[renaming("R", "R2")]))],
+    )
+    .change("a-modifies", TICKED, &[("queries", &modifies)])
+    .source("tests/holds.rs", &proof("queries", "R holds"))
+    .source("tests/better.rs", &proof("queries", "R2 works better"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert!(
+        outcome
+            .output
+            .contains("queries: 2 proven, 0 pending, 0 failing"),
+        "{}",
+        outcome.output
+    );
+    let kept = format!(
+        "proven   R holds  (openspec/changes/a-modifies/specs/queries/spec.md:{})",
+        line_of(&modifies, "Scenario: R holds")
+    );
+    assert!(outcome.output.contains(&kept), "{}", outcome.output);
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "c-adds\nb-renames\na-modifies\n"
+    );
+}
+
+#[test]
+fn a_renamed_requirement_keeps_its_scenarios_and_the_change_that_wrote_them() {
+    let tree = Tree::new();
+    let adds = delta("ADDED", &[requirement("R", &["R works"])]);
+    tree.change("b-adds", TICKED, &[("queries", &adds)])
+        .change(
+            "a-renames",
+            TICKED,
+            &[("queries", &delta("RENAMED", &[renaming("R", "R2")]))],
+        )
+        .source("tests/works.rs", &proof("queries", "R works"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert!(
+        outcome
+            .output
+            .contains("queries: 1 proven, 0 pending, 0 failing"),
+        "{}",
+        outcome.output
+    );
+    let kept = format!(
+        "proven   R works  (openspec/changes/b-adds/specs/queries/spec.md:{})",
+        line_of(&adds, "Scenario: R works")
+    );
+    assert!(outcome.output.contains(&kept), "{}", outcome.output);
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "b-adds\na-renames\n"
+    );
+}
+
+#[gsttt_scenario::scenario("spec-gate", "A change that nothing places still counts")]
+#[test]
+fn a_change_that_nothing_places_still_counts() {
+    let tree = Tree::new();
+    // Nothing has `R` for the change to modify, so `openspec archive` would stop at it.
+    tree.change(
+        "modifies-nothing",
+        TICKED,
+        &[(
+            "queries",
+            &delta("MODIFIED", &[requirement("R", &["R works"])]),
+        )],
+    );
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = "scenario `R works` of capability `queries` has no proof, and every task of change `modifies-nothing` is ticked";
+    assert!(outcome.output.contains(failure), "{}", outcome.output);
+
+    tree.source("tests/works.rs", &proof("queries", "R works"));
+    assert!(tree.gate().passed);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+}
+
+#[test]
+fn changes_that_nothing_places_apply_in_the_order_of_their_names() {
+    let claim = proof("queries", "Ghost works");
+    let tree = Tree::new();
+    // Nothing adds `Ghost`, so `openspec archive` could take neither change. The gate reads them after the others, by their names: `b-removes` takes away what `a-modifies` wrote.
+    tree.change(
+        "a-modifies",
+        TICKED,
+        &[(
+            "queries",
+            &delta("MODIFIED", &[requirement("Ghost", &["Ghost works"])]),
+        )],
+    )
+    .change(
+        "b-removes",
+        TICKED,
+        &[("queries", &delta("REMOVED", &[removal("Ghost")]))],
+    )
+    .source("tests/ghost.rs", &claim);
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "crates/app/tests/ghost.rs:{}: `proof` claims scenario `Ghost works` of capability `queries`, but change `b-removes` removes its requirement `Ghost`",
+        line_of(&claim, "fn proof")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+}
+
+#[gsttt_scenario::scenario("spec-gate", "A modified requirement that leaves out a scenario fails")]
+#[test]
+fn a_modified_requirement_that_leaves_out_a_scenario_fails() {
+    let tree = Tree::new();
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["Exact match", "Prefix match"])]),
+    );
+    // `reword` retitles `Prefix match`, so the block it writes lacks a scenario of the block it replaces. No test claims `Prefix match` and every scenario that stands is proven: the refusal alone fails the gate and keeps the change from `--ready`.
+    let modified = delta(
+        "MODIFIED",
+        &[requirement(
+            "Matching",
+            &["Exact match", "Prefix match reworded"],
+        )],
+    );
+    tree.change("reword", TICKED, &[("queries", &modified)])
+        .source("tests/exact.rs", &proof("queries", "Exact match"))
+        .source(
+            "tests/reworded.rs",
+            &proof("queries", "Prefix match reworded"),
+        );
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/reword/specs/queries/spec.md:{}: change `reword` modifies requirement `Matching` of capability `queries` and leaves out scenario `Prefix match` of the requirement it replaces, and `openspec archive` refuses such a block",
+        line_of(&modified, "Requirement: Matching")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+}
+
+#[gsttt_scenario::scenario("spec-gate", "A modified requirement that keeps every scenario passes")]
+#[test]
+fn a_modified_requirement_that_keeps_every_scenario_passes() {
+    let tree = Tree::new();
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["Exact match"])]),
+    )
+    .change(
+        "extend",
+        TICKED,
+        &[(
+            "queries",
+            &delta(
+                "MODIFIED",
+                &[requirement("Matching", &["Exact match", "Prefix match"])],
+            ),
+        )],
+    )
+    .source("tests/exact.rs", &proof("queries", "Exact match"))
+    .source("tests/prefix.rs", &proof("queries", "Prefix match"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "extend\n");
+}
+
+#[gsttt_scenario::scenario("spec-gate", "A title held twice and written once fails")]
+#[test]
+fn a_title_held_twice_and_written_once_fails() {
+    let tree = Tree::new();
+    // The main spec holds `Same title` twice and `dedupe` writes it once. Comparing sets would call the block complete; `openspec archive` counts a title as often as it appears, so one of the two is left unmatched.
+    let modified = delta("MODIFIED", &[requirement("Matching", &["Same title"])]);
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["Same title", "Same title"])]),
+    )
+    .change("dedupe", TICKED, &[("queries", &modified)])
+    .source("tests/same.rs", &proof("queries", "Same title"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/dedupe/specs/queries/spec.md:{}: change `dedupe` modifies requirement `Matching` of capability `queries` and leaves out scenario `Same title` of the requirement it replaces, and `openspec archive` refuses such a block",
+        line_of(&modified, "Requirement: Matching")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+}
+
+#[gsttt_scenario::scenario(
+    "spec-gate",
+    "A requirement that an earlier change adds is the one replaced"
+)]
+#[test]
+fn a_requirement_that_an_earlier_change_adds_is_the_one_replaced() {
+    let tree = Tree::new();
+    // `a-trims` sorts first but is archived after `b-adds`, and replaces the `R` that `b-adds` adds: the main specs have no `R` to compare with.
+    let trims = delta("MODIFIED", &[requirement("R", &["R works"])]);
+    tree.change(
+        "b-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R works", "R holds"])]),
+        )],
+    )
+    .change("a-trims", TICKED, &[("queries", &trims)])
+    .source("tests/works.rs", &proof("queries", "R works"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/a-trims/specs/queries/spec.md:{}: change `a-trims` modifies requirement `R` of capability `queries` and leaves out scenario `R holds` of the requirement it replaces, and `openspec archive` refuses such a block",
+        line_of(&trims, "Requirement: R")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    // Only the change with the refused block waits; `b-adds` has nothing of its own left to prove.
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "b-adds\n");
 }
 
 /// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine` with the `## Purpose` taken out of its delta.
@@ -916,7 +1273,10 @@ fn a_delta_that_creates_no_capability_needs_no_purpose() {
         OPEN,
         &[(
             "fresh",
-            &bare_delta("MODIFIED", &[requirement("Fresh", &["Fresh still works"])]),
+            &bare_delta(
+                "MODIFIED",
+                &[requirement("Fresh", &["Fresh works", "Fresh still works"])],
+            ),
         )],
     )
     .source(
@@ -1086,9 +1446,9 @@ fn a_modified_requirement_replaces_the_main_one() {
     );
 }
 
-#[gsttt_scenario::scenario("spec-gate", "Retitled scenarios may not be claimed")]
+// `openspec archive` refuses a modified requirement that lacks a scenario, so no scenario of the spec promises this: the test pins what the gate says of a test that still claims the scenario such a block leaves out.
 #[test]
-fn a_claim_on_a_scenario_that_a_change_retitles_fails() {
+fn a_claim_on_a_scenario_that_a_modified_requirement_leaves_out_names_the_change() {
     let claim = proof("queries", "Old title");
     let tree = Tree::new();
     tree.spec(
@@ -1111,11 +1471,6 @@ fn a_claim_on_a_scenario_that_a_change_retitles_fails() {
         line_of(&claim, "fn proof")
     );
     assert!(outcome.output.contains(&failure), "{}", outcome.output);
-
-    // A claim on the new title is clean: the old scenario needs no proof any more.
-    tree.source("tests/matching.rs", &proof("queries", "New title"));
-    let outcome = tree.gate();
-    assert!(outcome.passed, "{}", outcome.output);
 }
 
 #[test]

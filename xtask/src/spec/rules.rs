@@ -1,10 +1,6 @@
 //! The rules of the gate.
 //!
-//! A scenario needs a proof when the specs will have it once the open changes are archived: the
-//! main scenarios, except those of requirements that an open change removes or modifies, and the
-//! scenarios of the `ADDED` and `MODIFIED` requirements of the open changes. Reading the specs that
-//! way keeps a modified scenario from counting twice, and makes the tests follow a change as it
-//! lands: once a change removes or retitles a scenario, no test may keep claiming the old one.
+//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming it. The fold also shows what `openspec archive` would refuse: a modified requirement replaces the whole block, and the archive stops at one that lacks a scenario of the block it replaces, so the gate fails that change before the archive does.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -120,6 +116,18 @@ struct Open {
     takes: Vec<(Key, Site)>,
 }
 
+impl Open {
+    fn new(change: &Change) -> Self {
+        Self {
+            name: change.name.clone(),
+            progress: Progress::of(change),
+            needs: change.deltas.iter().flat_map(needs).collect(),
+            gives: change.deltas.iter().flat_map(gives).collect(),
+            takes: change.deltas.iter().flat_map(takes).collect(),
+        }
+    }
+}
+
 /// Everything the gate found out.
 #[derive(Debug)]
 pub(super) struct Judgement {
@@ -146,9 +154,9 @@ impl Judgement {
             .map(|open| open.progress)
     }
 
-    /// The open changes that can be archived, in an order that `openspec archive` can take them in: every task ticked, every scenario proven, no failure that mentions them, and every requirement they modify, remove or rename in the main specs or added by a change listed before them and not taken away by one. A change that removes or renames a requirement goes after the waiting changes that need it. Of the changes that can go next, the one with the first name goes first.
+    /// The open changes that can be archived, in the order of [`archive_order`]: every task ticked, every scenario proven, and no failure that mentions them.
     pub(super) fn ready(&self) -> Vec<&str> {
-        let mut waiting: Vec<&Open> = self
+        let waiting = self
             .changes
             .iter()
             .filter(|change| change.progress == Progress::Finished)
@@ -165,39 +173,21 @@ impl Judgement {
                     .any(|failure| failure.changes.contains(&change.name))
             })
             .collect();
-        let mut have: BTreeSet<&Key> = self.main.iter().collect();
-        let mut listed = Vec::new();
-        while let Some(next) = waiting.iter().position(|change| {
-            change.needs.iter().all(|need| have.contains(need))
-                && change.takes.iter().all(|(key, _)| {
-                    waiting
-                        .iter()
-                        .all(|other| other.name == change.name || !other.needs.contains(key))
-                })
-        }) {
-            let change = waiting.remove(next);
-            for (key, _) in &change.takes {
-                have.remove(key);
-            }
-            have.extend(&change.gives);
-            listed.push(change.name.as_str());
-        }
-        listed
+        archive_order(&self.main, waiting)
+            .into_iter()
+            .map(|change| change.name.as_str())
+            .collect()
     }
 }
 
-/// How an open change takes a main requirement away.
+/// How an open change takes a requirement away from the specs and the changes archived before it.
 #[derive(Debug, Clone, Copy)]
 enum Replacement {
     Removed,
     Modified,
 }
 
-/// The main requirements that open changes remove or modify, by capability and name, with the
-/// first change (in name order) that does.
-type Replaced = BTreeMap<Key, (String, Replacement)>;
-
-/// A main scenario that an open change takes away.
+/// A scenario that an open change takes away from the main specs or from an open change archived before it.
 #[derive(Debug)]
 struct Dropped {
     change: String,
@@ -207,22 +197,13 @@ struct Dropped {
 
 /// Judges the scenarios of the specs against the claims found in the sources.
 pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
+    let changes: Vec<Open> = openspec.changes.iter().map(Open::new).collect();
     let Effective {
         mut entries,
         dropped,
+        refusals,
         main,
-    } = effective(openspec);
-    let changes: Vec<Open> = openspec
-        .changes
-        .iter()
-        .map(|change| Open {
-            name: change.name.clone(),
-            progress: Progress::of(change),
-            needs: change.deltas.iter().flat_map(needs).collect(),
-            gives: change.deltas.iter().flat_map(gives).collect(),
-            takes: change.deltas.iter().flat_map(takes).collect(),
-        })
-        .collect();
+    } = effective(openspec, &changes);
 
     let mut homes: BTreeMap<Key, Vec<(Site, Source)>> = BTreeMap::new();
     for entry in &entries {
@@ -274,6 +255,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
     }
     failures.extend(purpose::failures(openspec));
     failures.extend(rivals(&changes));
+    failures.extend(refusals);
 
     entries.sort_by(|a, b| {
         (&a.capability, &a.source, &a.site).cmp(&(&b.capability, &b.source, &b.site))
@@ -291,85 +273,144 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
 struct Effective {
     /// The scenarios that need a proof.
     entries: Vec<Entry>,
-    /// The main scenarios that open changes take away.
+    /// The scenarios that open changes take away, each with the last change that does.
     dropped: BTreeMap<Key, Dropped>,
+    /// The modified requirements that `openspec archive` would refuse, because they lack a scenario of the requirement they replace.
+    refusals: Vec<Failure>,
     /// The requirements of the main specs.
     main: BTreeSet<Key>,
 }
 
-/// Walks the main specs once for their requirements and for the scenarios that open changes leave them, then adds the scenarios that open changes bring.
-fn effective(openspec: &OpenSpec) -> Effective {
-    let replaced = replaced(&openspec.changes);
-    let mut entries = Vec::new();
-    let mut dropped = BTreeMap::new();
-    let mut main = BTreeSet::new();
-    for spec in &openspec.specs {
-        for requirement in &spec.requirements {
-            let key = (spec.capability.clone(), requirement.name.clone());
-            let taken = replaced.get(&key);
-            main.insert(key);
-            for scenario in &requirement.scenarios {
-                if let Some((change, how)) = taken {
-                    dropped.insert(
-                        (spec.capability.clone(), scenario.title.clone()),
-                        Dropped {
-                            change: change.clone(),
-                            requirement: requirement.name.clone(),
-                            how: *how,
-                        },
-                    );
-                } else {
-                    entries.push(Entry::new(
-                        &spec.capability,
-                        scenario,
-                        Source::Main,
-                        &spec.file,
-                    ));
+/// A requirement that stands once the changes read so far are archived, with the place that wrote it.
+struct Held<'a> {
+    source: Source,
+    file: &'a Path,
+    requirement: &'a Requirement,
+}
+
+/// The requirements that stand once the changes read so far are archived, by capability and name, the scenarios that those changes took away, and the modified requirements that `openspec archive` would refuse. A name holds more than one requirement only where two specs or two changes add it, which `openspec archive` takes only when the two are the same block: both stay, so that the gate reports the scenarios they share.
+struct Fold<'a> {
+    standing: BTreeMap<Key, Vec<Held<'a>>>,
+    dropped: BTreeMap<Key, Dropped>,
+    refusals: Vec<Failure>,
+}
+
+impl<'a> Fold<'a> {
+    /// Applies a delta of `change` the way `openspec archive` does: renames first, then removals, then modifications, then additions.
+    fn apply(&mut self, change: &'a Change, delta: &'a Delta) {
+        let capability = &delta.capability;
+        let key = |name: &str| (capability.clone(), name.to_owned());
+        let written = |requirement: &'a Requirement| Held {
+            source: Source::Change(change.name.clone()),
+            file: &delta.file,
+            requirement,
+        };
+        for renamed in &delta.renamed {
+            if let Some(moved) = self.standing.remove(&key(&renamed.from)) {
+                self.standing
+                    .entry(key(&renamed.to))
+                    .or_default()
+                    .extend(moved);
+            }
+        }
+        for removed in &delta.removed {
+            let gone = self.standing.remove(&key(&removed.name));
+            self.take_away(gone, capability, &change.name, Replacement::Removed);
+        }
+        for requirement in &delta.modified {
+            let gone = self
+                .standing
+                .insert(key(&requirement.name), vec![written(requirement)]);
+            // Two places that add one name hold one block for the archive, or it stops at the second, so the first stands for them.
+            if let Some(replaced) = gone.as_ref().and_then(|group| group.first()) {
+                let missing = missing_titles(replaced.requirement, requirement);
+                if !missing.is_empty() {
+                    self.refusals
+                        .push(refusal(change, delta, requirement, &missing));
                 }
+            }
+            self.take_away(gone, capability, &change.name, Replacement::Modified);
+        }
+        for requirement in &delta.added {
+            self.standing
+                .entry(key(&requirement.name))
+                .or_default()
+                .push(written(requirement));
+        }
+    }
+
+    /// Notes every scenario of the requirements `gone` as taken away by `change`.
+    fn take_away(
+        &mut self,
+        gone: Option<Vec<Held<'_>>>,
+        capability: &str,
+        change: &str,
+        how: Replacement,
+    ) {
+        for held in gone.into_iter().flatten() {
+            for scenario in &held.requirement.scenarios {
+                self.dropped.insert(
+                    (capability.to_owned(), scenario.title.clone()),
+                    Dropped {
+                        change: change.to_owned(),
+                        requirement: held.requirement.name.clone(),
+                        how,
+                    },
+                );
             }
         }
     }
-    for change in &openspec.changes {
+}
+
+/// Folds every open change, finished or not, over the requirements of the main specs: in the order that [`archive_order`] gives, then the changes it cannot place in the order of their names, each as far as its deltas reach. The scenarios of what stands at the end need a proof.
+fn effective(openspec: &OpenSpec, changes: &[Open]) -> Effective {
+    let mut fold = Fold {
+        standing: BTreeMap::new(),
+        dropped: BTreeMap::new(),
+        refusals: Vec::new(),
+    };
+    for spec in &openspec.specs {
+        for requirement in &spec.requirements {
+            fold.standing
+                .entry((spec.capability.clone(), requirement.name.clone()))
+                .or_default()
+                .push(Held {
+                    source: Source::Main,
+                    file: &spec.file,
+                    requirement,
+                });
+        }
+    }
+    let main: BTreeSet<Key> = fold.standing.keys().cloned().collect();
+    let placed = archive_order(&main, changes.iter().collect());
+    let mut ordered: Vec<&Change> = openspec.changes.iter().collect();
+    ordered.sort_by_key(|change| {
+        placed
+            .iter()
+            .position(|open| open.name == change.name)
+            .unwrap_or(placed.len())
+    });
+    for change in ordered {
         for delta in &change.deltas {
-            for requirement in delta.added.iter().chain(&delta.modified) {
-                for scenario in &requirement.scenarios {
-                    entries.push(Entry::new(
-                        &delta.capability,
-                        scenario,
-                        Source::Change(change.name.clone()),
-                        &delta.file,
-                    ));
-                }
-            }
+            fold.apply(change, delta);
+        }
+    }
+    let mut entries = Vec::new();
+    for ((capability, _), group) in &fold.standing {
+        for held in group {
+            entries.extend(
+                held.requirement.scenarios.iter().map(|scenario| {
+                    Entry::new(capability, scenario, held.source.clone(), held.file)
+                }),
+            );
         }
     }
     Effective {
         entries,
-        dropped,
+        dropped: fold.dropped,
+        refusals: fold.refusals,
         main,
     }
-}
-
-fn replaced(changes: &[Change]) -> Replaced {
-    let mut replaced = Replaced::new();
-    for change in changes {
-        for delta in &change.deltas {
-            let removals = delta
-                .removed
-                .iter()
-                .map(|removed| (&removed.name, Replacement::Removed));
-            let modifications = delta
-                .modified
-                .iter()
-                .map(|requirement| (main_name(delta, requirement), Replacement::Modified));
-            for (name, how) in removals.chain(modifications) {
-                replaced
-                    .entry((delta.capability.clone(), name.clone()))
-                    .or_insert_with(|| (change.name.clone(), how));
-            }
-        }
-    }
-    replaced
 }
 
 /// The name under which the main spec has a requirement that `delta` modifies. A requirement that
@@ -381,6 +422,28 @@ fn main_name<'a>(delta: &'a Delta, modified: &'a Requirement) -> &'a String {
         .iter()
         .find(|renamed| renamed.to == modified.name)
         .map_or(&modified.name, |renamed| &renamed.from)
+}
+
+/// The order in which `openspec archive` can take the changes in `waiting` one after the other, starting from the requirements `main` holds: a change goes next when every requirement it needs is in what `main` and the changes before it leave, and no other waiting change needs a requirement it takes away; the requirements it takes leave before the ones it gives enter. Of the changes that can go next, the first of `waiting` goes first, so changes given in the order of their names come out in it where nothing else decides. A change that cannot go, because what it needs is nowhere or because it and another wait for each other, is left out.
+fn archive_order<'a>(main: &BTreeSet<Key>, mut waiting: Vec<&'a Open>) -> Vec<&'a Open> {
+    let mut have: BTreeSet<&Key> = main.iter().collect();
+    let mut listed = Vec::new();
+    while let Some(next) = waiting.iter().position(|change| {
+        change.needs.iter().all(|need| have.contains(need))
+            && change.takes.iter().all(|(key, _)| {
+                waiting
+                    .iter()
+                    .all(|other| other.name == change.name || !other.needs.contains(key))
+            })
+    }) {
+        let change = waiting.remove(next);
+        for (key, _) in &change.takes {
+            have.remove(key);
+        }
+        have.extend(&change.gives);
+        listed.push(change);
+    }
+    listed
 }
 
 /// The requirements that `delta` modifies, removes or renames, under the names they have before the change is archived.
@@ -509,6 +572,47 @@ fn rivals(changes: &[Open]) -> Vec<Failure> {
             changes: by_change.keys().map(|name| (*name).to_owned()).collect(),
         })
         .collect()
+}
+
+/// The titles of the scenarios of `replaced` that `modified` does not match, counting a title as often as it is written the way `openspec archive` does: a title that `replaced` holds more often than `modified` leaves the difference.
+fn missing_titles<'a>(replaced: &'a Requirement, modified: &Requirement) -> Vec<&'a str> {
+    let mut available: BTreeMap<&str, usize> = BTreeMap::new();
+    for scenario in &modified.scenarios {
+        *available.entry(scenario.title.as_str()).or_default() += 1;
+    }
+    replaced
+        .scenarios
+        .iter()
+        .map(|scenario| scenario.title.as_str())
+        .filter(|title| {
+            let Some(left) = available.get_mut(*title).filter(|left| **left > 0) else {
+                return true;
+            };
+            *left -= 1;
+            false
+        })
+        .collect()
+}
+
+/// A modified requirement that leaves out scenarios of the requirement it replaces, which `openspec archive` refuses: the change waits until it keeps them.
+fn refusal(change: &Change, delta: &Delta, modified: &Requirement, missing: &[&str]) -> Failure {
+    let titles = join(missing.iter().map(|title| format!("`{title}`")));
+    let noun = if missing.len() == 1 {
+        "scenario"
+    } else {
+        "scenarios"
+    };
+    Failure {
+        site: Site {
+            file: delta.file.clone(),
+            line: modified.line,
+        },
+        message: format!(
+            "change `{}` modifies requirement `{}` of capability `{}` and leaves out {noun} {titles} of the requirement it replaces, and `openspec archive` refuses such a block",
+            change.name, modified.name, delta.capability
+        ),
+        changes: vec![change.name.clone()],
+    }
 }
 
 /// A claim on a scenario the specs do not have.
