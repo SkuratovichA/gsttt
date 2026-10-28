@@ -92,7 +92,7 @@ impl LineIndex {
 
 ### The depth check
 
-Deserializing a nested value recurses, in serde and in the `Drop` of the value, so a file nested a hundred thousand deep would overflow the stack of the thread that reads it. The check runs on toml_parser's events, from `parser::parse_document` over the tokens of `Source::new(text).lex()`, and past the limit it returns false from `array_open` and `inline_table_open`, which makes the parser skip the value without descending into it. The check itself never goes deeper than the limit.
+Deserializing a nested value recurses, in serde and in the `Drop` of the value. toml bounds part of that: its parser refuses inline tables and arrays nested deeper than 80, through toml_parser's `RecursionGuard`, and keys of 80 parts or more. The bounds add up, though, and each part of a header that names an array of tables adds a level of its own, so a file within them can still nest more than two hundred deep, which a small stack does not hold. `RecursionGuard` cannot do this check's counting, because it counts inline values only. The check runs on toml_parser's events, from `parser::parse_document` over the tokens of `Source::new(text).lex()`, and past the limit it returns false from `array_open` and `inline_table_open`, which makes the parser skip the value without descending into it. The check itself never goes deeper than the limit.
 
 ```rust
 struct DepthCheck<'s> {
