@@ -12,3 +12,4 @@ import legacy = require('./legacy');
 
 export type Kept = T;
 export const used = [def, a, c, ns, lazy, cjs, legacy];
+import { ok } from './present';

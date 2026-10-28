@@ -40,7 +40,10 @@ expression: json
             "file-system routes (Next.js, Remix, SvelteKit) are not read",
             "routers mounted from another package are not followed",
             "prefixes and paths held in variables are not followed",
-            "a global prefix set at start-up (NestJS setGlobalPrefix) is not applied"
+            "a global prefix set at start-up (NestJS setGlobalPrefix) is not applied",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the same file",
+            "a mount path array with a non-literal element is read for its literal elements only",
+            "routers that mount each other in a cycle are followed until the cycle closes"
           ],
           "kind": "http",
           "role": "serves",
@@ -52,7 +55,7 @@ expression: json
         {
           "blind_spots": [
             "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
           ],
           "kind": "http",
           "role": "calls",
@@ -73,7 +76,8 @@ expression: json
         },
         {
           "blind_spots": [
-            "routers merged or built at run time are not followed"
+            "routers merged or built at run time are not followed",
+            "router entries that are spread, read from a member (other.router) or built by another call are not followed"
           ],
           "kind": "trpc",
           "role": "serves",

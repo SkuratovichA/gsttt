@@ -170,9 +170,33 @@ expression: json
               "reason": "not-found"
             }
           }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 15,
+          "names": [
+            "ok"
+          ],
+          "spec": "./present",
+          "to": {
+            "file": "src/present.ts"
+          }
         }
       ],
       "path": "src/forms.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "src/present.ts",
       "project": "ts .",
       "status": {
         "status": "ok"
@@ -190,7 +214,7 @@ expression: json
         {
           "blind_spots": [
             "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
           ],
           "kind": "http",
           "role": "calls",

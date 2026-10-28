@@ -5,7 +5,7 @@ return {
   detect = { "@prisma/client" },
   chains = {
     {
-      root = { "prisma", "this.prisma", "this.prismaService", "ctx.prisma", "ctx.db" },
+      root = { "prisma", "this.prisma", "this.prismaService", "ctx.prisma", "ctx.db", "this.db", "db", "tx" },
       kind = "table",
       role = "calls",
       segments = 1,

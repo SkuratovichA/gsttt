@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use gsttt_core::FileId;
 use gsttt_core::connector::{LinkFile, LinkInput, LinkedFact};
 use gsttt_core::contract::{ContractKey, ContractKind, Role};
-use gsttt_core::fact::{ContractFact, Resolution};
+use gsttt_core::fact::{ContractFact, Line, Resolution};
 use gsttt_core::rules::contract_key;
 
 use crate::extra::{ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra};
@@ -101,17 +101,33 @@ fn express(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
             }
         }
     }
+    let mut mounts = Mounts {
+        parents: &parents,
+        memo: BTreeMap::new(),
+        cuts: 0,
+    };
     let mut linked = Vec::new();
     for file in input.files() {
         for route in &file.extra.routes {
             let node = (file.id, route.host.clone());
-            for prefix in prefixes_of(&parents, &node, &mut Vec::new()) {
+            let mut prefixes = mounts.prefixes_of(&node, &mut Vec::new());
+            // A router that is only reached through a cycle is served where it is written.
+            if prefixes.is_empty() {
+                prefixes.insert(String::new());
+            }
+            for prefix in prefixes {
                 linked.push(LinkedFact {
                     file: file.id,
                     fact: rekey(&route.fact, &prefix),
                 });
             }
         }
+    }
+    if mounts.cuts > 0 {
+        tracing::debug!(
+            cuts = mounts.cuts,
+            "mounts close a cycle and are cut where they close"
+        );
     }
     linked
 }
@@ -134,31 +150,44 @@ fn mounted_host(
         .then_some((defined_in, local))
 }
 
-/// Every path a node is served under: the prefixes of its parents followed by its own mount; none for a node nothing
-/// mounts. A cycle of mounts is cut where it closes.
-fn prefixes_of(
-    parents: &BTreeMap<Node, Vec<(Node, String)>>,
-    node: &Node,
-    visiting: &mut Vec<Node>,
-) -> BTreeSet<String> {
-    let Some(edges) = parents.get(node) else {
-        return BTreeSet::from([String::new()]);
-    };
-    visiting.push(node.clone());
-    let mut prefixes = BTreeSet::new();
-    for (parent, mount) in edges {
-        if visiting.contains(parent) {
-            continue;
+/// The mounts of a run, with the paths of each node remembered so a router under many mounts is walked once.
+struct Mounts<'a> {
+    parents: &'a BTreeMap<Node, Vec<(Node, String)>>,
+    memo: BTreeMap<Node, BTreeSet<String>>,
+    /// How many mounts were skipped because they close a cycle.
+    cuts: usize,
+}
+
+impl Mounts<'_> {
+    /// Every path a node is served under: the prefixes of its parents followed by its own mount; the empty path for a
+    /// node nothing mounts. A mount that would close a cycle adds no path, so a node reached only through a cycle has
+    /// none. Only a walk that met no cycle is remembered, because a cut makes the answer depend on where the walk began.
+    fn prefixes_of(&mut self, node: &Node, visiting: &mut Vec<Node>) -> BTreeSet<String> {
+        if let Some(known) = self.memo.get(node) {
+            return known.clone();
         }
-        for above in prefixes_of(parents, parent, visiting) {
-            prefixes.insert(join_path(&above, mount));
+        let parents = self.parents;
+        let Some(edges) = parents.get(node) else {
+            return BTreeSet::from([String::new()]);
+        };
+        let cuts_before = self.cuts;
+        visiting.push(node.clone());
+        let mut prefixes = BTreeSet::new();
+        for (parent, mount) in edges {
+            if visiting.contains(parent) {
+                self.cuts += 1;
+                continue;
+            }
+            for above in self.prefixes_of(parent, visiting) {
+                prefixes.insert(join_path(&above, mount));
+            }
         }
+        visiting.pop();
+        if self.cuts == cuts_before {
+            self.memo.insert(node.clone(), prefixes.clone());
+        }
+        prefixes
     }
-    visiting.pop();
-    if prefixes.is_empty() {
-        prefixes.insert(String::new());
-    }
-    prefixes
 }
 
 fn join_path(above: &str, below: &str) -> String {
@@ -242,16 +271,10 @@ fn emit(
     path.push(node.clone());
     for entry in &router.entries {
         match entry {
-            TrpcEntry::Procedure { name, line } => linked.push(LinkedFact {
-                file: node.0,
-                fact: ContractFact {
-                    key: ContractKey::new(ContractKind::Trpc, &join_dot(prefix, name)),
-                    role: Role::Serves,
-                    line: *line,
-                    via: "trpc".to_owned(),
-                },
-            }),
-            TrpcEntry::Nested { name, .. } | TrpcEntry::Ref { name, .. } => {
+            TrpcEntry::Procedure { name, line } => {
+                linked.push(procedure_fact(node.0, prefix, name, *line));
+            }
+            TrpcEntry::Nested { name, .. } => {
                 if let Some(child) = child_node(input, file, entry) {
                     emit(
                         input,
@@ -263,9 +286,46 @@ fn emit(
                     );
                 }
             }
+            TrpcEntry::Ref { name, line, .. } => {
+                let Some(child) = child_node(input, file, entry) else {
+                    continue;
+                };
+                if routers.contains_key(&child) {
+                    emit(
+                        input,
+                        routers,
+                        &child,
+                        &join_dot(prefix, name),
+                        path,
+                        linked,
+                    );
+                } else if is_procedure(input, &child) {
+                    linked.push(procedure_fact(node.0, prefix, name, *line));
+                }
+            }
         }
     }
     path.pop();
+}
+
+/// A procedure served at `name` under `prefix`, reported at the line of the entry that lists it.
+fn procedure_fact(file: FileId, prefix: &str, name: &str, line: Line) -> LinkedFact {
+    LinkedFact {
+        file,
+        fact: ContractFact {
+            key: ContractKey::new(ContractKind::Trpc, &join_dot(prefix, name)),
+            role: Role::Serves,
+            line,
+            via: "trpc".to_owned(),
+        },
+    }
+}
+
+/// Whether `node` is a variable that its file initialises with a procedure call.
+fn is_procedure(input: &LinkInput<'_, TsExtra>, node: &Node) -> bool {
+    input
+        .get(node.0)
+        .is_some_and(|file| file.extra.procedures.contains(&node.1))
 }
 
 fn join_dot(prefix: &str, name: &str) -> String {

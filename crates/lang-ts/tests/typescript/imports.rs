@@ -24,6 +24,7 @@ fn every_import_form_is_read() -> Result<(), Box<dyn Error>> {
             "./lazy dynamic @9 [*] -> unresolved not-found",
             "./cjs require @10 [default] -> unresolved not-found",
             "./legacy require @11 [default] -> unresolved not-found",
+            "./present static @15 [ok] -> file src/present.ts",
         ]
     );
     insta::assert_json_snapshot!(json);
@@ -68,5 +69,19 @@ fn a_recoverable_error_keeps_the_imports() -> Result<(), Box<dyn Error>> {
         ["./a static @1 [a] -> file src/a.ts"]
     );
     insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+fn every_import_form_can_lead_to_a_file() -> Result<(), Box<dyn Error>> {
+    let json = run("import-forms-resolved")?;
+    let lines = imports(&json, "src/forms.ts");
+    assert_eq!(lines.len(), 6, "{lines:?}");
+    assert!(
+        lines
+            .iter()
+            .all(|line| line.ends_with("-> file src/present.ts")),
+        "{lines:?}"
+    );
     Ok(())
 }

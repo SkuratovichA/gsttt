@@ -55,3 +55,22 @@ fn every_way_of_reading_the_environment_is_seen() -> Result<(), Box<dyn Error>> 
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+fn a_prisma_client_named_db_or_tx_names_its_table() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-roots")?;
+    let facts = contracts(&json, "src/repo.ts");
+    assert!(
+        facts
+            .iter()
+            .any(|fact| fact.starts_with("calls table invoice @4")),
+        "{facts:?}"
+    );
+    assert!(
+        facts
+            .iter()
+            .any(|fact| fact.starts_with("calls table payment @5")),
+        "{facts:?}"
+    );
+    Ok(())
+}

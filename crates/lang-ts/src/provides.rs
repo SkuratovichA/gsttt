@@ -55,24 +55,28 @@ fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
             "routers mounted from another package are not followed",
             "prefixes and paths held in variables are not followed",
             "a global prefix set at start-up (NestJS setGlobalPrefix) is not applied",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the same file",
+            "a mount path array with a non-literal element is read for its literal elements only",
+            "routers that mount each other in a cycle are followed until the cycle closes",
         ],
         (ContractKind::Http, Role::Calls) => &[
             "URLs held in variables are not followed",
-            "clients created in another file are not recognised",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it",
         ],
         (ContractKind::Graphql, Role::Serves) => &[
             "resolvers built at run time are not read",
             "schema-first resolvers outside a resolvers map are not read",
         ],
-        (ContractKind::Trpc, Role::Serves) => {
-            &["routers merged or built at run time are not followed"]
-        }
+        (ContractKind::Trpc, Role::Serves) => &[
+            "routers merged or built at run time are not followed",
+            "router entries that are spread, read from a member (other.router) or built by another call are not followed",
+        ],
         (ContractKind::Trpc, Role::Calls) => {
             &["clients under a name other than trpc or api are not recognised"]
         }
         (ContractKind::Table, Role::Calls) => &[
             "raw SQL and query builders are not read",
-            "clients under another name are not recognised",
+            "clients under a root other than prisma, db, tx, this.prisma, this.prismaService, this.db, ctx.prisma or ctx.db are not recognised",
         ],
         (ContractKind::Table, Role::Declares) => &["tables named at run time are not read"],
         (ContractKind::Env, Role::Calls) => {

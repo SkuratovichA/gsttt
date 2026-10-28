@@ -26,6 +26,9 @@ pub struct TsExtra {
     /// tRPC routers declared in this file.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub routers: Vec<TrpcRouter>,
+    /// Variables a tRPC procedure call is stored in, which a router can list by name.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub procedures: Vec<String>,
 }
 
 /// A local name bound to something another module exports.
@@ -98,6 +101,10 @@ pub enum TrpcEntry {
     Procedure { name: String, line: Line },
     /// A router written in place: the id it is stored under.
     Nested { name: String, id: String },
-    /// A router (or anything else) named by a variable.
-    Ref { name: String, local: String },
+    /// A router, a procedure or anything else named by a variable; the line is where a procedure is reported.
+    Ref {
+        name: String,
+        local: String,
+        line: Line,
+    },
 }

@@ -276,6 +276,14 @@ impl Analyzer<'_> {
                 }
                 let site: &Shape =
                     lazy.get_or_insert_with(|| Shape::of_call(callee, it.arguments.iter()));
+                // `app.get('env')` reads a setting: a route always has a handler after its path.
+                if rule.receiver.is_some()
+                    && rule.kind == ContractKind::Http
+                    && rule.role == Role::Serves
+                    && it.arguments.len() < 2
+                {
+                    continue;
+                }
                 let (prefix, host) = match &rule.receiver {
                     None => (None, None),
                     Some(receiver) => match self.receiver(callee, receiver) {
@@ -319,10 +327,12 @@ impl Analyzer<'_> {
         self.trpc_router(it, callee);
     }
 
-    /// `host.use([prefix], router…)`.
+    /// `host.use([prefix], router…)`. A prefix may be an array of paths: the routers are mounted once under each literal
+    /// element, and an element that is not a literal is a site the file could not read.
     fn mount(&mut self, host: &str, call: &CallExpression<'_>, line: Line) {
-        let mut prefix = String::new();
+        let mut prefixes = vec![String::new()];
         let mut targets = Vec::new();
+        let mut computed = false;
         for (position, argument) in call
             .arguments
             .iter()
@@ -330,9 +340,29 @@ impl Analyzer<'_> {
             .enumerate()
         {
             if position == 0
+                && let Expression::ArrayExpression(array) = argument.get_inner_expression()
+            {
+                let paths: Vec<Option<String>> = array
+                    .elements
+                    .iter()
+                    .map(|element| element.as_expression().and_then(text_of))
+                    .collect();
+                if paths.iter().any(Option::is_some) {
+                    computed = paths.iter().any(Option::is_none);
+                    prefixes = paths.into_iter().flatten().collect();
+                } else {
+                    // `app.use([a, b])` lists handlers, not paths.
+                    targets.extend(
+                        array
+                            .elements
+                            .iter()
+                            .filter_map(|element| element.as_expression().and_then(mount_target)),
+                    );
+                }
+            } else if position == 0
                 && let Some(text) = text_of(argument)
             {
-                prefix = text;
+                prefixes = vec![text];
             } else if let Some(target) = mount_target(argument) {
                 targets.push(target);
             }
@@ -340,7 +370,7 @@ impl Analyzer<'_> {
         if targets.is_empty() {
             return;
         }
-        if prefix.contains("${}") {
+        if computed || prefixes.iter().any(|prefix| prefix.contains("${}")) {
             let detail = self.snippet(call.span);
             self.out.unresolved.push(UnresolvedSite {
                 line,
@@ -348,12 +378,14 @@ impl Analyzer<'_> {
                 detail,
             });
         }
-        self.out.extra.mounts.push(Mount {
-            host: host.to_owned(),
-            prefix,
-            targets,
-            line,
-        });
+        for prefix in prefixes {
+            self.out.extra.mounts.push(Mount {
+                host: host.to_owned(),
+                prefix,
+                targets: targets.clone(),
+                line,
+            });
+        }
     }
 
     fn tagged(&mut self, it: &TaggedTemplateExpression<'_>, tag: &str) {
@@ -677,6 +709,13 @@ impl<'a> Visit<'a> for Analyzer<'_> {
                     .insert(call.span.start, id.name.as_str().to_owned());
             }
             self.load_declared(init, &it.id);
+            if self.has_trpc
+                && let (BindingPattern::BindingIdentifier(id), Expression::CallExpression(call)) =
+                    (&it.id, init)
+                && maps::is_procedure(call)
+            {
+                self.out.extra.procedures.push(id.name.as_str().to_owned());
+            }
             self.destructured_chain(&it.id, init, it.span.start);
             if self.has_graphql
                 && let BindingPattern::BindingIdentifier(id) = &it.id

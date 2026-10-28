@@ -23,6 +23,14 @@ pub(super) struct Maker {
 
 /// Every variable of `program` that is made by a call, by its name; a field is named `this.field`.
 pub(super) fn collect(program: &Program<'_>, packs: &[Pack]) -> BTreeMap<String, Maker> {
+    // Only a rule that reads a receiver looks at what a variable was made by, so a project without one skips the walk.
+    if !packs
+        .iter()
+        .flat_map(|pack| &pack.calls)
+        .any(|rule| rule.receiver.is_some())
+    {
+        return BTreeMap::new();
+    }
     let mut collector = Collector {
         packs,
         found: BTreeMap::new(),

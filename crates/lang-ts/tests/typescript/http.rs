@@ -89,3 +89,54 @@ fn a_computed_url_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A router mounted under several paths serves under each")]
+fn a_router_mounted_under_several_paths_serves_under_each() -> Result<(), Box<dyn Error>> {
+    let json = run("express-mount-forms")?;
+    let mut served = linked(&json);
+    served.sort();
+    assert_eq!(
+        served,
+        [
+            "serves http GET /a/z @4 in src/pair.ts",
+            "serves http GET /b/z @4 in src/pair.ts",
+            "serves http GET /c/m @4 in src/mixed.ts",
+            "serves http GET /health @4 in src/extras.ts",
+            "serves http GET /v1/list @4 in src/users.ts",
+            "serves http GET /v2/list @4 in src/users.ts",
+        ]
+    );
+    let sites = unread(&json, "src/app.ts");
+    assert_eq!(sites.len(), 1, "{sites:?}");
+    assert!(sites[0].starts_with("@14 non-literal"), "{sites:?}");
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A mount cycle is cut where it closes")]
+fn a_mount_cycle_is_cut_where_it_closes() -> Result<(), Box<dyn Error>> {
+    let json = run("express-mount-cycle")?;
+    let mut served = linked(&json);
+    served.sort();
+    assert_eq!(
+        served,
+        [
+            "serves http GET /api/b/y @6 in src/b.ts",
+            "serves http GET /api/x @6 in src/a.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A setting getter is no route")]
+fn a_setting_getter_is_no_route() -> Result<(), Box<dyn Error>> {
+    let json = run("express-settings")?;
+    assert_eq!(
+        linked(&json),
+        ["serves http GET /ping @5 in src/settings.ts"]
+    );
+    assert_eq!(contracts(&json, "src/settings.ts"), Vec::<String>::new());
+    Ok(())
+}

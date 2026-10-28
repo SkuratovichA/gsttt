@@ -58,7 +58,7 @@ expression: json
         {
           "blind_spots": [
             "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
           ],
           "kind": "http",
           "role": "calls",
@@ -69,7 +69,7 @@ expression: json
         {
           "blind_spots": [
             "raw SQL and query builders are not read",
-            "clients under another name are not recognised"
+            "clients under a root other than prisma, db, tx, this.prisma, this.prismaService, this.db, ctx.prisma or ctx.db are not recognised"
           ],
           "kind": "table",
           "role": "calls",

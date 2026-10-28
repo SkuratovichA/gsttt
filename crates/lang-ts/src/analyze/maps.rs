@@ -70,8 +70,12 @@ impl Analyzer<'_> {
             .unwrap_or_else(|| format!("#{line}"));
         let mut entries = Vec::new();
         for property in &object.properties {
-            let ObjectPropertyKind::ObjectProperty(property) = property else {
-                continue;
+            let property = match property {
+                ObjectPropertyKind::ObjectProperty(property) => property,
+                ObjectPropertyKind::SpreadProperty(spread) => {
+                    self.skipped_entry("spread entry", spread.span);
+                    continue;
+                }
             };
             if property.computed {
                 continue;
@@ -83,6 +87,7 @@ impl Analyzer<'_> {
                 Expression::Identifier(local) => entries.push(TrpcEntry::Ref {
                     name,
                     local: local.name.as_str().to_owned(),
+                    line: self.line(property.span.start),
                 }),
                 Expression::CallExpression(inner) if is_procedure(inner) => {
                     entries.push(TrpcEntry::Procedure {
@@ -99,12 +104,27 @@ impl Analyzer<'_> {
                     self.names.insert(inner.span.start, nested.clone());
                     entries.push(TrpcEntry::Nested { name, id: nested });
                 }
+                Expression::StaticMemberExpression(_)
+                | Expression::ComputedMemberExpression(_)
+                | Expression::PrivateFieldExpression(_) => {
+                    self.skipped_entry("member entry", property.span);
+                }
                 _ => {}
             }
         }
         if !entries.is_empty() {
             self.out.extra.routers.push(TrpcRouter { id, entries });
         }
+    }
+
+    /// A router entry the link phase cannot follow becomes a site this file could not read.
+    fn skipped_entry(&mut self, form: &str, span: oxc_span::Span) {
+        let site = gsttt_core::fact::UnresolvedSite {
+            line: self.line(span.start),
+            reason: gsttt_core::fact::UnresolvedReason::Unsupported(format!("tRPC router {form}")),
+            detail: self.snippet(span),
+        };
+        self.out.unresolved.push(site);
     }
 }
 
@@ -116,7 +136,7 @@ fn is_router_callee(callee: &str) -> bool {
 }
 
 /// `procedure.input(schema).query(handler)`: the call ends in `.query`, `.mutation` or `.subscription`.
-fn is_procedure(call: &CallExpression<'_>) -> bool {
+pub(super) fn is_procedure(call: &CallExpression<'_>) -> bool {
     matches!(
         &call.callee,
         Expression::StaticMemberExpression(member)
