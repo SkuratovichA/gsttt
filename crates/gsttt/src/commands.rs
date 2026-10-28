@@ -51,7 +51,9 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
         Command::Schema(_) => Err(not_built(command)),
         Command::Config(ConfigCommand::Trust) => config::trust(flags, io),
         Command::Config(ConfigCommand::Untrust) => config::untrust(flags, io),
-        Command::Init | Command::Config(ConfigCommand::Check | ConfigCommand::Show) => {
+        Command::Config(ConfigCommand::Check) => config::check(&Session::open(flags)?, io),
+        Command::Config(ConfigCommand::Show) => config::show(&Session::open(flags)?, io),
+        Command::Init => {
             root::locate(&root::start(flags.directory.as_deref())?)?;
             Err(not_built(command))
         }

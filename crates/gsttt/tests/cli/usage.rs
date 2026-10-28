@@ -202,17 +202,11 @@ fn index_cannot_run_without_a_refresh() {
     assert!(ran.stderr.contains("--no-refresh"), "{}", ran.stderr);
 }
 
-/// The commands of the third run that are not built yet: `init`, `config check`, `config show` and `schema`. They find
-/// their root first, as the built ones do, so a refused root is told as such.
+/// The commands of the third run that are not built yet: `init` and `schema`.
 #[test]
 fn a_command_that_is_not_built_yet_says_so_and_exits_1() {
     let sandbox = Sandbox::new();
-    for args in [
-        &["init"][..],
-        &["config", "check"][..],
-        &["config", "show"][..],
-        &["--json", "schema", "external"][..],
-    ] {
+    for args in [&["init"][..], &["--json", "schema", "external"][..]] {
         let ran = sandbox.run(args);
         assert_eq!(ran.code, Some(1), "{args:?}");
         assert_eq!(ran.stdout, "", "{args:?}");
@@ -222,19 +216,4 @@ fn a_command_that_is_not_built_yet_says_so_and_exits_1() {
             ran.stderr
         );
     }
-}
-
-#[test]
-fn a_command_that_is_not_built_yet_still_refuses_the_home_directory() {
-    let sandbox = Sandbox::new();
-    let mut command = sandbox.gsttt();
-    command
-        .current_dir(sandbox.home.path())
-        .args(["config", "check"]);
-    let ran = super::support::ran(&mut command);
-    assert_eq!(ran.code, Some(2), "{ran:?}");
-    assert!(
-        ran.stderr.contains("does not index the home directory"),
-        "{ran:?}"
-    );
 }

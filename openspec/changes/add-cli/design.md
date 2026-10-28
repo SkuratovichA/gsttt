@@ -85,6 +85,11 @@ impl Repository {
     pub fn root(&self) -> &Utf8Path;
     /// The externals of the config in its order, each with whether it is trusted here.
     pub fn externals(&self) -> &[Declared];
+    /// The setup the config evaluated to, and the registry with the built-in packs: what `config show` describes.
+    pub const fn setup(&self) -> &Setup;
+    pub const fn registry(&self) -> &Registry;
+    /// The connectors that find themselves in the tree, in registry order, whatever the config says about them.
+    pub fn detected(&self) -> Result<Vec<&'static str>, RepositoryError>;
     pub fn refreshed(&self) -> Result<Refreshed, RepositoryError>;
     pub fn stored(&self) -> Result<Option<Loaded>, RepositoryError>;
     pub fn argument(&self, base: &Utf8Path, argument: &str) -> Result<Target, RepositoryError>;
@@ -97,19 +102,24 @@ impl Repository {
 
 ### Checking options
 
-`DynConnector` gains a provided method that the blanket implementation for `Connector` overrides. The override runs the very same deserialization as `open`, one private function that both call, so the check cannot accept what `open` refuses. `TypeScriptOptions` has `deny_unknown_fields`, so an option the module does not declare fails there, with the module and the option named. An external keeps the default, because its options are free-form JSON that only the process reads:
+`DynConnector` gains a provided method that the blanket implementation for `Connector` overrides. The override runs the very same deserialization as `open`, one private function that both call, so the check cannot accept what `open` refuses. `TypeScriptOptions` has `deny_unknown_fields`, so an option the module does not declare fails there, with the module and the option named. The default accepts everything, so that no other implementer of `DynConnector` has to change:
 
 ```rust
-// crates/core/src/connector.rs
-fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorError> { Ok(()) }
+// crates/core/src/connector.rs, in the trait
+fn check_options(&self, _options: &serde_json::Value) -> Result<(), ConnectorError> { Ok(()) }
 
-// in the blanket impl, over the function `open` calls
+// the one function that reads options; `null` is the defaults
+fn read_options<O: DeserializeOwned + Default>(connector: &str, options: &serde_json::Value) -> Result<O, ConnectorError>;
+
+// in the blanket impl, where `open` calls the same function
 fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorError> {
-    read_options::<C::Options>(self.meta().name, options).map(drop)
+    read_options::<C::Options>(self.0.meta().name, options).map(drop)
 }
 ```
 
-- `Repository::open` checks every module of the setup against its connector in the registry, collects every failure, sorted by module, and fails with one error that lists each on its own line. So every command that opens a repository exits 1 on a bad option, and `config check` has nothing more to check than what `open` does.
+- `Repository::open` checks every module of the setup against the connector of that name once the trusted externals have joined the registry, collects every failure in the order of the config, and fails with `RepositoryError::Options`: one header line and one indented line for each failure. So every command that opens a repository exits 1 on a bad option, and `config check` has nothing more to check than what `open` does. A table can only name a built-in module, because the evaluation of the config refuses any other, so a module always has its connector to read its options; the `options` of an `[[external]]` are inside its entry, and only its process reads them.
+- The error names the module and the option, not a line of the file: the evaluation turns the TOML into JSON before the modules see it, and the position is gone by then. A syntax error, a key the config does not know and an invalid `[[external]]` still name their file, line and column, because the evaluation finds them.
+- The evaluation stops at the first file that does not read, so `config check` prints one such error. The option errors of all modules are printed together.
 
 ### Registry
 
@@ -186,10 +196,19 @@ pub fn session_line(header: &Header, now: jiff::Timestamp) -> Option<String>;
 - A step after Package, under `if: matrix.smoke`, unpacks the archive and runs `gsttt --version`, `gsttt index` and `gsttt impact crates/core/src/lib.rs` in the checkout.
 - `xtask/tests/dist/ci.rs` pins the step and the two flags, the way it already pins the rest of the workflow.
 
+### Showing the config
+
+- `config show` is one document that is printed as text or, under `--json`, as one JSON object with the same parts: `root`, `modules`, `packs`, `externals`, and the settings `detect`, `exclude`, `max_file_bytes` and `http_prefixes`.
+- Each module of the registry is listed in registry order, so the built-in ones and then the externals the user trusts, with `on` and the reason (`why`) in the order the engine decides: `disabled`, `configured` (the config has a table for it), `detection_off`, `detected`, `not_detected`. `on` comes from the reason, and a test pins the reason against `Setup::runs` for every combination of the four facts it rests on.
+- `options` is what the config wrote for the module, `null` when it wrote none. The options a module fills in itself are not shown, because the engine would have to be asked what they come to.
+- `packs` lists, for each module that is on, the packs it receives as `merge_packs` hands them over, with their origin: `built-in`, or `config` for a pack of the config or of `.gsttt/packs/` that replaces or adds to them.
+- `externals` lists every `[[external]]` of the config, whether the user trusts it or not, with `cmd` and `files`. An external that is not trusted is not a module of the run, so it is only here.
+- Whether a module is detected comes from `Engine::detected`, the one new method of the engine: it lists the tree the way a refresh does, with the same view and the same panic containment, and asks each connector in registry order. `Repository::detected` wraps it.
+
 ### Init
 
 - `init` finds the root like the other commands and does not read the config, so it works beside a config that does not parse.
-- It learns which connectors find a project from one `Engine` method over the same listing a refresh uses, and passes their names to `gsttt_config::starter`.
+- It learns which connectors find a project from `Engine::detected`, the method `config show` uses, over the same listing a refresh uses, and passes their names to `gsttt_config::starter`.
 - It writes `.gsttt/config.toml` only when it is missing. The first line of the starter names the config schema.
 - It always writes `.gsttt/schema/config.json` and `.gsttt/schema/pack.json`, the schemas generated from the registry. Each holds a top-level `$comment` that says `gsttt init` generated the file and that edits to it are lost.
 

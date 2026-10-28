@@ -1,4 +1,6 @@
-//! `gsttt config`: the trust in the external connectors of a repository.
+//! `gsttt config`: checking the config, showing it, and the trust in the external connectors of a repository.
+
+mod show;
 
 use std::fmt::Write as _;
 use std::io::{self, BufRead, IsTerminal};
@@ -11,6 +13,27 @@ use crate::error::CliError;
 use crate::root;
 use crate::streams::{Io, Outcome};
 use crate::trust::{Declared, Store};
+
+pub(super) use show::show;
+
+/// `gsttt config check`: opens the repository, which reads the config and has every module read its options, and
+/// says the config is valid, with a line for each external connector the user does not trust yet. An error ends the
+/// run the way it ends any other command that opens the repository. It prints plain text under `--json` too, because
+/// it has no answer to give but yes.
+pub(super) fn check(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, CliError> {
+    let mut text = String::from("The config is valid.\n");
+    for external in session
+        .repository
+        .externals()
+        .iter()
+        .filter(|external| !external.trusted())
+    {
+        text.push_str(&external.problem());
+        text.push('\n');
+    }
+    io.answer(text.as_bytes())?;
+    Ok(Outcome::Answered)
+}
 
 /// `gsttt config trust`: shows what each external connector that waits for trust would run, asks once, and records
 /// trust in all of them when the answer is `y` or `yes`. Any other answer trusts nothing.

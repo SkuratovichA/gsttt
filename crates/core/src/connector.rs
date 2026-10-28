@@ -293,6 +293,15 @@ pub trait DynConnector: Send + Sync {
     fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema;
     /// The default options as JSON.
     fn default_options(&self) -> serde_json::Value;
+    /// Whether [`DynConnector::open`] can read `options`, without opening anything: the error is the one `open` would
+    /// give. A connector that takes no options needs no check.
+    ///
+    /// # Errors
+    ///
+    /// [`ConnectorError::Options`] when the options do not read as the options of the connector.
+    fn check_options(&self, _options: &serde_json::Value) -> Result<(), ConnectorError> {
+        Ok(())
+    }
     /// Opens the projects with options as JSON; `null` means the defaults.
     fn open(
         &self,
@@ -346,6 +355,21 @@ struct ErasedProject<P> {
     project: P,
 }
 
+/// Reads the options of the connector `connector` from the JSON of the config; `null` means the defaults. The one
+/// place that does it, so that checking options and opening with them cannot disagree.
+fn read_options<O: DeserializeOwned + Default>(
+    connector: &str,
+    options: &serde_json::Value,
+) -> Result<O, ConnectorError> {
+    if options.is_null() {
+        return Ok(O::default());
+    }
+    serde_path_to_error::deserialize(options).map_err(|error| ConnectorError::Options {
+        connector: connector.to_owned(),
+        message: with_path(error.path(), &error.inner().to_string()),
+    })
+}
+
 impl<C: Connector> DynConnector for Erased<C> {
     fn meta(&self) -> Meta {
         self.0.meta()
@@ -363,6 +387,10 @@ impl<C: Connector> DynConnector for Erased<C> {
         serde_json::to_value(C::Options::default()).unwrap_or(serde_json::Value::Null)
     }
 
+    fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorError> {
+        read_options::<C::Options>(self.0.meta().name, options).map(drop)
+    }
+
     fn open(
         &self,
         repo: &RepoView,
@@ -370,14 +398,7 @@ impl<C: Connector> DynConnector for Erased<C> {
         packs: &[Pack],
     ) -> Result<Vec<Box<dyn DynProject>>, ConnectorError> {
         let meta = self.0.meta();
-        let options = if options.is_null() {
-            C::Options::default()
-        } else {
-            serde_path_to_error::deserialize(options).map_err(|error| ConnectorError::Options {
-                connector: meta.name.to_owned(),
-                message: with_path(error.path(), &error.inner().to_string()),
-            })?
-        };
+        let options = read_options::<C::Options>(meta.name, options)?;
         let projects = self.0.open(repo, &options, packs)?;
         Ok(projects
             .into_iter()
@@ -524,6 +545,7 @@ mod tests {
     struct Lines;
 
     #[derive(Default, Serialize, Deserialize, JsonSchema)]
+    #[serde(deny_unknown_fields)]
     struct LinesOptions {
         #[serde(default)]
         tag: String,
@@ -628,6 +650,36 @@ mod tests {
     }
 
     static REGISTRY: &[&dyn DynConnector] = &[&Erased(Lines)];
+
+    #[test]
+    fn checking_options_gives_the_answer_that_opening_with_them_gives() {
+        let repo = RepoView::new("/repo", Vec::new());
+        let [connector] = REGISTRY else {
+            panic!("one connector")
+        };
+        for options in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({ "tag": "jobs" }),
+            serde_json::json!({ "tag": 3 }),
+            serde_json::json!({ "no_such_option": true }),
+            serde_json::json!("not a table"),
+        ] {
+            assert_eq!(
+                connector.check_options(&options),
+                connector.open(&repo, &options, &[]).map(drop),
+                "{options}"
+            );
+        }
+        assert_eq!(
+            connector.check_options(&serde_json::json!({ "no_such_option": true })),
+            Err(ConnectorError::Options {
+                connector: "lines".to_owned(),
+                message: "`no_such_option`: unknown field `no_such_option`, expected `tag`"
+                    .to_owned(),
+            })
+        );
+    }
 
     #[test]
     fn erased_connectors_round_trip_options_and_extras() {

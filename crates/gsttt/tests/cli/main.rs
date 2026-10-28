@@ -2,6 +2,7 @@
 #![cfg(test)]
 
 mod colour;
+mod config;
 mod hook;
 mod impact;
 mod index;
