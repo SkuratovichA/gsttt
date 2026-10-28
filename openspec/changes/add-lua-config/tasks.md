@@ -36,3 +36,4 @@
 - [x] 5.12 Tests for the gaps the review named: the line limit, a pipe that closes mid-line, threads that share one process and a fingerprint that follows module and external options
 - [x] 5.13 An import of a file parsed before the process stopped is unresolved with the reason `unsupported` and the failure message as its detail
 - [x] 5.14 The paths in `.luarc.json` are relative to `.gsttt/`, the folder LuaLS reads it in, and the starter `init.lua` says to open that folder as the workspace
+- [x] 5.15 The proposal names what the fixes reached beyond the crate: `ExternalSetup` in core, and the `rustix` and `memchr` dependencies that make the crate unix-only

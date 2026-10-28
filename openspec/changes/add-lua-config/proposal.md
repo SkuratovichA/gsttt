@@ -24,4 +24,4 @@ None.
 
 ## Impact
 
-`crates/config/` only. The binary wires `gsttt init`, `gsttt schema external` and the registry's module list in the CLI change.
+`crates/config/`, and `ExternalSetup` in `crates/core/src/setup.rs`, which carries the `provides` and `options` an external declares. The crate depends on `rustix` for process groups and for opening a file without waiting on it, and on `memchr`, so it builds for unix only. The binary wires `gsttt init`, `gsttt schema external` and the registry's module list in the CLI change.
