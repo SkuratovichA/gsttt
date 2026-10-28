@@ -49,3 +49,4 @@
 - [x] 6.3 `TRACE` is an HTTP method: core lists it, so actix `#[route(.., method = "TRACE")]` serves `http TRACE <path>` and the connector no longer rewrites the key of an axum `trace(..)` route after the rules ran
 - [x] 6.4 `cfg_flags` reads only the leading attributes of each ancestor, so a file of 10001 `mod` declarations is indexed in 0.12 s instead of 16 s in a debug build, and a doc comment between two attributes, an inner attribute of a file or of a module body, and a shebang before one are still read
 - [x] 6.5 The project salt is made with `salt_of` of the core from the edition and the packs, in place of a hash of its own, so the crate no longer needs `xxhash-rust`
+- [x] 6.6 A path of a manifest is joined to its directory with `RepoPath::join_dir` of the core, which names the repository root as `""` where `RepoPath::join` fails, so the connector no longer has a copy of it

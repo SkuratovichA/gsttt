@@ -71,6 +71,18 @@ impl RepoPath {
         }
     }
 
+    /// [`RepoPath::join`] for a directory: `""` is the repository root in `dir` and in the result. A `RepoPath` names
+    /// a file, so `join` fails with [`PathError::Empty`] for the root, which is what `.` from the root and a `..`
+    /// that climbs back to it come to; this returns `Some("")` for it. `None` when `relative` is absolute or leaves
+    /// the repository.
+    pub fn join_dir(dir: &str, relative: &str) -> Option<String> {
+        match Self::join(dir, relative) {
+            Ok(path) => Some(path.0),
+            Err(PathError::Empty) => Some(String::new()),
+            Err(PathError::Absolute(_) | PathError::EscapesRoot(_)) => None,
+        }
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -182,6 +194,19 @@ mod tests {
             "src/b/c.ts"
         );
         assert_eq!(RepoPath::join("", "./x.py").unwrap().as_str(), "x.py");
+    }
+
+    #[test]
+    fn join_dir_names_the_root_that_join_cannot() {
+        assert_eq!(RepoPath::join_dir("", "src").as_deref(), Some("src"));
+        assert_eq!(RepoPath::join_dir("a/b", "../c").as_deref(), Some("a/c"));
+        for (dir, relative) in [("", "."), ("", "./"), ("fuzz", ".."), ("a/b", "../..")] {
+            assert_eq!(RepoPath::join(dir, relative), Err(PathError::Empty));
+            assert_eq!(RepoPath::join_dir(dir, relative).as_deref(), Some(""));
+        }
+        assert_eq!(RepoPath::join_dir("a", "../..").as_deref(), None);
+        assert_eq!(RepoPath::join_dir("", "..").as_deref(), None);
+        assert_eq!(RepoPath::join_dir("a", "/b").as_deref(), None);
     }
 
     #[test]

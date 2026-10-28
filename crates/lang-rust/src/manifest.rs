@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use gsttt_core::path::{PathError, RepoPath};
+use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use toml::{Table, Value};
 
@@ -158,7 +158,7 @@ impl Manifests {
         let explicit = package
             .get("workspace")
             .and_then(Value::as_str)
-            .and_then(|relative| join_dir(dir, relative));
+            .and_then(|relative| RepoPath::join_dir(dir, relative));
         let candidates = explicit.map_or_else(|| ancestors(dir), |named| vec![named]);
         candidates.iter().find_map(|candidate| {
             match self.tables.get_key_value(candidate.as_str()) {
@@ -182,17 +182,8 @@ fn ancestors(dir: &str) -> Vec<String> {
     found
 }
 
-/// `relative` from `dir`, as a repository path. `..` climbs; a path that leaves the repository is `None`.
-pub(crate) fn join_dir(dir: &str, relative: &str) -> Option<String> {
-    match RepoPath::join(dir, relative) {
-        Ok(path) => Some(String::from(path)),
-        // The repository root is `""` wherever a directory is a string, and `path = ".."` from `fuzz/` reaches it.
-        Err(PathError::Empty) => Some(String::new()),
-        Err(_) => None,
-    }
-}
-
-/// `rest` inside the directory `dir`, where `""` is the repository root.
+/// `rest` inside the directory `dir`, where `""` is the repository root. It joins names that the connector wrote or
+/// read as one segment and does not normalize them, so a path from a manifest goes through [`RepoPath::join_dir`].
 pub(crate) fn at(dir: &str, rest: &str) -> String {
     if dir.is_empty() {
         rest.to_owned()
@@ -294,7 +285,7 @@ impl Manifests {
         let path = table
             .and_then(|table| table.get("path"))
             .and_then(Value::as_str)
-            .and_then(|path| join_dir(dir, path));
+            .and_then(|path| RepoPath::join_dir(dir, path));
         // Code names a dependency that is not renamed by the `[lib] name` of its own manifest, which only a path shows.
         let lib_name = path
             .as_deref()
@@ -351,7 +342,7 @@ fn targets(
         .and_then(Value::as_table)
         .and_then(|lib| lib.get("path"))
         .and_then(Value::as_str)
-        .and_then(|path| join_dir(dir, path))
+        .and_then(|path| RepoPath::join_dir(dir, path))
         .unwrap_or_else(|| at(dir, "src/lib.rs"));
     if exists(&lib_root) {
         found.push(Target {
@@ -385,7 +376,7 @@ fn targets(
         let folder = at(dir, folder);
         for (entry, path) in explicit(table, key) {
             let root = match path {
-                Some(path) => join_dir(dir, &path),
+                Some(path) => RepoPath::join_dir(dir, &path),
                 None => [
                     format!("{folder}/{entry}.rs"),
                     format!("{folder}/{entry}/main.rs"),
@@ -407,7 +398,7 @@ fn targets(
     }
 
     let build = match package.get("build") {
-        Some(Value::String(path)) => join_dir(dir, path),
+        Some(Value::String(path)) => RepoPath::join_dir(dir, path),
         Some(Value::Boolean(false)) => None,
         _ => Some(at(dir, "build.rs")),
     };
