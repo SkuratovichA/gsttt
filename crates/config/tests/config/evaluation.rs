@@ -239,6 +239,31 @@ fn a_value_with_no_json_form_is_refused_with_its_key_and_line() {
     }
 }
 
+#[test]
+fn a_path_reads_the_same_in_both_kinds_of_error() {
+    // The walk that refuses a value with no JSON form prints its path with `dotted`, and a value of the wrong type is named by `with_path` from the path serde keeps: two printers of one syntax, pinned here against each other and against the place as the config writes it.
+    let places = [
+        ("exclude[0]", "exclude = [VALUE]\n"),
+        (
+            "external[0].cmd[0]",
+            "[[external]]\nname = \"k\"\ncmd = [VALUE]\nfiles = [\"*.x\"]\n",
+        ),
+        (
+            "external[0].provides[0].via[0]",
+            "[[external]]\nname = \"k\"\ncmd = [\"x\"]\nfiles = [\"*.x\"]\n\n[[external.provides]]\nkind = \"http\"\nrole = \"serves\"\nvia = [VALUE]\nblind_spots = []\n",
+        ),
+    ];
+    let quoted = |message: &str| message.split('`').nth(1).map(str::to_owned);
+    for (place, config) in places {
+        let date = failure(&config.replace("VALUE", "1979-05-27"));
+        assert!(date.contains("no JSON form"), "{date}");
+        assert_eq!(quoted(&date).as_deref(), Some(place), "{date}");
+        let integer = failure(&config.replace("VALUE", "1"));
+        assert!(integer.contains("invalid type"), "{integer}");
+        assert_eq!(quoted(&integer).as_deref(), Some(place), "{integer}");
+    }
+}
+
 #[gsttt_scenario::scenario("config", "Comments do not change the fingerprint")]
 #[test]
 fn comments_do_not_change_the_fingerprint() {

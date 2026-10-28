@@ -141,6 +141,8 @@ fn refuse_without_json_form<'k>(
 }
 
 /// The keys down to a value as the config writes them: `ts.paths[0]`.
+///
+/// The other printer of this syntax is `with_path`, over the `serde_path_to_error::Path` of a typed error (the `From` impl above). It is not reused because that `Path` has no public constructor, so the steps of this walk cannot become one. `a_path_reads_the_same_in_both_kinds_of_error` in `tests/config/evaluation.rs` pins the two against each other.
 fn dotted(steps: &[Step<'_>]) -> String {
     let mut path = String::new();
     for step in steps {
