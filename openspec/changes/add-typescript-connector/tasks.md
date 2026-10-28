@@ -44,4 +44,5 @@
 ## 6. Integration fixes
 
 - [x] 6.1 Scenarios and tests for what the engine's rule on declarations a mount keys again asks of the Express link: a router mounted at the root, at the root and under a prefix, and routes that share a line; the link already did all three
-- [x] 6.2 `link` returns the parsed facts that share a line, role and kind with a fact it returns, so that a fact of another rule on the line of a route is not replaced in the graph
+- [x] 6.2 A fact of another rule on the line of a route is not replaced in the graph: a scenario and a test pin it
+- [x] 6.3 `link` returns the Express routes and the tRPC procedures as new facts that name no parsed fact (`LinkedFact::found`), because the engine now drops only the own facts a linked fact names; the workaround that returned the parsed facts of a route's line beside it is gone, and the scenarios of 6.1 and 6.2 stay green without it
