@@ -192,8 +192,7 @@ fn declining_trusts_nothing() {
     assert!(!fake.marker.exists(), "the connector was started");
 }
 
-/// The document of `gsttt coverage --json` holds the problems of the index under one key: the report of the engine
-/// holds them, and the command adds none of its own.
+/// The document of `gsttt coverage --json` holds the problems of the index under one key: the report of the engine holds them, and the command adds none of its own.
 #[test]
 fn the_coverage_document_holds_problems_once() {
     let sandbox = Sandbox::new();
