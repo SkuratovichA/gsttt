@@ -1,5 +1,4 @@
-//! Prisma schemas. Each `model` declares `table <model>` and, with `@@map("<name>")`, also `table <name>`; a
-//! datasource property `url = env("NAME")` calls `env NAME`.
+//! Prisma schemas. Each `model` declares `table <model>` and, with `@@map("<name>")`, also `table <name>`; a datasource property `url = env("NAME")` calls `env NAME`.
 
 use gsttt_core::connector::{
     Connector, ConnectorError, Erased, Meta, Parsed, Project, Provide, SourceFile,
@@ -124,9 +123,7 @@ enum Block {
     Other,
 }
 
-/// Reads a schema line by line: Prisma's blocks never nest and never share a line with another block's body, so a
-/// scanner finds everything the contracts need without a grammar. A block that never closes and a closing brace
-/// that closes nothing are the recovered errors.
+/// Reads a schema line by line: Prisma's blocks never nest and never share a line with another block's body, so a scanner finds everything the contracts need without a grammar. A block that never closes and a closing brace that closes nothing are the recovered errors.
 fn read(text: &str) -> (Vec<ContractFact>, ParseStatus) {
     let mut facts = Vec::new();
     let mut errors = ErrorCount::default();
@@ -203,8 +200,7 @@ fn scan_body(kind: Block, body: &str, line: Line, facts: &mut Vec<ContractFact>)
     }
 }
 
-/// The first string literal after `marker`: `"booking_items"` in `@@map("booking_items")` and in
-/// `@@map(name: "booking_items")`.
+/// The first string literal after `marker`: `"booking_items"` in `@@map("booking_items")` and in `@@map(name: "booking_items")`.
 fn quoted_argument<'a>(text: &'a str, marker: &str) -> Option<&'a str> {
     let after = text.get(text.find(marker)?.checked_add(marker.len())?..)?;
     let literal = after.get(after.find('"')?.checked_add(1)?..)?;
@@ -219,9 +215,7 @@ fn strip_comment(line: &str) -> &str {
         .unwrap_or(line)
 }
 
-/// The byte offset of the first character that `wanted` accepts and that stands outside a string literal; `wanted`
-/// gets the character and the one after it. A string ends at its next quote unless a backslash escapes it, and a
-/// string never continues on the next line, so the scan starts outside one on every line.
+/// The byte offset of the first character that `wanted` accepts and that stands outside a string literal; `wanted` gets the character and the one after it. A string ends at its next quote unless a backslash escapes it, and a string never continues on the next line, so the scan starts outside one on every line.
 fn find_outside_strings(line: &str, wanted: impl Fn(char, Option<char>) -> bool) -> Option<usize> {
     let mut in_string = false;
     let mut escaped = false;

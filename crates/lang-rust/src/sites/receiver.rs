@@ -1,8 +1,6 @@
 //! Receivers: whether the file shows what a method is called on to be what a rule wants.
 //!
-//! `cache.get("/bookings")` and `client.get("/bookings")` read alike, so a rule with a `receiver` applies only where
-//! the same file binds the receiver to a call the rule names, or declares it with a type the rule names. Nothing is
-//! inferred past that: a client that comes out of another function is not seen.
+//! `cache.get("/bookings")` and `client.get("/bookings")` read alike, so a rule with a `receiver` applies only where the same file binds the receiver to a call the rule names, or declares it with a type the rule names. Nothing is inferred past that: a client that comes out of another function is not seen.
 
 use std::collections::HashMap;
 
@@ -14,16 +12,14 @@ use super::Reader;
 use super::candidate::{Candidate, View, path_callee, peel};
 use crate::syntax::{segments, text};
 
-/// What a receiver can be traced to in a file, found in one pass the first time a rule with a receiver asks. Every
-/// candidate of the file asks the same questions, and answering each by walking the file again would be quadratic.
+/// What a receiver can be traced to in a file, found in one pass the first time a rule with a receiver asks. Every candidate of the file asks the same questions, and answering each by walking the file again would be quadratic.
 #[derive(Default)]
 pub(super) struct Scope {
     /// The fields of structs, with the type each is declared with.
     fields: Vec<(String, ast::Type)>,
     /// The `static` and `const` items, with their types.
     items: Vec<(String, ast::Type)>,
-    /// The `let` statements of each function in source order, by where the function starts. `None` holds the ones
-    /// outside any function.
+    /// The `let` statements of each function in source order, by where the function starts. `None` holds the ones outside any function.
     lets: HashMap<Option<TextSize>, Vec<ast::LetStmt>>,
 }
 
@@ -81,8 +77,7 @@ enum Origin {
 }
 
 impl Reader<'_> {
-    /// The prefix the receiver of `candidate` carries when the file shows it to be made by a call `prefix` names, or
-    /// to be declared with a type it names. `None` when it does not.
+    /// The prefix the receiver of `candidate` carries when the file shows it to be made by a call `prefix` names, or to be declared with a type it names. `None` when it does not.
     pub(super) fn gate(&self, candidate: &Candidate, prefix: &Prefix) -> Option<String> {
         let receiver = candidate.receiver.as_ref()?;
         match self.origin(receiver, &prefix.from)? {
@@ -116,8 +111,7 @@ impl Reader<'_> {
         }
     }
 
-    /// What a local name stands for at `at`: the call its last `let` binds it to, or the type it is declared with as
-    /// a `let`, a parameter, a `static` or a `const`.
+    /// What a local name stands for at `at`: the call its last `let` binds it to, or the type it is declared with as a `let`, a parameter, a `static` or a `const`.
     fn binding(&self, at: &SyntaxNode, name: &str, from: &OneOrMany) -> Option<Origin> {
         if name == "self" {
             return None;
@@ -162,8 +156,7 @@ impl Reader<'_> {
     }
 }
 
-/// The call at the root of a method chain, when its callee is one of `from`: `Client::builder()` in
-/// `Client::builder().build()?`.
+/// The call at the root of a method chain, when its callee is one of `from`: `Client::builder()` in `Client::builder().build()?`.
 fn maker(expr: &ast::Expr, from: &OneOrMany) -> Option<SyntaxNode> {
     match expr {
         ast::Expr::CallExpr(call) => from
@@ -182,8 +175,7 @@ fn is_named(pattern: Option<ast::Pat>, name: &str) -> bool {
     matches!(pattern, Some(ast::Pat::IdentPat(ident)) if ident.name().is_some_and(|bound| text(&bound) == name))
 }
 
-/// Whether a declared type mentions the type a `from` pattern constructs: `Client` and `reqwest::Client` both stand
-/// for `reqwest.Client.new`, and so does `LazyLock<Client>`.
+/// Whether a declared type mentions the type a `from` pattern constructs: `Client` and `reqwest::Client` both stand for `reqwest.Client.new`, and so does `LazyLock<Client>`.
 fn type_names(ty: &ast::Type, from: &OneOrMany) -> bool {
     let wanted: Vec<&str> = from
         .iter()

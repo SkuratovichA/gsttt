@@ -1,9 +1,6 @@
-//! The middle of a run: open the connectors, give every file to a project, parse, prepare, resolve, read the
-//! embedded documents and link.
+//! The middle of a run: open the connectors, give every file to a project, parse, prepare, resolve, read the embedded documents and link.
 //!
-//! It reads files through a [`RepoView`], so a run over a directory of fixtures is the same code as a run over a
-//! repository. The engine puts the file listing, the content ids, the fact cache, the graph and the snapshot
-//! around it; a connector's tests call [`run`] on a fixture tree and snapshot [`Output::to_json`].
+//! It reads files through a [`RepoView`], so a run over a directory of fixtures is the same code as a run over a repository. The engine puts the file listing, the content ids, the fact cache, the graph and the snapshot around it; a connector's tests call [`run`] on a fixture tree and snapshot [`Output::to_json`].
 
 use std::cell::Cell;
 use std::cmp::Reverse;
@@ -80,19 +77,16 @@ pub struct FileRun {
     pub embedded: Vec<EmbeddedRun>,
     /// Whether `facts` came from a cache instead of a parse.
     pub reused: bool,
-    /// The stamp of the bytes that were parsed, when the file had changed since the listing and so is no longer
-    /// the one the listing stamped. A stamp without an id is a file that changed while it was being read.
+    /// The stamp of the bytes that were parsed, when the file had changed since the listing and so is no longer the one the listing stamped. A stamp without an id is a file that changed while it was being read.
     pub stamp: Option<Stamp>,
 }
 
 /// An embedded document after the embedded phase.
 #[derive(Debug)]
 pub struct EmbeddedRun {
-    /// The connector that read it; `None` when no project reads its language, which coverage reports as a blind
-    /// spot.
+    /// The connector that read it; `None` when no project reads its language, which coverage reports as a blind spot.
     pub read_by: Option<&'static str>,
-    /// What the reader found, with lines counted in the host file: a fact on the second line of a document that
-    /// starts on line 10 is on line 11.
+    /// What the reader found, with lines counted in the host file: a fact on the second line of a document that starts on line 10 is on line 11.
     pub facts: Vec<ContractFact>,
 }
 
@@ -231,8 +225,7 @@ struct Made {
     stamp: Option<Stamp>,
 }
 
-/// Asks a connector whether the repository has anything for it. A `detect` that panics finds nothing, and the
-/// panic becomes a problem in `problems`.
+/// Asks a connector whether the repository has anything for it. A `detect` that panics finds nothing, and the panic becomes a problem in `problems`.
 pub fn detect(connector: &dyn DynConnector, repo: &RepoView, problems: &mut Vec<Problem>) -> bool {
     contain(|| connector.detect(repo)).unwrap_or_else(|message| {
         problems.push(Problem {
@@ -245,8 +238,7 @@ pub fn detect(connector: &dyn DynConnector, repo: &RepoView, problems: &mut Vec<
     })
 }
 
-/// Opens every module and gives every file of `repo` to a project. Only a bad option fails; a connector that
-/// cannot open becomes a problem in the output of [`execute`], and so do the `problems` the caller already has.
+/// Opens every module and gives every file of `repo` to a project. Only a bad option fails; a connector that cannot open becomes a problem in the output of [`execute`], and so do the `problems` the caller already has.
 pub fn assign_files<'a>(
     repo: &'a RepoView,
     modules: &[Module<'_>],
@@ -282,8 +274,7 @@ pub fn assign_files<'a>(
     })
 }
 
-/// Runs the middle of a run over every file of `repo`, with `modules` in registry order. Only a bad option stops
-/// it; anything else a connector gets wrong, a panic included, ends up in the output.
+/// Runs the middle of a run over every file of `repo`, with `modules` in registry order. Only a bad option stops it; anything else a connector gets wrong, a panic included, ends up in the output.
 pub fn run(
     repo: &RepoView,
     modules: &[Module<'_>],
@@ -293,10 +284,7 @@ pub fn run(
     Ok(execute(assigned, repo, max_file_bytes, &[], Vec::new()).0)
 }
 
-/// Parses, prepares, resolves, reads the embedded documents and links the files `assigned` holds. `seeds` has one
-/// entry per claimed file, in [`Assigned::claims`] order; a file with a seed is not read or parsed. `listing` is
-/// the file set `repo` was made from, in file id order: a file that no longer matches its stamp when it is read
-/// comes back with the stamp of what was read, in [`FileRun::stamp`]. An empty listing checks nothing.
+/// Parses, prepares, resolves, reads the embedded documents and links the files `assigned` holds. `seeds` has one entry per claimed file, in [`Assigned::claims`] order; a file with a seed is not read or parsed. `listing` is the file set `repo` was made from, in file id order: a file that no longer matches its stamp when it is read comes back with the stamp of what was read, in [`FileRun::stamp`]. An empty listing checks nothing.
 pub fn execute(
     assigned: Assigned<'_>,
     repo: &RepoView,
@@ -532,9 +520,7 @@ impl<'p> Roots<'p> {
     }
 }
 
-/// The project that owns `path`: of the first module with a project that takes it, the project with the deepest
-/// root. A `matches` that panics takes nothing; `reported` keeps the first panic of each project the only problem
-/// it adds, so a project that panics on every file does not fill the coverage.
+/// The project that owns `path`: of the first module with a project that takes it, the project with the deepest root. A `matches` that panics takes nothing; `reported` keeps the first panic of each project the only problem it adds, so a project that panics on every file does not fill the coverage.
 fn assign(
     projects: &[Box<dyn DynProject>],
     module_of: &[usize],
@@ -578,8 +564,7 @@ fn depth(root: &str) -> usize {
     }
 }
 
-/// Reads a file and hands it to its project. A file that cannot be read, is past the size limit or is not UTF-8,
-/// and a parse that panics, come back as failed facts. `listed` is the stamp the listing made of the file.
+/// Reads a file and hands it to its project. A file that cannot be read, is past the size limit or is not UTF-8, and a parse that panics, come back as failed facts. `listed` is the stamp the listing made of the file.
 fn parse(
     repo: &RepoView,
     project: &dyn DynProject,
@@ -731,8 +716,7 @@ fn problem(project: &dyn DynProject, call: Call, message: String) -> Problem {
 }
 
 thread_local! {
-    /// How many contained calls are running on this thread. The panic hook of [`quiet_contained_panics`] reads it
-    /// on the thread that panics, which is the thread of the call, a rayon worker as often as not.
+    /// How many contained calls are running on this thread. The panic hook of [`quiet_contained_panics`] reads it on the thread that panics, which is the thread of the call, a rayon worker as often as not.
     static DEPTH: Cell<u32> = const { Cell::new(0) };
 }
 
@@ -753,10 +737,7 @@ impl Drop for Containing {
     }
 }
 
-/// Makes the panic hook stay silent about the panics the engine catches in connector calls, which are reported as
-/// coverage lines, and leaves every other panic to the hook that was installed before. A binary calls it once, at
-/// the start of `main`: without it the default hook prints each caught panic to stderr before the engine can
-/// contain it.
+/// Makes the panic hook stay silent about the panics the engine catches in connector calls, which are reported as coverage lines, and leaves every other panic to the hook that was installed before. A binary calls it once, at the start of `main`: without it the default hook prints each caught panic to stderr before the engine can contain it.
 pub fn quiet_contained_panics() {
     let previous = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
@@ -783,8 +764,7 @@ pub(super) fn display_root(root: &str) -> &str {
 }
 
 impl Output {
-    /// The output as JSON, with paths in place of file ids and `<connector> <root>` in place of project ids, for
-    /// snapshots and for looking at what a connector made of a tree.
+    /// The output as JSON, with paths in place of file ids and `<connector> <root>` in place of project ids, for snapshots and for looking at what a connector made of a tree.
     pub fn to_json(&self, repo: &RepoView) -> Value {
         let path = |id: FileId| {
             repo.path(id).map_or_else(
@@ -1182,8 +1162,7 @@ mod tests {
     fn a_contained_panic_is_muted_and_another_one_is_not() {
         use std::sync::{Arc, Mutex};
 
-        // The recorder stands in for the default hook, so the test can see what reaches it. The test runs alone in
-        // its process under nextest; the hook it replaces is put back before it asserts anything.
+        // The recorder stands in for the default hook, so the test can see what reaches it. The test runs alone in its process under nextest; the hook it replaces is put back before it asserts anything.
         let seen = Arc::new(Mutex::new(Vec::<String>::new()));
         let recorder = Arc::clone(&seen);
         let before = panic::take_hook();

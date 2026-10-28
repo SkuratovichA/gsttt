@@ -1,5 +1,4 @@
-//! Where an import of a Rust file points: through the module tree of its crate, the library of its package, its
-//! dependencies, and the workspace's other crates.
+//! Where an import of a Rust file points: through the module tree of its crate, the library of its package, its dependencies, and the workspace's other crates.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -66,9 +65,7 @@ impl Resolver<'_> {
             .unwrap_or_else(|| Module::orphan(file))
     }
 
-    /// A file read at compile time. A literal path counts from the directory of the including file; one that
-    /// starts at `CARGO_MANIFEST_DIR` counts from the package; one that starts at `OUT_DIR` is written by a build
-    /// script.
+    /// A file read at compile time. A literal path counts from the directory of the including file; one that starts at `CARGO_MANIFEST_DIR` counts from the package; one that starts at `OUT_DIR` is written by a build script.
     fn include(&self, from: &RepoPath, spec: &str) -> Resolution {
         let target = if let Some(rest) = spec.strip_prefix("${CARGO_MANIFEST_DIR}/") {
             RepoPath::join(self.root, rest)
@@ -85,8 +82,7 @@ impl Resolver<'_> {
             .map_or_else(not_found, |file| Resolution::File { file })
     }
 
-    /// A path of `use` or of code. A first segment the file brought in with `use` is replaced by what it stands
-    /// for, once each, so two uses that name each other cannot loop.
+    /// A path of `use` or of code. A first segment the file brought in with `use` is replaced by what it stands for, once each, so two uses that name each other cannot loop.
     fn path(&self, from: &str, spec: &str) -> Resolution {
         let mut segments: Vec<String> = spec.split("::").map(str::to_owned).collect();
         let mut applied: Vec<String> = Vec::new();
@@ -138,9 +134,7 @@ impl Resolver<'_> {
 
     /// A path whose first segment names a child module, a crate, or a module at the crate root, in that order.
     ///
-    /// The last step is not Rust's rule, which starts a path at the module or at a crate. It stands in for the names
-    /// that `use super::*` and `use crate::…::*` bring in, which the connector does not read: a first segment that is a
-    /// module at the crate root is more likely one of those than a mistake.
+    /// The last step is not Rust's rule, which starts a path at the module or at a crate. It stands in for the names that `use super::*` and `use crate::…::*` bring in, which the connector does not read: a first segment that is a module at the crate root is more likely one of those than a mistake.
     fn named(&self, home: Option<(&CrateTree, &str)>, names: &[&str]) -> Resolution {
         let Some((first, rest)) = names.split_first() else {
             return not_found();
@@ -161,8 +155,7 @@ impl Resolver<'_> {
         Resolution::Unresolved(UnresolvedReason::UnknownPackage)
     }
 
-    /// `::name::…`: the crate root in 2015, where `use` paths start; a crate from 2018 on, so a module of this crate
-    /// is not one.
+    /// `::name::…`: the crate root in 2015, where `use` paths start; a crate from 2018 on, so a module of this crate is not one.
     fn rooted(&self, home: Option<(&CrateTree, &str)>, names: &[&str]) -> Resolution {
         let Some((first, rest)) = names.split_first() else {
             return not_found();
@@ -177,8 +170,7 @@ impl Resolver<'_> {
             .unwrap_or(Resolution::Unresolved(UnresolvedReason::UnknownPackage))
     }
 
-    /// A crate named by its first segment: the package's own library, a declared dependency, or a builtin. A build
-    /// script sees the build dependencies and nothing else, and no other target sees those.
+    /// A crate named by its first segment: the package's own library, a declared dependency, or a builtin. A build script sees the build dependencies and nothing else, and no other target sees those.
     fn krate(
         &self,
         home: Option<(&CrateTree, &str)>,

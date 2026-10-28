@@ -11,8 +11,7 @@ use crate::syntax::{segments, text};
 /// Stands for a part of a string that is only known at run time. The rules treat it as such.
 const COMPUTED: &str = "${}";
 
-/// The arguments of a macro call or an attribute, read the way a function call's arguments are, in the `edition` of
-/// the file they are written in. `delimited` is the token tree with its brackets.
+/// The arguments of a macro call or an attribute, read the way a function call's arguments are, in the `edition` of the file they are written in. `delimited` is the token tree with its brackets.
 pub(crate) fn reparse_args(delimited: &str, edition: Edition) -> Vec<ast::Expr> {
     let mut inner: String = delimited.chars().skip(1).collect();
     inner.pop();
@@ -34,9 +33,7 @@ pub(crate) fn macro_args(call: &ast::MacroCall, edition: Edition) -> Vec<ast::Ex
         .unwrap_or_default()
 }
 
-/// An expression as text: a string literal, or a template, a `concat!` or a `+` whose computed parts are written as
-/// `${}`. With `named_env`, `env!("NAME")` is written `${NAME}`. `None` for anything that is not a string. `edition`
-/// is the one the file is written in, for the macros read on the way.
+/// An expression as text: a string literal, or a template, a `concat!` or a `+` whose computed parts are written as `${}`. With `named_env`, `env!("NAME")` is written `${NAME}`. `None` for anything that is not a string. `edition` is the one the file is written in, for the macros read on the way.
 pub(crate) fn text_of(expr: &ast::Expr, named_env: bool, edition: Edition) -> Option<String> {
     match expr {
         ast::Expr::Literal(literal) => match literal.kind() {

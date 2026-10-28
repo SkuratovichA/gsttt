@@ -175,8 +175,7 @@ pub struct Import {
     pub kind: ImportKind,
     pub line: Line,
     pub flags: ImportFlags,
-    /// The names imported from `spec` when resolution depends on them: Python `from pkg import sub` may import
-    /// the module `pkg/sub.py`. Empty otherwise.
+    /// The names imported from `spec` when resolution depends on them: Python `from pkg import sub` may import the module `pkg/sub.py`. Empty otherwise.
     pub names: Vec<String>,
 }
 
@@ -484,8 +483,7 @@ impl fmt::Display for UnresolvedReason {
 
 /// How a file failed, in a sentence part: `syntax error at line 3: unexpected token`.
 impl ParseFailure {
-    /// Whether the engine put the file aside before its connector saw it: past the size limit, not UTF-8 or not
-    /// readable. Such a file is owned and counted, and it is not a failure of the connector's parse.
+    /// Whether the engine put the file aside before its connector saw it: past the size limit, not UTF-8 or not readable. Such a file is owned and counted, and it is not a failure of the connector's parse.
     pub fn is_skipped(&self) -> bool {
         match self {
             Self::TooLarge { .. } | Self::NotUtf8 | Self::Unreadable { .. } => true,

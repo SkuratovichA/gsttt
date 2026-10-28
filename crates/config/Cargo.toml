@@ -1,6 +1,6 @@
 [package]
 name = "gsttt-config"
-description = "Lua config for gsttt: modules attached by calling them, packs, externals, and the built-in packs"
+description = "TOML config for gsttt: a table per module, packs in files, externals, and the JSON Schemas that editors check them with"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,13 +11,14 @@ publish.workspace = true
 [dependencies]
 gsttt-core.workspace = true
 globset.workspace = true
-memchr.workspace = true
-mlua.workspace = true
 rustix = { workspace = true, features = ["fs", "process"] }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_path_to_error.workspace = true
 thiserror.workspace = true
+toml.workspace = true
+toml_parser.workspace = true
 tracing.workspace = true
 xxhash-rust.workspace = true
 
@@ -27,6 +28,8 @@ insta.workspace = true
 proptest.workspace = true
 rayon.workspace = true
 tempfile.workspace = true
+# A table of toml keeps the order of the text in the tests, so that they see whether a map was sorted: without this a table comes out sorted whatever the code does. Dev-dependency features reach only builds of test targets, so the shipped build is unchanged.
+toml = { workspace = true, features = ["preserve_order"] }
 tracing-subscriber.workspace = true
 
 [lints]

@@ -14,9 +14,7 @@ use crate::ids::{FileId, Id};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
 use crate::repo::RepoView;
 
-/// Builds the index of the files of `repo` from what the pipeline found. `ran` names the connectors that took part
-/// in registry order, so one that opened no project still has its line in the coverage. The time the build took is
-/// added to `info` as the graph phase.
+/// Builds the index of the files of `repo` from what the pipeline found. `ran` names the connectors that took part in registry order, so one that opened no project still has its line in the coverage. The time the build took is added to `info` as the graph phase.
 pub fn build_index(
     repo: &RepoView,
     output: &Output,
@@ -63,8 +61,7 @@ pub fn build_index(
         })
         .collect();
 
-    // The own facts that the link keyed again, each by the file, line and role of the linked fact that names it.
-    // Probed per own fact and never iterated, so the order of a hash set cannot reach the output.
+    // The own facts that the link keyed again, each by the file, line and role of the linked fact that names it. Probed per own fact and never iterated, so the order of a hash set cannot reach the output.
     let replaced: HashSet<(FileId, Line, Role, &ContractKey), RandomState> = output
         .linked
         .iter()

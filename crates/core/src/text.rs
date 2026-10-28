@@ -1,5 +1,4 @@
-//! Text helpers shared by the connectors and by the words of answers: line numbers from byte offsets, counts,
-//! names and times.
+//! Text helpers shared by the connectors and by the words of answers: line numbers from byte offsets, counts, names and times.
 
 use crate::fact::Line;
 
@@ -30,6 +29,33 @@ impl LineIndex {
     pub fn line_at(&self, offset: usize) -> Line {
         self.line(u32::try_from(offset).unwrap_or(u32::MAX))
     }
+
+    /// The 1-based column of the byte at `offset` on its line, counted in characters, so that it is the column an editor shows. `text` is the text the index was built from. An offset inside a character is the column of that character, and one past the end of the text is the column after the last character. It takes the `usize` offset that parsers report, as [`Self::line_at`] does.
+    pub fn column(&self, text: &str, offset: usize) -> u32 {
+        let start = usize::try_from(self.line_at(offset))
+            .ok()
+            .and_then(|line| line.checked_sub(1))
+            .and_then(|index| self.starts.get(index))
+            .map_or(0, |&start| usize::try_from(start).unwrap_or(usize::MAX));
+        let mut end = offset.min(text.len());
+        // Offset 0 is always a boundary, so this ends.
+        while !text.is_char_boundary(end) {
+            end = end.saturating_sub(1);
+        }
+        let before = text
+            .get(start..end)
+            .map_or(0, |before| before.chars().count());
+        u32::try_from(before).unwrap_or(u32::MAX).saturating_add(1)
+    }
+}
+
+/// `message` of a deserialization error, led by where in the value it happened: `` `external[0].cmd`: invalid type … ``. Serde's own message names a field only for an unknown one, and the path names it for every kind. An error at the root of the value has no path to name.
+pub fn with_path(path: &serde_path_to_error::Path, message: &str) -> String {
+    if path.iter().next().is_none() {
+        message.to_owned()
+    } else {
+        format!("`{path}`: {message}")
+    }
 }
 
 /// A count with a thousands separator: `4,213`.
@@ -45,9 +71,7 @@ pub fn thousands(count: impl TryInto<u64>) -> String {
     out
 }
 
-/// `part` of `whole` as a whole percentage: `29%`. It is rounded down, so that a tree with one lost import never
-/// claims to resolve all of them, and it is computed from the counts, because a share kept as a float prints 29 of
-/// 100 as `28%`. Nothing out of nothing counts as all of it.
+/// `part` of `whole` as a whole percentage: `29%`. It is rounded down, so that a tree with one lost import never claims to resolve all of them, and it is computed from the counts, because a share kept as a float prints 29 of 100 as `28%`. Nothing out of nothing counts as all of it.
 pub fn percent(part: u32, whole: u32) -> String {
     let share = (u64::from(part) * 100)
         .checked_div(u64::from(whole))
@@ -98,8 +122,7 @@ pub fn duration(micros: u64) -> String {
     }
 }
 
-/// `micros / unit` rounded to one decimal place, with integers only so that no float's rounding decides it. A
-/// `unit` of zero gives `0.0`.
+/// `micros / unit` rounded to one decimal place, with integers only so that no float's rounding decides it. A `unit` of zero gives `0.0`.
 pub fn tenths(micros: u64, unit: u64) -> String {
     let tenths = micros
         .saturating_mul(10)
@@ -131,6 +154,24 @@ mod tests {
         assert_eq!(lines, vec![1, 1, 2, 3, 4, 4]);
         assert_eq!(index.line_at(usize::MAX), 4);
         assert_eq!(index.line_at(usize::MAX), index.line(u32::MAX));
+    }
+
+    #[test]
+    fn columns_count_characters_from_one() {
+        // `ä` and `ü` are two bytes each: `ab\n` is bytes 0 to 2, `ä` is 3 and 4, and the last `ü` is 9 and 10.
+        let text = "ab\näb = ü";
+        let index = LineIndex::new(text);
+        let columns: Vec<u32> = [0, 1, 2, 3, 4, 5, 9, 10, 11, 99]
+            .map(|offset| index.column(text, offset))
+            .to_vec();
+        assert_eq!(columns, vec![1, 2, 3, 1, 1, 2, 6, 6, 7, 7]);
+    }
+
+    #[test]
+    fn a_column_of_an_empty_text_is_one() {
+        let index = LineIndex::new("");
+        assert_eq!(index.column("", 0), 1);
+        assert_eq!(index.column("", 7), 1);
     }
 
     fn names(names: &[&str]) -> Vec<String> {
@@ -217,5 +258,38 @@ mod tests {
     #[test]
     fn a_unit_of_zero_gives_zero() {
         assert_eq!(tenths(1_500, 0), "0.0");
+    }
+
+    #[test]
+    fn an_error_is_led_by_the_path_it_happened_at() {
+        #[derive(Debug, serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Outer {
+            #[expect(dead_code, reason = "read by the deserializer, never by the test")]
+            list: Vec<Inner>,
+        }
+        #[derive(Debug, serde::Deserialize)]
+        struct Inner {
+            #[expect(dead_code, reason = "read by the deserializer, never by the test")]
+            size: u32,
+        }
+        let message = |value: serde_json::Value| {
+            let error = serde_path_to_error::deserialize::<_, Outer>(value).unwrap_err();
+            with_path(error.path(), &error.inner().to_string())
+        };
+        let nested = message(serde_json::json!({ "list": [{ "size": 1 }, { "size": "big" }] }));
+        assert!(
+            nested.starts_with("`list[1].size`: invalid type"),
+            "{nested}"
+        );
+        // The path of an unknown key is the key, which serde names too.
+        let unknown = message(serde_json::json!({ "list": [], "extra": 1 }));
+        assert!(
+            unknown.starts_with("`extra`: unknown field `extra`"),
+            "{unknown}"
+        );
+        // An error about the whole value has no path to lead with, so it keeps serde's words alone.
+        let root = message(serde_json::json!(5));
+        assert!(root.starts_with("invalid type: integer `5`"), "{root}");
     }
 }

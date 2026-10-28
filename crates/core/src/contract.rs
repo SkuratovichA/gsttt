@@ -1,6 +1,4 @@
-//! Contracts: the seams between files that imports do not show. An HTTP route joins a controller and the
-//! frontend that calls it; a table joins a schema, its migrations and every query; an env var joins
-//! `.env.example` and the code that reads it.
+//! Contracts: the seams between files that imports do not show. An HTTP route joins a controller and the frontend that calls it; a table joins a schema, its migrations and every query; an env var joins `.env.example` and the code that reads it.
 
 use std::fmt;
 
@@ -32,13 +30,11 @@ pub enum ContractKind {
     Grpc,
     /// `trpc booking.get`: the procedure path.
     Trpc,
-    /// `table booking`: a table or an ORM model. SQL folds unquoted names and ORMs map them loosely, so table
-    /// keys are lower case: Prisma's `model Booking`, `prisma.booking` and `FROM Booking` meet.
+    /// `table booking`: a table or an ORM model. SQL folds unquoted names and ORMs map them loosely, so table keys are lower case: Prisma's `model Booking`, `prisma.booking` and `FROM Booking` meet.
     Table,
     /// `queue booking-created`: a topic, queue or event name.
     Queue,
-    /// `env DATABASE_URL`. Keys are upper case: pydantic settings read `database_url` from `DATABASE_URL`, and no
-    /// project tells two variables apart by case alone.
+    /// `env DATABASE_URL`. Keys are upper case: pydantic settings read `database_url` from `DATABASE_URL`, and no project tells two variables apart by case alone.
     Env,
     /// A kind a user rule or an external connector introduced.
     Other(String),
@@ -110,8 +106,7 @@ impl fmt::Display for ContractKind {
 #[serde(rename_all = "lowercase")]
 #[rkyv(derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug))]
 pub enum Role {
-    /// A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration,
-    /// `.env.example`.
+    /// A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration, `.env.example`.
     Declares,
     /// Code implements it: a controller, a resolver, a gRPC server.
     Serves,
@@ -165,9 +160,7 @@ pub enum ContractKeyError {
 }
 
 impl ContractKey {
-    /// A key of `kind`, put in that kind's canonical form. HTTP keys are `<METHOD> <path>`, with the method in
-    /// upper case (`*` when unknown) and the path through [`normalize_http_path`]; table keys are lower case and env
-    /// keys upper case; other keys are trimmed.
+    /// A key of `kind`, put in that kind's canonical form. HTTP keys are `<METHOD> <path>`, with the method in upper case (`*` when unknown) and the path through [`normalize_http_path`]; table keys are lower case and env keys upper case; other keys are trimmed.
     pub fn new(kind: ContractKind, key: &str) -> Self {
         let key = key.trim();
         match kind {
@@ -190,8 +183,7 @@ impl ContractKey {
         }
     }
 
-    /// `http <METHOD> <path>`. A method that names no single verb (`ALL`, `ANY`, empty) becomes `*`, which
-    /// matches every method.
+    /// `http <METHOD> <path>`. A method that names no single verb (`ALL`, `ANY`, empty) becomes `*`, which matches every method.
     pub fn http(method: &str, path: &str) -> Self {
         let method = method.trim().to_ascii_uppercase();
         let method = match method.as_str() {
@@ -287,6 +279,11 @@ fn split_host(rest: &str) -> (&str, &str) {
     rest.split_at_checked(end).unwrap_or_default()
 }
 
+/// `url` up to its query string or fragment, which start at the first `?` or `#`: `/a?x=1#top` and `/a#top?x=1` give `/a`, and a URL with neither is returned whole. Nothing is trimmed, so a caller decides whether whitespace goes before or after the cut.
+pub fn without_query_and_fragment(url: &str) -> &str {
+    url.split_once(['?', '#']).map_or(url, |(before, _)| before)
+}
+
 /// Puts an HTTP path in the form servers and clients are matched on.
 ///
 /// - A scheme and host go: `https://api.example.com/v1/x` becomes `/v1/x`, and so does `${}://${}/v1/x` with a scheme and host written as placeholders. Only text that starts with an origin has a host, see [`path_after_origin`]: in `/a?next=https://b/c` the path `/a` stays, and the host of `http://h?next=/a` ends at the `?`, so that path is `/`.
@@ -297,7 +294,7 @@ fn split_host(rest: &str) -> (&str, &str) {
 pub fn normalize_http_path(raw: &str) -> String {
     let raw = raw.trim();
     let without_host = path_after_origin(raw).unwrap_or(raw);
-    let path = without_host.split(['?', '#']).next().unwrap_or("");
+    let path = without_query_and_fragment(without_host);
     let mut segments = path.split('/').map(str::trim).peekable();
     if !path.starts_with('/') && segments.peek().is_some_and(|first| is_placeholder(first)) {
         segments.next();
@@ -441,6 +438,25 @@ mod tests {
     }
 
     #[test]
+    fn a_query_string_and_a_fragment_are_cut_off_a_url() {
+        for (url, cut) in [
+            ("/a/b", "/a/b"),
+            ("/a?x=1", "/a"),
+            ("/a#top", "/a"),
+            ("/a?x=1#top", "/a"),
+            ("/a#top?x=1", "/a"),
+            ("https://h/a?next=https://b/c", "https://h/a"),
+            ("?x=1", ""),
+            ("#top", ""),
+            ("", ""),
+            // The whitespace stays where it is: a caller trims before the cut, after it, or both.
+            (" /a ?x", " /a "),
+        ] {
+            assert_eq!(without_query_and_fragment(url), cut, "{url}");
+        }
+    }
+
+    #[test]
     fn keys_round_trip_through_text() {
         let key = ContractKey::parse("http get /bookings/:id").unwrap();
         assert_eq!(key.to_string(), "http GET /bookings/{}");
@@ -485,6 +501,17 @@ mod tests {
             if let Some(rest) = path_after_origin(&raw) {
                 prop_assert!(raw.ends_with(rest), "{rest:?}");
             }
+        }
+
+        #[test]
+        fn a_url_is_cut_at_its_first_query_or_fragment_delimiter(raw in texts()) {
+            let cut = without_query_and_fragment(&raw);
+            prop_assert!(!cut.contains(['?', '#']), "{cut:?}");
+            let rest = raw.strip_prefix(cut);
+            prop_assert!(
+                rest.is_some_and(|rest| rest.is_empty() || rest.starts_with(['?', '#'])),
+                "{cut:?}"
+            );
         }
     }
 }

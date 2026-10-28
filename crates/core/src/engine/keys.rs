@@ -1,9 +1,6 @@
 //! Fact keys: what a file's cached facts are filed under.
 //!
-//! A key covers everything `parse` can depend on, so equal keys mean equal facts: the fact format, the
-//! connector's name and version, the module options, the packs the connector received, the project's root and
-//! salt, the path and the content id. The part that is the same for every file of a module is hashed once and
-//! cloned per file.
+//! A key covers everything `parse` can depend on, so equal keys mean equal facts: the fact format, the connector's name and version, the module options, the packs the connector received, the project's root and salt, the path and the content id. The part that is the same for every file of a module is hashed once and cloned per file.
 
 use serde_json::Value;
 use xxhash_rust::xxh3::Xxh3;
@@ -32,8 +29,7 @@ pub fn module_state(meta: &Meta, options: &Value, packs: &[Pack]) -> Xxh3 {
     hasher
 }
 
-/// The key of one file of a project of a module. The root is part of it whatever the connector puts in the salt, so
-/// a file that moves to another project is never given the facts of the first.
+/// The key of one file of a project of a module. The root is part of it whatever the connector puts in the salt, so a file that moves to another project is never given the facts of the first.
 pub fn file_key(module: &Xxh3, root: &str, salt: u64, path: &RepoPath, id: ContentId) -> FactKey {
     let mut hasher = module.clone();
     feed(&mut hasher, root.as_bytes());
@@ -43,8 +39,7 @@ pub fn file_key(module: &Xxh3, root: &str, salt: u64, path: &RepoPath, id: Conte
     hasher.digest128()
 }
 
-/// What decides whether a stored index can answer without a run: the fact format, the whole setup, the
-/// connectors with their versions and the built-in packs. The version of gsttt itself is checked by the snapshot.
+/// What decides whether a stored index can answer without a run: the fact format, the whole setup, the connectors with their versions and the built-in packs. The version of gsttt itself is checked by the snapshot.
 pub fn config_fingerprint(
     setup: &Setup,
     connectors: &[&dyn DynConnector],
@@ -64,8 +59,7 @@ pub fn config_fingerprint(
     hasher.digest128()
 }
 
-/// JSON text with the keys of every object in sorted order, so equal values hash equal whatever order a map
-/// holds them in.
+/// JSON text with the keys of every object in sorted order, so equal values hash equal whatever order a map holds them in.
 pub fn canonical_json(value: &Value) -> String {
     let mut text = String::new();
     write_canonical(value, &mut text);
@@ -118,8 +112,7 @@ mod tests {
         assert_eq!(canonical_json(&a), r#"{"a":{"x":null,"y":[1,2]},"b":1}"#);
     }
 
-    /// A pack with one call rule on `callee`, so that two packs may share a name and a place in the list and differ in
-    /// their body only.
+    /// A pack with one call rule on `callee`, so that two packs may share a name and a place in the list and differ in their body only.
     fn pack(name: &str, callee: &str) -> Pack {
         serde_json::from_value(json!({
             "name": name,
@@ -145,8 +138,7 @@ mod tests {
 
         let other_options = module_state(&meta, &json!({ "tsconfig": "x" }), &packs);
         let other_version = module_state(&Meta { version: 2, ..meta }, &Value::Null, &packs);
-        // A connector may name the packs in force by their positions alone in its salt, because the key holds every
-        // pack: the body of one pack changes it with the names and the order kept, and so does the order.
+        // A connector may name the packs in force by their positions alone in its salt, because the key holds every pack: the body of one pack changes it with the names and the order kept, and so does the order.
         let other_body = module_state(
             &meta,
             &Value::Null,

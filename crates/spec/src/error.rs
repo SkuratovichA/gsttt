@@ -8,7 +8,7 @@ pub enum Error {
     /// The file or directory could not be read.
     #[error("{}: cannot read: {source}", .path.display())]
     Read {
-        /// The path that failed, relative to the repository root.
+        /// The path that failed. The reader of the `openspec/` tree names it relative to the repository root, and [`read_directory`](crate::read_directory) as it was given.
         path: PathBuf,
         /// The underlying failure.
         source: std::io::Error,
@@ -80,8 +80,7 @@ pub enum Problem {
         /// The side that is missing.
         missing: &'static str,
     },
-    /// A code fence that nothing closes: the rest of the file would count as code, and no heading
-    /// or scenario after it would be read.
+    /// A code fence that nothing closes: the rest of the file would count as code, and no heading or scenario after it would be read.
     #[error(
         "code fence is never closed, so the rest of the file counts as code; expected a closing fence"
     )]

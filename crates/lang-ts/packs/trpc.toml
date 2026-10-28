@@ -1,0 +1,30 @@
+# tRPC: a client call names a procedure by the path of properties up to the method that runs it.
+name = "trpc"
+language = "ts"
+detect = ["@trpc/server", "@trpc/client", "@trpc/react-query", "@trpc/next", "@trpc/tanstack-react-query"]
+
+[[chains]]
+root = ["trpc", "api"]
+kind = "trpc"
+role = "calls"
+terminals = [
+  "useQuery",
+  "useSuspenseQuery",
+  "useInfiniteQuery",
+  "useSuspenseInfiniteQuery",
+  "useMutation",
+  "useSubscription",
+  "query",
+  "mutate",
+  "subscribe",
+  "prefetch",
+  "prefetchInfinite",
+  "fetch",
+  "fetchInfinite",
+  "invalidate",
+  "refetch",
+  "cancel",
+  "setData",
+  "getData",
+  "ensureData",
+]

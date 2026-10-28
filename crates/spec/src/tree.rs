@@ -5,6 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::capability::{Delta, Spec, parse_delta, parse_spec};
+use crate::directory::{Entry, read_directory};
 use crate::error::Error;
 use crate::tasks::{Task, parse_tasks};
 
@@ -31,22 +32,18 @@ pub struct Change {
 }
 
 impl Change {
-    /// Whether every task is ticked. A change with no task at all is a proposal that has not been
-    /// broken into work yet, so it is not finished and is never archived.
+    /// Whether every task is ticked. A change with no task at all is a proposal that has not been broken into work yet, so it is not finished and is never archived.
     #[must_use]
     pub fn is_finished(&self) -> bool {
         !self.tasks.is_empty() && self.tasks.iter().all(|task| task.done)
     }
 }
 
-/// Reads `openspec/specs/**/spec.md` and, for each directory of `openspec/changes/` other than
-/// `archive`, its `tasks.md` and `specs/**/spec.md`. `root` is the repository root; the files in
-/// the result and in errors are named relative to it.
+/// Reads `openspec/specs/**/spec.md` and, for each directory of `openspec/changes/` other than `archive`, its `tasks.md` and `specs/**/spec.md`. `root` is the repository root; the files in the result and in errors are named relative to it.
 ///
 /// # Errors
 ///
-/// Fails when `root` has no `openspec` directory, when a file cannot be read, and with the file
-/// and line of the first one that does not follow the format.
+/// Fails when `root` has no `openspec` directory, when a file cannot be read, and with the file and line of the first one that does not follow the format.
 pub fn read(root: &Path) -> Result<OpenSpec, Error> {
     let base = Path::new("openspec");
     if !root.join(base).is_dir() {
@@ -63,12 +60,9 @@ pub fn read(root: &Path) -> Result<OpenSpec, Error> {
     let changes_dir = base.join("changes");
     let mut changes = Vec::new();
     for entry in entries(root, &changes_dir)? {
-        if entry.is_dir && entry.name != "archive" {
-            changes.push(read_change(
-                root,
-                &changes_dir.join(&entry.name),
-                entry.name,
-            )?);
+        let name = name_of(&entry);
+        if entry.kind.is_dir() && name != "archive" {
+            changes.push(read_change(root, &changes_dir.join(&name), name)?);
         }
     }
     Ok(OpenSpec { specs, changes })
@@ -93,8 +87,7 @@ fn read_change(root: &Path, dir: &Path, name: String) -> Result<Change, Error> {
     })
 }
 
-/// Every `spec.md` below `dir` with its capability, sorted by capability. A `spec.md` directly in
-/// `dir` has no capability and is left out.
+/// Every `spec.md` below `dir` with its capability, sorted by capability. A `spec.md` directly in `dir` has no capability and is left out.
 fn find_specs(root: &Path, dir: &Path) -> Result<Vec<(String, PathBuf)>, Error> {
     let mut found = Vec::new();
     collect_specs(root, dir, "", &mut found)?;
@@ -109,53 +102,45 @@ fn collect_specs(
     found: &mut Vec<(String, PathBuf)>,
 ) -> Result<(), Error> {
     for entry in entries(root, dir)? {
-        if entry.is_dir {
+        let name = name_of(&entry);
+        if entry.kind.is_dir() {
             let nested = if capability.is_empty() {
-                entry.name.clone()
+                name.clone()
             } else {
-                format!("{capability}/{}", entry.name)
+                format!("{capability}/{name}")
             };
-            collect_specs(root, &dir.join(&entry.name), &nested, found)?;
-        } else if entry.name == "spec.md" && !capability.is_empty() {
+            collect_specs(root, &dir.join(&name), &nested, found)?;
+        } else if name == "spec.md" && !capability.is_empty() {
             found.push((capability.to_owned(), dir.join("spec.md")));
         }
     }
     Ok(())
 }
 
-/// A directory entry, reduced to what the reader needs.
-struct Entry {
-    name: String,
-    is_dir: bool,
+/// The entries of `dir`, a directory below `root`, sorted by name so that everything the reader emits has a fixed order. A directory that does not exist has none. A symbolic link is not a directory here, whatever it points to: following one could lead back into the tree and read the same specs again. A failure names its path relative to `root`, like every other error of the reader, where [`read_directory`] names the path it was given.
+fn entries(root: &Path, dir: &Path) -> Result<Vec<Entry>, Error> {
+    let listing = read_directory(&root.join(dir)).map_err(|error| match error {
+        Error::Read { path, source } => Error::Read {
+            path: path
+                .strip_prefix(root)
+                .map(Path::to_path_buf)
+                .unwrap_or(path),
+            source,
+        },
+        // A listing fails only by being read; the arm is there because the error type has a second variant.
+        format @ Error::Format { .. } => format,
+    })?;
+    Ok(listing.unwrap_or_default())
 }
 
-/// The entries of `dir` sorted by name, so that everything the reader emits has a fixed order. A
-/// directory that does not exist has none. A symbolic link is not a directory here, whatever it
-/// points to: following one could lead back into the tree and read the same specs again.
-fn entries(root: &Path, dir: &Path) -> Result<Vec<Entry>, Error> {
-    let read_error = |source: io::Error| Error::Read {
-        path: dir.to_path_buf(),
-        source,
-    };
-    let listing = match fs::read_dir(root.join(dir)) {
-        Ok(listing) => listing,
-        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(source) => return Err(read_error(source)),
-    };
-    let mut found = Vec::new();
-    for item in listing {
-        let item = item.map_err(read_error)?;
-        let kind = item.file_type().map_err(|source| Error::Read {
-            path: dir.join(item.file_name()),
-            source,
-        })?;
-        found.push(Entry {
-            name: item.file_name().to_string_lossy().into_owned(),
-            is_dir: kind.is_dir(),
-        });
-    }
-    found.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(found)
+/// The name of `entry` as text, which is the end of its path. A character that is not valid Unicode is replaced, so a name that is none is still listed.
+fn name_of(entry: &Entry) -> String {
+    entry
+        .path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn read_text(root: &Path, file: &Path) -> Result<String, Error> {
