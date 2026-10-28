@@ -46,3 +46,4 @@
 - [x] 5.20 The project at the repository root opens only when some Python file lies under no directory with a manifest, in place of whenever the root has no manifest of its own
 - [x] 5.21 A requirements file is read together with the files it includes with `-r`, `-rFILE`, `--requirement FILE` and `--requirement=FILE`, each relative to the file that names it and read once, an include outside the repository is skipped and `-c` is not followed, and a comment starts at a `#` after any whitespace
 - [x] 5.22 The text files of a `requirements` directory are claimed as manifests of the project that holds them, like `requirements*.txt`
+- [x] 5.23 A fixture and a scenario pin the relative imports that climb above the project root, into a sibling project and out of the repository, which the tests left open

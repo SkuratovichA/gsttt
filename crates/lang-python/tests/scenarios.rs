@@ -457,6 +457,24 @@ fn relative_imports_climb_packages() {
     );
 }
 
+#[gsttt_scenario::scenario("python", "Relative imports may climb above the project")]
+#[test]
+fn relative_imports_may_climb_above_the_project() {
+    let tree = index("relative_above_root");
+    let from = "services/api/app/x.py";
+    assert_eq!(tree.target(from, "..", &["util"]), "services/api/util.py");
+    assert_eq!(tree.target(from, "...", &["common"]), "services/common.py");
+    assert_eq!(
+        tree.target(from, "...shared", &["tool"]),
+        "services/shared/tool.py"
+    );
+    assert_eq!(tree.target(from, "....", &["top"]), "top.py");
+    assert_eq!(
+        tree.target(from, ".....", &["beyond"]),
+        "unresolved NotFound"
+    );
+}
+
 #[gsttt_scenario::scenario("python", "Standard library, dependencies and unknown modules")]
 #[test]
 fn standard_library_dependencies_and_unknown_modules() {

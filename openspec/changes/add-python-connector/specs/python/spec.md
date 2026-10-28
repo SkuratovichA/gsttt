@@ -137,11 +137,15 @@ An import SHALL reach the `__init__` file of every package it passes through as 
 - **THEN** each resolves to `pkg/sub/leaf.py` only
 
 ### Requirement: Relative import resolution
-Relative imports SHALL resolve from the importing file's package.
+Relative imports SHALL resolve from the importing file's package, up to the root of the repository whatever project holds the file they reach, and one that climbs out of the repository SHALL be unresolved as not found.
 
 #### Scenario: Relative imports climb packages
 - **WHEN** `app/api/routes.py` has `from ..db import session` and `from . import deps`
 - **THEN** they resolve to `app/db/session.py` or `app/db.py`, whichever exists, and to `app/api/deps.py`
+
+#### Scenario: Relative imports may climb above the project
+- **WHEN** `services/api/app/x.py` imports `util` from `..`, `common` from `...`, `tool` from `...shared`, `top` from `....` and `beyond` from `.....`, where `services/api` and `services/shared` each hold a `pyproject.toml`
+- **THEN** they resolve to `services/api/util.py`, `services/common.py`, `services/shared/tool.py` and `top.py`, and the last one, which leaves the repository, is unresolved as not found
 
 ### Requirement: Standard library and dependencies
 A standard library module SHALL resolve to a builtin, a module of a declared dependency to that package (by its normalised distribution name and the known import names of common distributions), and anything else to an unknown package or not found.
