@@ -206,8 +206,7 @@ pub struct Scanned {
     /// The files of the work tree in path order, each with its stamp.
     pub files: Vec<FileState>,
     /// The directories the process cannot read, in path order, less the ones `Setup.exclude` leaves out. The scan
-    /// goes on without them, so files under them may be missing from `files`. Outside git none is reported: the
-    /// walk there fails on the first directory it cannot read.
+    /// goes on without them, so files under them may be missing from `files`. Outside git none is reported.
     pub unreadable: Vec<RepoPath>,
 }
 
