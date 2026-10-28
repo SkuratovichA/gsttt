@@ -613,16 +613,13 @@ impl GraphBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::owned;
 
     fn paths(names: &[&str]) -> Vec<RepoPath> {
         names
             .iter()
             .map(|name| RepoPath::normalize(name).unwrap())
             .collect()
-    }
-
-    fn owned(names: &[&str]) -> Vec<String> {
-        names.iter().map(|&name| name.to_owned()).collect()
     }
 
     fn plain(kind: ImportKind, flags: ImportFlags) -> Import {

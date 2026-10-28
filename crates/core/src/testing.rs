@@ -125,8 +125,8 @@ impl Entry {
     }
 }
 
-/// Names as a connector records them.
-fn owned(names: &[&str]) -> Vec<String> {
+/// Names as a connector records them. The unit tests of the graph build facts by hand and take them from here.
+pub(crate) fn owned(names: &[&str]) -> Vec<String> {
     names.iter().map(|&name| name.to_owned()).collect()
 }
 
