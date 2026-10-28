@@ -234,7 +234,7 @@ fn read(name: &str, text: &str) -> Result<Read, SyntaxError> {
     })?;
     // The descriptor numbers its locations by path (`[6, 0, 2, 1]` is the second rpc of the first service); the
     // first line of each is what the sites need.
-    let mut lines_at: BTreeMap<Vec<i32>, Line> = BTreeMap::new();
+    let mut lines_at: BTreeMap<&[i32], Line> = BTreeMap::new();
     if let Some(info) = &descriptor.source_code_info {
         for location in &info.location {
             if let Some(first) = location
@@ -243,7 +243,7 @@ fn read(name: &str, text: &str) -> Result<Read, SyntaxError> {
                 .and_then(|line| u32::try_from(*line).ok())
             {
                 lines_at
-                    .entry(location.path.clone())
+                    .entry(location.path.as_slice())
                     .or_insert_with(|| first.saturating_add(1));
             }
         }
