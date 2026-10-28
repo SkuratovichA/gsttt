@@ -23,7 +23,7 @@ use gsttt_core::setup::ExternalSetup;
 use gsttt_core::{FileId, RepoPath, RepoView};
 use serde_json::{Map, Value, json};
 
-use crate::text::cut;
+use crate::text::{cut, log_line};
 use process::{Failure, Launch, Process};
 pub use protocol::PROTOCOL;
 use protocol::WireResolution;
@@ -360,10 +360,11 @@ impl Session {
             return Err(message.clone());
         }
         self.call(call).map_err(|failure| {
-            let message = format!(
+            // The text holds the path of a file of the repository and what the process sent, which may hold anything.
+            let message = log_line(&format!(
                 "external connector `{}` stopped at {what}: {failure}",
                 self.launch.name
-            );
+            ));
             tracing::warn!("{message}");
             if let Some(mut process) = self.process.take() {
                 process.kill();

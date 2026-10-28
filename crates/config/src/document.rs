@@ -33,8 +33,9 @@ impl Located {
 
     /// `<file>:<line>:<column>: <message>`, with the line and the column counted from 1 and the column in characters, cut to 1 KiB. `text` is what `file` holds. An error without a place is `<file>: <message>`.
     pub(crate) fn render(&self, file: &str, text: &str) -> String {
-        // The message holds text of the file, a key or a value, which may hold anything: it is made fit for a line first.
+        // The message holds text of the file, a key or a value, and the name of the file is the user's text as well: either may hold anything, so both are made fit for a line first.
         let message = log_line(&self.message);
+        let file = log_line(file);
         let line = match &self.span {
             Some(span) => {
                 let offset = u32::try_from(span.start).unwrap_or(u32::MAX);

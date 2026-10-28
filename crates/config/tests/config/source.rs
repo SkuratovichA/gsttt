@@ -109,6 +109,28 @@ fn a_config_over_a_mebibyte_is_refused() {
 }
 
 #[test]
+fn a_pack_name_cannot_steer_the_terminal() {
+    // The name of a file is the user's text, and a syntax error quotes the file it is in.
+    let tree = Tree::empty();
+    tree.write(".gsttt/packs/\u{1b}[31mx.toml", "name = ");
+    let message = tree.evaluate().unwrap_err().to_string();
+    assert!(!message.contains('\u{1b}'), "{message:?}");
+    assert!(message.contains("[31mx.toml"), "{message:?}");
+}
+
+#[test]
+fn a_pack_that_is_not_a_file_cannot_steer_the_terminal_by_its_name() {
+    let tree = Tree::empty();
+    fs::create_dir_all(tree.root().join(".gsttt/packs/\u{1b}[2Jy.toml")).unwrap();
+    let message = tree.evaluate().unwrap_err().to_string();
+    assert!(!message.contains('\u{1b}'), "{message:?}");
+    assert!(
+        message.contains("[2Jy.toml") && message.ends_with("is not a regular file"),
+        "{message:?}"
+    );
+}
+
+#[test]
 fn a_pack_over_a_mebibyte_is_refused() {
     let tree = Tree::empty();
     tree.write(".gsttt/packs/big.toml", &comment(MEBIBYTE + 1));

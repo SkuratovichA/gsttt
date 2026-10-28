@@ -1,5 +1,7 @@
 //! Why the files of the config do not become a setup.
 
+use crate::text::log_line;
+
 /// Why `.gsttt/config.toml` and the packs next to it do not read into a setup.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ConfigError {
@@ -7,6 +9,6 @@ pub enum ConfigError {
     #[error("{0}")]
     Invalid(String),
     /// A file exists and cannot be read: it resolves outside the repository, is not a regular file, is too large, is not UTF-8 text or cannot be opened.
-    #[error("cannot read {path}: {message}")]
+    #[error("cannot read {}: {message}", log_line(.path))]
     Read { path: String, message: String },
 }
