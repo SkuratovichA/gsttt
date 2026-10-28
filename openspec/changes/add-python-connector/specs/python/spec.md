@@ -270,7 +270,7 @@ With the `dbapi` pack, `execute` and `executemany` called on a receiver of more 
 - **AND** the provides of the project name `execute` and `executemany` calls on a receiver of more than three segments as a blind spot
 
 ### Requirement: Environment variables
-With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.getenv("<NAME>")` and each field of a class deriving from `BaseSettings` SHALL call `env <NAME>`, a field's name prefixed with the literal `env_prefix` of the class's `model_config` or inner `Config` when it has one.
+With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.environ.setdefault("<NAME>", …)`, `os.getenv("<NAME>")` and each field of a class deriving from `BaseSettings` SHALL call `env <NAME>`, a field's name prefixed with the literal `env_prefix` of the class's `model_config` or inner `Config` when it has one.
 
 #### Scenario: Every way of reading the environment is seen
 - **WHEN** a file reads `os.environ["A"]`, `os.environ.get("B")`, `os.getenv("C")` and declares `class Settings(BaseSettings): database_url: str`
@@ -279,6 +279,24 @@ With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.get
 #### Scenario: A settings prefix is applied
 - **WHEN** a class deriving from `BaseSettings` has `model_config = SettingsConfigDict(env_prefix="APP_")` and a field `port: int`
 - **THEN** the file calls `env APP_PORT`
+
+#### Scenario: Setting a default for an environment variable reads it
+- **WHEN** a file calls `os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")`, `environ.setdefault("PORT", "8000")` after `from os import environ`, and `os.environ.setdefault(NAME, "x")`
+- **THEN** it calls `env DJANGO_SETTINGS_MODULE` and `env PORT`, and the call whose name is a variable leaves an unread site
+
+### Requirement: Settings aliases
+A field of a class deriving from `BaseSettings` that is assigned a call with a literal `validation_alias=` or `alias=` SHALL call `env <ALIAS>` in place of the variable its name gives, `validation_alias` before `alias`, with no `env_prefix` put in front. A keyword that is not a literal SHALL leave an unread site and no `env` call for the field.
+
+#### Scenario: A settings field with an alias is read under the alias
+- **WHEN** a class deriving from `BaseSettings` with `env_prefix="APP_"` has `database_url: str = Field(alias="DB_URL")`, `region: str = Field("eu", alias="OLD_REGION", validation_alias="REGION")`, `mode: str = Field(validation_alias=AliasChoices("MODE", "APP_MODE"))`, `secret: str = Field(alias=TOKEN_NAME)` and `timeout: int = 30`
+- **THEN** it calls `env DB_URL`, `env REGION` and `env APP_TIMEOUT`, and `mode` and `secret` each leave an unread site
+
+### Requirement: Settings subclasses
+Only a class that names `BaseSettings` as one of its bases SHALL have its fields read. The fields of a class deriving from another settings class, and an alias written inside a field's annotation, SHALL be among the blind spots of the project.
+
+#### Scenario: The fields of a settings subclass are a blind spot
+- **WHEN** `class Base(BaseSettings)` has the field `log_level` and `class Production(Base)` has the field `replicas`
+- **THEN** the file calls `env LOG_LEVEL` and not `env REPLICAS`, and the provides of the project name the fields of a settings class that derives from another settings class as a blind spot
 
 ### Requirement: Pack activation
 A pack SHALL be active in a project when its manifests declare one of the pack's `detect` packages, compared by normalised name, in `[project]` dependencies, optional dependencies, dependency groups, Poetry dependencies, the `install_requires` of `setup.py` and `setup.cfg` or a `requirements*.txt`, or always when its `detect` is empty. Each project SHALL report what it provides, with its blind spots in words.
@@ -293,4 +311,4 @@ A pack SHALL be active in a project when its manifests declare one of the pack's
 
 #### Scenario: Blind spots are reported
 - **WHEN** the coverage of a Python project is read
-- **THEN** its provides name, among the blind spots, Flask routes with several methods beyond the first, Flask routes whose methods are held in a variable, prefixes held in variables, Django default table names, `execute` and `executemany` calls on a receiver of more than three segments, and SQL held in a variable
+- **THEN** its provides name, among the blind spots, Flask routes with several methods beyond the first, Flask routes whose methods are held in a variable, prefixes held in variables, Django default table names, `execute` and `executemany` calls on a receiver of more than three segments, SQL held in a variable, the fields of a settings class that derives from another settings class, and an alias written inside a field's annotation

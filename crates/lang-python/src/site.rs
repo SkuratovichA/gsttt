@@ -376,8 +376,17 @@ impl Site for AssignSite<'_> {
         dict_prop(self.value?, prop)
     }
 
-    fn keyword(&self, _name: &str) -> Option<Cow<'_, str>> {
-        None
+    /// The keyword `name` of the call the value is, as in `url: str = Field(alias="DB_URL")`.
+    ///
+    /// A keyword that is there but not a literal names something the rule cannot read, so it comes back as a computed
+    /// text and the rule records an unread site: left out, the rule would go on to the next alternative and name a
+    /// variable the field does not read.
+    fn keyword(&self, name: &str) -> Option<Cow<'_, str>> {
+        let Expr::Call(call) = self.value? else {
+            return None;
+        };
+        let value = &call.arguments.find_keyword(name)?.value;
+        Some(literal_of(value).unwrap_or(Cow::Borrowed(COMPUTED)))
     }
 }
 
@@ -388,6 +397,37 @@ mod tests {
     use ruff_python_parser::parse_module;
 
     use super::*;
+
+    /// The keyword `name` of the value assigned by the one-line assignment `source`.
+    fn assigned_keyword(source: &str, name: &str) -> Option<String> {
+        let parsed = parse_module(source).unwrap();
+        let Some(ruff_python_ast::Stmt::Assign(assign)) = parsed.suite().first() else {
+            panic!("not an assignment");
+        };
+        let site = AssignSite {
+            name: Cow::Borrowed("field"),
+            value: Some(&assign.value),
+        };
+        site.keyword(name).map(Cow::into_owned)
+    }
+
+    #[test]
+    fn a_keyword_of_the_assigned_call_is_read_and_one_that_is_not_a_literal_is_computed() {
+        let read = |source| assigned_keyword(source, "alias");
+        assert_eq!(
+            read("field = Field(alias='DB_URL')").as_deref(),
+            Some("DB_URL")
+        );
+        assert_eq!(read("field = Field(alias=NAME)").as_deref(), Some("${}"));
+        assert_eq!(
+            read("field = Field(alias=f'{PREFIX}_URL')").as_deref(),
+            Some("${}")
+        );
+        assert_eq!(read("field = Field(alias=None)").as_deref(), Some("${}"));
+        assert_eq!(read("field = Field('DB_URL', description='d')"), None);
+        assert_eq!(read("field = 'DB_URL'"), None);
+        assert_eq!(read("field = NAME"), None);
+    }
 
     fn call_text(source: &str, position: u32) -> Option<String> {
         let parsed = parse_module(source).unwrap();

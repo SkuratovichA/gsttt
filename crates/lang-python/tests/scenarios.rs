@@ -128,6 +128,12 @@ impl Tree {
         self.file(path).facts.contracts.iter().map(show).collect()
     }
 
+    /// The lines of the sites of a file that were found and could not be read.
+    fn unresolved_lines(&self, path: &str) -> Vec<Line> {
+        let unresolved = &self.file(path).facts.unresolved;
+        unresolved.iter().map(|site| site.line).collect()
+    }
+
     /// The facts `link` added to a file.
     fn linked(&self, path: &str) -> Vec<String> {
         self.output
@@ -844,7 +850,8 @@ fn a_line_break_written_as_an_escape_adds_no_line() {
 #[test]
 fn a_sql_string_built_at_run_time_is_an_unread_site() {
     let tree = index("sql_arguments");
-    // An f-string, `+` and `%` on a literal, and `.format` on a text joined with `+`; the plain literal on line 6 is read.
+    // An f-string, `+` and `%` on a literal, and `.format` on a text joined with `+`; the plain literal on line 6 is
+    // read.
     assert_eq!(
         tree.unread("built.py"),
         [
@@ -877,7 +884,8 @@ fn an_argument_that_is_not_a_string_records_nothing() {
 #[test]
 fn a_text_call_with_a_variable_is_still_an_unread_site() {
     let tree = index("sql_arguments");
-    // `text(query)` can only hold a statement, so what it holds is unread; `execute(text(…))` holds a call and adds none.
+    // `text(query)` can only hold a statement, so what it holds is unread; `execute(text(…))` holds a call and adds
+    // none.
     assert_eq!(tree.unread("named.py"), ["L5 text"]);
     let embedded = &tree.file("named.py").facts.embedded;
     assert_eq!(embedded.len(), 1, "{embedded:?}");
@@ -938,6 +946,53 @@ fn a_settings_prefix_is_applied() {
     insta::assert_json_snapshot!(
         "a_settings_prefix_is_applied",
         tree.file_json("settings.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A settings field with an alias is read under the alias")]
+#[test]
+fn a_settings_field_with_an_alias_is_read_under_the_alias() {
+    let tree = index("settings_alias");
+    // `validation_alias` wins over `alias`, an alias is not prefixed, and a field whose alias is not a literal is an
+    // unread site rather than a variable named after the field.
+    assert_eq!(
+        tree.contracts("settings.py"),
+        [
+            "calls env DB_URL@10",
+            "calls env SERVICE_TOKEN@11",
+            "calls env REGION@12",
+            "calls env APP_DEBUG@15",
+            "calls env APP_TIMEOUT@16",
+        ]
+    );
+    assert_eq!(tree.unresolved_lines("settings.py"), [13, 14]);
+    insta::assert_json_snapshot!(
+        "a_settings_field_with_an_alias_is_read_under_the_alias",
+        tree.file_json("settings.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Setting a default for an environment variable reads it")]
+#[test]
+fn setting_a_default_for_an_environment_variable_reads_it() {
+    let tree = index("environment");
+    assert_eq!(
+        tree.contracts("defaults.py"),
+        ["calls env DJANGO_SETTINGS_MODULE@4", "calls env PORT@5",]
+    );
+    assert_eq!(tree.unresolved_lines("defaults.py"), [6]);
+}
+
+#[gsttt_scenario::scenario("python", "The fields of a settings subclass are a blind spot")]
+#[test]
+fn the_fields_of_a_settings_subclass_are_a_blind_spot() {
+    let tree = index("settings_subclass");
+    assert_eq!(tree.contracts("settings.py"), ["calls env LOG_LEVEL@5"]);
+    let blind_spots = tree.blind_spots();
+    assert!(
+        blind_spots
+            .contains(&"fields of a settings class that derives from another settings class"),
+        "{blind_spots:?}"
     );
 }
 
@@ -1167,6 +1222,8 @@ fn blind_spots_are_reported() {
         "Django default table names",
         "execute and executemany calls on a receiver of more than three segments",
         "SQL held in a variable",
+        "fields of a settings class that derives from another settings class",
+        "an alias written inside a field's annotation",
     ] {
         assert!(blind_spots.contains(&words), "{words}: {blind_spots:?}");
     }

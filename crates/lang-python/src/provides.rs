@@ -92,6 +92,16 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
                 Role::Calls,
                 "settings read by environs, django-environ or python-decouple",
             ),
+            (
+                ContractKind::Env,
+                Role::Calls,
+                "fields of a settings class that derives from another settings class",
+            ),
+            (
+                ContractKind::Env,
+                Role::Calls,
+                "an alias written inside a field's annotation",
+            ),
         ],
         _ => Vec::new(),
     }

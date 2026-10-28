@@ -71,6 +71,8 @@ expression: "tree.json[\"projects\"]"
           "env"
         ],
         "blind_spots": [
+          "an alias written inside a field's annotation",
+          "fields of a settings class that derives from another settings class",
           "settings read by environs, django-environ or python-decouple",
           "variable names held in variables"
         ]
