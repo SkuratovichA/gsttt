@@ -1742,6 +1742,7 @@ version = "0.1.0"
 dependencies = [
  "anstream",
  "anstyle",
+ "camino",
  "clap",
  "clap_complete",
  "gsttt-config",
@@ -1751,6 +1752,7 @@ dependencies = [
  "gsttt-lang-rust",
  "gsttt-lang-ts",
  "gsttt-mcp",
+ "gsttt-scenario",
  "insta",
  "jiff",
  "miette",
@@ -1758,6 +1760,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
 ]
