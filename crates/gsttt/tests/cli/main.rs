@@ -3,6 +3,7 @@
 
 mod colour;
 mod hook;
+mod impact;
 mod index;
 mod logs;
 mod panics;

@@ -6,7 +6,7 @@ use std::fs;
 use gsttt_scenario::scenario;
 use serde_json::Value;
 
-use super::support::{Ran, Sandbox, init_repo, typescript_project, write};
+use super::support::{Ran, Sandbox, init_repo, json, typescript_project, write};
 
 /// The lines of `text` that name one of the importers `importers` wrote.
 fn listed(text: &str) -> usize {
@@ -27,12 +27,6 @@ fn forty_five_importers(sandbox: &Sandbox) -> std::path::PathBuf {
         write(&repo, &format!("importers/f{number:02}.ts"), &text);
     }
     repo.canonicalize().unwrap()
-}
-
-fn json(run: &Ran) -> Value {
-    assert_eq!(run.code, Some(0), "{run:?}");
-    assert_eq!(run.stderr, "", "{run:?}");
-    serde_json::from_str(&run.stdout).unwrap_or_else(|error| panic!("{error}: {run:?}"))
 }
 
 #[scenario("cli", "A subject the index does not hold exits 1")]

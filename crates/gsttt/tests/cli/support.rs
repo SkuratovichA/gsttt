@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use serde_json::Value;
 use tempfile::TempDir;
 
 /// The directories a run may touch, so that no test reads or writes the real home, cache or state of the user.
@@ -69,6 +70,13 @@ pub(crate) struct Ran {
     pub(crate) stderr: String,
 }
 
+/// The JSON document a run that succeeded printed alone on stdout.
+pub(crate) fn json(run: &Ran) -> Value {
+    assert_eq!(run.code, Some(0), "{run:?}");
+    assert_eq!(run.stderr, "", "{run:?}");
+    serde_json::from_str(&run.stdout).unwrap_or_else(|error| panic!("{error}: {run:?}"))
+}
+
 /// Runs `command` to its end with its stdin closed.
 pub(crate) fn ran(command: &mut Command) -> Ran {
     let output = command.output().unwrap();
@@ -121,7 +129,7 @@ pub(crate) fn listing(dir: &Path) -> Vec<String> {
 }
 
 /// Runs `git` with `args` in `dir`, whatever git settings the machine has, and returns what it printed.
-fn git(dir: &Path, args: &[&str]) -> String {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .arg("-C")
         .arg(dir)

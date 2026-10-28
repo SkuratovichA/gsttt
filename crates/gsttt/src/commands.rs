@@ -9,6 +9,7 @@ use crate::repository::{Loaded, Repository, Target};
 use crate::streams::{Io, Outcome};
 use crate::{hook, root};
 
+mod impact;
 mod index;
 mod print;
 mod questions;
@@ -51,16 +52,7 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
             root::locate(&root::start(flags.directory.as_deref())?)?;
             Err(not_built(command))
         }
-        Command::Impact(ImpactArgs { paths, .. }) => {
-            let session = Session::open(flags)?;
-            for argument in paths {
-                session.argument(argument)?;
-            }
-            if flags.no_refresh {
-                session.stored()?;
-            }
-            Err(not_built(command))
-        }
+        Command::Impact(args) => impact::impact(&Session::open(flags)?, args, io),
         Command::Index => index::index(&Session::open(flags)?, io),
         Command::Status => index::status(&Session::open(flags)?, io),
         Command::Dependents(args) => questions::dependents(&Session::open(flags)?, args, io),
@@ -132,7 +124,7 @@ fn is_blank(query: &ContractArgs) -> bool {
     query.text().trim().is_empty()
 }
 
-/// Every command whose answer needs the config or a connector fails here until it is built.
+/// The commands of the third run, `init`, `config` and `schema`, fail here until they are built.
 fn not_built(command: &Command) -> CliError {
     CliError::NotBuilt {
         command: command.name(),
