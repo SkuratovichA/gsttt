@@ -113,7 +113,7 @@ Global flags: `-C <dir>`, `--json`, `--all`, `--no-refresh`. `--changed` takes t
 
 **Hook.** `gsttt hook session-start` reads the snapshot header with `peek` and prints one line (`gsttt: 4,213 files indexed at a1b2c3d (3 dirty), 2 h ago; use the gsttt tools for impact before changing shared code`) or nothing when there is no snapshot. It runs no git command and finishes in under 10 ms.
 
-**Plugin.** `plugin/` is a Claude Code plugin: `.claude-plugin/plugin.json`, `.mcp.json` starting `gsttt mcp`, `hooks/hooks.json` running the hook on `SessionStart`, and a skill that says when to ask gsttt. The repository root carries `.claude-plugin/marketplace.json`, so `/plugin marketplace add SkuratovichA/gsttt` installs it. The plugin expects `gsttt` on `PATH`, and its hook prints an install hint when the binary is missing.
+**Plugin.** `plugin/` is a Claude Code plugin: `.claude-plugin/plugin.json`, which declares the MCP server (`gsttt mcp`) and the hook that runs on `SessionStart` inline, `scripts/gsttt.sh`, which runs both, and a skill that says when to ask gsttt. The repository root carries `.claude-plugin/marketplace.json`, so `/plugin marketplace add SkuratovichA/gsttt` installs it. The wrapper finds `gsttt` on `PATH` or in the directory `install.sh` puts it in, and when it is in neither, the hook prints an install hint for the user and still ends with status 0, so a missing binary never breaks a session.
 
 ## Configuration
 
