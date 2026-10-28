@@ -99,9 +99,9 @@ fn the_starter_config_is_valid() {
     assert_eq!(shown["detect"], true);
 }
 
-/// The modules the starter names are the ones that find a project in the tree, not a fixed list.
+/// The modules the starter names are the ones that find a project in the tree, not a fixed list. In a tree without code those are `graphql` and `sql`, whose connectors detect a project in every tree, because code in any language can embed their documents.
 #[test]
-fn the_starter_names_no_module_in_a_tree_without_code() {
+fn the_starter_names_only_the_modules_that_detect_in_a_tree_without_code() {
     let sandbox = Sandbox::new();
     let root = sandbox.work.path().join("docs");
     std::fs::create_dir_all(&root).unwrap();
@@ -112,7 +112,12 @@ fn the_starter_names_no_module_in_a_tree_without_code() {
 
     assert_eq!(ran.code, Some(0), "{ran:?}");
     let config = read(&root, CONFIG);
-    assert!(config.contains("No module was detected"), "{config}");
+    let named: Vec<&str> = config
+        .lines()
+        .filter(|line| line.starts_with("# ["))
+        .collect();
+    assert_eq!(named, ["# [graphql]", "# [sql]"], "{config}");
+    assert!(!config.contains("No module was detected"), "{config}");
 }
 
 /// The schema of the config lists the modules of the registry, so that an editor offers their options.
