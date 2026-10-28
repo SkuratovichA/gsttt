@@ -34,3 +34,5 @@
 - [x] 5.8 An import reaches the `__init__` file of every package it passes through, except the packages the importing file sits in
 - [x] 5.9 A name an import gives another is read by both names: `import requests as r`, `from requests import post as send` and the like match the packs' callees, decorators, base classes and subscripted names as the file writes them and as the import spells them, every file keeps its imports for this, and a name imported twice from one module is listed once
 - [x] 5.10 A Flask route whose `methods` is held in a variable is read as GET, which the rule language cannot tell from an absent keyword, so the provides of a project with the `flask` pack name it as a blind spot
+- [x] 5.11 A `setup.py` list of requirements is read to its own bracket, so a requirement with extras (`fastapi[standard]>=0.1`) no longer ends it, and a comment in the list is skipped
+- [x] 5.12 The line of the first error of a file the parser recovered from is a line the file has, also when the error is the bracket left open at the end of the text

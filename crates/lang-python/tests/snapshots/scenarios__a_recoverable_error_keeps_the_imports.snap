@@ -6,7 +6,7 @@ expression: "tree.file_json(\"broken.py\")"
   "status": {
     "status": "recovered",
     "errors": 1,
-    "first_error_line": 5
+    "first_error_line": 4
   },
   "tags": 0,
   "imports": [

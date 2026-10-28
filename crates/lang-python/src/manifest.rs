@@ -189,17 +189,13 @@ pub(crate) fn read_setup_cfg(text: &str) -> Manifest {
 /// `package_dir={…}`. Anything computed is not read.
 pub(crate) fn read_setup_py(text: &str) -> Manifest {
     let mut manifest = Manifest::default();
-    if let Some(list) = bracketed(text, "install_requires", '[', ']') {
-        for requirement in quoted_strings(list) {
-            manifest.require(&requirement);
-        }
+    for requirement in quoted_in(text, "install_requires", '[', ']') {
+        manifest.require(&requirement);
     }
-    if let Some(table) = bracketed(text, "package_dir", '{', '}') {
-        let strings = quoted_strings(table);
-        let (pairs, _) = strings.as_chunks::<2>();
-        for [package, dir] in pairs {
-            manifest.root(package_root(package, dir));
-        }
+    let strings = quoted_in(text, "package_dir", '{', '}');
+    let (pairs, _) = strings.as_chunks::<2>();
+    for [package, dir] in pairs {
+        manifest.root(package_root(package, dir));
     }
     manifest
 }
@@ -266,26 +262,41 @@ fn tables_array(value: Option<&Value>) -> impl Iterator<Item = &Table> {
         .filter_map(Value::as_table)
 }
 
-/// The text between the first `open` after `key` and the next `close`.
-fn bracketed<'a>(text: &'a str, key: &str, open: char, close: char) -> Option<&'a str> {
-    let after = text.get(text.find(key)? + key.len()..)?;
-    let start = after.find(open)? + 1;
-    let inner = after.get(start..)?;
-    inner.get(..inner.find(close)?)
-}
-
-/// The contents of every single- or double-quoted string in `text`, without escapes.
-fn quoted_strings(text: &str) -> Vec<String> {
+/// The contents of every single- or double-quoted string, without escapes, between the first `open` after `key` and
+/// the `close` that matches it. A bracket inside a string belongs to the string, so `"fastapi[standard]>=0.1"` is one
+/// requirement, and a comment is skipped whole, apostrophe and bracket included. A text that ends before the bracket
+/// closes gives the strings read so far.
+fn quoted_in(text: &str, key: &str, open: char, close: char) -> Vec<String> {
+    let after = text
+        .find(key)
+        .and_then(|at| text.get(at + key.len()..))
+        .unwrap_or_default();
+    let inner = after
+        .find(open)
+        .and_then(|at| after.get(at + open.len_utf8()..))
+        .unwrap_or_default();
     let mut found = Vec::new();
-    let mut open: Option<(char, String)> = None;
-    for ch in text.chars() {
-        match &mut open {
-            Some((quote, content)) if ch == *quote => {
+    let mut depth = 0_usize;
+    let mut quote: Option<(char, String)> = None;
+    let mut comment = false;
+    for ch in inner.chars() {
+        if comment {
+            comment = ch != '\n';
+            continue;
+        }
+        match &mut quote {
+            Some((mark, content)) if ch == *mark => {
                 found.push(std::mem::take(content));
-                open = None;
+                quote = None;
             }
             Some((_, content)) => content.push(ch),
-            None if ch == '"' || ch == '\'' => open = Some((ch, String::new())),
+            None if ch == '"' || ch == '\'' => quote = Some((ch, String::new())),
+            None if ch == '#' => comment = true,
+            None if ch == open => depth += 1,
+            None if ch == close => match depth.checked_sub(1) {
+                Some(outer) => depth = outer,
+                None => break,
+            },
             None => {}
         }
     }
@@ -294,6 +305,8 @@ fn quoted_strings(text: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     fn deps(manifest: &Manifest) -> Vec<&str> {
@@ -371,6 +384,58 @@ mod tests {
         );
         assert_eq!(deps(&manifest), ["flask", "requests"]);
         assert_eq!(manifest.roots, ["src"]);
+    }
+
+    #[test]
+    fn setup_py_keeps_the_brackets_of_a_requirement() {
+        let manifest = read_setup_py(
+            r#"setup(install_requires=["fastapi[standard]>=0.1","sqlalchemy"], extras_require={"dev": ["pytest"]})"#,
+        );
+        assert_eq!(deps(&manifest), ["fastapi", "sqlalchemy"]);
+    }
+
+    #[test]
+    fn setup_py_skips_the_comments_of_a_list() {
+        let manifest = read_setup_py(
+            "setup(install_requires=[\n    'flask',  # don't pin ]\n    \"requests\",\n], name='x')",
+        );
+        assert_eq!(deps(&manifest), ["flask", "requests"]);
+    }
+
+    #[test]
+    fn setup_py_reads_the_list_to_its_own_bracket() {
+        let manifest = read_setup_py(
+            "setup(install_requires=['a', ['b'], 'c'], classifiers=['d [e]'], package_dir={'': 'src'})",
+        );
+        assert_eq!(deps(&manifest), ["a", "b", "c"]);
+        assert_eq!(manifest.roots, ["src"]);
+    }
+
+    proptest! {
+        #[test]
+        fn setup_py_reads_every_requirement_whatever_its_extras(
+            requirements in proptest::collection::vec(
+                (
+                    "[a-z][a-z0-9]{0,8}",
+                    proptest::option::of("[a-z]{1,6}(,[a-z]{1,6}){0,2}"),
+                    "(>=[0-9]\\.[0-9])?",
+                    proptest::bool::ANY,
+                ),
+                1..6,
+            )
+        ) {
+            let listed: Vec<String> = requirements
+                .iter()
+                .map(|(name, extras, version, double)| {
+                    let extras = extras.as_ref().map_or_else(String::new, |extras| format!("[{extras}]"));
+                    let quote = if *double { '"' } else { '\'' };
+                    format!("{quote}{name}{extras}{version}{quote}")
+                })
+                .collect();
+            let text = format!("setup(install_requires=[{}], classifiers=['x [y]'])", listed.join(", "));
+            let expected: BTreeSet<String> = requirements.iter().map(|(name, ..)| name.clone()).collect();
+            prop_assert_eq!(read_setup_py(&text).dependencies, expected);
+        }
     }
 
     #[test]

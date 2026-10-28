@@ -49,14 +49,17 @@ pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<Py
     collector.visit_body(parsed.suite());
     let mut read = collector.finish();
     read.facts.tags = tags;
-    read.facts.status = status_of(parsed.errors(), &lines);
+    read.facts.status = status_of(parsed.errors(), &lines, file.text.len());
     read
 }
 
-fn status_of(errors: &[ParseError], lines: &LineIndex) -> ParseStatus {
+/// `len` is the length of the text: the parser puts the error of a bracket left open at the end of the text, one byte
+/// past the last line, so an offset is held to the last byte to name a line the file has.
+fn status_of(errors: &[ParseError], lines: &LineIndex, len: usize) -> ParseStatus {
+    let last_byte = u32::try_from(len.saturating_sub(1)).unwrap_or(u32::MAX);
     let Some(first) = errors
         .iter()
-        .map(|error| u32::from(error.location.start()))
+        .map(|error| u32::from(error.location.start()).min(last_byte))
         .min()
     else {
         return ParseStatus::Ok;

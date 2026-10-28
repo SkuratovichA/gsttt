@@ -265,8 +265,13 @@ fn guarded_imports_are_flagged() {
 fn a_recoverable_error_keeps_the_imports() {
     let tree = index("imports");
     let broken = tree.file("broken.py");
+    // The parser puts the error of the bracket left open at the end of the text, a line the file does not have: the
+    // file has four lines, and the error is on the last of them.
     assert!(
-        matches!(broken.facts.status, ParseStatus::Recovered { errors, .. } if errors > 0),
+        matches!(
+            broken.facts.status,
+            ParseStatus::Recovered { errors, first_error_line: 4 } if errors > 0
+        ),
         "{:?}",
         broken.facts.status
     );
@@ -945,6 +950,30 @@ fn a_name_imported_twice_is_listed_once() {
     insta::assert_json_snapshot!(
         "a_name_imported_twice_is_listed_once",
         tree.file_json("reexport.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A setup.py with bracketed requirements is read")]
+#[test]
+fn a_setup_py_with_bracketed_requirements_is_read() {
+    let tree = index("setup_py");
+    // `fastapi[standard]` is what switches the FastAPI pack on, and a comment with an apostrophe follows it. The
+    // route is on a router nothing includes, which `link` serves behind the router's own prefix.
+    assert_eq!(
+        tree.linked("lib/bookings/api.py"),
+        ["serves http GET /ping@6"]
+    );
+    // `package_dir={"": "lib"}` is what makes `lib` a source root.
+    assert_eq!(
+        tree.target("app.py", "bookings", &["api"]),
+        "lib/bookings/api.py"
+    );
+    insta::assert_json_snapshot!(
+        "a_setup_py_with_bracketed_requirements_is_read",
+        json!({
+            "file": tree.file_json("lib/bookings/api.py"),
+            "linked": tree.linked("lib/bookings/api.py"),
+        })
     );
 }
 

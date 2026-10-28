@@ -73,8 +73,8 @@ A callee, decorator, base class or subscripted name SHALL be matched by a rule a
 A file with syntax errors from which the parser recovered SHALL be recorded as recovered with the number of errors and the line of the first, keeping what was read.
 
 #### Scenario: A recoverable error keeps the imports
-- **WHEN** a file imports `os` and `app.db` and has an unclosed bracket on its last line
-- **THEN** its status is recovered and its facts still hold both imports
+- **WHEN** a file imports `os` and `app.db` and has an unclosed bracket on its last line, the line break after it being the end of the file
+- **THEN** its status is recovered with the last line as the line of the first error, and its facts still hold both imports
 
 ### Requirement: Test files
 Files named `test_*.py` or `*_test.py`, `conftest.py`, and files under a directory named `tests` or `test` SHALL be tagged as tests.
@@ -249,11 +249,15 @@ With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.get
 - **THEN** the file calls `env APP_PORT`
 
 ### Requirement: Pack activation
-A pack SHALL be active in a project when its manifests declare one of the pack's `detect` packages, compared by normalised name, in `[project]` dependencies, optional dependencies, dependency groups, Poetry dependencies or a `requirements*.txt`, or always when its `detect` is empty. Each project SHALL report what it provides, with its blind spots in words.
+A pack SHALL be active in a project when its manifests declare one of the pack's `detect` packages, compared by normalised name, in `[project]` dependencies, optional dependencies, dependency groups, Poetry dependencies, the `install_requires` of `setup.py` and `setup.cfg` or a `requirements*.txt`, or always when its `detect` is empty. Each project SHALL report what it provides, with its blind spots in words.
 
 #### Scenario: Packs follow the manifest
 - **WHEN** a project's `pyproject.toml` declares `Flask>=3` and not `fastapi`
 - **THEN** Flask routes in it produce sites and FastAPI decorators do not
+
+#### Scenario: A setup.py with bracketed requirements is read
+- **WHEN** a project has a `setup.py` with `package_dir={"": "lib"}` and `install_requires=["fastapi[standard]>=0.1",  # don't pin the extras` and `"sqlalchemy"]`, and `lib/bookings/api.py` has an `APIRouter()` with `@router.get("/ping")`
+- **THEN** the `fastapi` pack is in force, so `lib/bookings/api.py` serves `http GET /ping`, and `from bookings import api` in another file of the project resolves to `lib/bookings/api.py`
 
 #### Scenario: Blind spots are reported
 - **WHEN** the coverage of a Python project is read
