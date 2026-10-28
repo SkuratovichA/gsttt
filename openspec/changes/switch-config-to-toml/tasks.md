@@ -25,6 +25,7 @@
 - [x] 4.1 `DynConnector::options_schema` takes a shared `SchemaGenerator`, and `Provide` derives `JsonSchema`
 - [x] 4.2 `config_schema` and `pack_schema`, draft-07, each type once under `definitions`
 - [x] 4.3 The starter with its `#:schema` line, read back as the defaults
+- [ ] 4.4 Every comment and doc comment that breaks a sentence or a paragraph across lines joined into one line, across the workspace (about 375 lines, most of them in `crates/core/src/rules.rs` and on `Role` in `crates/core/src/contract.rs`), with a test that no description in either schema breaks inside a paragraph; done at the top of the stack once this change merges there, so that the layers between do not conflict
 
 ## 5. Removal
 
@@ -33,8 +34,9 @@
 
 ## 6. Proof
 
-- [ ] 6.1 A test annotated `#[scenario("config", …)]` for every scenario of this change's delta, and no test left for a removed requirement
-- [ ] 6.2 `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check` and `openspec validate switch-config-to-toml --strict` pass
+- [x] 6.1 A test annotated `#[scenario("config", …)]` for every scenario of this change's delta, and no test left for a removed requirement
+- [x] 6.2 `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check` and `openspec validate switch-config-to-toml --strict` pass
+- [ ] 6.3 CI runs `taplo fmt --check` beside `cargo fmt --all --check`, added when this change merges above the change that adds CI
 
 ## 7. Review fixes
 
@@ -49,3 +51,4 @@
 - [x] 7.9 `mod evaluation` of the test crate is under `cfg(test)` like its siblings
 - [x] 7.10 The path that `dotted` prints and the path of a typed error are pinned against each other, and `dotted` says where the other printer is
 - [x] 7.11 The TOML files are formatted by taplo, and `.editorconfig` indents them by two
+- [x] 7.12 The design says what the code does to take `null` out of the schemas, and the tasks name the follow-ups that wait for the stack above this change

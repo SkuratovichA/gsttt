@@ -172,7 +172,7 @@ fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema {
 }
 ```
 
-`config_schema(registry)` and `pack_schema()` use `SchemaSettings::draft07()` with `option_add_null_type` off, because TOML has no null and an editor would otherwise offer one. The config schema is the schema of `Keys` with a property per module added and `additionalProperties` false, and its `definitions` are the generator's. `Provide` derives `JsonSchema`, and `ExternalSetup.provides` drops its `#[schemars(with = "Vec<serde_json::Value>")]`.
+`config_schema(registry)` and `pack_schema()` use `SchemaSettings::draft07()` with the transform `without_null` added, because TOML has no null and an editor would otherwise offer one. schemars 1.2.3 has no setting that turns `option_add_null_type` off, so `without_null` takes `null` out of each schema it meets: a `"default": null` is dropped, `"type": ["string", "null"]` becomes `"type": "string"`, and an `anyOf` of one alternative and `{ "type": "null" }` becomes an `allOf` of that alternative. The generator runs it over the root and over its definitions, and `config_schema` runs it again over the schema of each module's options, which the generator's pass does not reach. A module whose options are `()` has the schema `{ "type": "null" }`, which no transform can take null out of, so its table is the empty closed table `{ "type": "object", "additionalProperties": false }`. The config schema is the schema of `Keys` with a property per module added and `additionalProperties` false, and its `definitions` are the generator's. `Provide` derives `JsonSchema`, and `ExternalSetup.provides` drops its `#[schemars(with = "Vec<serde_json::Value>")]`.
 
 ### The starter
 
