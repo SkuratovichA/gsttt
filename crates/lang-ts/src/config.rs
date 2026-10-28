@@ -2,9 +2,10 @@
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use gsttt_core::fact::Line;
+use gsttt_core::path::RepoPath;
 
 use crate::json::Json;
-use crate::pathing::{join_dir, join_file};
+use crate::pathing::join_file;
 
 /// The options of one tsconfig file as written, before `extends` is followed.
 #[derive(Debug, Clone, Default)]
@@ -145,8 +146,11 @@ impl Effective {
 
     /// Lets the options `config` sets, read from the directory `dir` it lies in, win over what is already here.
     pub(crate) fn apply(&mut self, config: &ConfigFile, dir: &str) {
-        let resolve =
-            |value: &Option<String>| value.as_deref().and_then(|value| join_dir(dir, value));
+        let resolve = |value: &Option<String>| {
+            value
+                .as_deref()
+                .and_then(|value| RepoPath::join_dir(dir, value))
+        };
         if let Some(base_url) = resolve(&config.base_url) {
             self.base_url = Some(base_url);
         }
@@ -160,7 +164,7 @@ impl Effective {
             list.as_ref().map(|items| {
                 items
                     .iter()
-                    .filter_map(|item| join_dir(dir, item))
+                    .filter_map(|item| RepoPath::join_dir(dir, item))
                     .collect::<Vec<_>>()
             })
         };

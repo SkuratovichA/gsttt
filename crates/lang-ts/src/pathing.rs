@@ -1,16 +1,5 @@
 //! Directory arithmetic on repository paths, where `""` is the repository root.
 
-use gsttt_core::path::{PathError, RepoPath};
-
-/// `relative` taken from `dir` as a repository path: `""` for the root, `None` when it leaves the repository.
-pub(crate) fn join_dir(dir: &str, relative: &str) -> Option<String> {
-    match RepoPath::join(dir, relative) {
-        Ok(path) => Some(path.as_str().to_owned()),
-        Err(PathError::Empty) => Some(String::new()),
-        Err(_) => None,
-    }
-}
-
 /// The file `name` inside `dir`.
 pub(crate) fn join_file(dir: &str, name: &str) -> String {
     if dir.is_empty() {
@@ -87,6 +76,7 @@ pub(crate) fn split_package(spec: &str) -> Option<(&str, &str)> {
 
 #[cfg(test)]
 mod tests {
+    use gsttt_core::path::RepoPath;
     use proptest::prelude::*;
 
     use super::*;
@@ -98,10 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn joins_stay_inside_the_repository() {
-        assert_eq!(join_dir("a/b", "../c").as_deref(), Some("a/c"));
-        assert_eq!(join_dir("a", "..").as_deref(), Some(""));
-        assert_eq!(join_dir("a", "../..").as_deref(), None);
+    fn a_directory_is_stripped_by_whole_segments() {
         assert_eq!(strip_dir("dist/a.js", "dist"), Some("a.js"));
         assert_eq!(strip_dir("distant/a.js", "dist"), None);
     }
@@ -139,7 +126,7 @@ mod tests {
 
         #[test]
         fn joins_never_panic(dir in "[a-z/.]{0,12}", relative in "[a-z/.]{0,12}") {
-            drop(join_dir(&dir, &relative));
+            drop(RepoPath::join_dir(&dir, &relative));
             let _ = strip_dir(&relative, &dir);
         }
 

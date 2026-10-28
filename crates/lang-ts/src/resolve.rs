@@ -10,7 +10,7 @@ use crate::config::Effective;
 use crate::json::Json;
 use crate::manifest::Manifest;
 use crate::pathing::{
-    ancestors, is_config_name, is_json, is_relative, join_dir, join_file, split_package, strip_dir,
+    ancestors, is_config_name, is_json, is_relative, join_file, split_package, strip_dir,
 };
 use crate::shared::Shared;
 
@@ -99,7 +99,7 @@ fn found(file: Option<FileId>) -> Resolution {
 fn relative(shared: &Shared, dir: &str, spec: &str) -> Resolution {
     // A trailing slash, `.` and `..` name a directory, which only an index file can stand for.
     let directory = spec.ends_with('/') || matches!(spec.rsplit('/').next(), Some("." | ".."));
-    let path = join_dir(dir, spec);
+    let path = RepoPath::join_dir(dir, spec);
     located(shared, path.iter().map(String::as_str), directory)
 }
 
@@ -160,7 +160,7 @@ fn bare(
             effective
                 .base_url
                 .as_deref()
-                .and_then(|base| join_dir(base, spec)),
+                .and_then(|base| RepoPath::join_dir(base, spec)),
         );
         if let Some(file) = leads.iter().find_map(|path| probe(shared, path)) {
             return Resolution::File { file };
@@ -238,7 +238,7 @@ fn alias(effective: &Effective, spec: &str) -> Vec<String> {
     mapping
         .targets
         .iter()
-        .filter_map(|target| join_dir(base, &target.replacen('*', captured, 1)))
+        .filter_map(|target| RepoPath::join_dir(base, &target.replacen('*', captured, 1)))
         .collect()
 }
 
@@ -313,10 +313,10 @@ fn package_file(shared: &Shared, package_dir: &str, manifest: &Manifest) -> Opti
 
 /// The file below a package that a path inside it names, in the package or in its source root.
 fn subpath_file(shared: &Shared, package_dir: &str, subpath: &str) -> Option<FileId> {
-    join_dir(package_dir, subpath)
+    RepoPath::join_dir(package_dir, subpath)
         .and_then(|path| probe(shared, &path))
         .or_else(|| {
-            join_dir(&source_root(shared, package_dir), subpath)
+            RepoPath::join_dir(&source_root(shared, package_dir), subpath)
                 .and_then(|path| probe(shared, &path))
         })
 }
@@ -332,7 +332,7 @@ fn source_root(shared: &Shared, package_dir: &str) -> String {
 /// The source file behind `target`, a path a manifest names relative to the package: the file itself, or what the
 /// package's build writes it from.
 fn built_file(shared: &Shared, package_dir: &str, target: &str) -> Option<FileId> {
-    let path = join_dir(package_dir, target)?;
+    let path = RepoPath::join_dir(package_dir, target)?;
     if let Some(file) = probe(shared, &path) {
         return Some(file);
     }
@@ -340,7 +340,7 @@ fn built_file(shared: &Shared, package_dir: &str, target: &str) -> Option<FileId
         let out_dir = effective.out_dir.as_deref()?;
         let rest = strip_dir(&path, out_dir)?;
         let root = effective.root_dir.as_deref().unwrap_or(package_dir);
-        probe(shared, &join_dir(root, rest)?)
+        probe(shared, &RepoPath::join_dir(root, rest)?)
     });
     if by_config.is_some() {
         return by_config;

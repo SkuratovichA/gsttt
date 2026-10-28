@@ -11,8 +11,8 @@ use crate::json::{self, Json};
 use crate::manifest::Manifest;
 use crate::options::TypeScriptOptions;
 use crate::pathing::{
-    ancestors, file_dir, has_segment, is_config_name, is_relative, join_dir, join_file,
-    split_package, strip_dir,
+    ancestors, file_dir, has_segment, is_config_name, is_relative, join_file, split_package,
+    strip_dir,
 };
 use crate::source::is_code;
 
@@ -123,7 +123,7 @@ impl Shared {
             fallback: options
                 .tsconfig
                 .as_deref()
-                .and_then(|path| join_dir("", path)),
+                .and_then(|path| RepoPath::join_dir("", path)),
             solutions: BTreeMap::new(),
             covers: BTreeMap::new(),
         };
@@ -249,14 +249,14 @@ impl Shared {
     /// The tsconfig an `extends` (or a reference) written in `from` stands for, when it is in the repository.
     pub(crate) fn extends_target(&self, from: &str, spec: &str) -> Option<String> {
         let base = if is_relative(spec) {
-            join_dir(file_dir(from), spec)?
+            RepoPath::join_dir(file_dir(from), spec)?
         } else {
             let (name, subpath) = split_package(spec)?;
             let package = self.packages.get(name)?;
             if subpath.is_empty() {
                 package.clone()
             } else {
-                join_dir(package, subpath)?
+                RepoPath::join_dir(package, subpath)?
             }
         };
         [

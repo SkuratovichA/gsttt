@@ -42,3 +42,4 @@
 
 - [x] 5.1 A path segment that holds a `{…}` is a parameter of the key, so the custom method `{id}:cancel` of OpenAPI meets the protobuf binding of the same method
 - [x] 5.2 One counter of syntax errors in the core, `ErrorCount`, replaces the copies of the contract, Python, Rust and TypeScript connectors, and it keeps the smallest line noted, so a parser that reports out of order still names the first error of the file
+- [x] 5.3 The TypeScript connector joins directories with `RepoPath::join_dir` of the core and its own `join_dir` is gone, because the two agree for every input: a join that comes to the root is the empty directory, and an absolute path or one that leaves the repository is `None`
