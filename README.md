@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/gsttt.svg" width="128" height="128" alt="A pixel-art glass sphere with a ghost's face, on a wooden stand">
+</p>
+
 # gsttt
 
 **Glass sphere telling the truth**, said "ghost". It answers one question without guessing: what does this change affect?
