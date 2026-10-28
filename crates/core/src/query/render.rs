@@ -22,6 +22,15 @@ pub enum Entries {
     All,
 }
 
+impl Entries {
+    /// [`Entries::All`] when the caller asked for every entry (`--all` on the command line, `all` in a tool call),
+    /// and [`Entries::Capped`] otherwise. Both surfaces map their flag through this one function, so a list is cut
+    /// in the same way wherever it is asked for.
+    pub const fn from_flag(all: bool) -> Self {
+        if all { Self::All } else { Self::Capped }
+    }
+}
+
 /// An answer to a question over an index: text for people and agents, and JSON for scripts.
 ///
 /// [`Display`](fmt::Display) gives the text with lists cut at [`LIST_CAP`] entries; [`Answer::text`] gives it with
@@ -304,5 +313,17 @@ pub(super) fn rows<T>(
     match items.len().saturating_sub(shown) {
         0 => Ok(()),
         rest => writeln!(f, "… {} more", thousands(rest)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_all_flag_asks_for_every_entry() {
+        assert_eq!(Entries::from_flag(true), Entries::All);
+        assert_eq!(Entries::from_flag(false), Entries::Capped);
+        assert_eq!(Entries::from_flag(false), Entries::default());
     }
 }
