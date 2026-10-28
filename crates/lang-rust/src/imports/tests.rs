@@ -1,6 +1,6 @@
 //! The import reader over single files, without the engine around it.
 
-use gsttt_core::fact::{Import, ImportKind};
+use gsttt_core::fact::{Import, ImportFlags, ImportKind};
 use gsttt_core::text::LineIndex;
 use proptest::prelude::*;
 use ra_ap_edition::Edition;
@@ -24,6 +24,44 @@ fn specs(source: &str) -> Vec<String> {
         .into_iter()
         .map(|import| import.spec)
         .collect()
+}
+
+/// The flags of the imports, in the order they are returned.
+fn flags(source: &str) -> Vec<ImportFlags> {
+    imports(source)
+        .into_iter()
+        .map(|import| import.flags)
+        .collect()
+}
+
+#[test]
+fn a_cfg_beside_a_doc_comment_between_two_attributes_is_read() {
+    assert_eq!(
+        flags(
+            "#[allow(unused)]\n/// between the attributes\nuse a::b;\n#[allow(unused)]\n/// between the attributes\n#[cfg(test)]\nuse a::c;\n"
+        ),
+        [ImportFlags::NONE, ImportFlags::TEST_ONLY]
+    );
+    assert_eq!(
+        flags("/// above\n#[cfg(feature = \"x\")]\n/// below\n#[allow(unused)]\nuse a::b;\n"),
+        [ImportFlags::OPTIONAL]
+    );
+}
+
+#[test]
+fn an_inner_attribute_flags_what_its_file_or_module_holds() {
+    assert_eq!(
+        flags("#![cfg(test)]\nuse a::b;\n"),
+        [ImportFlags::TEST_ONLY]
+    );
+    assert_eq!(
+        flags("#!/usr/bin/env run-cargo-script\n#![cfg(test)]\nuse a::b;\n"),
+        [ImportFlags::TEST_ONLY]
+    );
+    assert_eq!(
+        flags("mod m {\n    #![cfg(feature = \"x\")]\n    use a::b;\n}\nuse a::c;\n"),
+        [ImportFlags::OPTIONAL, ImportFlags::NONE]
+    );
 }
 
 #[test]

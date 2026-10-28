@@ -26,7 +26,11 @@ pub(crate) fn segments(path: &ast::Path) -> Option<Vec<String>> {
 pub(crate) fn cfg_flags(node: &SyntaxNode) -> ImportFlags {
     let mut flags = ImportFlags::NONE;
     for ancestor in node.ancestors() {
-        for attr in ancestor.children().filter_map(ast::Attr::cast) {
+        let attrs = ancestor
+            .children_with_tokens()
+            .take_while(|child| leads(child.kind()))
+            .filter_map(|child| child.into_node().and_then(ast::Attr::cast));
+        for attr in attrs {
             let Some(predicate) = cfg_predicate(&attr) else {
                 continue;
             };
@@ -39,6 +43,22 @@ pub(crate) fn cfg_flags(node: &SyntaxNode) -> ImportFlags {
         }
     }
     flags
+}
+
+/// Whether a child of a node can stand before the node's last attribute. The parser reads the outer attributes of an
+/// item, a field or a statement before anything else of it, doc comments among them, and the inner attributes of a
+/// file or of a body right after its `{`, so the walk over the children of an ancestor ends at the first child that is
+/// none of these. Reading all of them would cost every module of a file of ten thousand a pass over its siblings.
+fn leads(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::ATTR
+            | SyntaxKind::DOC_COMMENT
+            | SyntaxKind::WHITESPACE
+            | SyntaxKind::COMMENT
+            | SyntaxKind::L_CURLY
+            | SyntaxKind::SHEBANG
+    )
 }
 
 /// The predicate of a `#[cfg(predicate)]` attribute.
