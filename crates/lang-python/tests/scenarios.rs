@@ -1691,3 +1691,29 @@ fn the_mounts_that_are_not_followed_are_named() {
         "{blind_spots:?}"
     );
 }
+
+#[test]
+fn a_router_included_with_a_prefix_and_without_is_served_at_both() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/bookings.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get(\"/bookings/{booking_id}\")\ndef get_booking(booking_id: int):\n    return {}\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import bookings\n\napp = FastAPI()\napp.include_router(bookings.router, prefix=\"/api\")\napp.include_router(bookings.router)\n",
+        ),
+    ]);
+    // The mount with no prefix is a mount like the other: the router is served at the root as well, and the file keeps
+    // no copy of the route of its own.
+    assert_eq!(
+        tree.linked("app/bookings.py"),
+        [
+            "serves http GET /api/bookings/{}@6",
+            "serves http GET /bookings/{}@6"
+        ]
+    );
+    assert_eq!(tree.contracts("app/bookings.py"), Vec::<String>::new());
+}
