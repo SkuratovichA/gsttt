@@ -22,7 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use gsttt_spec::scenario_args;
+use gsttt_spec::{read_directory, scenario_args};
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::ext::IdentExt as _;
 use syn::parse::Parser as _;
@@ -35,7 +35,6 @@ use syn::{
 };
 
 use super::workspace::{Target, Workspace, clean};
-use crate::directory::read_directory;
 
 /// Directories that hold material for tests, not tests: the attributes in them are no proofs.
 const LEFT_OUT: [&str; 2] = ["fixtures", "snapshots"];
@@ -310,7 +309,8 @@ fn read(path: &Path) -> anyhow::Result<String> {
 /// directories of other packages, which are members of their own or not ours at all. Without those,
 /// a package at the repository root would take every copy of the tree for its own.
 fn rust_files(dir: &Path, found: &mut Vec<PathBuf>) -> anyhow::Result<()> {
-    let entries = read_directory(dir)?
+    let entries = read_directory(dir)
+        .context("listing the sources of a package")?
         .with_context(|| format!("listing {}: there is no such directory", dir.display()))?;
     for entry in entries {
         if entry.kind.is_dir() {

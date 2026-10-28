@@ -229,6 +229,73 @@ fn a_repository_without_workflows_fails_the_check() {
     );
 }
 
+/// A directory of a repository that nobody can list while this lives. Dropping it gives the directory its mode back, so that the repository can be removed.
+struct Unlisted<'a> {
+    root: &'a Path,
+    relative: &'a str,
+}
+
+impl<'a> Unlisted<'a> {
+    /// `None` when the directory can be listed all the same, as it is for the superuser: then there is no failure to look at.
+    fn new(root: &'a Path, relative: &'a str) -> Option<Self> {
+        set_mode(root, relative, 0o000);
+        let unlisted = Self { root, relative };
+        std::fs::read_dir(root.join(relative))
+            .is_err()
+            .then_some(unlisted)
+    }
+}
+
+impl Drop for Unlisted<'_> {
+    fn drop(&mut self) {
+        set_mode(self.root, self.relative, 0o755);
+    }
+}
+
+#[test]
+fn a_workflows_directory_that_cannot_be_listed_is_named_in_the_error() {
+    let repo = clean_repository();
+    let Some(_unlisted) = Unlisted::new(repo.path(), ".github/workflows") else {
+        return;
+    };
+
+    let output = xtask(repo.path(), &["check"]);
+
+    let printed = printed(&output);
+    assert!(!output.status.success(), "{printed}");
+    assert!(printed.contains("listing the workflows"), "{printed}");
+    assert!(
+        printed.contains(".github/workflows: cannot read"),
+        "{printed}"
+    );
+}
+
+#[test]
+fn a_composite_actions_directory_that_cannot_be_listed_is_named_in_the_error() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        ".github/actions/setup/action.yml",
+        "name: setup\nruns:\n  using: composite\n  steps: []\n",
+    );
+    let Some(_unlisted) = Unlisted::new(repo.path(), ".github/actions") else {
+        return;
+    };
+
+    let output = xtask(repo.path(), &["check"]);
+
+    let printed = printed(&output);
+    assert!(!output.status.success(), "{printed}");
+    assert!(
+        printed.contains("listing the composite actions"),
+        "{printed}"
+    );
+    assert!(
+        printed.contains(".github/actions: cannot read"),
+        "{printed}"
+    );
+}
+
 #[test]
 fn a_workflow_that_is_not_yaml_fails_the_check() {
     let repo = clean_repository();

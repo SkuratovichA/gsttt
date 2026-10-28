@@ -5,9 +5,8 @@
 use std::path::Path;
 
 use anyhow::Context as _;
+use gsttt_spec::{Entry, read_directory};
 use serde_norway::{Mapping, Value};
-
-use crate::directory::{Entry, read_directory};
 
 /// Where the workflows are, from the repository root.
 const WORKFLOWS: &str = ".github/workflows";
@@ -19,7 +18,7 @@ const ACTIONS: &str = ".github/actions";
 pub(super) fn problems(root: &Path) -> anyhow::Result<Vec<String>> {
     let mut problems = Vec::new();
     let mut files = Vec::new();
-    match read_directory(&root.join(WORKFLOWS))? {
+    match read_directory(&root.join(WORKFLOWS)).context("listing the workflows")? {
         Some(entries) => files.extend(entries.into_iter().filter(|entry| is_yaml(&entry.path))),
         None => problems.push(format!(
             "{WORKFLOWS}: the directory is missing, so no workflow is checked"
@@ -42,7 +41,10 @@ fn is_yaml(path: &Path) -> bool {
 /// The `action.yml` files below `directory`, however deep. No directory means no composite actions.
 fn composite_actions(directory: &Path) -> anyhow::Result<Vec<Entry>> {
     let mut found = Vec::new();
-    for entry in read_directory(directory)?.unwrap_or_default() {
+    for entry in read_directory(directory)
+        .context("listing the composite actions")?
+        .unwrap_or_default()
+    {
         if entry.kind.is_dir() {
             found.extend(composite_actions(&entry.path)?);
         } else if matches!(

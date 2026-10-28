@@ -3,9 +3,8 @@
 //! - `spec`: the spec gate ([`spec`]).
 //! - `version`, `package`, `notes`, `check`: releases and repository checks ([`dist`]).
 //!
-//! [`root`] finds the repository a task works on, and [`directory`] lists a directory for the tasks that walk one.
+//! [`root`] finds the repository a task works on.
 
-mod directory;
 mod dist;
 mod root;
 mod spec;
