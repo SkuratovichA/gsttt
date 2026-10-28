@@ -593,7 +593,15 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         let Some(spec) = it.source.value.as_str() else {
             return;
         };
-        let mut import = Import::new(spec, ImportKind::ReExportAll, self.line(it.span.start));
+        let line = self.line(it.span.start);
+        // `export * as ns from 'x'` re-exports the namespace under one name, which is not `export *`.
+        let mut import = if it.exported.is_some() {
+            let mut import = Import::new(spec, ImportKind::ReExport, line);
+            import.names.push("*".to_owned());
+            import
+        } else {
+            Import::new(spec, ImportKind::ReExportAll, line)
+        };
         let exported = it
             .exported
             .as_ref()
@@ -649,6 +657,7 @@ impl<'a> Visit<'a> for Analyzer<'_> {
                 import.flags = import.flags | ImportFlags::TYPE_ONLY;
             }
             self.bind(it.id.name.as_str(), spec, "default");
+            import.names.push("default".to_owned());
             self.out.imports.push(import);
         }
     }
