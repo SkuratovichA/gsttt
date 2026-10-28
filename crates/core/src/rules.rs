@@ -36,7 +36,7 @@ pub struct Pack {
     pub embeds: Vec<EmbedRule>,
     #[serde(default)]
     pub assigns: Vec<AssignRule>,
-    /// Packages whose imported names each name a contract: the model types of `@prisma/client`.
+    /// Packages whose imported names each name a contract: the model types of `@prisma/client`. Only the TypeScript connector reads them.
     // Left out when empty, unlike the lists above, so that a pack written before this rule existed serialises as it did: the hash of the packs that keys the cache and the pinned packs of the other languages do not move.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<ImportRule>,
@@ -103,7 +103,7 @@ pub struct DecoratorRule {
 pub struct ChainRule {
     /// Dotted roots a chain starts from: `process.env`, `import.meta.env`, `prisma`, `trpc`.
     pub root: OneOrMany,
-    /// Types that make a name a root too, wherever the file uses it: a variable, a parameter or a class property declared with one of them starts a chain of this rule, and so does `this.<name>` for a constructor parameter property. A type counts when it is written as one of these, as a member of a union, as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, or through a `type` alias of the same file: `PrismaClient`, `Prisma.TransactionClient`. Only a connector for a language with declared types reads them.
+    /// Types that make a name a root too, wherever the file uses it: a variable, a parameter or a class property declared with one of them starts a chain of this rule, and so does `this.<name>` for a constructor parameter property. A type counts when it is written as one of these, as a member of a union, as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, or through a `type` alias of the same file: `PrismaClient`, `Prisma.TransactionClient`. Only the TypeScript connector reads them.
     // Left out when empty, for the reason given at `Pack::imports`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub root_types: Vec<String>,

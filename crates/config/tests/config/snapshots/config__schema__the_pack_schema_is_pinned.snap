@@ -60,7 +60,7 @@ expression: pack_schema()
       "default": []
     },
     "imports": {
-      "description": "Packages whose imported names each name a contract: the model types of `@prisma/client`.",
+      "description": "Packages whose imported names each name a contract: the model types of `@prisma/client`. Only the TypeScript connector reads them.",
       "type": "array",
       "items": {
         "$ref": "#/definitions/ImportRule"
@@ -238,7 +238,7 @@ expression: pack_schema()
           ]
         },
         "root_types": {
-          "description": "Types that make a name a root too, wherever the file uses it: a variable, a parameter or a class property declared with one of them starts a chain of this rule, and so does `this.<name>` for a constructor parameter property. A type counts when it is written as one of these, as a member of a union, as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, or through a `type` alias of the same file: `PrismaClient`, `Prisma.TransactionClient`. Only a connector for a language with declared types reads them.",
+          "description": "Types that make a name a root too, wherever the file uses it: a variable, a parameter or a class property declared with one of them starts a chain of this rule, and so does `this.<name>` for a constructor parameter property. A type counts when it is written as one of these, as a member of a union, as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, or through a `type` alias of the same file: `PrismaClient`, `Prisma.TransactionClient`. Only the TypeScript connector reads them.",
           "type": "array",
           "items": {
             "type": "string"

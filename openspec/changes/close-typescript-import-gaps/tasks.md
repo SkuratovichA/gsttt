@@ -25,3 +25,4 @@
 - [x] 3.3 A name is an alias of `this` or a typed root only when every binding of it in the file, and of `this.<name>` for a class property, binds `this` or a root type, and one other binding makes it neither for the whole file
 - [x] 3.4 The parameters of a signature without a body bind nothing
 - [x] 3.5 An import type reaches the import rules by the first name of its qualifier, at the line of its specifier
+- [x] 3.6 The doc comments of the `imports` and `root_types` rule fields say that only the TypeScript connector reads them, and the pinned pack schema follows
