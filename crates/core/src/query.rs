@@ -17,7 +17,7 @@ mod report;
 mod route;
 mod walk;
 
-pub use contracts::{ContractLookup, Found, Match, Site, contract};
+pub use contracts::{ContractLookup, ContractLookupError, Found, Match, Site, contract};
 pub use http::HttpMatcher;
 pub use impact::{Affected, Deleted, Impact, ImpactRequest, Reason, impact};
 pub use lookup::Miss;

@@ -96,8 +96,27 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 - **WHEN** a path is asked between two files with no chain between them
 - **THEN** the answer says there is none and how many files the first one reaches
 
+### Requirement: Ties between equally near ways
+When several ways reach a file at the same distance, `impact` SHALL give as its reason the way from the file with the smallest path, and `path` SHALL reach each file of its chain from the file with the smallest path one hop nearer. From one file an import SHALL come before a contract, contracts SHALL go in key order, and a file with several sites in one contract SHALL give the first by line of those the walk reaches.
+
+#### Scenario: The reason comes from the file with the smallest path
+- **WHEN** `w.ts` imports `a.ts` and `b.ts`, `z.ts` imports `a.ts`, `y.ts` imports `b.ts`, `x.ts` imports `y.ts` and `z.ts`, and `a.ts` and `b.ts` change, asked in either order
+- **THEN** impact gives `imports a.ts` as the reason for `w.ts` and `imports y.ts` as the reason for `x.ts`
+
+#### Scenario: From one file an import comes before a contract
+- **WHEN** `lib.ts` serves `http GET /x`, `x.ts` imports `lib.ts` and calls `http GET /x`, and `lib.ts` changes
+- **THEN** impact gives `imports lib.ts` as the reason for `x.ts`
+
+#### Scenario: A file's first site by line gives the reason
+- **WHEN** `schema.yaml` declares `http GET /x`, `early-caller.ts` serves it at line 9 and calls it at line 3, and `schema.yaml` changes
+- **THEN** impact gives `calls http GET /x` as the reason for `early-caller.ts`
+
+#### Scenario: A chain comes from the file with the smallest path
+- **WHEN** `start.ts` imports `a.ts` and `b.ts`, which both import `goal.ts`
+- **THEN** the path from `start.ts` to `goal.ts` is `start.ts`, `a.ts`, `goal.ts`
+
 ### Requirement: Contract lookup
-`contract` SHALL take a canonical key and list its sites grouped by role, and for an HTTP key also the sites of every key that meets it, each with its own key. Text that is not a canonical key SHALL be searched case-insensitively in every key, and the answer SHALL list the matching keys with the number of sites of each role.
+`contract` SHALL take a canonical key and list its sites grouped by role, and for an HTTP key also the sites of every key that meets it, each with its own key. Text that is not a canonical key SHALL be searched case-insensitively in every key, and the answer SHALL list the matching keys with the number of sites of each role. A blank query SHALL be an error that says what to ask for, not an answer.
 
 #### Scenario: A route lists its callers
 - **WHEN** `http GET /bookings/{}` is looked up, one file serves that key and another calls `http GET /bookings/me`
@@ -106,6 +125,11 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 #### Scenario: Free text searches keys
 - **WHEN** `booking` is looked up and the index has `table bookings`, `graphql Query.bookings` and `env API_URL`
 - **THEN** the answer lists `table bookings` and `graphql Query.bookings` with their site counts and not `env API_URL`
+
+#### Scenario: A blank query is an error
+- **WHEN** `contract` is asked for empty text or only whitespace, and the index holds contracts
+- **THEN** it returns an error that says to give a contract key or part of one
+- **AND** it does not list the contracts of the index
 
 ### Requirement: HTTP matching
 Two HTTP keys SHALL meet when their methods are equal or either is `*`, and their paths have the same number of segments, each pair equal or `{}` on either side, with or without one prefix from the index's `http_prefixes` removed from the start of one of the two paths. A prefix SHALL NOT be removed from both paths, and SHALL NOT be removed from a path that it is all of.

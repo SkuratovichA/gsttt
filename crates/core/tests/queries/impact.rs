@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 
+use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{Affected, Answer, Entries, Impact, ImpactRequest, impact};
@@ -353,6 +354,170 @@ fn several_changed_files_are_walked_together() {
         ]
     );
     assert_eq!(answer.changed, ["a.ts", "b.ts"]);
+}
+
+#[scenario("queries", "The reason comes from the file with the smallest path")]
+#[test]
+fn the_reason_comes_from_the_file_with_the_smallest_path() {
+    // `w.ts` is reached from both changed files, `x.ts` from both of the files at distance 1 that it imports. `z.ts`
+    // is found before `y.ts`, because the file it imports is the smaller one, so the order of discovery is not the
+    // order of paths.
+    let index = Tree::new()
+        .imports("w.ts", "a.ts")
+        .imports("w.ts", "b.ts")
+        .imports("z.ts", "a.ts")
+        .imports("y.ts", "b.ts")
+        .imports("x.ts", "y.ts")
+        .imports("x.ts", "z.ts")
+        .build();
+
+    // Asked in the opposite order, so that the order of the request is no part of the answer.
+    let answer = run(&index, &["b.ts", "a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("w.ts", 1, "imports a.ts".to_owned()),
+            ("y.ts", 1, "imports b.ts".to_owned()),
+            ("z.ts", 1, "imports a.ts".to_owned()),
+            ("x.ts", 2, "imports y.ts".to_owned()),
+        ]
+    );
+}
+
+#[scenario("queries", "From one file an import comes before a contract")]
+#[test]
+fn from_one_file_an_import_comes_before_a_contract() {
+    let index = Tree::new()
+        .serves("lib.ts", "http GET /x")
+        .imports("x.ts", "lib.ts")
+        .calls("x.ts", "http GET /x")
+        .build();
+
+    let answer = run(&index, &["lib.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("x.ts", 1, "imports lib.ts".to_owned())]
+    );
+}
+
+#[test]
+fn a_smaller_path_comes_before_an_import_from_a_larger_one() {
+    // `x.ts` is reached at distance 1 from `a.ts` by a contract and from `b.ts` by an import: the file comes first,
+    // and an import is not preferred over every contract of the walk, only over those of the same file.
+    let index = Tree::new()
+        .serves("a.ts", "http GET /x")
+        .calls("x.ts", "http GET /x")
+        .imports("x.ts", "b.ts")
+        .build();
+
+    let answer = run(&index, &["b.ts", "a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("x.ts", 1, "calls http GET /x".to_owned())]
+    );
+}
+
+#[test]
+fn from_one_file_contracts_come_in_key_order() {
+    let index = Tree::new()
+        .serves("lib.ts", "queue beta")
+        .serves("lib.ts", "queue alpha")
+        .calls("x.ts", "queue beta")
+        .calls("x.ts", "queue alpha")
+        .build();
+
+    let answer = run(&index, &["lib.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("x.ts", 1, "calls queue alpha".to_owned())]
+    );
+}
+
+#[scenario("queries", "A file's first site by line gives the reason")]
+#[test]
+fn a_file_that_serves_and_calls_a_contract_gives_its_first_site_by_line() {
+    // Each file has both sites, in opposite order of line, so that neither the role order nor the order the sites
+    // were written in decides.
+    let index = Tree::new()
+        .declares("schema.yaml", "http GET /x")
+        .site("early-server.ts", "http GET /x", Role::Calls, 9)
+        .site("early-server.ts", "http GET /x", Role::Serves, 3)
+        .site("early-caller.ts", "http GET /x", Role::Serves, 9)
+        .site("early-caller.ts", "http GET /x", Role::Calls, 3)
+        .build();
+
+    let answer = run(&index, &["schema.yaml"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("early-caller.ts", 1, "calls http GET /x".to_owned()),
+            ("early-server.ts", 1, "serves http GET /x".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn a_server_reaches_a_file_that_serves_and_calls_by_its_call() {
+    let index = Tree::new()
+        .serves("server.ts", "http GET /x")
+        .site("proxy.ts", "http GET /x", Role::Serves, 3)
+        .site("proxy.ts", "http GET /x", Role::Calls, 9)
+        .build();
+
+    let answer = run(&index, &["server.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("proxy.ts", 1, "calls http GET /x".to_owned())]
+    );
+}
+
+#[test]
+fn a_changed_file_that_serves_and_calls_a_contract_is_a_server() {
+    let index = Tree::new()
+        .site("proxy.ts", "http GET /x", Role::Serves, 3)
+        .site("proxy.ts", "http GET /x", Role::Calls, 9)
+        .serves("other-server.ts", "http GET /x")
+        .calls("client.ts", "http GET /x")
+        .build();
+
+    let answer = run(&index, &["proxy.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("client.ts", 1, "calls http GET /x".to_owned())]
+    );
+}
+
+#[test]
+fn a_declarer_reached_after_a_server_still_reaches_the_other_servers() {
+    // `server.ts` crosses the contract first, as a server, and reaches only its caller. `schema.ts` imports it and
+    // declares the contract, so it crosses the same contract again, as a declarer, and reaches the other server.
+    let index = Tree::new()
+        .imports("server.ts", "lib.ts")
+        .serves("server.ts", "http GET /x")
+        .imports("schema.ts", "server.ts")
+        .declares("schema.ts", "http GET /x")
+        .serves("other-server.ts", "http GET /x")
+        .calls("client.ts", "http GET /x")
+        .build();
+
+    let answer = run(&index, &["lib.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("server.ts", 1, "imports lib.ts".to_owned()),
+            ("client.ts", 2, "calls http GET /x".to_owned()),
+            ("schema.ts", 2, "imports server.ts".to_owned()),
+            ("other-server.ts", 3, "serves http GET /x".to_owned()),
+        ]
+    );
 }
 
 #[test]

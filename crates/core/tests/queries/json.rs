@@ -179,8 +179,8 @@ fn json_of_a_contract_lookup_says_which_kind_of_lookup_it_was() {
         .serves("repo.ts", "table bookings")
         .build();
 
-    let key = to_value(contract(&index, Freshness::Fresh, "table bookings")).unwrap();
-    let search = to_value(contract(&index, Freshness::Fresh, "book")).unwrap();
+    let key = to_value(contract(&index, Freshness::Fresh, "table bookings").unwrap()).unwrap();
+    let search = to_value(contract(&index, Freshness::Fresh, "book").unwrap()).unwrap();
 
     assert_eq!(key["found"]["lookup"], "key");
     assert_eq!(key["found"]["serves"][0]["path"], "repo.ts");

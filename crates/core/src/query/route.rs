@@ -72,8 +72,8 @@ pub struct Route {
 ///
 /// A hop is an import, a hop from a file that calls a contract to a file that serves or declares it, or a hop from a
 /// file that serves a contract to a file that declares it. HTTP hops go to the sites of every key that meets the
-/// key. Of several shortest chains the answer is the one found first by visiting files in path order, imports before
-/// contracts.
+/// key. Of several shortest chains the answer reaches each file from the file with the smallest path among those one
+/// hop nearer; from that file an import comes before a contract, and contracts go in key order.
 pub fn path(index: &Index, freshness: Freshness, from: &str, to: &str) -> Route {
     let (from_name, start) = locate(index, from);
     let (to_name, goal) = locate(index, to);
@@ -161,7 +161,8 @@ impl Hop {
 }
 
 /// A breadth-first search from one file along imports and contract hops, level by level so that the first hop to a
-/// file is on a shortest chain, and in file order so that the same chain comes out on every run.
+/// file is on a shortest chain, and each level in path order so that a file is reached from the smallest path one hop
+/// nearer, which is the same on every run.
 struct Chase<'a> {
     graph: &'a Graph,
     crossing: Crossing<'a>,

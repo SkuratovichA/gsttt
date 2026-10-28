@@ -21,8 +21,9 @@ pub(super) struct Reached {
     pub(super) file: FileId,
     /// Hops from the nearest changed file.
     pub(super) distance: u32,
-    /// The first way the walk found: of the nearest ways, the one from the file with the smallest path, and from one
-    /// file an import before a contract, and a contract before a later one in key order.
+    /// The first way the walk found. Of the equally near ways it is the one from the file with the smallest path among
+    /// those one hop nearer; from that file an import comes before a contract, contracts go in key order and the
+    /// sites of a contract by line.
     pub(super) cause: Cause,
 }
 

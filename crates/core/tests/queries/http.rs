@@ -195,7 +195,7 @@ proptest! {
             .map(ToString::to_string)
             .collect();
 
-        match contract(&index, Freshness::Fresh, &asked.to_string()).found {
+        match contract(&index, Freshness::Fresh, &asked.to_string()).unwrap().found {
             Found::Key { serves, .. } => {
                 let found: BTreeSet<String> = serves.into_iter().map(|site| site.key).collect();
                 prop_assert_eq!(found, expected);

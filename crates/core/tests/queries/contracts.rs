@@ -2,13 +2,13 @@
 
 use gsttt_core::contract::Role;
 use gsttt_core::index::Freshness;
-use gsttt_core::query::{ContractLookup, Found, Match, Site, contract};
+use gsttt_core::query::{ContractLookup, ContractLookupError, Found, Match, Site, contract};
 use gsttt_scenario::scenario;
 
 use crate::fixture::Tree;
 
 fn lookup(tree: Tree, query: &str) -> ContractLookup {
-    contract(&tree.build(), Freshness::Fresh, query)
+    contract(&tree.build(), Freshness::Fresh, query).unwrap()
 }
 
 /// Path, line and key of each site, which is what a reader of the answer sees.
@@ -100,6 +100,29 @@ fn free_text_searches_keys() {
     assert!(
         text.contains("graphql Query.bookings  declares 1, serves 0, calls 0\n"),
         "{text}"
+    );
+}
+
+#[scenario("queries", "A blank query is an error")]
+#[test]
+fn a_blank_query_is_an_error_and_not_a_list_of_every_contract() {
+    let index = Tree::new()
+        .declares("schema.sql", "table bookings")
+        .declares("schema.graphql", "graphql Query.bookings")
+        .build();
+
+    for blank in ["", "   ", "\t\n"] {
+        let error = contract(&index, Freshness::Fresh, blank).unwrap_err();
+
+        assert_eq!(error, ContractLookupError::Blank, "{blank:?}");
+    }
+}
+
+#[test]
+fn the_error_for_a_blank_query_says_what_to_ask_for() {
+    assert_eq!(
+        ContractLookupError::Blank.to_string(),
+        "no contract was asked for: expected a key like `http GET /bookings/{}`, or part of one"
     );
 }
 

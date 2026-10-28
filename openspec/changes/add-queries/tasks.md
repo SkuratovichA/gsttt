@@ -34,3 +34,6 @@
 - [x] 5.7 The share of resolved imports is computed from the counts as a whole percentage rounded down, so that 29 of 100 reads `29%`, and the JSON footer carries the count behind it
 - [x] 5.8 `impact` and `path` cross a contract with one function that takes the direction, and a path hop over a `mod` declaration is named from the edge and the label the dependents use
 - [x] 5.9 The architecture document words an empty answer as the spec does
+- [x] 5.10 The tie-breaks of `impact` and `path` are written into the spec and pinned by tests: the smallest path first, an import before a contract from one file, contracts in key order and a file's first site by line
+- [x] 5.11 A file that serves and calls one contract, and a declarer or a caller reached after a server, are pinned by tests in both walks
+- [x] 5.12 `contract` returns an error for a blank query in place of listing every contract

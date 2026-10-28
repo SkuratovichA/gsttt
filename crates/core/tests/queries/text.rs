@@ -133,7 +133,9 @@ fn an_empty_impact_says_what_was_searched() {
 fn a_contract_search_that_finds_nothing_says_what_was_searched() {
     let index = Tree::new().declares("schema.sql", "table bookings").build();
 
-    let text = contract(&index, Freshness::Fresh, "zebra").to_string();
+    let text = contract(&index, Freshness::Fresh, "zebra")
+        .unwrap()
+        .to_string();
 
     assert!(
         text.starts_with("no contract key contains `zebra` among 1 contract\n"),
@@ -161,7 +163,7 @@ fn every_answer_ends_with_coverage_and_freshness() {
         dependencies(&index, fresh, "b.ts").to_string(),
         impact(&index, fresh, &request).to_string(),
         path(&index, fresh, "b.ts", "a.ts").to_string(),
-        contract(&index, fresh, "http GET /x").to_string(),
+        contract(&index, fresh, "http GET /x").unwrap().to_string(),
         coverage(&index, fresh).to_string(),
         status(&index, fresh).to_string(),
     ];

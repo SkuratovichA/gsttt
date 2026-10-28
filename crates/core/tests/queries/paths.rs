@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 
+use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind};
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{Link, Route, path};
@@ -129,6 +130,123 @@ fn the_shortest_of_several_chains_wins() {
         files(&route(&index, "a.ts", "d.ts")),
         ["a.ts", "x.ts", "d.ts"]
     );
+}
+
+#[scenario("queries", "A chain comes from the file with the smallest path")]
+#[test]
+fn of_equally_short_chains_the_one_through_the_smallest_path_wins() {
+    let index = Tree::new()
+        .imports("start.ts", "b.ts")
+        .imports("start.ts", "a.ts")
+        .imports("b.ts", "goal.ts")
+        .imports("a.ts", "goal.ts")
+        .build();
+
+    assert_eq!(
+        files(&route(&index, "start.ts", "goal.ts")),
+        ["start.ts", "a.ts", "goal.ts"]
+    );
+}
+
+#[test]
+fn a_smaller_path_comes_before_an_import_from_a_larger_one() {
+    // `z.ts` is found by an import and `a.ts` by a contract, both from `start.ts`, so `z.ts` is found first. The
+    // chain still goes through `a.ts`, because the files one hop from the start are visited in path order.
+    let index = Tree::new()
+        .imports("start.ts", "z.ts")
+        .calls("start.ts", "http GET /x")
+        .serves("a.ts", "http GET /x")
+        .imports("a.ts", "goal.ts")
+        .imports("z.ts", "goal.ts")
+        .build();
+
+    assert_eq!(
+        steps(&route(&index, "start.ts", "goal.ts")),
+        [
+            ("start.ts", None),
+            ("a.ts", Some("by http GET /x".to_owned())),
+            ("goal.ts", Some("by import".to_owned())),
+        ]
+    );
+}
+
+#[test]
+fn from_one_file_an_import_comes_before_a_contract() {
+    let index = Tree::new()
+        .imports("start.ts", "goal.ts")
+        .calls("start.ts", "http GET /x")
+        .serves("goal.ts", "http GET /x")
+        .build();
+
+    assert_eq!(
+        steps(&route(&index, "start.ts", "goal.ts")),
+        [
+            ("start.ts", None),
+            ("goal.ts", Some("by import".to_owned()))
+        ]
+    );
+}
+
+#[test]
+fn from_one_file_contracts_come_in_key_order() {
+    let index = Tree::new()
+        .calls("start.ts", "queue beta")
+        .calls("start.ts", "queue alpha")
+        .serves("goal.ts", "queue beta")
+        .serves("goal.ts", "queue alpha")
+        .build();
+
+    assert_eq!(
+        steps(&route(&index, "start.ts", "goal.ts")),
+        [
+            ("start.ts", None),
+            ("goal.ts", Some("by queue alpha".to_owned()))
+        ]
+    );
+}
+
+#[test]
+fn a_file_that_calls_a_contract_after_a_server_reached_it_still_reaches_the_other_servers() {
+    // `server.ts` crosses the contract first, as a server, and reaches only its declarers. `caller.ts` is one hop
+    // farther, so it crosses the same contract again, as a caller, and reaches the other server.
+    let index = Tree::new()
+        .imports("start.ts", "server.ts")
+        .serves("server.ts", "http GET /x")
+        .imports("server.ts", "caller.ts")
+        .calls("caller.ts", "http GET /x")
+        .serves("other-server.ts", "http GET /x")
+        .build();
+
+    assert_eq!(
+        steps(&route(&index, "start.ts", "other-server.ts")),
+        [
+            ("start.ts", None),
+            ("server.ts", Some("by import".to_owned())),
+            ("caller.ts", Some("by import".to_owned())),
+            ("other-server.ts", Some("by http GET /x".to_owned())),
+        ]
+    );
+}
+
+#[test]
+fn a_file_that_serves_and_calls_a_contract_starts_a_chain_as_a_caller() {
+    let index = Tree::new()
+        .site("proxy.ts", "http GET /x", Role::Serves, 3)
+        .site("proxy.ts", "http GET /x", Role::Calls, 9)
+        .serves("server.ts", "http GET /x")
+        .declares("schema.yaml", "http GET /x")
+        .build();
+
+    assert_eq!(
+        files(&route(&index, "proxy.ts", "server.ts")),
+        ["proxy.ts", "server.ts"]
+    );
+    assert_eq!(
+        files(&route(&index, "proxy.ts", "schema.yaml")),
+        ["proxy.ts", "schema.yaml"]
+    );
+    // From a server, the file's site as a server is no hop: only the schema is.
+    assert_eq!(route(&index, "server.ts", "proxy.ts").reach, Some(1));
 }
 
 #[test]

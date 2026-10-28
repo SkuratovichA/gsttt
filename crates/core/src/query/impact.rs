@@ -58,7 +58,8 @@ pub struct Affected {
     pub path: String,
     /// Hops from the nearest changed file.
     pub distance: u32,
-    /// The first way the walk got here.
+    /// The first way the walk got here: of the equally near ways, the one from the file with the smallest path, and
+    /// from that file an import before a contract.
     pub reason: Reason,
 }
 

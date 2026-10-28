@@ -61,13 +61,35 @@ pub struct ContractLookup {
     pub footer: Footer,
 }
 
+/// Why a contract could not be looked up.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ContractLookupError {
+    /// There was no text to look up. A search for no text would list every contract, which reads as an answer to a
+    /// question nobody asked, so the caller is told what to ask for instead.
+    #[error(
+        "no contract was asked for: expected a key like `http GET /bookings/{{}}`, or part of one"
+    )]
+    Blank,
+}
+
 /// The sites of the contract `query` names, or else the contracts whose keys contain `query`.
 ///
 /// `query` names a contract when it reads as `<kind> <key>` in any spelling that [`ContractKey::parse`] puts in
 /// canonical form, and the index has sites for that key, or for an HTTP key that meets it.
-pub fn contract(index: &Index, freshness: Freshness, query: &str) -> ContractLookup {
+///
+/// # Errors
+///
+/// [`ContractLookupError::Blank`] when `query` is empty or only whitespace.
+pub fn contract(
+    index: &Index,
+    freshness: Freshness,
+    query: &str,
+) -> Result<ContractLookup, ContractLookupError> {
     let graph = &index.graph;
     let query = query.trim();
+    if query.is_empty() {
+        return Err(ContractLookupError::Blank);
+    }
     let key_sites = ContractKey::parse(query)
         .ok()
         .map(|key| (Crossing::new(index).meeting(&key), key))
@@ -109,12 +131,12 @@ pub fn contract(index: &Index, freshness: Freshness, query: &str) -> ContractLoo
         }
         None => search(graph, query),
     };
-    ContractLookup {
+    Ok(ContractLookup {
         query: query.to_owned(),
         found,
         contracts: u32::try_from(graph.contract_count()).unwrap_or(u32::MAX),
         footer: Footer::new(index, freshness, files),
-    }
+    })
 }
 
 fn place(graph: &Graph, site: &ContractSite, key: &str) -> Option<Site> {
