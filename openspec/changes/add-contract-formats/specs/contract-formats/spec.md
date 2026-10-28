@@ -189,4 +189,4 @@ Each connector SHALL report what it provides, with its blind spots in words.
 
 #### Scenario: Blind spots are reported
 - **WHEN** the coverage of the contract connectors is read
-- **THEN** among the blind spots are GraphQL fragments spread from other files, environment variables set in compose files, CI and deployment manifests, and schemas generated at build time
+- **THEN** among the blind spots are GraphQL fragments spread from other files, root types renamed by a `schema` definition in another file, `# import <names> from "<file>"` imports, environment variables set in compose files, CI and deployment manifests, and schemas generated at build time

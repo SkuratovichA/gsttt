@@ -33,3 +33,4 @@
 - [x] 4.10 The GraphQL operations fixture also holds a shorthand query and a fragment spread at the root, which the operations scenario now names
 - [x] 4.11 OpenAPI reads every server, drops an origin written as `//host` or `{variable}`, and declares each operation, and each fragment reached by a `$ref`, once under each distinct server path
 - [x] 4.12 OpenAPI searches a document for its `$ref`s without reading its operations, and logs each document it skips because it is too large, unreadable or invalid
+- [x] 4.13 GraphQL lists a root type renamed in another file and the `# import <names> from "<file>"` form as blind spots, and builds its root and fragment maps only for documents that hold a type or a fragment

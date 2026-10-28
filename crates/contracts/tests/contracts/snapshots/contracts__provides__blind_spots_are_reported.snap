@@ -29,7 +29,9 @@ expression: provides
           "schema definitions and their extensions"
         ],
         "blind_spots": [
-          "schemas generated at build time"
+          "schemas generated at build time",
+          "root types renamed by a `schema` definition in another file",
+          "imports written `# import <names> from \"<file>\"`"
         ]
       },
       {
@@ -40,7 +42,8 @@ expression: provides
           "documents embedded in code"
         ],
         "blind_spots": [
-          "GraphQL fragments spread from other files"
+          "GraphQL fragments spread from other files",
+          "imports written `# import <names> from \"<file>\"`"
         ]
       }
     ]

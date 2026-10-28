@@ -2,7 +2,9 @@
 //! connectors find embedded in code.
 //!
 //! A schema declares `graphql Query.bookings` for each field of a root type, an operation calls the root fields it
-//! selects, and a `#import "path"` comment is an import, the convention graphql-import and graphql-tag loaders use.
+//! selects, and a `#import "path"` comment is an import, the convention of the graphql-tag loaders. The
+//! `# import <names> from "<file>"` form of graphql-import is not read, and neither is a root type renamed in
+//! another file than the one that defines it; both are blind spots of the connector.
 //!
 //! The connector always opens a project, even where no file is claimed, because code in any language can embed
 //! GraphQL documents.
@@ -26,6 +28,9 @@ use serde::{Deserialize, Serialize};
 use crate::common::{Errors, byte_offset, line_number, provide, resolve_relative, site};
 
 const VIA: &str = "graphql";
+
+/// Said by both roles: an import written this way is no edge of the graph, so the files it joins stay apart.
+const UNREAD_IMPORTS: &str = "imports written `# import <names> from \"<file>\"`";
 
 /// The connector for GraphQL.
 #[derive(Clone, Copy, Debug)]
@@ -98,13 +103,17 @@ impl Project for GraphqlProject {
                 ContractKind::Graphql,
                 Role::Declares,
                 &["schema definitions and their extensions"],
-                &["schemas generated at build time"],
+                &[
+                    "schemas generated at build time",
+                    "root types renamed by a `schema` definition in another file",
+                    UNREAD_IMPORTS,
+                ],
             ),
             provide(
                 ContractKind::Graphql,
                 Role::Calls,
                 &["operation documents", "documents embedded in code"],
-                &["GraphQL fragments spread from other files"],
+                &["GraphQL fragments spread from other files", UNREAD_IMPORTS],
             ),
         ]
     }
@@ -207,8 +216,26 @@ impl Root {
 /// The sites of a document: the root fields its schema declares and the root fields its operations call.
 fn read_document(document: &cst::Document, lines: &LineIndex) -> Vec<ContractFact> {
     let definitions: Vec<Definition> = document.definitions().collect();
-    let roots = root_types(&definitions);
-    let fragments = fragments_of(&definitions);
+    // A type looks itself up among the roots and a spread looks up its fragment, so a document without a type or
+    // without a fragment, the usual embedded one, builds neither map.
+    let roots = if definitions.iter().any(|definition| {
+        matches!(
+            definition,
+            Definition::ObjectTypeDefinition(_) | Definition::ObjectTypeExtension(_)
+        )
+    }) {
+        root_types(&definitions)
+    } else {
+        BTreeMap::new()
+    };
+    let fragments = if definitions
+        .iter()
+        .any(|definition| matches!(definition, Definition::FragmentDefinition(_)))
+    {
+        fragments_of(&definitions)
+    } else {
+        BTreeMap::new()
+    };
     let mut facts = Vec::new();
     for definition in &definitions {
         match definition {

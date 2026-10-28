@@ -23,6 +23,8 @@ fn blind_spots_are_reported() {
         "environment variables set in compose files",
         "CI and deployment manifests",
         "schemas generated at build time",
+        "root types renamed by a `schema` definition in another file",
+        "imports written `# import <names> from \"<file>\"`",
     ] {
         assert!(
             blind_spots.contains(expected),
