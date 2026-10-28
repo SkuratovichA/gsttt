@@ -1,0 +1,91 @@
+---
+source: crates/lang-ts/tests/typescript/imports.rs
+expression: json
+---
+{
+  "projects": [
+    {
+      "connector": "ts",
+      "root": ".",
+      "provides": [
+        {
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ],
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ]
+        },
+        {
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ],
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ]
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "package.json",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/a.ts",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "recovered",
+        "errors": 1,
+        "first_error_line": 3
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "./a",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [
+            "a"
+          ],
+          "to": {
+            "file": "src/a.ts"
+          }
+        }
+      ],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/main.ts",
+      "project": "ts ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

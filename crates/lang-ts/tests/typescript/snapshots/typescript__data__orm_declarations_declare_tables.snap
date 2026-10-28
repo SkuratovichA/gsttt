@@ -1,0 +1,160 @@
+---
+source: crates/lang-ts/tests/typescript/data.rs
+expression: json
+---
+{
+  "projects": [
+    {
+      "connector": "ts",
+      "root": ".",
+      "provides": [
+        {
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ],
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ]
+        },
+        {
+          "kind": "table",
+          "role": "declares",
+          "via": [
+            "drizzle",
+            "typeorm"
+          ],
+          "blind_spots": [
+            "tables named at run time are not read"
+          ]
+        },
+        {
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ],
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ]
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "package.json",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "typeorm",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [
+            "Entity"
+          ],
+          "to": {
+            "external": "typeorm"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "table bookings",
+          "role": "declares",
+          "line": 3,
+          "via": "typeorm"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/booking.entity.ts",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "typeorm",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [
+            "Entity"
+          ],
+          "to": {
+            "external": "typeorm"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "table room",
+          "role": "declares",
+          "line": 3,
+          "via": "typeorm"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/room.entity.ts",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "drizzle-orm/pg-core",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [
+            "pgTable",
+            "serial"
+          ],
+          "to": {
+            "external": "drizzle-orm"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "table booking_items",
+          "role": "declares",
+          "line": 3,
+          "via": "drizzle"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/schema.ts",
+      "project": "ts ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

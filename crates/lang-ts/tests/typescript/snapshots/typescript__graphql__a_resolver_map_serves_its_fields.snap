@@ -1,0 +1,88 @@
+---
+source: crates/lang-ts/tests/typescript/graphql.rs
+expression: json
+---
+{
+  "projects": [
+    {
+      "connector": "ts",
+      "root": ".",
+      "provides": [
+        {
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ],
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ]
+        },
+        {
+          "kind": "graphql",
+          "role": "serves",
+          "via": [
+            "graphql"
+          ],
+          "blind_spots": [
+            "resolvers built at run time are not read",
+            "schema-first resolvers outside a resolvers map are not read"
+          ]
+        },
+        {
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ],
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ]
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "package.json",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "graphql Query.bookings",
+          "role": "serves",
+          "line": 6,
+          "via": "graphql"
+        },
+        {
+          "key": "graphql Mutation.cancel",
+          "role": "serves",
+          "line": 9,
+          "via": "graphql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/resolvers.ts",
+      "project": "ts ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

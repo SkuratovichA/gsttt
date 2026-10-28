@@ -1,0 +1,106 @@
+---
+source: crates/lang-ts/tests/typescript/trpc.rs
+expression: json
+---
+{
+  "projects": [
+    {
+      "connector": "ts",
+      "root": ".",
+      "provides": [
+        {
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ],
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ]
+        },
+        {
+          "kind": "trpc",
+          "role": "serves",
+          "via": [
+            "trpc"
+          ],
+          "blind_spots": [
+            "routers merged or built at run time are not followed"
+          ]
+        },
+        {
+          "kind": "trpc",
+          "role": "calls",
+          "via": [
+            "trpc"
+          ],
+          "blind_spots": [
+            "clients under a name other than trpc or api are not recognised"
+          ]
+        },
+        {
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ],
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ]
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "package.json",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "../utils/api",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [
+            "api"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "trpc booking.get",
+          "role": "calls",
+          "line": 4,
+          "via": "trpc"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/Bookings.tsx",
+      "project": "ts ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

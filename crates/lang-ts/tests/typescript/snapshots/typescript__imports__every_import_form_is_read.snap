@@ -1,0 +1,216 @@
+---
+source: crates/lang-ts/tests/typescript/imports.rs
+expression: json
+---
+{
+  "projects": [
+    {
+      "connector": "ts",
+      "root": ".",
+      "provides": [
+        {
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ],
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ]
+        },
+        {
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ],
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ]
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "package.json",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "./globals.d.ts",
+          "kind": "reference",
+          "line": 1,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./named",
+          "kind": "static",
+          "line": 2,
+          "flags": 0,
+          "names": [
+            "default",
+            "a",
+            "b"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./namespace",
+          "kind": "static",
+          "line": 3,
+          "flags": 0,
+          "names": [
+            "*"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./side-effect",
+          "kind": "side-effect",
+          "line": 4,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./types",
+          "kind": "static",
+          "line": 5,
+          "flags": 1,
+          "names": [
+            "T"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./re-exported",
+          "kind": "re-export",
+          "line": 6,
+          "flags": 0,
+          "names": [
+            "x",
+            "y"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./all",
+          "kind": "re-export-all",
+          "line": 7,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./star",
+          "kind": "re-export",
+          "line": 8,
+          "flags": 0,
+          "names": [
+            "*"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./lazy",
+          "kind": "dynamic",
+          "line": 9,
+          "flags": 0,
+          "names": [
+            "*"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./cjs",
+          "kind": "require",
+          "line": 10,
+          "flags": 0,
+          "names": [
+            "default"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "spec": "./legacy",
+          "kind": "require",
+          "line": 11,
+          "flags": 0,
+          "names": [
+            "default"
+          ],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        }
+      ],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/forms.ts",
+      "project": "ts ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

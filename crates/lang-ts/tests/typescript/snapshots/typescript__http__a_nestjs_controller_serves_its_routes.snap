@@ -1,0 +1,109 @@
+---
+source: crates/lang-ts/tests/typescript/http.rs
+expression: json
+---
+{
+  "projects": [
+    {
+      "connector": "ts",
+      "root": ".",
+      "provides": [
+        {
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ],
+          "blind_spots": [
+            "file-system routes (Next.js, Remix, SvelteKit) are not read",
+            "routers mounted from another package are not followed",
+            "prefixes and paths held in variables are not followed",
+            "a global prefix set at start-up (NestJS setGlobalPrefix) is not applied"
+          ]
+        },
+        {
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ],
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ]
+        },
+        {
+          "kind": "graphql",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ],
+          "blind_spots": [
+            "resolvers built at run time are not read",
+            "schema-first resolvers outside a resolvers map are not read"
+          ]
+        },
+        {
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ],
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ]
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "package.json",
+      "project": "ts ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "@nestjs/common",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [
+            "Controller",
+            "Get"
+          ],
+          "to": {
+            "external": "@nestjs/common"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "http GET /bookings/{}",
+          "role": "serves",
+          "line": 5,
+          "via": "nestjs"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/bookings.controller.ts",
+      "project": "ts ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}
