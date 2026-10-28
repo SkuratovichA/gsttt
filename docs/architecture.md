@@ -170,3 +170,5 @@ The hot path allocates as little as it can: facts borrow from the source where t
 ## Known gaps in 0.1
 
 Each one is listed in its connector's `provides` blind spots, so `gsttt coverage` reports it instead of hiding it: file-system routes (Next.js `app/`, SvelteKit), Diesel `table!`, tonic server impls, Flask routes declared with several methods in a list beyond the first, imports with computed paths, dependency-injection containers, and code generated into git-ignored directories.
+
+The engine has one gap that is not a connector's blind spot and that `gsttt coverage` does not report: when git filters a file on checkout (`core.autocrlf`, a `.gitattributes` filter), a clean file gets the blob id from the git index while its connector parses the bytes in the work tree, so its facts are keyed by a blob they were not made from, and a filtered file whose stored stat is stale is hashed as it lies, never equals the blob of HEAD, and shows as modified in `dirty` and in the changed files.

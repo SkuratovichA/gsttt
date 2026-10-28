@@ -49,3 +49,4 @@
 - [x] 5.20 "One thread and eight agree" runs over 500 files in 20 projects, with imports across projects, unresolved ones, embedded documents and parses that panic
 - [x] 5.21 "Only edited files are parsed" also saves a file again with the same size, which only the modification time tells from the save before
 - [x] 5.22 "Directory outside git uses the cache home" runs `Workspace::locate` in a child process with `XDG_CACHE_HOME` set, and the fallback to `HOME` and the error without either are checked the same way
+- [x] 5.23 The architecture document lists among its known gaps that a file git filters on checkout is keyed by the blob in the git index while its connector parses the bytes in the work tree
