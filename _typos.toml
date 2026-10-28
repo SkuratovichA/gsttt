@@ -6,3 +6,8 @@ extend-exclude = [
   "**/snapshots/**",
   "openspec/changes/archive/**",
 ]
+
+[default.extend-words]
+# Test data that is misspelled or encoded on purpose: a misspelled option name in the Lua config spec, and "café" as the bytes of Latin-1 in the engine tests.
+exlude = "exlude"
+caf = "caf"
