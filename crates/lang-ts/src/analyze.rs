@@ -30,8 +30,8 @@ use self::makers::Maker;
 use self::roots::Roots;
 use crate::extra::{Binding, Export, ExportTarget, Mount, MountTarget, Route, TsExtra};
 use crate::shape::{
-    Shape, chain_of, dotted, literal_text, member_chain, property_name, static_chain,
-    template_text, text_of,
+    Shape, chain_of, dotted, field_name, literal_text, member_chain, property_name, property_str,
+    static_chain, template_text, text_of,
 };
 
 /// Everything one file says on its own.
@@ -769,7 +769,7 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
         if self.has_graphql
             && !it.computed
-            && property_name(&it.key).as_deref() == Some("resolvers")
+            && property_str(&it.key) == Some("resolvers")
             && let Expression::ObjectExpression(object) = it.value.get_inner_expression()
         {
             self.resolver_map(object);
@@ -853,13 +853,9 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     }
 
     fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
-        let member = if it.computed {
-            None
-        } else {
-            property_name(&it.key)
-        };
-        self.decorators(&it.decorators, member.as_deref());
-        if let (Some(name), Some(value)) = (&member, &it.value) {
+        let member = field_name(it);
+        self.decorators(&it.decorators, member);
+        if let (Some(name), Some(value)) = (member, &it.value) {
             self.assignment(name, value, it.span.start, true);
         }
         walk::walk_property_definition(self, it);
