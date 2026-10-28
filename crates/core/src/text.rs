@@ -148,6 +148,7 @@ pub fn tenths(micros: u64, unit: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::owned;
 
     #[test]
     fn offsets_map_to_lines() {
@@ -187,10 +188,6 @@ mod tests {
         assert_eq!(index.column("", 7), 1);
     }
 
-    fn names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|name| (*name).to_owned()).collect()
-    }
-
     #[test]
     fn counts_get_a_thousands_separator() {
         let spelled: Vec<String> = [0_u64, 999, 1_000, 4_213, 1_234_567]
@@ -228,25 +225,25 @@ mod tests {
 
     #[test]
     fn names_are_joined_for_a_sentence() {
-        assert_eq!(join_and(&names(&[])), "");
-        assert_eq!(join_and(&names(&["a"])), "a");
-        assert_eq!(join_and(&names(&["a", "b"])), "a and b");
-        assert_eq!(join_and(&names(&["a", "b", "c"])), "a, b and c");
+        assert_eq!(join_and(&owned(&[])), "");
+        assert_eq!(join_and(&owned(&["a"])), "a");
+        assert_eq!(join_and(&owned(&["a", "b"])), "a and b");
+        assert_eq!(join_and(&owned(&["a", "b", "c"])), "a, b and c");
     }
 
     #[test]
     fn a_summary_names_three_and_counts_the_rest() {
-        assert_eq!(summary(&names(&["a", "b", "c"])), "a, b and c");
-        assert_eq!(summary(&names(&["a", "b", "c", "d"])), "a, b, c and 1 more");
+        assert_eq!(summary(&owned(&["a", "b", "c"])), "a, b and c");
+        assert_eq!(summary(&owned(&["a", "b", "c", "d"])), "a, b, c and 1 more");
     }
 
     #[test]
     fn a_comma_summary_keeps_its_commas_until_it_cuts_as_a_summary_does() {
-        assert_eq!(comma_summary(&names(&[])), "");
-        assert_eq!(comma_summary(&names(&["a", "b"])), "a, b");
-        assert_eq!(comma_summary(&names(&["a", "b", "c"])), "a, b, c");
+        assert_eq!(comma_summary(&owned(&[])), "");
+        assert_eq!(comma_summary(&owned(&["a", "b"])), "a, b");
+        assert_eq!(comma_summary(&owned(&["a", "b", "c"])), "a, b, c");
         assert_eq!(
-            comma_summary(&names(&["a", "b", "c", "d"])),
+            comma_summary(&owned(&["a", "b", "c", "d"])),
             "a, b, c and 1 more"
         );
     }
