@@ -29,6 +29,6 @@
 - [x] 6.1 A star re-export never drops its importer: it holds the importer with no names when the file has nothing left to pass on, and the importers of the barrel are measured against the names it exports on every star hop
 - [x] 6.2 An edge into a file whose exports are unknown is followed at file level, whatever names it carries; Rust records the source name of an aliased `use`
 - [x] 6.3 Tests for a held file that becomes whole, `export * as ns`, `default` through a star, unknown exports inside a star chain, an empty X(T), and a proptest oracle over random trees
-- [x] 6.4 The `re-exports` reason names the source name and its alias, and X(T) is not worked out when no name is wanted
+- [x] 6.4 The `re-exports` reason names the source name and its alias; X(T) is built only for a file with an `export *` line and only when a name of it is wanted, whether it exists is asked without collecting a name, and any other file lends the list of the graph
 - [x] 6.5 The TypeScript linker does not forward `default` through `export *`, pinned against the core by a test; one `owned` for the tests; the cut after three names comes from `summary`
 - [x] 6.6 A named re-export of a name the barrel does not export is reached like a use of it, as the oracle of 6.3 requires

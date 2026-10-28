@@ -2,8 +2,8 @@
 
 mod exports;
 
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
-use std::rc::Rc;
 
 use foldhash::fast::RandomState;
 
@@ -109,8 +109,8 @@ struct Walk<'a> {
     whole: IdSet<FileId>,
     /// The seen files that are not whole. Probed and never iterated, so the order of a hash map cannot reach the output.
     held: HashMap<FileId, Held, RandomState>,
-    /// X(file) per file that was asked for, kept because a barrel is asked about once per layer that grows it.
-    exported: HashMap<FileId, Option<Rc<[NameId]>>, RandomState>,
+    /// X(file) per file that was asked for, kept because a barrel is asked about once per layer that grows it. A file with no `export *` line of its own holds the list of the graph and builds nothing.
+    exported: HashMap<FileId, Option<Cow<'a, [NameId]>>, RandomState>,
     /// The ids of the names `export *` never forwards and `export * as ns` takes, when the graph holds them.
     default: Option<NameId>,
     star: Option<NameId>,
@@ -124,12 +124,17 @@ struct Walk<'a> {
 impl Walk<'_> {
     fn expand(&mut self, file: FileId, delta: &Delta) {
         let graph = self.graph;
+        // Whether the exports of `file` are known, which every importer of it that is not plain asks when the walk reaches the file whole. The answer is the same for all of them, so it is worked out once, and not at all when none asks.
+        let mut known = None;
         for &(importer, edge) in graph.dependents(file) {
             if edge.is_structural() || self.whole.contains(importer) {
                 continue;
             }
-            if edge.is_plain() {
-                // Every import of a connector that records no names lands here, at the cost of a bit per file.
+            // Every import of a connector that records no names is plain and lands here, at the cost of a bit per file. So does an import of a whole file whose exports are unknown: it could lose or pass on any name, so over such an edge the importer is followed at file level, whatever names the edge carries.
+            let at_file_level = edge.is_plain()
+                || (matches!(delta, Delta::All)
+                    && !*known.get_or_insert_with(|| exports::known(graph, file)));
+            if at_file_level {
                 self.take_all(
                     importer,
                     Cause::Imports {
@@ -159,26 +164,6 @@ impl Walk<'_> {
     fn follow(&mut self, importer: FileId, file: FileId, edge: Edge, delta: &Delta) {
         let graph = self.graph;
         let binding = graph.binding(edge);
-
-        // The names `file` gained: all of them when the walk reaches it whole. A file whose exports are unknown could lose or pass on any name, so over an edge into one the importer is followed at file level, whatever names the edge carries, as the walk follows every import of a connector that records no names.
-        let all;
-        let gained: &[NameId] = match delta {
-            Delta::Names(fresh) => fresh,
-            Delta::All => {
-                let Some(names) = self.exported_by(file) else {
-                    self.take_all(
-                        importer,
-                        Cause::Imports {
-                            file,
-                            names: Vec::new(),
-                        },
-                    );
-                    return;
-                };
-                all = names;
-                &all
-            }
-        };
 
         // The names the importer uses itself. One of them is enough to affect it in all of its names.
         let mut used = Vec::new();
@@ -214,11 +199,17 @@ impl Walk<'_> {
             }
         }
         if binding.star {
+            // The names `file` gained: all of them when the walk reaches it whole, and then its exports are known, because `expand` followed the importer at file level otherwise.
+            let default = self.default;
+            let gained: &[NameId] = match delta {
+                Delta::Names(fresh) => fresh,
+                Delta::All => self.exported_by(file).unwrap_or_default(),
+            };
             passed.extend(
                 gained
                     .iter()
                     .copied()
-                    .filter(|&name| Some(name) != self.default)
+                    .filter(|&name| Some(name) != default)
                     .map(|name| (name, name)),
             );
         }
@@ -283,17 +274,16 @@ impl Walk<'_> {
 
     /// Whether an importer of `file` that takes `name`, to use it or to pass it on, meets the names `fresh` that `file` gained: it is one of them, or `file` does not export it, because the import may be the very thing the change breaks or mends. A file whose exports are unknown could lose any name, so none is ruled out. X(file) is only worked out when `name` is not among `fresh`.
     fn reaches(&mut self, file: FileId, fresh: &[NameId], name: NameId) -> bool {
-        holds(fresh, name) || self.exported_by(file).is_none_or(|all| !holds(&all, name))
+        holds(fresh, name) || self.exported_by(file).is_none_or(|all| !holds(all, name))
     }
 
     /// X(file), worked out once.
-    fn exported_by(&mut self, file: FileId) -> Option<Rc<[NameId]>> {
+    fn exported_by(&mut self, file: FileId) -> Option<&[NameId]> {
         let (graph, default) = (self.graph, self.default);
         self.exported
             .entry(file)
-            .or_insert_with(|| exports::exported(graph, file, default).map(Rc::from))
-            .as_ref()
-            .map(Rc::clone)
+            .or_insert_with(|| exports::exported(graph, file, default))
+            .as_deref()
     }
 
     /// Ends the layer: the files that grew, in file order, with what each gained. The gain is fixed here and not when the file is expanded, so a file that becomes whole while its layer is expanded is still met with the names it had when the layer began and its importers sit one hop further out.
