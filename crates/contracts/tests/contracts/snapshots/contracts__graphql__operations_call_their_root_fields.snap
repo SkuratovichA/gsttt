@@ -1,0 +1,48 @@
+---
+source: crates/contracts/tests/contracts/graphql.rs
+expression: run.snapshot()
+---
+{
+  "files": [
+    {
+      "contracts": [
+        {
+          "key": "graphql Query.bookings",
+          "line": 2,
+          "role": "calls",
+          "via": "graphql"
+        },
+        {
+          "key": "graphql Query.me",
+          "line": 5,
+          "role": "calls",
+          "via": "graphql"
+        },
+        {
+          "key": "graphql Mutation.cancel",
+          "line": 11,
+          "role": "calls",
+          "via": "graphql"
+        }
+      ],
+      "embedded": [],
+      "imports": [],
+      "path": "operations.graphql",
+      "project": "graphql .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "graphql",
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

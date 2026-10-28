@@ -1,0 +1,72 @@
+---
+source: crates/contracts/tests/contracts/proto.rs
+expression: run.snapshot()
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 5,
+          "names": [],
+          "spec": "booking/v1/types.proto",
+          "to": {
+            "file": "proto/booking/v1/types.proto"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 6,
+          "names": [],
+          "spec": "google/protobuf/timestamp.proto",
+          "to": "builtin"
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 7,
+          "names": [],
+          "spec": "google/api/annotations.proto",
+          "to": {
+            "unresolved": {
+              "reason": "unknown-package"
+            }
+          }
+        }
+      ],
+      "path": "proto/booking/v1/booking.proto",
+      "project": "proto .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "proto/booking/v1/types.proto",
+      "project": "proto .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "proto",
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

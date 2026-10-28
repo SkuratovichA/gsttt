@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package booking.v1;
+
+import "booking/v1/types.proto";
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+
+message Booking {
+  string id = 1;
+}

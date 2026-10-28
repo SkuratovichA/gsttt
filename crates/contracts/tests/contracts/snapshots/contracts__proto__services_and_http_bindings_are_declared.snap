@@ -1,0 +1,42 @@
+---
+source: crates/contracts/tests/contracts/proto.rs
+expression: run.snapshot()
+---
+{
+  "files": [
+    {
+      "contracts": [
+        {
+          "key": "grpc booking.v1.BookingService/GetBooking",
+          "line": 6,
+          "role": "declares",
+          "via": "proto"
+        },
+        {
+          "key": "http GET /v1/bookings/{}",
+          "line": 7,
+          "role": "declares",
+          "via": "proto"
+        }
+      ],
+      "embedded": [],
+      "imports": [],
+      "path": "booking.proto",
+      "project": "proto .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "proto",
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

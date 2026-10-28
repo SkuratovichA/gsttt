@@ -1,0 +1,42 @@
+---
+source: crates/contracts/tests/contracts/env.rs
+expression: run.snapshot()
+---
+{
+  "files": [
+    {
+      "contracts": [
+        {
+          "key": "env DATABASE_URL",
+          "line": 2,
+          "role": "declares",
+          "via": "env"
+        },
+        {
+          "key": "env PORT",
+          "line": 3,
+          "role": "declares",
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "imports": [],
+      "path": ".env.example",
+      "project": "env .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "env",
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

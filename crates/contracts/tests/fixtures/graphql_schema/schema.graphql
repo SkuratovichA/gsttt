@@ -1,0 +1,15 @@
+schema {
+  query: RootQuery
+}
+
+type RootQuery {
+  bookings: [Booking]
+}
+
+type Booking {
+  id: ID!
+}
+
+extend type Mutation {
+  cancel(id: ID!): Booking
+}
