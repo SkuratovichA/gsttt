@@ -29,3 +29,6 @@
 - [x] 5.3 `link` reads the ways up from each router once, ends a chain that comes back to a router it passed, caps the ways at 64 and the depth at 32, and names what it cut in the log
 - [x] 5.4 A client or session made with no base URL reads its calls as a module-level call does, so a computed URL with no literal path is an unread site, and a client made where it is called is read like one held in a variable
 - [x] 5.5 An embedded document starts on the line its first literal starts on, joined literals keep each part on its own line, and a line break written as an escape adds no line, so a reader of the document puts each fact on the line it is on in the file
+- [x] 5.6 An absolute import is looked up in one order, the first place that has the module winning: the project's own source roots, the standard library, the source roots of the other Python projects of the repository, the declared distributions, then namespace directories; resolution goes through the repository view, and a bare namespace import names no file
+- [x] 5.7 A package directory beats a module of the same name, and a stub beside its source is reached together with it
+- [x] 5.8 An import reaches the `__init__` file of every package it passes through, except the packages the importing file sits in

@@ -15,7 +15,10 @@ expression: "tree.file_json(\"tests/test_api.py\")"
       "flags": 0,
       "names": [],
       "to": {
-        "file": "src/booking/api.py"
+        "files": [
+          "src/booking/__init__.py",
+          "src/booking/api.py"
+        ]
       }
     },
     {
@@ -27,7 +30,10 @@ expression: "tree.file_json(\"tests/test_api.py\")"
         "handler"
       ],
       "to": {
-        "file": "src/booking/api.py"
+        "files": [
+          "src/booking/__init__.py",
+          "src/booking/api.py"
+        ]
       }
     }
   ],

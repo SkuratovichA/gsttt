@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::connector::{
-    ConnectorError, LinkInput, LinkedFact, Parsed, PrepareFile, Project, Provide, SourceFile,
+    ConnectorError, LinkInput, LinkedFact, Parsed, Project, Provide, SourceFile,
 };
 use gsttt_core::fact::{Import, Resolution};
 use gsttt_core::path::RepoPath;
@@ -15,7 +15,6 @@ use crate::PythonOptions;
 use crate::extra::PyExtra;
 use crate::files::{PROJECT_MANIFESTS, is_manifest, is_python_source, is_requirements, join_dir};
 use crate::manifest::{Manifest, read_pyproject, read_requirements, read_setup_cfg, read_setup_py};
-use crate::resolve::ModuleIndex;
 
 /// A directory with a `pyproject.toml`, `setup.py` or `setup.cfg`, or the repository root when it has Python
 /// files and none of these. It knows its source roots, the distributions it declares and the packs they switch on.
@@ -29,8 +28,11 @@ pub struct PythonProject {
     /// The packs in force: those written for Python whose `detect` list meets a declared distribution.
     pub(crate) packs: Vec<Pack>,
     salt: u64,
-    /// The project's Python files by path, built in `prepare`.
-    pub(crate) index: ModuleIndex,
+    /// The repository the project lives in, which resolution looks files up in.
+    pub(crate) repo: RepoView,
+    /// The source roots of the other Python projects of the repository that the project does not search itself,
+    /// in path order: where a library of the repository is found when the project depends on it.
+    pub(crate) sibling_roots: Vec<String>,
 }
 
 /// The projects of the repository, one per manifest directory, in path order.
@@ -62,7 +64,7 @@ pub(crate) fn open_projects(
             requirements.entry(owner.as_str()).or_default().push(path);
         }
     }
-    roots
+    let mut projects = roots
         .iter()
         .map(|root| {
             let own = requirements
@@ -70,7 +72,20 @@ pub(crate) fn open_projects(
                 .map_or(&[][..], Vec::as_slice);
             open_project(repo, root, options, packs, own)
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    // A project imports the libraries of its neighbours, so each learns where the others look for modules.
+    let all: Vec<Vec<String>> = projects
+        .iter()
+        .map(|project| project.source_roots.clone())
+        .collect();
+    for project in &mut projects {
+        for dir in all.iter().flatten() {
+            if !project.source_roots.contains(dir) && !project.sibling_roots.contains(dir) {
+                project.sibling_roots.push(dir.clone());
+            }
+        }
+    }
+    Ok(projects)
 }
 
 fn open_project(
@@ -125,7 +140,8 @@ fn open_project(
         dependencies: manifest.dependencies,
         packs,
         salt,
-        index: ModuleIndex::default(),
+        repo: repo.clone(),
+        sibling_roots: Vec::new(),
     })
 }
 
@@ -194,10 +210,6 @@ impl Project for PythonProject {
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<PyExtra> {
         crate::parse::parse(self, file)
-    }
-
-    fn prepare(&mut self, files: &[PrepareFile<'_>]) {
-        self.index = ModuleIndex::build(files);
     }
 
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution {

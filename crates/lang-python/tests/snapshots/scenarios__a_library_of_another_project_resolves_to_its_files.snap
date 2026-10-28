@@ -1,0 +1,55 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: tree.file_json(from)
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "common.util",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "files": [
+          "libs/common/common/__init__.py",
+          "libs/common/common/util.py"
+        ]
+      }
+    },
+    {
+      "spec": "fastapi",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "external": "fastapi"
+      }
+    },
+    {
+      "spec": "common",
+      "kind": "static",
+      "line": 3,
+      "flags": 0,
+      "names": [
+        "util"
+      ],
+      "to": {
+        "files": [
+          "libs/common/common/__init__.py",
+          "libs/common/common/util.py"
+        ]
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "services/api/app/main.py",
+  "project": "python services/api"
+}

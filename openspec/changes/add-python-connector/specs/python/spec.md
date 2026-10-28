@@ -17,8 +17,8 @@ The connector SHALL open one project per directory holding a `pyproject.toml`, `
 A project's source roots SHALL be the project root, `src` when that directory exists, the directories named by setuptools, Poetry or Hatch package settings, and the roots given in the module's options.
 
 #### Scenario: A src layout is a source root
-- **WHEN** a project has `pyproject.toml` and `src/booking/api.py`, and `tests/test_api.py` imports `booking.api`
-- **THEN** the import resolves to `src/booking/api.py`
+- **WHEN** a project has `pyproject.toml`, `src/booking/__init__.py` and `src/booking/api.py`, and `tests/test_api.py` imports `booking.api`
+- **THEN** the import resolves to `src/booking/api.py` and to the package file `src/booking/__init__.py` it passes through
 
 ### Requirement: Imports
 The connector SHALL read `import a.b`, `import a.b as c`, `from a.b import c`, relative imports with any number of dots, and `importlib.import_module` and `__import__` with a literal argument, each with its line and names. Imports under `if TYPE_CHECKING:` SHALL be flagged type-checking and imports inside a `try` whose handler catches `ImportError` or `ModuleNotFoundError` SHALL be flagged optional. `importlib.import_module` with a computed argument SHALL be an unread site.
@@ -46,12 +46,46 @@ Files named `test_*.py` or `*_test.py`, `conftest.py`, and files under a directo
 - **THEN** the first three are tagged as tests and `app/api.py` is not
 
 ### Requirement: Resolution
-A module path SHALL resolve to the deepest file it names under a source root: `a/b.py`, else `a/b/__init__.py`, else `a/b.pyi`, with namespace packages allowed. `from a import b` SHALL resolve to the module `a.b` when it exists and to `a` otherwise.
+A module path SHALL resolve segment by segment under a source root: a package (`a/b/__init__.py`) before a module (`a/b.py`), a stub reached together with the source beside it, and a directory of Python files with no `__init__.py` as a namespace package. `from a import b` SHALL resolve to the module `a.b` when it exists and to `a` otherwise.
 
 #### Scenario: Submodules and names are told apart
 - **WHEN** `app/x.py` has `from app import models` and `from app.models import Booking`, and `app/models.py` exists
 - **THEN** both imports resolve to `app/models.py`
 - **AND** `from app import settings`, where `app/settings.py` does not exist but `app/__init__.py` does, resolves to `app/__init__.py`
+
+#### Scenario: A package beats a module of the same name
+- **WHEN** a project holds both `both/__init__.py` and `both.py`, and a file imports `both`
+- **THEN** the import resolves to `both/__init__.py` only
+
+#### Scenario: A stub is reached with its source
+- **WHEN** a project holds `stubbed.py` and `stubbed.pyi`, and a file imports `stubbed`
+- **THEN** the import resolves to both files
+
+### Requirement: Resolution order
+An absolute import SHALL look in this order, the first place that has the module winning: the project's own source roots, the standard library, the source roots of the other Python projects of the repository, the distributions the project declares, and last the namespace directories, the project's own before the others'. A module found nowhere SHALL be an unknown package, or not found when its first segment names a directory or package of the repository.
+
+#### Scenario: A library of another project resolves to its files
+- **WHEN** `libs/common` and `services/api` are projects, `services/api` declares `common`, and a file of it imports `common.util`, which `libs/common/common/util.py` provides
+- **THEN** the import resolves to `libs/common/common/__init__.py` and `libs/common/common/util.py`, not to the package `common`
+
+#### Scenario: A namespace directory does not shadow the standard library or a dependency
+- **WHEN** a project declares `PyYAML` and holds `logging/formatters.py`, `yaml/loaders.py` and `ns/part.py`, none of the three directories with an `__init__.py`
+- **THEN** `import logging` and `import logging.handlers` resolve to a builtin, `import yaml` to the package `pyyaml`, and `import ns.part` to `ns/part.py`
+
+#### Scenario: A bare namespace import names no file
+- **WHEN** a file imports `ns`, a directory with `ns/part.py` and no `__init__.py`, and another imports `ns.missing`
+- **THEN** both are not found, because a directory is no file to depend on
+
+### Requirement: Packages on the way
+An import SHALL reach the `__init__` file of every package it passes through as well as the module it names, except the packages the importing file sits in, which are initialised before it runs.
+
+#### Scenario: An import reaches the packages it passes through
+- **WHEN** `outside.py` has `import pkg.sub.leaf`, `from pkg.sub import leaf` and `from pkg import sub`, and `pkg/__init__.py`, `pkg/sub/__init__.py` and `pkg/sub/leaf.py` exist
+- **THEN** the first two resolve to all three files and the third to `pkg/__init__.py` and `pkg/sub/__init__.py`
+
+#### Scenario: An import inside a package adds nothing for its own package
+- **WHEN** `pkg/sub/sibling.py` has `import pkg.sub.leaf`, `from .leaf import value` and `from . import leaf`
+- **THEN** each resolves to `pkg/sub/leaf.py` only
 
 ### Requirement: Relative import resolution
 Relative imports SHALL resolve from the importing file's package.

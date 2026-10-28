@@ -178,13 +178,14 @@ fn each_pyproject_is_a_project() {
 #[test]
 fn a_src_layout_is_a_source_root() {
     let tree = index("src_layout");
+    let reached = "src/booking/__init__.py + src/booking/api.py";
     assert_eq!(
         tree.target("tests/test_api.py", "booking.api", &[]),
-        "src/booking/api.py"
+        reached
     );
     assert_eq!(
         tree.target("tests/test_api.py", "booking.api", &["handler"]),
-        "src/booking/api.py"
+        reached
     );
     insta::assert_json_snapshot!(
         "a_src_layout_is_a_source_root",
@@ -370,6 +371,105 @@ fn standard_library_dependencies_and_unknown_modules() {
     insta::assert_json_snapshot!(
         "standard_library_dependencies_and_unknown_modules",
         tree.file_json("app/main.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A package beats a module of the same name")]
+#[test]
+fn a_package_beats_a_module_of_the_same_name() {
+    let tree = index("precedence");
+    assert_eq!(tree.target("main.py", "both", &[]), "both/__init__.py");
+    insta::assert_json_snapshot!(
+        "a_package_beats_a_module_of_the_same_name",
+        tree.file_json("main.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A stub is reached with its source")]
+#[test]
+fn a_stub_is_reached_with_its_source() {
+    let tree = index("precedence");
+    assert_eq!(
+        tree.target("main.py", "stubbed", &[]),
+        "stubbed.py + stubbed.pyi"
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A library of another project resolves to its files")]
+#[test]
+fn a_library_of_another_project_resolves_to_its_files() {
+    let tree = index("monorepo");
+    let from = "services/api/app/main.py";
+    let library = "libs/common/common/__init__.py + libs/common/common/util.py";
+    assert_eq!(tree.target(from, "common.util", &[]), library);
+    assert_eq!(tree.target(from, "common", &["util"]), library);
+    // The project declares `common` too, and the files of the repository still come before the package.
+    assert_eq!(tree.target(from, "fastapi", &[]), "package fastapi");
+    insta::assert_json_snapshot!(
+        "a_library_of_another_project_resolves_to_its_files",
+        tree.file_json(from)
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A namespace directory does not shadow the standard library or a dependency"
+)]
+#[test]
+fn a_namespace_directory_does_not_shadow_the_standard_library_or_a_dependency() {
+    let tree = index("shadowing");
+    assert_eq!(tree.target("main.py", "logging", &[]), "builtin");
+    assert_eq!(tree.target("main.py", "logging.handlers", &[]), "builtin");
+    assert_eq!(tree.target("main.py", "yaml", &[]), "package pyyaml");
+    assert_eq!(tree.target("main.py", "ns.part", &[]), "ns/part.py");
+    assert_eq!(
+        tree.target("main.py", "ns.missing", &[]),
+        "unresolved NotFound"
+    );
+    insta::assert_json_snapshot!(
+        "a_namespace_directory_does_not_shadow_the_standard_library_or_a_dependency",
+        tree.file_json("main.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A bare namespace import names no file")]
+#[test]
+fn a_bare_namespace_import_names_no_file() {
+    let tree = index("shadowing");
+    assert_eq!(tree.target("main.py", "ns", &[]), "unresolved NotFound");
+}
+
+#[gsttt_scenario::scenario("python", "An import reaches the packages it passes through")]
+#[test]
+fn an_import_reaches_the_packages_it_passes_through() {
+    let tree = index("passing");
+    let chain = "pkg/__init__.py + pkg/sub/__init__.py + pkg/sub/leaf.py";
+    assert_eq!(tree.target("outside.py", "pkg.sub.leaf", &[]), chain);
+    assert_eq!(tree.target("outside.py", "pkg.sub", &["leaf"]), chain);
+    assert_eq!(
+        tree.target("outside.py", "pkg", &["sub"]),
+        "pkg/__init__.py + pkg/sub/__init__.py"
+    );
+    insta::assert_json_snapshot!(
+        "an_import_reaches_the_packages_it_passes_through",
+        tree.file_json("outside.py")
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "An import inside a package adds nothing for its own package"
+)]
+#[test]
+fn an_import_inside_a_package_adds_nothing_for_its_own_package() {
+    let tree = index("passing");
+    let file = "pkg/sub/sibling.py";
+    assert_eq!(tree.target(file, "pkg.sub.leaf", &[]), "pkg/sub/leaf.py");
+    assert_eq!(tree.target(file, ".leaf", &["value"]), "pkg/sub/leaf.py");
+    assert_eq!(tree.target(file, ".", &["leaf"]), "pkg/sub/leaf.py");
+    insta::assert_json_snapshot!(
+        "an_import_inside_a_package_adds_nothing_for_its_own_package",
+        tree.file_json(file)
     );
 }
 
