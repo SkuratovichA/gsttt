@@ -335,11 +335,7 @@ impl Tree {
                     .unwrap();
                 let counted = &mut coverage.connectors[project];
                 match &entry.status {
-                    ParseStatus::Failed(
-                        failure @ (ParseFailure::TooLarge { .. }
-                        | ParseFailure::NotUtf8
-                        | ParseFailure::Unreadable { .. }),
-                    ) => {
+                    ParseStatus::Failed(failure) if failure.is_skipped() => {
                         counted.files += 1;
                         coverage.skipped.push(FailedFile {
                             file,

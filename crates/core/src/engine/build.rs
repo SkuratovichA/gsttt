@@ -8,9 +8,7 @@ use foldhash::fast::RandomState;
 use super::pipeline::{Output, display_root};
 use crate::contract::{ContractKind, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
-use crate::fact::{
-    ContractFact, Line, ParseFailure, ParseStatus, UnresolvedReason, UnresolvedSite,
-};
+use crate::fact::{ContractFact, Line, ParseStatus, UnresolvedReason, UnresolvedSite};
 use crate::graph::{ContractSite, Edge, GraphBuilder};
 use crate::ids::{FileId, Id};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
@@ -90,11 +88,7 @@ pub fn build_index(
             continue;
         };
         match &file.facts.status {
-            ParseStatus::Failed(
-                failure @ (ParseFailure::TooLarge { .. }
-                | ParseFailure::NotUtf8
-                | ParseFailure::Unreadable { .. }),
-            ) => {
+            ParseStatus::Failed(failure) if failure.is_skipped() => {
                 // The connector never saw this file, so it is listed apart from the files that failed in a parse.
                 entry.files = entry.files.saturating_add(1);
                 skipped.push(FailedFile {

@@ -452,6 +452,17 @@ impl fmt::Display for UnresolvedReason {
 }
 
 /// How a file failed, in a sentence part: `syntax error at line 3: unexpected token`.
+impl ParseFailure {
+    /// Whether the engine put the file aside before its connector saw it: past the size limit, not UTF-8 or not
+    /// readable. Such a file is owned and counted, and it is not a failure of the connector's parse.
+    pub fn is_skipped(&self) -> bool {
+        match self {
+            Self::TooLarge { .. } | Self::NotUtf8 | Self::Unreadable { .. } => true,
+            Self::Panicked { .. } | Self::Syntax { .. } => false,
+        }
+    }
+}
+
 impl fmt::Display for ParseFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -481,9 +492,9 @@ mod tests {
         assert!(ImportFlags::NONE.is_empty());
     }
 
-    #[test]
-    fn a_failure_is_spelled_as_a_sentence_part() {
-        let failures = [
+    /// One failure of every kind.
+    fn every_failure() -> [ParseFailure; 5] {
+        [
             ParseFailure::Panicked {
                 message: "boom".to_owned(),
             },
@@ -499,7 +510,12 @@ mod tests {
                 line: 3,
                 message: "unexpected token".to_owned(),
             },
-        ];
+        ]
+    }
+
+    #[test]
+    fn a_failure_is_spelled_as_a_sentence_part() {
+        let failures = every_failure();
         let spelled: Vec<String> = failures.iter().map(ToString::to_string).collect();
         assert_eq!(
             spelled,
@@ -511,6 +527,20 @@ mod tests {
                 "syntax error at line 3: unexpected token",
             ]
         );
+    }
+
+    #[test]
+    fn a_file_put_aside_is_skipped_and_a_failed_parse_is_not() {
+        for failure in every_failure() {
+            // A match without a wildcard, so that a new variant does not compile until it is classified here as well.
+            let put_aside = match failure {
+                ParseFailure::TooLarge { .. }
+                | ParseFailure::NotUtf8
+                | ParseFailure::Unreadable { .. } => true,
+                ParseFailure::Panicked { .. } | ParseFailure::Syntax { .. } => false,
+            };
+            assert_eq!(failure.is_skipped(), put_aside, "{failure}");
+        }
     }
 
     #[test]
