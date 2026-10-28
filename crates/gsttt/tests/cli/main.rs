@@ -5,6 +5,7 @@ mod colour;
 mod hook;
 mod logs;
 mod panics;
+mod paths;
 mod root;
 mod support;
 mod usage;

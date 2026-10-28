@@ -1,6 +1,8 @@
 //! The commands: what each one checks, and what it ends with.
 
+use camino::Utf8Path;
 use clap::CommandFactory;
+use gsttt_core::RepoPath;
 use gsttt_core::engine::snapshot;
 use gsttt_core::engine::workspace::Workspace;
 
@@ -46,6 +48,7 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<(), Cli
                 let start = root::start(flags.directory.as_deref())?;
                 let workspace = root::locate(&start)?;
                 tracing::debug!(root = %workspace.root(), "found the root");
+                read_paths(command, workspace.root(), &start)?;
                 if answers_from_the_stored_index(flags, command) {
                     require_index(&workspace)?;
                 }
@@ -53,6 +56,20 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<(), Cli
             Err(not_built(command))
         }
     }
+}
+
+/// Reads every path argument of `command` against `base`, the directory the run started in, as a path from `root`.
+/// A usage error is told before anything reads the index, so the answer does not depend on it.
+fn read_paths(
+    command: &Command,
+    root: &Utf8Path,
+    base: &Utf8Path,
+) -> Result<Vec<RepoPath>, CliError> {
+    command
+        .path_arguments()
+        .into_iter()
+        .map(|argument| Ok(RepoPath::from_argument(root, base, argument)?))
+        .collect()
 }
 
 /// Whether the command reads the index as it was stored, without refreshing it first.

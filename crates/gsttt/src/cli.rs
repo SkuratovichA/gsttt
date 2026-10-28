@@ -192,6 +192,27 @@ impl Command {
         )
     }
 
+    /// The arguments that name files, in the order they are typed: the paths of `impact`, the file of
+    /// `dependents` and `dependencies`, and both ends of `path`.
+    pub fn path_arguments(&self) -> Vec<&str> {
+        match self {
+            Self::Impact(ImpactArgs { paths, .. }) => paths.iter().map(String::as_str).collect(),
+            Self::Dependents(FileArgs { path }) | Self::Dependencies(FileArgs { path }) => {
+                vec![path]
+            }
+            Self::Path(PathArgs { from, to }) => vec![from, to],
+            Self::Index
+            | Self::Contract(_)
+            | Self::Coverage
+            | Self::Status
+            | Self::Hook(_)
+            | Self::Init
+            | Self::Config(_)
+            | Self::Schema(_)
+            | Self::Completions { .. } => Vec::new(),
+        }
+    }
+
     /// The command as it is typed, for messages: `impact`, `config check`.
     pub const fn name(&self) -> &'static str {
         match self {

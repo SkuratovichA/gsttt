@@ -3,6 +3,7 @@
 use std::io;
 
 use camino::Utf8PathBuf;
+use gsttt_core::path::OutsideRoot;
 use miette::{Diagnostic, GraphicalReportHandler, GraphicalTheme, Report};
 
 use crate::root::RootError;
@@ -18,6 +19,12 @@ pub(crate) enum CliError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     Root(#[from] RootError),
+
+    #[error(transparent)]
+    #[diagnostic(help(
+        "a path is read from the current directory, or from the one `-C` names, and has to name a file inside the repository"
+    ))]
+    Path(#[from] OutsideRoot),
 
     #[error("there is no index yet for `{root}`")]
     #[diagnostic(help("run `gsttt index` to build one"))]
@@ -54,6 +61,7 @@ impl CliError {
                 Outcome::Failed
             }
             Self::Root(_)
+            | Self::Path(_)
             | Self::EmptyQuery
             | Self::BaseNeedsChanged
             | Self::NoRefreshWithIndex => Outcome::Usage,

@@ -6,7 +6,7 @@
 ## 2. Root, paths and the repository
 
 - [x] 2.1 Find the root with `Workspace::locate` after `-C`, and refuse `$HOME` and `/` by their canonical paths
-- [ ] 2.2 Add `RepoPath::from_argument` to `crates/core/src/path.rs`, with proptests that its result never holds a `.` or `..` segment and never leaves the root, and read every path argument through it
+- [x] 2.2 Add `RepoPath::from_argument` to `crates/core/src/path.rs`, with proptests that its result never holds a `.` or `..` segment and never leaves the root, and read every path argument through it
 - [ ] 2.3 Add `Repository` with `open`, `refreshed`, `stored`, `argument` and `changed`, in the shape the MCP server's `IndexSource` needs
 
 ## 3. Commands
