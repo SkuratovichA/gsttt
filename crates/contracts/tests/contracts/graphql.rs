@@ -31,6 +31,10 @@ fn operations_call_their_root_fields() {
             "calls graphql Query.bookings @2",
             "calls graphql Query.me @5",
             "calls graphql Mutation.cancel @11",
+            // The shorthand `{ me }` is a query.
+            "calls graphql Query.me @16",
+            // `query WithFragment { ...F }` reaches the field of the fragment in the same document.
+            "calls graphql Query.me @20",
         ]
     );
     insta::assert_json_snapshot!(run.snapshot());

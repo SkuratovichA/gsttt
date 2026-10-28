@@ -58,8 +58,8 @@ In a schema, each field of `Query`, `Mutation` and `Subscription`, including the
 In an operation, each root field SHALL call `graphql <Root>.<field>`, an anonymous operation being a query, and the root fields of a fragment spread at the root SHALL count when the fragment is in the same document.
 
 #### Scenario: Operations call their root fields
-- **WHEN** a document has `query Bookings { bookings { id } me { id } }` and `mutation { cancel(id: 1) { id } }`
-- **THEN** it calls `graphql Query.bookings`, `graphql Query.me` and `graphql Mutation.cancel`
+- **WHEN** a document has `query Bookings { bookings { id } me { id } }`, `mutation { cancel(id: 1) { id } }`, the shorthand `{ me }`, and `query WithFragment { ...F }` with `fragment F on Query { me }` in the same document
+- **THEN** it calls `graphql Query.bookings`, `graphql Query.me` and `graphql Mutation.cancel`, and `graphql Query.me` again at the shorthand and at the field of the fragment
 
 ### Requirement: GraphQL imports
 A `#import "<path>"` comment SHALL be an import relative to the file.

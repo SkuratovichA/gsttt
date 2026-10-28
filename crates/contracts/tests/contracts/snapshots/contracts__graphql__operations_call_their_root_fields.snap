@@ -34,6 +34,18 @@ expression: run.snapshot()
           "role": "calls",
           "line": 11,
           "via": "graphql"
+        },
+        {
+          "key": "graphql Query.me",
+          "role": "calls",
+          "line": 16,
+          "via": "graphql"
+        },
+        {
+          "key": "graphql Query.me",
+          "role": "calls",
+          "line": 20,
+          "via": "graphql"
         }
       ],
       "embedded": [],

@@ -12,3 +12,9 @@ mutation {
     id
   }
 }
+
+{ me }
+
+query WithFragment { ...F }
+
+fragment F on Query { me }

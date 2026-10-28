@@ -30,3 +30,4 @@
 - [x] 4.7 A proto path variable is a parameter wherever it stands, `{id}:cancel` and variables that span segments included, and a binding set as `option (google.api.http).get = "…"` is read
 - [x] 4.8 The proto line map borrows the location paths of the descriptor instead of cloning one vector for every location
 - [x] 4.9 A brace inside a Prisma string literal closes no block, and the scan for the closing brace shares its string logic with the one for comments
+- [x] 4.10 The GraphQL operations fixture also holds a shorthand query and a fragment spread at the root, which the operations scenario now names
