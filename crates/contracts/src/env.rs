@@ -1,5 +1,4 @@
-//! Env files: `.env`, `.env.example`, `prod.env`. Each `NAME=` line declares the variable `env NAME`, which is what
-//! meets the code that reads it.
+//! Env files: `.env`, `.env.example`, `prod.env`. Each `NAME=` line declares the variable `env NAME`, which is what meets the code that reads it.
 
 use gsttt_core::connector::{
     Connector, ConnectorError, Erased, Meta, Parsed, Project, Provide, SourceFile,
@@ -33,8 +32,7 @@ pub struct EnvOptions {}
 #[derive(Clone, Copy, Debug)]
 pub struct EnvProject;
 
-/// `.env`, `.env.*` and `*.env`. A `.env.*` file in a programming language, `.env.d.ts` or `.env.schema.ts`, only has
-/// a name that begins like an env file's, and reading its code for `NAME=` lines would invent variables.
+/// `.env`, `.env.*` and `*.env`. A `.env.*` file in a programming language, `.env.d.ts` or `.env.schema.ts`, only has a name that begins like an env file's, and reading its code for `NAME=` lines would invent variables.
 fn claims(path: &RepoPath) -> bool {
     let name = path.file_name();
     let ends_with_env = name
@@ -118,8 +116,7 @@ impl Project for EnvProject {
     }
 }
 
-/// The variable declared at each `NAME=` line, with or without `export`. The lines of a quoted value that runs over
-/// several lines declare nothing: a key or a certificate kept in a variable has lines that end in `=` like a name.
+/// The variable declared at each `NAME=` line, with or without `export`. The lines of a quoted value that runs over several lines declare nothing: a key or a certificate kept in a variable has lines that end in `=` like a name.
 fn declarations(text: &str) -> Vec<ContractFact> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut facts = Vec::new();
@@ -136,8 +133,7 @@ fn declarations(text: &str) -> Vec<ContractFact> {
             VIA,
         ));
         if let Some(quote) = unclosed_quote(value) {
-            // The value ends at the line that closes the quote. A quote that nothing closes ends its value with its
-            // own line, as dotenv reads it, so the lines after it still declare.
+            // The value ends at the line that closes the quote. A quote that nothing closes ends its value with its own line, as dotenv reads it, so the lines after it still declare.
             let mut ahead = lines.clone();
             if ahead.any(|(_, later)| closes(later, quote)) {
                 lines = ahead;

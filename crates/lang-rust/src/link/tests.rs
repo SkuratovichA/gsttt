@@ -74,10 +74,7 @@ fn imported(name: &str, spec: &str, file: u32) -> ResolvedImport {
     }
 }
 
-/// What linking finds in `files`, as `<file> <line> <key>`. A module path `fileN` reaches the file numbered `N`, and
-/// any other leads out of the project.
-/// Runs `run` over `files` the way the engine hands them to `link`: the `n`th of them is file `n`, and the module path
-/// `file<n>` resolves to it.
+/// What linking finds in `files`, as `<file> <line> <key>`. A module path `fileN` reaches the file numbered `N`, and any other leads out of the project. Runs `run` over `files` the way the engine hands them to `link`: the `n`th of them is file `n`, and the module path `file<n>` resolves to it.
 fn over<T>(
     files: &[Source],
     run: impl FnOnce(&LinkInput<'_, Extra>, &dyn Fn(&RepoPath, &str) -> Resolution) -> T,
@@ -326,8 +323,7 @@ fn a_chain_of_mounts_that_no_program_has_stops_at_the_depth_limit() {
     let files = [source(groups, Vec::new())];
     // The first router sits at the root with no prefix, so it adds nothing, and the walk goes no further than the limit.
     assert_eq!(linked(&files).len(), MAX_DEPTH - 1);
-    // The engine drops the own fact that a linked fact names at its line and no other, so the routes below the cut, which
-    // none names, keep the path they are written with.
+    // The engine drops the own fact that a linked fact names at its line and no other, so the routes below the cut, which none names, keep the path they are written with.
     let replaced: Vec<u32> = over(&files, link)
         .iter()
         .filter(|found| found.replaces.is_some())

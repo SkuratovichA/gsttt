@@ -128,8 +128,7 @@ impl Analyzer<'_> {
         }
     }
 
-    /// A literal `require` or `import()` becomes an import, with the names the declaration takes from it; one that is
-    /// computed is a blind spot. Each call is read once.
+    /// A literal `require` or `import()` becomes an import, with the names the declaration takes from it; one that is computed is a blind spot. Each call is read once.
     fn load(
         &mut self,
         span: Span,
@@ -223,8 +222,7 @@ impl Analyzer<'_> {
         }
     }
 
-    /// Applies the chain rules to every root the chain starts with. A rule that lists terminals needs one of them after
-    /// the first segment, so `trpc.useUtils()` and `prisma.$transaction()` name nothing.
+    /// Applies the chain rules to every root the chain starts with. A rule that lists terminals needs one of them after the first segment, so `trpc.useUtils()` and `prisma.$transaction()` name nothing.
     fn chain_rules(&mut self, names: &[Option<String>], offset: u32) {
         let line = self.line(offset);
         let packs = self.packs;
@@ -255,8 +253,7 @@ impl Analyzer<'_> {
         }
     }
 
-    /// The prefix the call that made the receiver of `callee` gives, and the receiver's name, when the receiver was made
-    /// in this file by a call that `rule` names.
+    /// The prefix the call that made the receiver of `callee` gives, and the receiver's name, when the receiver was made in this file by a call that `rule` names.
     fn receiver<'c>(&self, callee: &'c str, rule: &Prefix) -> Option<(String, &'c str)> {
         let (host, _) = callee.rsplit_once('.')?;
         let maker = self.makers.get(host)?;
@@ -327,8 +324,7 @@ impl Analyzer<'_> {
         self.trpc_router(it, callee);
     }
 
-    /// `host.use([prefix], router…)`. A prefix may be an array of paths: the routers are mounted once under each literal
-    /// element, and an element that is not a literal is a site the file could not read.
+    /// `host.use([prefix], router…)`. A prefix may be an array of paths: the routers are mounted once under each literal element, and an element that is not a literal is a site the file could not read.
     fn mount(&mut self, host: &str, call: &CallExpression<'_>, line: Line) {
         let mut prefixes = vec![String::new()];
         let mut targets = Vec::new();

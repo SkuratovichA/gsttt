@@ -3,8 +3,7 @@
 use gsttt_core::fact::{ContractFact, Line};
 use serde::{Deserialize, Serialize};
 
-/// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and
-/// mounts, and the tRPC routers it declares. Empty parts are left out of the cached bytes.
+/// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and mounts, and the tRPC routers it declares. Empty parts are left out of the cached bytes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TsExtra {

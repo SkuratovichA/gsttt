@@ -1,15 +1,10 @@
-//! Which HTTP contract keys meet. A call and the route it reaches are rarely spelled alike: the method may be a
-//! wildcard, a gateway may put a prefix in front of the route, and parameters have no name in a key.
+//! Which HTTP contract keys meet. A call and the route it reaches are rarely spelled alike: the method may be a wildcard, a gateway may put a prefix in front of the route, and parameters have no name in a key.
 
 use crate::contract::{ContractKey, normalize_http_path};
 
 /// Decides whether two contract keys meet, under the path prefixes a gateway or proxy puts in front of routes.
 ///
-/// Two HTTP keys meet when their methods are equal or either is `*`, and their paths have the same number of
-/// segments, each pair equal or `{}` on either side. A prefix may be taken off the start of one of the paths, never
-/// of both: `/api/users` meets `/users`, but not `/v1/users`, which is another route behind another gateway. Taking
-/// a prefix off is optional, so adding a prefix never breaks a match, and it must leave a path: `/api` is a prefix,
-/// not a route, and does not meet `/`. Any other two keys meet when they are equal.
+/// Two HTTP keys meet when their methods are equal or either is `*`, and their paths have the same number of segments, each pair equal or `{}` on either side. A prefix may be taken off the start of one of the paths, never of both: `/api/users` meets `/users`, but not `/v1/users`, which is another route behind another gateway. Taking a prefix off is optional, so adding a prefix never breaks a match, and it must leave a path: `/api` is a prefix, not a route, and does not meet `/`. Any other two keys meet when they are equal.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HttpMatcher {
     /// The prefixes in the form key paths take: `/api/v1`, never `api/v1/`. The root is not a prefix.
@@ -39,8 +34,7 @@ impl HttpMatcher {
         }
     }
 
-    /// How many segments `path` has as written and with each prefix taken off, which are the lengths at which it can
-    /// meet another path.
+    /// How many segments `path` has as written and with each prefix taken off, which are the lengths at which it can meet another path.
     pub(super) fn lengths<'a>(&'a self, path: &'a str) -> impl Iterator<Item = usize> {
         std::iter::once(path)
             .chain(self.stripped(path))
@@ -65,8 +59,7 @@ fn methods_meet(a: &str, b: &str) -> bool {
     a == b || a == "*" || b == "*"
 }
 
-/// `path` without `prefix`, when `prefix` is made of whole leading segments of it and something is left. A path
-/// always starts with `/`, so what is left starts with one exactly when it holds a segment.
+/// `path` without `prefix`, when `prefix` is made of whole leading segments of it and something is left. A path always starts with `/`, so what is left starts with one exactly when it holds a segment.
 fn strip_segments<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
     path.strip_prefix(prefix)
         .filter(|rest| rest.starts_with('/'))

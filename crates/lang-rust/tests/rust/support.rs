@@ -64,8 +64,7 @@ pub(crate) fn index_at(root: &str) -> Indexed {
 impl Indexed {
     /// The whole run as JSON, the shape the snapshots hold, with the keys of every object in byte order.
     pub(crate) fn json(&self) -> Value {
-        // Sorted here, so that no snapshot depends on whether serde_json keeps insertion order: its `preserve_order`
-        // feature, which another crate of the workspace may switch on or off.
+        // Sorted here, so that no snapshot depends on whether serde_json keeps insertion order: its `preserve_order` feature, which another crate of the workspace may switch on or off.
         let mut json = self.output.to_json(&self.repo);
         json.sort_all_objects();
         json
@@ -98,9 +97,7 @@ impl Indexed {
         described(self.file(path)["contracts"].as_array().unwrap())
     }
 
-    /// The contract sites of one file in the graph the engine builds from the output, as `<line> <role> <key>` in byte
-    /// order. Unlike [`Indexed::contracts`], the graph has applied the rule that a linked fact replaces the own fact it
-    /// names, so it is what a query answers from.
+    /// The contract sites of one file in the graph the engine builds from the output, as `<line> <role> <key>` in byte order. Unlike [`Indexed::contracts`], the graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query answers from.
     pub(crate) fn graph(&self, path: &str) -> Vec<String> {
         let index = build_index(
             &self.repo,

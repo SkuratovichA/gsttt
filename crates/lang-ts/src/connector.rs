@@ -15,18 +15,18 @@ pub struct TypeScript;
 /// The connector in the form the engine takes.
 pub static TYPESCRIPT: Erased<TypeScript> = Erased(TypeScript);
 
-/// The rule packs shipped with the connector, as `(name, Lua source)` pairs.
+/// The rule packs shipped with the connector, as `(name, TOML source)` pairs. The name is the file name without `.toml`, which is also the `name` the pack declares.
 pub const PACKS: &[(&str, &str)] = &[
-    ("axios", include_str!("../packs/axios.lua")),
-    ("drizzle", include_str!("../packs/drizzle.lua")),
-    ("env", include_str!("../packs/env.lua")),
-    ("express", include_str!("../packs/express.lua")),
-    ("fetch", include_str!("../packs/fetch.lua")),
-    ("graphql", include_str!("../packs/graphql.lua")),
-    ("nestjs", include_str!("../packs/nestjs.lua")),
-    ("prisma", include_str!("../packs/prisma.lua")),
-    ("trpc", include_str!("../packs/trpc.lua")),
-    ("typeorm", include_str!("../packs/typeorm.lua")),
+    ("axios", include_str!("../packs/axios.toml")),
+    ("drizzle", include_str!("../packs/drizzle.toml")),
+    ("env", include_str!("../packs/env.toml")),
+    ("express", include_str!("../packs/express.toml")),
+    ("fetch", include_str!("../packs/fetch.toml")),
+    ("graphql", include_str!("../packs/graphql.toml")),
+    ("nestjs", include_str!("../packs/nestjs.toml")),
+    ("prisma", include_str!("../packs/prisma.toml")),
+    ("trpc", include_str!("../packs/trpc.toml")),
+    ("typeorm", include_str!("../packs/typeorm.toml")),
 ];
 
 impl Connector for TypeScript {

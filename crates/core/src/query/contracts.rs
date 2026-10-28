@@ -38,8 +38,7 @@ pub struct Match {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "lookup", rename_all = "kebab-case")]
 pub enum Found {
-    /// The text names a contract of the index: its sites by role, and for an HTTP key the sites of every key that
-    /// meets it.
+    /// The text names a contract of the index: its sites by role, and for an HTTP key the sites of every key that meets it.
     Key {
         key: String,
         declares: Vec<Site>,
@@ -64,8 +63,7 @@ pub struct ContractLookup {
 /// Why a contract could not be looked up.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ContractLookupError {
-    /// There was no text to look up. A search for no text would list every contract, which reads as an answer to a
-    /// question nobody asked, so the caller is told what to ask for instead.
+    /// There was no text to look up. A search for no text would list every contract, which reads as an answer to a question nobody asked, so the caller is told what to ask for instead.
     #[error(
         "no contract was asked for: expected a key like `http GET /bookings/{{}}`, or part of one"
     )]
@@ -74,8 +72,7 @@ pub enum ContractLookupError {
 
 /// The sites of the contract `query` names, or else the contracts whose keys contain `query`.
 ///
-/// `query` names a contract when it reads as `<kind> <key>` in any spelling that [`ContractKey::parse`] puts in
-/// canonical form, and the index has sites for that key, or for an HTTP key that meets it.
+/// `query` names a contract when it reads as `<kind> <key>` in any spelling that [`ContractKey::parse`] puts in canonical form, and the index has sites for that key, or for an HTTP key that meets it.
 ///
 /// # Errors
 ///

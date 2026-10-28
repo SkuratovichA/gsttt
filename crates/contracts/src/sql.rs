@@ -1,10 +1,6 @@
 //! SQL files: migrations and queries, and the SQL other connectors find embedded in code.
 //!
-//! `CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, declare `table <name>`, and a rename declares
-//! the new name as well; queries and statements that change rows call the tables they name, leaving out the names of
-//! common table expressions.
-//! Statements are read one by one, so a statement that does not parse, or has a string or comment that is never closed,
-//! is counted and the others still count.
+//! `CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, declare `table <name>`, and a rename declares the new name as well; queries and statements that change rows call the tables they name, leaving out the names of common table expressions. Statements are read one by one, so a statement that does not parse, or has a string or comment that is never closed, is counted and the others still count.
 //!
 //! The connector always opens a project, even where no file is claimed, because code in any language can embed SQL.
 
@@ -44,9 +40,7 @@ const VIA: &str = "sql";
 /// The dialect statements are read with when the options name none.
 const DEFAULT_DIALECT: &str = "postgresql";
 
-/// The grammars the `dialect` option names, by the names `sqlparser`'s `dialect_from_str` knows; a test checks each
-/// of them against it. That function builds a lower-case copy of the name on every call, which is too much to pay
-/// for every file and every embedded document, so a project holds its grammar from the moment it is opened.
+/// The grammars the `dialect` option names, by the names `sqlparser`'s `dialect_from_str` knows; a test checks each of them against it. That function builds a lower-case copy of the name on every call, which is too much to pay for every file and every embedded document, so a project holds its grammar from the moment it is opened.
 static DIALECTS: [(&str, &(dyn Dialect + Sync)); 18] = [
     ("generic", &GenericDialect),
     ("mysql", &MySqlDialect {}),
@@ -87,9 +81,7 @@ pub static SQL: Erased<Sql> = Erased(Sql);
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct SqlOptions {
-    /// The SQL dialect every statement is read with: `postgresql` (the default), `mysql`, `sqlite`, `mssql`,
-    /// `bigquery`, `snowflake`, `redshift`, `clickhouse`, `duckdb`, `hive`, `databricks`, `spark`, `oracle`,
-    /// `teradata`, `ansi` or `generic`.
+    /// The SQL dialect every statement is read with: `postgresql` (the default), `mysql`, `sqlite`, `mssql`, `bigquery`, `snowflake`, `redshift`, `clickhouse`, `duckdb`, `hive`, `databricks`, `spark`, `oracle`, `teradata`, `ansi` or `generic`.
     pub dialect: Option<String>,
 }
 
@@ -211,8 +203,7 @@ impl Project for SqlProject {
 
 /// The sites of a text of SQL, and how well it was read.
 ///
-/// A string, a quoted name or a comment that the tokenizer cannot close fails the statement it is in and no other:
-/// the statements before it are whole, and reading goes on after the next semicolon.
+/// A string, a quoted name or a comment that the tokenizer cannot close fails the statement it is in and no other: the statements before it are whole, and reading goes on after the next semicolon.
 fn read(dialect: &dyn Dialect, text: &str) -> (Vec<ContractFact>, ParseStatus) {
     let mut facts = Vec::new();
     let mut errors = ErrorCount::default();
@@ -304,8 +295,7 @@ fn read_group(
     }
 }
 
-/// Where reading goes on after the tokenizer failed at `at`: the text after the next semicolon, and the number of
-/// lines left behind.
+/// Where reading goes on after the tokenizer failed at `at`: the text after the next semicolon, and the number of lines left behind.
 fn after_semicolon(text: &str, at: Location) -> Option<(&str, u64)> {
     let from = offset_of(text, at);
     let semicolon = from.saturating_add(text.get(from..)?.find(';')?);
@@ -314,8 +304,7 @@ fn after_semicolon(text: &str, at: Location) -> Option<(&str, u64)> {
     Some((rest, u64::try_from(lines).unwrap_or(u64::MAX)))
 }
 
-/// The byte offset of a tokenizer location, which counts lines by `\n` and columns by characters; the end of the
-/// text when the location lies beyond it.
+/// The byte offset of a tokenizer location, which counts lines by `\n` and columns by characters; the end of the text when the location lies beyond it.
 fn offset_of(text: &str, at: Location) -> usize {
     let lines = usize::try_from(at.line)
         .unwrap_or(usize::MAX)
@@ -340,8 +329,7 @@ fn parse_group(dialect: &dyn Dialect, tokens: Vec<TokenWithSpan>) -> Option<Stat
     (parser.peek_token().token == Token::EOF).then_some(statement)
 }
 
-/// Whether a token may begin a driver placeholder that not every grammar reads: `?` and `:name` are operators or
-/// nothing at all in PostgreSQL, and `%s` is a modulo.
+/// Whether a token may begin a driver placeholder that not every grammar reads: `?` and `:name` are operators or nothing at all in PostgreSQL, and `%s` is a modulo.
 fn may_start_parameter(token: &Token) -> bool {
     matches!(
         token,
@@ -349,10 +337,7 @@ fn may_start_parameter(token: &Token) -> bool {
     )
 }
 
-/// The sites of a statement that parses once its driver placeholders stand for a value, which is how the grammars
-/// that do not read them are made to. Native syntax is tried first, so `data ? 'key'` stays a PostgreSQL operator
-/// whenever the statement reads that way. `base` is the line `text` starts on and `start` the line of the
-/// statement's first token.
+/// The sites of a statement that parses once its driver placeholders stand for a value, which is how the grammars that do not read them are made to. Native syntax is tried first, so `data ? 'key'` stays a PostgreSQL operator whenever the statement reads that way. `base` is the line `text` starts on and `start` the line of the statement's first token.
 fn read_with_parameters(
     dialect: &dyn Dialect,
     text: &str,
@@ -378,8 +363,7 @@ fn read_with_parameters(
     Some(facts)
 }
 
-/// The text of a statement put back together from its tokens, as it was written. A newline token that does not end a
-/// line for the tokenizer is a carriage return on its own, and it stays one character and not a line.
+/// The text of a statement put back together from its tokens, as it was written. A newline token that does not end a line for the tokenizer is a carriage return on its own, and it stays one character and not a line.
 fn source_of(tokens: &[TokenWithSpan]) -> String {
     let mut text = String::new();
     for token in tokens {
@@ -397,8 +381,7 @@ fn source_of(tokens: &[TokenWithSpan]) -> String {
     text
 }
 
-/// The tokens of each statement; a semicolon inside a string, a comment or a dollar-quoted body is part of one
-/// token, so splitting on semicolon tokens is safe.
+/// The tokens of each statement; a semicolon inside a string, a comment or a dollar-quoted body is part of one token, so splitting on semicolon tokens is safe.
 fn statements(tokens: Vec<TokenWithSpan>) -> Vec<Vec<TokenWithSpan>> {
     let mut groups = Vec::new();
     let mut current = Vec::new();
@@ -456,8 +439,7 @@ fn read_statement(statement: &Statement, start: Line, facts: &mut Vec<ContractFa
     }
 }
 
-/// The table an object name stands for: its last part, which drops the schema, without quotes, and the line it is
-/// written on when the tokens carry one.
+/// The table an object name stands for: its last part, which drops the schema, without quotes, and the line it is written on when the tokens carry one.
 fn table_of(name: &ObjectName) -> Option<(&str, Option<Line>)> {
     let ObjectNamePart::Identifier(ident) = name.0.last()? else {
         return None;
@@ -495,8 +477,7 @@ fn call_in<N: Visit + ?Sized>(node: &N, start: Line, facts: &mut Vec<ContractFac
     }
 }
 
-/// Collects the tables of a query: its relations without the common table expressions it defines and without
-/// the table functions it calls.
+/// Collects the tables of a query: its relations without the common table expressions it defines and without the table functions it calls.
 #[derive(Default)]
 struct Relations {
     found: Vec<(String, Option<Line>)>,
@@ -542,8 +523,7 @@ impl Visitor for Relations {
 }
 
 impl Relations {
-    /// Whether a relation is the name of a common table expression or of a table function of the statement. Most
-    /// statements have neither, and then no name is lower-cased to find out.
+    /// Whether a relation is the name of a common table expression or of a table function of the statement. Most statements have neither, and then no name is lower-cased to find out.
     fn names_no_table(&self, relation: &ObjectName, table: &str) -> bool {
         if self.ctes.is_empty() && self.functions.is_empty() {
             return false;
@@ -553,13 +533,10 @@ impl Relations {
     }
 }
 
-/// What a placeholder is replaced with: a value that every grammar reads wherever an operand stands, a list of
-/// one included (`IN %s`).
+/// What a placeholder is replaced with: a value that every grammar reads wherever an operand stands, a list of one included (`IN %s`).
 const PARAMETER: &str = "(0)";
 
-/// Replaces the placeholders of the common drivers, `?`, `?1`, `%s`, `%(name)s` and `:name`, with a value.
-/// Nothing else changes, newlines included, so lines stay where they are. The `::` of a cast and a colon that
-/// continues a word, as in `'10:30'`, are left alone.
+/// Replaces the placeholders of the common drivers, `?`, `?1`, `%s`, `%(name)s` and `:name`, with a value. Nothing else changes, newlines included, so lines stay where they are. The `::` of a cast and a colon that continues a word, as in `'10:30'`, are left alone.
 fn neutralise_placeholders(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
@@ -676,8 +653,7 @@ mod tests {
 
     #[test]
     fn native_syntax_is_tried_before_placeholders() {
-        // The jsonb operator `?` reads as itself in PostgreSQL; the same character is a placeholder in a statement
-        // that does not parse with it.
+        // The jsonb operator `?` reads as itself in PostgreSQL; the same character is a placeholder in a statement that does not parse with it.
         let operator = calls("postgresql", "SELECT 1 FROM docs WHERE data ? 'key';");
         assert_eq!(operator, vec![(1, "table docs".to_owned(), Role::Calls)]);
         let placeholder = calls("postgresql", "SELECT 1 FROM docs WHERE id = ?;");
@@ -760,8 +736,7 @@ mod tests {
 
     #[test]
     fn one_site_is_kept_per_line_key_and_role() {
-        // Declared, called, and declared again on one line: the two declarations are not told apart by a sort that
-        // leaves the role out, and then only a neighbour is ever removed.
+        // Declared, called, and declared again on one line: the two declarations are not told apart by a sort that leaves the role out, and then only a neighbour is ever removed.
         assert_eq!(
             read_in(
                 "postgresql",

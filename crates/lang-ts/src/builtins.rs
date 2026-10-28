@@ -1,7 +1,6 @@
 //! The modules Node ships, which resolve to builtins rather than packages.
 
-/// Names of the builtin modules, sorted so that a lookup is a binary search. `node:test` and the other modules that exist only
-/// behind the `node:` prefix are covered by that prefix, not listed here.
+/// Names of the builtin modules, sorted so that a lookup is a binary search. `node:test` and the other modules that exist only behind the `node:` prefix are covered by that prefix, not listed here.
 const BUILTINS: [&str; 42] = [
     "assert",
     "async_hooks",

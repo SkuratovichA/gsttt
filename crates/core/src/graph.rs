@@ -1,7 +1,6 @@
 //! The graph: files joined by imports, and contracts joined to the files that declare, serve and call them.
 //!
-//! Both directions of the import relation are stored as compressed sparse rows, so dependents and
-//! dependencies of a file are one slice each, and a walk over the whole repository touches two flat arrays.
+//! Both directions of the import relation are stored as compressed sparse rows, so dependents and dependencies of a file are one slice each, and a walk over the whole repository touches two flat arrays.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,8 +9,7 @@ use crate::fact::{FileTags, ImportFlags, ImportKind, Line};
 use crate::ids::{ContractId, FileId, Id};
 use crate::path::RepoPath;
 
-/// How one file depends on another: the import kinds between them, and the flags every one of those imports
-/// carries.
+/// How one file depends on another: the import kinds between them, and the flags every one of those imports carries.
 #[derive(
     Clone,
     Copy,
@@ -38,8 +36,7 @@ impl Edge {
         }
     }
 
-    /// Two imports between the same pair of files: the kinds add up, and a flag stays only if both imports
-    /// carry it, so one runtime import makes the whole edge a runtime edge.
+    /// Two imports between the same pair of files: the kinds add up, and a flag stays only if both imports carry it, so one runtime import makes the whole edge a runtime edge.
     #[must_use]
     pub const fn merge(self, other: Self) -> Self {
         Self {

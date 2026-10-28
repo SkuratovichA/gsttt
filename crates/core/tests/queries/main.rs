@@ -2,7 +2,6 @@
 #![cfg(test)]
 
 mod contracts;
-mod fixture;
 mod http;
 mod impact;
 mod json;

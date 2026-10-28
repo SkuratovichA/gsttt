@@ -80,8 +80,7 @@ pub enum Problem {
         /// The side that is missing.
         missing: &'static str,
     },
-    /// A code fence that nothing closes: the rest of the file would count as code, and no heading
-    /// or scenario after it would be read.
+    /// A code fence that nothing closes: the rest of the file would count as code, and no heading or scenario after it would be read.
     #[error(
         "code fence is never closed, so the rest of the file counts as code; expected a closing fence"
     )]

@@ -3,8 +3,7 @@
 use crate::rules::Pack;
 use crate::setup::Setup;
 
-/// The packs for the connector named `language`: the built-in packs of its language except those the setup
-/// disables, where a pack of the setup replaces the built-in pack of the same name and otherwise is added.
+/// The packs for the connector named `language`: the built-in packs of its language except those the setup disables, where a pack of the setup replaces the built-in pack of the same name and otherwise is added.
 pub fn merge_packs(builtin: &[Pack], setup: &Setup, language: &str) -> Vec<Pack> {
     let mut merged: Vec<Pack> = builtin
         .iter()
