@@ -26,6 +26,38 @@ expression: "tree.file_json(\"db.py\")"
       "via": "dbapi",
       "read_by": null,
       "contracts": []
+    },
+    {
+      "lang": "sql",
+      "line": 14,
+      "text": "\n        SELECT id\n        FROM bookings\n        WHERE id IN %s\n        ",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    },
+    {
+      "lang": "sql",
+      "line": 27,
+      "text": "SELECT id \nFROM bookings \nWHERE id = %s",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    },
+    {
+      "lang": "sql",
+      "line": 38,
+      "text": "SELECT id \nFROM bookings \nWHERE id = %s",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    },
+    {
+      "lang": "sql",
+      "line": 48,
+      "text": "SELECT id FROM bookings WHERE id = %s",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
     }
   ],
   "unresolved": [],

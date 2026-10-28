@@ -7,7 +7,9 @@
 
 use gsttt_config::pack::builtin_packs;
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
-use gsttt_core::fact::{ContractFact, FileTags, ImportFlags, ParseStatus, Resolution};
+use gsttt_core::fact::{
+    ContractFact, Embedded, FileTags, ImportFlags, Line, ParseStatus, Resolution,
+};
 use gsttt_core::ids::FileId;
 use gsttt_core::repo::RepoView;
 use gsttt_lang_python::{PACKS, PYTHON};
@@ -616,11 +618,62 @@ fn a_migration_declares_its_tables() {
 fn raw_sql_is_embedded() {
     let tree = index("raw_sql");
     let embedded = &tree.file("db.py").facts.embedded;
-    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded.len(), 5, "{embedded:?}");
     assert_eq!(embedded[0].lang, "sql");
     assert_eq!(embedded[0].line, 7);
     assert_eq!(embedded[0].text, "SELECT id FROM bookings WHERE id = %s");
     insta::assert_json_snapshot!("raw_sql_is_embedded", tree.file_json("db.py"));
+}
+
+/// The line of `needle` in the file, counting the lines of the document from the one it starts on, which is how a
+/// reader of the document places what it finds in it.
+fn line_in(document: &Embedded, needle: &str) -> Line {
+    assert!(
+        document.text.contains(needle),
+        "{needle:?} is not in {:?}",
+        document.text
+    );
+    let before = document.text.split(needle).next().unwrap();
+    document.line + Line::try_from(before.matches('\n').count()).unwrap()
+}
+
+#[gsttt_scenario::scenario("python", "A document starts on the line of its first literal")]
+#[test]
+fn a_document_starts_on_the_line_of_its_first_literal() {
+    let tree = index("raw_sql");
+    let embedded = &tree.file("db.py").facts.embedded;
+    // `find_many` calls `execute(` on line 13 and opens its literal on line 14, as black lays a long call out.
+    let document = &embedded[1];
+    assert_eq!(document.line, 14, "{document:?}");
+    assert_eq!(line_in(document, "SELECT id"), 15);
+    assert_eq!(line_in(document, "FROM bookings"), 16);
+    assert_eq!(line_in(document, "WHERE id IN %s"), 17);
+}
+
+#[gsttt_scenario::scenario("python", "Joined literals keep the lines of their parts")]
+#[test]
+fn joined_literals_keep_the_lines_of_their_parts() {
+    let tree = index("raw_sql");
+    let embedded = &tree.file("db.py").facts.embedded;
+    // `find_joined` writes three literals one after the other, `find_added` joins the same three with `+`.
+    for (document, first) in [(&embedded[2], 27), (&embedded[3], 38)] {
+        assert_eq!(document.line, first, "{document:?}");
+        assert_eq!(document.text, "SELECT id \nFROM bookings \nWHERE id = %s");
+        assert_eq!(line_in(document, "FROM bookings"), first + 1);
+        assert_eq!(line_in(document, "WHERE id = %s"), first + 2);
+    }
+}
+
+#[gsttt_scenario::scenario("python", "A line break written as an escape adds no line")]
+#[test]
+fn a_line_break_written_as_an_escape_adds_no_line() {
+    let tree = index("raw_sql");
+    let embedded = &tree.file("db.py").facts.embedded;
+    // `find_escaped` is one line of the file, with `\n` written out in its literal.
+    let document = &embedded[4];
+    assert_eq!(document.line, 48, "{document:?}");
+    assert_eq!(document.text, "SELECT id FROM bookings WHERE id = %s");
+    assert_eq!(line_in(document, "WHERE id = %s"), 48);
 }
 
 #[gsttt_scenario::scenario("python", "Every way of reading the environment is seen")]

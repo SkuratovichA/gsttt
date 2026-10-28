@@ -28,3 +28,4 @@
 - [x] 5.2 A route on a router is served once for each way the router is mounted and never also under the bare prefix; a mount without a prefix adds no second copy
 - [x] 5.3 `link` reads the ways up from each router once, ends a chain that comes back to a router it passed, caps the ways at 64 and the depth at 32, and names what it cut in the log
 - [x] 5.4 A client or session made with no base URL reads its calls as a module-level call does, so a computed URL with no literal path is an unread site, and a client made where it is called is read like one held in a variable
+- [x] 5.5 An embedded document starts on the line its first literal starts on, joined literals keep each part on its own line, and a line break written as an escape adds no line, so a reader of the document puts each fact on the line it is on in the file

@@ -146,11 +146,24 @@ With the `alembic` pack, `op.create_table`, `op.drop_table`, `op.rename_table`, 
 - **THEN** it declares `table bookings` and `table booking_items`
 
 ### Requirement: DB-API SQL
-With the `dbapi` pack, the first argument of `execute` and `executemany` on any receiver SHALL be an embedded `sql` document when it is a string literal.
+With the `dbapi` pack, the first argument of `execute` and `executemany` on any receiver SHALL be an embedded `sql` document when it is a string literal. The document SHALL start on the line its first literal starts on and keep the lines of the source: each part of a literal joined by implicit concatenation or `+` stays on its own line, and a line break written as an escape sequence adds none.
 
 #### Scenario: Raw SQL is embedded
 - **WHEN** a file has `cursor.execute("SELECT id FROM bookings WHERE id = %s", (id,))` on line 7
 - **THEN** it embeds an `sql` document at line 7 with that text
+
+#### Scenario: A document starts on the line of its first literal
+- **WHEN** a file has `cursor.execute(` on line 13 and a triple-quoted literal that opens on line 14, with `SELECT id` on line 15, `FROM bookings` on line 16 and `WHERE id IN %s` on line 17
+- **THEN** it embeds an `sql` document at line 14
+- **AND** counting its lines from line 14, `FROM bookings` is on line 16
+
+#### Scenario: Joined literals keep the lines of their parts
+- **WHEN** a file has `cursor.execute(` followed by the literals `"SELECT id "`, `"FROM bookings "` and `"WHERE id = %s"` on three lines, and another call with the same literals joined by `+`
+- **THEN** each call embeds a document at the line of `"SELECT id "`, whose second line is `FROM bookings ` and third is `WHERE id = %s`
+
+#### Scenario: A line break written as an escape adds no line
+- **WHEN** a file has `cursor.execute("SELECT id\nFROM bookings\nWHERE id = %s", (id,))` on one line
+- **THEN** it embeds an `sql` document on that line, with the text `SELECT id FROM bookings WHERE id = %s`
 
 ### Requirement: Environment variables
 With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.getenv("<NAME>")` and each field of a class deriving from `BaseSettings` SHALL call `env <NAME>`, a field's name prefixed with the literal `env_prefix` of the class's `model_config` or inner `Config` when it has one.

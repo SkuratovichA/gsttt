@@ -23,7 +23,9 @@ use ruff_text_size::{Ranged, TextSize};
 use crate::extra::{Bind, Mount, PyExtra, Route, RouterPrefix, Target};
 use crate::files::{is_python_source, tags_of};
 use crate::project::PythonProject;
-use crate::site::{AssignSite, CallSite, dict_prop, dotted, join_prefixes, literal_of, text_of};
+use crate::site::{
+    AssignSite, CallSite, EmbedSite, dict_prop, dotted, join_prefixes, literal_of, text_of,
+};
 
 /// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags only.
 pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<PyExtra> {
@@ -440,8 +442,14 @@ impl<'a> Collector<'a> {
                 if !rule.callee.matches(&callee) {
                     continue;
                 }
-                match rule.apply(&pack.name, &site, line, &callee) {
-                    Ok(document) => self.facts.embedded.push(document),
+                // The document starts where the text the rule read does, which is not the line of the call when
+                // the argument is on a line of its own.
+                let embed = EmbedSite::new(site, self.lines, line);
+                match rule.apply(&pack.name, &embed, line, &callee) {
+                    Ok(mut document) => {
+                        document.line = embed.line();
+                        self.facts.embedded.push(document);
+                    }
                     // `conn.execute(text("…"))` and `session.execute(select(…))` hold a document or a query
                     // object, not a string built at run time; a call with no argument holds nothing at all.
                     Err(_)
