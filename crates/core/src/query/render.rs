@@ -94,14 +94,20 @@ impl ConnectorShare {
         if self.imports == 0 {
             f.write_str("no imports")
         } else {
-            // Rounded down, so that an index with one lost import never claims to resolve everything.
-            write!(
-                f,
-                "{:.0}% of imports resolved",
-                (self.resolved * 100.0).floor()
-            )
+            write!(f, "{} of imports resolved", percent(self.resolved))
         }
     }
+}
+
+/// A share from 0 to 1 as a whole percentage. It is rounded down, so that an index with one lost import never
+/// claims to resolve everything.
+pub(super) fn percent(share: f64) -> String {
+    format!("{:.0}%", (share * 100.0).floor())
+}
+
+/// The first seven characters of a commit id, which is how people name one.
+pub(super) fn short(head: &str) -> String {
+    head.chars().take(7).collect()
 }
 
 /// The last two lines of every answer: how much of the tree the connectors read, and how fresh the index is.
@@ -171,7 +177,7 @@ impl Footer {
             Freshness::Fresh => {
                 f.write_str("fresh")?;
                 if let Some(head) = &self.head {
-                    write!(f, " at {}", head.chars().take(7).collect::<String>())?;
+                    write!(f, " at {}", short(head))?;
                 }
                 write!(f, ", {} dirty", noun(self.dirty, "file"))
             }
@@ -266,6 +272,16 @@ pub(super) fn list<T>(
         return Ok(());
     }
     writeln!(f, "{heading} ({}):", thousands(items.len()))?;
+    rows(f, items, entries, each)
+}
+
+/// Writes one line per item as `each` writes it, then `… N more` for the items `entries` leaves out.
+pub(super) fn rows<T>(
+    f: &mut fmt::Formatter<'_>,
+    items: &[T],
+    entries: Entries,
+    each: impl Fn(&mut fmt::Formatter<'_>, &T) -> fmt::Result,
+) -> fmt::Result {
     let shown = match entries {
         Entries::All => items.len(),
         Entries::Capped => items.len().min(LIST_CAP),

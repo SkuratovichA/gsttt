@@ -6,14 +6,25 @@
 //! [`Display`](std::fmt::Display) for the text people and agents read and [`Serialize`](serde::Serialize) for
 //! scripts. Nothing here prints.
 
+mod contracts;
 mod cross;
 mod http;
 mod impact;
 mod lookup;
+mod neighbours;
 mod render;
+mod report;
+mod route;
 mod walk;
 
+pub use contracts::{ContractLookup, Found, Match, Site, contract};
 pub use http::HttpMatcher;
 pub use impact::{Affected, Deleted, Impact, ImpactRequest, Reason, impact};
 pub use lookup::Miss;
+pub use neighbours::{Dependencies, Dependents, External, Neighbour, dependencies, dependents};
 pub use render::{Answer, ConnectorShare, Entries, Footer, LIST_CAP, Searched};
+pub use report::{
+    ConnectorReport, CoverageReport, Failure, Reasons, Spot, Status, UnclaimedExtension,
+    UnclaimedLanguage, coverage, status,
+};
+pub use route::{Link, Route, Step, path};

@@ -10,19 +10,18 @@ use crate::ids::FileId;
 use crate::index::Index;
 use crate::path::RepoPath;
 
-/// The file `raw` names. A file is in the index for a question only when a connector read it, because the graph
-/// lists every file of the tree and an answer about a file nobody read would claim a certainty it does not have.
-/// When the index holds no such file, the error is the path to print for it: `raw` taken to its canonical form
-/// when it has one.
-pub(super) fn find(index: &Index, raw: &str) -> Result<FileId, String> {
+/// The file `raw` names, with its path. A file is in the index for a question only when a connector read it, because
+/// the graph lists every file of the tree and an answer about a file nobody read would claim a certainty it does
+/// not have. When the index holds no such file, the error is the path to print for it: `raw` taken to its
+/// canonical form when it has one.
+pub(super) fn find<'a>(index: &'a Index, raw: &str) -> Result<(FileId, &'a RepoPath), String> {
     let read = |path: &str| {
-        index
-            .graph
-            .file_id(path)
-            .filter(|&file| index.project_of(file).is_some())
+        let file = index.graph.file_id(path)?;
+        index.project_of(file)?;
+        Some((file, index.graph.path(file)?))
     };
-    if let Some(file) = read(raw) {
-        return Ok(file);
+    if let Some(found) = read(raw) {
+        return Ok(found);
     }
     match RepoPath::normalize(raw) {
         Ok(path) => read(path.as_str()).ok_or_else(|| path.to_string()),

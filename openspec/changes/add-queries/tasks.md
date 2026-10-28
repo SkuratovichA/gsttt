@@ -8,15 +8,15 @@
 
 ## 2. The other questions
 
-- [ ] 2.1 `dependents` and `dependencies` with edge kinds, packages, builtins and unresolved imports
-- [ ] 2.2 `path` through imports and contract hops
-- [ ] 2.3 `contract` by canonical key and by free text
-- [ ] 2.4 `coverage` and `status`
+- [x] 2.1 `dependents` and `dependencies` with edge kinds, packages, builtins and unresolved imports
+- [x] 2.2 `path` through imports and contract hops
+- [x] 2.3 `contract` by canonical key and by free text
+- [x] 2.4 `coverage` and `status`
 
 ## 3. Answers
 
-- [ ] 3.1 Text rendering: relative paths, `path:line`, lists cut at 30, empty results with what was searched, the coverage and freshness footer
-- [ ] 3.2 JSON for every answer, uncut
+- [x] 3.1 Text rendering: relative paths, `path:line`, lists cut at 30, empty results with what was searched, the coverage and freshness footer
+- [x] 3.2 JSON for every answer, uncut
 
 ## 4. Proof
 

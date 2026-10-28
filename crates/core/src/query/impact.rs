@@ -103,7 +103,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         .chain(request.deleted.iter().map(|path| (path, true)));
     for (raw, reported_deleted) in asked {
         match find(index, raw) {
-            Ok(file) => {
+            Ok((file, _)) => {
                 if seen.insert(file) {
                     changed.push(file);
                 }
