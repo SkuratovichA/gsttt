@@ -33,11 +33,18 @@ A file a format's parser cannot read SHALL be a syntax failure with its line, an
 - **THEN** its status is a syntax failure at line 12 and the other contract files are read
 
 ### Requirement: OpenAPI
-Each operation under `paths` SHALL declare `http <METHOD> <base><path>` at the line of the operation, where the base is the path of the first entry of `servers` in OpenAPI 3 or `basePath` in Swagger 2. A `$ref` to another file SHALL be an import resolving relative to the referring file with its fragment dropped, and a path item that is a `$ref` to a fragment SHALL declare the fragment's operations under the referring path, at their lines in the fragment.
+Each operation under `paths` SHALL declare `http <METHOD> <base><path>` at the line of the operation, once for each distinct base in the order of the servers. A base SHALL be the path of an entry of `servers` in OpenAPI 3 or the `basePath` in Swagger 2, without its origin, whether the origin is written `https://host`, `//host` or `{variable}`; a document with neither has the empty base.
 
 #### Scenario: Operations are declared under the server path
 - **WHEN** `openapi.yaml` has `servers: [{url: "https://api.example.com/v1"}]` and the path `/bookings/{id}` with `get` and `delete`
 - **THEN** it declares `http GET /v1/bookings/{}` and `http DELETE /v1/bookings/{}` at the lines of `get` and `delete`
+
+#### Scenario: Operations are declared under every server path
+- **WHEN** `api/openapi.yaml` has the servers `https://api.example.com/v1`, `https://staging.example.com/v1`, `//api.example.com/v2/` and `{baseUrl}/v3`, the path `/bookings` with `get`, and the path `/carts` that is a `$ref` to a fragment with `get`
+- **THEN** it declares `http GET /v1/bookings`, `http GET /v2/bookings` and `http GET /v3/bookings` at the line of `get`, and the fragment declares `http GET /v1/carts`, `http GET /v2/carts` and `http GET /v3/carts`
+
+### Requirement: OpenAPI references
+A `$ref` to another file SHALL be an import resolving relative to the referring file with its fragment dropped, and a path item that is a `$ref` to a fragment SHALL declare the fragment's operations under the referring path, once for each base, at their lines in the fragment.
 
 #### Scenario: References are imports
 - **WHEN** `api/openapi.yaml` has `$ref: "./schemas/booking.yaml#/Booking"`

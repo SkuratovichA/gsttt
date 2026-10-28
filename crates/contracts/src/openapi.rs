@@ -310,45 +310,89 @@ fn read(path: &RepoPath, text: &str) -> Result<Read, SyntaxError> {
     Ok(read)
 }
 
-/// Declares the operations of `paths` under the server base and notes the path items that are references.
+/// Declares the operations of `paths` under each server path and notes the path items that are references.
 fn read_document(root: &Value, read: &mut Read) {
-    let base = base_of(root);
+    let prefixes = server_paths(root);
     let Some(paths) = root.get("paths") else {
         return;
     };
     for item in paths.entries() {
-        let route = format!(
-            "{}{}{}",
-            base.trim_end_matches('/'),
-            if item.key.starts_with('/') { "" } else { "/" },
-            item.key
-        );
+        let routes: Vec<String> = prefixes
+            .iter()
+            .map(|prefix| {
+                let slash = if item.key.starts_with('/') { "" } else { "/" };
+                format!("{prefix}{slash}{}", item.key)
+            })
+            .collect();
         for member in item.value.entries() {
             if let Some(method) = method_of(&member.key) {
-                read.facts
-                    .push(http_site(method, &route, Role::Declares, member.line, VIA));
+                read.facts.extend(
+                    routes
+                        .iter()
+                        .map(|route| http_site(method, route, Role::Declares, member.line, VIA)),
+                );
             } else if member.key == "$ref"
                 && let Some(spec) = member.value.as_str().and_then(file_of_ref)
             {
-                read.extra.path_refs.push(PathRef {
-                    spec: spec.to_owned(),
-                    line: member.line,
-                    route: route.clone(),
-                });
+                read.extra
+                    .path_refs
+                    .extend(routes.iter().map(|route| PathRef {
+                        spec: spec.to_owned(),
+                        line: member.line,
+                        route: route.clone(),
+                    }));
             }
         }
     }
 }
 
-/// The URL of the first server in OpenAPI 3, or `basePath` in Swagger 2; the key keeps only its path.
-fn base_of(root: &Value) -> String {
-    root.get("servers")
-        .and_then(|servers| servers.items().first())
-        .and_then(|server| server.get("url"))
-        .and_then(Value::as_str)
-        .or_else(|| root.get("basePath").and_then(Value::as_str))
+/// The paths a route can start with, one for each distinct path among the `servers` of OpenAPI 3, or the `basePath`
+/// of Swagger 2, in the order they are written. A document that names none has the empty path alone. The paths are
+/// compared before the key normaliser sees them, so two servers that differ in their origin only give one.
+fn server_paths(root: &Value) -> Vec<&str> {
+    let mut urls: Vec<&str> = root
+        .get("servers")
+        .into_iter()
+        .flat_map(Value::items)
+        .filter_map(|server| server.get("url")?.as_str())
+        .collect();
+    if urls.is_empty() {
+        urls.extend(root.get("basePath").and_then(Value::as_str));
+    }
+    let mut paths: Vec<&str> = Vec::with_capacity(urls.len());
+    for url in urls {
+        let path = path_of_server(url);
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    if paths.is_empty() {
+        paths.push("");
+    }
+    paths
+}
+
+/// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route
+/// and is written three ways: `https://host`, which the key normaliser drops by itself, and `//host` and
+/// `{variable}`, which it would keep as the first segment.
+fn path_of_server(url: &str) -> &str {
+    let url = url.trim();
+    let after_scheme = if let Some((scheme, rest)) = url.split_once("://")
+        && !scheme.contains('/')
+    {
+        rest
+    } else if let Some(rest) = url.strip_prefix("//") {
+        rest
+    } else if url.starts_with('{') {
+        url
+    } else {
+        return url.trim_end_matches('/');
+    };
+    after_scheme
+        .find('/')
+        .and_then(|slash| after_scheme.get(slash..))
         .unwrap_or_default()
-        .to_owned()
+        .trim_end_matches('/')
 }
 
 fn method_of(key: &str) -> Option<&'static str> {
@@ -407,6 +451,76 @@ mod tests {
     }
 
     #[test]
+    fn a_server_gives_its_path_whichever_way_its_origin_is_written() {
+        for (url, path) in [
+            ("https://api.example.com/v1", "/v1"),
+            ("https://api.example.com/v1/", "/v1"),
+            ("https://api.example.com", ""),
+            ("{scheme}://{host}:{port}/v1", "/v1"),
+            ("//api.example.com/v1", "/v1"),
+            ("{baseUrl}/v1", "/v1"),
+            ("{baseUrl}", ""),
+            ("/v1/", "/v1"),
+            ("/", ""),
+            ("/api/{version}", "/api/{version}"),
+            (
+                "/redirect/http://example.com",
+                "/redirect/http://example.com",
+            ),
+        ] {
+            assert_eq!(path_of_server(url), path, "{url}");
+        }
+    }
+
+    #[test]
+    fn every_distinct_server_path_serves_each_operation() {
+        let text = "openapi: 3.0.3\nservers:\n  - url: https://api.example.com/v1\n  - url: https://staging.example.com/v1/\n  - url: //api.example.com/v2\n  - url: '{baseUrl}/v3'\npaths:\n  /a:\n    get: {}\n    put: {}\n";
+        assert_eq!(
+            route_facts("openapi.yaml", text),
+            vec![
+                (9, "http GET /v1/a".to_owned()),
+                (9, "http GET /v2/a".to_owned()),
+                (9, "http GET /v3/a".to_owned()),
+                (10, "http PUT /v1/a".to_owned()),
+                (10, "http PUT /v2/a".to_owned()),
+                (10, "http PUT /v3/a".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_document_without_a_server_path_serves_from_the_root() {
+        for servers in [
+            "",
+            "servers: []\n",
+            "servers:\n  - description: none\n",
+            "servers:\n  - url: https://api.example.com\n",
+        ] {
+            let text = format!("openapi: 3.0.3\n{servers}paths:\n  /a:\n    get: {{}}\n");
+            let lines = text.lines().count();
+            assert_eq!(
+                route_facts("openapi.yaml", &text),
+                vec![(u32::try_from(lines).unwrap(), "http GET /a".to_owned())],
+                "{servers}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_path_item_that_is_a_reference_is_noted_for_each_server_path() {
+        let text = "openapi: 3.0.3\nservers:\n  - url: /v1\n  - url: /v2\npaths:\n  /a:\n    $ref: ./a.yaml\n";
+        let path = RepoPath::normalize("openapi.yaml").unwrap();
+        let read = read(&path, text).unwrap();
+        let routes: Vec<(&str, Line)> = read
+            .extra
+            .path_refs
+            .iter()
+            .map(|path_ref| (path_ref.route.as_str(), path_ref.line))
+            .collect();
+        assert_eq!(routes, vec![("/v1/a", 7), ("/v2/a", 7)]);
+    }
+
+    #[test]
     fn json_documents_keep_key_lines() {
         let text = "{\n  \"openapi\": \"3.0.0\",\n  \"paths\": {\n    \"/a\": {\n      \"post\": {}\n    }\n  }\n}\n";
         assert_eq!(
@@ -428,6 +542,20 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn a_server_path_is_what_follows_its_origin(
+            origin in prop_oneof![
+                Just("https://host.example.com"),
+                Just("//host.example.com"),
+                Just("{baseUrl}"),
+                Just(""),
+            ],
+            path in "(/[a-z{}]{1,6}){0,4}",
+        ) {
+            let url = format!("{origin}{path}/");
+            prop_assert_eq!(path_of_server(&url), path);
+        }
+
         #[test]
         fn a_reference_names_no_fragment_and_no_url(reference in "\\PC*") {
             if let Some(file) = file_of_ref(&reference) {

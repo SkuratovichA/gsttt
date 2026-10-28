@@ -21,6 +21,31 @@ fn operations_are_declared_under_the_server_path() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
+#[gsttt_scenario::scenario("contract-formats", "Operations are declared under every server path")]
+#[test]
+fn operations_are_declared_under_every_server_path() {
+    let run = Run::new("openapi_many_servers", &[module(&OPENAPI)]);
+    assert_eq!(run.status("api/openapi.yaml"), &ParseStatus::Ok);
+    // The first two servers differ in their origin only, so they give one path.
+    assert_eq!(
+        run.sites("api/openapi.yaml"),
+        vec![
+            "declares http GET /v1/bookings @12",
+            "declares http GET /v2/bookings @12",
+            "declares http GET /v3/bookings @12",
+        ]
+    );
+    assert_eq!(
+        run.linked(),
+        vec![
+            "api/paths/carts.yaml: declares http GET /v1/carts @1",
+            "api/paths/carts.yaml: declares http GET /v2/carts @1",
+            "api/paths/carts.yaml: declares http GET /v3/carts @1",
+        ]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
 #[test]
 fn swagger_two_documents_use_their_base_path() {
     let run = Run::new("openapi_swagger", &[module(&OPENAPI)]);

@@ -31,3 +31,4 @@
 - [x] 4.8 The proto line map borrows the location paths of the descriptor instead of cloning one vector for every location
 - [x] 4.9 A brace inside a Prisma string literal closes no block, and the scan for the closing brace shares its string logic with the one for comments
 - [x] 4.10 The GraphQL operations fixture also holds a shorthand query and a fragment spread at the root, which the operations scenario now names
+- [x] 4.11 OpenAPI reads every server, drops an origin written as `//host` or `{variable}`, and declares each operation, and each fragment reached by a `$ref`, once under each distinct server path
