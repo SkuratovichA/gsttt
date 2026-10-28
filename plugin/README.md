@@ -10,7 +10,7 @@ This plugin gives Claude Code the gsttt MCP server, a skill that says when to as
    curl -fsSL https://raw.githubusercontent.com/SkuratovichA/gsttt/main/install.sh | sh
    ```
 
-   The installer checks the SHA-256 of what it downloads and puts `gsttt` in `~/.local/bin`, or in `GSTTT_INSTALL_DIR` when that is set. Make sure that directory is on your `PATH`. The checksum comes from the same release as the package, so it guards against a damaged download and not against a compromised release.
+   The installer checks the SHA-256 of what it downloads and puts `gsttt` in `~/.local/bin`, or in `GSTTT_INSTALL_DIR` when that is set. The plugin finds it there either way; to run `gsttt` by name in a terminal, put that directory on your `PATH`, as the installer says if it is not. The checksum comes from the same release as the package, so it guards against a damaged download and not against a compromised release.
 
    This line needs a public repository: `raw.githubusercontent.com` answers 404 for a private one, and `curl -f` then prints an error and installs nothing. While the repository is private, install with the GitHub CLI, signed in with `gh auth login`:
 

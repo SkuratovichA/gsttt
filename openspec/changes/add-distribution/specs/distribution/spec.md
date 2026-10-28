@@ -104,6 +104,50 @@ The GitHub release `v<version>` SHALL carry the packages and notes listing the s
 - **WHEN** the checksum beside the package does not match it
 - **THEN** `install.sh` exits non-zero and `GSTTT_INSTALL_DIR` is unchanged
 
+### Requirement: Installer downloads
+`install.sh` SHALL fetch from GitHub with `curl` over HTTPS only, with TLS 1.2 or newer, a limit on the wait and retries of transient failures, and from `GSTTT_BASE_URL` without those. It SHALL stop before any download when neither `sha256sum` nor `shasum` exists, and SHALL accept as `GSTTT_VERSION` only numbers joined by single dots.
+
+#### Scenario: A GitHub download is over HTTPS only
+- **WHEN** `install.sh` downloads without a base URL
+- **THEN** every `curl` call has `--proto =https`, `--tlsv1.2`, `--connect-timeout`, `--max-time` and `--retry`
+
+#### Scenario: A base URL is fetched as given
+- **WHEN** `GSTTT_BASE_URL` is a `file://` URL
+- **THEN** the package is installed and no `curl` call has those options
+
+#### Scenario: A missing checksum tool stops the install before any download
+- **WHEN** neither `sha256sum` nor `shasum` is on `PATH`
+- **THEN** `install.sh` exits non-zero naming both, before `curl` is called, and installs nothing
+
+#### Scenario: A malformed version is refused
+- **WHEN** `GSTTT_VERSION` is `1..2`
+- **THEN** `install.sh` exits non-zero saying it cannot tell which version to install, and downloads nothing
+
+### Requirement: Installer on Apple Silicon
+On macOS, `install.sh` SHALL install the Apple Silicon package on an Apple Silicon machine even when `uname -m` says `x86_64` because the shell runs under Rosetta.
+
+#### Scenario: A shell under Rosetta gets the Apple Silicon package
+- **WHEN** `uname -s` is `Darwin`, `uname -m` is `x86_64` and `sysctl -n sysctl.proc_translated` prints `1`
+- **THEN** the `aarch64-apple-darwin` package is installed
+
+### Requirement: Installer leaves nothing behind
+`install.sh` SHALL stage the binary in a uniquely named file in the install directory before renaming it into place, and SHALL remove the staged file and its download directory however it stops.
+
+#### Scenario: An interrupted install leaves nothing behind
+- **WHEN** `install.sh` is sent `TERM` after the binary is copied and before it is renamed
+- **THEN** it exits non-zero, and neither the install directory nor `TMPDIR` holds anything the install made
+
+### Requirement: Installer PATH hint
+`install.sh` SHALL print the line that adds the install directory to `PATH` when it is not there, and no hint when it is, whether or not the directory or the `PATH` entry ends in a slash.
+
+#### Scenario: A directory on PATH gets no hint
+- **WHEN** the install directory is listed in `PATH`, with or without a trailing slash
+- **THEN** `install.sh` prints no hint about `PATH`
+
+#### Scenario: A directory off PATH gets the line to add
+- **WHEN** the install directory is not in `PATH`
+- **THEN** `install.sh` prints `export PATH="<directory>:$PATH"`
+
 ### Requirement: Claude Code plugin
 The repository SHALL be a Claude Code plugin marketplace: `.claude-plugin/marketplace.json` SHALL list the plugin `gsttt` from `plugin/`, whose manifest declares the MCP server `gsttt mcp`, a session-start hook and a skill that says when to use gsttt's tools.
 
@@ -132,6 +176,10 @@ The plugin's commands SHALL run through a wrapper that looks for `gsttt` on `PAT
 #### Scenario: The binary in the install directory is found
 - **WHEN** `gsttt` is not on `PATH` and is in the install directory
 - **THEN** the wrapper runs it with the arguments it was given
+
+#### Scenario: The wrapper finds the default install
+- **WHEN** `install.sh` has run with only `HOME` set, and `PATH` lacks `~/.local/bin`
+- **THEN** the wrapper runs the binary the installer put there
 
 ### Requirement: Missing binary
 When the wrapper finds no `gsttt`, a session start SHALL print one line that names the install command and is written as a note for the user, every other hook event SHALL do nothing and exit zero, and the MCP server SHALL print one line on stderr and exit with status 1.

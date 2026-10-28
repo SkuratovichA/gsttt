@@ -1,6 +1,7 @@
-//! `install.sh`, run on packages made by `cargo xtask package` and served from a local directory. Programs the installer asks the network or the machine, `gh`, `curl` and `uname`, are replaced by scripts in front of `PATH`.
+//! `install.sh`, run on packages made by `cargo xtask package` and served from a local directory. Programs the installer asks the network or the machine, `gh`, `curl`, `uname` and `sysctl`, are replaced by scripts in front of `PATH`.
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
@@ -8,7 +9,9 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
-use crate::support::{RELEASE_TARGETS, commit, package, printed, repository, workspace_root};
+use crate::support::{
+    RELEASE_TARGETS, commit, package, printed, repository, workspace_root, write_executable,
+};
 
 /// Answers `uname -m` and `uname -s` with `FAKE_ARCH` and `FAKE_OS`.
 const UNAME: &str = r#"case "$1" in
@@ -44,7 +47,7 @@ url=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) output="$2"; shift ;;
-    -w) shift ;;
+    -w | --proto | --connect-timeout | --max-time | --retry) shift ;;
     -*) ;;
     *) url="$1" ;;
   esac
@@ -56,6 +59,29 @@ case "$url" in
   https://github.com/SkuratovichA/gsttt/releases/download/v*/*)
     cp "$FAKE_PACKAGES/${url##*/}" "$output" ;;
   *) echo "no such URL: $url" >&2; exit 22 ;;
+esac
+"#;
+
+/// A `sysctl` that answers `sysctl -n sysctl.proc_translated` with `FAKE_TRANSLATED`, and fails as an Intel Mac does when that is `none`. Every call is appended to `FAKE_LOG`.
+const SYSCTL: &str = r#"echo "sysctl $*" >> "$FAKE_LOG"
+if [ "$*" != "-n sysctl.proc_translated" ] || [ "$FAKE_TRANSLATED" = none ]; then
+  echo "sysctl: unknown oid" >&2
+  exit 1
+fi
+echo "$FAKE_TRANSLATED"
+"#;
+
+/// A `curl` that appends its call to `FAKE_LOG` and runs the next `curl` on `PATH`. A script from `shims` is the first on `PATH`, so dropping the first entry finds the real one.
+const CURL_LOGGING: &str = r#"echo "curl $*" >> "$FAKE_LOG"
+PATH="${PATH#*:}"
+exec curl "$@"
+"#;
+
+/// A `cp` that ends the copy to the staged file of the installer by sending the installer `TERM`, as an interrupt would between the copy and the rename.
+const CP_THEN_TERM: &str = r#"PATH="${PATH#*:}"
+cp "$@" || exit 1
+case "$2" in
+  */.gsttt.*) kill -TERM "$PPID" ;;
 esac
 "#;
 
@@ -149,22 +175,53 @@ impl Machine {
     }
 }
 
+/// The `PATH` of this test run with `directories` in front of it.
+fn path_with(directories: &[&Path]) -> OsString {
+    let rest = std::env::var_os("PATH").unwrap_or_default();
+    std::env::join_paths(
+        directories
+            .iter()
+            .map(|directory| directory.to_path_buf())
+            .chain(std::env::split_paths(&rest)),
+    )
+    .unwrap()
+}
+
 /// Puts the scripts `scripts` (name and body) in front of `PATH` of `command`. The scripts exist as long as the returned directory does.
 fn shims(command: &mut Command, machine: &Machine, scripts: &[(&str, &str)]) -> TempDir {
     let directory = tempfile::tempdir().unwrap();
     for (name, body) in scripts {
-        let path = directory.path().join(name);
-        fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        write_executable(directory.path(), name, &format!("#!/bin/sh\n{body}"));
     }
-    let rest = std::env::var_os("PATH").unwrap_or_default();
-    let path = std::env::join_paths(
-        std::iter::once(directory.path().to_path_buf()).chain(std::env::split_paths(&rest)),
-    )
-    .unwrap();
     command
-        .env("PATH", path)
+        .env("PATH", path_with(&[directory.path()]))
         .env("FAKE_LOG", machine.home.path().join("calls.log"));
+    directory
+}
+
+/// The first program called `name` on the `PATH` of this test run.
+fn program(name: &str) -> PathBuf {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let found = std::env::split_paths(&path)
+        .map(|directory| directory.join(name))
+        .find(|candidate| candidate.is_file());
+    assert!(found.is_some(), "{name} is not on PATH");
+    found.unwrap()
+}
+
+/// A directory to be the whole of `PATH`: links to the programs `install.sh` runs, and a `curl` that appends its call to `FAKE_LOG` and fails. It holds neither `sha256sum` nor `shasum`.
+fn path_without_checksum_tools() -> TempDir {
+    let directory = tempfile::tempdir().unwrap();
+    for name in [
+        "sh", "uname", "mktemp", "rm", "mkdir", "tar", "cp", "chmod", "mv", "cut", "sort", "tail",
+    ] {
+        std::os::unix::fs::symlink(program(name), directory.path().join(name)).unwrap();
+    }
+    write_executable(
+        directory.path(),
+        "curl",
+        "#!/bin/sh\necho \"curl $*\" >> \"$FAKE_LOG\"\nexit 22\n",
+    );
     directory
 }
 
@@ -434,4 +491,270 @@ fn a_base_url_replaces_the_release_even_when_gh_is_signed_in() {
     assert!(output.status.success(), "{}", printed(&output));
     assert!(machine.installed().starts_with("gsttt first "));
     assert!(!machine.calls().contains("gh "), "{}", machine.calls());
+}
+
+#[gsttt_scenario::scenario("distribution", "A GitHub download is over HTTPS only")]
+#[test]
+fn curl_fetches_github_over_https_with_a_bounded_wait() {
+    let releases = releases(&["first", "second"]);
+    let packages = packages(&releases);
+    let machine = Machine::new();
+    let (mut command, _scripts) = installer_with_github(&machine, &packages, false);
+
+    let output = command.output().unwrap();
+
+    assert!(output.status.success(), "{}", printed(&output));
+    let calls = machine.calls();
+    let curl_calls: Vec<&str> = calls
+        .lines()
+        .filter(|line| line.starts_with("curl "))
+        .collect();
+    // The lookup of the latest release, the package and its checksum.
+    assert_eq!(curl_calls.len(), 3, "{calls}");
+    for call in curl_calls {
+        for flag in [
+            "--proto =https",
+            "--tlsv1.2",
+            "--connect-timeout",
+            "--max-time",
+            "--retry",
+        ] {
+            assert!(call.contains(flag), "{flag} is missing from: {call}");
+        }
+    }
+}
+
+#[gsttt_scenario::scenario("distribution", "A base URL is fetched as given")]
+#[test]
+fn a_base_url_is_fetched_without_the_limits_meant_for_github() {
+    let releases = releases(&["first"]);
+    let machine = Machine::new();
+    let mut command = machine.installer(&packages(&releases));
+    let _scripts = shims(&mut command, &machine, &[("curl", CURL_LOGGING)]);
+
+    let output = command.output().unwrap();
+
+    assert!(output.status.success(), "{}", printed(&output));
+    let calls = machine.calls();
+    assert!(calls.contains("curl "), "curl fetched nothing: {calls}");
+    for flag in [
+        "--proto",
+        "--tlsv1.2",
+        "--connect-timeout",
+        "--max-time",
+        "--retry",
+    ] {
+        assert!(!calls.contains(flag), "{flag} was given to curl: {calls}");
+    }
+}
+
+#[gsttt_scenario::scenario(
+    "distribution",
+    "A missing checksum tool stops the install before any download"
+)]
+#[test]
+fn a_machine_without_a_checksum_tool_is_told_so_before_anything_is_downloaded() {
+    let releases = releases(&["first"]);
+    let machine = Machine::new();
+    let path = path_without_checksum_tools();
+    let mut command = machine.installer(&packages(&releases));
+    command
+        .env("PATH", path.path())
+        .env("FAKE_LOG", machine.home.path().join("calls.log"));
+
+    let output = command.output().unwrap();
+
+    assert!(!output.status.success(), "{}", printed(&output));
+    assert!(
+        printed(&output).contains("sha256sum or shasum"),
+        "{}",
+        printed(&output)
+    );
+    assert_eq!(machine.calls(), "", "something was downloaded");
+    assert!(!machine.install_dir().exists());
+}
+
+#[gsttt_scenario::scenario("distribution", "A malformed version is refused")]
+#[test]
+fn a_version_that_is_not_numbers_joined_by_single_dots_is_refused() {
+    let releases = releases(&["first"]);
+    let packages = packages(&releases);
+    for version in [".", "..", "1..2", ".1.2", "1.2.", "1.2.x", "1/2"] {
+        let machine = Machine::new();
+        let mut command = machine.installer(&packages);
+        let _scripts = shims(&mut command, &machine, &[("curl", CURL_LOGGING)]);
+
+        let output = command.env("GSTTT_VERSION", version).output().unwrap();
+
+        assert!(!output.status.success(), "{version}: {}", printed(&output));
+        assert!(
+            printed(&output).contains("cannot tell which version"),
+            "{version}: {}",
+            printed(&output)
+        );
+        assert_eq!(machine.calls(), "", "{version}: something was downloaded");
+        assert!(!machine.install_dir().exists(), "{version}");
+    }
+}
+
+#[gsttt_scenario::scenario("distribution", "A shell under Rosetta gets the Apple Silicon package")]
+#[test]
+fn a_shell_under_rosetta_gets_the_apple_silicon_package() {
+    let releases = releases(&["first"]);
+    for (os, arch, translated, target) in [
+        ("Darwin", "x86_64", "1", "aarch64-apple-darwin"),
+        ("Darwin", "x86_64", "0", "x86_64-apple-darwin"),
+        ("Darwin", "x86_64", "none", "x86_64-apple-darwin"),
+        ("Darwin", "arm64", "0", "aarch64-apple-darwin"),
+        ("Linux", "x86_64", "1", "x86_64-unknown-linux-musl"),
+    ] {
+        let machine = Machine::new();
+        let mut command = machine.installer(&packages(&releases));
+        let _scripts = shims(
+            &mut command,
+            &machine,
+            &[("uname", UNAME), ("sysctl", SYSCTL)],
+        );
+        command
+            .env("FAKE_OS", os)
+            .env("FAKE_ARCH", arch)
+            .env("FAKE_TRANSLATED", translated);
+
+        let output = command.output().unwrap();
+
+        let case = format!("{os} {arch}, translated {translated}");
+        assert!(output.status.success(), "{case}: {}", printed(&output));
+        assert_eq!(
+            machine.installed(),
+            format!("gsttt first {target}"),
+            "{case}"
+        );
+    }
+}
+
+#[gsttt_scenario::scenario("distribution", "A directory on PATH gets no hint")]
+#[test]
+fn a_directory_on_the_path_gets_no_hint_however_it_is_spelled() {
+    let releases = releases(&["first"]);
+    let packages = packages(&releases);
+    for (given, listed) in [("", ""), ("/", ""), ("", "/")] {
+        let machine = Machine::new();
+        let directory = machine.install_dir().display().to_string();
+        let mut command = machine.installer(&packages);
+        command
+            .env("GSTTT_INSTALL_DIR", format!("{directory}{given}"))
+            .env(
+                "PATH",
+                path_with(&[Path::new(&format!("{directory}{listed}"))]),
+            );
+
+        let output = command.output().unwrap();
+
+        let case = format!("installed into {directory}{given}, PATH lists {directory}{listed}");
+        assert!(output.status.success(), "{case}: {}", printed(&output));
+        for hint in ["your PATH", "export PATH="] {
+            assert!(
+                !printed(&output).contains(hint),
+                "{case}: {}",
+                printed(&output)
+            );
+        }
+    }
+}
+
+#[gsttt_scenario::scenario("distribution", "A directory off PATH gets the line to add")]
+#[test]
+fn a_directory_off_the_path_comes_with_the_line_that_puts_it_there() {
+    let releases = releases(&["first"]);
+    let machine = Machine::new();
+
+    let output = machine.installer(&packages(&releases)).output().unwrap();
+
+    assert!(output.status.success(), "{}", printed(&output));
+    let line = format!("export PATH=\"{}:$PATH\"", machine.install_dir().display());
+    assert!(printed(&output).contains(&line), "{}", printed(&output));
+}
+
+#[gsttt_scenario::scenario("distribution", "An interrupted install leaves nothing behind")]
+#[test]
+fn an_install_interrupted_after_the_copy_leaves_nothing_behind() {
+    let releases = releases(&["first"]);
+    let machine = Machine::new();
+    let temporary = machine.home.path().join("tmp");
+    fs::create_dir(&temporary).unwrap();
+    let mut command = machine.installer(&packages(&releases));
+    let _scripts = shims(&mut command, &machine, &[("cp", CP_THEN_TERM)]);
+    command.env("TMPDIR", &temporary);
+
+    let output = command.output().unwrap();
+
+    assert!(!output.status.success(), "{}", printed(&output));
+    assert_eq!(
+        contents(&machine.install_dir()),
+        BTreeMap::new(),
+        "the install directory is not empty"
+    );
+    assert_eq!(
+        fs::read_dir(&temporary).unwrap().count(),
+        0,
+        "the download directory is left in TMPDIR"
+    );
+}
+
+#[test]
+fn the_download_directory_is_removed_whether_the_install_works_or_not() {
+    let releases = releases(&["first"]);
+    let packages = packages(&releases);
+    for works in [true, false] {
+        if !works {
+            for (name, _) in contents(&packages) {
+                if name.ends_with(".sha256") {
+                    fs::write(packages.join(&name), format!("{}  x\n", "0".repeat(64))).unwrap();
+                }
+            }
+        }
+        let machine = Machine::new();
+        let temporary = machine.home.path().join("tmp");
+        fs::create_dir(&temporary).unwrap();
+
+        let output = machine
+            .installer(&packages)
+            .env("TMPDIR", &temporary)
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.success(), works, "{}", printed(&output));
+        assert_eq!(
+            fs::read_dir(&temporary).unwrap().count(),
+            0,
+            "the download directory is left in TMPDIR, the install worked: {works}"
+        );
+    }
+}
+
+#[gsttt_scenario::scenario("distribution", "The wrapper finds the default install")]
+#[test]
+fn the_wrapper_finds_what_the_installer_installs_by_default() {
+    let releases = releases(&["first"]);
+    let machine = Machine::new();
+    let installed = machine
+        .installer(&packages(&releases))
+        .env_remove("GSTTT_INSTALL_DIR")
+        .output()
+        .unwrap();
+    assert!(installed.status.success(), "{}", printed(&installed));
+    let nowhere = tempfile::tempdir().unwrap();
+
+    let output = Command::new(workspace_root().join("plugin/scripts/gsttt.sh"))
+        .env_clear()
+        .env("PATH", nowhere.path())
+        .env("HOME", machine.home.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        String::from_utf8_lossy(&output.stdout).starts_with("gsttt first "),
+        "{}",
+        printed(&output)
+    );
 }
