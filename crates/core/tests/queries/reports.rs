@@ -327,8 +327,8 @@ fn coverage_of_an_index_no_connector_read_says_so() {
     assert!(text.starts_with("no connector read any file\n"), "{text}");
 }
 
-const NOT_TRUSTED: &str =
-    "the external connector `fake` (/bin/sh fake.sh) is not trusted in this repository";
+/// A line that the program that embeds the engine adds to the problems of the index. Core knows nothing of what such a line says, and this one sorts after the other lines of these tests.
+const EMBEDDER_LINE: &str = "the program that embeds the engine adds this line";
 
 const NO_TSCONFIG: &str = "`ts` project at `web`, open: no tsconfig";
 
@@ -337,19 +337,19 @@ const NO_TSCONFIG: &str = "`ts` project at `web`, open: no tsconfig";
 fn coverage_lists_the_problems_of_the_index() {
     let mut index = Tree::new().imports("b.ts", "a.ts").build();
     let quiet = coverage(&index, Freshness::Fresh);
-    assert!(!quiet.to_string().contains("problems"), "{quiet}");
+    assert!(!quiet.to_string().starts_with("problems ("), "{quiet}");
     assert_eq!(to_value(&quiet).unwrap()["problems"], json!([]));
 
-    index.coverage.problems = vec![NOT_TRUSTED.to_owned(), NO_TSCONFIG.to_owned()];
+    index.coverage.problems = vec![EMBEDDER_LINE.to_owned(), NO_TSCONFIG.to_owned()];
     index.coverage.finish();
     let answer = coverage(&index, Freshness::Fresh);
 
     let text = answer.to_string();
-    let lines = format!("problems (2):\n  {NO_TSCONFIG}\n  {NOT_TRUSTED}\nts: ");
+    let lines = format!("problems (2):\n  {NO_TSCONFIG}\n  {EMBEDDER_LINE}\nts: ");
     assert!(text.starts_with(&lines), "{text}");
     assert_eq!(
         to_value(&answer).unwrap()["problems"],
-        json!([NO_TSCONFIG, NOT_TRUSTED])
+        json!([NO_TSCONFIG, EMBEDDER_LINE])
     );
 }
 
@@ -362,7 +362,7 @@ fn the_problems_are_never_cut() {
     }
     let mut index = tree.build();
     index.coverage.problems = (0..30).map(|n| format!("problem {n:02}")).collect();
-    index.coverage.problems.push(NOT_TRUSTED.to_owned());
+    index.coverage.problems.push(EMBEDDER_LINE.to_owned());
     index.coverage.finish();
     let answer = coverage(&index, Freshness::Fresh);
 
@@ -376,7 +376,7 @@ fn the_problems_are_never_cut() {
             .collect();
         assert!(text.starts_with("problems (31):\n  problem 00\n"), "{text}");
         assert_eq!(listed.len(), 31, "{text}");
-        assert_eq!(listed.last(), Some(&format!("  {NOT_TRUSTED}").as_str()));
+        assert_eq!(listed.last(), Some(&format!("  {EMBEDDER_LINE}").as_str()));
         assert!(
             text.lines()
                 .nth(32)
