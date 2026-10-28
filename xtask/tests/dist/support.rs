@@ -1,9 +1,17 @@
 //! Helpers shared by the tests: repositories made in a temporary directory and the `xtask` binary run on them.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use tempfile::TempDir;
+
+/// The root of the workspace this crate belongs to.
+pub(crate) fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
 
 /// Makes `command` ignore the git configuration of the machine and commit as a fixed author.
 fn isolate_git(command: &mut Command) -> &mut Command {

@@ -6,6 +6,7 @@
 )]
 
 mod check;
+mod ci;
 mod notes;
 mod package;
 mod support;
