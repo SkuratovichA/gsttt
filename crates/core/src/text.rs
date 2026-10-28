@@ -99,11 +99,21 @@ pub const NAMES_SHOWN: usize = 3;
 
 /// Names for a heading: the first [`NAMES_SHOWN`] as [`join_and`] writes them, then a count of the rest.
 pub fn summary(names: &[String]) -> String {
+    cut(names, join_and)
+}
+
+/// Names for a line that lists them: [`summary`] with commas all the way, so that three names are `a, b, c` and not `a, b and c`.
+pub fn comma_summary(names: &[String]) -> String {
+    cut(names, |names| names.join(", "))
+}
+
+/// The first [`NAMES_SHOWN`] names and a count of the rest when there are more of them, and all of them as `join` writes them when there are not.
+fn cut(names: &[String], join: impl FnOnce(&[String]) -> String) -> String {
     match names.split_at_checked(NAMES_SHOWN) {
         Some((shown, rest)) if !rest.is_empty() => {
             format!("{} and {} more", shown.join(", "), thousands(rest.len()))
         }
-        _ => join_and(names),
+        _ => join(names),
     }
 }
 
@@ -228,6 +238,17 @@ mod tests {
     fn a_summary_names_three_and_counts_the_rest() {
         assert_eq!(summary(&names(&["a", "b", "c"])), "a, b and c");
         assert_eq!(summary(&names(&["a", "b", "c", "d"])), "a, b, c and 1 more");
+    }
+
+    #[test]
+    fn a_comma_summary_keeps_its_commas_until_it_cuts_as_a_summary_does() {
+        assert_eq!(comma_summary(&names(&[])), "");
+        assert_eq!(comma_summary(&names(&["a", "b"])), "a, b");
+        assert_eq!(comma_summary(&names(&["a", "b", "c"])), "a, b, c");
+        assert_eq!(
+            comma_summary(&names(&["a", "b", "c", "d"])),
+            "a, b, c and 1 more"
+        );
     }
 
     #[test]

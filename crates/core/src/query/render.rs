@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::coverage::ConnectorCoverage;
 use crate::ids::FileId;
 use crate::index::{Freshness, Index};
-use crate::text::{NAMES_SHOWN, join_and, noun, percent, short, summary, thousands};
+use crate::text::{comma_summary, join_and, noun, percent, short, thousands};
 
 /// How many entries of a list the text of an answer shows unless every entry is asked for.
 pub const LIST_CAP: usize = 30;
@@ -282,12 +282,11 @@ pub(super) fn moved(added: u32, removed: u32, changed: u32) -> String {
     join_and(&parts)
 }
 
-/// The names of a line of an answer, written as they come: separated by commas, and with `entries` capped the first [`NAMES_SHOWN`] followed by `and N more` when there are more.
+/// The names of a line of an answer, written as they come: separated by commas, and with `entries` capped the first [`NAMES_SHOWN`](crate::text::NAMES_SHOWN) followed by `and N more` when there are more.
 pub(super) fn name_list(names: &[String], entries: Entries) -> String {
-    if entries == Entries::Capped && names.len() > NAMES_SHOWN {
-        summary(names)
-    } else {
-        names.join(", ")
+    match entries {
+        Entries::Capped => comma_summary(names),
+        Entries::All => names.join(", "),
     }
 }
 
