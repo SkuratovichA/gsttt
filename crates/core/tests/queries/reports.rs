@@ -5,9 +5,10 @@ use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{Import, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index, Timings};
 use gsttt_core::query::{
-    Failure, Reasons, UnclaimedExtension, UnclaimedLanguage, coverage, status,
+    Answer, Entries, Failure, Reasons, UnclaimedExtension, UnclaimedLanguage, coverage, status,
 };
 use gsttt_scenario::scenario;
+use serde_json::{json, to_value};
 
 use crate::fixture::{To, Tree, resolving};
 
@@ -324,6 +325,48 @@ fn coverage_of_an_index_no_connector_read_says_so() {
     let text = coverage(&index, Freshness::Fresh).to_string();
 
     assert!(text.starts_with("no connector read any file\n"), "{text}");
+}
+
+const NOT_TRUSTED: &str =
+    "the external connector `fake` (/bin/sh fake.sh) is not trusted in this repository";
+
+const NO_TSCONFIG: &str = "`ts` project at `web`, open: no tsconfig";
+
+#[scenario("queries", "Coverage lists the problems of the index")]
+#[test]
+fn coverage_lists_the_problems_of_the_index() {
+    let mut index = Tree::new().imports("b.ts", "a.ts").build();
+    let quiet = coverage(&index, Freshness::Fresh);
+    assert!(!quiet.to_string().contains("problems"), "{quiet}");
+    assert_eq!(to_value(&quiet).unwrap()["problems"], json!([]));
+
+    index.coverage.problems = vec![NOT_TRUSTED.to_owned(), NO_TSCONFIG.to_owned()];
+    index.coverage.finish();
+    let answer = coverage(&index, Freshness::Fresh);
+
+    let text = answer.to_string();
+    let lines = format!("problems (2):\n  {NO_TSCONFIG}\n  {NOT_TRUSTED}\nts: ");
+    assert!(text.starts_with(&lines), "{text}");
+    assert_eq!(
+        to_value(&answer).unwrap()["problems"],
+        json!([NO_TSCONFIG, NOT_TRUSTED])
+    );
+}
+
+#[test]
+fn the_problems_are_cut_like_every_other_list() {
+    let mut index = Tree::new().imports("b.ts", "a.ts").build();
+    index.coverage.problems = (0..31).map(|n| format!("problem {n:02}")).collect();
+    index.coverage.finish();
+    let answer = coverage(&index, Freshness::Fresh);
+
+    let cut = answer.to_string();
+    assert!(cut.starts_with("problems (31):\n  problem 00\n"), "{cut}");
+    assert!(cut.contains("  problem 29\n… 1 more\n"), "{cut}");
+    assert!(!cut.contains("problem 30"), "{cut}");
+    assert!(answer.text(Entries::All).contains("  problem 30\n"));
+    let in_json = to_value(&answer).unwrap();
+    assert_eq!(in_json["problems"].as_array().map(Vec::len), Some(31));
 }
 
 #[scenario("queries", "A stale index says what moved")]

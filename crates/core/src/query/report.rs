@@ -108,6 +108,8 @@ pub struct CoverageReport {
     /// Files left out before any connector saw them: over the size limit, not UTF-8, unreadable.
     pub skipped: Vec<Failure>,
     pub footer: Footer,
+    /// The problems of the index, one line each, sorted, as `Coverage::problems` holds them. The text lists them before the connectors; the document keeps this key last.
+    pub problems: Vec<String>,
 }
 
 /// What every connector read and could not read, and the files no connector read.
@@ -156,6 +158,7 @@ pub fn coverage(index: &Index, freshness: Freshness) -> CoverageReport {
         other_extensions,
         skipped: failures(graph, &counted.skipped),
         footer: Footer::new(index, freshness, []),
+        problems: counted.problems.clone(),
     }
 }
 
@@ -298,6 +301,9 @@ fn write_reason(f: &mut fmt::Formatter<'_>, reasons: &Reasons, what: &str) -> fm
 
 impl Answer for CoverageReport {
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
+        list(f, "problems", &self.problems, entries, |f, problem| {
+            write!(f, "  {problem}")
+        })?;
         if self.connectors.is_empty() {
             writeln!(f, "no connector read any file")?;
         }

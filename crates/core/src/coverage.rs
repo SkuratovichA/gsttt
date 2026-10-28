@@ -33,8 +33,7 @@ pub struct Coverage {
     pub unclaimed: Vec<Unclaimed>,
     /// Files left out before any connector saw them: over the size limit, not UTF-8, unreadable.
     pub skipped: Vec<FailedFile>,
-    /// Connector calls that failed outside the parse of one file (opening a project, preparing, linking), one line
-    /// each. The run went on without what they would have added.
+    /// Connector calls that failed outside the parse of one file (opening a project, preparing, linking), one line each. The run went on without what they would have added. The program that embeds the engine may add lines of its own, such as an external connector that waits for trust; the coverage answer lists them all.
     #[serde(default)]
     pub problems: Vec<String>,
 }

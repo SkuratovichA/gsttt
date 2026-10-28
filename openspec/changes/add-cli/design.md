@@ -162,7 +162,7 @@ for argument in &external.cmd {
 the external connector `kotlin` (gsttt-kotlin --stdio) is not trusted in this repository; run `gsttt config trust` in a terminal to allow it
 ```
 
-- The queries of core do not list `Coverage.problems` yet, so `gsttt coverage` prints them itself, above its report as `problems (N):` and under `--json` as a `problems` array (`commands/questions.rs`). The test `the_coverage_document_holds_problems_once` fails when core adds the same key, which is the reminder to delete the wrapper.
+- The coverage answer of core holds `Coverage.problems` and lists them, above the connectors as `problems (N):` with one indented line each, cut like every other list, and under `--json` as a `problems` array, the last key. `gsttt coverage` prints that answer with no wrapper of its own, and the test `the_coverage_document_holds_problems_once` keeps the key to one.
 - The scenarios that answer the prompt run the real binary on a pseudo-terminal opened with the `pty` module of `rustix`, a dev-dependency that adds no crate to the lock file, with the sandbox's environment and so with the sandbox's store.
 
 ### Panics

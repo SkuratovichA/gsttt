@@ -14,6 +14,7 @@
 - [x] 3.1 Answer `dependents`, `dependencies`, `path`, `contract` and `coverage` after a refresh, with `--json`, `--all` and `--no-refresh`, and exit 1 when the subject is not in the index
 - [x] 3.2 Answer `impact` with paths or `--changed`, `--base` and `--depth`, passing missing named paths as deleted
 - [x] 3.3 Print the `index` summary and its JSON, and answer `status` without refreshing
+- [x] 3.4 Hold the problems of the index in the coverage answer of core, in its text above the connectors and as the last key of its JSON, and delete the wrapper around it in the command line
 
 ## 4. Registry and trust
 
