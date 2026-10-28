@@ -52,6 +52,8 @@ struct Parent<'a> {
     router: Router<'a>,
     prefix: Option<&'a str>,
     replaces: bool,
+    /// Whether the mount gives a prefix that is not a literal.
+    unread_prefix: bool,
     /// Where the mount is, for a cut way to name.
     file: FileId,
     line: Line,
@@ -64,6 +66,8 @@ enum Why {
     Cycle,
     TooDeep,
     TooMany,
+    /// The mount gives a prefix that is not a literal, so the path behind it is not known.
+    Prefix,
 }
 
 /// A mount that a way up from a router stopped at. Coverage should count it as a site `link` could not read.
@@ -159,6 +163,7 @@ impl<'a> Mounts<'a> {
                         router,
                         prefix: mount.prefix.as_deref(),
                         replaces: mount.replaces,
+                        unread_prefix: mount.unread_prefix,
                         file: file.id,
                         line: mount.line,
                     });
@@ -176,7 +181,8 @@ impl<'a> Mounts<'a> {
     }
 
     /// Every prefix `start` is served behind, sorted: one for each way up through the mounts to a router nobody
-    /// mounts. A router that no mount reaches, or whose every way up is cut, is served behind its own prefix.
+    /// mounts. A router that no mount reaches is served behind its own prefix. One whose every way up is cut is
+    /// mounted, by a mount that cannot be followed to its end, so it is served behind no prefix that is known.
     fn prefixes(&self, start: Router<'a>, cuts: &mut BTreeSet<Cut<'a>>) -> Vec<String> {
         let mut climb = Climb {
             mounts: self,
@@ -185,9 +191,6 @@ impl<'a> Mounts<'a> {
             cuts,
         };
         climb.up(start, "", &mut vec![start]);
-        if climb.ways.is_empty() {
-            return vec![self.own_prefix(start).to_owned()];
-        }
         climb.ways.into_iter().collect()
     }
 }
@@ -221,6 +224,8 @@ impl<'a> Climb<'_, 'a, '_> {
                 Some(Why::Cycle)
             } else if trail.len() >= MAX_DEPTH {
                 Some(Why::TooDeep)
+            } else if parent.unread_prefix {
+                Some(Why::Prefix)
             } else {
                 None
             };
@@ -341,6 +346,7 @@ mod tests {
                 receiver: parent.to_owned(),
                 target: Target::Name(child.to_owned()),
                 prefix: Some(prefix.to_owned()),
+                unread_prefix: false,
                 replaces: false,
             });
         }
@@ -410,27 +416,52 @@ mod tests {
     }
 
     #[test]
-    fn routers_that_are_only_mounted_into_each_other_are_served_on_their_own() {
+    fn routers_that_are_only_mounted_into_each_other_serve_nothing() {
         let mut project = Project::new();
         project.declare("a", "/x");
         project.mount("b", "a", "/ab");
         project.mount("a", "b", "/ba");
         project.route("a", "/one");
         let composed = project.compose();
-        assert_eq!(keys(&composed), ["GET /x/one"]);
+        // No chain ends at a router nobody mounts, and a path at the router's own prefix would be one nothing serves.
+        assert_eq!(keys(&composed), Vec::<String>::new());
         assert!(composed.cuts.iter().all(|cut| cut.why == Why::Cycle));
         assert!(!composed.cuts.is_empty());
     }
 
     #[test]
-    fn a_router_mounted_into_itself_is_served_on_its_own() {
+    fn a_router_mounted_into_itself_serves_nothing() {
         let mut project = Project::new();
         project.declare("a", "/x");
         project.mount("a", "a", "/again");
         project.route("a", "/one");
         let composed = project.compose();
-        assert_eq!(keys(&composed), ["GET /x/one"]);
+        assert_eq!(keys(&composed), Vec::<String>::new());
         assert_eq!(composed.cuts.len(), 1);
+    }
+
+    #[test]
+    fn a_mount_with_a_prefix_that_is_not_a_literal_is_cut_and_the_others_stay() {
+        let mut project = Project::new();
+        project.declare("r", "/items");
+        project.mount("app", "r", "/v2");
+        project.extra.mounts.push(Mount {
+            line: 7,
+            receiver: "app".to_owned(),
+            target: Target::Name("r".to_owned()),
+            prefix: None,
+            unread_prefix: true,
+            replaces: false,
+        });
+        project.route("r", "/{}");
+        let composed = project.compose();
+        assert_eq!(keys(&composed), ["GET /v2/items/{}"]);
+        let cuts: Vec<(Line, Why)> = composed
+            .cuts
+            .iter()
+            .map(|cut| (cut.line, cut.why))
+            .collect();
+        assert_eq!(cuts, [(7, Why::Prefix)]);
     }
 
     #[test]
@@ -464,7 +495,7 @@ mod tests {
         project.declare("r0", "/own");
         project.route("r0", "/leaf");
         let composed = project.compose();
-        assert_eq!(keys(&composed), ["GET /own/leaf"]);
+        assert_eq!(keys(&composed), Vec::<String>::new());
         assert_eq!(composed.cuts.len(), 1);
         assert!(composed.cuts.iter().all(|cut| cut.why == Why::TooDeep));
     }
@@ -510,6 +541,7 @@ mod tests {
             receiver: "app".to_owned(),
             target: Target::Name("r".to_owned()),
             prefix: None,
+            unread_prefix: false,
             replaces: false,
         });
         project.route("r", "/{}");

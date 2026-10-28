@@ -572,17 +572,20 @@ impl<'a> Collector<'a> {
             member: None,
         };
         let mut prefix = None;
+        let mut unread_prefix = false;
         if let Some(read) = site.keyword(keywords.1) {
             prefix = Some(read.into_owned());
         } else if call.arguments.find_keyword(keywords.1).is_some() {
-            // A prefix held in a variable: the router is still mounted, only its prefix is unknown.
+            // A prefix held in a variable: the router is still mounted, but not at a path that is known.
             self.unresolved(line, callee);
+            unread_prefix = true;
         }
         self.extra.mounts.push(Mount {
             line,
             receiver: receiver.to_owned(),
             target: Target::Name(target),
             prefix,
+            unread_prefix,
             replaces,
         });
         true
@@ -599,12 +602,14 @@ impl<'a> Collector<'a> {
             return false;
         }
         let mut prefix = None;
+        let mut unread_prefix = false;
         if let Some(route) = call.arguments.find_positional(0).and_then(text_of) {
             // The anchors of a `re_path` pattern are not part of the path.
             let route = route.strip_prefix('^').unwrap_or(&route);
             prefix = Some(route.strip_suffix('$').unwrap_or(route).to_owned());
         } else {
             self.unresolved(line, "path");
+            unread_prefix = true;
         }
         // `include(("bookings.urls", "bookings"))` names its module first, like `include("bookings.urls")`.
         match include.arguments.find_positional(0).and_then(literal_of) {
@@ -616,6 +621,7 @@ impl<'a> Collector<'a> {
                     receiver: String::new(),
                     target: Target::Module(module),
                     prefix,
+                    unread_prefix,
                     replaces: false,
                 });
             }

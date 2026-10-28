@@ -49,9 +49,13 @@ pub(crate) struct Mount {
     /// The router the mount is called on, `app` in `app.include_router(…)`; empty for Django.
     pub(crate) receiver: String,
     pub(crate) target: Target,
-    /// The prefix as written; `None` when there is none or when it is not a literal.
+    /// The prefix as written; `None` when there is none or when it is not a literal, which `unread_prefix` tells apart.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) prefix: Option<String>,
+    /// Whether the call gives a prefix that is not a literal, so that the path the mounted router is served at is
+    /// not known.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) unread_prefix: bool,
     /// Whether the prefix replaces the mounted router's own, as Flask's `register_blueprint(url_prefix=…)` does,
     /// or comes before it, as FastAPI's `include_router(prefix=…)` and Django's `include` do.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

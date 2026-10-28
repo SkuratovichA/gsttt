@@ -203,7 +203,7 @@ A router that a mount names through a package that re-exports it, with an import
 - **THEN** `app/api/bookings.py` serves `http GET /api/bookings/{}` and no other path
 
 ### Requirement: Repeated and cyclic mounts
-A call that includes a router without a `prefix` SHALL add no second copy of its routes, and a chain of calls that comes back to a router it has passed SHALL end there, the routes being served by the chains that end at a router nobody includes.
+A call that includes a router without a `prefix` SHALL add no second copy of its routes. A chain of calls SHALL be cut where it comes back to a router it has passed, where it is deeper than 32 routers and at a call whose `prefix` is not a literal. The routes SHALL be served by the chains that end at a router nobody includes, so a router every chain of which is cut serves none.
 
 #### Scenario: A router is served once for each way it is mounted
 - **WHEN** `app/main.py` has `app.include_router(health.router)`, `app.include_router(items.router)` and `app.include_router(items.router, prefix="/v2")`, and `@app.get("/ping")`, where `health.router` is `APIRouter()` with `@router.get("/health")` and `items.router` is `APIRouter(prefix="/items")` with `@router.get("/{item_id}")`
@@ -212,6 +212,15 @@ A call that includes a router without a `prefix` SHALL add no second copy of its
 #### Scenario: Routers that mount each other still serve their routes
 - **WHEN** `app/a.py` has `router = APIRouter(prefix="/x")`, `router.include_router(b.router, prefix="/b")` and `@router.get("/one")`, `app/b.py` has `router = APIRouter(prefix="/y")`, `router.include_router(a.router, prefix="/a")` and `@router.get("/two")`, and `app/main.py` has `app.include_router(a.router, prefix="/a")`
 - **THEN** `app/a.py` serves `http GET /a/x/one` and `app/b.py` serves `http GET /a/x/b/y/two`
+
+#### Scenario: A router whose every chain is cut serves nothing
+- **WHEN** `app/a.py` has `router = APIRouter(prefix="/x")`, `router.include_router(b.router, prefix="/b")` and `@router.get("/one")`, `app/b.py` has `router = APIRouter(prefix="/y")`, `router.include_router(a.router, prefix="/a")` and `@router.get("/two")`, and no file includes either router in an application
+- **THEN** neither `app/a.py` nor `app/b.py` serves a route
+
+#### Scenario: A prefix that is not a literal cuts the chain
+- **WHEN** `app/items.py` has `router = APIRouter(prefix="/items")` and `@router.get("/{item_id}")`, and `app/main.py` has `PREFIX = "/api"`, `app.include_router(items.router, prefix=PREFIX)` and `app.include_router(items.router, prefix="/v2")`
+- **THEN** `app/items.py` serves `http GET /v2/items/{}` and no other path
+- **AND** the call with `prefix=PREFIX` is an unread site of `app/main.py`
 
 ### Requirement: Flask routes
 With the `flask` pack, `route` and the verb decorators on a receiver made by `Flask()` or `Blueprint()` SHALL serve the path, the method taken from the first entry of `methods` and `GET` when it is absent, and `register_blueprint(bp, url_prefix=…)` SHALL serve the blueprint's routes under the prefix, across files.

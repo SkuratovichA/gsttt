@@ -12,8 +12,9 @@ use gsttt_core::rules::Pack;
 const ROUTERS_ELSEWHERE: &str =
     "routers and blueprints created in another module than the one that declares their routes";
 
-/// `link` sees one project at a time and follows each router up through the mounts it can find, so a mount it cannot
-/// read leaves the router served behind its own prefix alone.
+/// `link` sees one project at a time and follows each router up through the mounts it can find. A router that a file
+/// of another project mounts is served behind its own prefix alone, and one whose every mount it cannot follow to the
+/// end is left out.
 const MOUNTS_UNFOLLOWED: &str = "mounts of a router by a file of another Python project, in a cycle, or in more ways than are followed";
 
 /// What the `dbapi` pack leaves out. SQL is declared (`CREATE TABLE`) or called (`SELECT`), so each is told under both.

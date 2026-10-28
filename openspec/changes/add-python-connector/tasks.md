@@ -55,3 +55,5 @@
 - [x] 6.2 A regular package or module that has the first segment of an import and not the rest ends the search of the source roots, so a package of the same name in a later root, the project's or another's, supplies nothing
 - [x] 6.3 The documents of the sibling roots and of the resolution order say which projects are searched and in what order
 - [x] 6.4 A mount that names a router through a package that re-exports it, `from .bookings import router as bookings_router` in the package's `__init__.py`, reaches the router of the module the import names, in place of a router of the package that does not exist; the imports followed are bounded
+- [x] 6.5 A router whose every way up through the mounts is cut, by a cycle, by the limit on depth or on ways, or by a prefix that is not a literal, serves no route, in place of one at its own prefix that nothing serves; a router that no mount reaches is still served at its own
+- [x] 6.6 A mount whose prefix is a variable, `include_router(r, prefix=PREFIX)`, `register_blueprint(bp, url_prefix=URL)` or `path(PREFIX, include(…))`, is a cut way and not a mount with no prefix, and the call stays an unread site

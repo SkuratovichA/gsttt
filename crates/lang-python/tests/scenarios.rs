@@ -1583,3 +1583,78 @@ fn a_router_reexported_by_two_packages_is_found_through_both() {
         ["serves http GET /v2/bookings/{}@6"]
     );
 }
+
+#[gsttt_scenario::scenario("python", "A router whose every chain is cut serves nothing")]
+#[test]
+fn a_router_whose_every_chain_is_cut_serves_nothing() {
+    let router = |own: &str, other: &str, prefix: &str, path: &str| {
+        format!(
+            "from fastapi import APIRouter\n\nfrom app import {other}\n\nrouter = APIRouter(prefix=\"{own}\")\nrouter.include_router({other}.router, prefix=\"{prefix}\")\n\n\n@router.get(\"{path}\")\ndef handler():\n    return {{}}\n"
+        )
+    };
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        ("app/a.py", &router("/x", "b", "/b", "/one")),
+        ("app/b.py", &router("/y", "a", "/a", "/two")),
+    ]);
+    // Each router is included by the other and by nothing else, so no chain ends at a router nobody includes: a path
+    // at the router's own prefix would be one that nothing serves.
+    assert_eq!(tree.linked("app/a.py"), Vec::<String>::new());
+    assert_eq!(tree.linked("app/b.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A prefix that is not a literal cuts the chain")]
+#[test]
+fn a_prefix_that_is_not_a_literal_cuts_the_chain() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/items.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter(prefix=\"/items\")\n\n\n@router.get(\"/{item_id}\")\ndef get_item(item_id: int):\n    return {}\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import items\n\nPREFIX = \"/api\"\napp = FastAPI()\napp.include_router(items.router, prefix=PREFIX)\napp.include_router(items.router, prefix=\"/v2\")\n",
+        ),
+    ]);
+    // The mount with the prefix held in a variable serves the router at a path that is not known, so only the other
+    // mount is followed; the call is an unread site of the file that makes it.
+    assert_eq!(
+        tree.linked("app/items.py"),
+        ["serves http GET /v2/items/{}@6"]
+    );
+    assert_eq!(tree.unread("app/main.py"), ["L7 app.include_router"]);
+}
+
+#[test]
+fn a_registration_or_an_include_with_a_prefix_held_in_a_variable_is_cut_too() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"web\"\ndependencies = [\"flask\", \"django\"]\n",
+        ),
+        (
+            "shop/__init__.py",
+            "from flask import Flask\n\nfrom shop.items import bp\n\nURL = \"/api\"\napp = Flask(__name__)\napp.register_blueprint(bp, url_prefix=URL)\n",
+        ),
+        (
+            "shop/items.py",
+            "from flask import Blueprint\n\nbp = Blueprint(\"items\", __name__, url_prefix=\"/items\")\n\n\n@bp.get(\"/<int:id>\")\ndef get_item(id):\n    return {}\n",
+        ),
+        (
+            "project/urls.py",
+            "from django.urls import include, path\n\nPREFIX = \"api/\"\nurlpatterns = [\n    path(PREFIX, include(\"bookings.urls\")),\n    path(\"v2/\", include(\"bookings.urls\")),\n]\n",
+        ),
+        (
+            "bookings/urls.py",
+            "from django.urls import path\n\nfrom . import views\n\nurlpatterns = [\n    path(\"bookings/<int:pk>/\", views.detail),\n]\n",
+        ),
+    ]);
+    assert_eq!(tree.linked("shop/items.py"), Vec::<String>::new());
+    assert_eq!(
+        tree.linked("bookings/urls.py"),
+        ["serves http * /v2/bookings/{}@6"]
+    );
+}
