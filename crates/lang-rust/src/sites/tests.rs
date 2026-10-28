@@ -1,6 +1,10 @@
 //! Every rule kind over single files, without the engine around them.
 
+use std::collections::BTreeSet;
+
 use gsttt_config::{builtin_packs, eval_pack};
+use gsttt_core::contract::{ContractKey, Role};
+use gsttt_core::fact::ContractFact;
 use gsttt_core::rules::Pack;
 use gsttt_core::text::LineIndex;
 use proptest::prelude::*;
@@ -8,6 +12,7 @@ use ra_ap_edition::Edition;
 use ra_ap_syntax::ast;
 
 use super::{Sites, read};
+use crate::link::{Extra, Function, Group, Mount, Prefix, Target};
 
 fn sites(source: &str, pack: &str) -> Sites {
     let pack = eval_pack("test.lua", pack).unwrap();
@@ -314,6 +319,182 @@ fn a_rebound_name_is_the_latest_binding() {
     assert_eq!(found(&sites(source, pack)), ["5 http GET /after"]);
 }
 
+/// The axum pack in the small: `route` serves the verb of its second argument.
+const AXUM: &str = r#"return { name = "axum", language = "rust", calls = {
+    { callee = "*.route", kind = "http", role = "serves", key = "$arg1", method = "$arg2.method" },
+} }"#;
+
+/// The actix pack in the small: an attribute named for the verb serves its path.
+const ACTIX: &str = r#"return { name = "actix", language = "rust", decorators = {
+    { decorator = "get", kind = "http", role = "serves", key = "$arg1", method = "$callee" },
+} }"#;
+
+/// Where `needle` starts in `source`, the way a group is told apart from the others of its file.
+fn anchor(source: &str, needle: &str) -> u32 {
+    u32::try_from(source.find(needle).unwrap()).unwrap()
+}
+
+/// A route a pack serves, as a group holds it.
+fn serves(line: u32, method: &str, path: &str, via: &str) -> ContractFact {
+    ContractFact {
+        key: ContractKey::http(method, path),
+        role: Role::Serves,
+        line,
+        via: via.to_owned(),
+    }
+}
+
+#[test]
+fn routers_become_groups_for_the_link_step() {
+    let source = r#"fn admin() -> Router {
+    let users = Router::new().route("/users", get(list));
+    Router::new().nest("/v1", users).merge(extra::router()).nest(prefix, other::router())
+}
+"#;
+    let out = sites(source, AXUM);
+    let users = anchor(source, "Router::new().route");
+    let admin = anchor(source, "Router::new().nest");
+    let expected = Extra {
+        groups: vec![
+            Group {
+                anchor: users,
+                base: Prefix::none(),
+                routes: vec![serves(2, "GET", "/users", "axum")],
+                mounts: Vec::new(),
+            },
+            Group {
+                anchor: admin,
+                base: Prefix::none(),
+                routes: Vec::new(),
+                mounts: vec![
+                    Mount {
+                        prefix: Prefix::Literal("/v1".to_owned()),
+                        target: Target::Local(users),
+                    },
+                    Mount {
+                        prefix: Prefix::none(),
+                        target: Target::Path(vec!["extra".to_owned(), "router".to_owned()]),
+                    },
+                    Mount {
+                        prefix: Prefix::Computed,
+                        target: Target::Path(vec!["other".to_owned(), "router".to_owned()]),
+                    },
+                ],
+            },
+        ],
+        functions: vec![Function {
+            name: "admin".to_owned(),
+            returns: vec![Target::Local(admin)],
+        }],
+    };
+    assert_eq!(out.extra, expected);
+    assert_eq!(unresolved(&out), [(3, "_.nest")]);
+    // What the engine caches is this, as JSON, and it has to come back the same.
+    let cached = serde_json::to_string(&out.extra).unwrap();
+    assert_eq!(serde_json::from_str::<Extra>(&cached).unwrap(), expected);
+}
+
+#[test]
+fn a_handler_is_a_group_and_a_scope_gives_its_chain_a_base() {
+    let source = r#"#[get("/{id}")]
+async fn show() {}
+
+fn app() -> Scope {
+    web::scope("/bookings").service(bookings::show)
+}
+"#;
+    let out = sites(source, ACTIX);
+    let show = anchor(source, "#[get");
+    let scope = anchor(source, "web::scope");
+    let expected = Extra {
+        groups: vec![
+            Group {
+                anchor: show,
+                base: Prefix::none(),
+                routes: vec![serves(1, "GET", "/{id}", "actix")],
+                mounts: Vec::new(),
+            },
+            Group {
+                anchor: scope,
+                base: Prefix::Literal("/bookings".to_owned()),
+                routes: Vec::new(),
+                mounts: vec![Mount {
+                    prefix: Prefix::none(),
+                    target: Target::Path(vec!["bookings".to_owned(), "show".to_owned()]),
+                }],
+            },
+        ],
+        functions: vec![
+            Function {
+                name: "show".to_owned(),
+                returns: vec![Target::Local(show)],
+            },
+            Function {
+                name: "app".to_owned(),
+                returns: vec![Target::Local(scope)],
+            },
+        ],
+    };
+    assert_eq!(out.extra, expected);
+}
+
+#[test]
+fn a_chain_that_starts_from_a_binding_adds_to_what_it_is_bound_to() {
+    let source = r#"fn app() -> Router {
+    let app = Router::new().route("/a", get(a));
+    app.route("/b", get(b))
+}
+
+fn wrapped() -> Result<Router, Error> {
+    Ok(app())
+}
+
+fn unrelated() -> u32 {
+    app()
+}
+"#;
+    let out = sites(source, AXUM);
+    let first = anchor(source, "Router::new().route");
+    let second = anchor(source, "app.route");
+    let mounts: Vec<_> = out
+        .extra
+        .groups
+        .iter()
+        .find(|group| group.anchor == second)
+        .map(|group| group.mounts.clone())
+        .unwrap_or_default();
+    assert_eq!(
+        mounts,
+        [Mount {
+            prefix: Prefix::none(),
+            target: Target::Local(first),
+        }]
+    );
+    // A function is followed to the router it builds, through `Ok`, only when its signature says it builds one.
+    let returns = |name: &str| {
+        out.extra
+            .functions
+            .iter()
+            .find(|function| function.name == name)
+            .map(|function| function.returns.clone())
+    };
+    assert_eq!(returns("app"), Some(vec![Target::Local(second)]));
+    assert_eq!(
+        returns("wrapped"),
+        Some(vec![Target::Path(vec!["app".to_owned()])])
+    );
+    assert_eq!(returns("unrelated"), None);
+}
+
+#[test]
+fn nothing_is_recorded_without_the_pack_that_mounts_routers() {
+    let source = "fn f() { Router::new().route(\"/a\", get(h)).nest(\"/b\", r); }\n";
+    let pack = r#"return { name = "other", language = "rust", calls = {
+        { callee = "*.route", kind = "http", role = "serves", key = "$arg1", method = "$arg2.method" },
+    } }"#;
+    assert_eq!(sites(source, pack).extra, Extra::default());
+}
+
 /// A pack with a rule of every kind, so that the properties below reach all of the reader.
 const EVERY_KIND: &str = r#"return { name = "every", language = "rust",
     calls = {
@@ -345,7 +526,17 @@ const FRAGMENTS: &[&str] = &[
     "Router::new()",
     ".route(\"/a/{id}\", get(h).post(p))",
     ".nest(\"/api\", r)",
+    ".nest(p, bookings::router())",
+    ".merge(r)",
+    ".service(r)",
+    ".service(web::resource(\"/q\").route(web::get().to(h)))",
     "web::scope(\"/s\").service(h)",
+    "web::scope(p)",
+    "let r = Router::new().route(\"/b\", get(h));",
+    "r.route(\"/c\", get(h))",
+    "fn router() -> Router {",
+    "Ok(r)",
+    "Self::router()",
     "#[get(\"/x\")]",
     "#[route(\"/y\", method = \"GET\", method = \"POST\")]",
     "#[sea_orm(table_name = \"t\")]",
@@ -393,6 +584,20 @@ proptest! {
         prop_assert!(first.unresolved.iter().all(|site| (1..=last_line).contains(&site.line)));
         prop_assert_eq!(found(&first), found(&second));
         prop_assert_eq!(unresolved(&first), unresolved(&second));
+        prop_assert_eq!(&first.extra, &second.extra);
+        // A router of this file that is mounted or returned is a group of this file.
+        let anchors: BTreeSet<u32> = first.extra.groups.iter().map(|group| group.anchor).collect();
+        let targets = first
+            .extra
+            .groups
+            .iter()
+            .flat_map(|group| group.mounts.iter().map(|mount| &mount.target))
+            .chain(first.extra.functions.iter().flat_map(|function| &function.returns));
+        for target in targets {
+            if let Target::Local(anchor) = target {
+                prop_assert!(anchors.contains(anchor));
+            }
+        }
     }
 
     #[test]

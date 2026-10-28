@@ -17,6 +17,21 @@ pub(crate) fn unresolved(reason: &str) -> Value {
     json!({ "unresolved": { "reason": reason } })
 }
 
+/// Contract sites as `<line> <role> <key>`.
+fn described(sites: &[Value]) -> Vec<String> {
+    sites
+        .iter()
+        .map(|site| {
+            format!(
+                "{} {} {}",
+                site["line"],
+                site["role"].as_str().unwrap(),
+                site["key"].as_str().unwrap()
+            )
+        })
+        .collect()
+}
+
 /// One run of the Rust connector over a fixture tree.
 pub(crate) struct Indexed {
     pub(crate) repo: RepoView,
@@ -72,19 +87,19 @@ impl Indexed {
 
     /// The contract sites of one file as `<line> <role> <key>`, in the order the engine prints them.
     pub(crate) fn contracts(&self, path: &str) -> Vec<String> {
-        self.file(path)["contracts"]
+        described(self.file(path)["contracts"].as_array().unwrap())
+    }
+
+    /// The sites that linking found in one file, written the way [`Indexed::contracts`] writes its own.
+    pub(crate) fn linked(&self, path: &str) -> Vec<String> {
+        let linked: Vec<Value> = self.json()["linked"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|site| {
-                format!(
-                    "{} {} {}",
-                    site["line"],
-                    site["role"].as_str().unwrap(),
-                    site["key"].as_str().unwrap()
-                )
-            })
-            .collect()
+            .filter(|site| site["file"] == path)
+            .cloned()
+            .collect();
+        described(&linked)
     }
 
     /// Where the first import of `spec` in `path` points, as the engine prints it.

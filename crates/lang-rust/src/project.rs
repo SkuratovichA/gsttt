@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use gsttt_core::connector::{Parsed, PrepareFile, Project, Provide, SourceFile};
+use gsttt_core::connector::{
+    LinkInput, LinkedFact, Parsed, PrepareFile, Project, Provide, SourceFile,
+};
 use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseStatus, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
@@ -15,6 +17,7 @@ use ra_ap_syntax::ast;
 use xxhash_rust::xxh3::xxh3_64;
 
 use crate::imports;
+use crate::link;
 use crate::manifest::Package;
 use crate::resolve::{Aliases, Resolver};
 use crate::sites;
@@ -112,7 +115,7 @@ impl RustProject {
 }
 
 impl Project for RustProject {
-    type Extra = ();
+    type Extra = link::Extra;
 
     fn root(&self) -> &str {
         &self.root
@@ -130,7 +133,7 @@ impl Project for RustProject {
         Vec::new()
     }
 
-    fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
+    fn parse(&self, file: &SourceFile<'_>) -> Parsed<link::Extra> {
         if file.path.file_name() == "Cargo.toml" {
             return Parsed::new(FileFacts {
                 tags: FileTags::MANIFEST,
@@ -149,18 +152,21 @@ impl Project for RustProject {
         };
         let root = parse.syntax_node();
         let sites = sites::read(&root, &lines, &self.packs);
-        Parsed::new(FileFacts {
-            status,
-            tags: if self.is_test(file.path) {
-                FileTags::TEST
-            } else {
-                FileTags::NONE
+        Parsed {
+            facts: FileFacts {
+                status,
+                tags: if self.is_test(file.path) {
+                    FileTags::TEST
+                } else {
+                    FileTags::NONE
+                },
+                imports: imports::read(&root, &lines, self.reads_query_files()),
+                contracts: sites.found.into_iter().map(|found| found.fact).collect(),
+                embedded: sites.embedded,
+                unresolved: sites.unresolved,
             },
-            imports: imports::read(&root, &lines, self.reads_query_files()),
-            contracts: sites.found.into_iter().map(|found| found.fact).collect(),
-            embedded: sites.embedded,
-            unresolved: sites.unresolved,
-        })
+            extra: sites.extra,
+        }
     }
 
     fn prepare(&mut self, files: &[PrepareFile<'_>]) {
@@ -189,6 +195,12 @@ impl Project for RustProject {
             aliases: &self.aliases,
         }
         .resolve(from, import)
+    }
+
+    fn link(&self, input: &LinkInput<'_, link::Extra>) -> Vec<LinkedFact> {
+        link::link(input, &|from, spec| {
+            self.resolve(from, &Import::new(spec, ImportKind::Static, 1))
+        })
     }
 }
 

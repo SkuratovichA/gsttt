@@ -9,6 +9,7 @@
 
 mod eval;
 mod imports;
+mod link;
 mod manifest;
 mod project;
 mod resolve;
@@ -26,6 +27,7 @@ use ra_ap_edition::Edition;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub use link::Extra;
 pub use project::RustProject;
 
 use crate::manifest::Manifests;

@@ -145,12 +145,17 @@ impl Candidate {
     }
 }
 
-/// The dotted path a call goes to, when the callee is a plain path.
-pub(super) fn path_callee(call: &ast::CallExpr) -> Option<String> {
+/// The names a call goes to, when the callee is a plain path.
+pub(super) fn callee_segments(call: &ast::CallExpr) -> Option<Vec<String>> {
     let ast::Expr::PathExpr(path) = call.expr()? else {
         return None;
     };
-    Some(segments(&path.path()?)?.join("."))
+    segments(&path.path()?)
+}
+
+/// The dotted path a call goes to, when the callee is a plain path.
+pub(super) fn path_callee(call: &ast::CallExpr) -> Option<String> {
+    Some(callee_segments(call)?.join("."))
 }
 
 /// The expression a receiver stands for, through `&`, `?`, `.await`, parentheses and `.clone()`.
@@ -184,7 +189,7 @@ fn receiver_name(receiver: &ast::Expr) -> String {
 }
 
 /// The outermost call of the method chain that `call` belongs to.
-fn chain_top(call: &SyntaxNode) -> SyntaxNode {
+pub(super) fn chain_top(call: &SyntaxNode) -> SyntaxNode {
     let mut top = call.clone();
     while let Some(parent) = top.parent().filter(|parent| {
         ast::MethodCallExpr::cast(parent.clone())

@@ -2,11 +2,13 @@
 //! packs in force, and the member chains and assignments that the other two rule kinds read.
 //!
 //! [`candidate`] says how a site is named and how its arguments are read, [`receiver`] how a rule that wants a
-//! particular receiver finds out whether it has one, and [`chain`] the two rule kinds that read names, not calls.
+//! particular receiver finds out whether it has one, [`chain`] the two rule kinds that read names, not calls, and
+//! [`routers`] which routes are served together and which routers are mounted in which.
 
 mod candidate;
 mod chain;
 mod receiver;
+mod routers;
 #[cfg(test)]
 mod tests;
 
@@ -16,6 +18,7 @@ use gsttt_core::text::LineIndex;
 use ra_ap_syntax::{SyntaxKind, SyntaxNode};
 
 use self::candidate::{Candidate, Prepared, View, apply_per_verb, lacks_keywords};
+use crate::link::Extra;
 
 /// What the sites of a file say.
 #[derive(Default)]
@@ -23,6 +26,8 @@ pub(crate) struct Sites {
     pub(crate) found: Vec<Found>,
     pub(crate) embedded: Vec<Embedded>,
     pub(crate) unresolved: Vec<UnresolvedSite>,
+    /// What linking needs, read from the routers of the file.
+    pub(crate) extra: Extra,
 }
 
 /// A contract site with the place it came from, which the link step uses to tell which routes belong together.
@@ -64,6 +69,8 @@ pub(crate) fn read(root: &SyntaxNode, lines: &LineIndex, packs: &[Pack]) -> Site
     for node in root.descendants() {
         reader.visit(&node, &mut sites);
     }
+    // Before `finish`, so the sites that routers add are sorted and deduplicated with the rest.
+    reader.routers(root, &mut sites);
     sites.finish();
     sites
 }
@@ -77,6 +84,10 @@ struct Reader<'a> {
     embeds: Vec<(&'a Pack, &'a EmbedRule)>,
     chains: Vec<(&'a Pack, &'a ChainRule)>,
     assigns: Vec<(&'a Pack, &'a AssignRule)>,
+    /// Whether the axum pack is in force, which is what makes `nest` and `merge` mount a router.
+    axum: bool,
+    /// Whether the actix pack is in force, which is what makes `scope` and `service` mount one.
+    actix: bool,
 }
 
 /// What the rules produced at one site. A site that yields a contract is not also a blind spot.
@@ -135,6 +146,8 @@ impl<'a> Reader<'a> {
                 .iter()
                 .flat_map(|pack| pack.assigns.iter().map(move |rule| (pack, rule)))
                 .collect(),
+            axum: packs.iter().any(|pack| pack.name == "axum"),
+            actix: packs.iter().any(|pack| pack.name == "actix"),
         }
     }
 

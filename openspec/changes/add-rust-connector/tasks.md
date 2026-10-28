@@ -15,7 +15,7 @@
 ## 3. Packs and link
 
 - [x] 3.1 Packs: `axum`, `actix`, `reqwest`, `sqlx`, `sea_orm`, `env`
-- [ ] 3.2 `link`: axum `nest` and `merge`, actix `scope`, across files
+- [x] 3.2 `link`: axum `nest` and `merge`, actix `scope`, across files
 - [ ] 3.3 `provides` with blind spots per project
 
 ## 4. Proof
