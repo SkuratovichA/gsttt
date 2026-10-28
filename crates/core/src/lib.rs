@@ -7,6 +7,7 @@
 //! - [`setup`]: what a config asks for.
 //! - [`engine`], [`graph`], [`index`], [`coverage`]: what a run builds.
 //! - [`query`]: what an answer asks.
+//! - [`atomic`]: replacing a file as a whole, so that a reader never sees half of it.
 
 pub mod atomic;
 pub mod connector;
