@@ -222,6 +222,13 @@ A call that includes a router without a `prefix` SHALL add no second copy of its
 - **THEN** `app/items.py` serves `http GET /v2/items/{}` and no other path
 - **AND** the call with `prefix=PREFIX` is an unread site of `app/main.py`
 
+### Requirement: Mounts that are not followed
+The provides of a project SHALL name, as one blind spot of the routes it serves, the mounts of a router that it does not follow: by a file of another Python project, in a cycle, deeper than 32 routers, in more than 64 ways, with a prefix held in a variable, through an import that cannot be resolved or through a name that a module other than a package's `__init__.py` re-exports. With the `fastapi` pack it SHALL name applications mounted under a path with `mount` as another.
+
+#### Scenario: The mounts that are not followed are named
+- **WHEN** the coverage of a project that declares `fastapi`, `flask` and `django` is read
+- **THEN** its provides name each of those mounts in one blind spot of the routes it serves, and applications mounted under a path with `mount` in another
+
 ### Requirement: Flask routes
 With the `flask` pack, `route` and the verb decorators on a receiver made by `Flask()` or `Blueprint()` SHALL serve the path, the method taken from the first entry of `methods` and `GET` when it is absent, and `register_blueprint(bp, url_prefix=…)` SHALL serve the blueprint's routes under the prefix, across files.
 

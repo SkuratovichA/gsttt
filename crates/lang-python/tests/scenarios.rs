@@ -1658,3 +1658,36 @@ fn a_registration_or_an_include_with_a_prefix_held_in_a_variable_is_cut_too() {
         ["serves http * /v2/bookings/{}@6"]
     );
 }
+
+#[gsttt_scenario::scenario("python", "The mounts that are not followed are named")]
+#[test]
+fn the_mounts_that_are_not_followed_are_named() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"web\"\ndependencies = [\"fastapi\", \"flask\", \"django\"]\n",
+        ),
+        ("app.py", "import fastapi\n"),
+    ]);
+    let blind_spots = tree.blind_spots();
+    let mounts = blind_spots
+        .iter()
+        .find(|words| words.starts_with("mounts of a router"))
+        .expect("the provides name the mounts that are not followed");
+    // Every way a chain of mounts is cut is in that one line, because `link` cannot report a site it did not read.
+    for cut in [
+        "another Python project",
+        "a cycle",
+        "deeper than 32 routers",
+        "more than 64 ways",
+        "a prefix held in a variable",
+        "an import that cannot be resolved",
+        "re-exports",
+    ] {
+        assert!(mounts.contains(cut), "{cut}: {mounts}");
+    }
+    assert!(
+        blind_spots.contains(&"applications mounted under a path with mount, as Starlette does"),
+        "{blind_spots:?}"
+    );
+}

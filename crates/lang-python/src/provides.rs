@@ -14,8 +14,13 @@ const ROUTERS_ELSEWHERE: &str =
 
 /// `link` sees one project at a time and follows each router up through the mounts it can find. A router that a file
 /// of another project mounts is served behind its own prefix alone, and one whose every mount it cannot follow to the
-/// end is left out.
-const MOUNTS_UNFOLLOWED: &str = "mounts of a router by a file of another Python project, in a cycle, or in more ways than are followed";
+/// end is left out. A link cannot report the sites it did not read, so each way a chain of mounts is cut is named here,
+/// in one line; the limits are the ones `link` applies.
+const MOUNTS_UNFOLLOWED: &str = "mounts of a router by a file of another Python project, in a cycle, deeper than 32 routers, in more than 64 ways, with a prefix held in a variable, through an import that cannot be resolved, or through a name that a module other than a package's __init__.py re-exports";
+
+/// What Starlette's `mount` does with an application, which FastAPI inherits: no pack reads it.
+const APPLICATIONS_MOUNTED: &str =
+    "applications mounted under a path with mount, as Starlette does";
 
 /// What the `dbapi` pack leaves out. SQL is declared (`CREATE TABLE`) or called (`SELECT`), so each is told under both.
 const DBAPI_GAPS: [&str; 2] = [
@@ -50,6 +55,7 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
             serves("prefixes held in variables"),
             serves(ROUTERS_ELSEWHERE),
             serves("routes registered by calls to add_api_route"),
+            serves(APPLICATIONS_MOUNTED),
             serves(MOUNTS_UNFOLLOWED),
         ],
         "flask" => vec![
@@ -168,4 +174,17 @@ pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
             blind_spots: entry.blind_spots.into_iter().map(str::to_owned).collect(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::link::{MAX_DEPTH, MAX_WAYS};
+
+    #[test]
+    fn the_blind_spot_for_mounts_names_the_limits_link_applies() {
+        // The words are a copy of the numbers in `link`, which they would silently outlive.
+        assert!(MOUNTS_UNFOLLOWED.contains(&format!("deeper than {MAX_DEPTH} routers")));
+        assert!(MOUNTS_UNFOLLOWED.contains(&format!("in more than {MAX_WAYS} ways")));
+    }
 }

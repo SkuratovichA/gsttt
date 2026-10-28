@@ -23,11 +23,11 @@ use crate::site::join_prefixes;
 
 /// How many mounts are followed upward from one router, so that a very deep tree of mounts cannot exhaust the
 /// stack. Routers that mount each other end sooner, at the first router seen twice.
-const MAX_DEPTH: usize = 32;
+pub(crate) const MAX_DEPTH: usize = 32;
 
 /// How many ways up are followed from one router, whole or cut. Mounts shared at every level multiply the ways, and
 /// a router mounted in dozens of places is unlike any real application.
-const MAX_WAYS: usize = 64;
+pub(crate) const MAX_WAYS: usize = 64;
 
 /// How many imports are followed from the name a mount writes to the module that makes the router. A re-export is one
 /// or two imports deep, and modules that import each other's names end at the bound.

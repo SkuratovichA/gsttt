@@ -17,7 +17,7 @@ expression: "tree.json[\"projects\"]"
         "blind_spots": [
           "Flask routes whose methods are held in a variable, which are read as GET",
           "Flask routes with several methods beyond the first",
-          "mounts of a router by a file of another Python project, in a cycle, or in more ways than are followed",
+          "mounts of a router by a file of another Python project, in a cycle, deeper than 32 routers, in more than 64 ways, with a prefix held in a variable, through an import that cannot be resolved, or through a name that a module other than a package's __init__.py re-exports",
           "prefixes held in variables",
           "re_path and regex routes",
           "routers and blueprints created in another module than the one that declares their routes",
