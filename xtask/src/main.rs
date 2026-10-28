@@ -4,9 +4,10 @@
 //! - `version`, `package`, `notes`, `check`: releases and repository checks ([`dist`]).
 //! - `bench`: the speed comparison with the tools people use today ([`bench`]).
 //!
-//! [`root`] finds the repository a task works on.
+//! [`root`] finds the repository a task works on, and [`digest`] writes a checksum as text.
 
 mod bench;
+mod digest;
 mod dist;
 mod root;
 mod spec;

@@ -14,6 +14,7 @@ use xshell::Shell;
 
 use super::pins::{Language, Pins, Repository, Tool};
 use super::plan::Programs;
+use crate::digest::hex;
 use crate::dist::git::git;
 
 /// Installs the tools `needed` that are not installed at their pinned version yet.
@@ -260,15 +261,6 @@ fn checksum(file: &Path) -> anyhow::Result<String> {
     Ok(hex(&hasher.finalize()))
 }
 
-/// The lowercase hexadecimal digits of `bytes`. A second copy of `hex` in `xtask/src/dist/package.rs`, which is private to the release task and not mine to change; the `sha2` digest does not implement `LowerHex`, so there is no way around a helper. The test below pins it to the same known digest.
-fn hex(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .flat_map(|byte| [byte >> 4, byte & 0x0f])
-        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use flate2::Compression;
@@ -323,12 +315,6 @@ mod tests {
             checksum(&file).unwrap(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
-    }
-
-    #[test]
-    fn hex_writes_two_lowercase_digits_per_byte() {
-        assert_eq!(hex(&[0x00, 0x0f, 0xa5, 0xff]), "000fa5ff");
-        assert_eq!(hex(&[]), "");
     }
 
     #[test]

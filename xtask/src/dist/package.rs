@@ -11,6 +11,7 @@ use flate2::write::GzEncoder;
 use sha2::{Digest as _, Sha256};
 
 use super::version::release_version;
+use crate::digest::hex;
 use crate::root::repository_root;
 
 const USAGE: &str = "usage: cargo xtask package --target <target>";
@@ -107,15 +108,6 @@ fn pack(root: &Path, target_dir: &Path, target: &str) -> anyhow::Result<Package>
     Ok(Package { archive, checksum })
 }
 
-/// The lowercase hexadecimal digits of `bytes`.
-fn hex(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .flat_map(|byte| [byte >> 4, byte & 0x0f])
-        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
-        .collect()
-}
-
 /// Writes `entries` to `archive` as a gzipped tarball. Times, owners and the gzip header carry nothing of the machine, so one commit packs to the same bytes everywhere.
 ///
 /// The compressed bytes also depend on the deflate backend of `flate2`, today the pure-Rust `miniz_oxide`, and on the compression level. A crate that turns on another backend (the `zlib-ng` or `zlib-rs` feature of `flate2`) anywhere in the same build changes them, because features add up across a build. The checksum is made from the archive that was written, so a release stays consistent either way.
@@ -141,12 +133,7 @@ fn write_archive(archive: &Path, entries: &[Entry]) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TARGETS, hex};
-
-    #[test]
-    fn writes_bytes_as_lowercase_hexadecimal() {
-        assert_eq!(hex(&[0x00, 0x0f, 0xa5, 0xff]), "000fa5ff");
-    }
+    use super::TARGETS;
 
     #[test]
     fn the_targets_are_the_four_of_the_spec() {
