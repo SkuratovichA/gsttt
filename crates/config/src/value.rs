@@ -8,8 +8,8 @@ use serde_json::{Map, Number, Value as Json};
 /// Tables nested deeper than this are refused, which also stops a table that contains itself.
 const MAX_DEPTH: usize = 64;
 
-/// How many values one conversion may build. A table that is used twice is converted twice, so a few lines of Lua make a table that stands for billions of JSON values, and neither the memory limit nor the instruction limit of the sandbox sees what Rust builds from it.
-const MAX_NODES: usize = 1_000_000;
+/// How many values one conversion may build. A table that is used twice is converted twice, so a few lines of Lua make a table that stands for billions of JSON values, and neither the memory limit nor the instruction limit of the sandbox sees what Rust builds from it. The sandbox uses the same number for the library functions that walk a table or a range (see `sandbox/tables.rs`).
+pub(crate) const MAX_NODES: usize = 1_000_000;
 
 /// Why a Lua value cannot be part of the setup. Every variant says where in the value the problem is.
 #[derive(Debug, thiserror::Error)]

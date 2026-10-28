@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use gsttt_config::fingerprint;
 use gsttt_core::Setup;
 use serde_json::json;
@@ -204,6 +206,155 @@ fn a_table_that_expands_is_refused_before_it_is_built() {
         message.contains("g.setup.exclude[1]") && message.contains("more than 1000000 values"),
         "{message}"
     );
+}
+
+/// The message of an `init.lua` that must fail at once. A native call that is not bounded runs for minutes, or until the memory limit, so the time is part of what the scenario proves.
+fn failure_at_once(init: &str) -> String {
+    let started = Instant::now();
+    let message = failure(init);
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "took {:?}: {message:.100}",
+        started.elapsed()
+    );
+    message
+}
+
+/// A table whose length is two to the fortieth by its border alone: forty-one keys, each twice the one before, all in the hash part of the table.
+fn sparse_table() -> String {
+    let keys: Vec<String> = (0..=40)
+        .map(|power| format!("[{}] = true", 1u64 << power))
+        .collect();
+    format!("local sparse = {{ {} }}\n", keys.join(", "))
+}
+
+#[gsttt_scenario::scenario("config", "Repeating nothing returns at once")]
+#[test]
+fn repeating_nothing_returns_at_once() {
+    let started = Instant::now();
+    Tree::with_init(
+        "assert(string.rep(\"\", 2 ^ 62) == \"\")\nassert(string.rep(\"\", 2 ^ 62, \"\") == \"\")\nassert((\"\"):rep(math.maxinteger) == \"\")\n",
+    )
+    .evaluate()
+    .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A range beyond the budget is refused")]
+#[test]
+fn a_range_beyond_the_budget_is_refused_before_it_is_walked() {
+    for (call, name) in [
+        ("table.move({}, 1, 2 ^ 40, 2)", "'move'"),
+        ("table.move({}, \"1\", \"1e12\", 2)", "'move'"),
+        (
+            "table.concat(setmetatable({}, { __index = rawlen }), \"\", 1, 2 ^ 40)",
+            "'concat'",
+        ),
+        (
+            "table.concat(setmetatable({}, { __index = rawlen }), \"\", -2 ^ 40)",
+            "'concat'",
+        ),
+    ] {
+        let message = failure_at_once(&format!("{call}\n"));
+        assert!(
+            message.starts_with(".gsttt/init.lua:1: bad argument")
+                && message.contains(name)
+                && message.contains("more than 1000000 elements"),
+            "{call}: {message}"
+        );
+    }
+}
+
+#[gsttt_scenario::scenario("config", "A table longer than the budget is refused")]
+#[test]
+fn a_table_longer_than_the_budget_is_refused_before_it_is_walked() {
+    for call in [
+        "table.insert(sparse, 1, \"x\")",
+        "table.remove(sparse, 1)",
+        "table.sort(sparse)",
+        "table.concat(sparse)",
+    ] {
+        let message = failure_at_once(&format!("{}{call}\n", sparse_table()));
+        assert!(
+            message.starts_with(".gsttt/init.lua:2: bad argument #1 to")
+                && message.contains("longer than 1000000 elements"),
+            "{call}: {message}"
+        );
+    }
+}
+
+#[gsttt_scenario::scenario("config", "A table with a length metamethod is refused")]
+#[test]
+fn a_table_with_a_length_metamethod_is_refused() {
+    // The length is asked again by the function after any check of it, and this table answers differently the second time.
+    let stateful = "local asked = 0\nlocal list = setmetatable({}, { __len = function() asked = asked + 1 return asked == 1 and 3 or 2 ^ 40 end })\n";
+    for call in [
+        "table.sort(list)",
+        "table.insert(list, 1, \"x\")",
+        "table.remove(list, 1)",
+        "table.concat(list)",
+    ] {
+        let message = failure_at_once(&format!("{stateful}{call}\n"));
+        assert!(
+            message.starts_with(".gsttt/init.lua:3: bad argument #1 to")
+                && message.contains("`__len`"),
+            "{call}: {message}"
+        );
+    }
+}
+
+#[gsttt_scenario::scenario("config", "Library calls within the budget are unchanged")]
+#[test]
+fn library_calls_within_the_budget_are_unchanged() {
+    Tree::with_init(
+        r#"
+local list = { 5, 3, 9 }
+table.insert(list, 1, 7)
+table.insert(list, 2, 8)
+assert(table.concat(list, ",") == "7,8,5,3,9")
+assert(table.remove(list, 1) == 7 and table.remove(list) == 9)
+table.sort(list)
+assert(table.concat(list, ",") == "3,5,8")
+table.sort(list, function(a, b) return a > b end)
+assert(table.concat(list, ",") == "8,5,3")
+assert(table.move(list, 1, 3, 2) == list and table.concat(list, ",") == "8,8,5,3")
+assert(table.concat({ 1, 2, 3 }, "-", 2, 3) == "2-3")
+assert(table.concat({ 1, 2, 3 }, "-", 2) == "2-3")
+assert(string.rep("ab", 3, ",") == "ab,ab,ab" and string.rep("", 3, ",") == ",,")
+local ok, message = pcall(table.insert, list, 9, "x")
+assert(not ok and tostring(message):find("bad argument #2 to 'insert' (position out of bounds)", 1, true), tostring(message))
+"#,
+    )
+    .evaluate()
+    .unwrap();
+    let message = failure("table.insert({}, 9, \"x\")\n");
+    assert_eq!(
+        message,
+        ".gsttt/init.lua:1: bad argument #2 to 'insert' (position out of bounds)"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A finalizer or a weak mode is refused")]
+#[test]
+fn a_finalizer_or_a_weak_mode_is_refused() {
+    for (field, name) in [
+        ("__gc = function() end", "`__gc`"),
+        ("__mode = \"k\"", "`__mode`"),
+        ("__mode = \"v\"", "`__mode`"),
+    ] {
+        let message = failure_at_once(&format!("setmetatable({{}}, {{ {field} }})\n"));
+        assert!(
+            message.starts_with(".gsttt/init.lua:1: ") && message.contains(name),
+            "{field}: {message}"
+        );
+    }
+    Tree::with_init("assert(type(setmetatable({}, { __index = {} })) == \"table\")\n")
+        .evaluate()
+        .unwrap();
 }
 
 #[gsttt_scenario::scenario("config", "A long error message is cut")]

@@ -127,6 +127,36 @@ Evaluation SHALL stop with an error naming the limit when it allocates more than
 - **WHEN** the config raises an error with a message of a hundred thousand characters
 - **THEN** the evaluation error is 1 KiB long and ends in `…`
 
+### Requirement: Library calls are bounded
+A library call whose native loop is as long as the config says SHALL be refused, naming the call and the limit, when the loop would pass a million elements, since no limit stops a native call. That covers the range of `table.move` and `table.concat` (to the length of the table by default) and the length of the table `table.insert` and `table.remove` (with a position) and `table.sort` work on, where a `__len` is refused. `string.rep` of nothing SHALL return the empty string at once.
+
+#### Scenario: Repeating nothing returns at once
+- **WHEN** the config repeats the empty string two to the sixty-second power times, with and without an empty separator
+- **THEN** the result is the empty string and evaluation takes well under the time limit
+
+#### Scenario: A range beyond the budget is refused
+- **WHEN** the config moves or concatenates a range of two to the fortieth elements, for instance `table.move({}, 1, 2^40, 2)`
+- **THEN** evaluation fails at once with a message that names the call and the limit of a million elements
+
+#### Scenario: A table longer than the budget is refused
+- **WHEN** the config sorts, concatenates or inserts at a position into a table whose length is two to the fortieth, built from forty keys that each double the one before
+- **THEN** evaluation fails at once with a message that names the call and the limit of a million elements
+
+#### Scenario: A table with a length metamethod is refused
+- **WHEN** the config sorts a table with a `__len` that answers three the first time it is asked and a trillion every time after
+- **THEN** evaluation fails at once with a message that names `__len`
+
+#### Scenario: Library calls within the budget are unchanged
+- **WHEN** the config inserts, removes, sorts, moves and concatenates in lists of a few elements and repeats a text with a separator
+- **THEN** each call gives the result Lua gives, and a call with a wrong argument gives the error Lua gives, with the position of the call
+
+### Requirement: The collector does no work for the config
+`setmetatable` SHALL refuse a metatable with `__gc` or `__mode`, with an error that names the field, because Lua runs finalizers and clears weak tables with the instruction hook off, so a config could keep the collector busy for as long as it likes.
+
+#### Scenario: A finalizer or a weak mode is refused
+- **WHEN** the config attaches a metatable with `__gc`, or with `__mode`, to a table
+- **THEN** evaluation fails with a message that names the field and the position of the call
+
 ### Requirement: Iteration order
 `pairs` SHALL visit list keys in order and then the other keys sorted, so that evaluation is deterministic. `next` SHALL not be available, because it would show the order of the table itself.
 

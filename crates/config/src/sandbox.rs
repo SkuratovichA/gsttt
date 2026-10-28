@@ -2,10 +2,11 @@
 //!
 //! The state has the pure libraries and the base functions that cannot reach outside it, a memory limit, an instruction limit, a time limit and a `pairs` with a fixed order, so the same files always evaluate to the same setup.
 //!
-//! The instruction limit counts Lua instructions, and a native call is one instruction however long it runs. Two things make that safe. The time limit is checked with the instruction count, so a loop of native calls that each cost a little still stops. And the one native call that could run for ever has no way to: the pattern matcher of `string` is not in the state (see `strings.rs`).
+//! The instruction limit counts Lua instructions, and a native call is one instruction however long it runs. Two things make that safe. The time limit is checked with the instruction count, so a loop of native calls that each cost a little still stops. And the native calls that could run for ever have no way to: the pattern matcher of `string` is not in the state (see `strings.rs`), and the functions that loop as long as an argument says refuse a long loop before they start (`rep` in `strings.rs`, the `table` functions in `tables.rs`).
 
 mod output;
 mod strings;
+mod tables;
 
 use std::cell::Cell;
 use std::cmp::Ordering;
@@ -64,15 +65,20 @@ const KEPT_GLOBALS: &[&str] = &[
 /// Wraps the base functions through which a script could outlast its limits. It runs once, before the hook is set.
 ///
 /// - `pcall` and `xpcall` re-raise the instruction limit when they catch it, so a loop around `pcall` still ends.
-/// - `setmetatable` refuses `__gc`: Lua runs finalizers with hooks off, so a finalizer could loop for ever.
+/// - `setmetatable` refuses `__gc` and `__mode`: Lua runs finalizers with hooks off, so a finalizer could loop for ever, and the collector clears weak tables with hooks off too, which takes for ever when their entries hold on to each other in the wrong order. The collector reads `__mode` at every cycle, so this stops a metatable that has one when it is attached and not one that is given it afterwards.
 const GUARDS: &str = r#"
 local check = ...
 local rawget, real_pcall, real_xpcall, real_setmetatable, type, error = rawget, pcall, xpcall, setmetatable, type, error
 function pcall(f, ...) return check(real_pcall(f, ...)) end
 function xpcall(f, handler, ...) return check(real_xpcall(f, handler, ...)) end
 function setmetatable(target, meta)
-  if type(meta) == "table" and rawget(meta, "__gc") ~= nil then
-    error("a metatable cannot have `__gc`: finalizers run outside the instruction limit", 2)
+  if type(meta) == "table" then
+    if rawget(meta, "__gc") ~= nil then
+      error("a metatable cannot have `__gc`: finalizers run outside the instruction limit", 2)
+    end
+    if rawget(meta, "__mode") ~= nil then
+      error("a metatable cannot have `__mode`: weak tables are cleared outside the instruction limit", 2)
+    end
   end
   return real_setmetatable(target, meta)
 end
@@ -186,6 +192,7 @@ impl Sandbox {
         let budget = Rc::new(Budget::new());
         keep_safe_globals(&lua)?;
         let tostring = strings::restrict(&lua)?;
+        tables::bound(&lua)?;
         output::route_to_log(&lua, &budget, &tostring)?;
         order_pairs(&lua)?;
         guard_limits(&lua, &budget, limits)?;
@@ -246,6 +253,40 @@ pub(crate) fn raise(lua: &Lua, message: impl Display) -> Error {
         .flatten()
         .unwrap_or_default();
     Error::runtime(format!("{position}{message}"))
+}
+
+/// An error of the native `name` that a wrapper called, worded the way Lua words it for a native called from Lua: with the position of the Lua call that reached it, the name of the function and no traceback. The original is called from a callback here, so it has no Lua caller to name and no name of its own; an error from Lua code inside a `__tostring` or a comparator already has its position.
+pub(super) fn located(lua: &Lua, name: &str, error: Error) -> Error {
+    match error {
+        Error::RuntimeError(message) if !starts_with_position(&message) => {
+            raise(lua, named(without_traceback(&message), name))
+        }
+        other => other,
+    }
+}
+
+/// `message` with the `'?'` that Lua puts in `bad argument #2 to '?'` when it does not know the function replaced by `name`.
+fn named(message: &str, name: &str) -> String {
+    match message
+        .strip_prefix("bad argument #")
+        .and_then(|rest| rest.split_once(" to '?'"))
+    {
+        Some((number, rest)) => format!("bad argument #{number} to '{name}'{rest}"),
+        None => message.to_owned(),
+    }
+}
+
+/// Whether `message` begins the way Lua begins an error raised in a chunk: `name:3: `.
+fn starts_with_position(message: &str) -> bool {
+    message
+        .split_once(": ")
+        .and_then(|(head, _)| head.rsplit_once(':'))
+        .is_some_and(|(_, line)| !line.is_empty() && line.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// The integer a native would read `value` as: an integer, a float that holds one, or a string that spells one. `None` for anything else, where the native raises its own error.
+fn integer(lua: &Lua, value: &Value) -> Option<i64> {
+    lua.coerce_integer(value.clone()).ok().flatten()
 }
 
 fn memory_message(limit: usize) -> String {
@@ -405,6 +446,8 @@ fn ordered_keys(lua: &Lua, table: &Table) -> mlua::Result<Vec<Value>> {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
     use crate::testlog::capture;
 
@@ -451,6 +494,37 @@ mod tests {
           return table.concat(shown, ",")
         end
     "##;
+
+    #[test]
+    fn a_message_with_a_position_is_told_from_one_without() {
+        for message in ["t.lua:5: boom", "[string \"x\"]:12: boom: more", "a.b:1: x"] {
+            assert!(starts_with_position(message), "{message}");
+        }
+        for message in [
+            "bad argument #2 to 'format' (number expected, got string)",
+            "invalid conversion '%y' to 'format'",
+            "t.lua: no line",
+            "t.lua:x: no number",
+            "",
+        ] {
+            assert!(!starts_with_position(message), "{message}");
+        }
+    }
+
+    #[test]
+    fn an_argument_error_names_the_function_that_was_called() {
+        assert_eq!(
+            named("bad argument #2 to '?' (position out of bounds)", "insert"),
+            "bad argument #2 to 'insert' (position out of bounds)"
+        );
+        for message in [
+            "bad argument #2 to 'insert' (position out of bounds)",
+            "invalid value (nil) at index 1 in table for 'concat'",
+            "the name is to '?' here",
+        ] {
+            assert_eq!(named(message, "insert"), message);
+        }
+    }
 
     #[test]
     fn limits_default_to_the_spec() {
@@ -875,5 +949,287 @@ mod tests {
             eval(&sandbox, r#"error("short")"#).unwrap_err(),
             "t.lua:1: short"
         );
+    }
+
+    /// A table whose length is `2^40` by its border alone: forty-one keys, each twice the one before, all in the hash part of the table, and no `__len`.
+    fn sparse_table() -> String {
+        let keys: Vec<String> = (0..=40)
+            .map(|power| format!("[{}] = true", 1u64 << power))
+            .collect();
+        format!("local sparse = {{ {} }}", keys.join(", "))
+    }
+
+    /// A table that answers three the first time it is asked its length and a trillion every time after.
+    const STATEFUL: &str = r"
+        local asked = 0
+        local stateful = setmetatable({}, { __len = function() asked = asked + 1 return asked == 1 and 3 or 2 ^ 40 end })
+    ";
+
+    /// Natives as `__index` and `__newindex` make a table without a body, whose every read and write is a call that runs no Lua instruction.
+    const NO_BODY: &str = "{ __index = type, __newindex = rawlen }";
+
+    #[test]
+    fn a_native_loop_that_the_script_sizes_is_refused_before_it_starts() {
+        let sandbox = Sandbox::new().unwrap();
+        let sparse = sparse_table();
+        let range = "the range holds more than 1000000 elements";
+        let long = "the table is longer than 1000000 elements";
+        let length = "a table with a `__len` metamethod is not accepted";
+        let cases = [
+            ("table.move({}, 1, 2^40, 2)".to_owned(), range),
+            (r#"table.move({}, "1", "1e12", 2)"#.to_owned(), range),
+            ("table.move({}, -2^62, 2^62, 1)".to_owned(), range),
+            (
+                "table.move({}, math.mininteger, math.maxinteger, 1)".to_owned(),
+                range,
+            ),
+            (
+                format!("local t = setmetatable({{}}, {NO_BODY}) table.move(t, 1, 2^40, 1, t)"),
+                range,
+            ),
+            (r#"table.concat({}, "", 1, 2^40)"#.to_owned(), range),
+            (r#"table.concat({}, "", -2^40, 1)"#.to_owned(), range),
+            // Without an end the range stops at the length of the table, and it still begins where the script says.
+            (
+                r#"table.concat(setmetatable({}, { __index = rawlen }), "", -2^40)"#.to_owned(),
+                range,
+            ),
+            (
+                r#"table.concat(setmetatable({}, { __index = rawlen }), "", math.mininteger)"#
+                    .to_owned(),
+                range,
+            ),
+            (format!("{sparse} table.insert(sparse, 1, 'x')"), long),
+            (format!("{sparse} table.remove(sparse, 1)"), long),
+            (format!("{sparse} table.sort(sparse)"), long),
+            (format!("{sparse} table.concat(sparse)"), long),
+            (
+                format!("{sparse} table.sort(setmetatable(sparse, {NO_BODY}))"),
+                long,
+            ),
+            (
+                "table.sort(setmetatable({}, { __len = function() return 2 ^ 40 end }))".to_owned(),
+                length,
+            ),
+            (format!("{STATEFUL} table.sort(stateful)"), length),
+            (format!("{STATEFUL} table.insert(stateful, 1, 'x')"), length),
+            (format!("{STATEFUL} table.remove(stateful, 1)"), length),
+            (format!("{STATEFUL} table.concat(stateful)"), length),
+        ];
+        let started = Instant::now();
+        for (source, expected) in &cases {
+            let message = eval(&sandbox, source).expect_err(source);
+            assert!(
+                message.starts_with("t.lua:") && message.contains(expected),
+                "{source}: {message}"
+            );
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_table_or_a_range_of_exactly_the_budget_is_still_worked_on() {
+        let sandbox = Sandbox::new().unwrap();
+        let inserted = |length: u32| {
+            format!(
+                "local list = {{}} for index = 1, {length} do list[index] = index end table.insert(list, 1, 0) return #list"
+            )
+        };
+        assert_eq!(eval(&sandbox, &inserted(1_000_000)).unwrap(), "1000001");
+        let message = eval(&sandbox, &inserted(1_000_001)).unwrap_err();
+        assert!(
+            message.contains("longer than 1000000 elements"),
+            "{message}"
+        );
+        assert_eq!(
+            eval(&sandbox, "return #table.move({}, 1, 1000000, 2)").unwrap(),
+            "0"
+        );
+        let message = eval(&sandbox, "table.move({}, 1, 1000001, 2)").unwrap_err();
+        assert!(message.contains("more than 1000000 elements"), "{message}");
+    }
+
+    #[test]
+    fn a_table_with_a_length_metamethod_is_left_alone_by_the_calls_that_do_not_walk_it() {
+        let sandbox = Sandbox::new().unwrap();
+        // `insert` with two arguments and `remove` without a position take one step, whatever the table answers.
+        let source = format!(
+            r#"{SHOW}
+            local list = setmetatable({{}}, {{ __len = function() return 2 ^ 40 end }})
+            table.insert(list, "x")
+            return show(rawget(list, 2 ^ 40 + 1), table.remove(list))"#
+        );
+        assert_eq!(eval(&sandbox, &source).unwrap(), "x,nil");
+    }
+
+    #[test]
+    fn repeating_nothing_returns_at_once_and_every_other_repeat_is_the_original() {
+        let sandbox = Sandbox::new().unwrap();
+        let started = Instant::now();
+        let cases = [
+            (r#"string.rep("", 2^62)"#, ""),
+            (r#"string.rep("", 2^62, "")"#, ""),
+            (r#"string.rep("", 2^62, nil)"#, ""),
+            (r#"string.rep("", "4611686018427387904")"#, ""),
+            (r#"(""):rep(math.maxinteger)"#, ""),
+            (r#"string.rep("", 0)"#, ""),
+            (r#"string.rep("ab", 3, ",")"#, "ab,ab,ab"),
+            (r#"string.rep("", 3, ",")"#, ",,"),
+            (r#"string.rep("ab", 0)"#, ""),
+            ("string.rep(12, 2)", "1212"),
+        ];
+        for (call, expected) in cases {
+            let source = format!("{SHOW} return show({call})");
+            assert_eq!(eval(&sandbox, &source).unwrap(), expected, "{call}");
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+        for (call, expected) in [
+            (
+                r#"string.rep("", {})"#,
+                "#2 to 'rep' (number expected, got table)",
+            ),
+            (
+                r#"string.rep("", 2.5)"#,
+                "#2 to 'rep' (number has no integer representation)",
+            ),
+            (
+                "string.rep({}, 2^62)",
+                "#1 to 'rep' (string expected, got table)",
+            ),
+            (r#"string.rep("x", 2^62)"#, "resulting string too large"),
+        ] {
+            let message = eval(&sandbox, &format!("return {call}")).unwrap_err();
+            assert!(
+                message.starts_with("t.lua:1: ") && message.contains(expected),
+                "{call}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wrapped_call_keeps_its_results_its_errors_and_their_positions() {
+        let sandbox = Sandbox::new().unwrap();
+        let source = format!(
+            r##"{SHOW}
+            local list = {{ 3, 1, 2 }}
+            return show(select("#", table.sort(list)), select("#", table.insert(list, 9)), table.remove(list, 1))"##
+        );
+        assert_eq!(eval(&sandbox, &source).unwrap(), "0,0,1");
+        let message = eval(&sandbox, "table.insert({}, 5, 1)").unwrap_err();
+        assert_eq!(
+            message,
+            "t.lua:1: bad argument #2 to 'insert' (position out of bounds)"
+        );
+        // Called by `pcall`, the original has no Lua caller to name, and neither does the wrapper. The error is an object, as every error that begins in Rust is.
+        let source = "return tostring(select(2, pcall(table.insert, {}, 5, 1)))";
+        let message = eval(&sandbox, source).unwrap();
+        assert!(
+            message.starts_with(
+                "runtime error: bad argument #2 to 'insert' (position out of bounds)\n"
+            ),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_limit_reached_inside_a_wrapped_call_still_ends_the_run() {
+        let sandbox = small(1_000_000, 64);
+        let forever =
+            "pcall(table.sort, { 3, 2, 1 }, function() while true do end end) return 'went on'";
+        let message = eval(&sandbox, forever).unwrap_err();
+        assert!(message.contains("instruction limit"), "{message}");
+        let sandbox = hurried(Duration::from_millis(100));
+        let message =
+            eval(&sandbox, "while true do pcall(table.insert, {}, 1, 1) end").unwrap_err();
+        assert!(message.contains("time limit"), "{message}");
+    }
+
+    #[test]
+    fn a_weak_table_cannot_stall_the_collector() {
+        let sandbox = Sandbox::new().unwrap();
+        for mode in ["k", "v", "kv"] {
+            let source =
+                format!(r#"local weak = setmetatable({{}}, {{ __mode = "{mode}" }}) return weak"#);
+            let message = eval(&sandbox, &source).unwrap_err();
+            assert!(
+                message.starts_with("t.lua:1: ") && message.contains("`__mode`"),
+                "{message}"
+            );
+        }
+        // A field written with `rawset` is a field all the same.
+        let source = r#"local weak = setmetatable({}, rawset({}, "__mode", "k")) return weak"#;
+        let message = eval(&sandbox, source).unwrap_err();
+        assert!(message.contains("`__mode`"), "{message}");
+        assert_eq!(
+            eval(
+                &sandbox,
+                "return type(setmetatable({}, { __index = {}, __call = print }))"
+            )
+            .unwrap(),
+            "table"
+        );
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(48))]
+
+        /// Inside the budget the bounded calls are the originals: the same results, the same number of results, the same errors and the same state of the list afterwards.
+        #[test]
+        fn the_bounded_library_calls_agree_with_the_originals(
+            items in prop::collection::vec(-9i64..9, 0..8),
+            position in -2i64..11,
+            from in -2i64..10,
+            to in -2i64..10,
+            target in -2i64..10,
+            count in -2i64..5,
+        ) {
+            let list = items.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+            let source = format!(
+                r##"
+                local function show(...)
+                  local shown = {{}}
+                  for index = 1, select("#", ...) do
+                    local value = (select(index, ...))
+                    local text = type(value) == "table" and "table" or tostring(value)
+                    -- An error that began in Rust is an object whose text begins with these words and ends in a traceback.
+                    if text:sub(1, 15) == "runtime error: " then text = text:sub(16) end
+                    local traceback = text:find("\nstack traceback:", 1, true)
+                    if traceback then text = text:sub(1, traceback - 1) end
+                    shown[#shown + 1] = text
+                  end
+                  return table.concat(shown, ",")
+                end
+                local out = {{}}
+                local function run(name, call)
+                  local subject = {{ {list} }}
+                  out[#out + 1] = name .. ":" .. show(pcall(call, subject)) .. "|" .. show(table.unpack(subject))
+                end
+                run("insert", function(list) return (table.insert(list, {position}, 7)) end)
+                run("append", function(list) return (table.insert(list, 7)) end)
+                run("remove", function(list) return (table.remove(list, {position})) end)
+                run("pop", function(list) return (table.remove(list)) end)
+                run("sort", function(list) return (table.sort(list)) end)
+                run("sort_down", function(list) return (table.sort(list, function(a, b) return a > b end)) end)
+                run("move", function(list) return (table.move(list, {from}, {to}, {target})) end)
+                run("concat", function(list) return (table.concat(list, ",", {from}, {to})) end)
+                run("concat_from", function(list) return (table.concat(list, ",", {from})) end)
+                run("concat_all", function(list) return (table.concat(list, ",")) end)
+                run("rep", function() return (string.rep("ab", {count}, ",")) end)
+                run("rep_nothing", function() return (string.rep("", {count}, "")) end)
+                return table.concat(out, ";")"##
+            );
+            let original = Lua::new();
+            let expected = original.load(&source).set_name("@t.lua").eval::<String>().unwrap();
+            let sandbox = Sandbox::new().unwrap();
+            prop_assert_eq!(eval(&sandbox, &source).unwrap(), expected);
+        }
     }
 }
