@@ -79,8 +79,7 @@ pub(super) fn collect<'p>(program: &Program<'_>, packs: &'p [Pack]) -> Roots<'p>
         wanted,
         heads: Vec::new(),
         declared: Vec::new(),
-        aliases: Vec::new(),
-        locals: Vec::new(),
+        types: BTreeMap::new(),
         this_bound: BTreeSet::new(),
         others: Vec::new(),
     };
@@ -113,10 +112,8 @@ struct Collector<'p, 'a> {
     heads: Vec<Cow<'a, str>>,
     /// A binding that has a type, with the rows of `heads` that hold the type.
     declared: Vec<(Name<'a>, Range<usize>)>,
-    /// A local `type` alias and a name its definition stands for at its head, one row for each.
-    aliases: Vec<(&'a str, Cow<'a, str>)>,
-    /// Every name the file declares as a `type` alias, an `interface`, a `class` or an `enum`: such a name is the type the file says it is, never the root type of a pack that has the same name.
-    locals: Vec<&'a str>,
+    /// Every name the file declares as a `type` alias, an `interface`, a `class` or an `enum`, with the names that its definition stands for at its head, which only a `type` alias has: such a name is the type the file says it is, never the root type of a pack that has the same name.
+    types: BTreeMap<&'a str, Vec<Cow<'a, str>>>,
     /// Every name that `const name = this` binds.
     this_bound: BTreeSet<&'a str>,
     /// Every binding that is neither `this` nor given a type: a name bound to anything else is no alias and no root for the whole file.
@@ -148,7 +145,7 @@ impl<'a> Collector<'_, 'a> {
     /// The file declares a type called `name`.
     fn declare_type(&mut self, name: &'a str) {
         if !self.wanted.is_empty() {
-            self.locals.push(name);
+            self.types.entry(name).or_default();
         }
     }
 }
@@ -157,13 +154,19 @@ impl<'p> Collector<'p, '_> {
     fn finish(&self) -> Roots<'p> {
         let mut typed: BTreeMap<Name<'_>, Vec<&'p str>> = BTreeMap::new();
         let mut untyped = Vec::new();
-        let mut seen = Vec::new();
+        let mut work = Vec::new();
+        let mut seen = BTreeSet::new();
         for (name, rows) in &self.declared {
             seen.clear();
+            work.extend(
+                self.heads
+                    .get(rows.clone())
+                    .unwrap_or_default()
+                    .iter()
+                    .map(Cow::as_ref),
+            );
             let mut found = Vec::new();
-            for head in self.heads.get(rows.clone()).unwrap_or_default() {
-                self.root_types(head, &mut seen, &mut found);
-            }
+            self.root_types(&mut work, &mut seen, &mut found);
             if found.is_empty() {
                 untyped.push(*name);
             } else {
@@ -187,18 +190,21 @@ impl<'p> Collector<'p, '_> {
         }
     }
 
-    /// Adds to `found` the root types that `head` is, or stands for through the aliases of the file. A name the file declares is the type it says it is, which only a `type` alias can make a root type; a name the file does not declare is a root type when a pack lists it. `seen` holds the names already followed for this question and is never emptied during it, so that a chain of any length is followed, a cycle ends, and a union that names its own alias many times is read once.
-    fn root_types<'s>(&'s self, head: &'s str, seen: &mut Vec<&'s str>, found: &mut Vec<&'p str>) {
-        if seen.contains(&head) {
-            return;
-        }
-        seen.push(head);
-        if !self.locals.contains(&head) {
-            found.extend(self.wanted.iter().copied().find(|wanted| *wanted == head));
-            return;
-        }
-        for (_, next) in self.aliases.iter().filter(|(alias, _)| *alias == head) {
-            self.root_types(next, seen, found);
+    /// Empties `work`, a list of names, and adds to `found` the root types that they are, or stand for through the aliases of the file. A name the file declares is the type it says it is, which only a `type` alias can make a root type; a name the file does not declare is a root type when a pack lists it. `seen` holds the names already followed for this question and is never emptied during it, so that a chain of any length is followed, a cycle ends, and a union that names its own alias many times is read once. The names wait on a list and not on the stack, because a chain of a hundred thousand aliases must not need a hundred thousand frames.
+    fn root_types<'s>(
+        &'s self,
+        work: &mut Vec<&'s str>,
+        seen: &mut BTreeSet<&'s str>,
+        found: &mut Vec<&'p str>,
+    ) {
+        while let Some(head) = work.pop() {
+            if !seen.insert(head) {
+                continue;
+            }
+            match self.types.get(head) {
+                Some(rows) => work.extend(rows.iter().map(Cow::as_ref)),
+                None => found.extend(self.wanted.iter().copied().find(|wanted| *wanted == head)),
+            }
         }
     }
 }
@@ -269,11 +275,8 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
 
     fn visit_ts_type_alias_declaration(&mut self, it: &TSTypeAliasDeclaration<'a>) {
         if !self.wanted.is_empty() {
-            let alias = it.id.name.as_str();
-            self.declare_type(alias);
-            heads(&it.type_annotation, &mut |head| {
-                self.aliases.push((alias, head));
-            });
+            let rows = self.types.entry(it.id.name.as_str()).or_default();
+            heads(&it.type_annotation, &mut |head| rows.push(head));
         }
     }
 

@@ -119,8 +119,10 @@ A `type` alias of the same file SHALL be read as the type it defines, through an
 - **WHEN** `src/chain.ts` has the nine aliases `Chain1` to `Chain9`, where `Chain1` is `PrismaClient` and each of the others is the one before it, and a function with the parameter `client: Chain9` that calls `client.tenant.findFirst()` on line 14
 - **AND** `src/cycle.ts` has `type Ping = Pong` and `type Pong = Ping` and a function with the parameter `ring: Ping` that calls `ring.tenant.findMany()`, and `type Back = Forth | PrismaClient` and `type Forth = Back` and a function with the parameter `value: Forth` that calls `value.booking.count()` on line 13
 - **AND** `src/fan-out.ts` has `type Wide = Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide` and a function with the parameter `value: Wide` that calls `value.tenant.findFirst()`
+- **AND** `src/long.ts` has the 100,000 aliases `Chain1` to `Chain100000`, where `Chain1` is `PrismaClient` and each of the others is the one before it, and a function with the parameter `client: Chain100000` that calls `client.tenant.findFirst()` on line 100003
 - **THEN** `src/chain.ts` calls `table tenant` at line 14 and `src/cycle.ts` calls `table booking` at line 13, and no other table
 - **AND** `src/fan-out.ts` calls no table, and the project is indexed without waiting on `Wide`
+- **AND** `src/long.ts` calls `table tenant` at line 100003, and the project is indexed within twenty seconds
 
 ### Requirement: Local types shadow root types
 A name that the file declares itself, as a `type` alias, an `interface`, a `class` or an `enum`, SHALL be that local type and never the root type of a pack with the same name. A local `type` alias SHALL be read as the type it defines, which may be a root type, and an `interface`, a `class` or an `enum` SHALL be no root type. Only a name that the file does not declare SHALL be checked against the root types.

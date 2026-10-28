@@ -1,11 +1,13 @@
 //! Tables and environment variables.
 
 use std::error::Error;
+use std::fmt::{self, Write};
+use std::fs;
 use std::time::Duration;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, contracts, run, run_within};
+use crate::support::{NOTHING, contracts, run, run_tree_within, run_within};
 
 #[test]
 #[scenario("typescript", "A Prisma call names its table")]
@@ -80,7 +82,7 @@ fn a_local_type_alias_of_a_client_type_is_a_root() -> Result<(), Box<dyn Error>>
 #[test]
 #[scenario("typescript", "A long chain of type aliases is followed to its end")]
 fn a_long_chain_of_type_aliases_is_followed_to_its_end() -> Result<(), Box<dyn Error>> {
-    let json = run_within("prisma-alias-walk", Duration::from_secs(20))?;
+    let json = run_within("prisma-alias-walk", ALIAS_WALK_LIMIT)?;
     assert_eq!(contracts(&json, "src/chain.ts"), ["calls table tenant @14"]);
     assert_eq!(
         contracts(&json, "src/cycle.ts"),
@@ -88,7 +90,45 @@ fn a_long_chain_of_type_aliases_is_followed_to_its_end() -> Result<(), Box<dyn E
     );
     assert_eq!(contracts(&json, "src/fan-out.ts"), NOTHING);
     insta::assert_json_snapshot!(json);
+
+    // Far more aliases than a stack of 2 MiB holds frames of a walk that recurses on each of them.
+    let tree = tempfile::tempdir()?;
+    fs::create_dir(tree.path().join("src"))?;
+    fs::write(
+        tree.path().join("package.json"),
+        r#"{ "name": "alias-chain", "dependencies": { "@prisma/client": "^6.0.0" } }"#,
+    )?;
+    fs::write(
+        tree.path().join("src/long.ts"),
+        long_chain(LONG_CHAIN_LENGTH)?,
+    )?;
+    let json = run_tree_within(tree.path(), ALIAS_WALK_LIMIT)?;
+    assert_eq!(
+        contracts(&json, "src/long.ts"),
+        [format!("calls table tenant @{}", LONG_CHAIN_LENGTH + 3)]
+    );
     Ok(())
+}
+
+/// How long the walk over the aliases of a file may take before the test gives up on it.
+const ALIAS_WALK_LIMIT: Duration = Duration::from_secs(20);
+
+/// The number of aliases in the generated chain.
+const LONG_CHAIN_LENGTH: usize = 100_000;
+
+/// A file of `length` type aliases, the first of which is `PrismaClient` and each of the others the one before it, and a function whose parameter has the last, and which calls a table on line `length + 3`.
+fn long_chain(length: usize) -> Result<String, fmt::Error> {
+    let mut source = String::from(
+        "import type { PrismaClient } from '@prisma/client';\ntype Chain1 = PrismaClient;\n",
+    );
+    for index in 2..=length {
+        writeln!(source, "type Chain{index} = Chain{};", index - 1)?;
+    }
+    writeln!(
+        source,
+        "export function find(client: Chain{length}) {{\n  return client.tenant.findFirst();\n}}"
+    )?;
+    Ok(source)
 }
 
 #[test]
