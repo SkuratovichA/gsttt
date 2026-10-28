@@ -107,7 +107,7 @@ The report SHALL list, per capability, the scenarios proven, pending and failing
 - **THEN** the gate exits zero and reports every scenario as proven
 
 ### Requirement: Archiving
-`cargo xtask spec --ready` SHALL print, one per line, the open changes that OpenSpec can archive: every task ticked, every scenario proven, and every requirement they modify, remove or rename present in `openspec/specs/`. The `archive-specs` workflow SHALL run on every push to `main`, archive each change it prints with the pinned OpenSpec CLI, run the gate on the result, and commit and push the result when the gate passes; a push it makes SHALL start no other workflow.
+`cargo xtask spec --ready` SHALL print, one per line, the open changes that OpenSpec can archive: every task ticked, every scenario proven, and every requirement they modify, remove or rename present in `openspec/specs/`. The `archive-specs` workflow SHALL run on every push to `main`, archive those changes with the pinned OpenSpec CLI, go on when one fails, commit and push the result when the gate passes on it, and fail at the end if any failed; a push it makes SHALL start no other workflow.
 
 #### Scenario: Ready changes are listed
 - **WHEN** one open change has every task ticked and every scenario proven, and another has an unticked task

@@ -28,3 +28,4 @@
 - [x] 5.4 Test the workspace listing and the mapping from the verdict to the exit code
 - [x] 5.5 Test the compile errors of `#[scenario]` through the attribute itself with `trybuild`
 - [x] 5.6 Keep a change out of `--ready` when it modifies, removes or renames a requirement that `openspec/specs/` does not have
+- [x] 5.7 Archive the other changes when OpenSpec refuses one and fail the job at the end, rebase before pushing, set a timeout, run cargo with `--locked`, and drop the redundant actor condition
