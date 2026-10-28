@@ -18,29 +18,36 @@ fn names(out: &Indexed, root: &str, needle: &str) -> bool {
 }
 
 /// Whether the blind spots explain an import that points nowhere. Code a build step generated is one. A path that
-/// starts with a name a glob import brought in is the other, which only a file that has a glob import can hold.
+/// starts with a name a glob import brought in is the other, but only a glob of a crate outside this repository can
+/// bring in a name that nothing here declares, so a path that starts with an unknown name in a file whose globs all
+/// land on files of the repository is a mistake.
 fn explained(reason: &str, file: &Value) -> bool {
-    let has_glob = file["imports"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|import| import["names"] == json!(["*"]));
+    let has_outside_glob = file["imports"].as_array().unwrap().iter().any(|import| {
+        import["names"] == json!(["*"])
+            && import["to"]["file"].is_null()
+            && import["to"]["unresolved"].is_null()
+    });
     match reason {
         "generated" => true,
-        "unknown-package" => has_glob,
+        "unknown-package" => has_outside_glob,
         _ => false,
     }
 }
 
+/// Whether `path` is in a `tests/fixtures` directory, the trees that tests read as inputs.
+fn is_fixture(path: &str) -> bool {
+    path.starts_with("tests/fixtures/") || path.contains("/tests/fixtures/")
+}
+
 /// Imports of the Rust files that point nowhere and that the blind spots do not explain, as
-/// `<path>:<line> <spec> (<reason>)`. Fixture trees are left out: they are inputs of tests, and the ones for imports
-/// are written to be unresolved.
+/// `<path>:<line> <spec> (<reason>)`. The trees under `tests/fixtures` are left out: they are inputs of tests, and the
+/// ones for imports are written to be unresolved.
 fn unexplained(out: &Indexed) -> Vec<String> {
     let json = out.json();
     let mut found = Vec::new();
     for file in json["files"].as_array().unwrap() {
         let path = file["path"].as_str().unwrap();
-        if path.split('/').any(|part| part == "fixtures") || file["project"].is_null() {
+        if is_fixture(path) || file["project"].is_null() {
             continue;
         }
         for import in file["imports"].as_array().unwrap() {
