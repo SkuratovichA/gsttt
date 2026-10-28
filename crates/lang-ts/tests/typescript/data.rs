@@ -128,6 +128,30 @@ fn a_signature_without_a_body_binds_nothing() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario("typescript", "A function type binds nothing wherever it is written")]
+fn a_function_type_binds_nothing_wherever_it_is_written() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-function-types")?;
+    assert_eq!(contracts(&json, "src/types.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A signature is no reason for another declaration to be no root"
+)]
+fn a_signature_is_no_reason_for_another_declaration_to_be_no_root() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-signature-names")?;
+    let expected: Vec<String> = (42..=50)
+        .map(|line| format!("calls table tenant @{line}"))
+        .collect();
+    assert_eq!(contracts(&json, "src/shared.ts"), expected);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A local type shadows a root type")]
 fn a_local_type_shadows_a_root_type() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-local-types")?;

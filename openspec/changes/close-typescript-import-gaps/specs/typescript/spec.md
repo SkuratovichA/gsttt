@@ -93,11 +93,20 @@ A name or a property that the file also declares anywhere in it with another typ
 - **AND** `src/consistent.ts` calls `table tenant` at line 4 and `table booking` at line 8
 
 ### Requirement: Signatures bind nothing
-A parameter of a signature without a body SHALL bind no name, so that it is neither a root nor a reason for another declaration of its name to be no root. These are the method, call and construct signatures of an interface or a type literal, a function type, a constructor type, an overload, an abstract method and a `declare function`.
+A parameter of a signature without a body SHALL bind no name, so that it is neither a root nor a reason for another declaration of its name to be no root. These are the method, call and construct signatures of an interface or a type literal, a function type, a constructor type, an overload, an abstract method and a `declare function`. A function type SHALL bind none wherever it is written, and so SHALL the name of a type parameter.
 
 #### Scenario: A signature without a body binds nothing
 - **WHEN** `src/signatures.ts` has a parameter typed `PrismaClient`, each with another name, in an interface method signature, a call signature, a construct signature, a function type, a `declare function`, an overload signature and an abstract method, and calls `.tenant.findFirst()` on each of those seven names, none of which the file declares anywhere else
 - **THEN** the file calls no table
+
+#### Scenario: A function type binds nothing wherever it is written
+- **WHEN** `src/types.ts` has a function with the return type `(returnedClient: PrismaClient) => void`, a class with the property `handler?: (propertyClient: PrismaClient) => void` and `make() as (castClient: PrismaClient) => void`, and calls `.tenant.findFirst()` on `returnedClient`, `propertyClient` and `castClient`, none of which the file declares anywhere else
+- **THEN** the file calls no table
+
+#### Scenario: A signature is no reason for another declaration to be no root
+- **WHEN** `src/shared.ts` has a parameter typed `string` in an interface method signature, a call signature, a construct signature, a function type, a `declare function`, an overload signature, an abstract method and the return type of a function, each with another name, and a type parameter with a ninth name
+- **AND** a function with a body has a parameter typed `PrismaClient` with each of those nine names and calls `.tenant.findFirst()` on each of them, on lines 42 to 50
+- **THEN** the file calls `table tenant` on each of the nine lines
 
 ### Requirement: Type aliases of root types
 A `type` alias of the same file SHALL be read as the type it defines, through any number of aliases, when a declaration is checked for a root type. An alias that is defined by itself, directly or through other aliases, SHALL define no root type, and no alias SHALL be followed more than once for a declaration, so that a type that names itself many times is read as fast as one that names itself once.
