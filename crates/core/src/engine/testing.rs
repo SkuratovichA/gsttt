@@ -107,14 +107,21 @@ pub(crate) struct Locked(PathBuf);
 
 #[cfg(unix)]
 impl Locked {
-    /// Takes every permission off `dir`. `None` when the process can open it anyway, as one running as root can:
-    /// a test could not show that the directory was left out.
+    /// Takes every permission off `dir`, so that it can be neither listed nor searched.
     pub(crate) fn new(dir: &Path) -> Option<Self> {
+        Self::with_mode(dir, 0o000)
+    }
+
+    /// Gives `dir` the permissions `mode`. `None` when the process can list `dir` and search it anyway, as one
+    /// running as root can: a test could not show that the directory was left out.
+    pub(crate) fn with_mode(dir: &Path, mode: u32) -> Option<Self> {
         use std::os::unix::fs::PermissionsExt;
 
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
         let locked = Self(dir.to_owned());
-        std::fs::read_dir(dir).is_err().then_some(locked)
+        // A file in the directory is reached through a search of it, which `dir/.` needs as well.
+        let blocked = std::fs::read_dir(dir).is_err() || std::fs::metadata(dir.join(".")).is_err();
+        blocked.then_some(locked)
     }
 }
 

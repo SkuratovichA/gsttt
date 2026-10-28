@@ -14,6 +14,7 @@
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs::{self, Metadata};
+use std::io::ErrorKind;
 use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,6 +24,7 @@ use gix::dir::entry::{Kind as DiskKind, Status as WalkStatus};
 use gix::dir::walk::{Action, Delegate, ForDeletionMode};
 use gix::index::entry::{Flags, Mode, Stat, stat};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use rayon::iter::Either;
 use rayon::prelude::*;
 
 use super::workspace::Workspace;
@@ -206,7 +208,8 @@ pub struct Scanned {
     /// The files of the work tree in path order, each with its stamp.
     pub files: Vec<FileState>,
     /// The directories the process cannot read, in path order, less the ones `Setup.exclude` leaves out: `.` is the
-    /// root. The scan goes on without them, so files under them may be missing from `files`.
+    /// root. The scan goes on without them, so files under them may be missing from `files`. A directory that can
+    /// be listed but not searched is one of them, once a file under it cannot be looked at.
     pub unreadable: Vec<String>,
 }
 
@@ -228,6 +231,7 @@ pub fn scan(
     };
     scanned.files.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     scanned.unreadable.sort_unstable();
+    scanned.unreadable.dedup();
     Ok(scanned)
 }
 
@@ -297,7 +301,7 @@ fn scan_git(
     let walked = walk_untracked(root, &repo, &index, &known)?;
     candidates.extend(walked.files.into_iter().map(|path| (path, None)));
     candidates.retain(|(path, _)| !excluder.excludes(path));
-    let unreadable = walked
+    let mut unreadable: Vec<String> = walked
         .unreadable
         .into_iter()
         .filter(|path| !excluder.excludes_dir(path))
@@ -317,7 +321,7 @@ fn scan_git(
         (tracked.stat.matches(&current, options) && !tracked.stat.is_racy(timestamp, options))
             .then_some(tracked.oid)
     };
-    let files = candidates
+    let (denied, files) = candidates
         .into_par_iter()
         .filter_map(|(path, tracked)| {
             stamp_file(root, &path, max_file_bytes, |meta| {
@@ -325,8 +329,11 @@ fn scan_git(
                 clean_oid(&path, tracked.as_ref())
                     .or_else(|| previous(&path)?.id_of_unchanged(meta))
             })
+            .transpose()
         })
-        .collect();
+        // The error side comes first.
+        .partition_map(Either::from);
+    unreadable.extend::<Vec<String>>(denied);
     Ok(Scanned { files, unreadable })
 }
 
@@ -412,7 +419,7 @@ impl Delegate for Untracked<'_> {
         let Ok(path) = std::str::from_utf8(&entry.rela_path) else {
             return false;
         };
-        let readable = fs::read_dir(self.root.join(path)).is_ok();
+        let readable = is_readable(&self.root.join(path));
         if !readable && let Ok(path) = RepoPath::normalize(path) {
             self.unreadable.push(path);
         }
@@ -437,6 +444,12 @@ impl Delegate for Untracked<'_> {
     }
 }
 
+/// Whether the process can list `directory` and look at the files in it. A directory with mode `r--` can be listed
+/// but not searched: git fails on it when it looks for the `.gitignore` inside.
+fn is_readable(directory: &Utf8Path) -> bool {
+    fs::read_dir(directory).is_ok() && fs::metadata(directory.join(".")).is_ok()
+}
+
 fn scan_plain(
     root: &Utf8Path,
     excluder: &Excluder,
@@ -453,30 +466,41 @@ fn scan_plain(
         .map(|(_, path)| path)
         .filter(|path| !excluder.excludes(path))
         .collect();
-    let files = paths
+    let (denied, files) = paths
         .into_par_iter()
         .filter_map(|path| {
             stamp_file(root, path, max_file_bytes, |meta| {
                 previous(path)?.id_of_unchanged(meta)
             })
+            .transpose()
         })
-        .collect();
+        // The error side comes first.
+        .partition_map(Either::from);
+    unreadable.extend::<Vec<String>>(denied);
     Scanned { files, unreadable }
 }
 
 /// Stamps a present regular file. `known` gives its id from what is already known, without reading it; when it
 /// cannot, the file is hashed, unless it is above `max_file_bytes` and so never parsed. A file that is gone or is
-/// not a regular file gives `None`.
+/// not a regular file gives `Ok(None)`. A file that cannot be looked at, because a directory above it cannot be
+/// searched, gives the directory that holds it (`.` for the root) as the error.
 fn stamp_file(
     root: &Utf8Path,
     path: &RepoPath,
     max_file_bytes: u64,
     known: impl FnOnce(&Metadata) -> Option<ContentId>,
-) -> Option<FileState> {
+) -> Result<Option<FileState>, String> {
     let absolute = root.join(path.as_str());
-    let meta = fs::symlink_metadata(&absolute).ok()?;
+    let meta = match fs::symlink_metadata(&absolute) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => {
+            let directory = path.parent();
+            return Err(if directory.is_empty() { "." } else { directory }.to_owned());
+        }
+        Err(_) => return Ok(None),
+    };
     if !meta.is_file() {
-        return None;
+        return Ok(None);
     }
     let id = known(&meta).unwrap_or_else(|| {
         if meta.len() > max_file_bytes {
@@ -486,10 +510,10 @@ fn stamp_file(
             hash_file(&absolute)
         }
     });
-    Some(FileState {
+    Ok(Some(FileState {
         path: path.clone(),
         stamp: Stamp::of(id, &meta),
-    })
+    }))
 }
 
 fn hash_file(path: &Utf8Path) -> ContentId {
@@ -669,6 +693,37 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn an_untracked_directory_that_can_be_listed_but_not_searched_is_left_out() {
+        let dir = init_repo(&[("src/a.ts", "a")]);
+        write(dir.path(), "locked/b.ts", "b");
+        let Some(_locked) = Locked::with_mode(&dir.path().join("locked"), 0o444) else {
+            return;
+        };
+
+        let scanned = scanned(dir.path(), &[], u64::MAX);
+
+        assert_eq!(paths(&scanned.files), ["src/a.ts"]);
+        assert_eq!(unreadable(&scanned), ["locked"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_tracked_directory_that_can_be_listed_but_not_searched_is_left_out_and_reported() {
+        let dir = init_repo(&[("src/a.ts", "a"), ("locked/b.ts", "b")]);
+        // An untracked file is what makes git look at the directory's ignore rules.
+        write(dir.path(), "locked/new.ts", "new");
+        let Some(_locked) = Locked::with_mode(&dir.path().join("locked"), 0o444) else {
+            return;
+        };
+
+        let scanned = scanned(dir.path(), &[], u64::MAX);
+
+        assert_eq!(paths(&scanned.files), ["src/a.ts"]);
+        assert_eq!(unreadable(&scanned), ["locked"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn a_directory_outside_git_that_cannot_be_read_is_left_out_and_reported() {
         let dir = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap();
@@ -687,6 +742,28 @@ mod tests {
         .unwrap();
 
         let scanned = scan(&workspace, &["vendor/".to_owned()], u64::MAX, &|_| None).unwrap();
+
+        assert_eq!(paths(&scanned.files), ["src/a.ts"]);
+        assert_eq!(unreadable(&scanned), ["locked"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_outside_git_that_can_be_listed_but_not_searched_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        write(dir.path(), "src/a.ts", "a");
+        write(dir.path(), "locked/b.ts", "b");
+        let Some(_locked) = Locked::with_mode(&dir.path().join("locked"), 0o444) else {
+            return;
+        };
+        let workspace = Workspace::locate_with(
+            Utf8Path::from_path(dir.path()).unwrap(),
+            Some(Utf8PathBuf::from_path_buf(cache.path().to_path_buf()).unwrap()),
+        )
+        .unwrap();
+
+        let scanned = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
 
         assert_eq!(paths(&scanned.files), ["src/a.ts"]);
         assert_eq!(unreadable(&scanned), ["locked"]);

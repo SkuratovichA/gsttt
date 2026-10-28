@@ -1530,6 +1530,69 @@ mod tests {
         assert_eq!(again.index.coverage.problems, *problems);
     }
 
+    /// Indexes a tree outside git whose directory `locked` has the permissions `mode`: the run succeeds, the index
+    /// leaves `locked/b.txt` out and the coverage names `locked`. A process that can reach the directory anyway
+    /// checks nothing.
+    #[cfg(unix)]
+    fn assert_directory_reported_outside_git(mode: u32) {
+        let rig = Rig::new();
+        let plain = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        write(plain.path(), "a.txt", "");
+        write(plain.path(), "locked/b.txt", "");
+        let Some(_locked) = Locked::with_mode(&plain.path().join("locked"), mode) else {
+            return;
+        };
+
+        let run = index_at(&rig, plain.path(), cache.path(), &Setup::default());
+
+        let graph = &run.index.graph;
+        assert!(graph.file_id("a.txt").is_some(), "mode {mode:o}");
+        assert!(graph.file_id("locked/b.txt").is_none(), "mode {mode:o}");
+        let problems = &run.index.coverage.problems;
+        assert!(
+            problems.iter().any(|line| line.contains("`locked`")),
+            "mode {mode:o}: {problems:?}"
+        );
+    }
+
+    /// Indexes a repository, gives its tracked directory `locked` the permissions `mode` and indexes it again: the
+    /// files of `locked` have left the index, they count as removed from HEAD and the coverage names `locked`. A
+    /// process that can reach the directory anyway checks nothing.
+    #[cfg(unix)]
+    fn assert_tracked_files_removed(mode: u32) {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", ""), ("locked/b.txt", "")]);
+        let setup = Setup::default();
+        let first = index(&rig, &dir, &setup).unwrap();
+        assert!(first.index.graph.file_id("locked/b.txt").is_some());
+        let Some(_locked) = Locked::with_mode(&dir.path().join("locked"), mode) else {
+            return;
+        };
+
+        let run = index(&rig, &dir, &setup).unwrap();
+
+        assert!(
+            run.index.graph.file_id("locked/b.txt").is_none(),
+            "mode {mode:o}"
+        );
+        assert_eq!(run.index.info.dirty, 1, "mode {mode:o}");
+        let connectors = rig.connectors();
+        let changes = Engine::new(workspace(&dir), &connectors, &[], &setup)
+            .changed_files(None)
+            .unwrap();
+        assert_eq!(
+            kinds(changes),
+            [("locked/b.txt".to_owned(), ChangeKind::Deleted)],
+            "mode {mode:o}"
+        );
+        let problems = &run.index.coverage.problems;
+        assert!(
+            problems.iter().any(|line| line.contains("`locked`")),
+            "mode {mode:o}: {problems:?}"
+        );
+    }
+
     #[cfg(unix)]
     #[gsttt_scenario::scenario(
         "indexing",
@@ -1537,25 +1600,29 @@ mod tests {
     )]
     #[test]
     fn a_directory_outside_git_that_cannot_be_read_does_not_fail_the_run() {
-        let rig = Rig::new();
-        let plain = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        write(plain.path(), "a.txt", "");
-        write(plain.path(), "locked/b.txt", "");
-        let Some(_locked) = Locked::new(&plain.path().join("locked")) else {
-            return;
-        };
+        assert_directory_reported_outside_git(0o000);
+    }
 
-        let run = index_at(&rig, plain.path(), cache.path(), &Setup::default());
+    #[cfg(unix)]
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A directory that can be listed but not searched is reported"
+    )]
+    #[test]
+    fn a_directory_outside_git_that_can_be_listed_but_not_searched_is_reported() {
+        assert_directory_reported_outside_git(0o444);
+    }
 
-        let graph = &run.index.graph;
-        assert!(graph.file_id("a.txt").is_some());
-        assert!(graph.file_id("locked/b.txt").is_none());
-        let problems = &run.index.coverage.problems;
-        assert!(
-            problems.iter().any(|line| line.contains("`locked`")),
-            "{problems:?}"
-        );
+    #[cfg(unix)]
+    #[test]
+    fn the_tracked_files_of_a_directory_that_cannot_be_read_count_as_removed() {
+        assert_tracked_files_removed(0o000);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_tracked_files_of_a_directory_that_can_be_listed_but_not_searched_count_as_removed() {
+        assert_tracked_files_removed(0o444);
     }
 
     #[test]

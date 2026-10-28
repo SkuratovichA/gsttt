@@ -20,7 +20,7 @@ The engine SHALL find the work tree root, the git dir and the common dir from an
 - **AND** the state dir is `/c/gsttt/<hex hash of the root path>`
 
 ### Requirement: File set
-The engine SHALL index the tracked files present in the work tree, conflicted ones included, and the untracked files git does not ignore, judged by the repository's own settings (every `.gitignore`, `info/exclude`, `core.excludesFile` and `core.ignorecase`), SHALL leave out submodules, symbolic links, skip-worktree entries, files matching `Setup.exclude` and directories the process cannot open (each named in the coverage problems unless excluded), and SHALL number files in path order.
+The engine SHALL index the tracked files present in the work tree, conflicted ones included, and the untracked files git does not ignore, judged by the repository's own settings (every `.gitignore`, `info/exclude`, `core.excludesFile` and `core.ignorecase`), SHALL leave out submodules, symbolic links, skip-worktree entries, files matching `Setup.exclude` and directories the process cannot list or search (each named in the coverage problems unless excluded), and SHALL number files in path order.
 
 #### Scenario: Ignored, excluded and linked files stay out
 - **WHEN** a repository has a committed `src/a.ts`, an untracked `src/new.ts`, `dist/a.js` ignored by `.gitignore`, `vendor/b.ts` matching `exclude = ["vendor/**"]` and a symbolic link `link.ts`
@@ -40,6 +40,10 @@ The engine SHALL index the tracked files present in the work tree, conflicted on
 
 #### Scenario: A directory outside git that cannot be read does not fail the run
 - **WHEN** a directory of a tree outside git cannot be opened by the process
+- **THEN** the run succeeds, the index holds the other files and none of that directory's, and the coverage names the directory as a problem
+
+#### Scenario: A directory that can be listed but not searched is reported
+- **WHEN** a directory has mode `r--`, so the process can list it but cannot look at the files in it
 - **THEN** the run succeeds, the index holds the other files and none of that directory's, and the coverage names the directory as a problem
 
 #### Scenario: A deleted tracked file is gone
