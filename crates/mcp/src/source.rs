@@ -3,29 +3,8 @@
 //! This crate cannot depend on the binary, which holds the root, the evaluated config, the registry and the trust
 //! store. The binary implements [`IndexSource`] once, and the server only ever sees the trait.
 
-use std::sync::Arc;
-
 use gsttt_core::engine::changes::Change;
-use gsttt_core::{Freshness, Index, RepoPath};
-
-/// An index and how it relates to the tree it describes.
-#[derive(Clone, Debug)]
-pub struct Loaded {
-    /// The index to answer from.
-    pub index: Arc<Index>,
-    /// Whether the tree has changed since the index was built.
-    pub freshness: Freshness,
-}
-
-/// A path argument, read from the root of the repository.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Target {
-    /// The path from the root.
-    pub path: RepoPath,
-    /// Whether a file is there. A path with no file is asked about as deleted, so that the answer can still list what
-    /// used to import it.
-    pub on_disk: bool,
-}
+use gsttt_core::{Loaded, Target};
 
 /// Why the source could not answer, as a sentence the model can act on.
 ///

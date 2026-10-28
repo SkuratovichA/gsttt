@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex, PoisonError, mpsc};
 
 use gsttt_core::engine::changes::{Change, ChangeKind};
 use gsttt_core::path::PathError;
-use gsttt_core::{Freshness, Index, RepoPath};
-use gsttt_mcp::{IndexSource, Loaded, SourceError, Target};
+use gsttt_core::{Freshness, Index, Loaded, RepoPath, Target};
+use gsttt_mcp::{IndexSource, SourceError};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::fixture::Tree;

@@ -6,14 +6,14 @@
 
 use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::query::{self, Answer, Entries, ImpactRequest};
-use gsttt_core::{Freshness, Index};
+use gsttt_core::{Freshness, Index, Loaded};
 
 use crate::arguments::{
     Call, ContractArguments, CoverageArguments, ImpactCall, NeighbourArguments, RouteArguments,
     Subject,
 };
 use crate::error::ToolError;
-use crate::source::{IndexSource, Loaded};
+use crate::source::IndexSource;
 
 /// What `index_status` says before the first index. It points at the questions that build one, because the tool does
 /// not.

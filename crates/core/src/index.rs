@@ -1,5 +1,7 @@
 //! One run's result: the graph, what each file said, the projects, the coverage and where it all came from.
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::coverage::Coverage;
@@ -153,6 +155,15 @@ impl Freshness {
             }
         }
     }
+}
+
+/// An index and how it stands against the tree it describes. The command line and the MCP server both answer from one, so it lives here beside [`Freshness`] where both can reach it.
+#[derive(Clone, Debug)]
+pub struct Loaded {
+    /// The index to answer from.
+    pub index: Arc<Index>,
+    /// Whether the tree has changed since the index was built.
+    pub freshness: Freshness,
 }
 
 impl Index {

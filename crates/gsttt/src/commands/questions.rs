@@ -1,11 +1,10 @@
 //! The questions `dependents`, `dependencies`, `path`, `contract` and `coverage`, which answer from the index.
 
-use gsttt_core::query;
+use gsttt_core::{Loaded, query};
 
 use super::{Session, print};
 use crate::cli::{ContractArgs, FileArgs, PathArgs};
 use crate::error::CliError;
-use crate::repository::Loaded;
 use crate::streams::{Io, Outcome};
 
 /// `gsttt dependents <path>`: the files that import one file.

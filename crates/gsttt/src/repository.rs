@@ -14,7 +14,7 @@ use gsttt_core::engine::changes::Change;
 use gsttt_core::engine::refresh::{Engine, IndexError};
 use gsttt_core::engine::workspace::Workspace;
 use gsttt_core::path::OutsideRoot;
-use gsttt_core::{Freshness, Index, RepoPath, Setup};
+use gsttt_core::{Freshness, Loaded, RepoPath, Setup, Target};
 
 use crate::registry::Registry;
 use crate::root::{self, RootError};
@@ -58,15 +58,6 @@ pub enum RepositoryError {
     Index(#[from] IndexError),
 }
 
-/// An index and how it stands against the tree it describes.
-#[derive(Clone, Debug)]
-pub struct Loaded {
-    /// The index to answer from.
-    pub index: Arc<Index>,
-    /// Whether the tree has changed since the index was built.
-    pub freshness: Freshness,
-}
-
 /// What a refresh did, and the index it left.
 #[derive(Clone, Debug)]
 pub struct Refreshed {
@@ -80,16 +71,6 @@ pub struct Refreshed {
     pub reused: u32,
     /// How long the refresh took, which is not what the index records of the run that built it.
     pub elapsed: Duration,
-}
-
-/// A path argument, read against its base.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Target {
-    /// The path from the root.
-    pub path: RepoPath,
-    /// Whether anything is at that path. A path with nothing there is asked about as deleted, so that an answer
-    /// can still list what used to import it.
-    pub on_disk: bool,
 }
 
 /// A root, the config evaluated there and the connectors that read the tree.

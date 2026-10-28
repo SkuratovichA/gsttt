@@ -20,9 +20,6 @@ pub trait IndexSource: Send + Sync + 'static {
     fn changed(&self, base: Option<&str>) -> Result<Vec<Change>, SourceError>;
 }
 
-pub struct Loaded { pub index: Arc<Index>, pub freshness: Freshness }
-pub struct Target { pub path: RepoPath, pub on_disk: bool }
-
 /// Why the source could not answer, as a sentence the model can act on.
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
@@ -31,6 +28,7 @@ pub struct SourceError { pub message: String }
 pub async fn serve(source: impl IndexSource) -> Result<(), ServeError>;
 ```
 
+- `Loaded { index: Arc<Index>, freshness: Freshness }` and `Target { path: RepoPath, on_disk: bool }` are `gsttt_core::Loaded` and `gsttt_core::Target`, the types the CLI's `Repository` returns, so the binary's source passes them on as they are.
 - The binary's implementation opens a `Repository` on every call. A server lives as long as a session, while `init.lua`, the trust store and the branch change under it, and opening is cheap next to a refresh. A root that the CLI refuses, `$HOME` for example, fails the call, not the server.
 
 ### Handler

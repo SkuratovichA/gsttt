@@ -14,4 +14,4 @@ mod source;
 mod tools;
 
 pub use serve::{ServeError, serve, serve_on};
-pub use source::{IndexSource, Loaded, SourceError, Target};
+pub use source::{IndexSource, SourceError};

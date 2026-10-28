@@ -2,10 +2,11 @@
 
 use camino::Utf8PathBuf;
 use clap::CommandFactory;
+use gsttt_core::{Loaded, Target};
 
 use crate::cli::{Cli, Command, ContractArgs, Flags, HookCommand, ImpactArgs};
 use crate::error::CliError;
-use crate::repository::{Loaded, Repository, Target};
+use crate::repository::Repository;
 use crate::streams::{Io, Outcome};
 use crate::{hook, root};
 

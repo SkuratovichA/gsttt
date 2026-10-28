@@ -29,7 +29,7 @@ pub use connector::{
 pub use contract::{ContractKey, ContractKind, Role};
 pub use graph::Graph;
 pub use ids::{ContractId, FileId, Id, ProjectId};
-pub use index::{Freshness, Index};
-pub use path::RepoPath;
+pub use index::{Freshness, Index, Loaded};
+pub use path::{RepoPath, Target};
 pub use repo::RepoView;
 pub use setup::Setup;
