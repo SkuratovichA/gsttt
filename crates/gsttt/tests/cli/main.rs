@@ -3,6 +3,7 @@
 
 mod colour;
 mod logs;
+mod panics;
 mod root;
 mod support;
 mod usage;

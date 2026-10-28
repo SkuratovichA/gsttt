@@ -29,7 +29,7 @@
 
 ## 6. Panics
 
-- [ ] 6.1 Install the quiet panic hook, catch a panic that reaches `main`, print its one line and exit 101
+- [x] 6.1 Install the quiet panic hook, catch a panic that reaches `main`, print its one line and exit 101
 
 ## 7. Dogfooding and CI
 

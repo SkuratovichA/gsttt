@@ -7,6 +7,7 @@ pub mod cli;
 mod commands;
 mod error;
 pub mod logging;
+pub mod panics;
 pub mod root;
 pub mod streams;
 

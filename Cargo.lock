@@ -1757,6 +1757,7 @@ dependencies = [
  "jiff",
  "miette",
  "mimalloc",
+ "proptest",
  "serde",
  "serde_json",
  "tempfile",
