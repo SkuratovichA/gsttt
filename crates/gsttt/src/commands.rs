@@ -4,10 +4,10 @@ use clap::CommandFactory;
 use gsttt_core::engine::snapshot;
 use gsttt_core::engine::workspace::Workspace;
 
-use crate::cli::{Cli, Command, ContractArgs, Flags, ImpactArgs};
+use crate::cli::{Cli, Command, ContractArgs, Flags, HookCommand, ImpactArgs};
 use crate::error::CliError;
-use crate::root;
 use crate::streams::{Io, Outcome};
+use crate::{hook, root};
 
 /// Runs the command `cli` names, writing the answer to `io.stdout` and the failure, if any, to `io.stderr`.
 pub fn run(cli: Cli, io: &mut Io<'_>) -> Outcome {
@@ -35,6 +35,10 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<(), Cli
             let mut script = Vec::new();
             clap_complete::generate(*shell, &mut Cli::command(), "gsttt", &mut script);
             io.answer(&script)
+        }
+        Command::Hook(HookCommand::SessionStart) => {
+            hook::session_start(flags, io);
+            Ok(())
         }
         command => {
             check_arguments(flags, command)?;

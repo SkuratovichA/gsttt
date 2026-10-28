@@ -24,7 +24,7 @@
 
 - [ ] 5.1 Add `DynConnector::check_options` to core and use it in `config check`; print the setup with `config show`
 - [ ] 5.2 Write the starter files with `init`
-- [ ] 5.3 Print the session-start line through `session_line(header, now)`
+- [x] 5.3 Print the session-start line through `session_line(header, now)`
 - [ ] 5.4 Print the external protocol's schema with `schema external`
 
 ## 6. Panics

@@ -6,6 +6,7 @@
 pub mod cli;
 mod commands;
 mod error;
+pub mod hook;
 pub mod logging;
 pub mod panics;
 pub mod root;

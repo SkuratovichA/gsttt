@@ -68,14 +68,30 @@ pub(crate) fn is_empty(dir: &Path) -> bool {
     std::fs::read_dir(dir).unwrap().next().is_none()
 }
 
-/// Makes `dir` the work tree of a new git repository, whatever git settings the machine has.
-pub(crate) fn init_repo(dir: &Path) {
+/// Runs `git` with `args` in `dir`, whatever git settings the machine has, and returns what it printed.
+fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
-        .args(["init", "--quiet"])
+        .arg("-C")
         .arg(dir)
+        .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
+/// Makes `dir` the work tree of a new git repository.
+pub(crate) fn init_repo(dir: &Path) {
+    git(dir, &["init", "--quiet"]);
+}
+
+/// Commits everything under `dir`, a git repository, and returns the id of the commit.
+pub(crate) fn commit_all(dir: &Path) -> String {
+    git(dir, &["add", "-A"]);
+    git(dir, &["commit", "--quiet", "-m", "first"]);
+    git(dir, &["rev-parse", "HEAD"]).trim().to_owned()
 }
