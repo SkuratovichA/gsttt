@@ -31,3 +31,4 @@
 - [x] 5.7 The config and its modules are read through one function that resolves links, refuses what is not a regular file inside its folder, never waits on a pipe and stops at 1 MiB
 - [x] 5.8 An external's process runs in a group of its own and the whole group is killed when it is stopped or has left
 - [x] 5.9 `g.external` takes `provides` and `options`: the provides are known without the process, the options reach `open`, and `ready` no longer carries provides
+- [x] 5.10 A `resolution` repeats the `from` and the `import` it answers, and one that answers another import is out of turn

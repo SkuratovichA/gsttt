@@ -85,7 +85,7 @@ expression: schema
               "type": "string"
             },
             "import": {
-              "description": "An `Import` of the facts of `from`, in the serde form of the core type: `spec`, `kind`, `line`, `flags` and `names`."
+              "description": "An `Import` of the facts of `from`, in the serde form of the core type: `spec`, `kind`, `line`, `flags` and `names`. The answer repeats it."
             }
           },
           "required": [
@@ -158,12 +158,19 @@ expression: schema
           ]
         },
         {
-          "description": "The answer to `resolve`.",
+          "description": "The answer to `resolve`. It repeats the file and the import it answers, so that a line that arrives late or twice is never taken for the answer to another import.",
           "type": "object",
           "properties": {
             "type": {
               "type": "string",
               "const": "resolution"
+            },
+            "from": {
+              "description": "The path of the file that holds the import, as it was asked.",
+              "type": "string"
+            },
+            "import": {
+              "description": "The import, as it was asked: the `import` of the request, copied back unchanged."
             },
             "resolution": {
               "description": "Where the import points.",
@@ -172,6 +179,8 @@ expression: schema
           },
           "required": [
             "type",
+            "from",
+            "import",
             "resolution"
           ]
         }

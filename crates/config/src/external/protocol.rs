@@ -8,7 +8,7 @@
 //! → {"type":"parse","path":"src/A.kt","text":"…"}
 //! ← {"type":"facts","path":"src/A.kt","facts":{…}}
 //! → {"type":"resolve","from":"src/A.kt","import":{…}}
-//! ← {"type":"resolution","resolution":{"to":"file","path":"src/B.kt"}}
+//! ← {"type":"resolution","from":"src/A.kt","import":{…},"resolution":{"to":"file","path":"src/B.kt"}}
 //! → {"type":"done"}
 //! ```
 //!
@@ -46,7 +46,7 @@ pub enum Request<'a> {
     Resolve {
         /// The path of the file that holds the import.
         from: &'a str,
-        /// An `Import` of the facts of `from`, in the serde form of the core type: `spec`, `kind`, `line`, `flags` and `names`.
+        /// An `Import` of the facts of `from`, in the serde form of the core type: `spec`, `kind`, `line`, `flags` and `names`. The answer repeats it.
         // The core fact types do not derive `JsonSchema` yet; once they do, this and the other substitutes below name the type.
         #[schemars(with = "serde_json::Value")]
         import: &'a Import,
@@ -74,8 +74,13 @@ pub enum Response {
         #[schemars(with = "serde_json::Value")]
         facts: FileFacts,
     },
-    /// The answer to `resolve`.
+    /// The answer to `resolve`. It repeats the file and the import it answers, so that a line that arrives late or twice is never taken for the answer to another import.
     Resolution {
+        /// The path of the file that holds the import, as it was asked.
+        from: String,
+        /// The import, as it was asked: the `import` of the request, copied back unchanged.
+        #[schemars(with = "serde_json::Value")]
+        import: Import,
         /// Where the import points.
         resolution: WireResolution,
     },
@@ -87,9 +92,17 @@ impl Response {
         match self {
             Self::Ready { .. } => "ready".to_owned(),
             Self::Facts { path, .. } => format!("facts for `{path}`"),
-            Self::Resolution { .. } => "resolution".to_owned(),
+            Self::Resolution { from, import, .. } => resolution_of(from, import),
         }
     }
+}
+
+/// How a failure names the resolution of `import` in `from`. The line tells two imports of the same specifier apart.
+pub(super) fn resolution_of(from: &str, import: &Import) -> String {
+    format!(
+        "resolution of `{}` at line {} in `{from}`",
+        import.spec, import.line
+    )
 }
 
 /// Where an import points, with files named by path where the core type names them by id.
@@ -213,6 +226,26 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(ready, Response::Ready { name, .. } if name == "kotlin"));
+        let import = Import::new("./B", ImportKind::Static, 3);
+        let resolution: Response = serde_json::from_value(json!({
+            "type": "resolution",
+            "from": "src/A.kt",
+            "import": serde_json::to_value(&import).unwrap(),
+            "resolution": { "to": "builtin" },
+        }))
+        .unwrap();
+        assert!(matches!(
+            resolution,
+            Response::Resolution { from, import: echoed, resolution }
+                if from == "src/A.kt" && echoed == import && resolution == WireResolution::Builtin
+        ));
+        assert!(
+            serde_json::from_value::<Response>(
+                json!({ "type": "resolution", "resolution": { "to": "builtin" } })
+            )
+            .is_err(),
+            "a resolution that does not say what it answers is not a message"
+        );
         let facts: Response = serde_json::from_value(json!({
             "type": "facts",
             "path": "src/A.kt",

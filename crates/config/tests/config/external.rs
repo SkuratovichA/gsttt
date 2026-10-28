@@ -150,8 +150,10 @@ fn facts_of(path: &str, facts: &FileFacts) -> Value {
     json!({ "type": "facts", "path": path, "facts": facts })
 }
 
-fn resolution(resolution: &Value) -> Value {
-    json!({ "type": "resolution", "resolution": resolution })
+/// The `resolution` of the import of `spec` on `line` of `from`, as a process sends it: with the file and the import it answers.
+fn resolution(from: &str, spec: &str, line: u32, to: &Value) -> Value {
+    let import = Import::new(spec, ImportKind::Static, line);
+    json!({ "type": "resolution", "from": from, "import": import, "resolution": to })
 }
 
 fn imports(specs: &[&str]) -> FileFacts {
@@ -194,26 +196,47 @@ fn well_behaved() -> Vec<Arm> {
         parses("src/C.kt", &FileFacts::default()),
         when(
             &resolve_of("src/A.kt", "./B"),
-            say(&resolution(&json!({ "to": "file", "path": "src/B.kt" }))),
+            say(&resolution(
+                "src/A.kt",
+                "./B",
+                1,
+                &json!({ "to": "file", "path": "src/B.kt" }),
+            )),
         ),
         when(
             &resolve_of("src/B.kt", "okio"),
-            say(&resolution(&json!({ "to": "external", "package": "okio" }))),
+            say(&resolution(
+                "src/B.kt",
+                "okio",
+                1,
+                &json!({ "to": "external", "package": "okio" }),
+            )),
         ),
         when(
             &resolve_of("src/B.kt", "kotlin.io"),
-            say(&resolution(&json!({ "to": "builtin" }))),
+            say(&resolution(
+                "src/B.kt",
+                "kotlin.io",
+                2,
+                &json!({ "to": "builtin" }),
+            )),
         ),
         // Out of order and twice, as a process may send it; gsttt sorts and dedups.
         when(
             &resolve_of("src/B.kt", "./gen"),
             say(&resolution(
+                "src/B.kt",
+                "./gen",
+                3,
                 &json!({ "to": "files", "paths": ["src/B.kt", "src/A.kt", "src/B.kt", "src/gone.kt"] }),
             )),
         ),
         when(
             &resolve_of("src/B.kt", "./ghost"),
             say(&resolution(
+                "src/B.kt",
+                "./ghost",
+                4,
                 &json!({ "to": "unresolved", "reason": "not-found" }),
             )),
         ),
@@ -683,13 +706,21 @@ fn a_process_that_exits_fails_the_files_it_did_not_answer() {
 #[test]
 fn a_process_that_answers_out_of_turn_fails_the_files_it_did_not_answer() {
     let wrong_path = say(&facts_of("src/Z.kt", &FileFacts::default()));
-    let wrong_type = say(&resolution(&json!({ "to": "builtin" })));
+    let wrong_type = say(&resolution(
+        "src/B.kt",
+        "./x",
+        7,
+        &json!({ "to": "builtin" }),
+    ));
     for (answer, expected) in [
         (
             wrong_path,
             "facts for `src/Z.kt` where facts for `src/B.kt` was due",
         ),
-        (wrong_type, "resolution where facts for `src/B.kt` was due"),
+        (
+            wrong_type,
+            "resolution of `./x` at line 7 in `src/B.kt` where facts for `src/B.kt` was due",
+        ),
     ] {
         let (run, b, c) = fails_on_b(&answer);
         assert!(
@@ -699,6 +730,57 @@ fn a_process_that_answers_out_of_turn_fails_the_files_it_did_not_answer() {
         assert_eq!(b, c);
         assert_eq!(run.facts("notes/a.txt").status, ParseStatus::Ok);
         assert!(!run.requests().iter().any(|line| line.contains("src/C.kt")));
+    }
+}
+
+#[gsttt_scenario::scenario("config", "A resolution of another import is out of turn")]
+#[test]
+fn a_resolution_of_another_import_is_out_of_turn() {
+    // Both imports are in `src/A.kt`, so the answers are lines of the right file and the right shape, for the wrong import.
+    let (due, other) = ("./B", "./C");
+    let (due_at_line, other_at_line) = (1, 2);
+    let stale = resolution(
+        "src/A.kt",
+        other,
+        other_at_line,
+        &json!({ "to": "builtin" }),
+    );
+    let elsewhere = resolution("src/B.kt", due, due_at_line, &json!({ "to": "builtin" }));
+    for answer in [stale, elsewhere] {
+        let tree = repository(&[
+            when(&request("open"), say(&ready())),
+            parses("src/A.kt", &imports(&[due, other])),
+            parses("src/B.kt", &FileFacts::default()),
+            parses("src/C.kt", &FileFacts::default()),
+            when(&resolve_of("src/A.kt", due), say(&answer)),
+            when(&resolve_of("src/A.kt", other), say(&answer)),
+        ]);
+        let run = Run::index(tree, kotlin(External::TIMEOUT));
+        let targets = run.targets("src/A.kt");
+        let detail = targets
+            .first()
+            .and_then(|target| target["unresolved"]["detail"].as_str())
+            .unwrap_or_default();
+        assert!(
+            targets
+                .first()
+                .is_some_and(|target| target["unresolved"]["reason"] == "unsupported"),
+            "{targets:?}"
+        );
+        assert!(
+            detail.contains("`kotlin`")
+                && detail.contains("out of turn")
+                && detail.contains("where resolution of `./B` at line 1 in `src/A.kt` was due"),
+            "{detail:?}"
+        );
+        // The process is stopped: the second import gets the same failure and the process never hears of it.
+        assert_eq!(targets.get(1), targets.first());
+        assert!(
+            !run.requests()
+                .iter()
+                .any(|line| line.contains(r#""spec":"./C""#)),
+            "nothing is sent to a process that stopped"
+        );
     }
 }
 
@@ -755,6 +837,9 @@ fn an_unresolved_reason_of_the_process_reaches_the_output_with_its_detail() {
         when(
             &resolve_of("src/A.kt", "./B"),
             say(&resolution(
+                "src/A.kt",
+                "./B",
+                1,
                 &json!({ "to": "unresolved", "reason": "unsupported", "detail": "kotlin script" }),
             )),
         ),

@@ -182,7 +182,7 @@ An external's process SHALL get only the variables `PATH`, `HOME`, `USER`, `LOGN
 - **THEN** the environment holds `PATH` and the listed variable and not the other one
 
 ### Requirement: External protocol
-An external's process SHALL receive `open` with the protocol version, the root and the `options` of its declaration, and answer `ready` with its name and version; then `parse` for each file with its path and text, answered by `facts`, and `resolve` for each import, answered by `resolution`; and `done` at the end of the run. Messages SHALL carry the serde forms of the core types and name files by path.
+An external's process SHALL receive `open` with the protocol version, the root and the `options` of its declaration, and answer `ready` with its name and version; then `parse` for each file with its path and text, answered by `facts`, and `resolve` for each import, answered by a `resolution` that repeats the `from` and the `import` it answers; and `done` at the end of the run. Messages SHALL carry the serde forms of the core types and name files by path.
 
 #### Scenario: A well-behaved process indexes its files
 - **WHEN** an external claims `**/*.kt` and its process answers every request
@@ -201,6 +201,10 @@ A process that exits, answers out of turn, sends a line that does not parse or t
 #### Scenario: A hung process fails its files and nothing else
 - **WHEN** an external's process does not answer the `parse` of `src/B.kt` within the timeout
 - **THEN** `src/B.kt` and every later file of that external fail as panics naming it, and the other connectors' files are indexed
+
+#### Scenario: A resolution of another import is out of turn
+- **WHEN** an external's process answers the `resolve` of one import with a `resolution` that repeats another file or another import
+- **THEN** the import is unresolved with the reason `unsupported` and a detail that names the connector and the import that was due, and no further request reaches the process
 
 ### Requirement: External process group
 An external's process SHALL run in a process group of its own, and whenever gsttt ends it (after a failure, a timeout, or `done`) it SHALL kill the whole group, so that a wrapper such as `sh -c`, `npx` or `gradle` leaves no child that holds its pipes or outlives gsttt.

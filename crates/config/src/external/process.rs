@@ -14,7 +14,7 @@ use gsttt_core::fact::{FileFacts, Import};
 use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
 use serde_json::{Map, Value};
 
-use super::protocol::{PROTOCOL, Request, Response, WireResolution};
+use super::protocol::{PROTOCOL, Request, Response, WireResolution, resolution_of};
 use crate::text::{LOG_LINE_LIMIT, log_line};
 
 /// The longest line the process may send. A message holds the facts of one file, so this is far above any real one, and it stops a process that never ends its line from filling the memory.
@@ -175,15 +175,19 @@ impl Process {
         }
     }
 
-    /// `resolve`: the answer is a `resolution`.
+    /// `resolve`: the answer is the `resolution` of the same import of the same file.
     pub(super) fn resolve(
         &mut self,
         from: &str,
         import: &Import,
     ) -> Result<WireResolution, Failure> {
         match self.round_trip(&Request::Resolve { from, import })? {
-            Response::Resolution { resolution } => Ok(resolution),
-            other => Err(out_of_turn(&other, "resolution")),
+            Response::Resolution {
+                from: answered,
+                import: repeated,
+                resolution,
+            } if answered == from && repeated == *import => Ok(resolution),
+            other => Err(out_of_turn(&other, &resolution_of(from, import))),
         }
     }
 
