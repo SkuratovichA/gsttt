@@ -568,8 +568,7 @@ fn ready_changes_are_listed() {
 #[test]
 fn a_change_comes_after_the_change_that_adds_what_it_modifies() {
     let tree = Tree::new();
-    // `a-modifies` sorts first, but `openspec archive` stops at a requirement it cannot find, so
-    // `b-adds` has to be archived before it.
+    // `a-modifies` sorts first, but `openspec archive` stops at a requirement it cannot find, so `b-adds` has to be archived before it.
     let adds = delta("ADDED", &[requirement("R", &["R works"])]);
     tree.change("b-adds", TICKED, &[("c", &adds)])
         .change(
@@ -825,8 +824,7 @@ fn a_change_that_a_failure_names_is_not_ready() {
     );
 }
 
-/// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine`
-/// with the `## Purpose` taken out of its delta.
+/// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine` with the `## Purpose` taken out of its delta.
 const PLACEHOLDER: &str =
     "TBD - created by archiving change add-indexing-engine. Update Purpose after archive.";
 
@@ -889,8 +887,7 @@ fn a_change_that_creates_a_capability_needs_a_purpose() {
 #[test]
 fn a_delta_that_creates_no_capability_needs_no_purpose() {
     let tree = Tree::new();
-    // `queries` has a main spec, so adding to it creates nothing. `fresh` is created by
-    // `add-fresh`, which gives the purpose; `tune-fresh` only modifies what that one adds.
+    // `queries` has a main spec, so adding to it creates nothing. `fresh` is created by `add-fresh`, which gives the purpose; `tune-fresh` only modifies what that one adds.
     tree.spec(
         "queries",
         &main_spec(&[requirement("Matching", &["HTTP matching is symmetric"])]),
