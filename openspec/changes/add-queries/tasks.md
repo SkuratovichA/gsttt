@@ -2,7 +2,7 @@
 
 ## 1. Impact
 
-- [ ] 1.1 HTTP key matching with `http_prefixes`, with a property test for symmetry
+- [x] 1.1 HTTP key matching with `http_prefixes`, with a property test for symmetry
 - [ ] 1.2 The fixpoint over reverse import edges and contract crossing, with distances, first reasons and a depth limit
 - [ ] 1.3 The impact answer: ordering, the test group, deleted and unknown inputs, possible misses
 
