@@ -5,7 +5,6 @@ use std::io;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use gsttt_core::engine::keys::canonical_json;
-use gsttt_core::hex;
 use gsttt_core::setup::ExternalSetup;
 use sha2::{Digest, Sha256};
 
@@ -69,7 +68,7 @@ pub fn key(root: &Utf8Path, external: &ExternalSetup) -> Result<String, KeyError
         feed(&mut hasher, path.as_str().as_bytes());
         feed(&mut hasher, &bytes);
     }
-    Ok(hex::encode(hasher.finalize()))
+    Ok(faster_hex::hex_string(&hasher.finalize()))
 }
 
 /// The regular file that `argument` names when read against `root`, as its path from `root` and its resolved path.
@@ -190,7 +189,7 @@ mod tests {
 
         assert_eq!(
             key(&root, &setup).unwrap(),
-            hex::encode(expected.finalize())
+            faster_hex::hex_string(&expected.finalize())
         );
     }
 

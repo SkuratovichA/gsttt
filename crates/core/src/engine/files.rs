@@ -27,7 +27,6 @@ use rayon::iter::Either;
 use rayon::prelude::*;
 
 use super::workspace::Workspace;
-use crate::hex;
 use crate::path::RepoPath;
 use crate::repo::RepoView;
 
@@ -69,7 +68,7 @@ impl ContentId {
 
     /// The id as 40 lower-case hex digits.
     pub fn to_hex(self) -> String {
-        hex::encode(self.0)
+        faster_hex::hex_string(&self.0)
     }
 }
 
