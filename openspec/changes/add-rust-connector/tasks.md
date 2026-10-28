@@ -46,3 +46,4 @@
 
 - [x] 6.1 A `use` of a macro declared in the same module reads no import, so gsttt reads its own repository, where `crates/core/src/query/render.rs` re-exports `display_as_text` that way, with no unexplained unresolved import
 - [x] 6.2 A router is served once under each mount and under no other path: `report` keys each route of a mounted router again with `LinkedFact::rekeyed`, at the root mount too, so the engine drops the bare site and the graph holds the router under its mounts only; scenarios for `nest`, `merge`, both and a cut
+- [x] 6.3 `TRACE` is an HTTP method: core lists it, so actix `#[route(.., method = "TRACE")]` serves `http TRACE <path>` and the connector no longer rewrites the key of an axum `trace(..)` route after the rules ran

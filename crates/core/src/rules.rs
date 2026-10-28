@@ -460,8 +460,8 @@ impl Outcome {
 }
 
 /// The verbs an HTTP method expression may yield; anything else means the site is not a route or a request.
-const HTTP_METHODS: [&str; 10] = [
-    "*", "ALL", "ANY", "DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT",
+const HTTP_METHODS: [&str; 11] = [
+    "*", "ALL", "ANY", "DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE",
 ];
 
 /// The parts every rule kind evaluates the same way.
@@ -748,6 +748,23 @@ mod tests {
 
     fn key(outcome: Outcome) -> String {
         outcome.fact().unwrap().key.to_string()
+    }
+
+    #[test]
+    fn every_standard_http_verb_is_a_method() {
+        let serves = rule(serde_json::json!({
+            "callee": "app.*", "kind": "http", "role": "serves", "key": "$arg1", "method": "$callee",
+        }));
+        for verb in [
+            "delete", "get", "head", "options", "patch", "post", "put", "trace",
+        ] {
+            let callee = format!("app.{verb}");
+            let site = call(&callee, &[Some("/x")]);
+            assert_eq!(
+                key(serves.apply("express", &site, None, 1, &callee)),
+                format!("http {} /x", verb.to_ascii_uppercase())
+            );
+        }
     }
 
     #[test]

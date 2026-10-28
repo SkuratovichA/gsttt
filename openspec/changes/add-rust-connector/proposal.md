@@ -40,7 +40,6 @@ Reported as blind spots of every project:
 Not reported:
 
 - Dev-dependencies are visible to every target but the build script, so non-test code that names one resolves to it instead of being an unknown package.
-- actix `#[route(method = "TRACE")]`, until core lists `TRACE` among its HTTP methods (`crates/core/src/rules.rs`).
 - axum 0.7 wildcard paths such as `/*rest`, which core does not normalise to `{}`.
 - Facade crates such as `shuttle-axum`: a pack applies only to a dependency the manifest declares itself.
 - The functions a router reaches are matched by name within a file.

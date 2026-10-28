@@ -264,6 +264,10 @@ With the `actix` pack, the attributes `#[get]`, `#[post]`, `#[put]`, `#[patch]`,
 - **WHEN** `src/bookings.rs` has `#[get("/{id}")] async fn show()` and `src/main.rs` has `web::scope("/bookings").service(bookings::show)`
 - **THEN** `src/bookings.rs` serves `http GET /bookings/{}` at the line of the attribute
 
+#### Scenario: An actix route attribute serves the TRACE method
+- **WHEN** `src/main.rs` has `#[route("/x", method = "TRACE")] async fn x()`
+- **THEN** `src/main.rs` serves `http TRACE /x` at the line of the attribute
+
 ### Requirement: HTTP requests
 With the `reqwest` pack, `reqwest::get(<url>)` SHALL call `http GET <url>`, and `get`, `post`, `put`, `patch`, `delete` and `head` with a URL, and `request(Method::<VERB>, <url>)`, SHALL call the URL with the verb on a receiver bound in the same file to `Client::new()`, `Client::builder()` or `ClientBuilder::new()`, with or without a chain, or a `self` field or parameter whose type in the same file is `Client`.
 

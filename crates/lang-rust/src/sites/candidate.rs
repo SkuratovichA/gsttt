@@ -13,7 +13,6 @@
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 
-use gsttt_core::contract::ContractKey;
 use gsttt_core::fact::Line;
 use gsttt_core::rules::{CallRule, Outcome, Site, ValueExpr, ValueSource};
 use gsttt_core::text::LineIndex;
@@ -26,10 +25,6 @@ use crate::syntax::{line_at, segments, text};
 
 /// The name of a receiver that has none.
 const UNNAMED: &str = "_";
-
-/// A verb that axum and actix serve and that the rules' list of HTTP methods lacks. A rule is applied for any verb,
-/// and the key is rewritten to this one afterwards.
-const UNLISTED: &str = "TRACE";
 
 /// A site in the syntax tree, before its arguments are read.
 pub(super) struct Candidate {
@@ -297,15 +292,7 @@ impl<'p> View<'p> {
     fn pinned(site: &'p Prepared, verb: &'p Verb) -> Self {
         Self {
             site,
-            // The rules do not list `TRACE`, so they are shown a verb they take and the key is put right afterwards.
-            verb: Some((
-                verb.router,
-                if verb.name == UNLISTED {
-                    "*"
-                } else {
-                    verb.name.as_str()
-                },
-            )),
+            verb: Some((verb.router, verb.name.as_str())),
         }
     }
 }
@@ -399,7 +386,7 @@ pub(super) fn apply_per_verb(
     }
     verbs
         .iter()
-        .map(|verb| restore(apply(&View::pinned(site, verb)), &verb.name))
+        .map(|verb| apply(&View::pinned(site, verb)))
         .collect()
 }
 
@@ -446,19 +433,5 @@ fn verb(name: &str) -> Option<String> {
         }
         "any" => Some("*".to_owned()),
         _ => None,
-    }
-}
-
-/// Puts back the verb a rule could not be applied for.
-fn restore(outcome: Outcome, verb: &str) -> Outcome {
-    match outcome {
-        Outcome::Fact(mut fact) if verb == UNLISTED => {
-            let path = fact.key.http_parts().map(|(_, path)| path.to_owned());
-            if let Some(path) = path {
-                fact.key = ContractKey::http(UNLISTED, &path);
-            }
-            Outcome::Fact(fact)
-        }
-        other => other,
     }
 }

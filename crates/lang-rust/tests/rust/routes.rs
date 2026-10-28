@@ -28,6 +28,13 @@ fn actix_attributes_resources_and_routes_serve_their_paths() {
     assert_json_snapshot!(out.sites("src/main.rs"));
 }
 
+#[scenario("rust", "An actix route attribute serves the TRACE method")]
+#[test]
+fn an_actix_route_attribute_serves_the_trace_method() {
+    let out = index("actixtrace");
+    assert_eq!(out.contracts("src/main.rs"), ["3 serves http TRACE /x"]);
+}
+
 #[scenario("rust", "A nested router in another file serves under the prefix")]
 #[test]
 fn a_nested_router_in_another_file_serves_under_the_prefix() {
