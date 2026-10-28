@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
-/// The ending of the temporary file [`write`] makes, which [`is_temporary`] looks for.
+/// The ending of the temporary file [`write()`] makes, which [`is_temporary`] looks for.
 const TEMP_SUFFIX: &str = ".tmp";
 
 /// Makes `bytes` the file at `path`, through a temporary file in the same folder named `temp_prefix`, random letters and `.tmp`, and a rename. The folder is created when it is missing, and the temporary file is synced before the rename: the rename makes the new file the one at `path` at once, and without the sync a crash after it can leave a file whose blocks never reached the disk. When a step fails, `path` keeps what it held and the temporary file is removed.
@@ -22,12 +22,12 @@ pub fn write(path: &Path, temp_prefix: &str, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-/// Whether `name` is the name of a temporary file that [`write`] makes with `temp_prefix`: the prefix, random letters and the ending `.tmp`. A caller that wants to clear the leftovers of a process that died between creating the file and renaming it asks this of the names in the folder, so that the test of a name sits beside the code that makes it and the two cannot drift apart.
+/// Whether `name` is the name of a temporary file that [`write()`] makes with `temp_prefix`: the prefix, random letters and the ending `.tmp`. A caller that wants to clear the leftovers of a process that died between creating the file and renaming it asks this of the names in the folder, so that the test of a name sits beside the code that makes it and the two cannot drift apart.
 pub fn is_temporary(name: &str, temp_prefix: &str) -> bool {
     name.starts_with(temp_prefix) && name.ends_with(TEMP_SUFFIX)
 }
 
-/// The settings of the temporary file of [`write`], kept in one place so that the tests can make a file named the way [`write`] names its own.
+/// The settings of the temporary file of [`write()`], kept in one place so that the tests can make a file named the way [`write()`] names its own.
 fn builder(temp_prefix: &str) -> tempfile::Builder<'_, 'static> {
     let mut builder = tempfile::Builder::new();
     builder.prefix(temp_prefix).suffix(TEMP_SUFFIX);
