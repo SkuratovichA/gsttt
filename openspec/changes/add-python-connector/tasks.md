@@ -75,3 +75,8 @@
 - [x] 6.22 A manifest or an included requirements file that is not a regular file, such as a symbolic link a file set made from git lists, is skipped instead of followed out of the repository
 - [x] 6.23 A call is read as `importlib.import_module` only when the file's imports make it that one, so a function named `import_module` that the file defines is no import, and a dynamic import of the empty name imports nothing and leaves no site
 - [x] 6.24 The sibling roots of a project are collected in one pass, with a set for its own roots and one for those already taken, in place of a scan of two lists for each root of each declared project.
+
+## 7. Integration fixes
+
+- [x] 7.1 `link` returns its routes as new facts that name no parsed fact (`LinkedFact::found`), because the engine now drops only the own facts a linked fact names and a router's routes are no facts of their file, so what the link returns is what it returned before
+- [x] 7.2 The source roots and the manifests of a project are joined to its directory with `RepoPath::join_dir` of the core, which names the repository root as `""` where `RepoPath::join` fails, so the connector no longer has a copy of it

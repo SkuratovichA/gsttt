@@ -1,18 +1,7 @@
 //! Which files a Python project reads, and how it tags them.
 
 use gsttt_core::fact::FileTags;
-use gsttt_core::path::{PathError, RepoPath};
-
-/// `relative` taken from the repository directory `dir` (`""` is the root), as a repository directory. `None`
-/// when it leaves the repository.
-pub(crate) fn join_dir(dir: &str, relative: &str) -> Option<String> {
-    match RepoPath::join(dir, relative) {
-        Ok(path) => Some(path.as_str().to_owned()),
-        // The root itself: `.` or a `..` that cancels the whole directory.
-        Err(PathError::Empty) => Some(String::new()),
-        Err(PathError::Absolute(_) | PathError::EscapesRoot(_)) => None,
-    }
-}
+use gsttt_core::path::RepoPath;
 
 /// The files whose directory becomes a project.
 pub(crate) const PROJECT_MANIFESTS: [&str; 3] = ["pyproject.toml", "setup.py", "setup.cfg"];

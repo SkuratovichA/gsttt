@@ -13,7 +13,7 @@ use xxhash_rust::xxh3::Xxh3;
 
 use crate::PythonOptions;
 use crate::extra::PyExtra;
-use crate::files::{PROJECT_MANIFESTS, is_manifest, is_python_source, is_requirements, join_dir};
+use crate::files::{PROJECT_MANIFESTS, is_manifest, is_python_source, is_requirements};
 use crate::manifest::{
     Manifest, read_pyproject, read_requirements, read_setup_cfg, read_setup_py,
     requirement_includes,
@@ -186,7 +186,7 @@ fn open_project(
 
     let mut source_roots = Vec::new();
     for declared in &options.source_roots {
-        let dir = join_dir(root, declared).ok_or_else(|| ConnectorError::Project {
+        let dir = RepoPath::join_dir(root, declared).ok_or_else(|| ConnectorError::Project {
             connector: "python".to_owned(),
             root: root.to_owned(),
             message: format!(
@@ -196,7 +196,7 @@ fn open_project(
         push_unique(&mut source_roots, dir);
     }
     for declared in &manifest.roots {
-        if let Some(dir) = join_dir(root, declared) {
+        if let Some(dir) = RepoPath::join_dir(root, declared) {
             push_unique(&mut source_roots, dir);
         } else {
             tracing::warn!(
@@ -206,7 +206,7 @@ fn open_project(
             );
         }
     }
-    if let Some(src) = join_dir(root, "src").filter(|src| repo.is_dir(src)) {
+    if let Some(src) = RepoPath::join_dir(root, "src").filter(|src| repo.is_dir(src)) {
         push_unique(&mut source_roots, src);
     }
     push_unique(&mut source_roots, root.to_owned());
@@ -268,7 +268,8 @@ fn push_unique(roots: &mut Vec<String>, dir: String) {
 fn read_manifests(repo: &RepoView, root: &str, requirements: &[&RepoPath]) -> Manifest {
     let mut manifest = Manifest::default();
     for name in PROJECT_MANIFESTS {
-        let Some(path) = join_dir(root, name).filter(|path| repo.lookup(path).is_some()) else {
+        let Some(path) = RepoPath::join_dir(root, name).filter(|path| repo.lookup(path).is_some())
+        else {
             continue;
         };
         let Some(text) = read_text(repo, &path) else {
