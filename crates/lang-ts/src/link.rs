@@ -18,11 +18,46 @@ const MAX_DEPTH: usize = 16;
 type Node = (FileId, String);
 
 /// The facts that need other files: routes under the prefixes their routers are mounted at, and tRPC procedures under
-/// the routers that compose them.
+/// the routers that compose them, with the parsed facts that share a place with either.
 pub(crate) fn link(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
     let mut linked = express(input);
     linked.extend(trpc(input));
+    let beside = parsed_beside(input, &linked);
+    linked.extend(beside);
     linked
+}
+
+/// Where a fact sits in a file, without its key: the file, the line, the role and the kind of contract. The engine
+/// decides what a link replaces by the same tuple, in a `place_of` of its own that is private to `engine::build`;
+/// `a_fact_of_another_rule_on_the_line_of_a_route_is_kept` reads the graph the engine builds and pins one case of it.
+type Place<'a> = (FileId, Line, Role, &'a ContractKind);
+
+fn place_of(file: FileId, fact: &ContractFact) -> Place<'_> {
+    (file, fact.line, fact.role, fact.key.kind())
+}
+
+/// The parsed facts that sit where a linked fact does. The engine replaces every parsed fact of a place the link returns
+/// a fact for and cannot tell which of them the linked fact stands for, so a fact of another rule on the line of a
+/// route is returned as it is, or it would drop out of the index.
+fn parsed_beside(input: &LinkInput<'_, TsExtra>, linked: &[LinkedFact]) -> Vec<LinkedFact> {
+    let places: BTreeSet<Place<'_>> = linked
+        .iter()
+        .map(|linked| place_of(linked.file, &linked.fact))
+        .collect();
+    input
+        .files()
+        .iter()
+        .flat_map(|file| {
+            file.facts
+                .contracts
+                .iter()
+                .filter(|fact| places.contains(&place_of(file.id, fact)))
+                .map(|fact| LinkedFact {
+                    file: file.id,
+                    fact: fact.clone(),
+                })
+        })
+        .collect()
 }
 
 /// The file a specifier written in `file` leads to.

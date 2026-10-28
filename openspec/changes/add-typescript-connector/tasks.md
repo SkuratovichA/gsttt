@@ -44,3 +44,4 @@
 ## 6. Integration fixes
 
 - [x] 6.1 Scenarios and tests for what the engine's rule on declarations a mount keys again asks of the Express link: a router mounted at the root, at the root and under a prefix, and routes that share a line; the link already did all three
+- [x] 6.2 `link` returns the parsed facts that share a line, role and kind with a fact it returns, so that a fact of another rule on the line of a route is not replaced in the graph
