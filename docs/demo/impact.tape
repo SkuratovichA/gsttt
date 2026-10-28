@@ -6,7 +6,7 @@ Require gsttt
 Set Shell "bash"
 Set FontSize 17
 Set Width 1280
-Set Height 500
+Set Height 580
 Set Padding 24
 Set TypingSpeed 45ms
 Set Theme "Catppuccin Mocha"
