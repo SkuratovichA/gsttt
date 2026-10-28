@@ -6,6 +6,7 @@ mod hook;
 mod logs;
 mod panics;
 mod paths;
+mod repository;
 mod root;
 mod support;
 mod usage;

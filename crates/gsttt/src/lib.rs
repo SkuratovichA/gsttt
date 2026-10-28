@@ -10,6 +10,7 @@ pub mod hook;
 pub mod logging;
 pub mod panics;
 pub mod registry;
+pub mod repository;
 pub mod root;
 pub mod streams;
 

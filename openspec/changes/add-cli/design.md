@@ -65,20 +65,33 @@ impl RepoPath {
 
 ### Repository
 
-One type holds what every command after argument parsing needs. The MCP server change implements its `IndexSource` trait for this type, so the type has the shape that trait needs and keeps no state between calls other than the evaluated setup:
+One type holds what every command after argument parsing needs. The MCP server change implements its `IndexSource` trait over this type, so the type has the shape that trait needs and keeps no state between calls other than the evaluated setup. A caller that must see an edit to the config opens it again, as the server does for every call.
 
 ```rust
-pub struct Repository { root: Utf8PathBuf, workspace: Workspace, registry: Registry, setup: Setup }
+pub struct Repository { workspace: Workspace, registry: Registry, setup: Setup }
+
+/// An index and how the tree stands against it.
+pub struct Loaded { pub index: Arc<Index>, pub freshness: Freshness }
+
+/// A refresh: the index it left, and what the run did.
+pub struct Refreshed { pub loaded: Loaded, pub unchanged: bool, pub parsed: u32, pub reused: u32, pub elapsed: Duration }
+
+/// A path argument. `on_disk` is false when nothing is at the path, so that the caller asks about it as deleted.
+pub struct Target { pub path: RepoPath, pub on_disk: bool }
 
 impl Repository {
-    /// Locates the root from `start`, refuses `$HOME` and `/`, evaluates the config and builds the registry.
-    pub fn open(start: &Utf8Path) -> Result<Self, OpenError>;
-    pub fn refreshed(&self) -> Result<Refresh, IndexError>;
-    pub fn stored(&self) -> Result<Option<(Index, Freshness)>, IndexError>;
-    pub fn argument(&self, base: &Utf8Path, argument: &str) -> Result<RepoPath, OutsideRoot>;
-    pub fn changed(&self, base: Option<&str>) -> Result<Vec<Change>, IndexError>;
+    /// Locates the root from `start`, refuses `$HOME` and `/`, builds the registry and evaluates the config.
+    pub fn open(start: &Utf8Path) -> Result<Self, RepositoryError>;
+    pub fn root(&self) -> &Utf8Path;
+    pub fn refreshed(&self) -> Result<Refreshed, RepositoryError>;
+    pub fn stored(&self) -> Result<Option<Loaded>, RepositoryError>;
+    pub fn argument(&self, base: &Utf8Path, argument: &str) -> Result<Target, RepositoryError>;
+    pub fn changed(&self, base: Option<&str>) -> Result<Vec<Change>, RepositoryError>;
 }
 ```
+
+- `RepositoryError` has a sentence for `Display` that names what failed and what to do, because a server passes it to a model unchanged. The CLI words the failures it has more to say about (`-C`, `--changed` and `--base`) itself, and shows the rest as they are.
+- `changed` fails with a usage error outside git, which has no history to compare with, and does not call the engine for it.
 
 ### Checking options
 
