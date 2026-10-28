@@ -188,6 +188,35 @@ fn each_pyproject_is_a_project() {
     );
 }
 
+#[gsttt_scenario::scenario("python", "A malformed pyproject.toml is a failed file")]
+#[test]
+fn a_malformed_pyproject_is_a_failed_file() {
+    let tree = index("bad_manifest");
+    let manifest = &tree.file_json("pyproject.toml")["status"];
+    assert_eq!(manifest["status"], "failed", "{manifest}");
+    assert_eq!(manifest["failure"], "syntax", "{manifest}");
+    assert_eq!(manifest["line"], 2, "{manifest}");
+    assert!(
+        manifest["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty()),
+        "{manifest}"
+    );
+    // An array left open is an error at the end of the text, which is on the third and last line of the file.
+    let at_the_end = &tree.file_json("lib/pyproject.toml")["status"];
+    assert_eq!(at_the_end["failure"], "syntax", "{at_the_end}");
+    assert_eq!(at_the_end["line"], 3, "{at_the_end}");
+    // The project still opens, and the Python beside the manifest is read as it would be without the pack.
+    assert_eq!(tree.file_json("app.py")["status"]["status"], "ok");
+    assert_eq!(tree.file_json("app.py")["project"], "python .");
+    assert!(
+        tree.file("pyproject.toml")
+            .facts
+            .tags
+            .contains(FileTags::MANIFEST)
+    );
+}
+
 #[gsttt_scenario::scenario("python", "A src layout is a source root")]
 #[test]
 fn a_src_layout_is_a_source_root() {

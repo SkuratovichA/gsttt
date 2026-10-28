@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use gsttt_core::connector::{Parsed, SourceFile};
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
-    FileFacts, Import, ImportFlags, ImportKind, Line, ParseStatus, UnresolvedReason, UnresolvedSite,
+    FileFacts, Import, ImportFlags, ImportKind, Line, ParseFailure, ParseStatus, UnresolvedReason,
+    UnresolvedSite,
 };
 use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Site, callee_matches};
 use gsttt_core::text::LineIndex;
@@ -23,18 +24,21 @@ use ruff_text_size::{Ranged, TextSize};
 use crate::extra::{Mount, PyExtra, Route, RouterPrefix, Target};
 use crate::files::{is_python_source, tags_of};
 use crate::imports::{Imports, Name, specifier};
+use crate::manifest::{ManifestError, read_pyproject};
 use crate::project::PythonProject;
 use crate::site::{
     AssignSite, CallSite, EmbedSite, dict_prop, dotted, is_string_shaped, join_prefixes,
     literal_of, text_of,
 };
 
-/// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags only.
+/// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags, and with the status
+/// `manifest_status` gives it.
 pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<PyExtra> {
     let tags = tags_of(file.path);
     if !is_python_source(file.path) {
         return Parsed::new(FileFacts {
             tags,
+            status: manifest_status(file),
             ..FileFacts::default()
         });
     }
@@ -54,21 +58,43 @@ pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<Py
     read
 }
 
+/// A `pyproject.toml` that is not valid TOML has failed: the project reads nothing from it, and the packs it would have
+/// switched on are missing, which the coverage should not hide. Every other manifest is read leniently and is fine.
+fn manifest_status(file: &SourceFile<'_>) -> ParseStatus {
+    if file.path.file_name() != "pyproject.toml" {
+        return ParseStatus::Ok;
+    }
+    match read_pyproject(file.path.as_str(), file.text) {
+        Ok(_) => ParseStatus::Ok,
+        Err(ManifestError::Toml {
+            offset, message, ..
+        }) => ParseStatus::Failed(ParseFailure::Syntax {
+            line: error_line(&LineIndex::new(file.text), offset, file.text.len()),
+            message,
+        }),
+    }
+}
+
 /// `len` is the length of the text: the parser puts the error of a bracket left open at the end of the text, one byte
 /// past the last line, so an offset is held to the last byte to name a line the file has.
 fn status_of(errors: &[ParseError], lines: &LineIndex, len: usize) -> ParseStatus {
-    let last_byte = u32::try_from(len.saturating_sub(1)).unwrap_or(u32::MAX);
     let Some(first) = errors
         .iter()
-        .map(|error| u32::from(error.location.start()).min(last_byte))
+        .map(|error| usize::from(error.location.start()))
         .min()
     else {
         return ParseStatus::Ok;
     };
     ParseStatus::Recovered {
         errors: u32::try_from(errors.len()).unwrap_or(u32::MAX),
-        first_error_line: lines.line(first),
+        first_error_line: error_line(lines, first, len),
     }
+}
+
+/// The line of the byte at `offset` in a text of `len` bytes, an offset past the end being held to the last byte.
+fn error_line(lines: &LineIndex, offset: usize, len: usize) -> Line {
+    let last_byte = len.saturating_sub(1);
+    lines.line(u32::try_from(offset.min(last_byte)).unwrap_or(u32::MAX))
 }
 
 /// A name assigned a call, `router = APIRouter(prefix="/bookings")`. Rules written for a receiver read it to tell

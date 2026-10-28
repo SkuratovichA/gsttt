@@ -13,6 +13,13 @@ The connector SHALL open one project per directory holding a `pyproject.toml`, `
 - **WHEN** a repository has `services/api/pyproject.toml` and `services/worker/pyproject.toml`
 - **THEN** the connector opens a project at each, and `services/api/app/main.py` belongs to `services/api`
 
+### Requirement: Malformed manifests
+A `pyproject.toml` that is not valid TOML SHALL be a failed file in the coverage, a syntax failure with the line and the message of the TOML parser, so a project that lost the packs and source roots the manifest would have given is not silent about it. The project SHALL still open and read its Python files.
+
+#### Scenario: A malformed pyproject.toml is a failed file
+- **WHEN** a project's `pyproject.toml` has a string left open on line 2, and another has an array left open on its last line
+- **THEN** the first is a failed file with a syntax failure on line 2 and the second one on line 3, each with the message of the parser, and the Python files of the first are read
+
 ### Requirement: Source roots
 A project's source roots SHALL be the project root, `src` when that directory exists, the directories named by setuptools, Poetry or Hatch package settings, and the roots given in the module's options.
 

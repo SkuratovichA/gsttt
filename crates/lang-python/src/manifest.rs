@@ -47,7 +47,12 @@ impl Manifest {
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ManifestError {
     #[error("`{file}` is not valid TOML: {message}")]
-    Toml { file: String, message: String },
+    Toml {
+        file: String,
+        /// Where the TOML parser found the error, `0` when it did not say.
+        offset: usize,
+        message: String,
+    },
 }
 
 /// Reads `pyproject.toml`: `[project]` dependencies and optional dependencies, dependency groups, Poetry and
@@ -57,6 +62,7 @@ pub(crate) fn read_pyproject(file: &str, text: &str) -> Result<Manifest, Manifes
         .parse()
         .map_err(|error: toml::de::Error| ManifestError::Toml {
             file: file.to_owned(),
+            offset: error.span().map_or(0, |span| span.start),
             message: error.message().to_owned(),
         })?;
     let mut manifest = Manifest::default();
