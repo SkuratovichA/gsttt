@@ -56,6 +56,37 @@ fn the_check_reads_the_workflows_of_the_repository_from_a_subdirectory() {
 }
 
 #[test]
+fn the_spec_gate_reads_the_specs_of_the_repository_from_a_subdirectory() {
+    let repo = repository("0.1.0");
+    // One member and a spec whose only scenario has no test, so that the gate fails and says where the spec is.
+    write(
+        repo.path(),
+        "Cargo.toml",
+        "[workspace]\nresolver = \"2\"\nmembers = [\"crates/app\"]\n",
+    );
+    write(
+        repo.path(),
+        "crates/app/Cargo.toml",
+        "[package]\nname = \"app\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    );
+    write(repo.path(), "crates/app/src/lib.rs", "");
+    write(
+        repo.path(),
+        "openspec/specs/queries/spec.md",
+        "# Queries Specification\n\n## Purpose\nAnswer what a change affects.\n\n## Requirements\n\n### Requirement: Defaults\nThe queries SHALL apply their defaults.\n\n#### Scenario: Defaults apply\n- **WHEN** a query runs without options\n- **THEN** the defaults apply\n",
+    );
+
+    let output = xtask(&subdirectory(repo.path()), &["spec"]);
+
+    assert!(!output.status.success(), "{}", printed(&output));
+    assert!(
+        printed(&output).contains("openspec/specs/queries/spec.md:11:"),
+        "{}",
+        printed(&output)
+    );
+}
+
+#[test]
 fn a_package_is_made_from_a_subdirectory() {
     let repo = repository("0.1.0");
     let target_dir = built(b"binary bytes");

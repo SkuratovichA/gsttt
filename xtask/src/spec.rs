@@ -16,11 +16,11 @@ mod tests;
 mod workspace;
 
 use std::io::Write as _;
-use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::Context as _;
 
+use crate::root::repository_root;
 use workspace::Workspace;
 
 /// What `cargo xtask spec` was asked to do.
@@ -55,9 +55,11 @@ impl Outcome {
 /// The exit code is non-zero exactly when the gate found something to fail. `--ready` only lists
 /// changes, so it succeeds whatever else is wrong; the archive workflow runs the gate itself on the
 /// archived specs.
+///
+/// Like every other task it works on the repository that holds the current directory, whichever of its directories that is (`crate::root`).
 pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     let mode = mode(args)?;
-    let workspace = Workspace::load(Path::new("."))?;
+    let workspace = Workspace::load(&repository_root()?)?;
     let outcome = execute(&workspace, mode)?;
     std::io::stdout()
         .write_all(outcome.output.as_bytes())

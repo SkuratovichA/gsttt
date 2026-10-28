@@ -6,7 +6,7 @@ use anyhow::Context as _;
 
 use crate::dist::git::git;
 
-/// The top directory of the git repository that holds the current directory.
+/// The top directory of the git repository that holds the current directory. Every task asks it, the spec gate included, so that there is one answer to where the repository starts.
 ///
 /// A task is run from the repository root as `cargo xtask <task>`, but a shell can be in any directory of the repository, and a task that reads `Cargo.toml` or `.github/workflows` must not depend on which one. The directory `xtask` was built in is no answer: it says where the code came from, not which repository a task works on.
 pub(crate) fn repository_root() -> anyhow::Result<PathBuf> {
