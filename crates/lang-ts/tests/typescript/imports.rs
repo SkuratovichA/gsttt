@@ -112,6 +112,21 @@ fn a_mocked_or_actual_module_is_a_dynamic_import() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
+#[scenario(
+    "typescript",
+    "A mock made from a module or set for it is a dynamic import"
+)]
+fn a_mock_made_from_a_module_or_set_for_it_is_a_dynamic_import() -> Result<(), Box<dyn Error>> {
+    let json = run("mocks-from-modules")?;
+    let expected: Vec<String> = (1..=3)
+        .map(|line| format!("./lib dynamic @{line} -> file src/lib.ts"))
+        .collect();
+    assert_eq!(imports(&json, "src/made.test.ts"), expected);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A module named at run time is no import")]
 fn a_module_named_at_run_time_is_no_import() -> Result<(), Box<dyn Error>> {
     let json = run("computed-mocks")?;

@@ -8,7 +8,7 @@ On the same monorepo, `contract 'table Tenant'` found 136 of the 160 files that 
 ## What Changes
 
 - `typeof import('x')` and `import('x').T` in a type are static imports of `x` flagged type-only, at the line of the specifier, naming the first segment of the qualifier, or `*` when there is none, as a namespace import does.
-- The first argument of `vi.mock`, `vi.doMock`, `vi.unmock`, `vi.doUnmock`, `vi.importActual`, `vi.importMock`, `jest.mock`, `jest.doMock`, `jest.unmock`, `jest.dontMock`, `jest.requireActual` and `jest.requireMock` is a dynamic import with no names when it is a literal. A computed one is neither an import nor an unread site.
+- The first argument of `vi.mock`, `vi.doMock`, `vi.unmock`, `vi.doUnmock`, `vi.importActual`, `vi.importMock`, `jest.mock`, `jest.doMock`, `jest.unmock`, `jest.dontMock`, `jest.requireActual`, `jest.requireMock`, `jest.setMock`, `jest.createMockFromModule` and `jest.genMockFromModule` is a dynamic import with no names when it is a literal. A computed one is neither an import nor an unread site.
 - A query is dropped from a specifier before it is resolved, so `../docs/terms.md?raw` leads where `../docs/terms.md` leads. The fact keeps the specifier as written.
 - The connector version goes from 1 to 2, so that facts cached by version 1 are read again.
 - A chain rule reads a chain that starts at a name bound by `const self = this` or `let self = this` as a chain from `this`, so `self.prisma.tenant.findUnique()` calls `table tenant`.

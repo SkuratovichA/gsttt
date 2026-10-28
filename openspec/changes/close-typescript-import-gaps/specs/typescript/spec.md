@@ -19,11 +19,15 @@ The connector SHALL read `typeof import('x')` and `import('x').T` in a type as a
 - **THEN** the file has type-only static imports of `./lib` at lines 2 and 5 naming `*`, and at line 4 one of `./lib` naming `Box` and one of `./other` naming `*`
 
 ### Requirement: Mocked modules
-The connector SHALL read the first argument of `vi.mock`, `vi.doMock`, `vi.unmock`, `vi.doUnmock`, `vi.importActual`, `vi.importMock`, `jest.mock`, `jest.doMock`, `jest.unmock`, `jest.dontMock`, `jest.requireActual` and `jest.requireMock` as a dynamic import with no names when it is a string or a template with no expression. A computed first argument SHALL be neither an import nor an unread site.
+The connector SHALL read the first argument of `vi.mock`, `vi.doMock`, `vi.unmock`, `vi.doUnmock`, `vi.importActual`, `vi.importMock`, `jest.mock`, `jest.doMock`, `jest.unmock`, `jest.dontMock`, `jest.requireActual`, `jest.requireMock`, `jest.setMock`, `jest.createMockFromModule` and `jest.genMockFromModule` as a dynamic import with no names when it is a string or a template with no expression. A computed first argument SHALL be neither an import nor an unread site.
 
 #### Scenario: A mocked or actual module is a dynamic import
-- **WHEN** `src/runners.test.ts` has `'./lib'` as the first argument of each of the twelve calls above, one per line, and `` vi.mock(`./lib`) `` on line 13
+- **WHEN** `src/runners.test.ts` has `'./lib'` as the first argument of `vi.mock`, `vi.doMock`, `vi.unmock`, `vi.doUnmock`, `vi.importActual`, `vi.importMock`, `jest.mock`, `jest.doMock`, `jest.unmock`, `jest.dontMock`, `jest.requireActual` and `jest.requireMock`, one per line, and `` vi.mock(`./lib`) `` on line 13
 - **THEN** each of the thirteen calls is a dynamic import of `./lib` at its line, with no names, resolving to `src/lib.ts`
+
+#### Scenario: A mock made from a module or set for it is a dynamic import
+- **WHEN** `src/made.test.ts` has `jest.setMock('./lib', {})`, `jest.createMockFromModule('./lib')` and `jest.genMockFromModule('./lib')` on lines 1 to 3, and `src/lib.ts` exists
+- **THEN** each of the three calls is a dynamic import of `./lib` at its line, with no names, resolving to `src/lib.ts`
 
 #### Scenario: A module named at run time is no import
 - **WHEN** `src/computed.test.ts` has `vi.mock(path)`, `` jest.mock(`./${name}`) ``, `vi.importActual('./' + name)` and `await import(name)`

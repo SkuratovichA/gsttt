@@ -888,7 +888,7 @@ fn is_require(call: &CallExpression<'_>) -> bool {
     matches!(&call.callee, Expression::Identifier(name) if name.name.as_str() == "require")
 }
 
-/// The calls of Vitest and Jest whose first argument is a module: the one to mock and the one to load as it is.
+/// The calls of Vitest and Jest whose first argument is a module: the ones that mock it, set a mock for it or make one from it, and the ones that load it as it is.
 fn is_module_call(callee: &str) -> bool {
     matches!(
         callee,
@@ -904,6 +904,9 @@ fn is_module_call(callee: &str) -> bool {
             | "jest.dontMock"
             | "jest.requireActual"
             | "jest.requireMock"
+            | "jest.setMock"
+            | "jest.createMockFromModule"
+            | "jest.genMockFromModule"
     )
 }
 
