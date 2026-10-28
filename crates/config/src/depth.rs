@@ -93,7 +93,7 @@ impl DepthCheck<'_> {
             let names_array = matches!(header, Header::ArrayOfTables) && index == last;
             depth += 1 + u32::from(names_array || self.arrays_of_tables.contains(path.as_slice()));
             if depth > MAX_DEPTH {
-                // Nothing below this header is read, so the loop stops here. The parts were decoded before the loop, so the stop does not bound that: it bounds the `path` the loop builds and the lookup of each prefix in `arrays_of_tables`, which would grow with the square of the number of parts.
+                // Nothing below this header is read, so the loop stops here. The parts were decoded before the loop, so the stop does not bound that: it bounds the `path` the loop builds, and the lookup of each of its prefixes in `arrays_of_tables`, which hashes the whole prefix, so that the lookups together would grow with the square of the number of parts.
                 self.header_depth = depth;
                 let span = *span;
                 self.pass(span);
