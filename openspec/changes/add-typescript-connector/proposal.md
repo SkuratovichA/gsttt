@@ -7,7 +7,7 @@ TypeScript is where most cross-service seams live: Express and NestJS servers, f
 ## What Changes
 
 - The `ts` connector: projects per `package.json`, manifests tagged, parsing with oxc into imports, tags and sites, recovery from syntax errors.
-- Resolution through `oxc_resolver` over the repository's file list, with workspace packages, `paths`, `extends`, `exports` conditions and `outDir` to `rootDir` mapping.
+- Resolution written by hand over the repository's file list, with workspace packages, `paths`, `extends`, `exports` conditions and `outDir` to `rootDir` mapping.
 - Built-in packs in `crates/lang-ts/packs/`: `express`, `nestjs`, `fetch`, `axios`, `graphql`, `trpc`, `prisma`, `typeorm`, `drizzle`, `env`.
 - `link` for Express mounts and tRPC router composition.
 
@@ -23,4 +23,4 @@ None.
 
 ## Impact
 
-`crates/lang-ts/` only, plus new entries in the root `[workspace.dependencies]` if needed. Known gaps, reported as blind spots: file-system routes (Next.js, Remix, SvelteKit), NestJS `setGlobalPrefix` (configure `http_prefixes`), routers mounted from another package, URLs and prefixes held in variables.
+`crates/lang-ts/` only, plus new entries in the root `[workspace.dependencies]` if needed. Known gaps, reported as blind spots: file-system routes (Next.js, Remix, SvelteKit), NestJS `setGlobalPrefix` (not applied: `http_prefixes` is a field of the core setup, not an option of this connector), routers mounted from another package, URLs and prefixes held in variables.
