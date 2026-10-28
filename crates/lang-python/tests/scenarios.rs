@@ -67,6 +67,14 @@ impl Tree {
             .expect("the fixture holds the file")
     }
 
+    /// Whether a project claimed the file at `path`.
+    fn claims(&self, path: &str) -> bool {
+        self.output
+            .files
+            .iter()
+            .any(|file| self.path_of(file.id) == path)
+    }
+
     /// The JSON of one file, the form its snapshot takes.
     fn file_json(&self, path: &str) -> &Value {
         self.json["files"]
@@ -207,6 +215,36 @@ fn the_root_project_opens_only_for_python_files_outside_every_project() {
         stray.file_json("services/api/app.py")["project"],
         "python services/api"
     );
+}
+
+#[gsttt_scenario::scenario("python", "Requirements files include each other")]
+#[test]
+fn requirements_files_include_each_other() {
+    let tree = index("requirement_includes");
+    // `fastapi` is declared two includes away from `requirements.txt` and `sqlalchemy` three, each include relative to
+    // the file that names it. `common/shared.txt` includes `requirements/base.txt` back, and `requirements/dev.txt`
+    // starts with two includes that name nothing in the repository: the walk reads each file once and goes on.
+    assert_eq!(tree.contracts("app.py"), ["serves http GET /ping@6"]);
+    assert_eq!(tree.contracts("models.py"), ["declares table bookings@5"]);
+    // Nothing in the name of `common/shared.txt` says it is a manifest, so it is read through the include and no more.
+    assert!(!tree.claims("common/shared.txt"));
+}
+
+#[gsttt_scenario::scenario("python", "A requirements directory holds manifests")]
+#[test]
+fn a_requirements_directory_holds_manifests() {
+    let tree = index("requirement_includes");
+    for path in [
+        "requirements.txt",
+        "requirements/base.txt",
+        "requirements/dev.txt",
+    ] {
+        assert!(
+            tree.file(path).facts.tags.contains(FileTags::MANIFEST),
+            "{path}"
+        );
+        assert_eq!(tree.file_json(path)["project"], "python .", "{path}");
+    }
 }
 
 #[gsttt_scenario::scenario("python", "A malformed pyproject.toml is a failed file")]

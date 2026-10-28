@@ -14,10 +14,14 @@ use xxhash_rust::xxh3::Xxh3;
 use crate::PythonOptions;
 use crate::extra::PyExtra;
 use crate::files::{PROJECT_MANIFESTS, is_manifest, is_python_source, is_requirements, join_dir};
-use crate::manifest::{Manifest, read_pyproject, read_requirements, read_setup_cfg, read_setup_py};
+use crate::manifest::{
+    Manifest, read_pyproject, read_requirements, read_setup_cfg, read_setup_py,
+    requirement_includes,
+};
 
-/// A directory with a `pyproject.toml`, `setup.py` or `setup.cfg`, or the repository root when it has Python
-/// files and none of these. It knows its source roots, the distributions it declares and the packs they switch on.
+/// A directory with a `pyproject.toml`, `setup.py` or `setup.cfg`, or the repository root when a Python file lies
+/// under none of those directories. It knows its source roots, the distributions it declares and the packs they switch
+/// on.
 #[derive(Debug)]
 pub struct PythonProject {
     pub(crate) root: String,
@@ -57,10 +61,7 @@ pub(crate) fn open_projects(
     }
     // A requirements file belongs to the deepest project above it.
     let mut requirements: BTreeMap<&str, Vec<&RepoPath>> = BTreeMap::new();
-    for (_, path) in repo
-        .files()
-        .filter(|(_, path)| is_requirements(path.file_name()))
-    {
+    for (_, path) in repo.files().filter(|(_, path)| is_requirements(path)) {
         let owner = roots
             .iter()
             .filter(|root| path.is_under(root))
@@ -170,8 +171,8 @@ fn packs_salt(positions: impl Iterator<Item = usize>) -> u64 {
 }
 
 /// A hash of `parts` in which each part is taken with its length, so `["ab", "c"]` and `["a", "bc"]` are two salts.
-/// The indexing change adds this function, with the same framing, to core as `gsttt_core::connector::salt_of`; this copy
-/// goes when the two meet, and no salt changes with it.
+/// The indexing change adds this function, with the same framing, to core as `gsttt_core::connector::salt_of`; this
+/// copy goes when the two meet, and no salt changes with it.
 fn salt_of(parts: &[&str]) -> u64 {
     let mut hasher = Xxh3::new();
     for part in parts {
@@ -207,12 +208,36 @@ fn read_manifests(repo: &RepoView, root: &str, requirements: &[&RepoPath]) -> Ma
             _ => manifest.absorb(read_setup_py(&text)),
         }
     }
-    for path in requirements {
-        if let Some(text) = read_text(repo, path.as_str()) {
-            manifest.absorb(read_requirements(&text));
+    read_requirement_files(repo, requirements, &mut manifest);
+    manifest
+}
+
+/// Reads the requirements `files` and the files they include with `-r`, each file once however many name it.
+///
+/// An include is relative to the file that names it, and a file that is not in the repository is skipped: one that
+/// git ignores is not part of the tree the index describes.
+fn read_requirement_files(repo: &RepoView, files: &[&RepoPath], manifest: &mut Manifest) {
+    let mut pending: Vec<RepoPath> = files.iter().map(|&file| file.clone()).collect();
+    let mut seen = BTreeSet::new();
+    while let Some(file) = pending.pop() {
+        if !seen.insert(file.clone()) {
+            continue;
+        }
+        let Some(text) = read_text(repo, file.as_str()) else {
+            continue;
+        };
+        manifest.absorb(read_requirements(&text));
+        for include in requirement_includes(&text) {
+            match RepoPath::join(file.parent(), include) {
+                Ok(included) if repo.lookup(included.as_str()).is_some() => pending.push(included),
+                _ => tracing::warn!(
+                    file = file.as_str(),
+                    include,
+                    "an included requirements file is not in the repository and is skipped"
+                ),
+            }
         }
     }
-    manifest
 }
 
 fn read_text(repo: &RepoView, path: &str) -> Option<String> {
@@ -233,7 +258,7 @@ impl Project for PythonProject {
     }
 
     fn matches(&self, path: &RepoPath) -> bool {
-        is_python_source(path) || is_manifest(path.file_name())
+        is_python_source(path) || is_manifest(path)
     }
 
     fn salt(&self) -> u64 {

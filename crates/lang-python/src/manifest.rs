@@ -206,16 +206,54 @@ pub(crate) fn read_setup_py(text: &str) -> Manifest {
     manifest
 }
 
+/// The lines of a requirements file that say something: a comment cut off the end of a line, blank and comment lines
+/// dropped.
+fn requirement_lines(text: &str) -> impl Iterator<Item = &str> {
+    text.lines()
+        .map(|line| without_comment(line).trim())
+        .filter(|line| !line.is_empty())
+}
+
+/// `line` up to its comment, which starts at a `#` that begins the line or follows whitespace, as pip reads it: the
+/// `#` of `git+https://example.com/x.git#egg=x` is part of the requirement.
+fn without_comment(line: &str) -> &str {
+    line.match_indices('#')
+        .find_map(|(index, _)| {
+            let before = line.get(..index)?;
+            before
+                .chars()
+                .next_back()
+                .is_none_or(char::is_whitespace)
+                .then_some(before)
+        })
+        .unwrap_or(line)
+}
+
 /// Reads a `requirements*.txt`: one requirement per line, options and comments skipped.
 pub(crate) fn read_requirements(text: &str) -> Manifest {
     let mut manifest = Manifest::default();
-    for line in text.lines() {
-        let line = line.split(" #").next().unwrap_or(line).trim();
-        if !line.starts_with('#') {
-            manifest.require(line);
-        }
+    for line in requirement_lines(text) {
+        manifest.require(line);
     }
     manifest
+}
+
+/// The files a requirements file includes, as it writes them: relative to the file that includes them.
+pub(crate) fn requirement_includes(text: &str) -> impl Iterator<Item = &str> {
+    requirement_lines(text).filter_map(include_of)
+}
+
+/// The file an include line names: `-r base.txt`, `-rbase.txt`, `--requirement base.txt` or `--requirement=base.txt`.
+/// A constraints file (`-c`) limits versions and requires nothing, so it is not an include.
+fn include_of(line: &str) -> Option<&str> {
+    let target = match line.strip_prefix("--requirement") {
+        Some(rest) => rest
+            .strip_prefix('=')
+            .or_else(|| rest.strip_prefix(char::is_whitespace))?,
+        None => line.strip_prefix("-r")?,
+    };
+    let target = target.trim();
+    (!target.is_empty()).then_some(target)
 }
 
 /// The directory a `package_dir` entry makes a source root: the entry `"" = "src"` makes `src`, and
@@ -450,5 +488,56 @@ mod tests {
             "# base\n-r other.txt\nflask==3.0  # web\n\nPyYAML\ngit+https://example.com/x.git\n--index-url https://example.com\n",
         );
         assert_eq!(deps(&manifest), ["flask", "pyyaml"]);
+    }
+
+    #[test]
+    fn includes_are_named_by_r_and_requirement_and_not_by_constraints() {
+        let includes: Vec<&str> = requirement_includes(
+            "# base\n-r a.txt\n-rb.txt\n-r  c.txt  # shared\n--requirement d.txt\n--requirement=e.txt\n\
+             -c constraints.txt\n--constraint f.txt\n--require-hashes\n--requirements g.txt\n-r\nflask\n-e .\n",
+        )
+        .collect();
+        assert_eq!(includes, ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+    }
+
+    #[test]
+    fn a_comment_starts_at_a_hash_that_follows_whitespace_of_any_kind() {
+        let includes: Vec<&str> =
+            requirement_includes("-r base.txt\t# shared\n-r  dev.txt \t #dev\n#-r off.txt\n")
+                .collect();
+        assert_eq!(includes, ["base.txt", "dev.txt"]);
+        let manifest = read_requirements(
+            "flask==3.0\t# web\nPyYAML\t#\ngit+https://example.com/x.git#egg=other\n",
+        );
+        assert_eq!(deps(&manifest), ["flask", "pyyaml"]);
+    }
+
+    proptest! {
+        #[test]
+        fn a_hash_after_whitespace_ends_the_line_and_a_hash_inside_a_word_does_not(
+            word in "[a-z0-9_.:/=@+-]{1,12}",
+            space in "[ \t]{1,3}",
+            rest in "[a-z0-9_.:/=@+# \t-]{0,12}",
+            fragment in "[a-z0-9_.:/=@+#-]{0,12}",
+        ) {
+            let commented = format!("{word}{space}#{rest}");
+            prop_assert_eq!(without_comment(&commented), format!("{word}{space}"));
+            let joined = format!("{word}#{fragment}");
+            prop_assert_eq!(without_comment(&joined), joined.as_str());
+        }
+
+        #[test]
+        fn every_spelling_of_an_include_names_the_same_file(target in "[a-z][a-z0-9_./-]{0,19}") {
+            for line in [
+                format!("-r {target}"),
+                format!("-r{target}"),
+                format!("-r   {target}  "),
+                format!("--requirement {target}"),
+                format!("--requirement={target}"),
+            ] {
+                let includes: Vec<&str> = requirement_includes(&line).collect();
+                prop_assert_eq!(includes, [target.as_str()], "{}", line);
+            }
+        }
     }
 }

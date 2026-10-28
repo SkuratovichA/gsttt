@@ -7,7 +7,7 @@ The Python connector reads Python into imports and contract sites. It parses wit
 ## ADDED Requirements
 
 ### Requirement: Projects
-The connector SHALL open one project per directory holding a `pyproject.toml`, `setup.py` or `setup.cfg`, and one at the root when a Python file lies under none of those directories. A project SHALL claim the `py` and `pyi` files under its root, and its manifests (`pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`), which it tags as manifests.
+The connector SHALL open one project per directory holding a `pyproject.toml`, `setup.py` or `setup.cfg`, and one at the root when a Python file lies under none of those directories. A project SHALL claim the `py` and `pyi` files under its root, and its manifests (`pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt` and the text files of a `requirements` directory), which it tags as manifests.
 
 #### Scenario: Each pyproject is a project
 - **WHEN** a repository has `services/api/pyproject.toml` and `services/worker/pyproject.toml`
@@ -309,8 +309,19 @@ Only a class that names `BaseSettings` as one of its bases SHALL have its fields
 - **WHEN** `class Base(BaseSettings)` has the field `log_level` and `class Production(Base)` has the field `replicas`
 - **THEN** the file calls `env LOG_LEVEL` and not `env REPLICAS`, and the provides of the project name the fields of a settings class that derives from another settings class as a blind spot
 
+### Requirement: Requirements includes
+A requirements file SHALL be read together with the files it includes with `-r` or `--requirement`, each relative to the file that names it, so the distributions an included file declares count for the project. Each file SHALL be read once however many files include it. An include that is not in the repository SHALL be skipped, and a constraints file (`-c`) SHALL NOT be followed. An included file that is not named like a requirements file is read but not claimed.
+
+#### Scenario: Requirements files include each other
+- **WHEN** `requirements.txt` includes `requirements/dev.txt`, which includes `base.txt` beside it, which declares `fastapi` and includes `../common/shared.txt`, which declares `sqlalchemy` and includes `base.txt` back, and `dev.txt` also names two includes that are not in the repository
+- **THEN** the `fastapi` and `sqlalchemy` packs are in force, so `app.py` serves `http GET /ping` and `models.py` declares `table bookings`, and `common/shared.txt` is read and not claimed
+
+#### Scenario: A requirements directory holds manifests
+- **WHEN** a project has `requirements.txt`, `requirements/base.txt` and `requirements/dev.txt`
+- **THEN** the project claims all three and tags each as a manifest
+
 ### Requirement: Pack activation
-A pack SHALL be active in a project when its manifests declare one of the pack's `detect` packages, compared by normalised name, in `[project]` dependencies, optional dependencies, dependency groups, Poetry dependencies, the `install_requires` of `setup.py` and `setup.cfg` or a `requirements*.txt`, or always when its `detect` is empty. Each project SHALL report what it provides, with its blind spots in words.
+A pack SHALL be active in a project when its manifests declare one of the pack's `detect` packages, compared by normalised name, in `[project]` dependencies, optional dependencies, dependency groups, Poetry dependencies, the `install_requires` of `setup.py` and `setup.cfg` or a requirements file, or always when its `detect` is empty. Each project SHALL report what it provides, with its blind spots in words.
 
 #### Scenario: Packs follow the manifest
 - **WHEN** a project's `pyproject.toml` declares `Flask>=3` and not `fastapi`

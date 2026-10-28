@@ -1,7 +1,5 @@
 //! Which files a Python project reads, and how it tags them.
 
-use std::path::Path;
-
 use gsttt_core::fact::FileTags;
 use gsttt_core::path::{PathError, RepoPath};
 
@@ -24,17 +22,17 @@ pub(crate) fn is_python_source(path: &RepoPath) -> bool {
     matches!(path.extension(), Some("py" | "pyi"))
 }
 
-/// `requirements.txt`, `requirements-dev.txt` and the like.
-pub(crate) fn is_requirements(name: &str) -> bool {
-    name.starts_with("requirements")
-        && Path::new(name)
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
+/// `requirements.txt`, `requirements-dev.txt` and the like, and the text files of a directory named `requirements`.
+pub(crate) fn is_requirements(path: &RepoPath) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
+        && (path.file_name().starts_with("requirements")
+            || path.parent().rsplit('/').next() == Some("requirements"))
 }
 
 /// A file a project claims as its manifest: a project file or a requirements file.
-pub(crate) fn is_manifest(name: &str) -> bool {
-    PROJECT_MANIFESTS.contains(&name) || is_requirements(name)
+pub(crate) fn is_manifest(path: &RepoPath) -> bool {
+    PROJECT_MANIFESTS.contains(&path.file_name()) || is_requirements(path)
 }
 
 /// Files named `test_*.py` or `*_test.py`, `conftest.py`, and files under a directory named `tests` or `test`.
@@ -57,7 +55,7 @@ pub(crate) fn tags_of(path: &RepoPath) -> FileTags {
     if is_test_path(path) {
         tags = tags | FileTags::TEST;
     }
-    if is_manifest(path.file_name()) {
+    if is_manifest(path) {
         tags = tags | FileTags::MANIFEST;
     }
     tags
@@ -95,9 +93,20 @@ mod tests {
             "setup.cfg",
             "requirements.txt",
             "requirements-dev.txt",
+            "svc/requirements/base.txt",
+            "requirements/Dev.TXT",
         ] {
-            assert!(is_manifest(name), "{name}");
+            assert!(is_manifest(&path(name)), "{name}");
         }
-        assert!(!is_manifest("README.md") && !is_manifest("dev-requirements.txt"));
+        for name in [
+            "README.md",
+            "dev-requirements.txt",
+            "requirements/base.md",
+            "requirements/nested/base.txt",
+            "my-requirements/base.txt",
+            "base.txt",
+        ] {
+            assert!(!is_manifest(&path(name)), "{name}");
+        }
     }
 }
