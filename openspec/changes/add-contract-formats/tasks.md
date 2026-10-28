@@ -25,3 +25,4 @@
 - [x] 4.2 `SyntaxError` lives in `common.rs` with the other helpers the connectors share
 - [x] 4.3 Every project returns salt 0 and `salt_of` is gone, because the options are part of the fact key already
 - [x] 4.4 SQL reads the statements around one the tokenizer cannot close, and counts that one as an error
+- [x] 4.5 A SQL statement read again with its placeholders replaced keeps its lines and its strings, escaped newlines, doubled quotes and lone carriage returns included

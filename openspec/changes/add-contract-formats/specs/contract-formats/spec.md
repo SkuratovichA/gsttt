@@ -116,11 +116,15 @@ Each statement SHALL be read with the dialect that the `sql` connector's `dialec
 - **THEN** opening the `sql` connector fails with an options error that names `dialect` and `cobol`
 
 ### Requirement: SQL placeholders
-Placeholders of the common drivers (`$1`, `?`, `:name`, `%s`, `%(name)s`) SHALL be read as parameters.
+Placeholders of the common drivers (`$1`, `?`, `:name`, `%s`, `%(name)s`) SHALL be read as parameters, and a statement that is read with its placeholders replaced SHALL report its tables at the lines they are written on.
 
 #### Scenario: Driver placeholders are parameters
 - **WHEN** a file has `SELECT * FROM bookings WHERE id = $1;` on line 1 and the same statement on lines 2, 3, 4 and 5 with `?`, `:id`, `%s` and `%(id)s` in place of `$1`, respectively
 - **THEN** its status is not recovered and it calls `table bookings` at lines 1 to 5
+
+#### Scenario: A statement across lines keeps the lines of its tables
+- **WHEN** a file has a statement that reads `bookings` on line 2 and `booking_items` on line 3 and has `%s` on line 4, and another with `'it''s'` on line 6, `carts` on line 7 and `%(owner)s` on line 8
+- **THEN** its status is not recovered and it calls `table bookings` at line 2, `table booking_items` at line 3 and `table carts` at line 7
 
 ### Requirement: SQL recovery
 A statement that does not parse, and a statement with a string, quoted name or comment that is never closed, SHALL each be counted in a recovered status at the line it starts on. The statements before it SHALL be read, and so SHALL those after the next semicolon that follows the unclosed text.

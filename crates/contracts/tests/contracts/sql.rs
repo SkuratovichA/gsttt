@@ -83,6 +83,27 @@ fn driver_placeholders_are_parameters() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
+/// The first statement is read again with its `%s` replaced, and the second with its `:owner` and a string that holds
+/// a doubled quote; the sites keep the lines the tables are written on.
+#[gsttt_scenario::scenario(
+    "contract-formats",
+    "A statement across lines keeps the lines of its tables"
+)]
+#[test]
+fn a_statement_across_lines_keeps_the_lines_of_its_tables() {
+    let run = Run::new("sql_multiline", &[module(&SQL)]);
+    assert_eq!(run.status("queries.sql"), &ParseStatus::Ok);
+    assert_eq!(
+        run.sites("queries.sql"),
+        vec![
+            "calls table bookings @2",
+            "calls table booking_items @3",
+            "calls table carts @7",
+        ]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
 #[gsttt_scenario::scenario("contract-formats", "One bad statement does not hide the rest")]
 #[test]
 fn one_bad_statement_does_not_hide_the_rest() {

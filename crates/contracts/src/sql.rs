@@ -8,6 +8,7 @@
 //! The connector always opens a project, even where no file is claimed, because code in any language can embed SQL.
 
 use std::collections::BTreeSet;
+use std::fmt::Write as _;
 use std::ops::ControlFlow;
 
 use gsttt_core::connector::{
@@ -27,7 +28,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::{Dialect, PostgreSqlDialect, dialect_from_str};
 use sqlparser::parser::Parser;
-use sqlparser::tokenizer::{Location, Token, TokenWithSpan, Tokenizer};
+use sqlparser::tokenizer::{Location, Token, TokenWithSpan, Tokenizer, Whitespace};
 
 use crate::common::{Errors, provide, site};
 
@@ -212,6 +213,8 @@ fn read(dialect: &dyn Dialect, text: &str) -> (Vec<ContractFact>, ParseStatus) {
     loop {
         let mut tokens = Vec::new();
         let failure = Tokenizer::new(dialect, rest)
+            // Raw strings, so that the text of a statement can be put back together as it was written.
+            .with_unescape(false)
             .tokenize_with_location_into_buf_with_mapper(&mut tokens, |token| place(token, before))
             .err();
         let mut groups = statements(tokens);
@@ -273,14 +276,14 @@ fn read_group(
     let text: Option<String> = group
         .iter()
         .any(|token| may_start_parameter(&token.token))
-        .then(|| group.iter().map(|token| token.token.to_string()).collect());
+        .then(|| source_of(&group));
     let found = parse_group(dialect, group)
         .map(|statement| {
             let mut found = Vec::new();
             read_statement(&statement, start, &mut found);
             found
         })
-        .or_else(|| read_with_parameters(dialect, text.as_deref()?, base));
+        .or_else(|| read_with_parameters(dialect, text.as_deref()?, base, start));
     match found {
         Some(found) => facts.extend(found),
         None => errors.note(start),
@@ -334,11 +337,13 @@ fn may_start_parameter(token: &Token) -> bool {
 
 /// The sites of a statement that parses once its driver placeholders stand for a value, which is how the grammars
 /// that do not read them are made to. Native syntax is tried first, so `data ? 'key'` stays a PostgreSQL operator
-/// whenever the statement reads that way. `base` is the line `text` starts on.
+/// whenever the statement reads that way. `base` is the line `text` starts on and `start` the line of the
+/// statement's first token.
 fn read_with_parameters(
     dialect: &dyn Dialect,
     text: &str,
     base: Line,
+    start: Line,
 ) -> Option<Vec<ContractFact>> {
     let neutral = neutralise_placeholders(text);
     let tokens = Tokenizer::new(dialect, &neutral)
@@ -346,13 +351,36 @@ fn read_with_parameters(
         .ok()?;
     let statement = parse_group(dialect, tokens)?;
     let mut facts = Vec::new();
-    read_statement(&statement, 1, &mut facts);
+    read_statement(
+        &statement,
+        start.saturating_sub(base).saturating_add(1),
+        &mut facts,
+    );
     // The lines of the new text count from its first line, which is `base` in the text it was made from.
     let shift = base.saturating_sub(1);
     for fact in &mut facts {
         fact.line = fact.line.saturating_add(shift);
     }
     Some(facts)
+}
+
+/// The text of a statement put back together from its tokens, as it was written. A newline token that does not end a
+/// line for the tokenizer is a carriage return on its own, and it stays one character and not a line.
+fn source_of(tokens: &[TokenWithSpan]) -> String {
+    let mut text = String::new();
+    for token in tokens {
+        match &token.token {
+            Token::Whitespace(Whitespace::Newline)
+                if token.span.start.line == token.span.end.line =>
+            {
+                text.push('\r');
+            }
+            other => {
+                let _ = write!(text, "{other}");
+            }
+        }
+    }
+    text
 }
 
 /// The tokens of each statement; a semicolon inside a string, a comment or a dollar-quoted body is part of one
@@ -620,6 +648,35 @@ mod tests {
                 (1, "table a".to_owned(), Role::Calls),
                 (4, "table b".to_owned(), Role::Calls),
             ]
+        );
+    }
+
+    #[test]
+    fn a_statement_read_with_its_placeholders_keeps_the_lines_after_an_escaped_newline() {
+        // MySQL reads `\n` in a string as a newline, and the text put back together must not hold a real one.
+        let text = "SELECT 'a\\nb'\nFROM t WHERE id = %s;";
+        assert_eq!(
+            read_in("mysql", text),
+            (vec![call(2, "t")], ParseStatus::Ok)
+        );
+    }
+
+    #[test]
+    fn a_statement_read_with_its_placeholders_keeps_its_doubled_quotes() {
+        let text = "SELECT * FROM t WHERE a = 'it''s' AND id = %s;";
+        assert_eq!(
+            read_in("postgresql", text),
+            (vec![call(1, "t")], ParseStatus::Ok)
+        );
+    }
+
+    #[test]
+    fn a_statement_read_with_its_placeholders_keeps_the_lines_of_lone_carriage_returns() {
+        // The tokenizer, like the engine, counts lines by `\n`, so these three statements are on line 1.
+        let text = "SELECT 1 FROM a;\rSELECT *\rFROM b WHERE id = %s;";
+        assert_eq!(
+            read_in("postgresql", text),
+            (vec![call(1, "a"), call(1, "b")], ParseStatus::Ok)
         );
     }
 
