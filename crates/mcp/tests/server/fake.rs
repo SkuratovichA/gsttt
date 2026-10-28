@@ -8,6 +8,8 @@ use gsttt_core::path::PathError;
 use gsttt_core::{Freshness, Index, RepoPath};
 use gsttt_mcp::{IndexSource, Loaded, SourceError, Target};
 
+use crate::fixture::Tree;
+
 /// A source the tests keep a handle to, so that they can read what the server asked after it has run. Clones share
 /// one set of counters.
 #[derive(Clone, Debug)]
@@ -32,6 +34,11 @@ struct Inner {
 }
 
 impl Fake {
+    /// A source over the smallest tree there is to ask about: `src/a.ts` imports `lib/util.ts`.
+    pub(crate) fn small() -> Self {
+        Self::over(Tree::new().imports("src/a.ts", "lib/util.ts").build())
+    }
+
     /// A source that holds `index`, fresh, as both its stored and its refreshed index.
     pub(crate) fn over(index: Index) -> Self {
         Self(Arc::new(Inner {

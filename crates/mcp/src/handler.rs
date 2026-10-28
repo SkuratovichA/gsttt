@@ -1,0 +1,111 @@
+//! The handler of the protocol: what the server says on `initialize`, which tools it lists, and how it takes a call.
+//!
+//! It is written by hand and not with the `#[tool]` router, because the router answers arguments that do not
+//! deserialize with a JSON-RPC error, while the specification of the protocol calls those tool execution errors, so
+//! that the model can correct the call.
+
+use std::sync::Arc;
+
+use gsttt_core::text::join_and;
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
+    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
+};
+use rmcp::service::{MaybeSendFuture, RequestContext};
+use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
+
+use crate::arguments::Call;
+use crate::ask;
+use crate::source::IndexSource;
+use crate::tools::{self, ToolName};
+
+/// What the client is told on `initialize` about when to call each tool. The specification test pins the words.
+const INSTRUCTIONS: &str = "gsttt answers what a change affects, from an index of imports and contracts (HTTP routes, \
+GraphQL operations, gRPC methods, tables, queues, env variables) across the repository. Call impact before changing a \
+file that others may use, or with changed=true before finishing a task; dependents before renaming or deleting; path \
+to learn how two files are connected; contract to find who serves and who calls an endpoint. Every answer ends with \
+what it covered and how fresh it is; when coverage names a gap, say so instead of assuming nothing is affected.";
+
+/// The server: it answers `initialize` and `tools/list` from itself, and every other question through the source.
+pub(crate) struct Server<S> {
+    source: Arc<S>,
+}
+
+impl<S: IndexSource> Server<S> {
+    pub(crate) fn new(source: S) -> Self {
+        Self {
+            source: Arc::new(source),
+        }
+    }
+}
+
+impl<S: IndexSource> Server<S> {
+    /// The entry of `tools/list`, which needs nothing from the source.
+    fn listing() -> Result<ListToolsResult, McpError> {
+        let tools = tools::listing().map_err(|reason| {
+            McpError::internal_error(
+                format!("the input schema of a tool could not be built: {reason}"),
+                None,
+            )
+        })?;
+        Ok(ListToolsResult::with_all_items(tools))
+    }
+
+    /// Answers a call to one of the tools. A tool the server does not offer is a protocol error; everything that goes
+    /// wrong in a known tool is a result with `isError` set, so that the model reads it and corrects the call.
+    fn answer(&self, request: CallToolRequestParams) -> Result<CallToolResponse, McpError> {
+        let Some(tool) = ToolName::from_name(&request.name) else {
+            return Err(unknown_tool(&request.name));
+        };
+        tracing::debug!(%tool, "tool call");
+        let reply = Call::read(tool, request.arguments)
+            .and_then(|call| ask::run(self.source.as_ref(), call));
+        let result = match reply {
+            Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
+            Err(error) => {
+                tracing::debug!(%tool, %error, "tool call failed");
+                CallToolResult::error(vec![ContentBlock::text(error.to_string())])
+            }
+        };
+        Ok(CallToolResponse::Complete(result))
+    }
+}
+
+impl<S: IndexSource> ServerHandler for Server<S> {
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("gsttt", env!("CARGO_PKG_VERSION")))
+            .with_instructions(INSTRUCTIONS)
+    }
+
+    fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListToolsResult, McpError>> + MaybeSendFuture + '_ {
+        std::future::ready(Self::listing())
+    }
+
+    fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<CallToolResponse, McpError>> + MaybeSendFuture + '_ {
+        std::future::ready(self.answer(request))
+    }
+}
+
+/// The protocol error for a tool the server does not offer, which the specification gives the code of invalid params.
+fn unknown_tool(name: &str) -> McpError {
+    let offered: Vec<String> = ToolName::ALL
+        .into_iter()
+        .map(|tool| tool.name().to_owned())
+        .collect();
+    McpError::invalid_params(
+        format!(
+            "unknown tool `{name}`; the tools are {}",
+            join_and(&offered)
+        ),
+        None,
+    )
+}

@@ -24,7 +24,7 @@ gsttt-scenario.workspace = true
 insta.workspace = true
 proptest.workspace = true
 rmcp = { workspace = true, features = ["client"] }
-tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread", "time"] }
 
 [lints]
 workspace = true

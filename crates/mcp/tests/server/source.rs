@@ -3,10 +3,9 @@
 use gsttt_mcp::IndexSource;
 
 use crate::fake::Fake;
-use crate::fixture::Tree;
 
 fn fake() -> Fake {
-    Fake::over(Tree::new().imports("src/a.ts", "lib/util.ts").build())
+    Fake::small()
 }
 
 #[test]
