@@ -35,3 +35,7 @@
 - [x] 5.11 Keep the reader of `openspec/` from following symbolic links, which read the same specs again under longer capability names
 - [x] 5.12 Drop the unused `pulldown-cmark` dependency and make the proposal and the purpose say what the change does: where the gate runs, the files it touches, the `serde_json` pin
 - [x] 5.13 Say in the spec that a proof of a scenario fails when an open change takes the scenario away by modifying its requirement, and pin the failure with that scenario
+
+## 6. Integration fixes
+
+- [x] 6.1 Compile the tests of nine scenarios of earlier changes on every target by taking `#[cfg(unix)]` off them and off the helpers they share, because the gate counts no proof under a `cfg` other than `test` and gsttt builds for unix only

@@ -297,7 +297,6 @@ fn a_requirement_continues_on_the_next_line() {
     assert_eq!(tree.contracts("models.py"), ["declares table bookings@5"]);
 }
 
-#[cfg(unix)]
 #[gsttt_scenario::scenario("python", "A manifest that is a symbolic link is not read")]
 #[test]
 fn a_manifest_that_is_a_symbolic_link_is_not_read() {
