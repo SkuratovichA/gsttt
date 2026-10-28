@@ -11,7 +11,7 @@ use crate::support::{
     workspace_root, write, write_executable,
 };
 
-fn workflow() -> Value {
+pub(crate) fn workflow() -> Value {
     let text = std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
     serde_norway::from_str(&text).unwrap()
 }
@@ -32,7 +32,7 @@ fn commands(job: &Value) -> Vec<&str> {
 }
 
 /// The step of `job` named `name`.
-fn step<'a>(job: &'a Value, name: &str) -> Option<&'a Value> {
+pub(crate) fn step<'a>(job: &'a Value, name: &str) -> Option<&'a Value> {
     job["steps"]
         .as_array()
         .unwrap()
@@ -320,6 +320,34 @@ fn the_token_is_given_only_to_the_commands_that_release() {
     );
 }
 
+/// The `run` script of the step of the `publish` job named `name`.
+pub(crate) fn publish_script(name: &str) -> String {
+    workflow()
+        .pointer("/jobs/publish")
+        .and_then(|publish| step(publish, name))
+        .and_then(|step| step.get("run"))
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_owned()
+}
+
+/// Runs the script of the step `name` of the `publish` job in `repo`, as the runner would: with `bash -e`, the programs of `tools` ahead of the others on `PATH`, and `env` set.
+pub(crate) fn run_publish_step(
+    repo: &Path,
+    name: &str,
+    tools: &Path,
+    env: &[(&str, &str)],
+) -> Output {
+    let path = format!("{}:{}", tools.display(), std::env::var("PATH").unwrap());
+    isolate_git(&mut Command::new("bash"))
+        .args(["-e", "-c", &publish_script(name)])
+        .current_dir(repo)
+        .env("PATH", path)
+        .envs(env.iter().copied())
+        .output()
+        .unwrap()
+}
+
 /// What the `Release` step did: how it ended and the arguments of each `gh` command it ran.
 struct Release {
     output: Output,
@@ -328,14 +356,6 @@ struct Release {
 
 /// Runs the `Release` step of the workflow in `repo`, as the runner would for the commit checked out there and the version `version`. `packages/` holds a package, and `gh` only writes its arguments down.
 fn run_release(repo: &Path, version: &str) -> Release {
-    let workflow = workflow();
-    let script = workflow
-        .pointer("/jobs/publish")
-        .and_then(|publish| step(publish, "Release"))
-        .and_then(|release| release.get("run"))
-        .and_then(Value::as_str)
-        .unwrap()
-        .to_owned();
     let tools = tempfile::tempdir().unwrap();
     let log = tools.path().join("gh.log");
     write_executable(
@@ -346,22 +366,17 @@ fn run_release(repo: &Path, version: &str) -> Release {
     write(repo, "packages/gsttt.tar.gz", "package");
     write(repo, "notes.md", "- a change\n");
 
-    let path = format!(
-        "{}:{}",
-        tools.path().display(),
-        std::env::var("PATH").unwrap()
+    let output = run_publish_step(
+        repo,
+        "Release",
+        tools.path(),
+        &[
+            ("GH_LOG", log.to_str().unwrap()),
+            ("GH_TOKEN", "token"),
+            ("VERSION", version),
+            ("GITHUB_SHA", &git(repo, &["rev-parse", "HEAD"])),
+        ],
     );
-    let mut command = Command::new("bash");
-    let output = isolate_git(&mut command)
-        .args(["-e", "-c", &script])
-        .current_dir(repo)
-        .env("PATH", path)
-        .env("GH_LOG", &log)
-        .env("GH_TOKEN", "token")
-        .env("VERSION", version)
-        .env("GITHUB_SHA", git(repo, &["rev-parse", "HEAD"]))
-        .output()
-        .unwrap();
     let gh = std::fs::read_to_string(&log)
         .map(|text| text.lines().map(str::to_owned).collect())
         .unwrap_or_default();
