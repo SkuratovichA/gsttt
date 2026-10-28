@@ -7,7 +7,7 @@ use jsonc_parser::common::Ranged;
 use jsonc_parser::{CollectOptions, ParseOptions, ast, parse_to_ast};
 use saphyr::{LoadableYamlNode, MarkedYaml};
 
-use crate::common::byte_offset;
+use crate::common::{SyntaxError, byte_offset};
 
 /// Documents nested deeper than this read as [`Value::Other`] below that level, so hostile input cannot exhaust the
 /// stack of the readers that walk the tree.
@@ -28,13 +28,6 @@ pub(crate) struct Entry {
     pub(crate) key: String,
     pub(crate) line: Line,
     pub(crate) value: Value,
-}
-
-/// Why a document does not parse, and where.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SyntaxError {
-    pub(crate) line: Line,
-    pub(crate) message: String,
 }
 
 impl Value {

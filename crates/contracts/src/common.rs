@@ -81,6 +81,13 @@ pub(crate) fn resolve_relative(repo: &RepoView, from: &RepoPath, spec: &str) -> 
         })
 }
 
+/// Why a document does not parse, and where.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SyntaxError {
+    pub(crate) line: Line,
+    pub(crate) message: String,
+}
+
 /// Facts of a file the format's parser could not read at `line`.
 pub(crate) fn syntax_failure(line: Line, message: impl Into<String>) -> FileFacts {
     FileFacts::failed(ParseFailure::Syntax {

@@ -22,3 +22,4 @@
 ## 4. Review fixes
 
 - [x] 4.1 Drop the dependencies nothing uses (`gsttt-config`, `tempfile`, `thiserror`) and keep `serde_json` for the tests only
+- [x] 4.2 `SyntaxError` lives in `common.rs` with the other helpers the connectors share

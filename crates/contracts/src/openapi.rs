@@ -19,8 +19,10 @@ use gsttt_core::rules::Pack;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{any_claimed, http_site, provide, resolve_relative, salt_of, syntax_failure};
-use crate::tree::{SyntaxError, Value, parse_json, parse_yaml};
+use crate::common::{
+    SyntaxError, any_claimed, http_site, provide, resolve_relative, salt_of, syntax_failure,
+};
+use crate::tree::{Value, parse_json, parse_yaml};
 
 const VIA: &str = "openapi";
 

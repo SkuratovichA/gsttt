@@ -28,8 +28,7 @@ use sqlparser::dialect::{Dialect, PostgreSqlDialect, dialect_from_str};
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
-use crate::common::{Errors, provide, salt_of, site, syntax_failure};
-use crate::tree::SyntaxError;
+use crate::common::{Errors, SyntaxError, provide, salt_of, site, syntax_failure};
 
 const VIA: &str = "sql";
 

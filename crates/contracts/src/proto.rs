@@ -20,8 +20,10 @@ use gsttt_core::text::LineIndex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{any_claimed, byte_offset, http_site, provide, site, syntax_failure};
-use crate::tree::{SyntaxError, Value, parse_yaml};
+use crate::common::{
+    SyntaxError, any_claimed, byte_offset, http_site, provide, site, syntax_failure,
+};
+use crate::tree::{Value, parse_yaml};
 
 const VIA: &str = "proto";
 
