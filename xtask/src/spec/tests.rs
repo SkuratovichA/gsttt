@@ -1,28 +1,62 @@
 //! The spec gate on small repository trees. Each test writes the files it needs into a temporary
 //! directory and runs the gate on them, so nothing depends on this repository's own specs.
 
-use std::fs;
-use std::path::PathBuf;
+mod reach;
 
-use super::{Mode, Outcome, execute, run};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use super::workspace::Workspace;
+use super::{Mode, Outcome, execute, mode, run};
 
 /// The tasks of a change that is finished.
 const TICKED: &str = "- [x] 1.1 Build it\n";
 /// The tasks of a change with work left.
 const OPEN: &str = "- [x] 1.1 Design it\n- [ ] 1.2 Build it\n";
 
-/// A repository in a temporary directory with one workspace member, `crates/app`.
+/// The manifest of the package of every tree: a feature called `slow`, and the targets cargo finds.
+const PACKAGE: &str =
+    "[package]\nname = \"app\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[features]\nslow = []\n";
+
+/// A repository in a temporary directory with a real cargo workspace, whose targets the gate asks
+/// cargo for.
 struct Tree {
     dir: tempfile::TempDir,
 }
 
 impl Tree {
+    /// A workspace with one member, `crates/app`, whose library is empty.
     fn new() -> Self {
+        Self::with_manifest("")
+    }
+
+    /// The same, with `manifest` added to the manifest of the member: targets, mostly.
+    fn with_manifest(manifest: &str) -> Self {
+        let tree = Self::empty();
+        tree.write(
+            "Cargo.toml",
+            "[workspace]\nresolver = \"2\"\nmembers = [\"crates/app\"]\n",
+        )
+        .write("crates/app/Cargo.toml", &format!("{PACKAGE}{manifest}"))
+        .source("src/lib.rs", "");
+        tree
+    }
+
+    /// A workspace whose only member is the package at its root, so that a walk of the package
+    /// takes in the whole tree. Its files are written with [`Tree::write`].
+    fn rooted() -> Self {
+        let tree = Self::empty();
+        tree.write("Cargo.toml", &format!("{PACKAGE}\n[workspace]\n"))
+            .write("src/lib.rs", "");
+        tree
+    }
+
+    fn empty() -> Self {
         let tree = Self {
             dir: tempfile::tempdir().unwrap(),
         };
         fs::create_dir_all(tree.dir.path().join("openspec")).unwrap();
-        fs::create_dir_all(tree.dir.path().join("crates/app")).unwrap();
         tree
     }
 
@@ -55,8 +89,12 @@ impl Tree {
         self.write(&format!("crates/app/{file}"), text)
     }
 
+    fn workspace(&self) -> Workspace {
+        Workspace::load(self.dir.path()).unwrap()
+    }
+
     fn try_run(&self, mode: Mode) -> anyhow::Result<Outcome> {
-        execute(self.dir.path(), &[PathBuf::from("crates/app")], mode)
+        execute(&Workspace::load(self.dir.path())?, mode)
     }
 
     fn gate(&self) -> Outcome {
@@ -608,4 +646,92 @@ fn a_source_that_does_not_parse_is_an_error_naming_the_file() {
 #[test]
 fn unknown_arguments_are_refused() {
     assert!(run(&["--nope".to_owned()]).is_err());
+}
+
+#[test]
+fn the_flag_picks_the_mode() {
+    assert_eq!(mode(&[]).unwrap(), Mode::Report);
+    assert_eq!(mode(&["--ready".to_owned()]).unwrap(), Mode::Ready);
+    assert!(mode(&["--nope".to_owned()]).is_err());
+    assert!(mode(&["--ready".to_owned(), "--ready".to_owned()]).is_err());
+}
+
+#[test]
+fn the_exit_code_follows_the_verdict() {
+    // `ExitCode` cannot be compared, but it can be printed.
+    let code = |outcome: &Outcome| format!("{:?}", outcome.exit_code());
+    let success = format!("{:?}", ExitCode::SUCCESS);
+    let failure = format!("{:?}", ExitCode::FAILURE);
+
+    let passing = Tree::new();
+    passing
+        .spec(
+            "queries",
+            &main_spec(&[requirement("Defaults", &["Defaults apply"])]),
+        )
+        .source("tests/defaults.rs", &proof("queries", "Defaults apply"));
+    assert_eq!(code(&passing.gate()), success);
+
+    let failing = Tree::new();
+    failing.spec(
+        "queries",
+        &main_spec(&[requirement("Defaults", &["Defaults apply"])]),
+    );
+    assert_eq!(code(&failing.gate()), failure);
+    // Listing the changes that can be archived never fails.
+    assert_eq!(code(&failing.try_run(Mode::Ready).unwrap()), success);
+}
+
+#[test]
+fn the_workspace_lists_the_targets_cargo_runs_tests_for() {
+    let tree = Tree::with_manifest(
+        "\n[[test]]\nname = \"outside\"\npath = \"../../shared/outside.rs\"\n\n[[example]]\nname = \"counted\"\ntest = true\n",
+    );
+    tree.source("src/main.rs", "fn main() {}\n")
+        .source("tests/plain.rs", "")
+        .source("tests/directory/main.rs", "")
+        .source("tests/directory/helper.rs", "")
+        .source("examples/demo.rs", "fn main() {}\n")
+        .source("examples/counted.rs", "fn main() {}\n")
+        .source("benches/speed.rs", "")
+        .source("build.rs", "fn main() {}\n")
+        .write("shared/outside.rs", "");
+    let workspace = tree.workspace();
+    // Cargo reports the directory it found by walking up from where it ran, links resolved.
+    let root = fs::canonicalize(tree.dir.path()).unwrap();
+    assert_eq!(workspace.root, root);
+    let [package] = workspace.packages.as_slice() else {
+        panic!("one package expected: {workspace:?}");
+    };
+    assert_eq!(package.dir, root.join("crates/app"));
+    let roots: Vec<&Path> = package
+        .targets
+        .iter()
+        .map(|target| target.root.strip_prefix(&root).unwrap())
+        .collect();
+    let expected: Vec<PathBuf> = [
+        "crates/app/examples/counted.rs",
+        "crates/app/src/lib.rs",
+        "crates/app/src/main.rs",
+        "crates/app/tests/directory/main.rs",
+        "crates/app/tests/plain.rs",
+        "shared/outside.rs",
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .collect();
+    assert_eq!(roots, expected);
+}
+
+#[test]
+fn a_manifest_cargo_cannot_read_is_an_error_naming_the_directory() {
+    let tree = Tree::new();
+    tree.write("crates/app/Cargo.toml", "this is not a manifest\n");
+    let error = Workspace::load(tree.dir.path()).unwrap_err();
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("running cargo metadata in ")
+            && message.contains(&tree.dir.path().display().to_string()),
+        "{message}"
+    );
 }

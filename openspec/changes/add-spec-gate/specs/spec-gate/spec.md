@@ -25,7 +25,7 @@ The `gsttt-spec` crate SHALL read OpenSpec files into capabilities, requirements
 - **THEN** the attribute reports an error at its arguments
 
 ### Requirement: Finding proofs
-The gate SHALL find every `#[scenario]` attribute in the `.rs` files of the workspace's members, including those inside `proptest!` blocks, leaving out files under directories named `fixtures` or `snapshots`. An attribute SHALL count as a proof only on a function that is also marked with an attribute whose last path segment is `test`, or that is inside `proptest!`.
+The gate SHALL find `#[scenario]` attributes in the sources that the library, binary and test targets of the workspace compile, following `mod` declarations, `#[path]` attributes and `#[cfg(test)]` modules from each crate root that `cargo metadata` names, including attributes inside `proptest!` blocks. An attribute SHALL count as a proof only on a function that is also marked with an attribute whose last path segment is `test`, or that is inside `proptest!`.
 
 #### Scenario: Proofs inside proptest count
 - **WHEN** a test file has `proptest! { #[test] #[scenario("queries", "HTTP matching is symmetric")] fn symmetric(…) { … } }`
@@ -34,6 +34,36 @@ The gate SHALL find every `#[scenario]` attribute in the `.rs` files of the work
 #### Scenario: A marked helper is no proof
 - **WHEN** `#[scenario]` marks a function with no test attribute
 - **THEN** the gate fails and names the function's file and line
+
+#### Scenario: Modules of a target are followed
+- **WHEN** a test is marked `#[scenario]` in a module that a target declares with `mod name;`, with `#[path = "…"]` or with `#[cfg(test)]`, whether the module is a file of its own, a `mod.rs` or inside an inline module
+- **THEN** the gate counts it as the proof of that scenario
+
+#### Scenario: A target outside the member is read
+- **WHEN** a `[[test]]` target has a `path` outside its package's directory and a test in that file is marked `#[scenario]`
+- **THEN** the gate counts it as the proof of that scenario
+
+### Requirement: Proofs that do not run
+A `#[scenario]` attribute SHALL prove nothing, and the gate SHALL fail and name its file, line and reason, when its test would not run in `cargo test`: the function is `#[ignore]`d, it or a module around it or its file is compiled only under a `cfg` other than `test`, its target needs `required-features`, or no library, binary or test target reaches its file.
+
+#### Scenario: A file no target reaches is no proof
+- **WHEN** a test marked `#[scenario]` is in a `.rs` file that no `mod` declaration of any target reaches
+- **THEN** the gate fails and names the test's file and line
+
+#### Scenario: An ignored test is no proof
+- **WHEN** a test marked `#[scenario]` is also marked `#[ignore]`
+- **THEN** the gate fails and names the test's file and line
+
+#### Scenario: A conditional test is no proof
+- **WHEN** a test marked `#[scenario]` is compiled only under `#[cfg(feature = "slow")]`, through its function, a module around it, its file, or the `required-features` of its target
+- **THEN** the gate fails and names the test's file and line
+
+### Requirement: Files that are read
+The gate SHALL look for `.rs` files that no target reaches by walking each package, leaving out `target`, `fixtures` and `snapshots` directories, hidden directories, directories with a `Cargo.toml` of their own and symbolic links, and an entry it cannot read SHALL be an error naming that entry.
+
+#### Scenario: Copies of the tree are left out
+- **WHEN** a package holds copies of the workspace under `target/`, in a hidden directory or in a directory with a `Cargo.toml` of its own, and the copies hold tests marked `#[scenario]`
+- **THEN** the gate reads none of them
 
 ### Requirement: The gate
 `cargo xtask spec` SHALL fail when a scenario in `openspec/specs/` has no proof, when a proof names a scenario that is in neither `openspec/specs/` nor the `ADDED` or `MODIFIED` requirements of an open change, when a scenario has more than one proof, when two scenarios of one capability share a title, or when a proof names a scenario of a requirement an open change removes.

@@ -1,7 +1,8 @@
 //! The spec gate: every scenario proven by exactly one test. Specified in `openspec/specs/spec-gate/`
 //! and, until that change is archived, in `openspec/changes/add-spec-gate/`.
 //!
-//! - [`proofs`] finds the `#[scenario]` attributes in the sources of the workspace.
+//! - [`workspace`] asks cargo which targets the workspace has.
+//! - [`proofs`] finds the `#[scenario]` attributes in the sources those targets compile.
 //! - [`rules`] decides which scenarios exist, which are proven and what fails.
 //! - [`report`] prints the verdict.
 
@@ -10,13 +11,15 @@ mod report;
 mod rules;
 #[cfg(test)]
 mod tests;
+mod workspace;
 
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::Context as _;
-use xshell::{Shell, cmd};
+
+use workspace::Workspace;
 
 /// What `cargo xtask spec` was asked to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,34 +37,45 @@ struct Outcome {
     passed: bool,
 }
 
+impl Outcome {
+    /// Non-zero exactly when the gate failed.
+    fn exit_code(&self) -> ExitCode {
+        if self.passed {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// `cargo xtask spec [--ready]`.
 ///
 /// The exit code is non-zero exactly when the gate found something to fail. `--ready` only lists
 /// changes, so it succeeds whatever else is wrong; the archive workflow runs the gate itself on the
 /// archived specs.
 pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
-    let mode = match args {
-        [] => Mode::Report,
-        [flag] if flag == "--ready" => Mode::Ready,
-        _ => anyhow::bail!("usage: cargo xtask spec [--ready]"),
-    };
-    let (root, members) = workspace()?;
-    let outcome = execute(&root, &members, mode)?;
+    let mode = mode(args)?;
+    let workspace = Workspace::load(Path::new("."))?;
+    let outcome = execute(&workspace, mode)?;
     std::io::stdout()
         .write_all(outcome.output.as_bytes())
         .context("writing the report")?;
-    Ok(if outcome.passed {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
+    Ok(outcome.exit_code())
 }
 
-/// Reads the specs under `root`, finds the proofs in the sources of `members` (directories,
-/// absolute or relative to `root`) and judges them.
-fn execute(root: &Path, members: &[PathBuf], mode: Mode) -> anyhow::Result<Outcome> {
-    let openspec = gsttt_spec::read(root)?;
-    let marks = proofs::find(root, members)?;
+/// The mode that the arguments after `spec` ask for.
+fn mode(args: &[String]) -> anyhow::Result<Mode> {
+    match args {
+        [] => Ok(Mode::Report),
+        [flag] if flag == "--ready" => Ok(Mode::Ready),
+        _ => anyhow::bail!("usage: cargo xtask spec [--ready]"),
+    }
+}
+
+/// Reads the specs of the workspace, finds the proofs in its sources and judges them.
+fn execute(workspace: &Workspace, mode: Mode) -> anyhow::Result<Outcome> {
+    let openspec = gsttt_spec::read(&workspace.root)?;
+    let marks = proofs::find(workspace)?;
     let judgement = rules::judge(&openspec, &marks);
     Ok(match mode {
         Mode::Report => Outcome {
@@ -73,33 +87,4 @@ fn execute(root: &Path, members: &[PathBuf], mode: Mode) -> anyhow::Result<Outco
             passed: true,
         },
     })
-}
-
-/// The workspace root and the directories of its members, from `cargo metadata`.
-fn workspace() -> anyhow::Result<(PathBuf, Vec<PathBuf>)> {
-    let sh = Shell::new()?;
-    let json = cmd!(sh, "cargo metadata --no-deps --format-version 1").read()?;
-    let metadata: serde_json::Value =
-        serde_json::from_str(&json).context("reading the output of cargo metadata")?;
-    let root = metadata
-        .get("workspace_root")
-        .and_then(serde_json::Value::as_str)
-        .context("cargo metadata names no workspace_root")?;
-    let packages = metadata
-        .get("packages")
-        .and_then(serde_json::Value::as_array)
-        .context("cargo metadata lists no packages")?;
-    let mut members = Vec::new();
-    for package in packages {
-        let manifest = package
-            .get("manifest_path")
-            .and_then(serde_json::Value::as_str)
-            .context("a package has no manifest_path")?;
-        let dir = Path::new(manifest)
-            .parent()
-            .context("a manifest path has no directory")?;
-        members.push(dir.to_path_buf());
-    }
-    members.sort();
-    Ok((PathBuf::from(root), members))
 }

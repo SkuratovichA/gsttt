@@ -4682,6 +4682,7 @@ dependencies = [
  "gsttt-scenario",
  "gsttt-spec",
  "proc-macro2",
+ "serde",
  "serde_json",
  "syn 3.0.9",
  "tempfile",
