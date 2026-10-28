@@ -1,6 +1,6 @@
 //! The rules of the gate.
 //!
-//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes or retitles a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming the old one.
+//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming it. The fold also shows what `openspec archive` would refuse: a modified requirement replaces the whole block, and the archive stops at one that lacks a scenario of the block it replaces, so the gate fails that change before the archive does.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -201,6 +201,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
     let Effective {
         mut entries,
         dropped,
+        refusals,
         main,
     } = effective(openspec, &changes);
 
@@ -254,6 +255,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
     }
     failures.extend(purpose::failures(openspec));
     failures.extend(rivals(&changes));
+    failures.extend(refusals);
 
     entries.sort_by(|a, b| {
         (&a.capability, &a.source, &a.site).cmp(&(&b.capability, &b.source, &b.site))
@@ -273,6 +275,8 @@ struct Effective {
     entries: Vec<Entry>,
     /// The scenarios that open changes take away, each with the last change that does.
     dropped: BTreeMap<Key, Dropped>,
+    /// The modified requirements that `openspec archive` would refuse, because they lack a scenario of the requirement they replace.
+    refusals: Vec<Failure>,
     /// The requirements of the main specs.
     main: BTreeSet<Key>,
 }
@@ -284,10 +288,11 @@ struct Held<'a> {
     requirement: &'a Requirement,
 }
 
-/// The requirements that stand once the changes read so far are archived, by capability and name, and the scenarios that those changes took away. A name holds more than one requirement only where two specs or two changes add it, which `openspec archive` takes only when the two are the same block: both stay, so that the gate reports the scenarios they share.
+/// The requirements that stand once the changes read so far are archived, by capability and name, the scenarios that those changes took away, and the modified requirements that `openspec archive` would refuse. A name holds more than one requirement only where two specs or two changes add it, which `openspec archive` takes only when the two are the same block: both stay, so that the gate reports the scenarios they share.
 struct Fold<'a> {
     standing: BTreeMap<Key, Vec<Held<'a>>>,
     dropped: BTreeMap<Key, Dropped>,
+    refusals: Vec<Failure>,
 }
 
 impl<'a> Fold<'a> {
@@ -316,6 +321,14 @@ impl<'a> Fold<'a> {
             let gone = self
                 .standing
                 .insert(key(&requirement.name), vec![written(requirement)]);
+            // Two places that add one name hold one block for the archive, or it stops at the second, so the first stands for them.
+            if let Some(replaced) = gone.as_ref().and_then(|group| group.first()) {
+                let missing = missing_titles(replaced.requirement, requirement);
+                if !missing.is_empty() {
+                    self.refusals
+                        .push(refusal(change, delta, requirement, &missing));
+                }
+            }
             self.take_away(gone, capability, &change.name, Replacement::Modified);
         }
         for requirement in &delta.added {
@@ -354,6 +367,7 @@ fn effective(openspec: &OpenSpec, changes: &[Open]) -> Effective {
     let mut fold = Fold {
         standing: BTreeMap::new(),
         dropped: BTreeMap::new(),
+        refusals: Vec::new(),
     };
     for spec in &openspec.specs {
         for requirement in &spec.requirements {
@@ -394,6 +408,7 @@ fn effective(openspec: &OpenSpec, changes: &[Open]) -> Effective {
     Effective {
         entries,
         dropped: fold.dropped,
+        refusals: fold.refusals,
         main,
     }
 }
@@ -557,6 +572,47 @@ fn rivals(changes: &[Open]) -> Vec<Failure> {
             changes: by_change.keys().map(|name| (*name).to_owned()).collect(),
         })
         .collect()
+}
+
+/// The titles of the scenarios of `replaced` that `modified` does not match, counting a title as often as it is written the way `openspec archive` does: a title that `replaced` holds more often than `modified` leaves the difference.
+fn missing_titles<'a>(replaced: &'a Requirement, modified: &Requirement) -> Vec<&'a str> {
+    let mut available: BTreeMap<&str, usize> = BTreeMap::new();
+    for scenario in &modified.scenarios {
+        *available.entry(scenario.title.as_str()).or_default() += 1;
+    }
+    replaced
+        .scenarios
+        .iter()
+        .map(|scenario| scenario.title.as_str())
+        .filter(|title| {
+            let Some(left) = available.get_mut(*title).filter(|left| **left > 0) else {
+                return true;
+            };
+            *left -= 1;
+            false
+        })
+        .collect()
+}
+
+/// A modified requirement that leaves out scenarios of the requirement it replaces, which `openspec archive` refuses: the change waits until it keeps them.
+fn refusal(change: &Change, delta: &Delta, modified: &Requirement, missing: &[&str]) -> Failure {
+    let titles = join(missing.iter().map(|title| format!("`{title}`")));
+    let noun = if missing.len() == 1 {
+        "scenario"
+    } else {
+        "scenarios"
+    };
+    Failure {
+        site: Site {
+            file: delta.file.clone(),
+            line: modified.line,
+        },
+        message: format!(
+            "change `{}` modifies requirement `{}` of capability `{}` and leaves out {noun} {titles} of the requirement it replaces, and `openspec archive` refuses such a block",
+            change.name, modified.name, delta.capability
+        ),
+        changes: vec![change.name.clone()],
+    }
 }
 
 /// A claim on a scenario the specs do not have.

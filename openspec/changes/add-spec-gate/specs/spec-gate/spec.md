@@ -70,7 +70,7 @@ The gate SHALL look for `.rs` files that no target reaches by walking each packa
 - **THEN** the gate reads none of them
 
 ### Requirement: The gate
-`cargo xtask spec` SHALL fail when a scenario in `openspec/specs/` has no proof, when a proof names a scenario that is in neither `openspec/specs/` nor the `ADDED` or `MODIFIED` requirements of an open change, when a scenario has more than one proof, when two scenarios of one capability share a title, or when a proof names a scenario that an open change takes away, by removing its requirement or by modifying it without that scenario.
+`cargo xtask spec` SHALL fail when a scenario in `openspec/specs/` has no proof, when a proof names a scenario that is in neither `openspec/specs/` nor the `ADDED` or `MODIFIED` requirements of an open change, when a scenario has more than one proof, when two scenarios of one capability share a title, or when a proof names a scenario that an open change takes away by removing its requirement.
 
 #### Scenario: A scenario without a proof fails
 - **WHEN** a scenario in `openspec/specs/queries/spec.md` has no proof
@@ -91,10 +91,6 @@ The gate SHALL look for `.rs` files that no target reaches by walking each packa
 #### Scenario: Removed scenarios may not be claimed
 - **WHEN** an open change removes a requirement and a test still claims one of its scenarios
 - **THEN** the gate exits non-zero and names the test
-
-#### Scenario: Retitled scenarios may not be claimed
-- **WHEN** an open change modifies a requirement so that it no longer has a scenario of `openspec/specs/`, and a test still claims that scenario
-- **THEN** the gate exits non-zero and names the test and the change
 
 ### Requirement: Pending scenarios
 A scenario that an open change adds or modifies and that has no proof SHALL be reported as pending while that change has an unticked task or no task at all, saying which, and SHALL fail once all its tasks are ticked.
@@ -200,3 +196,22 @@ The gate SHALL read the open changes in the order `--ready` would archive them, 
 #### Scenario: A change that nothing places still counts
 - **WHEN** an open change modifies a requirement that no spec and no other open change has
 - **THEN** its scenarios need a proof like those of any other change, and `--ready` does not print the change
+
+### Requirement: Modified requirements keep their scenarios
+The gate SHALL fail an open change whose modified requirement lacks a scenario title of the requirement it replaces, the one that the main specs or an earlier open change leaves, whether or not a test claims that title, because `openspec archive` refuses such a block. A title counts as often as it is written, so one held twice and written once is lacking. The failure names the change, the requirement and each missing title, and `--ready` does not list the change.
+
+#### Scenario: A modified requirement that leaves out a scenario fails
+- **WHEN** an open change modifies a requirement so that it lacks a scenario of the requirement it replaces, and no test claims that scenario
+- **THEN** the gate exits non-zero and names the change, the requirement and the scenario
+
+#### Scenario: A modified requirement that keeps every scenario passes
+- **WHEN** an open change modifies a requirement, keeps every scenario of the requirement it replaces and adds one
+- **THEN** the gate exits zero and `--ready` lists the change
+
+#### Scenario: A title held twice and written once fails
+- **WHEN** an open change modifies a requirement that holds one scenario title twice, and writes that title once
+- **THEN** the gate exits non-zero and names the change, the requirement and the title
+
+#### Scenario: A requirement that an earlier change adds is the one replaced
+- **WHEN** an open change modifies a requirement that another open change adds, and leaves out one of its scenarios
+- **THEN** the gate exits non-zero and names the modifying change, and `--ready` still lists the other
