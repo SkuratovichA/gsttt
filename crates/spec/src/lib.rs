@@ -7,6 +7,7 @@
 
 mod attribute;
 mod capability;
+mod directory;
 mod error;
 mod markdown;
 mod tasks;
@@ -16,6 +17,7 @@ pub use attribute::{expand_scenario, scenario_args};
 pub use capability::{
     Delta, Purpose, Removed, Renamed, Requirement, Scenario, Spec, parse_delta, parse_spec,
 };
+pub use directory::{Entry, read_directory};
 pub use error::{Error, Problem};
 pub use tasks::{Task, parse_tasks};
 pub use tree::{Change, OpenSpec, read};
