@@ -264,12 +264,9 @@ fn check_disable(keys: &DeTable<'_>, modules: &[&str]) -> Result<(), Located> {
 fn module_options(name: &str, table: Spanned<DeValue<'_>>) -> Result<serde_json::Value, Located> {
     match table.get_ref() {
         DeValue::Table(options) if options.is_empty() => Ok(serde_json::Value::Null),
-        DeValue::Table(_) => {
-            let mut options = serde_json::Value::deserialize(ValueDeserializer::from(table))
-                .map_err(Located::from)?;
-            options.sort_all_objects();
-            Ok(options)
-        }
+        DeValue::Table(_) => serde_json::Value::deserialize(ValueDeserializer::from(table))
+            .map(sorted)
+            .map_err(Located::from),
         other => Err(Located::new(
             format!(
                 "`{name}` must be a table of options, like `[{name}]`, but it is of type {}",
@@ -307,8 +304,31 @@ fn check_external(
     glob_set(&external.files).map_err(|error| format!("`files` of `{name}` {error}"))?;
     check_env(&external.env).map_err(|error| format!("`env` of `{name}` {error}"))?;
     external.options = options_object(&external.options)
-        .map(serde_json::Value::Object)
+        .map(|options| sorted(serde_json::Value::Object(options)))
         .map_err(|error| format!("`options` of `{name}` {error}"))?;
-    external.options.sort_all_objects();
     Ok(())
+}
+
+/// `value` with the keys of every map sorted, at every depth and inside lists. The tables of toml come sorted already, but only while no crate of the build turns on its `preserve_order`, and the order a file was written in must never be part of the setup.
+fn sorted(mut value: serde_json::Value) -> serde_json::Value {
+    value.sort_all_objects();
+    value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_level_of_a_map_is_sorted() -> Result<(), serde_json::Error> {
+        // A map read from text keeps the order of the text, which a table of toml does not: only a value built like this one shows whether `sorted` reaches every level.
+        let written: serde_json::Value = serde_json::from_str(
+            r#"{"outer":{"b":{"z":1,"y":2},"a":3},"list":[{"y":1,"x":2}],"c":1}"#,
+        )?;
+        assert_eq!(
+            serde_json::to_string(&sorted(written))?,
+            r#"{"c":1,"list":[{"x":2,"y":1}],"outer":{"a":3,"b":{"y":2,"z":1}}}"#
+        );
+        Ok(())
+    }
 }
