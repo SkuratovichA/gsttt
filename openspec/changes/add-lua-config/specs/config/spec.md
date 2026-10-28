@@ -154,6 +154,13 @@ An external's process SHALL receive `open` with the protocol version, the root a
 - **WHEN** an external claims `**/*.kt` and its process answers every request
 - **THEN** the files `src/A.kt` and `src/B.kt` carry the facts it sent and the imports resolve as it said
 
+### Requirement: External output
+The lines an external's process writes to its standard error SHALL go to the log as warnings that name the connector, each line cut to 4 KiB and without control characters other than tab, so that the process cannot flood the log or forge a line in it.
+
+#### Scenario: A noisy process cannot flood or forge the log
+- **WHEN** an external's process writes to its standard error a line of a million characters, a line with an escape sequence and a carriage return, and an ordinary line
+- **THEN** the log holds three warnings naming the connector: the first cut to 4 KiB and ending in `…`, the second without its control characters, the third as it was written
+
 ### Requirement: External failures
 A process that exits, answers out of turn, sends a line that does not parse or takes longer than its timeout for one request SHALL fail every file it has not answered, as a panic naming the connector, and the run SHALL go on. The timeout SHALL be 10 seconds.
 

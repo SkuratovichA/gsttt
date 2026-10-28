@@ -14,6 +14,7 @@ use gsttt_core::fact::{FileFacts, Import};
 use serde_json::Map;
 
 use super::protocol::{PROTOCOL, Request, Response, WireResolution};
+use crate::text::{LOG_LINE_LIMIT, log_line};
 
 /// The longest line the process may send. A message holds the facts of one file, so this is far above any real one, and it stops a process that never ends its line from filling the memory.
 const MAX_LINE: u64 = 64 * 1024 * 1024;
@@ -281,21 +282,26 @@ fn drive(mut stdin: ChildStdin, mut stdout: BufReader<ChildStdout>, exchanges: R
     }
 }
 
-/// Sends what the process writes to standard error to the log until it closes the pipe.
-fn forward(name: &str, mut stderr: BufReader<ChildStderr>) {
+/// Sends what the process writes to standard error to the log until it closes the pipe: a warning for each line, made fit for a log by [`log_line`]. The process writes the text, so a line of any length must neither become a log line of that length nor sit in memory: what follows the first [`LOG_LINE_LIMIT`] bytes of a line is read and thrown away.
+fn forward(name: &str, mut stderr: impl BufRead) {
+    // One byte more than a log line holds, so that `log_line` can tell a line that ends there from one that goes on.
+    let kept = LOG_LINE_LIMIT as u64 + 1;
     let mut line = Vec::new();
-    while stderr
-        .by_ref()
-        .take(MAX_LINE)
-        .read_until(b'\n', &mut line)
-        .is_ok_and(|read| read > 0)
-    {
+    loop {
+        line.clear();
+        match (&mut stderr).take(kept).read_until(b'\n', &mut line) {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        let ended = line.last() == Some(&b'\n');
         tracing::warn!(
             connector = name,
             "{}",
-            String::from_utf8_lossy(&line).trim_end()
+            log_line(&String::from_utf8_lossy(&line))
         );
-        line.clear();
+        if !ended && stderr.skip_until(b'\n').is_err() {
+            return;
+        }
     }
 }
 
@@ -342,5 +348,52 @@ fn out_of_turn(got: &Response, due: &str) -> Failure {
     Failure::OutOfTurn {
         got: got.describe(),
         due: due.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, BufReader};
+
+    use super::*;
+    use crate::testlog::capture;
+
+    /// What `forward` logs for `stderr`, one entry per warning: its text, without the level, the target and the connector.
+    fn forwarded(stderr: impl BufRead) -> Vec<String> {
+        capture(|| forward("demo", stderr))
+            .iter()
+            .map(|line| {
+                let text = line.split_once(": ").map_or("", |(_, text)| text);
+                text.strip_suffix(" connector=\"demo\"")
+                    .unwrap_or(text)
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    #[gsttt_scenario::scenario("config", "A noisy process cannot flood or forge the log")]
+    #[test]
+    fn a_noisy_process_cannot_flood_or_forge_the_log() {
+        let long = "x".repeat(1_000_000);
+        let stderr = format!("{long}\nfake\u{1b}[31m red\r\nplain\ttabbed");
+        let lines = forwarded(stderr.as_bytes());
+        assert_eq!(
+            lines.len(),
+            3,
+            "{:?}",
+            lines.iter().map(String::len).collect::<Vec<_>>()
+        );
+        assert_eq!(lines[0].len(), LOG_LINE_LIMIT);
+        assert!(lines[0].starts_with("xxx") && lines[0].ends_with("x…"));
+        assert_eq!(lines[1], "fake[31m red");
+        assert_eq!(lines[2], "plain\ttabbed");
+    }
+
+    #[test]
+    fn a_line_of_hundreds_of_megabytes_is_one_short_log_line() {
+        let endless = BufReader::new(io::repeat(b'x').take(200 * 1024 * 1024));
+        let lines = forwarded(endless);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].len(), LOG_LINE_LIMIT);
     }
 }

@@ -27,3 +27,4 @@
 - [x] 5.3 The `string` library has no pattern matcher and its `find` looks only for the text it is given
 - [x] 5.4 A run stops after two seconds, `print` and `warn` write a bounded plain log, and an error message is cut at 1 KiB
 - [x] 5.5 `next` is gone, and no address reaches a config through `tostring` or `string.format`
+- [x] 5.6 The standard error of an external's process reaches the log as lines of at most 4 KiB without control characters
