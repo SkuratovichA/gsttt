@@ -770,6 +770,7 @@ mod tests {
         }
     }
 
+    #[gsttt_scenario::scenario("contract-formats", "A computed origin alone is a blind spot")]
     #[test]
     fn http_calls_skip_what_is_not_a_url_and_count_what_is_computed() {
         let get = rule(serde_json::json!({

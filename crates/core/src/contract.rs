@@ -367,6 +367,10 @@ mod tests {
         assert_eq!(normalize_http_path("/a/>b<"), "/a/>b<");
     }
 
+    #[gsttt_scenario::scenario(
+        "contract-formats",
+        "A parameter with a custom method is still a parameter"
+    )]
     #[test]
     fn a_parameter_with_a_custom_method_is_still_a_parameter() {
         for path in [
@@ -394,6 +398,10 @@ mod tests {
         assert_eq!(path_after_origin("://h/x"), None);
     }
 
+    #[gsttt_scenario::scenario(
+        "contract-formats",
+        "A scheme and host written as placeholders are an origin"
+    )]
     #[test]
     fn a_scheme_and_host_written_as_placeholders_are_an_origin() {
         for (url, after_origin, path) in [
@@ -415,6 +423,7 @@ mod tests {
         assert_eq!(normalize_http_path("${}/${}/x"), "/{}/x");
     }
 
+    #[gsttt_scenario::scenario("contract-formats", "A URL in a query string is no origin")]
     #[test]
     fn a_url_in_a_query_string_is_no_origin() {
         assert_eq!(path_after_origin("/a?next=https://b/c"), None);
@@ -422,6 +431,7 @@ mod tests {
         assert_eq!(normalize_http_path("/a?next=https://b/c"), "/a");
     }
 
+    #[gsttt_scenario::scenario("contract-formats", "The host ends at a query string")]
     #[test]
     fn the_host_ends_at_a_query_string_or_a_fragment() {
         assert_eq!(path_after_origin("http://h?next=/a"), Some("?next=/a"));

@@ -79,6 +79,35 @@ A document that is too large, unreadable or invalid when the connector looks for
 - **WHEN** `openapi.yaml` has the path items `/bookings` and `/carts` as `$ref`s to `paths/bookings.yaml` and `paths/carts.yaml`, and `paths/carts.yaml` has a tab where YAML expects spaces
 - **THEN** a warning names `paths/carts.yaml` and none names `paths/bookings.yaml`, and both files belong to the project
 
+### Requirement: The origin of a URL
+A URL SHALL have an origin when its text starts with a scheme and `://`, and the host after it SHALL end at the first `/`, `?` or `#`. A scheme SHALL be a letter followed by letters, digits, `+`, `-` or `.`, or be written as placeholders, which lets it start with `$` or `{` and hold `$`, `{` and `}`; it SHALL never hold `/`. A placeholder, `//` and a host that holds a placeholder SHALL be an origin too. An HTTP key SHALL drop the origin and keep the path after it.
+
+#### Scenario: A scheme and host written as placeholders are an origin
+- **WHEN** the HTTP paths `${}://${}/bookings/{}`, `{scheme}://{host}:{port}/v1` and `${}//${}/api/x` are normalised, the last from `${location.protocol}//${location.host}/api/x`
+- **THEN** they become `/bookings/{}`, `/v1` and `/api/x`, and `${}//api/x`, a base URL with a trailing slash, becomes `/api/x`
+
+#### Scenario: A URL in a query string is no origin
+- **WHEN** the HTTP path `/a?next=https://b/c` is normalised
+- **THEN** it becomes `/a`
+
+#### Scenario: The host ends at a query string
+- **WHEN** the HTTP paths `http://h?next=/a` and `http://h#/a` are normalised
+- **THEN** both become `/`
+
+### Requirement: A computed origin alone
+A call whose request target is only a computed origin SHALL be a blind spot and SHALL declare no fact about the path `/`.
+
+#### Scenario: A computed origin alone is a blind spot
+- **WHEN** a call has the request target `${}`, `https://${}`, `${}://${}` or `${}//${}`, or one that cannot be read
+- **THEN** it is a blind spot and declares no fact
+
+### Requirement: Parameter segments of an HTTP key
+A segment of an HTTP path SHALL be keyed `{}` when it starts with `:`, holds a `${…}` or `{}` placeholder, holds a `{` followed later by a `}`, or holds a `<` followed later by a `>`, whatever else it holds, so the custom methods `{id}:cancel` and `<id>:cancel` are parameters and `}x{` is not.
+
+#### Scenario: A parameter with a custom method is still a parameter
+- **WHEN** the HTTP paths `/v1/things/{id}:cancel`, `/v1/things/<id>:cancel` and `/v1/things/<int:id>:cancel` are normalised
+- **THEN** each becomes `/v1/things/{}`
+
 ### Requirement: GraphQL
 In a schema, each field of `Query`, `Mutation` and `Subscription`, including their `extend type` forms and the types a `schema` definition names for those roots, SHALL declare `graphql <Root>.<field>`, with a renamed root written as `Query`, `Mutation` or `Subscription`.
 
