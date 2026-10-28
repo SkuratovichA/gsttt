@@ -3,6 +3,9 @@
 //! The snapshot of a test holds everything the connector found. The readers below give the few facts a scenario speaks about, so that a test says what it proves even when a snapshot is accepted in a hurry.
 
 use std::error::Error;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use gsttt_config::builtin_packs;
 use gsttt_core::RepoView;
@@ -38,6 +41,18 @@ pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
     let mut json = output.to_json(&repo);
     json.sort_all_objects();
     Ok(json)
+}
+
+/// Runs `fixture` on another thread and gives up after `limit`, so that a walk that does not end fails its test instead of hanging the run.
+pub(crate) fn run_within(fixture: &'static str, limit: Duration) -> Result<Value, Box<dyn Error>> {
+    let (sender, receiver) = mpsc::channel();
+    // The receiver is gone when the test gave up, and then there is nobody to tell.
+    thread::spawn(move || {
+        sender
+            .send(run(fixture).map_err(|error| error.to_string()))
+            .ok()
+    });
+    Ok(receiver.recv_timeout(limit)??)
 }
 
 /// Every site of the graph the engine builds from the output for `fixture`, as `<role> <key> @<line> in <path>`, in byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query would answer from.

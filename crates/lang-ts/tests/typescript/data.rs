@@ -1,26 +1,11 @@
 //! Tables and environment variables.
 
 use std::error::Error;
-use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 
 use gsttt_scenario::scenario;
-use serde_json::Value;
 
-use crate::support::{NOTHING, contracts, run};
-
-/// Runs `fixture` on another thread and gives up after `limit`, so that a walk that does not end fails its test instead of hanging the run.
-fn run_within(fixture: &'static str, limit: Duration) -> Result<Value, Box<dyn Error>> {
-    let (sender, receiver) = mpsc::channel();
-    // The receiver is gone when the test gave up, and then there is nobody to tell.
-    thread::spawn(move || {
-        sender
-            .send(run(fixture).map_err(|error| error.to_string()))
-            .ok()
-    });
-    Ok(receiver.recv_timeout(limit)??)
-}
+use crate::support::{NOTHING, contracts, run, run_within};
 
 #[test]
 #[scenario("typescript", "A Prisma call names its table")]
