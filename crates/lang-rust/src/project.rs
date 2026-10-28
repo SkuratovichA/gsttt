@@ -214,18 +214,10 @@ fn aliases(files: &[PrepareFile<'_>]) -> Aliases {
         .iter()
         .filter_map(|file| {
             let mut names = BTreeMap::new();
-            for import in
-                file.facts.imports.iter().filter(|import| {
-                    matches!(import.kind, ImportKind::Static | ImportKind::ReExport)
-                })
-            {
-                if let [name] = import.names.as_slice()
-                    && name != "*"
-                {
-                    names
-                        .entry(name.clone())
-                        .or_insert_with(|| import.spec.clone());
-                }
+            for (name, spec) in imports::bindings(&file.facts.imports) {
+                names
+                    .entry(name.to_owned())
+                    .or_insert_with(|| spec.to_owned());
             }
             (!names.is_empty()).then(|| (file.path.as_str().to_owned(), names))
         })

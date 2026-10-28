@@ -83,6 +83,18 @@ pub(crate) fn read(
     imports
 }
 
+/// The names that `imports` bring into a file, each with the path it stands for: one for every `use` or `extern crate`
+/// leaf that binds a single name, and none for a glob or a `mod`.
+pub(crate) fn bindings(imports: &[Import]) -> impl Iterator<Item = (&str, &str)> {
+    imports
+        .iter()
+        .filter(|import| matches!(import.kind, ImportKind::Static | ImportKind::ReExport))
+        .filter_map(|import| match import.names.as_slice() {
+            [name] if name != "*" => Some((name.as_str(), import.spec.as_str())),
+            _ => None,
+        })
+}
+
 struct Reader<'a> {
     lines: &'a LineIndex,
     query_files: bool,

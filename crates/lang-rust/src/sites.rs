@@ -12,7 +12,7 @@ mod routers;
 #[cfg(test)]
 mod tests;
 
-use gsttt_core::fact::{ContractFact, Embedded, Import, ImportKind, UnresolvedSite};
+use gsttt_core::fact::{ContractFact, Embedded, Import, UnresolvedSite};
 use gsttt_core::rules::{AssignRule, CallRule, ChainRule, DecoratorRule, EmbedRule, Outcome, Pack};
 use gsttt_core::text::LineIndex;
 use ra_ap_edition::Edition;
@@ -21,6 +21,7 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 
 use self::candidate::{Candidate, Prepared, View, apply_per_verb, lacks_keywords};
+use crate::imports;
 use crate::link::Extra;
 
 /// What the sites of a file say.
@@ -88,19 +89,10 @@ pub(crate) fn read(
 /// paths, as two modules of one file may, stands for neither.
 fn uses_of(imports: &[Import]) -> HashMap<String, String> {
     let mut found: HashMap<String, Option<String>> = HashMap::new();
-    let brought = imports
-        .iter()
-        .filter(|import| matches!(import.kind, ImportKind::Static | ImportKind::ReExport));
-    for import in brought {
-        let [name] = import.names.as_slice() else {
-            continue;
-        };
-        if name == "*" {
-            continue;
-        }
-        let path = import.spec.trim_start_matches("::").replace("::", ".");
+    for (name, spec) in imports::bindings(imports) {
+        let path = spec.trim_start_matches("::").replace("::", ".");
         found
-            .entry(name.clone())
+            .entry(name.to_owned())
             .and_modify(|known| {
                 if known.as_deref() != Some(path.as_str()) {
                     *known = None;
