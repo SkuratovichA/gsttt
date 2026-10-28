@@ -169,7 +169,7 @@ The engine SHALL call each project's `prepare` once with every file it owns befo
 - **THEN** the graph has that site on that file
 
 ### Requirement: Linked facts replace the facts they re-key
-A site from the link phase SHALL replace the site of each own fact of the same file with the same line, role and contract kind, so that a declaration a mount re-keys is a site once, under its linked key. A link that re-keys a line SHALL return one fact per mount, the root included. Embedded facts are never replaced, and a file whose link returned nothing or panicked keeps its own facts.
+A site from the link phase SHALL replace the site of each own fact of the same file with the same line, role and contract kind, so that a declaration a mount re-keys is a site once, under its linked key. A link that re-keys a line SHALL return a fact for every own fact of that line, role and kind, one per mount, the root included. Embedded facts are never replaced, and a file whose link returned nothing or panicked keeps its own facts.
 
 #### Scenario: A linked fact replaces the own fact it re-keys
 - **WHEN** a file has the own fact `serves http GET /bookings/{}` at line 1 and its project's `link` returns `serves http GET /api/bookings/{}` at line 1 of the same file
@@ -192,6 +192,11 @@ A site from the link phase SHALL replace the site of each own fact of the same f
 - **WHEN** a file has an own fact at line 1 and `link` returns two facts for that line, one under each of two prefixes
 - **THEN** the graph has two sites on that file at line 1, one under each linked key
 - **AND** it has no site under the own key
+
+#### Scenario: An own fact the link leaves out of a re-keyed line loses its site
+- **WHEN** a file has the own facts `serves http GET /a` and `serves http GET /b` at line 1 and `link` returns only `serves http GET /api/a` at line 1
+- **THEN** the graph has a site under `/api/a`
+- **AND** it has no site under `/a` or under `/b`
 
 #### Scenario: An embedded fact is not replaced by a linked one
 - **WHEN** a linked fact has the file, line, role and contract kind of a fact read from an embedded document
