@@ -4,7 +4,6 @@ expression: "json!({ \"roots\": roots, \"project_of\": tree.column(\"project\") 
 ---
 {
   "roots": [
-    "",
     "services/api",
     "services/worker"
   ],

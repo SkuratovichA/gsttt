@@ -43,3 +43,4 @@
 - [x] 5.17 The `env` pack names a settings field after a literal `validation_alias` or `alias` of the call it is assigned, with no prefix in front, and an alias that is not a literal leaves an unread site in place of the variable named after the field
 - [x] 5.18 The provides name the fields of a settings class that derives from another settings class, and an alias written inside a field's annotation, as blind spots of the `env` pack
 - [x] 5.19 A `pyproject.toml` that is not valid TOML is a failed file in the coverage, a syntax failure with the line and the message of the TOML parser, and its project still opens
+- [x] 5.20 The project at the repository root opens only when some Python file lies under no directory with a manifest, in place of whenever the root has no manifest of its own

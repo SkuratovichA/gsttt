@@ -7,11 +7,15 @@ The Python connector reads Python into imports and contract sites. It parses wit
 ## ADDED Requirements
 
 ### Requirement: Projects
-The connector SHALL open one project per directory holding a `pyproject.toml`, `setup.py` or `setup.cfg`, and one at the root when the repository has Python files and none of these at the root. A project SHALL claim the `py` and `pyi` files under its root, and its manifests (`pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`), which it tags as manifests.
+The connector SHALL open one project per directory holding a `pyproject.toml`, `setup.py` or `setup.cfg`, and one at the root when a Python file lies under none of those directories. A project SHALL claim the `py` and `pyi` files under its root, and its manifests (`pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`), which it tags as manifests.
 
 #### Scenario: Each pyproject is a project
 - **WHEN** a repository has `services/api/pyproject.toml` and `services/worker/pyproject.toml`
 - **THEN** the connector opens a project at each, and `services/api/app/main.py` belongs to `services/api`
+
+#### Scenario: The root project opens only for Python files outside every project
+- **WHEN** every Python file of a repository lies under a directory with a `pyproject.toml`, and when another repository also has `tools/release.py` under none of them
+- **THEN** the first repository has no project at the root, and the second has one that owns `tools/release.py`
 
 ### Requirement: Malformed manifests
 A `pyproject.toml` that is not valid TOML SHALL be a failed file in the coverage, a syntax failure with the line and the message of the TOML parser, so a project that lost the packs and source roots the manifest would have given is not silent about it. The project SHALL still open and read its Python files.

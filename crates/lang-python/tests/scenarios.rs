@@ -188,6 +188,27 @@ fn each_pyproject_is_a_project() {
     );
 }
 
+#[gsttt_scenario::scenario(
+    "python",
+    "The root project opens only for Python files outside every project"
+)]
+#[test]
+fn the_root_project_opens_only_for_python_files_outside_every_project() {
+    // Every Python file is under a manifest: an empty root project would only be noise in the coverage.
+    assert_eq!(
+        index("workspace").roots(),
+        ["services/api", "services/worker"]
+    );
+    // `tools/release.py` is under none of them, so the root project reads it.
+    let stray = index("root_script");
+    assert_eq!(stray.roots(), ["", "services/api"]);
+    assert_eq!(stray.file_json("tools/release.py")["project"], "python .");
+    assert_eq!(
+        stray.file_json("services/api/app.py")["project"],
+        "python services/api"
+    );
+}
+
 #[gsttt_scenario::scenario("python", "A malformed pyproject.toml is a failed file")]
 #[test]
 fn a_malformed_pyproject_is_a_failed_file() {

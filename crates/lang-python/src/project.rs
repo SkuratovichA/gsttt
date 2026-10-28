@@ -46,8 +46,13 @@ pub(crate) fn open_projects(
         .filter(|(_, path)| PROJECT_MANIFESTS.contains(&path.file_name()))
         .map(|(_, path)| path.parent().to_owned())
         .collect();
-    // Python files without a manifest above them still need a project to be read; the repository root is it.
-    if !roots.contains("") && repo.files().any(|(_, path)| is_python_source(path)) {
+    // Python files without a manifest above them still need a project to be read; the repository root is it. Without
+    // such a file the root would be a project with nothing to read.
+    if !roots.contains("")
+        && repo
+            .files()
+            .any(|(_, path)| is_python_source(path) && !is_held_by(&roots, path))
+    {
         roots.insert(String::new());
     }
     // A requirements file belongs to the deepest project above it.
@@ -86,6 +91,14 @@ pub(crate) fn open_projects(
         }
     }
     Ok(projects)
+}
+
+/// Whether `path` lies under one of the project `roots`: its directory or one above it is a root.
+fn is_held_by(roots: &BTreeSet<String>, path: &RepoPath) -> bool {
+    std::iter::successors(Some(path.parent()), |dir| {
+        (!dir.is_empty()).then(|| dir.rsplit_once('/').map_or("", |(above, _)| above))
+    })
+    .any(|dir| roots.contains(dir))
 }
 
 fn open_project(
