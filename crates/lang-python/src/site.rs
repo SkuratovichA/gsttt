@@ -534,12 +534,15 @@ impl Site for AssignSite<'_> {
     ///
     /// A keyword that is there but not a literal names something the rule cannot read, so it comes back as a computed
     /// text and the rule records an unread site: left out, the rule would go on to the next alternative and name a
-    /// variable the field does not read.
+    /// variable the field does not read. `None` is what a keyword defaults to, so it is left out all the same.
     fn keyword(&self, name: &str) -> Option<Cow<'_, str>> {
         let Expr::Call(call) = self.value? else {
             return None;
         };
         let value = &call.arguments.find_keyword(name)?.value;
+        if value.is_none_literal_expr() {
+            return None;
+        }
         Some(literal_of(value).unwrap_or(Cow::Borrowed(COMPUTED)))
     }
 }
@@ -578,7 +581,8 @@ mod tests {
             read("field = Field(alias=f'{PREFIX}_URL')").as_deref(),
             Some("${}")
         );
-        assert_eq!(read("field = Field(alias=None)").as_deref(), Some("${}"));
+        // `None` is what a keyword defaults to, so writing it says nothing.
+        assert_eq!(read("field = Field(alias=None)"), None);
         assert_eq!(read("field = Field('DB_URL', description='d')"), None);
         assert_eq!(read("field = 'DB_URL'"), None);
         assert_eq!(read("field = NAME"), None);

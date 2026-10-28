@@ -420,11 +420,19 @@ With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.env
 - **THEN** it calls `env DJANGO_SETTINGS_MODULE` and `env PORT`, and the call whose name is a variable leaves an unread site
 
 ### Requirement: Settings aliases
-A field of a class deriving from `BaseSettings` that is assigned a call with a literal `validation_alias=` or `alias=` SHALL call `env <ALIAS>` in place of the variable its name gives, `validation_alias` before `alias`, with no `env_prefix` put in front. A keyword that is not a literal SHALL leave an unread site and no `env` call for the field.
+A field of a class deriving from `BaseSettings` that is assigned a call with a literal `env=` (pydantic 1), `validation_alias=` or `alias=` SHALL call `env <NAME>` in place of the variable its name gives, in that order, with no `env_prefix` put in front. A keyword that is `None` SHALL count as not written. Any other keyword that is not a literal SHALL leave an unread site and no `env` call for the field.
 
 #### Scenario: A settings field with an alias is read under the alias
 - **WHEN** a class deriving from `BaseSettings` with `env_prefix="APP_"` has `database_url: str = Field(alias="DB_URL")`, `region: str = Field("eu", alias="OLD_REGION", validation_alias="REGION")`, `mode: str = Field(validation_alias=AliasChoices("MODE", "APP_MODE"))`, `secret: str = Field(alias=TOKEN_NAME)` and `timeout: int = 30`
 - **THEN** it calls `env DB_URL`, `env REGION` and `env APP_TIMEOUT`, and `mode` and `secret` each leave an unread site
+
+#### Scenario: A settings field with a pydantic 1 env name is read under it
+- **WHEN** a class deriving from `BaseSettings` with `env_prefix="APP_"` has `database_url: str = Field(env="DB_URL")`, `region: str = Field("eu", env="REGION", alias="OLD_REGION")` and `timeout: int = 30`
+- **THEN** it calls `env DB_URL`, `env REGION` and `env APP_TIMEOUT`
+
+#### Scenario: A None alias is no alias
+- **WHEN** a class deriving from `BaseSettings` has `port: int = Field(8000, alias=None)` and `mode: str = Field("dev", validation_alias=None, alias="MODE_NAME")`
+- **THEN** it calls `env PORT` and `env MODE_NAME`, and leaves no unread site
 
 ### Requirement: Settings subclasses
 Only a class that names `BaseSettings` as one of its bases SHALL have its fields read. The fields of a class deriving from another settings class, and an alias written inside a field's annotation, SHALL be among the blind spots of the project.

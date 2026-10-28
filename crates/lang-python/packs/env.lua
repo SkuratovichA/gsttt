@@ -1,6 +1,7 @@
 -- Environment variables: `os.environ["A"]`, `os.environ.get("A")`, `os.environ.setdefault("A", …)`, `os.getenv("A")`
 -- and each field of a pydantic settings class, named after the field (behind the class's `env_prefix`) in upper case,
--- or after its `validation_alias` or `alias` when it has a literal one, which is the name as it stands, with no prefix.
+-- or after its `env` (pydantic 1), `validation_alias` or `alias` when it has a literal one, which is the name as it
+-- stands, with no prefix.
 -- Always on.
 --
 -- Only a class that names `BaseSettings` as a base is a settings class: a class that derives from another settings
@@ -38,7 +39,7 @@ return {
       class = { "BaseSettings", "*.BaseSettings", "pydantic_settings.BaseSettings", "pydantic.BaseSettings" },
       kind = "env",
       role = "calls",
-      key = "$validation_alias|$alias|$callee",
+      key = "$env|$validation_alias|$alias|$callee",
     },
   },
 }

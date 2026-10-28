@@ -1281,6 +1281,56 @@ fn a_settings_field_with_an_alias_is_read_under_the_alias() {
     );
 }
 
+#[gsttt_scenario::scenario(
+    "python",
+    "A settings field with a pydantic 1 env name is read under it"
+)]
+#[test]
+fn a_settings_field_with_a_pydantic_1_env_name_is_read_under_it() {
+    let tree = index_files(&[(
+        "settings.py",
+        r#"from pydantic import BaseSettings, Field
+from pydantic_settings import SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="APP_")
+    database_url: str = Field(env="DB_URL")
+    region: str = Field("eu", env="REGION", alias="OLD_REGION")
+    timeout: int = 30
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("settings.py"),
+        [
+            "calls env DB_URL@7",
+            "calls env REGION@8",
+            "calls env APP_TIMEOUT@9"
+        ]
+    );
+    assert_eq!(tree.unread("settings.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A None alias is no alias")]
+#[test]
+fn a_none_alias_is_no_alias() {
+    let tree = index_files(&[(
+        "settings.py",
+        r#"from pydantic import BaseSettings, Field
+
+
+class Settings(BaseSettings):
+    port: int = Field(8000, alias=None)
+    mode: str = Field("dev", validation_alias=None, alias="MODE_NAME")
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("settings.py"),
+        ["calls env PORT@5", "calls env MODE_NAME@6"]
+    );
+    assert_eq!(tree.unread("settings.py"), Vec::<String>::new());
+}
+
 #[gsttt_scenario::scenario("python", "Setting a default for an environment variable reads it")]
 #[test]
 fn setting_a_default_for_an_environment_variable_reads_it() {
