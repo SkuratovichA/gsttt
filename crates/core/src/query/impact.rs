@@ -10,10 +10,11 @@ use crate::graph::Graph;
 use crate::ids::{FileId, IdSet};
 use crate::index::{Freshness, Index};
 use crate::path::RepoPath;
+use crate::text::{noun, summary};
 
 use super::cross::Crossing;
 use super::lookup::{Miss, find, possible_misses};
-use super::render::{Answer, Entries, Footer, Searched, display_as_text, list, noun, summary};
+use super::render::{Answer, Entries, Footer, Searched, display_as_text, list};
 use super::walk::{Cause, reach};
 
 /// What a change is asked about.

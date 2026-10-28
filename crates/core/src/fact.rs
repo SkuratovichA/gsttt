@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::contract::{ContractKey, Role};
 use crate::ids::FileId;
+use crate::text::thousands;
 
 /// A 1-based line number.
 pub type Line = u32;
@@ -450,6 +451,24 @@ impl fmt::Display for UnresolvedReason {
     }
 }
 
+/// How a file failed, in a sentence part: `syntax error at line 3: unexpected token`.
+impl fmt::Display for ParseFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Panicked { message } => write!(f, "the parser panicked: {message}"),
+            Self::TooLarge { bytes, limit } => write!(
+                f,
+                "{} bytes, over the limit of {}",
+                thousands(*bytes),
+                thousands(*limit)
+            ),
+            Self::NotUtf8 => f.write_str("not valid UTF-8"),
+            Self::Unreadable { message } => write!(f, "could not be read: {message}"),
+            Self::Syntax { line, message } => write!(f, "syntax error at line {line}: {message}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,6 +479,38 @@ mod tests {
         assert!(flags.contains(ImportFlags::TYPE_ONLY) && !flags.contains(ImportFlags::TEST_ONLY));
         assert_eq!(format!("{flags:?}"), r#"{"TYPE_ONLY", "OPTIONAL"}"#);
         assert!(ImportFlags::NONE.is_empty());
+    }
+
+    #[test]
+    fn a_failure_is_spelled_as_a_sentence_part() {
+        let failures = [
+            ParseFailure::Panicked {
+                message: "boom".to_owned(),
+            },
+            ParseFailure::TooLarge {
+                bytes: 2_000_000,
+                limit: 1_000_000,
+            },
+            ParseFailure::NotUtf8,
+            ParseFailure::Unreadable {
+                message: "permission denied".to_owned(),
+            },
+            ParseFailure::Syntax {
+                line: 3,
+                message: "unexpected token".to_owned(),
+            },
+        ];
+        let spelled: Vec<String> = failures.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            spelled,
+            [
+                "the parser panicked: boom",
+                "2,000,000 bytes, over the limit of 1,000,000",
+                "not valid UTF-8",
+                "could not be read: permission denied",
+                "syntax error at line 3: unexpected token",
+            ]
+        );
     }
 
     #[test]

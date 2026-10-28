@@ -9,10 +9,11 @@ use crate::fact::ImportKind;
 use crate::graph::{Edge, Graph};
 use crate::ids::{ContractId, FileId, IdSet, IdVec};
 use crate::index::{Freshness, Index};
+use crate::text::noun;
 
 use super::cross::{Crossing, roles_of};
 use super::lookup::find;
-use super::render::{Answer, Entries, Footer, display_as_text, noun, rows};
+use super::render::{Answer, Entries, Footer, display_as_text, rows};
 
 /// How a chain gets from one file to the next.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

@@ -9,11 +9,9 @@ use crate::coverage::{ConnectorCoverage, FailedFile, ReasonCount};
 use crate::fact::{Line, ParseFailure, UnresolvedReason};
 use crate::graph::Graph;
 use crate::index::{Freshness, Index, Timings};
+use crate::text::{duration, join_and, noun, short, thousands};
 
-use super::render::{
-    Answer, Entries, Footer, display_as_text, join_and, list, moved, noun, percent, short,
-    thousands,
-};
+use super::render::{Answer, Entries, Footer, display_as_text, list, moved, percent};
 
 /// A line of a file, written `path:line`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -250,7 +248,7 @@ impl ConnectorReport {
             &format!("{name} failed files"),
             &self.failed,
             entries,
-            |f, failed| write!(f, "{}  {}", failed.path, failure_text(&failed.failure)),
+            |f, failed| write!(f, "{}  {}", failed.path, failed.failure),
         )?;
         let unresolved = format!("{name} unresolved imports");
         list(f, &unresolved, &self.unresolved, entries, |f, reason| {
@@ -288,21 +286,6 @@ fn write_reason(f: &mut fmt::Formatter<'_>, reasons: &Reasons, what: &str) -> fm
         noun(reasons.count, what),
         reasons.first
     )
-}
-
-/// How a file failed, in a sentence part.
-fn failure_text(failure: &ParseFailure) -> String {
-    match failure {
-        ParseFailure::Panicked { message } => format!("the parser panicked: {message}"),
-        ParseFailure::TooLarge { bytes, limit } => format!(
-            "{} bytes, over the limit of {}",
-            thousands(*bytes),
-            thousands(*limit)
-        ),
-        ParseFailure::NotUtf8 => "not valid UTF-8".to_owned(),
-        ParseFailure::Unreadable { message } => format!("could not be read: {message}"),
-        ParseFailure::Syntax { line, message } => format!("syntax error at line {line}: {message}"),
-    }
 }
 
 impl Answer for CoverageReport {
@@ -351,7 +334,7 @@ impl Answer for CoverageReport {
             "files skipped before any connector read them",
             &self.skipped,
             entries,
-            |f, skipped| write!(f, "{}  {}", skipped.path, failure_text(&skipped.failure)),
+            |f, skipped| write!(f, "{}  {}", skipped.path, skipped.failure),
         )?;
         self.footer.write(f)
     }
@@ -435,50 +418,4 @@ impl Answer for Status {
     }
 }
 
-/// A time in microseconds, written as microseconds, or as milliseconds or seconds with one decimal.
-fn duration(micros: u64) -> String {
-    if micros < 1_000 {
-        return format!("{micros} µs");
-    }
-    // Below this many microseconds a time in milliseconds still rounds to less than a thousand of them.
-    if micros < 999_950 {
-        format!("{} ms", tenths(micros, 1_000))
-    } else {
-        format!("{} s", tenths(micros, 1_000_000))
-    }
-}
-
-/// `micros / unit` rounded to one decimal place, with integers only so that no float's rounding decides it.
-fn tenths(micros: u64, unit: u64) -> String {
-    let tenths = micros.saturating_mul(10).saturating_add(unit / 2) / unit;
-    format!("{}.{}", tenths / 10, tenths % 10)
-}
-
 display_as_text!(CoverageReport, Status);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn durations_pick_a_unit_and_round_once() {
-        let spelled: Vec<String> = [
-            0, 999, 1_000, 1_049, 1_050, 12_345, 999_949, 999_950, 2_500_000,
-        ]
-        .into_iter()
-        .map(duration)
-        .collect();
-        assert_eq!(
-            spelled,
-            [
-                "0 µs", "999 µs", "1.0 ms", "1.0 ms", "1.1 ms", "12.3 ms", "999.9 ms", "1.0 s",
-                "2.5 s"
-            ]
-        );
-    }
-
-    #[test]
-    fn the_largest_duration_does_not_overflow() {
-        assert!(duration(u64::MAX).ends_with(" s"));
-    }
-}

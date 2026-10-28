@@ -9,9 +9,10 @@ use crate::fact::Line;
 use crate::graph::{ContractSite, Graph};
 use crate::ids::FileId;
 use crate::index::{Freshness, Index};
+use crate::text::{noun, thousands};
 
 use super::cross::Crossing;
-use super::render::{Answer, Entries, Footer, display_as_text, list, noun, thousands};
+use super::render::{Answer, Entries, Footer, display_as_text, list};
 
 /// A place in a file that declares, serves or calls a contract.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

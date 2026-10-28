@@ -1,5 +1,4 @@
-//! What every answer shares: text with lists cut at a count, a footer of coverage and freshness, and the small
-//! helpers that spell counts, names and times.
+//! What every answer shares: text with lists cut at a count, and a footer of coverage and freshness.
 
 use std::fmt;
 
@@ -8,6 +7,7 @@ use serde::Serialize;
 use crate::coverage::ConnectorCoverage;
 use crate::ids::FileId;
 use crate::index::{Freshness, Index};
+use crate::text::{join_and, noun, short, thousands};
 
 /// How many entries of a list the text of an answer shows unless every entry is asked for.
 pub const LIST_CAP: usize = 30;
@@ -103,11 +103,6 @@ impl ConnectorShare {
 /// claims to resolve everything.
 pub(super) fn percent(share: f64) -> String {
     format!("{:.0}%", (share * 100.0).floor())
-}
-
-/// The first seven characters of a commit id, which is how people name one.
-pub(super) fn short(head: &str) -> String {
-    head.chars().take(7).collect()
 }
 
 /// The last two lines of every answer: how much of the tree the connectors read, and how fresh the index is.
@@ -293,43 +288,5 @@ pub(super) fn rows<T>(
     match items.len().saturating_sub(shown) {
         0 => Ok(()),
         rest => writeln!(f, "… {} more", thousands(rest)),
-    }
-}
-
-/// A count with a thousands separator: `4,213`.
-pub(super) fn thousands(count: impl TryInto<u64>) -> String {
-    let digits = count.try_into().unwrap_or(u64::MAX).to_string();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
-    for (position, digit) in digits.chars().enumerate() {
-        if position > 0 && (digits.len() - position) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
-}
-
-/// A count and its noun, for a noun that adds an `s`: `1 file`, `3 files`.
-pub(super) fn noun(count: u32, singular: &str) -> String {
-    let plural = if count == 1 { "" } else { "s" };
-    format!("{} {singular}{plural}", thousands(count))
-}
-
-/// Names joined for a sentence: `a`, `a and b`, `a, b and c`.
-pub(super) fn join_and(names: &[String]) -> String {
-    match names.split_last() {
-        None => String::new(),
-        Some((last, [])) => last.clone(),
-        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
-    }
-}
-
-/// Names for a heading: the first three as `join_and` writes them, then a count of the rest.
-pub(super) fn summary(names: &[String]) -> String {
-    match names.split_at_checked(3) {
-        Some((shown, rest)) if !rest.is_empty() => {
-            format!("{} and {} more", shown.join(", "), thousands(rest.len()))
-        }
-        _ => join_and(names),
     }
 }
