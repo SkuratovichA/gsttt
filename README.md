@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/gsttt.svg" width="128" height="128" alt="A pixel-art glass sphere with a ghost's face, on a wooden stand">
+  <img src="assets/gsttt.svg" width="128" height="128" alt="An 8-bit ghost, the gsttt logo">
 </p>
 
 # gsttt
 
-**Glass sphere telling the truth**, said "ghost". It answers one question without guessing: what does this change affect?
+It answers one question without guessing: what does this change affect?
 
 gsttt builds a graph of the files in a repository and of the contracts between them: imports, HTTP routes and the calls that reach them, GraphQL, gRPC and tRPC operations, database tables and environment variables. It follows them across packages, languages and services. No model runs anywhere in it, so the same tree always gives the same answer, and every answer says how much of the repository it covers and how fresh the index is.
 
