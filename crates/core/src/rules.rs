@@ -20,7 +20,7 @@ use std::str::FromStr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::contract::{ContractKey, ContractKind, Role, normalize_http_path};
+use crate::contract::{ContractKey, ContractKind, Role, normalize_http_path, path_after_origin};
 use crate::fact::{ContractFact, Embedded, Line, UnresolvedReason, UnresolvedSite};
 
 /// The rules for one framework or library.
@@ -525,7 +525,10 @@ fn is_http_method(method: &str) -> bool {
 
 /// Whether a request target names a URL or an absolute path rather than, say, a cache key.
 fn looks_like_url(key: &str) -> bool {
-    key.starts_with('/') || key.contains("://") || key.starts_with("${") || key.starts_with("{}")
+    key.starts_with('/')
+        || path_after_origin(key).is_some()
+        || key.starts_with("${")
+        || key.starts_with("{}")
 }
 
 fn is_computed(key: &str) -> bool {
@@ -774,6 +777,11 @@ mod tests {
         }));
         let apply = |site: &Call<'_>| get.apply("api", site, None, 7, site.callee);
         assert_eq!(apply(&call("cache.get", &[Some("user")])), Outcome::Skip);
+        // A `://` inside a query string is no origin, so this is a cache key and no URL.
+        assert_eq!(
+            apply(&call("cache.get", &[Some("cache?next=https://b")])),
+            Outcome::Skip
+        );
         assert_eq!(
             key(apply(&call("api.get", &[Some("/bookings/${}")]))),
             "http GET /bookings/{}"
