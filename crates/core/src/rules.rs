@@ -3,8 +3,8 @@
 //! A pack tells one language connector which calls, decorators, member chains and embedded documents name a
 //! contract, and where the key is: `fetch("/bookings")` calls `http GET /bookings`, `@Get(":id")` inside
 //! `@Controller("bookings")` serves `http GET /bookings/{}`, `process.env.API_URL` calls `env API_URL`. Packs are
-//! Lua files: the built-in ones live next to the connector they are for (`crates/lang-ts/packs/`), a user's own in
-//! `.gsttt/lua/`. They arrive here through serde. A language connector finds the sites a rule names with
+//! TOML files: the built-in ones live next to the connector they are for (`crates/lang-ts/packs/`), a user's own in
+//! `.gsttt/packs/`. They arrive here through serde. A language connector finds the sites a rule names with
 //! [`callee_matches`] and hands each one to the rule's `apply`, which makes every decision after that: where the
 //! key is, whether the site is a contract at all, and whether it is a blind spot. So a rule means the same thing in
 //! TypeScript, Python and Rust.

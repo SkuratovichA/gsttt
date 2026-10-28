@@ -29,7 +29,7 @@
 ## 5. Removal
 
 - [x] 5.1 `mlua`, `memchr`, the sandbox, the Lua value conversion, the annotations and `.luarc.json` removed
-- [ ] 5.2 The docs, `AGENTS.md`, `README.md`, `.editorconfig` and the comments that name Lua updated
+- [x] 5.2 The docs, `AGENTS.md`, `README.md`, `.editorconfig` and the comments that name Lua updated
 
 ## 6. Proof
 

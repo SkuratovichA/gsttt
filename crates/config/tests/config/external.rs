@@ -99,7 +99,7 @@ impl Project for PlainProject {
     }
 }
 
-/// The `g.external` of the Kotlin stand-in, running `command` in the repository root.
+/// The `[[external]]` entry of the Kotlin stand-in, running `command` in the repository root.
 fn setup(command: &[&str]) -> ExternalSetup {
     ExternalSetup {
         name: "kotlin".to_owned(),

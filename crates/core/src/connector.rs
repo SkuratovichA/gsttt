@@ -37,7 +37,7 @@ pub struct Meta {
 
 /// A language or contract-format module, written against its own types.
 pub trait Connector: Send + Sync + 'static {
-    /// The options a config passes in `g.<name>{ … }`. Their JSON schema becomes the Lua type stubs.
+    /// The options a config passes in the table named after the module, `[<name>]`. Their JSON schema is what an editor checks that table with.
     type Options: Serialize + DeserializeOwned + JsonSchema + Default + Send + Sync;
     type Project: Project;
 

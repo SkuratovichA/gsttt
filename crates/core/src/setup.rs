@@ -1,4 +1,4 @@
-//! What a config asks for. The config crate builds a [`Setup`] from `.gsttt/init.lua`; the engine runs it.
+//! What a config asks for. The config crate builds a [`Setup`] from `.gsttt/config.toml`; the engine runs it.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,7 @@ impl Default for Setup {
     }
 }
 
-/// A module turned on by the config: `g.ts { tsconfig = "tsconfig.base.json" }`.
+/// A module turned on by the config: a `[ts]` table holding `tsconfig = "tsconfig.base.json"`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModuleSetup {
