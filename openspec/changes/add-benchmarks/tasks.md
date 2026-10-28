@@ -18,5 +18,5 @@
 ## 4. Proof
 
 - [x] 4.1 A test annotated `#[scenario("benchmarks", …)]` for every scenario of the `benchmarks` spec
-- [ ] 4.2 The smoke run: `cargo xtask bench --runs 1` over the four repositories exits 0 and leaves nothing to commit
-- [ ] 4.3 `cargo fmt --all --check`, `taplo fmt --check`, `cargo clippy`, `cargo nextest run -p xtask`, `cargo xtask spec`, `openspec validate add-benchmarks --strict` and `typos` pass
+- [x] 4.2 The smoke run: `cargo xtask bench --runs 1` over the four repositories exits 0 and leaves nothing to commit
+- [x] 4.3 `cargo fmt --all --check`, `taplo fmt --check`, `cargo clippy`, `cargo nextest run -p xtask`, `cargo xtask spec`, `openspec validate add-benchmarks --strict` and `typos` pass
