@@ -9,13 +9,13 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+globset.workspace = true
 gsttt-core.workspace = true
 jsonc-parser.workspace = true
 oxc_allocator.workspace = true
 oxc_ast.workspace = true
 oxc_ast_visit.workspace = true
 oxc_parser.workspace = true
-oxc_resolver.workspace = true
 oxc_span.workspace = true
 oxc_syntax.workspace = true
 schemars.workspace = true
@@ -23,11 +23,13 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+xxhash-rust.workspace = true
 
 [dev-dependencies]
 gsttt-config.workspace = true
 gsttt-scenario.workspace = true
 insta.workspace = true
+proptest.workspace = true
 tempfile.workspace = true
 
 [lints]

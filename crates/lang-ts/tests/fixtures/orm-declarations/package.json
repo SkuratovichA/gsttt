@@ -1,0 +1,1 @@
+{ "name": "api", "dependencies": { "typeorm": "^0.3.0", "drizzle-orm": "^0.40.0" } }
