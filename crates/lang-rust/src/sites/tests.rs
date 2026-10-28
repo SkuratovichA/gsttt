@@ -325,6 +325,24 @@ fn a_rebound_name_is_the_latest_binding() {
     assert_eq!(found(&sites(source, pack)), ["5 http GET /after"]);
 }
 
+#[test]
+fn a_let_in_a_nested_function_binds_nothing_outside_it() {
+    let pack = r#"return { name = "t", language = "rust", calls = {
+        { callee = "*.get", kind = "http", role = "calls", key = "$arg1", method = "$callee",
+          receiver = { from = "Client.new" } },
+    } }"#;
+    let source = r#"fn outer() {
+    let c = HashMap::new();
+    fn inner() {
+        let c = Client::new();
+        c.get("/inner");
+    }
+    c.get("/outer");
+}
+"#;
+    assert_eq!(found(&sites(source, pack)), ["5 http GET /inner"]);
+}
+
 /// The axum pack in the small: `route` serves the verb of its second argument.
 const AXUM: &str = r#"return { name = "axum", language = "rust", calls = {
     { callee = "*.route", kind = "http", role = "serves", key = "$arg1", method = "$arg2.method" },
