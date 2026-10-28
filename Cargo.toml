@@ -48,7 +48,6 @@ saphyr = "0.3.3"
 serde_norway = "0.9.42"
 jsonc-parser = { version = "0.34.0", features = ["serde"] }
 toml = "0.9.8"
-pulldown-cmark = { version = "0.13.5", default-features = false }
 regex = "1.13.1"
 
 # Engine. Crates add the features they need locally; versions live here.
@@ -105,6 +104,7 @@ insta = { version = "1.49.0", features = ["json"] }
 libtest-mimic = "0.8.2"
 proptest = "1.12.0"
 similar-asserts = "2.0.0"
+trybuild = "1.0.122"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
