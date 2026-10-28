@@ -40,3 +40,7 @@
 - [x] 5.13 `app.get` with a path alone is no route, Prisma clients named `db` and `tx` are recognised, and the blind spots name the receivers and roots not read
 - [x] 5.14 Scenario tests that proved less than their scenario now assert the cases the spec names
 - [x] 5.15 The proposal, spec and tasks say that resolution is hand-written and that `http_prefixes` belongs to the core setup, split long requirements and list every tRPC client call
+
+## 6. Integration fixes
+
+- [x] 6.1 Scenarios and tests for what the engine's rule on declarations a mount keys again asks of the Express link: a router mounted at the root, at the root and under a prefix, and routes that share a line; the link already did all three

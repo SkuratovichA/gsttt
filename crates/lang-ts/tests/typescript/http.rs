@@ -4,7 +4,7 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, contracts, linked, run, unread};
+use crate::support::{NOTHING, contracts, linked, run, sites, unread};
 
 #[test]
 #[scenario("typescript", "An Express route is served")]
@@ -124,6 +124,46 @@ fn a_mount_cycle_is_cut_where_it_closes() -> Result<(), Box<dyn Error>> {
         [
             "serves http GET /api/b/y @6 in src/b.ts",
             "serves http GET /api/x @6 in src/a.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A router mounted at the root serves without a prefix")]
+fn a_router_mounted_at_the_root_serves_without_a_prefix() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("express-root-mount")?,
+        ["serves http GET /x @7 in src/app.ts"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A router mounted at the root and under a prefix serves under both"
+)]
+fn a_router_mounted_at_the_root_and_under_a_prefix_serves_under_both() -> Result<(), Box<dyn Error>>
+{
+    assert_eq!(
+        sites("express-root-and-prefix-mount")?,
+        [
+            "serves http GET /api/x @8 in src/app.ts",
+            "serves http GET /x @8 in src/app.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "Routes on one line are keyed apart")]
+fn routes_on_one_line_are_keyed_apart() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("express-routes-on-one-line")?,
+        [
+            "serves http GET /api/a @7 in src/app.ts",
+            "serves http POST /api/b @7 in src/app.ts",
         ]
     );
     Ok(())

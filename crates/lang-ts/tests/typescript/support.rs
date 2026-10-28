@@ -7,8 +7,10 @@ use std::error::Error;
 
 use gsttt_config::builtin_packs;
 use gsttt_core::RepoView;
-use gsttt_core::engine::pipeline::{self, Module};
+use gsttt_core::engine::build::build_index;
+use gsttt_core::engine::pipeline::{self, Module, Output};
 use gsttt_core::fact::{FileTags, ImportFlags};
+use gsttt_core::index::IndexInfo;
 use serde_json::Value;
 
 /// The size above which a file is left unread; the fixtures are far below it.
@@ -17,9 +19,8 @@ const MAX_FILE_BYTES: u64 = 1_000_000;
 /// What a reader returns when the output holds nothing of the kind, typed so that a test can compare against it.
 pub(crate) const NOTHING: [&str; 0] = [];
 
-/// Indexes the tree `tests/fixtures/<fixture>` with the TypeScript connector and its built-in packs, and returns the
-/// output in the JSON form that is snapshotted, with the keys of every object in byte order.
-pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
+/// Runs the tree `tests/fixtures/<fixture>` through the pipeline with the TypeScript connector and its built-in packs.
+fn pipeline_of(fixture: &str) -> Result<(RepoView, Output), Box<dyn Error>> {
     let root = format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"));
     let repo = RepoView::scan(root)?;
     let modules = [Module {
@@ -28,10 +29,37 @@ pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
         packs: builtin_packs(gsttt_lang_ts::PACKS)?,
     }];
     let output = pipeline::run(&repo, &modules, MAX_FILE_BYTES)?;
+    Ok((repo, output))
+}
+
+/// Indexes the tree `tests/fixtures/<fixture>` with the TypeScript connector and its built-in packs, and returns the
+/// output in the JSON form that is snapshotted, with the keys of every object in byte order.
+pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
+    let (repo, output) = pipeline_of(fixture)?;
     // Sorted here, once, so that no snapshot depends on whether serde_json keeps insertion order (its `preserve_order` feature, which another crate of the workspace may switch on).
     let mut json = output.to_json(&repo);
     json.sort_all_objects();
     Ok(json)
+}
+
+/// Every site of the graph the engine builds from the output for `fixture`, as `<role> <key> @<line> in <path>`, in
+/// byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own facts of its
+/// line, role and kind, so it is what a query would answer from.
+pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let (repo, output) = pipeline_of(fixture)?;
+    let index = build_index(&repo, &output, &["ts"], &[], IndexInfo::default());
+    let graph = &index.graph;
+    let mut sites: Vec<String> = graph
+        .contracts()
+        .flat_map(|(id, key)| {
+            graph.sites(id).iter().map(move |site| {
+                let path = graph.path(site.file).map_or("?", |path| path.as_str());
+                format!("{} {key} @{} in {path}", site.role, site.line)
+            })
+        })
+        .collect();
+    sites.sort();
+    Ok(sites)
 }
 
 /// The roots of the projects, in the order of the output.

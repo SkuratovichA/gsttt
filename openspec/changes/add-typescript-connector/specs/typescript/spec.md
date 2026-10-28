@@ -151,6 +151,22 @@ A router mounted with `use('<prefix>', router)` SHALL have its routes served und
 - **THEN** `a.ts` serves `http GET /api/x` and `b.ts` serves `http GET /api/b/y`
 - **AND** no route is served under a path that goes round the cycle again
 
+### Requirement: Routes under every mount
+A route SHALL be served once under each mount of its router and under no other path. A mount with no path is a mount at the root, so it serves the route bare, and a router that nothing mounts serves its routes as written. Routes on one line SHALL each be keyed on their own.
+
+#### Scenario: A router mounted at the root serves without a prefix
+- **WHEN** `app.ts` has `const app = express(); const router = Router(); app.use(router); router.get('/x', h)`
+- **THEN** `app.ts` serves `http GET /x` at the line of `router.get` and nothing else
+
+#### Scenario: A router mounted at the root and under a prefix serves under both
+- **WHEN** `app.ts` has `app.use('/api', router)`, `app.use(router)` and `router.get('/x', h)`
+- **THEN** `app.ts` serves `http GET /api/x` and `http GET /x`, both at the line of `router.get`
+
+#### Scenario: Routes on one line are keyed apart
+- **WHEN** `app.ts` has `router.get('/a', h); router.post('/b', h);` on one line and `app.use('/api', router)`
+- **THEN** `app.ts` serves `http GET /api/a` and `http POST /api/b` at that line
+- **AND** it serves neither `http GET /a` nor `http POST /b`
+
 ### Requirement: NestJS routes
 With the `nestjs` pack, `@Get`, `@Post`, `@Put`, `@Patch`, `@Delete`, `@Options`, `@Head` and `@All` on a method of a `@Controller('<prefix>')` class SHALL serve the prefix and the path joined.
 
