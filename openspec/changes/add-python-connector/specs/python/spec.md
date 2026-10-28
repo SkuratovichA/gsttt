@@ -50,7 +50,7 @@ A name imported more than once from one module in a single `from` statement SHAL
 - **THEN** its one import of `bookings` lists the name `views` once
 
 ### Requirement: Imports under another name
-A callee, decorator, base class or subscripted name SHALL be matched by a rule as the file writes it and as its imports spell it, so `import requests as r`, `import httpx as hx`, `import os as _os`, `from requests import post as send`, `from sqlalchemy import text as t` and `from fastapi import APIRouter as R` read like the plain forms. An import SHALL apply from its statement on, and a name bound by a relative import SHALL stay as written.
+A callee, decorator, base class or subscripted name SHALL be matched by a rule as the file writes it and as its imports spell it, so `import requests as r`, `from requests import post as send` and `from fastapi import APIRouter as R` read like the plain forms, except by a pattern that starts with `*`, which SHALL meet the name as written only. An import SHALL apply from its statement on, and a name bound by a relative import SHALL stay as written.
 
 #### Scenario: A module imported under another name is followed
 - **WHEN** a file has `import requests as r` and `r.post(f"{BASE}/bookings/{id}/cancel")` on line 7
@@ -75,6 +75,10 @@ A callee, decorator, base class or subscripted name SHALL be matched by a rule a
 #### Scenario: The environment is read through an aliased os
 - **WHEN** a file has `import os as _os`, `_os.getenv("A")`, `_os.environ["B"]` and `_os.environ.get("C")`
 - **THEN** it calls `env A`, `env B` and `env C`
+
+#### Scenario: A function imported by name is no method of a receiver
+- **WHEN** a file has `from mylib import execute, get` and `from pydantic_settings import BaseSettings as Base`, calls `execute("rm -rf /tmp/x")`, `execute(f"SELECT * FROM {table}")`, `get("https://example.com/x")` and `cursor.execute("SELECT 1 FROM bookings")`, and has `class Settings(Base)` with the field `port: int`
+- **THEN** it embeds the one `sql` document of the `cursor.execute` call, leaves no unread site and calls `env PORT`
 
 #### Scenario: Django routes imported under another name compose
 - **WHEN** `project/urls.py` has `from django.urls import include as inc` and `path as p` and `p("api/", inc("bookings.urls"))`, and `bookings/urls.py` has `p("bookings/<int:pk>/", views.detail)`

@@ -4,7 +4,8 @@
 -- Always on.
 --
 -- Only a class that names `BaseSettings` as a base is a settings class: a class that derives from another settings
--- class is not read, which the provides say.
+-- class is not read, which the provides say. A pattern that starts with `*` meets a base as written only, so the two
+-- libraries that define `BaseSettings` are named for a class that imports it under another name.
 return {
   name = "env",
   language = "python",
@@ -34,7 +35,7 @@ return {
   assigns = {
     {
       target = "*",
-      class = { "BaseSettings", "*.BaseSettings" },
+      class = { "BaseSettings", "*.BaseSettings", "pydantic_settings.BaseSettings", "pydantic.BaseSettings" },
       kind = "env",
       role = "calls",
       key = "$validation_alias|$alias|$callee",

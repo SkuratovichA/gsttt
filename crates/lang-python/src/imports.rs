@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use gsttt_core::fact::Line;
-use gsttt_core::rules::OneOrMany;
+use gsttt_core::rules::{OneOrMany, callee_matches};
 use ruff_python_ast::Expr;
 
 use crate::extra::Bind;
@@ -204,10 +204,17 @@ impl Name {
     }
 
     /// The spelling that `patterns` match, the one as written first.
+    ///
+    /// The imported spelling meets only the patterns that start with a module or a package. A `*` there stands for a
+    /// receiver, and the module a name was imported from is none: `execute` taken from `mylib` is no `*.execute`.
     pub(crate) fn matching(&self, patterns: &OneOrMany) -> Option<&str> {
         if patterns.matches(&self.written) {
             Some(&self.written)
-        } else if self.renamed && patterns.matches(&self.imported) {
+        } else if self.renamed
+            && patterns
+                .iter()
+                .any(|pattern| !pattern.starts_with('*') && callee_matches(pattern, &self.imported))
+        {
             Some(&self.imported)
         } else {
             None

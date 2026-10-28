@@ -1757,3 +1757,30 @@ fn a_settings_prefix_that_is_not_a_literal_leaves_its_fields_unread() {
         ["L9 port", "L16 host", "L23 region"]
     );
 }
+
+#[gsttt_scenario::scenario("python", "A function imported by name is no method of a receiver")]
+#[test]
+fn a_function_imported_by_name_is_no_method_of_a_receiver() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"web\"\ndependencies = [\"httpx\", \"pydantic-settings\"]\n",
+        ),
+        (
+            "app.py",
+            "import sqlite3\nfrom mylib import execute, get\nfrom pydantic_settings import BaseSettings as Base\n\n\nclass Settings(Base):\n    port: int\n\n\ndef run(table):\n    execute(\"rm -rf /tmp/x\")\n    execute(f\"SELECT * FROM {table}\")\n    get(\"https://example.com/x\")\n    cursor = sqlite3.connect(\"db\").cursor()\n    cursor.execute(\"SELECT 1 FROM bookings\")\n",
+        ),
+    ]);
+    // `mylib.execute` and `mylib.get` match `*.execute` and `*.get` only when the module a name was imported from is
+    // taken for the receiver, which it is not. A pack that wants a library's own spelling names the library.
+    let file = tree.file("app.py");
+    let embedded: Vec<_> = file
+        .facts
+        .embedded
+        .iter()
+        .map(|document| (document.line, document.text.as_str()))
+        .collect();
+    assert_eq!(embedded, [(15, "SELECT 1 FROM bookings")]);
+    assert_eq!(tree.unread("app.py"), Vec::<String>::new());
+    assert_eq!(tree.contracts("app.py"), ["calls env PORT@7"]);
+}
