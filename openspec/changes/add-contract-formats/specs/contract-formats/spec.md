@@ -123,11 +123,15 @@ Placeholders of the common drivers (`$1`, `?`, `:name`, `%s`, `%(name)s`) SHALL 
 - **THEN** its status is not recovered and it calls `table bookings` at lines 1 to 5
 
 ### Requirement: SQL recovery
-A statement that does not parse SHALL be counted in a recovered status and the other statements read.
+A statement that does not parse, and a statement with a string, quoted name or comment that is never closed, SHALL each be counted in a recovered status at the line it starts on. The statements before it SHALL be read, and so SHALL those after the next semicolon that follows the unclosed text.
 
 #### Scenario: One bad statement does not hide the rest
 - **WHEN** a file has three statements and the second is not valid SQL
 - **THEN** its status is recovered with one error at the second statement's line and the sites of the first and third are read
+
+#### Scenario: A statement that does not tokenize does not hide the rest
+- **WHEN** a file has `SELECT * FROM a;`, `SELECT 'oops FROM b;` and `SELECT * FROM c;` on lines 1 to 3
+- **THEN** its status is recovered with one error at line 2 and it calls `table a` and `table c`
 
 ### Requirement: Embedded SQL
 The connector SHALL read embedded `sql` documents the same way as it reads `sql` files and SHALL return lines within the document, line 1 being its first line; the engine places them in the host file.

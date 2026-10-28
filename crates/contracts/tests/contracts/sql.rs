@@ -101,6 +101,29 @@ fn one_bad_statement_does_not_hide_the_rest() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
+/// An unterminated string swallows the text up to the end of the file for the tokenizer, so the statement after the
+/// bad one is only read when reading resumes after the next semicolon.
+#[gsttt_scenario::scenario(
+    "contract-formats",
+    "A statement that does not tokenize does not hide the rest"
+)]
+#[test]
+fn a_statement_that_does_not_tokenize_does_not_hide_the_rest() {
+    let run = Run::new("sql_unterminated", &[module(&SQL)]);
+    assert_eq!(
+        run.status("queries.sql"),
+        &ParseStatus::Recovered {
+            errors: 1,
+            first_error_line: 2
+        }
+    );
+    assert_eq!(
+        run.sites("queries.sql"),
+        vec!["calls table a @1", "calls table c @3"]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
 #[gsttt_scenario::scenario("contract-formats", "Embedded SQL reports lines within the document")]
 #[test]
 fn embedded_sql_reports_lines_within_the_document() {

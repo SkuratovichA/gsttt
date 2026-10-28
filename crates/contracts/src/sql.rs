@@ -2,7 +2,8 @@
 //!
 //! `CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, declare `table <name>`; queries and
 //! statements that change rows call the tables they name, leaving out the names of common table expressions.
-//! Statements are read one by one, so a statement that does not parse is counted and the others still count.
+//! Statements are read one by one, so a statement that does not parse, or has a string or comment that is never closed,
+//! is counted and the others still count.
 //!
 //! The connector always opens a project, even where no file is claimed, because code in any language can embed SQL.
 
@@ -26,9 +27,9 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::{Dialect, PostgreSqlDialect, dialect_from_str};
 use sqlparser::parser::Parser;
-use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
+use sqlparser::tokenizer::{Location, Token, TokenWithSpan, Tokenizer};
 
-use crate::common::{Errors, SyntaxError, provide, site, syntax_failure};
+use crate::common::{Errors, provide, site};
 
 const VIA: &str = "sql";
 
@@ -174,14 +175,12 @@ impl Project for SqlProject {
     }
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
-        match read(self.grammar().as_ref(), file.text) {
-            Ok((contracts, status)) => Parsed::new(FileFacts {
-                status,
-                contracts,
-                ..FileFacts::default()
-            }),
-            Err(error) => Parsed::new(syntax_failure(error.line, error.message)),
-        }
+        let (contracts, status) = read(self.grammar().as_ref(), file.text);
+        Parsed::new(FileFacts {
+            status,
+            contracts,
+            ..FileFacts::default()
+        })
     }
 
     fn resolve(&self, _: &RepoPath, _: &Import) -> Resolution {
@@ -196,56 +195,121 @@ impl Project for SqlProject {
 
     fn parse_embedded(&self, document: &Embedded) -> Vec<ContractFact> {
         // Lines count from the document's first line; the engine places them in the host file.
-        read(self.grammar().as_ref(), &document.text)
-            .map_or_else(|_| Vec::new(), |(facts, _)| facts)
+        read(self.grammar().as_ref(), &document.text).0
     }
 }
 
 /// The sites of a text of SQL, and how well it was read.
-fn read(
-    dialect: &dyn Dialect,
-    text: &str,
-) -> Result<(Vec<ContractFact>, ParseStatus), SyntaxError> {
-    let tokens = Tokenizer::new(dialect, text)
-        .tokenize_with_location()
-        .map_err(|error| SyntaxError {
-            line: line_of(error.location.line),
-            message: error.message,
-        })?;
+///
+/// A string, a quoted name or a comment that the tokenizer cannot close fails the statement it is in and no other:
+/// the statements before it are whole, and reading goes on after the next semicolon.
+fn read(dialect: &dyn Dialect, text: &str) -> (Vec<ContractFact>, ParseStatus) {
     let mut facts = Vec::new();
     let mut errors = Errors::default();
-    for group in statements(tokens) {
-        let Some(first) = group
-            .iter()
-            .find(|token| !matches!(token.token, Token::Whitespace(_)))
-        else {
-            continue;
-        };
-        let start = line_of(first.span.start.line);
-        let base = group
-            .first()
-            .map_or(start, |token| line_of(token.span.start.line));
-        // The text is kept only for a statement that may hold a placeholder this grammar does not read.
-        let text: Option<String> = group
-            .iter()
-            .any(|token| may_start_parameter(&token.token))
-            .then(|| group.iter().map(|token| token.token.to_string()).collect());
-        let found = parse_group(dialect, group)
-            .map(|statement| {
-                let mut found = Vec::new();
-                read_statement(&statement, start, &mut found);
-                found
-            })
-            .or_else(|| read_with_parameters(dialect, text.as_deref()?, base));
-        match found {
-            Some(found) => facts.extend(found),
-            None => errors.note(start),
+    let mut rest = text;
+    // The lines of `text` that come before `rest`.
+    let mut before = 0;
+    loop {
+        let mut tokens = Vec::new();
+        let failure = Tokenizer::new(dialect, rest)
+            .tokenize_with_location_into_buf_with_mapper(&mut tokens, |token| place(token, before))
+            .err();
+        let mut groups = statements(tokens);
+        // After a tokenizer error the last group is the statement it stopped in, which is not read.
+        let unfinished = failure.as_ref().and_then(|_| groups.pop());
+        for group in groups {
+            read_group(dialect, group, &mut facts, &mut errors);
         }
+        let Some(failure) = failure else {
+            break;
+        };
+        errors.note(
+            unfinished
+                .as_deref()
+                .and_then(start_of)
+                .unwrap_or_else(|| line_of(failure.location.line.saturating_add(before))),
+        );
+        let Some((next, skipped)) = after_semicolon(rest, failure.location) else {
+            break;
+        };
+        rest = next;
+        before = before.saturating_add(skipped);
     }
     // Source order, the same everywhere; one site per line and key.
     facts.sort_by(|a, b| a.line.cmp(&b.line).then_with(|| a.key.cmp(&b.key)));
     facts.dedup_by(|a, b| a.line == b.line && a.key == b.key && a.role == b.role);
-    Ok((facts, errors.status()))
+    (facts, errors.status())
+}
+
+/// A token moved down by the lines of the text before the one it was read from.
+fn place(mut token: TokenWithSpan, before: u64) -> TokenWithSpan {
+    token.span.start.line = token.span.start.line.saturating_add(before);
+    token.span.end.line = token.span.end.line.saturating_add(before);
+    token
+}
+
+/// The line a statement starts on: its first token that is not whitespace or a comment.
+fn start_of(group: &[TokenWithSpan]) -> Option<Line> {
+    group
+        .iter()
+        .find(|token| !matches!(token.token, Token::Whitespace(_)))
+        .map(|first| line_of(first.span.start.line))
+}
+
+/// Reads one statement: its sites, or an error when it does not parse even with its placeholders replaced.
+fn read_group(
+    dialect: &dyn Dialect,
+    group: Vec<TokenWithSpan>,
+    facts: &mut Vec<ContractFact>,
+    errors: &mut Errors,
+) {
+    let Some(start) = start_of(&group) else {
+        return;
+    };
+    let base = group
+        .first()
+        .map_or(start, |token| line_of(token.span.start.line));
+    // The text is kept only for a statement that may hold a placeholder this grammar does not read.
+    let text: Option<String> = group
+        .iter()
+        .any(|token| may_start_parameter(&token.token))
+        .then(|| group.iter().map(|token| token.token.to_string()).collect());
+    let found = parse_group(dialect, group)
+        .map(|statement| {
+            let mut found = Vec::new();
+            read_statement(&statement, start, &mut found);
+            found
+        })
+        .or_else(|| read_with_parameters(dialect, text.as_deref()?, base));
+    match found {
+        Some(found) => facts.extend(found),
+        None => errors.note(start),
+    }
+}
+
+/// Where reading goes on after the tokenizer failed at `at`: the text after the next semicolon, and the number of
+/// lines left behind.
+fn after_semicolon(text: &str, at: Location) -> Option<(&str, u64)> {
+    let from = offset_of(text, at);
+    let semicolon = from.saturating_add(text.get(from..)?.find(';')?);
+    let (skipped, rest) = text.split_at_checked(semicolon.saturating_add(1))?;
+    let lines = skipped.matches('\n').count();
+    Some((rest, u64::try_from(lines).unwrap_or(u64::MAX)))
+}
+
+/// The byte offset of a tokenizer location, which counts lines by `\n` and columns by characters; the end of the
+/// text when the location lies beyond it.
+fn offset_of(text: &str, at: Location) -> usize {
+    let lines = usize::try_from(at.line)
+        .unwrap_or(usize::MAX)
+        .saturating_sub(1);
+    let columns = usize::try_from(at.column)
+        .unwrap_or(usize::MAX)
+        .saturating_sub(1);
+    let line_start: usize = text.split_inclusive('\n').take(lines).map(str::len).sum();
+    text.get(line_start..)
+        .and_then(|line| line.char_indices().nth(columns))
+        .map_or(text.len(), |(index, _)| line_start.saturating_add(index))
 }
 
 fn line_of(line: u64) -> Line {
@@ -493,14 +557,29 @@ mod tests {
 
     use super::*;
 
-    fn calls(dialect: &str, text: &str) -> Vec<(Line, String, Role)> {
+    fn read_in(dialect: &str, text: &str) -> (Vec<(Line, String, Role)>, ParseStatus) {
         let dialect = dialect_from_str(dialect).unwrap();
-        read(dialect.as_ref(), text)
-            .unwrap()
-            .0
+        let (facts, status) = read(dialect.as_ref(), text);
+        let sites = facts
             .into_iter()
             .map(|fact| (fact.line, fact.key.to_string(), fact.role))
-            .collect()
+            .collect();
+        (sites, status)
+    }
+
+    fn calls(dialect: &str, text: &str) -> Vec<(Line, String, Role)> {
+        read_in(dialect, text).0
+    }
+
+    fn call(line: Line, table: &str) -> (Line, String, Role) {
+        (line, format!("table {table}"), Role::Calls)
+    }
+
+    fn recovered(errors: u32, first_error_line: Line) -> ParseStatus {
+        ParseStatus::Recovered {
+            errors,
+            first_error_line,
+        }
     }
 
     #[test]
@@ -571,6 +650,80 @@ mod tests {
         assert_eq!(got, expected);
     }
 
+    #[test]
+    fn an_unterminated_string_costs_only_its_statement() {
+        let text = "SELECT * FROM a;\nSELECT 'oops FROM b;\nSELECT * FROM c;";
+        assert_eq!(
+            read_in("postgresql", text),
+            (vec![call(1, "a"), call(3, "c")], recovered(1, 2))
+        );
+    }
+
+    #[test]
+    fn an_unterminated_comment_ends_the_file() {
+        // Nothing after the opening of the comment is a statement, so only the statements before it are read.
+        let text = "SELECT * FROM a;\nSELECT 1 /* oops\nSELECT * FROM b;";
+        assert_eq!(
+            read_in("postgresql", text),
+            (vec![call(1, "a")], recovered(1, 2))
+        );
+    }
+
+    #[test]
+    fn every_statement_the_tokenizer_stops_in_is_counted() {
+        let text = "SELECT 'x FROM a;\nSELECT * FROM b;\nSELECT \"y FROM c;\nSELECT * FROM d;";
+        assert_eq!(
+            read_in("postgresql", text),
+            (vec![call(2, "b"), call(4, "d")], recovered(2, 1))
+        );
+    }
+
+    #[test]
+    fn a_statement_across_lines_is_counted_at_its_first_line() {
+        let text = "SELECT *\nFROM a\nWHERE x = 'oops;\nSELECT * FROM b;";
+        assert_eq!(
+            read_in("postgresql", text),
+            (vec![call(4, "b")], recovered(1, 1))
+        );
+    }
+
+    #[test]
+    fn columns_are_counted_in_characters_when_reading_resumes() {
+        // The quote is the 14th character and the 18th byte of the line; counting bytes would resume too late.
+        let text = "SELECT 'ü€' FROM a; SELECT 'ü€ FROM b; SELECT * FROM c;";
+        assert_eq!(
+            read_in("postgresql", text),
+            (vec![call(1, "a"), call(1, "c")], recovered(1, 1))
+        );
+    }
+
+    #[test]
+    fn a_text_that_is_one_open_string_has_no_sites() {
+        assert_eq!(read_in("postgresql", "'oops"), (vec![], recovered(1, 1)));
+        assert_eq!(
+            read_in("postgresql", "\n\n  -- c\n'oops"),
+            (vec![], recovered(1, 4))
+        );
+    }
+
+    #[test]
+    fn a_tokenizer_location_is_a_line_of_newlines_and_a_column_of_characters() {
+        let text = "ab\nüx\ny";
+        assert_eq!(offset_of(text, Location::new(1, 1)), 0);
+        assert_eq!(offset_of(text, Location::new(2, 2)), 5);
+        assert_eq!(offset_of(text, Location::new(3, 1)), 7);
+        assert_eq!(offset_of(text, Location::new(9, 9)), text.len());
+        assert_eq!(
+            after_semicolon("a;\nb;c", Location::new(1, 1)),
+            Some(("\nb;c", 0))
+        );
+        assert_eq!(
+            after_semicolon("a;\nb;c", Location::new(2, 1)),
+            Some(("c", 1))
+        );
+        assert_eq!(after_semicolon("a;\nb", Location::new(2, 1)), None);
+    }
+
     proptest! {
         #[test]
         fn neutralising_keeps_every_line_where_it_was(text in "\\PC*\n?\\PC*") {
@@ -580,12 +733,27 @@ mod tests {
 
         #[test]
         fn arbitrary_text_never_panics_and_keeps_lines_in_range(text in "[ -~\n]*") {
-            let lines = u32::try_from(text.lines().count().max(1)).unwrap_or(u32::MAX);
-            if let Ok((facts, _)) = read(&PostgreSqlDialect {}, &text) {
-                for fact in facts {
-                    prop_assert!(fact.line >= 1 && fact.line <= lines);
-                }
+            let lines = u32::try_from(text.matches('\n').count() + 1).unwrap_or(u32::MAX);
+            for fact in read(&PostgreSqlDialect {}, &text).0 {
+                prop_assert!(fact.line >= 1 && fact.line <= lines);
             }
+        }
+
+        #[test]
+        fn broken_quoting_never_takes_the_statements_before_it(
+            pieces in prop::collection::vec(
+                prop::sample::select(vec![
+                    "SELECT * FROM t", ";", "'", "\"", "`", "/*", "*/", "--", "$$", "\n", " ", "x", "é",
+                ]),
+                0..24,
+            ),
+        ) {
+            let tail = pieces.concat();
+            let text = format!("SELECT * FROM kept;\n{tail}");
+            let lines = u32::try_from(text.matches('\n').count() + 1).unwrap_or(u32::MAX);
+            let (facts, _) = read(&PostgreSqlDialect {}, &text);
+            prop_assert!(facts.iter().any(|fact| fact.line == 1 && fact.key.to_string() == "table kept"));
+            prop_assert!(facts.iter().all(|fact| (1..=lines).contains(&fact.line)));
         }
     }
 }
