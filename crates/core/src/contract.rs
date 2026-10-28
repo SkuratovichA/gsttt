@@ -293,12 +293,12 @@ fn split_host(rest: &str) -> (&str, &str) {
 /// - The query string and fragment go.
 /// - Parameter segments become `{}`: `:id`, `{id}`, `{id:int}`, `<id>`, `<int:id>`, any segment that holds a `{` followed later by a `}` or a `<` followed later by a `>`, such as the custom methods `{id}:cancel` and `<id>:cancel`, and any segment holding a `${…}` or `{}` placeholder from a template string or a concatenation.
 /// - A placeholder before the first `/` is a base URL and goes: `${API}/bookings` becomes `/bookings`.
-/// - Repeated and trailing slashes go; the result starts with `/`.
+/// - Repeated and trailing slashes go, and so does the whitespace around a segment; the result starts with `/`.
 pub fn normalize_http_path(raw: &str) -> String {
     let raw = raw.trim();
     let without_host = path_after_origin(raw).unwrap_or(raw);
     let path = without_host.split(['?', '#']).next().unwrap_or("");
-    let mut segments = path.split('/').peekable();
+    let mut segments = path.split('/').map(str::trim).peekable();
     if !path.starts_with('/') && segments.peek().is_some_and(|first| is_placeholder(first)) {
         segments.next();
     }
@@ -334,6 +334,8 @@ fn holds_pair(segment: &str, open: char, close: char) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     #[gsttt_scenario::scenario("indexing", "Paths from every framework meet")]
@@ -353,6 +355,9 @@ mod tests {
             assert_eq!(normalize_http_path(spelling), "/bookings/{}", "{spelling}");
         }
         assert_eq!(normalize_http_path(""), "/");
+        // Whitespace that the cut of a query string or the end of the path leaves at the end of a segment goes with it.
+        assert_eq!(normalize_http_path("a #"), "/a");
+        assert_eq!(normalize_http_path("/a /?x"), "/a");
         assert_eq!(normalize_http_path("/${tenant}/x"), "/{}/x");
         assert_eq!(normalize_http_path("{tenant}/x"), "/{}/x");
         // A bracket that is never closed, or that closes before it opens, makes no parameter.
@@ -449,5 +454,27 @@ mod tests {
             ContractKey::parse("env DATABASE_URL").unwrap()
         );
         assert!(ContractKey::parse("http").is_err());
+    }
+
+    /// Text that reaches the edges of a path, with its separators, brackets, placeholders and a space, and any text at all.
+    fn texts() -> impl Strategy<Value = String> {
+        prop_oneof!["[a-z/:{}$<>?#.+ -]{0,24}", ".{0,40}"]
+    }
+
+    proptest! {
+        #[test]
+        fn a_normalised_path_starts_with_a_slash_and_normalises_to_itself(raw in texts()) {
+            let path = normalize_http_path(&raw);
+            prop_assert!(path.starts_with('/'), "{path:?}");
+            prop_assert!(!path.contains(['?', '#']), "{path:?}");
+            prop_assert_eq!(normalize_http_path(&path), path);
+        }
+
+        #[test]
+        fn what_follows_an_origin_is_the_end_of_the_text(raw in texts()) {
+            if let Some(rest) = path_after_origin(&raw) {
+                prop_assert!(raw.ends_with(rest), "{rest:?}");
+            }
+        }
     }
 }
