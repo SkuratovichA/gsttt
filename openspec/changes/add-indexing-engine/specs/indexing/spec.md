@@ -132,7 +132,7 @@ Indexing the same tree with the same setup SHALL give equal indexes apart from `
 - **THEN** the two indexes are equal apart from `IndexInfo`
 
 ### Requirement: Snapshot
-The engine SHALL store the index, every file's key, content id, size, modification time, facts and connector extra in `<state dir>/snapshot.gsttt`, written to a temporary file and renamed. The file SHALL start with the magic `GSTTSNAP`, a format version and a JSON header, followed by a validated rkyv body. A snapshot with another magic, format or `built_by`, or one that fails validation, SHALL be treated as absent. `peek` SHALL read the header without reading the body.
+The engine SHALL store the index, every file's key, content id, size, modification time, facts and connector extra in `<state dir>/snapshot.gsttt`, written to a temporary file and renamed. The file SHALL start with the magic `GSTTSNAP`, a format version and a JSON header, followed by a validated rkyv body. A snapshot with another magic, format or `built_by`, or one that fails validation, SHALL be treated as absent. `peek` SHALL read the header without reading the body. A snapshot that cannot be written SHALL be logged and SHALL NOT fail the run.
 
 #### Scenario: A stored index loads back equal
 - **WHEN** an index is stored and loaded
@@ -142,6 +142,11 @@ The engine SHALL store the index, every file's key, content id, size, modificati
 - **WHEN** the snapshot's body is truncated
 - **THEN** loading returns no index
 - **AND** the next refresh rebuilds and replaces the snapshot
+
+#### Scenario: A snapshot that cannot be written does not fail the run
+- **WHEN** the state directory cannot be created
+- **THEN** the refresh still returns the index it built
+- **AND** no snapshot exists afterwards
 
 #### Scenario: Peek reads only the header
 - **WHEN** `peek` runs on a snapshot whose body bytes are garbage

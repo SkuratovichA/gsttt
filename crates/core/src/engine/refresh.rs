@@ -15,7 +15,7 @@ use super::files::{self, ContentId, Excluder, FileState, FilesError, Stamp};
 use super::keys::{self, FactKey};
 use super::packs::merge_packs;
 use super::pipeline::{self, Claim, FileRun, Module, ProjectRun, Seed};
-use super::snapshot::{self, Header, SnapshotError, Stored, StoredFile};
+use super::snapshot::{self, Header, Stored, StoredFile};
 use super::workspace::{Workspace, WorkspaceError};
 use crate::connector::{ConnectorError, DynConnector};
 use crate::coverage::Coverage;
@@ -36,8 +36,6 @@ pub enum IndexError {
     Files(#[from] FilesError),
     #[error(transparent)]
     Connector(#[from] ConnectorError),
-    #[error(transparent)]
-    Snapshot(#[from] SnapshotError),
     #[error(transparent)]
     Changes(#[from] ChangesError),
 }
@@ -277,11 +275,12 @@ impl<'a> Engine<'a> {
             config,
             files: stored_files(states, file_keys, output.files),
         };
-        snapshot::write(
-            self.workspace.snapshot_path().as_std_path(),
-            &header,
-            &stored,
-        )?;
+        // The index is built, so a snapshot that cannot be stored (a read-only `.git`, a full disk) costs the next
+        // run its head start and nothing else.
+        let snapshot_path = self.workspace.snapshot_path();
+        if let Err(error) = snapshot::write(snapshot_path.as_std_path(), &header, &stored) {
+            tracing::warn!(%error, "the snapshot was not stored; the index is returned without it");
+        }
         let Stored { index, .. } = stored;
         Ok(Refresh {
             index,
@@ -842,6 +841,24 @@ mod tests {
         let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
         let run = engine.refresh().unwrap();
         assert_eq!(engine.load().as_ref(), Some(&run.index));
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A snapshot that cannot be written does not fail the run"
+    )]
+    #[test]
+    fn a_snapshot_that_cannot_be_written_does_not_fail_the_run() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "use b.txt\n"), ("b.txt", "")]);
+        // A file where the state directory belongs, so nothing can be stored under it.
+        fs::write(dir.path().join(".git").join("gsttt"), "").unwrap();
+        let setup = Setup::default();
+        let connectors = rig.connectors();
+        let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
+        let run = engine.refresh().unwrap();
+        assert_eq!((run.index.graph.file_count(), run.parsed), (2, 2));
+        assert!(engine.load().is_none());
     }
 
     #[gsttt_scenario::scenario("indexing", "A corrupt snapshot counts as none")]
