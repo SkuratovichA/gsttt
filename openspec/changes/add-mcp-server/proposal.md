@@ -21,7 +21,7 @@ An agent that edits code asks the questions gsttt answers more often than a pers
 
 ### Modified Capabilities
 
-None.
+- `cli`: the requirement `Commands` lists `mcp` among the commands of the binary.
 
 ## Impact
 

@@ -6,7 +6,7 @@ use gsttt_scenario::scenario;
 
 use super::support::Sandbox;
 
-/// The commands the specs list, each as it is typed: those of the cli capability, and `mcp`, which the mcp capability adds.
+/// The commands the cli spec lists, each as it is typed: those of the change that adds the command line, and `mcp`, which the change that adds the server puts among them.
 const COMMANDS: [&str; 17] = [
     "index",
     "impact",
