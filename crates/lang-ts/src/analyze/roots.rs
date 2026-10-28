@@ -13,7 +13,7 @@ use oxc_ast::ast::{
 use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::ScopeFlags;
 
-use crate::shape::field_name;
+use crate::shape::{field_name, this_key};
 
 /// The generic types that keep the members of their first type argument: `Pick<PrismaClient, 'tenant'>` is a client with fewer models.
 const WRAPPERS: [&str; 6] = [
@@ -100,7 +100,7 @@ impl Name<'_> {
     fn key(self) -> String {
         match self {
             Self::Local(name) => name.to_owned(),
-            Self::Property(name) => format!("this.{name}"),
+            Self::Property(name) => this_key(name),
         }
     }
 }

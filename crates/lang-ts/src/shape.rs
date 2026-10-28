@@ -143,6 +143,11 @@ pub(crate) fn field_name<'a>(field: &PropertyDefinition<'a>) -> Option<&'a str> 
     property_str(&field.key)
 }
 
+/// The name under which a chain that starts at the property `name` of `this` is looked up: `this.db` for the property `db`.
+pub(crate) fn this_key(name: &str) -> String {
+    format!("this.{name}")
+}
+
 /// The text of a string, a template or a concatenation, with each computed part written `${}`; the first element that has text for an array. `None` for anything else.
 pub(crate) fn text_of(expr: &Expression<'_>) -> Option<String> {
     match expr.get_inner_expression() {

@@ -10,7 +10,7 @@ use oxc_ast::ast::{
 };
 use oxc_ast_visit::{Visit, walk};
 
-use crate::shape::{Shape, chain_of, dotted, property_name};
+use crate::shape::{Shape, chain_of, dotted, field_name, this_key};
 
 /// A variable made by a call: what was called, the call as a rule reads it, and whether it serves routes.
 #[derive(Debug)]
@@ -86,16 +86,14 @@ impl<'a> Visit<'a> for Collector<'_> {
         if let AssignmentTarget::StaticMemberExpression(member) = &it.left
             && matches!(member.object, Expression::ThisExpression(_))
         {
-            self.add(format!("this.{}", member.property.name.as_str()), &it.right);
+            self.add(this_key(member.property.name.as_str()), &it.right);
         }
         walk::walk_assignment_expression(self, it);
     }
 
     fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
-        if !it.computed
-            && let (Some(name), Some(value)) = (property_name(&it.key), &it.value)
-        {
-            self.add(format!("this.{name}"), value);
+        if let (Some(name), Some(value)) = (field_name(it), &it.value) {
+            self.add(this_key(name), value);
         }
         walk::walk_property_definition(self, it);
     }
