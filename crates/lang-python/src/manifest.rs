@@ -11,6 +11,9 @@ use crate::names::{normalize_distribution, requirement_name};
 /// What one project's manifests say.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Manifest {
+    /// The distribution the manifest names for the project itself, normalised: what another project writes in its
+    /// dependencies to depend on this one.
+    pub(crate) name: Option<String>,
     /// The declared distributions, normalised.
     pub(crate) dependencies: BTreeSet<String>,
     /// Source roots named by package settings, as written and relative to the manifest's directory.
@@ -20,6 +23,9 @@ pub(crate) struct Manifest {
 impl Manifest {
     /// Adds what `other` declares.
     pub(crate) fn absorb(&mut self, other: Self) {
+        if self.name.is_none() {
+            self.name = other.name;
+        }
         self.dependencies.extend(other.dependencies);
         for root in other.roots {
             if !self.roots.contains(&root) {
@@ -68,6 +74,10 @@ pub(crate) fn read_pyproject(file: &str, text: &str) -> Result<Manifest, Manifes
     let mut manifest = Manifest::default();
     let at = |path: &[&str]| lookup(&table, path);
 
+    manifest.name = at(&["project", "name"])
+        .or_else(|| at(&["tool", "poetry", "name"]))
+        .and_then(Value::as_str)
+        .map(normalize_distribution);
     for requirement in strings(at(&["project", "dependencies"])) {
         manifest.require(requirement);
     }
@@ -146,7 +156,8 @@ fn poetry_names(manifest: &mut Manifest, dependencies: Option<&Value>) {
     }
 }
 
-/// Reads `setup.cfg`: `install_requires`, the keys of `extras_require`, `package_dir` and `packages.find` `where`.
+/// Reads `setup.cfg`: the name of the distribution, `install_requires`, the keys of `extras_require`, `package_dir`
+/// and `packages.find` `where`.
 pub(crate) fn read_setup_cfg(text: &str) -> Manifest {
     let mut manifest = Manifest::default();
     let mut section = String::new();
@@ -176,6 +187,7 @@ pub(crate) fn read_setup_cfg(text: &str) -> Manifest {
             continue;
         }
         match (section.as_str(), key.as_str()) {
+            ("metadata", "name") => manifest.name = Some(normalize_distribution(value)),
             ("options", "install_requires") | ("options.extras_require", _) => {
                 manifest.require(value);
             }
@@ -191,10 +203,15 @@ pub(crate) fn read_setup_cfg(text: &str) -> Manifest {
     manifest
 }
 
-/// Reads `setup.py` without running it: the quoted strings of `install_requires=[…]` and the `""` entry of
-/// `package_dir={…}`. Anything computed is not read.
+/// Reads `setup.py` without running it: the string of `name=`, the quoted strings of `install_requires=[…]` and the
+/// `""` entry of `package_dir={…}`. Anything computed is not read.
 pub(crate) fn read_setup_py(text: &str) -> Manifest {
-    let mut manifest = Manifest::default();
+    let mut manifest = Manifest {
+        name: keyword_value(text, "name")
+            .and_then(string_start)
+            .map(normalize_distribution),
+        ..Manifest::default()
+    };
     for requirement in quoted_in(text, "install_requires", '[', ']') {
         manifest.require(&requirement);
     }
@@ -306,6 +323,34 @@ fn tables_array(value: Option<&Value>) -> impl Iterator<Item = &Table> {
         .filter_map(Value::as_table)
 }
 
+/// What follows `key=` in `text`, with the space after the `=` dropped. The key must stand as a word of its own, not as
+/// the end of `package_name` or of `meta.name`, and a mention in a comment is no argument.
+fn keyword_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    text.match_indices(key).find_map(|(at, _)| {
+        let before = text.get(..at)?;
+        let attached = before
+            .chars()
+            .next_back()
+            .is_some_and(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '.'));
+        let commented = before
+            .rsplit('\n')
+            .next()
+            .is_some_and(|line| line.contains('#'));
+        if attached || commented {
+            return None;
+        }
+        let value = text.get(at + key.len()..)?.trim_start().strip_prefix('=')?;
+        (!value.starts_with('=')).then(|| value.trim_start())
+    })
+}
+
+/// The contents of the quoted string `value` starts with.
+fn string_start(value: &str) -> Option<&str> {
+    let mark = value.chars().next().filter(|ch| matches!(ch, '"' | '\''))?;
+    let (content, _) = value.get(mark.len_utf8()..)?.split_once(mark)?;
+    Some(content)
+}
+
 /// The contents of every single- or double-quoted string, without escapes, between the first `open` after `key` and
 /// the `close` that matches it. A bracket inside a string belongs to the string, so `"fastapi[standard]>=0.1"` is one
 /// requirement, and a comment is skipped whole, apostrophe and bracket included. A text that ends before the bracket
@@ -380,6 +425,56 @@ mod tests {
             deps(&manifest),
             ["django", "flask", "httpx", "pytest", "pyyaml", "sqlalchemy"]
         );
+    }
+
+    #[test]
+    fn the_name_of_the_project_comes_from_each_manifest_normalised() {
+        let named = |text: &str| read_pyproject("pyproject.toml", text).unwrap().name;
+        assert_eq!(
+            named("[project]\nname = \"My_Lib.core\"\n"),
+            Some("my-lib-core".to_owned())
+        );
+        assert_eq!(
+            named("[tool.poetry]\nname = \"lib\"\n"),
+            Some("lib".to_owned())
+        );
+        // PEP 621 comes before Poetry's own table.
+        assert_eq!(
+            named("[project]\nname = \"x\"\n[tool.poetry]\nname = \"y\"\n"),
+            Some("x".to_owned())
+        );
+        assert_eq!(named("[project]\ndependencies = []\n"), None);
+        assert_eq!(
+            read_setup_cfg("[metadata]\nname = My_Lib\nversion = 1\n").name,
+            Some("my-lib".to_owned())
+        );
+        let first = {
+            let mut manifest = read_setup_cfg("[metadata]\nname = first\n");
+            manifest.absorb(read_setup_py("setup(name='second')"));
+            manifest.name
+        };
+        assert_eq!(first, Some("first".to_owned()));
+    }
+
+    #[test]
+    fn setup_py_reads_the_name_keyword_only() {
+        let named = |text: &str| read_setup_py(text).name;
+        assert_eq!(
+            named("setup(name='My_Lib', version='1')"),
+            Some("my-lib".to_owned())
+        );
+        assert_eq!(
+            named("setup(\n    name = \"lib\",\n)"),
+            Some("lib".to_owned())
+        );
+        assert_eq!(
+            named("# name='old'\nsetup(name='lib')"),
+            Some("lib".to_owned())
+        );
+        // The end of another word, an attribute, a comparison and a computed name are no name.
+        assert_eq!(named("setup(package_name='x', meta.name='y')"), None);
+        assert_eq!(named("setup(name == 'x')"), None);
+        assert_eq!(named("setup(name=NAME, packages=[])"), None);
     }
 
     #[test]

@@ -25,6 +25,8 @@ use crate::manifest::{
 #[derive(Debug)]
 pub struct PythonProject {
     pub(crate) root: String,
+    /// The distribution the project's manifests name for it, normalised: what another project writes to depend on it.
+    distribution: Option<String>,
     /// The directories modules are imported from, repository-relative, in the order they are tried.
     pub(crate) source_roots: Vec<String>,
     /// The declared distributions, normalised.
@@ -34,8 +36,10 @@ pub struct PythonProject {
     salt: u64,
     /// The repository the project lives in, which resolution looks files up in.
     pub(crate) repo: RepoView,
-    /// The source roots of the other Python projects of the repository that the project does not search itself,
-    /// in path order: where a library of the repository is found when the project depends on it.
+    /// The source roots of the other Python projects of the repository that this project declares as dependencies and
+    /// does not search itself, in the order of those projects' paths and each project's roots in the order it tries
+    /// them: where a library of the repository is found. A project nobody declares is not on the path of an import, so
+    /// what it holds is no module of this one.
     pub(crate) sibling_roots: Vec<String>,
 }
 
@@ -79,17 +83,40 @@ pub(crate) fn open_projects(
             open_project(repo, root, options, packs, own)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    // A project imports the libraries of its neighbours, so each learns where the others look for modules.
-    let all: Vec<Vec<String>> = projects
-        .iter()
-        .map(|project| project.source_roots.clone())
-        .collect();
-    for project in &mut projects {
-        for dir in all.iter().flatten() {
-            if !project.source_roots.contains(dir) && !project.sibling_roots.contains(dir) {
-                project.sibling_roots.push(dir.clone());
-            }
+    // A project imports the libraries of the projects it declares, a dependency naming the distribution another
+    // project's manifest gives it, so each learns where those look for modules.
+    let mut named: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (index, project) in projects.iter().enumerate() {
+        if let Some(name) = &project.distribution {
+            named.entry(name).or_default().push(index);
         }
+    }
+    let siblings: Vec<Vec<String>> = projects
+        .iter()
+        .enumerate()
+        .map(|(index, project)| {
+            let declared: BTreeSet<usize> = project
+                .dependencies
+                .iter()
+                .flat_map(|name| named.get(name.as_str()).into_iter().flatten().copied())
+                .filter(|other| *other != index)
+                .collect();
+            let mut roots = Vec::new();
+            for dir in declared.into_iter().flat_map(|other| {
+                projects
+                    .get(other)
+                    .into_iter()
+                    .flat_map(|project| &project.source_roots)
+            }) {
+                if !project.source_roots.contains(dir) {
+                    push_unique(&mut roots, dir.clone());
+                }
+            }
+            roots
+        })
+        .collect();
+    for (project, roots) in projects.iter_mut().zip(siblings) {
+        project.sibling_roots = roots;
     }
     Ok(projects)
 }
@@ -150,6 +177,7 @@ fn open_project(
     let packs = in_force.into_iter().map(|(_, pack)| pack.clone()).collect();
     Ok(PythonProject {
         root: root.to_owned(),
+        distribution: manifest.name,
         source_roots,
         dependencies: manifest.dependencies,
         packs,

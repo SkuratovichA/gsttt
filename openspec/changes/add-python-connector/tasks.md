@@ -48,3 +48,9 @@
 - [x] 5.22 The text files of a `requirements` directory are claimed as manifests of the project that holds them, like `requirements*.txt`
 - [x] 5.23 A fixture and a scenario pin the relative imports that climb above the project root, into a sibling project and out of the repository, which the tests left open
 - [x] 5.24 `importlib.import_module(".m", package="p")` with literals imports `p.m`, taken from the package with the rules of `importlib`; a relative name with no package or with `__package__` is taken from the importing file, and a package that is not a literal or that the name climbs out of makes the call an unread site
+
+## 6. Review fixes, round 3
+
+- [x] 6.1 A project of the repository is searched for modules only when the project declares it, a dependency naming the distribution the other project's manifest gives it, in place of every project of the repository; the name is read from `[project]`, `[tool.poetry]`, `setup.cfg` and a literal `name=` of `setup.py`
+- [x] 6.2 A regular package or module that has the first segment of an import and not the rest ends the search of the source roots, so a package of the same name in a later root, the project's or another's, supplies nothing
+- [x] 6.3 The documents of the sibling roots and of the resolution order say which projects are searched and in what order

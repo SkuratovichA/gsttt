@@ -111,11 +111,15 @@ A module path SHALL resolve segment by segment under a source root: a package (`
 - **THEN** the import resolves to both files
 
 ### Requirement: Resolution order
-An absolute import SHALL look in this order, the first place that has the module winning: the project's own source roots, the standard library, the source roots of the other Python projects of the repository, the distributions the project declares, and last the namespace directories, the project's own before the others'. A module found nowhere SHALL be an unknown package, or not found when its first segment names a directory or package of the repository.
+An absolute import SHALL look in this order, the first place that has the module winning: the project's own source roots, the standard library, the source roots of the projects of the repository that the project declares, the distributions the project declares, and last the namespace directories, the project's own before the others'. A module found nowhere SHALL be an unknown package, or not found when its first segment names a directory or package of the repository.
 
 #### Scenario: A library of another project resolves to its files
 - **WHEN** `libs/common` and `services/api` are projects, `services/api` declares `common`, and a file of it imports `common.util`, which `libs/common/common/util.py` provides
 - **THEN** the import resolves to `libs/common/common/__init__.py` and `libs/common/common/util.py`, not to the package `common`
+
+#### Scenario: A project of the repository is searched only when it is declared
+- **WHEN** `services/api` declares `requests` and `common`, `libs/common` is a project named `common`, `tools` is a project named `tools` with `tools/requests/__init__.py` and `tools/helper/__init__.py`, and a file of `services/api` imports `requests`, `common.util` and `helper`
+- **THEN** `requests` resolves to the package `requests`, `common.util` to the files of `libs/common`, and `helper` to an unknown package
 
 #### Scenario: A namespace directory does not shadow the standard library or a dependency
 - **WHEN** a project declares `PyYAML` and holds `logging/formatters.py`, `yaml/loaders.py` and `ns/part.py`, none of the three directories with an `__init__.py`
@@ -124,6 +128,13 @@ An absolute import SHALL look in this order, the first place that has the module
 #### Scenario: A bare namespace import names no file
 - **WHEN** a file imports `ns`, a directory with `ns/part.py` and no `__init__.py`, and another imports `ns.missing`
 - **THEN** both are not found, because a directory is no file to depend on
+
+### Requirement: A package hides its name further along
+A regular package or module of a source root that has the first segment of an import and not the rest SHALL end the search of the source roots, so a package of the same name in a root after it supplies nothing and the import is not found.
+
+#### Scenario: A regular package hides the same name further along
+- **WHEN** `a` holds `a/util/__init__.py` and declares the project `b`, which holds `b/util/__init__.py` and `b/util/two.py`, and a file of `a` imports `util.two` and `util`
+- **THEN** `util.two` is not found and `util` resolves to `a/util/__init__.py`
 
 ### Requirement: Packages on the way
 An import SHALL reach the `__init__` file of every package it passes through as well as the module it names, except the packages the importing file sits in, which are initialised before it runs.

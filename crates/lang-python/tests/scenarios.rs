@@ -26,6 +26,8 @@ struct Tree {
     repo: RepoView,
     output: Output,
     json: Value,
+    /// The directory an inline tree was written to, kept until the test ends.
+    _dir: Option<tempfile::TempDir>,
 }
 
 fn index(fixture: &str) -> Tree {
@@ -35,6 +37,23 @@ fn index(fixture: &str) -> Tree {
 /// Like [`index`], with `packs` in place of the built-in ones.
 fn index_with(fixture: &str, packs: Vec<Pack>) -> Tree {
     let root = format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"));
+    run(root, packs, None)
+}
+
+/// A tree written to a temporary directory from `(path, text)` pairs and indexed like a fixture, for the inputs that
+/// fit in a few lines.
+fn index_files(files: &[(&str, &str)]) -> Tree {
+    let dir = tempfile::tempdir().unwrap();
+    for (path, text) in files {
+        let file = dir.path().join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    let root = dir.path().to_str().unwrap().to_owned();
+    run(root, builtin_packs(PACKS).unwrap(), Some(dir))
+}
+
+fn run(root: String, packs: Vec<Pack>, dir: Option<tempfile::TempDir>) -> Tree {
     let repo = RepoView::scan(root).unwrap();
     let modules = [Module {
         connector: &PYTHON,
@@ -43,7 +62,12 @@ fn index_with(fixture: &str, packs: Vec<Pack>) -> Tree {
     }];
     let output = pipeline::run(&repo, &modules, MAX_FILE_BYTES).unwrap();
     let json = output.to_json(&repo);
-    Tree { repo, output, json }
+    Tree {
+        repo,
+        output,
+        json,
+        _dir: dir,
+    }
 }
 
 /// A contract fact as `<role> <key>@<line>`, the key carrying its kind.
@@ -1411,4 +1435,98 @@ fn the_built_in_packs_are_python_packs_named_after_their_files() {
         assert_eq!(pack.language, "python");
         assert_eq!(format!("{}.lua", pack.name), *file);
     }
+}
+
+// Review fixes, round 3. Each test fails on the code the second round left and passes on its fix.
+
+const API_DECLARES_COMMON: &str =
+    "[project]\nname = \"api\"\ndependencies = [\"requests\", \"common\"]\n";
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A project of the repository is searched only when it is declared"
+)]
+#[test]
+fn a_project_of_the_repository_is_searched_only_when_it_is_declared() {
+    let tree = index_files(&[
+        ("pyproject.toml", "[project]\nname = \"monorepo\"\n"),
+        ("scripts/__init__.py", ""),
+        ("services/api/pyproject.toml", API_DECLARES_COMMON),
+        (
+            "services/api/app.py",
+            "import requests\nimport common.util\nimport helper\nimport scripts\n",
+        ),
+        (
+            "libs/common/pyproject.toml",
+            "[project]\nname = \"common\"\n",
+        ),
+        ("libs/common/common/__init__.py", ""),
+        ("libs/common/common/util.py", ""),
+        ("tools/pyproject.toml", "[project]\nname = \"tools\"\n"),
+        ("tools/requests/__init__.py", ""),
+        ("tools/helper/__init__.py", ""),
+    ]);
+    let target = |spec: &str| tree.target("services/api/app.py", spec, &[]);
+    // `requests` is the declared distribution of PyPI, whatever a project nobody declared holds under that name.
+    assert_eq!(target("requests"), "package requests");
+    assert_eq!(
+        target("common.util"),
+        "libs/common/common/__init__.py + libs/common/common/util.py"
+    );
+    // Neither `tools` nor the project at the root is declared, so what they hold is no module of `services/api`.
+    assert_eq!(target("helper"), "unresolved UnknownPackage");
+    assert_eq!(target("scripts"), "unresolved UnknownPackage");
+}
+
+#[test]
+fn declared_projects_are_searched_in_the_order_of_their_paths() {
+    let tree = index_files(&[
+        (
+            "app/pyproject.toml",
+            "[project]\nname = \"app\"\ndependencies = [\"zeta\", \"alpha\"]\n",
+        ),
+        ("app/main.py", "import shared\n"),
+        ("libs/alpha/pyproject.toml", "[project]\nname = \"alpha\"\n"),
+        ("libs/alpha/shared.py", ""),
+        ("libs/zeta/pyproject.toml", "[project]\nname = \"zeta\"\n"),
+        ("libs/zeta/shared.py", ""),
+    ]);
+    assert_eq!(
+        tree.target("app/main.py", "shared", &[]),
+        "libs/alpha/shared.py"
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A regular package hides the same name further along")]
+#[test]
+fn a_regular_package_hides_the_same_name_further_along() {
+    let tree = index_files(&[
+        (
+            "a/pyproject.toml",
+            "[project]\nname = \"a\"\ndependencies = [\"b\"]\n",
+        ),
+        ("a/util/__init__.py", ""),
+        ("a/main.py", "import util.two\nimport util\n"),
+        ("b/pyproject.toml", "[project]\nname = \"b\"\n"),
+        ("b/util/__init__.py", ""),
+        ("b/util/two.py", ""),
+        ("c/pyproject.toml", "[project]\nname = \"c\"\n"),
+        ("c/src/pkg/__init__.py", ""),
+        ("c/pkg/more.py", ""),
+        ("c/logging/__init__.py", ""),
+        ("c/main.py", "import pkg.more\nimport logging.handlers\n"),
+    ]);
+    // `a/util` is the first `util` on the path and has no `two`, so the `util` of `b` supplies nothing.
+    assert_eq!(
+        tree.target("a/main.py", "util.two", &[]),
+        "unresolved NotFound"
+    );
+    assert_eq!(tree.target("a/main.py", "util", &[]), "a/util/__init__.py");
+    // Between the roots of one project the same holds: `src/pkg` comes before the directory `pkg` beside it.
+    assert_eq!(
+        tree.target("c/main.py", "pkg.more", &[]),
+        "unresolved NotFound"
+    );
+    // The standard library is looked in before the later roots, as the order says, so it still has its own module.
+    assert_eq!(tree.target("c/main.py", "logging.handlers", &[]), "builtin");
 }

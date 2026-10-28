@@ -5,13 +5,17 @@
 //!
 //! 1. the project's own source roots, as a package or a module;
 //! 2. the standard library;
-//! 3. the source roots of the other Python projects of the repository, as a package or a module;
+//! 3. the source roots of the Python projects of the repository that the project declares, as a package or a module;
 //! 4. the distributions the project declares;
 //! 5. a namespace package, under the project's own source roots and then under the others'.
 //!
 //! A namespace package comes last because it is only a directory. Python takes a regular package or a module of the
 //! same name from anywhere on its path before it, so a folder called `logging` beside the code never hides the
 //! standard library.
+//!
+//! A regular package or a module that has the first segment of a path and not the rest ends the search of the source
+//! roots, as it does in Python: the first one on the path is the package, and a package of the same name further along
+//! supplies nothing.
 
 use gsttt_core::fact::{Import, Resolution, UnresolvedReason};
 use gsttt_core::ids::FileId;
@@ -82,7 +86,11 @@ enum Reach {
         namespace: bool,
     },
     /// The first segment is there and the rest is not: a typo, or a module that was deleted.
-    Partial,
+    Partial {
+        /// The first segment is a regular package or a module, which Python takes before anything of that name
+        /// further along the path, so the rest is not looked for there.
+        shadows: bool,
+    },
     Absent,
 }
 
@@ -203,7 +211,7 @@ impl<'a> Probe<'a> {
             match spot {
                 Spot::Missing => return miss(head),
                 // A module has no submodules.
-                Spot::Module(_) if !last => return Reach::Partial,
+                Spot::Module(_) if !last => return partial(head),
                 Spot::Package(init) if !last && !query.from.is_under(&self.path) => {
                     files.extend(init.iter());
                 }
@@ -243,7 +251,7 @@ impl<'a> Probe<'a> {
         // A namespace package holds no file of its own. Importing it is fine; importing a name it does not have is
         // not.
         if files.is_empty() && named > 0 {
-            return Reach::Partial;
+            return first.map_or(Reach::Absent, partial);
         }
         Reach::Found {
             files,
@@ -261,7 +269,15 @@ impl<'a> Probe<'a> {
 fn miss(head: Spot) -> Reach {
     match head {
         Spot::Missing => Reach::Absent,
-        Spot::Package(_) | Spot::Module(_) | Spot::Namespace => Reach::Partial,
+        Spot::Package(_) | Spot::Module(_) | Spot::Namespace => partial(head),
+    }
+}
+
+/// A path whose first segment is `head` and whose rest is not there. Only a namespace package leaves the rest to be
+/// looked for further along the path.
+fn partial(head: Spot) -> Reach {
+    Reach::Partial {
+        shadows: !matches!(head, Spot::Namespace),
     }
 }
 
@@ -284,13 +300,16 @@ struct Seen {
     /// The first segment of the path is a package or a directory of the repository, so a path that does not resolve
     /// is a typo and no library.
     first_party: bool,
+    /// A regular package or a module has the first segment and not the rest. It is the one Python imports, so no
+    /// regular package or module of that name further along supplies the module.
+    shadowed: bool,
     /// The first hit under a namespace package.
     namespace: Option<Hit>,
 }
 
 impl Seen {
     /// The hit under the first of `roots` that holds the module as a regular package or module. A namespace package
-    /// is kept for later.
+    /// is kept for later, and a regular package or module that lacks the module ends the search.
     fn search(&mut self, probe: &mut Probe<'_>, roots: &[String], query: Query<'_>) -> Option<Hit> {
         for base in roots {
             match probe.reach(query, base) {
@@ -307,7 +326,13 @@ impl Seen {
                     self.first_party = true;
                     self.namespace.get_or_insert(Hit::Files { files, target });
                 }
-                Reach::Partial => self.first_party = true,
+                Reach::Partial { shadows } => {
+                    self.first_party = true;
+                    if shadows {
+                        self.shadowed = true;
+                        return None;
+                    }
+                }
                 Reach::Absent => {}
             }
         }
@@ -344,7 +369,9 @@ fn locate(project: &PythonProject, from: &RepoPath, spec: &str, names: &[String]
     if is_standard_library(module.split('.').next().unwrap_or_default()) {
         return Hit::Builtin;
     }
-    if let Some(hit) = seen.search(&mut probe, &project.sibling_roots, query) {
+    if !seen.shadowed
+        && let Some(hit) = seen.search(&mut probe, &project.sibling_roots, query)
+    {
         return hit;
     }
     if let Some(package) = distributions_for_import(module)
@@ -430,6 +457,13 @@ mod tests {
             .find(|project| project.root == root)
             .unwrap();
         project.dependencies = dependencies.iter().map(|name| (*name).to_owned()).collect();
+        project
+    }
+
+    /// `project` with the source roots of the projects it declares set by hand: the manifests are not read here, so
+    /// which projects a project declares is not known.
+    fn declaring(mut project: PythonProject, roots: &[&str]) -> PythonProject {
+        project.sibling_roots = roots.iter().map(|root| (*root).to_owned()).collect();
         project
     }
 
@@ -707,7 +741,10 @@ mod tests {
             "services/api/app/__init__.py",
             "services/api/app/main.py",
         ];
-        let api = project(&paths, "services/api", &["common", "fastapi"]);
+        let api = declaring(
+            project(&paths, "services/api", &["common", "fastapi"]),
+            &["libs/common"],
+        );
         assert_resolves(
             &api,
             "services/api/app/main.py",
@@ -735,7 +772,7 @@ mod tests {
             "b/shared.py",
             "b/only_b.py",
         ];
-        let a = project(&paths, "a", &[]);
+        let a = declaring(project(&paths, "a", &[]), &["b"]);
         assert_resolves(
             &a,
             "a/main.py",
@@ -758,7 +795,7 @@ mod tests {
             "b/util/__init__.py",
             "b/util/two.py",
         ];
-        let a = project(&paths, "a", &[]);
+        let a = declaring(project(&paths, "a", &[]), &["b"]);
         assert_resolves(
             &a,
             "a/main.py",
@@ -782,7 +819,7 @@ mod tests {
             "b/ns/two.py",
             "b/ns/same.py",
         ];
-        let a = project(&paths, "a", &[]);
+        let a = declaring(project(&paths, "a", &[]), &["b"]);
         assert_resolves(
             &a,
             "a/main.py",
