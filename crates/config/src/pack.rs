@@ -1,11 +1,12 @@
 //! Rule packs written in Lua: a chunk that returns one table, read into a [`Pack`].
 //!
-//! Built-in packs live next to their connector (`crates/lang-ts/packs/express.lua`) and reach this module as
-//! `(file name, source)` pairs; a user's packs arrive through `g.pack` in the config. Both go through
-//! [`eval_pack`], so a built-in pack is also an example of a pack a user can write.
+//! Built-in packs live next to their connector (`crates/lang-ts/packs/express.lua`) and reach this module as `(file name, source)` pairs; a user's packs arrive through `g.pack` in the config. Both go through the same sandbox as the config, so a built-in pack is also an example of a pack a user can write.
 
 use gsttt_core::rules::Pack;
-use mlua::{Lua, LuaOptions, LuaSerdeExt, StdLib};
+use mlua::Value;
+
+use crate::sandbox::Sandbox;
+use crate::value::to_json;
 
 /// Why a pack does not load. The message names the pack and what Lua or the schema said.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -24,38 +25,30 @@ impl PackError {
     }
 }
 
-/// A Lua with the pure standard libraries only: no `io`, `os`, `package` or `debug`, so evaluating a pack can
-/// neither touch the machine nor load code.
-pub(crate) fn sandbox() -> mlua::Result<Lua> {
-    Lua::new_with(
-        StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8,
-        LuaOptions::default(),
-    )
-}
-
 /// Evaluates `source`, named `name` in errors, and reads the table it returns as a [`Pack`].
 pub fn eval_pack(name: &str, source: &str) -> Result<Pack, PackError> {
-    let lua = sandbox().map_err(|error| PackError::new(name, &error))?;
-    eval_in(&lua, name, source)
+    let sandbox = Sandbox::new().map_err(|error| PackError::new(name, &error))?;
+    eval_in(&sandbox, name, source)
 }
 
 /// Evaluates the built-in packs of a connector, `(file name, source)` pairs, in one Lua state.
 pub fn builtin_packs(sources: &[(&str, &str)]) -> Result<Vec<Pack>, PackError> {
-    let lua = sandbox().map_err(|error| PackError::new("<builtin>", &error))?;
+    let sandbox = Sandbox::new().map_err(|error| PackError::new("<builtin>", &error))?;
     sources
         .iter()
-        .map(|(name, source)| eval_in(&lua, name, source))
+        .map(|(name, source)| eval_in(&sandbox, name, source))
         .collect()
 }
 
-fn eval_in(lua: &Lua, name: &str, source: &str) -> Result<Pack, PackError> {
-    let value: mlua::Value = lua
-        .load(source)
-        .set_name(format!("@{name}"))
+fn eval_in(sandbox: &Sandbox, name: &str, source: &str) -> Result<Pack, PackError> {
+    sandbox.reset_budget();
+    let value: Value = sandbox
+        .load(name, source)
         .eval()
-        .map_err(|error| PackError::new(name, &error))?;
-    lua.from_value(value)
-        .map_err(|error| PackError::new(name, &error))
+        .map_err(|error| PackError::new(name, &sandbox.explain(&error)))?;
+    // The converter of the gsttt module, so a pack in a file reads exactly as one passed to `g.pack`: an empty table is an empty list.
+    let json = to_json(&value, "the pack").map_err(|error| PackError::new(name, &error))?;
+    serde_json::from_value(json).map_err(|error| PackError::new(name, &error))
 }
 
 #[cfg(test)]

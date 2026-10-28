@@ -7,7 +7,7 @@ A repository needs to say what detection cannot guess: a gateway prefix, a tscon
 ## What Changes
 
 - `.gsttt/init.lua` evaluated into `gsttt_core::Setup` through `require("gsttt")`: `setup`, a function per module, `disable`, `pack`, `disable_pack`, `external`.
-- `require` from `.gsttt/lua/` only; a sandbox without file, process or code loading, with memory and instruction limits and a fixed `pairs` order; the same sandbox for built-in packs, which today still have `load`, `loadfile` and `dofile`.
+- `require` from `.gsttt/lua/` only; a sandbox without file, process or code loading and without a pattern matcher, with memory, instruction and time limits, a bounded log, a fixed `pairs` order and no addresses; the same sandbox for built-in packs, which today still have `load`, `loadfile` and `dofile`.
 - A fingerprint of the evaluated setup for the snapshot's config check.
 - LuaLS annotations, `.luarc.json` and a starter config, generated for `gsttt init`.
 - External connectors over JSON lines, with a schema of the messages.
@@ -24,4 +24,4 @@ None.
 
 ## Impact
 
-`crates/config/` only. The binary wires `gsttt init`, `gsttt schema external` and the registry's module list in the CLI change.
+`crates/config/`, and `ExternalSetup` in `crates/core/src/setup.rs`, which carries the `provides` and `options` an external declares. The crate depends on `rustix` for process groups and for opening a file without waiting on it, and on `memchr`, so it builds for unix only. The binary wires `gsttt init`, `gsttt schema external` and the registry's module list in the CLI change.

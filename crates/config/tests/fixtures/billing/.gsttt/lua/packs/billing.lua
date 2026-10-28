@@ -1,0 +1,8 @@
+return {
+  name = "billing",
+  language = "ts",
+  detect = { "@acme/billing" },
+  calls = {
+    { callee = { "billing.*" }, kind = "http", role = "calls", key = "$arg1", method = "$callee" },
+  },
+}
