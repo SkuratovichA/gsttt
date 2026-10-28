@@ -1,9 +1,9 @@
 //! Releases and repository checks. Specified in `openspec/changes/add-distribution/`.
 //!
-//! Every task works on the repository in the current directory, which is the repository root when a task is run as `cargo xtask <task>`.
+//! Every task works on the git repository that holds the current directory (`crate::root`), whichever of its directories that is.
 
 mod check;
-mod git;
+pub(crate) mod git;
 mod notes;
 mod package;
 mod version;

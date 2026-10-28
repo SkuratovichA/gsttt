@@ -11,6 +11,7 @@ mod install;
 mod notes;
 mod package;
 mod plugin;
+mod root;
 mod supply_chain;
 mod support;
 mod version;

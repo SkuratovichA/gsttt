@@ -11,6 +11,7 @@ use flate2::write::GzEncoder;
 use sha2::{Digest as _, Sha256};
 
 use super::version::release_version;
+use crate::root::repository_root;
 
 const USAGE: &str = "usage: cargo xtask package --target <target>";
 
@@ -42,17 +43,20 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     if flag != "--target" {
         bail!(USAGE);
     }
-    let root = std::env::current_dir()?;
-    let package = pack(&root, &target_dir(&root), target)?;
+    let root = repository_root()?;
+    let package = pack(&root, &target_dir(&root)?, target)?;
     let mut stdout = std::io::stdout();
     writeln!(stdout, "{}", package.archive.display())?;
     writeln!(stdout, "{}", package.checksum.display())?;
     Ok(ExitCode::SUCCESS)
 }
 
-/// Where cargo puts what it builds for the repository in `root`.
-fn target_dir(root: &Path) -> PathBuf {
-    std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), |dir| root.join(dir))
+/// Where cargo puts what it builds for the repository in `root`: `CARGO_TARGET_DIR`, which cargo reads relative to the directory it was started in, else `target` in the repository.
+fn target_dir(root: &Path) -> anyhow::Result<PathBuf> {
+    match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) => Ok(std::env::current_dir()?.join(dir)),
+        None => Ok(root.join("target")),
+    }
 }
 
 /// Packs `<target_dir>/<target>/dist/gsttt` with the `LICENSE` and `README.md` of `root` into `<target_dir>/packages/`.

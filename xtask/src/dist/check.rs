@@ -12,12 +12,14 @@ use std::process::ExitCode;
 
 use anyhow::bail;
 
-/// Checks the repository in the current directory and prints every problem, one per line.
+use crate::root::repository_root;
+
+/// Checks the repository and prints every problem, one per line.
 pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     if !args.is_empty() {
         bail!("usage: cargo xtask check");
     }
-    let problems = problems(&std::env::current_dir()?)?;
+    let problems = problems(&repository_root()?)?;
     if problems.is_empty() {
         writeln!(std::io::stdout(), "cargo xtask check: no problems")?;
         return Ok(ExitCode::SUCCESS);

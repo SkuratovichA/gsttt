@@ -6,23 +6,11 @@ use std::io::Read as _;
 use std::path::Path;
 
 use sha2::{Digest as _, Sha256};
-use tempfile::TempDir;
 
-use crate::support::{package, printed, repository};
-
-const TARGET: &str = "x86_64-unknown-linux-musl";
+use crate::support::{TARGET, built, package, printed, repository};
 
 /// A file of an archive: its name, permissions and content.
 type Entry = (String, u32, Vec<u8>);
-
-/// A target directory holding a release build of `TARGET`, as `cargo build --profile dist` leaves it.
-fn built(binary: &[u8]) -> TempDir {
-    let target_dir = tempfile::tempdir().unwrap();
-    let directory = target_dir.path().join(TARGET).join("dist");
-    std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(directory.join("gsttt"), binary).unwrap();
-    target_dir
-}
 
 fn entries(archive: &Path) -> Vec<Entry> {
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(File::open(archive).unwrap()));

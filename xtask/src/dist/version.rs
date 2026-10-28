@@ -7,13 +7,14 @@ use std::process::ExitCode;
 use anyhow::{Context as _, bail};
 
 use super::git::git;
+use crate::root::repository_root;
 
 /// Prints the version a release of the checked-out commit gets.
 pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     if !args.is_empty() {
         bail!("usage: cargo xtask version");
     }
-    let version = release_version(&std::env::current_dir()?)?;
+    let version = release_version(&repository_root()?)?;
     writeln!(std::io::stdout(), "{version}")?;
     Ok(ExitCode::SUCCESS)
 }

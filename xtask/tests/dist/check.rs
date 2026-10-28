@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::support::{printed, workspace_root, write, xtask};
+use crate::support::{git, printed, workspace_root, write, xtask};
 
 const PINNED: &str = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
 
@@ -28,6 +28,7 @@ fn plugin_manifest(skills: &str) -> String {
 fn clean_repository() -> TempDir {
     let repo = tempfile::tempdir().unwrap();
     let root = repo.path();
+    git(root, &["init", "--quiet", "--initial-branch=main"]);
     write(root, ".github/workflows/ci.yml", &workflow(PINNED));
     write(
         root,

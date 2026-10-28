@@ -13,6 +13,9 @@ pub(crate) const RELEASE_TARGETS: [&str; 4] = [
     "aarch64-apple-darwin",
 ];
 
+/// The target the tests build a package for.
+pub(crate) const TARGET: &str = RELEASE_TARGETS[0];
+
 /// The root of the workspace this crate belongs to.
 pub(crate) fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -88,6 +91,15 @@ pub(crate) fn repository(version: &str) -> TempDir {
     git(path, &["add", "."]);
     git(path, &["commit", "--quiet", "--message", "chore: start"]);
     directory
+}
+
+/// A target directory holding a release build of `TARGET`, as `cargo build --profile dist` leaves it.
+pub(crate) fn built(binary: &[u8]) -> TempDir {
+    let target_dir = tempfile::tempdir().unwrap();
+    let directory = target_dir.path().join(TARGET).join("dist");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("gsttt"), binary).unwrap();
+    target_dir
 }
 
 /// Adds an empty commit with the subject `subject`.

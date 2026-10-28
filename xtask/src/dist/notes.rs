@@ -7,13 +7,14 @@ use std::process::ExitCode;
 use anyhow::bail;
 
 use super::git::git;
+use crate::root::repository_root;
 
 /// Prints the subjects of the commits since the previous release.
 pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     if !args.is_empty() {
         bail!("usage: cargo xtask notes");
     }
-    let notes = release_notes(&std::env::current_dir()?)?;
+    let notes = release_notes(&repository_root()?)?;
     std::io::stdout().write_all(notes.as_bytes())?;
     Ok(ExitCode::SUCCESS)
 }
