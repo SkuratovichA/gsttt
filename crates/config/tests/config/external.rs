@@ -860,8 +860,8 @@ fn a_process_that_leaves_in_the_middle_of_a_line_fails_the_files_it_did_not_answ
 
 #[test]
 fn a_line_that_does_not_end_within_the_limit_fails_the_files_it_did_not_answer() {
-    // 65 MiB without a newline: one more than the 64 MiB a line may be.
-    let (run, b, c) = fails_on_b(r"head -c 68157440 /dev/zero | tr '\0' x");
+    // 65 MiB without a newline, one more than the 64 MiB a line may be. The bytes are zeros straight from `head`: the reader counts them without looking at them, and on macOS a `tr` that made them printable took seconds over 65 MiB, past the 10 s an answer may take when the whole suite runs at once.
+    let (run, b, c) = fails_on_b("head -c 68157440 /dev/zero");
     assert!(
         b.contains("`kotlin`") && b.contains("a line longer than 67108864 bytes"),
         "{b:.300}"
