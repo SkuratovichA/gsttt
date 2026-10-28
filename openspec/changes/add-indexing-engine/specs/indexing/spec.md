@@ -92,7 +92,7 @@ Each file SHALL belong to at most one project: the first connector in registry o
 
 #### Scenario: Unclaimed files are counted by language
 - **WHEN** the tree holds `Main.kt` and no project matches it
-- **THEN** coverage counts one unclaimed `kotlin` file
+- **THEN** coverage counts one unclaimed `kt` file, whose language is Kotlin
 
 ### Requirement: Fact reuse
 The engine SHALL key a file's facts by the fact format, the connector's name and version, the module options, the fingerprint of the packs the connector received, the project's root and salt, the path and the content id. It SHALL take facts with an equal key from this worktree's snapshot, then, as the next requirement says, from the snapshots of sibling worktrees, and parse only when neither has them.
