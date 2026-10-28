@@ -168,10 +168,7 @@ pub(crate) fn top_names(repo: &RepoView, root: &str) -> BTreeSet<String> {
 
 /// Whether `path` lies under one of the project `roots`: its directory or one above it is a root.
 fn is_held_by(roots: &BTreeSet<String>, path: &RepoPath) -> bool {
-    std::iter::successors(Some(path.parent()), |dir| {
-        (!dir.is_empty()).then(|| dir.rsplit_once('/').map_or("", |(above, _)| above))
-    })
-    .any(|dir| roots.contains(dir))
+    path.directories().any(|dir| roots.contains(dir))
 }
 
 fn open_project(
