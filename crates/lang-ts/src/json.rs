@@ -1,5 +1,9 @@
 //! Package manifests and tsconfig files are JSON with comments and trailing commas. They are read into a small tree that keeps
 //! the order of keys, because the conditions of an `exports` map are order-sensitive: the first matching key wins.
+//!
+//! `crates/contracts/src/tree.rs` (`from_json`) holds a twin of this reader: both turn a `jsonc_parser` tree into an ordered
+//! tree with a depth cap and a line index, and both cap the depth at 64. The two crates cannot depend on each other, so the
+//! copy stays until integration moves one ordered-JSON reader into `gsttt-core`.
 
 use gsttt_core::fact::Line;
 use gsttt_core::text::LineIndex;
@@ -8,7 +12,7 @@ use jsonc_parser::common::Ranged;
 use jsonc_parser::{CollectOptions, ParseOptions, parse_to_ast};
 
 /// Nesting beyond this is read as an opaque value, so a pathological file cannot exhaust the stack.
-const MAX_DEPTH: usize = 48;
+const MAX_DEPTH: usize = 64;
 
 /// A JSON value, keeping what resolution needs: strings, arrays and ordered objects.
 #[derive(Debug, Clone, PartialEq)]
