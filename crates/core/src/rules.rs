@@ -1,16 +1,8 @@
 //! Rule packs: how a framework spells a contract in code, written down as data.
 //!
-//! A pack tells one language connector which calls, decorators, member chains and embedded documents name a
-//! contract, and where the key is: `fetch("/bookings")` calls `http GET /bookings`, `@Get(":id")` inside
-//! `@Controller("bookings")` serves `http GET /bookings/{}`, `process.env.API_URL` calls `env API_URL`. Packs are
-//! Lua files: the built-in ones live next to the connector they are for (`crates/lang-ts/packs/`), a user's own in
-//! `.gsttt/lua/`. They arrive here through serde. A language connector finds the sites a rule names with
-//! [`callee_matches`] and hands each one to the rule's `apply`, which makes every decision after that: where the
-//! key is, whether the site is a contract at all, and whether it is a blind spot. So a rule means the same thing in
-//! TypeScript, Python and Rust.
+//! A pack tells one language connector which calls, decorators, member chains and embedded documents name a contract, and where the key is: `fetch("/bookings")` calls `http GET /bookings`, `@Get(":id")` inside `@Controller("bookings")` serves `http GET /bookings/{}`, `process.env.API_URL` calls `env API_URL`. Packs are TOML files: the built-in ones live next to the connector they are for (`crates/lang-ts/packs/`), a user's own in `.gsttt/packs/`. They arrive here through serde. A language connector finds the sites a rule names with [`callee_matches`] and hands each one to the rule's `apply`, which makes every decision after that: where the key is, whether the site is a contract at all, and whether it is a blind spot. So a rule means the same thing in TypeScript, Python and Rust.
 //!
-//! Callees are dotted member paths in every language. `a?.b` is read as `a.b`, a subscript with a string literal
-//! (`process.env["X"]`) is a segment, and a Rust path is written with dots: `env.var` matches `env::var(…)`.
+//! Callees are dotted member paths in every language. `a?.b` is read as `a.b`, a subscript with a string literal (`process.env["X"]`) is a segment, and a Rust path is written with dots: `env.var` matches `env::var(…)`.
 
 use std::borrow::Cow;
 use std::fmt;
@@ -27,7 +19,7 @@ use crate::fact::{ContractFact, Embedded, Line, UnresolvedReason, UnresolvedSite
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Pack {
-    /// The framework: `nestjs`, `fastapi`, `axios`. Answers name it as the way a contract was found.
+    /// The framework: `nestjs`, `fastapi`, `axios`. Answers name it as the way a contract was found. In a file of `.gsttt/packs/` it is the name of the file without `.toml`.
     pub name: String,
     /// The language connector the rules are for: `ts`, `python` or `rust`.
     pub language: String,
@@ -47,8 +39,7 @@ pub struct Pack {
 }
 
 impl Pack {
-    /// Whether a project whose manifest lists `dependencies` gets this pack. Python names arrive normalised
-    /// (PEP 503: lower case, runs of `-_.` as `-`).
+    /// Whether a project whose manifest lists `dependencies` gets this pack. Python names arrive normalised (PEP 503: lower case, runs of `-_.` as `-`).
     pub fn applies_to<'a>(&self, mut dependencies: impl Iterator<Item = &'a str>) -> bool {
         self.detect.is_empty()
             || dependencies.any(|dependency| self.detect.iter().any(|name| name == dependency))
@@ -71,8 +62,7 @@ pub struct CallRule {
     #[serde(default)]
     #[schemars(with = "Option<String>")]
     pub method: Option<ValueExpr>,
-    /// A prefix taken from the call that made the receiver: `router = APIRouter(prefix="/x")` before
-    /// `router.get("/y")`.
+    /// A prefix taken from the call that made the receiver: `router = APIRouter(prefix="/x")` before `router.get("/y")`.
     #[serde(default)]
     pub receiver: Option<Prefix>,
 }
@@ -94,19 +84,16 @@ pub struct DecoratorRule {
     /// A prefix taken from a decorator of the enclosing class: NestJS `@Controller("bookings")`.
     #[serde(default)]
     pub class: Option<Prefix>,
-    /// A prefix taken from the call that made the decorator's receiver: FastAPI `APIRouter(prefix=…)`, Flask
-    /// `Blueprint(url_prefix=…)`.
+    /// A prefix taken from the call that made the decorator's receiver: FastAPI `APIRouter(prefix=…)`, Flask `Blueprint(url_prefix=…)`.
     #[serde(default)]
     pub receiver: Option<Prefix>,
-    /// A prefix read at the decorator itself, joined after the class and receiver prefixes: with `$callee`,
-    /// NestJS `@Query() bookings()` serves `graphql Query.bookings`.
+    /// A prefix read at the decorator itself, joined after the class and receiver prefixes: with `$callee`, NestJS `@Query() bookings()` serves `graphql Query.bookings`.
     #[serde(default)]
     #[schemars(with = "Option<String>")]
     pub prefix: Option<ValueExpr>,
 }
 
-/// A member chain that names a contract: `process.env.API_URL`, `prisma.booking.findMany()`,
-/// `trpc.booking.get.useQuery()`.
+/// A member chain that names a contract: `process.env.API_URL`, `prisma.booking.findMany()`, `trpc.booking.get.useQuery()`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChainRule {
@@ -115,8 +102,7 @@ pub struct ChainRule {
     #[schemars(with = "String")]
     pub kind: ContractKind,
     pub role: Role,
-    /// How many segments after the root make the key. Unset: every segment up to a terminal or the end of the
-    /// chain.
+    /// How many segments after the root make the key. Unset: every segment up to a terminal or the end of the chain.
     #[serde(default)]
     pub segments: Option<NonZeroU32>,
     /// Segments that end the key and are not part of it: `useQuery`, `query`, `mutate`.
@@ -127,8 +113,7 @@ pub struct ChainRule {
     pub case: Option<Case>,
 }
 
-/// A document in another language inside code: a GraphQL query in a `gql` tagged template, SQL in
-/// `cursor.execute("…")`.
+/// A document in another language inside code: a GraphQL query in a `gql` tagged template, SQL in `cursor.execute("…")`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EmbedRule {
@@ -148,8 +133,7 @@ pub struct EmbedRule {
 pub struct AssignRule {
     /// Names assigned to, matched like callees: `__tablename__`, `db_table`.
     pub target: OneOrMany,
-    /// Base-class patterns, matched like callees, one of which the innermost enclosing class must list: `Base`,
-    /// `*.Model`. Unset: the assignment counts wherever it is.
+    /// Base-class patterns, matched like callees, one of which the innermost enclosing class must list: `Base`, `*.Model`. Unset: the assignment counts wherever it is.
     #[serde(default)]
     pub class: Option<OneOrMany>,
     #[schemars(with = "String")]
@@ -162,11 +146,7 @@ pub struct AssignRule {
 
 /// Where a key prefix comes from: the decorator or call named by `from`, and the value `key` reads there.
 ///
-/// Every connector reads it the same way. For `class`, the innermost enclosing class must carry a decorator matching
-/// `from`, or the rule does not apply. For `receiver`, the site's receiver must be a name bound in the same file to a
-/// call matching `from` (`router = APIRouter(prefix="/x")`, `const app = express()`), or the rule does not apply;
-/// a receiver imported from another file is left to [`Project::link`](crate::connector::Project::link), which sees
-/// both files. So `receiver` is also how a rule stays off `cache.get("/x")`.
+/// Every connector reads it the same way. For `class`, the innermost enclosing class must carry a decorator matching `from`, or the rule does not apply. For `receiver`, the site's receiver must be a name bound in the same file to a call matching `from` (`router = APIRouter(prefix="/x")`, `const app = express()`), or the rule does not apply; a receiver imported from another file is left to the connector's `link` step, which sees both files. So `receiver` is also how a rule stays off `cache.get("/x")`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Prefix {
@@ -179,8 +159,7 @@ pub struct Prefix {
 }
 
 impl Prefix {
-    /// The prefix at `maker`, the decorator or call that `from` matched. Empty when `key` is unset or yields nothing
-    /// there, which includes a prefix held in a variable: connectors list that among their blind spots.
+    /// The prefix at `maker`, the decorator or call that `from` matched. Empty when `key` is unset or yields nothing there, which includes a prefix held in a variable: connectors list that among their blind spots.
     pub fn read(&self, maker: &(impl Site + ?Sized)) -> String {
         self.key
             .as_ref()
@@ -189,7 +168,7 @@ impl Prefix {
     }
 }
 
-/// One pattern or several: `callee = "fetch"` or `callee = { "axios.*", "api.*" }`.
+/// One pattern or several: `callee = "fetch"` or `callee = ["axios.*", "api.*"]`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum OneOrMany {
@@ -212,8 +191,7 @@ impl OneOrMany {
     }
 }
 
-/// Whether a dotted callee such as `axios.get` matches a pattern such as `axios.*`. Segments compare one by one;
-/// `*` matches exactly one segment.
+/// Whether a dotted callee such as `axios.get` matches a pattern such as `axios.*`. Segments compare one by one; `*` matches exactly one segment.
 pub fn callee_matches(pattern: &str, callee: &str) -> bool {
     let mut pattern = pattern.split('.');
     let mut callee = callee.split('.');
@@ -249,8 +227,7 @@ impl Case {
     }
 }
 
-/// Where a value comes from at a call or decorator site: alternatives separated by `|`, tried left to right,
-/// the first that yields text winning.
+/// Where a value comes from at a call or decorator site: alternatives separated by `|`, tried left to right, the first that yields text winning.
 ///
 /// - `$callee`: the last segment of the callee, `get` in `axios.get(…)` and `Get` in `@Get(…)`.
 /// - `$arg1`, `$arg2`, …: an argument, counting from 1, when it is a string literal or a template.
@@ -284,17 +261,13 @@ pub enum ValueExprError {
     Malformed(String),
 }
 
-/// A call or decorator site as a language connector reads it. Each connector implements it over its own syntax
-/// tree, so a [`ValueExpr`] is evaluated the same way in every language.
+/// A call or decorator site as a language connector reads it. Each connector implements it over its own syntax tree, so a [`ValueExpr`] is evaluated the same way in every language.
 pub trait Site {
     /// The last segment of the callee or of the decorator's name.
     fn callee_last(&self) -> Option<Cow<'_, str>>;
-    /// The argument at `position`, counting from 1, as text: a string literal, or a template, f-string or
-    /// concatenation with each computed part written as `${}`; a list, array or tuple literal gives its first
-    /// element that is one of those. `None` for anything else.
+    /// The argument at `position`, counting from 1, as text: a string literal, or a template, f-string or concatenation with each computed part written as `${}`; a list, array or tuple literal gives its first element that is one of those. `None` for anything else.
     fn arg(&self, position: NonZeroU32) -> Option<Cow<'_, str>>;
-    /// The property `prop` of the argument at `position` when that argument is an object or dict literal, as text
-    /// the way [`Site::arg`] gives it.
+    /// The property `prop` of the argument at `position` when that argument is an object or dict literal, as text the way [`Site::arg`] gives it.
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>>;
     /// The keyword argument `name`, in languages that have them.
     fn keyword(&self, name: &str) -> Option<Cow<'_, str>>;
@@ -411,8 +384,7 @@ impl fmt::Display for ValueExpr {
     }
 }
 
-/// The contract a rule names at a site: `key` behind `prefix`, joined with `/` for HTTP and `.` otherwise, with
-/// `method` for HTTP (`*` when unknown).
+/// The contract a rule names at a site: `key` behind `prefix`, joined with `/` for HTTP and `.` otherwise, with `method` for HTTP (`*` when unknown).
 pub fn contract_key(
     kind: &ContractKind,
     prefix: Option<&str>,
@@ -445,8 +417,7 @@ pub enum Outcome {
     Fact(ContractFact),
     /// The site names a contract whose key is computed at run time: a blind spot, which coverage counts.
     Blind(UnresolvedSite),
-    /// The site is not a contract after all: `cache.get("user")` under an `*.get` rule, `app.listen(3000)` under
-    /// `app.*`.
+    /// The site is not a contract after all: `cache.get("user")` under an `*.get` rule, `app.listen(3000)` under `app.*`.
     Skip,
 }
 
@@ -544,8 +515,7 @@ fn blind(line: Line, what: &str) -> Outcome {
 }
 
 impl CallRule {
-    /// What this rule makes of a call whose callee matched [`CallRule::callee`]. `prefix` is what the connector
-    /// read for [`CallRule::receiver`]; `callee` is the callee as written.
+    /// What this rule makes of a call whose callee matched [`CallRule::callee`]. `prefix` is what the connector read for [`CallRule::receiver`]; `callee` is the callee as written.
     pub fn apply(
         &self,
         pack: &str,
@@ -566,9 +536,7 @@ impl CallRule {
 }
 
 impl DecoratorRule {
-    /// What this rule makes of a decorator, attribute or annotation that matched [`DecoratorRule::decorator`].
-    /// `prefix` joins what the connector read for [`DecoratorRule::class`] and then [`DecoratorRule::receiver`];
-    /// [`DecoratorRule::prefix`] is read here and joined after it.
+    /// What this rule makes of a decorator, attribute or annotation that matched [`DecoratorRule::decorator`]. `prefix` joins what the connector read for [`DecoratorRule::class`] and then [`DecoratorRule::receiver`]; [`DecoratorRule::prefix`] is read here and joined after it.
     pub fn apply(
         &self,
         pack: &str,
@@ -614,8 +582,7 @@ impl AssignRule {
 }
 
 impl ChainRule {
-    /// What this rule makes of a member chain that starts at one of its roots. `segments` follow the root in
-    /// order, `None` where a segment is computed (`process.env[name]`); `root` is the root as written.
+    /// What this rule makes of a member chain that starts at one of its roots. `segments` follow the root in order, `None` where a segment is computed (`process.env[name]`); `root` is the root as written.
     pub fn apply(&self, pack: &str, segments: &[Option<&str>], line: Line, root: &str) -> Outcome {
         let limit = self.segments.map_or(usize::MAX, |count| {
             usize::try_from(count.get()).unwrap_or(usize::MAX)
@@ -644,8 +611,7 @@ impl ChainRule {
 }
 
 impl EmbedRule {
-    /// The document a call carries. A tagged template is the document itself and is read by the connector, not
-    /// here. A document built at run time is a blind spot.
+    /// The document a call carries. A tagged template is the document itself and is read by the connector, not here. A document built at run time is a blind spot.
     pub fn apply(
         &self,
         pack: &str,

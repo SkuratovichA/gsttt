@@ -1,0 +1,5 @@
+error: expected two string literals: #[scenario("<capability>", "<scenario>")]
+ --> tests/fixtures/ui/three_arguments.rs:1:28
+  |
+1 | #[gsttt_scenario::scenario("a", "b", "c")]
+  |                            ^^^^^^^^^^^^^

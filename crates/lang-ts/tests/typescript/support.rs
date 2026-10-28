@@ -1,7 +1,6 @@
 //! Running a fixture tree through the whole pipeline, and reading the output back as short lines.
 //!
-//! The snapshot of a test holds everything the connector found. The readers below give the few facts a scenario speaks
-//! about, so that a test says what it proves even when a snapshot is accepted in a hurry.
+//! The snapshot of a test holds everything the connector found. The readers below give the few facts a scenario speaks about, so that a test says what it proves even when a snapshot is accepted in a hurry.
 
 use std::error::Error;
 
@@ -32,8 +31,7 @@ fn pipeline_of(fixture: &str) -> Result<(RepoView, Output), Box<dyn Error>> {
     Ok((repo, output))
 }
 
-/// Indexes the tree `tests/fixtures/<fixture>` with the TypeScript connector and its built-in packs, and returns the
-/// output in the JSON form that is snapshotted, with the keys of every object in byte order.
+/// Indexes the tree `tests/fixtures/<fixture>` with the TypeScript connector and its built-in packs, and returns the output in the JSON form that is snapshotted, with the keys of every object in byte order.
 pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
     let (repo, output) = pipeline_of(fixture)?;
     // Sorted here, once, so that no snapshot depends on whether serde_json keeps insertion order (its `preserve_order` feature, which another crate of the workspace may switch on).
@@ -42,9 +40,7 @@ pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
     Ok(json)
 }
 
-/// Every site of the graph the engine builds from the output for `fixture`, as `<role> <key> @<line> in <path>`, in
-/// byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own fact it names,
-/// so it is what a query would answer from.
+/// Every site of the graph the engine builds from the output for `fixture`, as `<role> <key> @<line> in <path>`, in byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query would answer from.
 pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let (repo, output) = pipeline_of(fixture)?;
     let index = build_index(&repo, &output, &["ts"], &[], IndexInfo::default());

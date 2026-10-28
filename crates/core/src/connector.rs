@@ -1,14 +1,10 @@
 //! Connectors: the modules that read one language or one contract format.
 //!
-//! A connector is the plug-in point of gsttt. The engine finds the files, hashes them, caches what connectors
-//! return, and builds the graph; a connector only says, one file at a time, what the file imports and which
-//! contracts it declares, serves or calls, and then where each import points. A connector is written against
-//! [`Connector`] and [`Project`] with its own option and per-file types; the engine holds it as a
-//! [`DynConnector`] through [`Erased`], so a new language is one crate and one line in the binary's registry.
+//! A connector is the plug-in point of gsttt. The engine finds the files, hashes them, caches what connectors return, and builds the graph; a connector only says, one file at a time, what the file imports and which contracts it declares, serves or calls, and then where each import points. A connector is written against [`Connector`] and [`Project`] with its own option and per-file types; the engine holds it as a [`DynConnector`] through [`Erased`], so a new language is one crate and one line in the binary's registry.
 
 use std::fmt;
 
-use schemars::{JsonSchema, Schema};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::Xxh3;
@@ -19,6 +15,7 @@ use crate::ids::FileId;
 use crate::path::RepoPath;
 use crate::repo::RepoView;
 use crate::rules::Pack;
+use crate::text::with_path;
 
 /// What a connector is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,14 +26,13 @@ pub struct Meta {
     pub version: u32,
     /// One line for `gsttt modules`.
     pub summary: &'static str,
-    /// Extensions of the files the connector reads, so coverage can say how many such files nothing read when the
-    /// connector is off: `["ts", "tsx", "js"]`.
+    /// Extensions of the files the connector reads, so coverage can say how many such files nothing read when the connector is off: `["ts", "tsx", "js"]`.
     pub extensions: &'static [&'static str],
 }
 
 /// A language or contract-format module, written against its own types.
 pub trait Connector: Send + Sync + 'static {
-    /// The options a config passes in `g.<name>{ … }`. Their JSON schema becomes the Lua type stubs.
+    /// The options a config passes in the table named after the module, `[<name>]`. Their JSON schema is what an editor checks that table with.
     type Options: Serialize + DeserializeOwned + JsonSchema + Default + Send + Sync;
     type Project: Project;
 
@@ -45,9 +41,7 @@ pub trait Connector: Send + Sync + 'static {
     /// Whether the repository has anything for this connector. It looks at the file list only, so it is cheap.
     fn detect(&self, repo: &RepoView) -> bool;
 
-    /// The connector's projects in the repository: a TypeScript project per `package.json`, a Rust crate per
-    /// `Cargo.toml`, one project at the root for a contract format. `packs` holds the rule packs written for this
-    /// connector; each project keeps those its manifest switches on.
+    /// The connector's projects in the repository: a TypeScript project per `package.json`, a Rust crate per `Cargo.toml`, one project at the root for a contract format. `packs` holds the rule packs written for this connector; each project keeps those its manifest switches on.
     fn open(
         &self,
         repo: &RepoView,
@@ -61,20 +55,13 @@ pub trait Project: Send + Sync + 'static {
     /// Per-file data the link phase needs, cached with the facts. `()` for a project without a link phase.
     type Extra: Serialize + DeserializeOwned + Default + Send + Sync;
 
-    /// The directory the project owns, `""` for the repository root, written the way a [`RepoPath`] is: `/`
-    /// between segments, no leading or trailing `/`. A file goes to the deepest project of the first connector
-    /// that matches it, and a project is only asked about the files under its root.
+    /// The directory the project owns, `""` for the repository root, written the way a [`RepoPath`] is: `/` between segments, no leading or trailing `/`. A file goes to the deepest project of the first connector that matches it, and a project is only asked about the files under its root.
     fn root(&self) -> &str;
 
     /// Whether the project reads `path`. Asked only for files under [`Project::root`].
     fn matches(&self, path: &RepoPath) -> bool;
 
-    /// Mixed into the cache key of every file the project parses, on top of what the key already holds: the
-    /// connector's name and version, the module's options, every pack the connector received, the project's root,
-    /// and the file's path and content. The salt covers whatever else `parse` depends on, such as the packs this
-    /// project's manifest switched on or a setting it read from the manifest when it opened, so that a change in
-    /// it reads every file of the project again. A project whose parse depends on nothing beyond its options
-    /// returns `0`. [`salt_of`] makes a salt out of text.
+    /// Mixed into the cache key of every file the project parses, on top of what the key already holds: the connector's name and version, the module's options, every pack the connector received, the project's root, and the file's path and content. The salt covers whatever else `parse` depends on, such as the packs this project's manifest switched on or a setting it read from the manifest when it opened, so that a change in it reads every file of the project again. A project whose parse depends on nothing beyond its options returns `0`. [`salt_of`] makes a salt out of text.
     fn salt(&self) -> u64;
 
     /// The contract kinds this project finds, how, and what it cannot see, for coverage.
@@ -85,8 +72,7 @@ pub trait Project: Send + Sync + 'static {
     /// [`ParseStatus`]: crate::fact::ParseStatus
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<Self::Extra>;
 
-    /// Runs once every file is parsed and before any is resolved, with the facts of this project's files: a Rust
-    /// crate builds its module tree here.
+    /// Runs once every file is parsed and before any is resolved, with the facts of this project's files: a Rust crate builds its module tree here.
     fn prepare(&mut self, files: &[PrepareFile<'_>]) {
         let _ = files;
     }
@@ -94,9 +80,7 @@ pub trait Project: Send + Sync + 'static {
     /// Where an import of the file `from` points.
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution;
 
-    /// Contract sites that only show across files: route prefixes mounted in another file, tRPC routers merged
-    /// into an app router. A fact that keys an own fact of the project again is made by [`LinkedFact::rekeyed`], and
-    /// the engine drops the site of that own fact and of no other.
+    /// Contract sites that only show across files: route prefixes mounted in another file, tRPC routers merged into an app router. A fact that keys an own fact of the project again is made by [`LinkedFact::rekeyed`], and the engine drops the site of that own fact and of no other.
     fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Vec<LinkedFact> {
         let _ = input;
         Vec::new()
@@ -114,9 +98,7 @@ pub trait Project: Send + Sync + 'static {
     }
 }
 
-/// A salt for [`Project::salt`] made of text: a hash of `parts` in which each part is taken with its length, so
-/// `["ab", "c"]` and `["a", "bc"]` are two salts. The same parts give the same salt in every run and on every
-/// machine.
+/// A salt for [`Project::salt`] made of text: a hash of `parts` in which each part is taken with its length, so `["ab", "c"]` and `["a", "bc"]` are two salts. The same parts give the same salt in every run and on every machine.
 pub fn salt_of(parts: &[&str]) -> u64 {
     let mut hasher = Xxh3::new();
     for part in parts {
@@ -125,8 +107,9 @@ pub fn salt_of(parts: &[&str]) -> u64 {
     hasher.digest()
 }
 
-/// Hashes `bytes` with their length in front, so two fields cannot trade bytes and keep the same hash. The one
-/// framing behind [`salt_of`] and the fact keys of the engine.
+/// Hashes `bytes` with their length in front, so two fields cannot trade bytes and keep the same hash. The one framing behind [`salt_of`] and the fact keys of the engine.
+///
+/// The length is a little-endian `u64`, which `a_salt_hashes_its_parts_with_their_lengths` pins with the value of a salt: another byte order would read the files of every project again. The trust key of the command line frames its parts in the same way with a big-endian length (`feed` in `crates/gsttt/src/trust/key.rs`, pinned by `the_key_hashes_the_framed_parts_in_order`), so the two are kept apart on purpose.
 pub(crate) fn feed(hasher: &mut Xxh3, bytes: &[u8]) {
     hasher.update(&u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_le_bytes());
     hasher.update(bytes);
@@ -211,8 +194,7 @@ impl<'a, X: ?Sized> LinkInput<'a, X> {
 pub struct LinkedFact {
     pub file: FileId,
     pub fact: ContractFact,
-    /// The key of the own fact of `file`, at the line and role of `fact`, that this fact keys again, such as a route
-    /// declared on a router and served behind the router's mount. That own fact loses its site and no other does.
+    /// The key of the own fact of `file`, at the line and role of `fact`, that this fact keys again, such as a route declared on a router and served behind the router's mount. That own fact loses its site and no other does.
     pub replaces: Option<ContractKey>,
 }
 
@@ -226,8 +208,7 @@ impl LinkedFact {
         }
     }
 
-    /// `own` keyed again as `key`, at the line, role and `via` of `own`, in place of `own`. A link calls it once for
-    /// every key a declaration has, such as once per mount of a router.
+    /// `own` keyed again as `key`, at the line, role and `via` of `own`, in place of `own`. A link calls it once for every key a declaration has, such as once per mount of a router.
     pub fn rekeyed(file: FileId, own: &ContractFact, key: ContractKey) -> Self {
         Self {
             file,
@@ -242,8 +223,7 @@ impl LinkedFact {
     }
 }
 
-/// One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run
-/// time`.
+/// One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run time`.
 #[derive(
     Clone,
     Debug,
@@ -251,12 +231,18 @@ impl LinkedFact {
     Eq,
     Serialize,
     Deserialize,
+    JsonSchema,
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[serde(deny_unknown_fields)]
 pub struct Provide {
+    /// The family of contract: `http`, `graphql`, `grpc`, `trpc`, `table`, `queue`, `env`, or a name of your own.
+    // serde reads a kind from a string, which the derive cannot see; the rules say the same.
+    #[schemars(with = "String")]
     pub kind: ContractKind,
+    /// What the connector does with it: `declares`, `serves` or `calls`.
     pub role: Role,
     /// The packs or formats that find it.
     pub via: Vec<String>,
@@ -283,10 +269,18 @@ pub enum ConnectorError {
 pub trait DynConnector: Send + Sync {
     fn meta(&self) -> Meta;
     fn detect(&self, repo: &RepoView) -> bool;
-    /// The JSON schema of the options, for `gsttt schema lua` and for checking a config.
-    fn options_schema(&self) -> Schema;
+    /// The JSON schema of the options, for an editor that checks the config. The types it uses are described in `generator` and referenced from the schema returned, so that the schema of a whole config describes each type once.
+    fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema;
     /// The default options as JSON.
     fn default_options(&self) -> serde_json::Value;
+    /// Whether [`DynConnector::open`] can read `options`, without opening anything: the error is the one `open` would give. A connector that takes no options needs no check.
+    ///
+    /// # Errors
+    ///
+    /// [`ConnectorError::Options`] when the options do not read as the options of the connector.
+    fn check_options(&self, _options: &serde_json::Value) -> Result<(), ConnectorError> {
+        Ok(())
+    }
     /// Opens the projects with options as JSON; `null` means the defaults.
     fn open(
         &self,
@@ -340,6 +334,20 @@ struct ErasedProject<P> {
     project: P,
 }
 
+/// Reads the options of the connector `connector` from the JSON of the config; `null` means the defaults. The one place that does it, so that checking options and opening with them cannot disagree.
+fn read_options<O: DeserializeOwned + Default>(
+    connector: &str,
+    options: &serde_json::Value,
+) -> Result<O, ConnectorError> {
+    if options.is_null() {
+        return Ok(O::default());
+    }
+    serde_path_to_error::deserialize(options).map_err(|error| ConnectorError::Options {
+        connector: connector.to_owned(),
+        message: with_path(error.path(), &error.inner().to_string()),
+    })
+}
+
 impl<C: Connector> DynConnector for Erased<C> {
     fn meta(&self) -> Meta {
         self.0.meta()
@@ -349,12 +357,16 @@ impl<C: Connector> DynConnector for Erased<C> {
         self.0.detect(repo)
     }
 
-    fn options_schema(&self) -> Schema {
-        schemars::schema_for!(C::Options)
+    fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema {
+        generator.subschema_for::<C::Options>()
     }
 
     fn default_options(&self) -> serde_json::Value {
         serde_json::to_value(C::Options::default()).unwrap_or(serde_json::Value::Null)
+    }
+
+    fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorError> {
+        read_options::<C::Options>(self.0.meta().name, options).map(drop)
     }
 
     fn open(
@@ -364,22 +376,7 @@ impl<C: Connector> DynConnector for Erased<C> {
         packs: &[Pack],
     ) -> Result<Vec<Box<dyn DynProject>>, ConnectorError> {
         let meta = self.0.meta();
-        let options = if options.is_null() {
-            C::Options::default()
-        } else {
-            serde_path_to_error::deserialize(options).map_err(|error| {
-                // serde's own message names the option only for an unknown one; the path names it for every kind.
-                let message = if error.path().iter().next().is_none() {
-                    error.inner().to_string()
-                } else {
-                    format!("`{}`: {}", error.path(), error.inner())
-                };
-                ConnectorError::Options {
-                    connector: meta.name.to_owned(),
-                    message,
-                }
-            })?
-        };
+        let options = read_options::<C::Options>(meta.name, options)?;
         let projects = self.0.open(repo, &options, packs)?;
         Ok(projects
             .into_iter()
@@ -534,11 +531,11 @@ mod tests {
         assert_eq!(linked.replaces, Some(own.key));
     }
 
-    /// A connector over `.txt` files whose lines `use <path>` import other files and whose link phase reports a
-    /// contract for every file with a non-empty extra.
+    /// A connector over `.txt` files whose lines `use <path>` import other files and whose link phase reports a contract for every file with a non-empty extra.
     struct Lines;
 
     #[derive(Default, Serialize, Deserialize, JsonSchema)]
+    #[serde(deny_unknown_fields)]
     struct LinesOptions {
         #[serde(default)]
         tag: String,
@@ -645,6 +642,36 @@ mod tests {
     static REGISTRY: &[&dyn DynConnector] = &[&Erased(Lines)];
 
     #[test]
+    fn checking_options_gives_the_answer_that_opening_with_them_gives() {
+        let repo = RepoView::new("/repo", Vec::new());
+        let [connector] = REGISTRY else {
+            panic!("one connector")
+        };
+        for options in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({ "tag": "jobs" }),
+            serde_json::json!({ "tag": 3 }),
+            serde_json::json!({ "no_such_option": true }),
+            serde_json::json!("not a table"),
+        ] {
+            assert_eq!(
+                connector.check_options(&options),
+                connector.open(&repo, &options, &[]).map(drop),
+                "{options}"
+            );
+        }
+        assert_eq!(
+            connector.check_options(&serde_json::json!({ "no_such_option": true })),
+            Err(ConnectorError::Options {
+                connector: "lines".to_owned(),
+                message: "`no_such_option`: unknown field `no_such_option`, expected `tag`"
+                    .to_owned(),
+            })
+        );
+    }
+
+    #[test]
     fn erased_connectors_round_trip_options_and_extras() {
         let path = |name: &str| RepoPath::normalize(name).unwrap();
         let repo = RepoView::new("/repo", vec![path("a.txt"), path("b.txt")]);
@@ -652,13 +679,13 @@ mod tests {
             panic!("one connector")
         };
         assert!(connector.detect(&repo));
-        assert!(
-            connector
-                .options_schema()
-                .as_value()
-                .to_string()
-                .contains("tag")
-        );
+
+        // The options are a reference into the generator, which holds what they say.
+        let mut generator = SchemaGenerator::default();
+        let schema = connector.options_schema(&mut generator);
+        assert!(schema.get("$ref").is_some(), "{schema:?}");
+        let definitions = serde_json::Value::Object(generator.take_definitions(false));
+        assert!(definitions.to_string().contains("tag"), "{definitions}");
 
         let bad = connector.open(&repo, &serde_json::json!({ "tag": 3 }), &[]);
         assert_eq!(

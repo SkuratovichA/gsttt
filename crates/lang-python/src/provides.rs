@@ -1,6 +1,4 @@
-//! What a Python project says it finds and what it cannot see, for the coverage lines of an answer. The kinds come
-//! from the packs in force; the blind spots are written per pack in words an answer can quote, so a project without
-//! Flask is never said to be blind to Flask routes.
+//! What a Python project says it finds and what it cannot see, for the coverage lines of an answer. The kinds come from the packs in force; the blind spots are written per pack in words an answer can quote, so a project without Flask is never said to be blind to Flask routes.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,27 +10,21 @@ use gsttt_core::rules::Pack;
 const ROUTERS_ELSEWHERE: &str =
     "routers and blueprints created in another module than the one that declares their routes";
 
-/// `link` sees one project at a time and follows each router up through the mounts it can find. A router that a file
-/// of another project mounts is served behind its own prefix alone, and one whose every mount it cannot follow to the
-/// end is left out. A link cannot report the sites it did not read, so each way a chain of mounts is cut is named here,
-/// in one line; the limits are the ones `link` applies.
+/// `link` sees one project at a time and follows each router up through the mounts it can find. A router that a file of another project mounts is served behind its own prefix alone, and one whose every mount it cannot follow to the end is left out. A link cannot report the sites it did not read, so each way a chain of mounts is cut is named here, in one line; the limits are the ones `link` applies.
 const MOUNTS_UNFOLLOWED: &str = "mounts of a router by a file of another Python project, in a cycle, deeper than 32 routers, in more than 64 ways, with a prefix held in a variable, through an import that cannot be resolved, or through a name that a module other than a package's __init__.py re-exports";
 
 /// What Starlette's `mount` does with an application, which FastAPI inherits: no pack reads it.
 const APPLICATIONS_MOUNTED: &str =
     "applications mounted under a path with mount, as Starlette does";
 
-/// A file is read as one scope, so a name two imports bind in turn stands for the last of them. A fallback import,
-/// `try: import httpx as http` and `except ImportError: import requests as http`, is the case that matters for clients.
+/// A file is read as one scope, so a name two imports bind in turn stands for the last of them. A fallback import, `try: import httpx as http` and `except ImportError: import requests as http`, is the case that matters for clients.
 const CLIENTS_REBOUND: &str = "a client library imported under one name in try and in except, of which the last import is read";
 
-/// A callee is matched as written and as the imports of its file spell it, and `from module import *` lists no name, so
-/// a function it brings in is matched as the bare name it is written as, which no pack names.
+/// A callee is matched as written and as the imports of its file spell it, and `from module import *` lists no name, so a function it brings in is matched as the bare name it is written as, which no pack names.
 const STAR_IMPORTS: &str =
     "names brought in by a star import, which are not matched to the module they come from";
 
-/// A model whose table name a `declared_attr` function gives, or that a mixin gives it, has no `__tablename__` in its
-/// body, and a function is not an assignment.
+/// A model whose table name a `declared_attr` function gives, or that a mixin gives it, has no `__tablename__` in its body, and a function is not an assignment.
 const MIXIN_TABLES: &str = "table names given by a declared_attr or inherited from a mixin";
 
 /// What the `dbapi` pack leaves out. SQL is declared (`CREATE TABLE`) or called (`SELECT`), so each is told under both.

@@ -1,5 +1,4 @@
-//! The link phase: what only the whole repository shows, which is how routers mount under each other across files and
-//! how tRPC routers compose.
+//! The link phase: what only the whole repository shows, which is how routers mount under each other across files and how tRPC routers compose.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,9 +16,7 @@ const MAX_DEPTH: usize = 16;
 /// A name in a file.
 type Node = (FileId, String);
 
-/// The facts that need other files: routes under the prefixes their routers are mounted at, and tRPC procedures under
-/// the routers that compose them. Neither keys a parsed fact again, because an Express route is found only here and a
-/// procedure is built from nothing, so the engine keeps every fact the parse returned.
+/// The facts that need other files: routes under the prefixes their routers are mounted at, and tRPC procedures under the routers that compose them. Neither keys a parsed fact again, because an Express route is found only here and a procedure is built from nothing, so the engine keeps every fact the parse returned.
 pub(crate) fn link(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
     let mut linked = express(input);
     linked.extend(trpc(input));
@@ -157,9 +154,7 @@ struct Mounts<'a> {
 }
 
 impl Mounts<'_> {
-    /// Every path a node is served under: the prefixes of its parents followed by its own mount; the empty path for a
-    /// node nothing mounts. A mount that would close a cycle adds no path, so a node reached only through a cycle has
-    /// none. Only a walk that met no cycle is remembered, because a cut makes the answer depend on where the walk began.
+    /// Every path a node is served under: the prefixes of its parents followed by its own mount; the empty path for a node nothing mounts. A mount that would close a cycle adds no path, so a node reached only through a cycle has none. Only a walk that met no cycle is remembered, because a cut makes the answer depend on where the walk began.
     fn prefixes_of(&mut self, node: &Node, visiting: &mut Vec<Node>) -> BTreeSet<String> {
         if let Some(known) = self.memo.get(node) {
             return known.clone();

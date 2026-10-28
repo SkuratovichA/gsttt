@@ -1,8 +1,6 @@
 //! OpenAPI 3 and Swagger 2 documents, in YAML or JSON.
 //!
-//! Each operation declares `http <METHOD> <base><path>` at its own line. A path item that is a `$ref` to another file
-//! is a fragment: the fragment declares its operations under the path that refers to it, which only the referring
-//! file knows, so it is the link step that writes them.
+//! Each operation declares `http <METHOD> <base><path>` at its own line. A path item that is a `$ref` to another file is a fragment: the fragment declares its operations under the path that refers to it, which only the referring file knows, so it is the link step that writes them.
 
 use std::collections::BTreeSet;
 
@@ -11,7 +9,7 @@ use gsttt_core::connector::{
     Connector, ConnectorError, Erased, LinkInput, LinkedFact, Meta, Parsed, Project, Provide,
     SourceFile,
 };
-use gsttt_core::contract::{ContractKind, Role, path_after_origin};
+use gsttt_core::contract::{ContractKind, Role, path_after_origin, without_query_and_fragment};
 use gsttt_core::fact::{ContractFact, FileFacts, Import, ImportKind, Line, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
@@ -51,8 +49,7 @@ pub static OPENAPI: Erased<OpenApi> = Erased(OpenApi);
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct OpenApiOptions {
-    /// Globs, relative to the repository root, of files to read as OpenAPI documents besides the ones named
-    /// `openapi.*`, `swagger.*` and `*.openapi.*`.
+    /// Globs, relative to the repository root, of files to read as OpenAPI documents besides the ones named `openapi.*`, `swagger.*` and `*.openapi.*`.
     pub files: Vec<String>,
 }
 
@@ -157,9 +154,7 @@ fn build_globs(patterns: &[String]) -> Result<GlobSet, ConnectorError> {
         .map_err(|error| options_error(format!("`files` does not build: {error}")))
 }
 
-/// The YAML and JSON files that the `$ref`s of the documents reach, and those of the files they reach in turn. A
-/// document that cannot be searched is skipped and logged: the references it holds are not followed, and the engine
-/// still reads the document itself and reports why it failed.
+/// The YAML and JSON files that the `$ref`s of the documents reach, and those of the files they reach in turn. A document that cannot be searched is skipped and logged: the references it holds are not followed, and the engine still reads the document itself and reports why it failed.
 fn fragments_of(repo: &RepoView, documents: &[&RepoPath]) -> BTreeSet<String> {
     let mut seen: BTreeSet<String> = documents
         .iter()
@@ -190,8 +185,7 @@ fn fragments_of(repo: &RepoView, documents: &[&RepoPath]) -> BTreeSet<String> {
     fragments
 }
 
-/// The `$ref`s of a document to other files, without reading anything else it says; why it cannot be searched
-/// when it cannot.
+/// The `$ref`s of a document to other files, without reading anything else it says; why it cannot be searched when it cannot.
 fn refs_of(repo: &RepoView, path: &RepoPath) -> Result<Vec<Import>, String> {
     let text = repo
         .read_to_string(path.as_str())
@@ -370,9 +364,7 @@ fn read_document(root: &Value, read: &mut Read) {
     }
 }
 
-/// The paths a route can start with, one for each distinct path among the `servers` of OpenAPI 3, or the `basePath`
-/// of Swagger 2, in the order they are written. A document that names none has the empty path alone. The paths are
-/// compared before the key normaliser sees them, so two servers that differ in their origin only give one.
+/// The paths a route can start with, one for each distinct path among the `servers` of OpenAPI 3, or the `basePath` of Swagger 2, in the order they are written. A document that names none has the empty path alone. The paths are compared before the key normaliser sees them, so two servers that differ in their origin only give one.
 fn server_paths(root: &Value) -> Vec<&str> {
     let mut urls: Vec<&str> = root
         .get("servers")
@@ -398,7 +390,7 @@ fn server_paths(root: &Value) -> Vec<&str> {
 
 /// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route and is written three ways: `https://host` and `{scheme}://host`, which [`path_after_origin`] drops as the key normaliser does, and `//host` and `{baseUrl}`, a variable for the whole origin, which the normaliser would keep as the first segment. A query string or a fragment is no part of the path and goes, so `https://host?key=1` has the empty path.
 fn path_of_server(url: &str) -> &str {
-    let url = url.trim().split(['?', '#']).next().unwrap_or_default();
+    let url = without_query_and_fragment(url.trim());
     if let Some(path) = path_after_origin(url) {
         return path.trim_end_matches('/');
     }

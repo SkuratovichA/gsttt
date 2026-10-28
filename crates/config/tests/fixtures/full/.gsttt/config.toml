@@ -1,0 +1,21 @@
+exclude = ["fixtures/**"]
+http_prefixes = ["/api"]
+disable = ["openapi"]
+disable_packs = ["axios"]
+
+[ts]
+tsconfig = "tsconfig.base.json"
+
+[[external]]
+name = "kotlin"
+cmd = ["gsttt-kotlin"]
+files = ["**/*.kt"]
+version = "1"
+env = ["JAVA_HOME"]
+options = { strict = true }
+
+[[external.provides]]
+kind = "http"
+role = "serves"
+via = ["ktor"]
+blind_spots = ["routes built at run time"]

@@ -10,7 +10,7 @@ rust-version = "1.99"
 license = "Apache-2.0"
 repository = "https://github.com/SkuratovichA/gsttt"
 homepage = "https://gsttt.arstoien.com"
-description = "Glass sphere telling the truth: what a code change affects, across files, packages and languages"
+description = "What a code change affects, across files, packages and languages"
 keywords = ["impact-analysis", "dependency-graph", "mcp", "monorepo", "static-analysis"]
 categories = ["command-line-utilities", "development-tools"]
 publish = false
@@ -48,7 +48,8 @@ saphyr = "0.3.3"
 serde_norway = "0.9.42"
 jsonc-parser = { version = "0.34.0", features = ["serde"] }
 toml = "0.9.8"
-pulldown-cmark = { version = "0.13.5", default-features = false }
+# The events of a TOML file, for counting its nesting before `toml` builds values from it.
+toml_parser = "1.1.5"
 regex = "1.13.1"
 
 # Engine. Crates add the features they need locally; versions live here.
@@ -68,6 +69,10 @@ fixedbitset = "0.5.7"
 memchr = "2.8.3"
 papaya = "0.2.5"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
+# The key a person's trust is recorded under. Unlike the xxh3 of the fact keys it is a hash that nobody can steer to a chosen value.
+sha2 = "0.11.1"
+# The hex form of content ids, the trust key and the checksums of the release packages. `gix` already brings it.
+faster-hex = { version = "0.10.1", default-features = false, features = ["std"] }
 tempfile = "3.27.0"
 # Process groups and opening files without waiting. Only for unix, which gsttt is.
 rustix = "1.1.6"
@@ -83,7 +88,6 @@ serde_json = { version = "1.0.154", features = ["preserve_order"] }
 serde_path_to_error = "0.1.20"
 rmcp = { version = "3.8.0", default-features = false }
 tokio = { version = "1.54.1", default-features = false }
-mlua = { version = "0.12.2", features = ["lua54", "vendored", "serialize"] }
 miette = "7.6.0"
 thiserror = "2.0.21"
 tracing = "0.1.44"
@@ -95,6 +99,10 @@ mimalloc = "0.1.52"
 anyhow = "1.0.104"
 xshell = "0.2.7"
 
+# Release packages, written in-process (xtask) so that an archive is the same on every machine, whatever `tar` and `sha256sum` the machine has. Their checksums use `sha2`, above.
+flate2 = "1.1.10"
+tar = { version = "0.4.46", default-features = false }
+
 # Proc macros.
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
@@ -105,6 +113,7 @@ insta = { version = "1.49.0", features = ["json"] }
 libtest-mimic = "0.8.2"
 proptest = "1.12.0"
 similar-asserts = "2.0.0"
+trybuild = "1.0.122"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

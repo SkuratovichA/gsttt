@@ -1,5 +1,4 @@
-//! The scenarios of the `python` capability. Each test indexes one fixture tree from `tests/fixtures/` through the
-//! whole pipeline, checks what its scenario claims and snapshots the facts it is about, for review.
+//! The scenarios of the `python` capability. Each test indexes one fixture tree from `tests/fixtures/` through the whole pipeline, checks what its scenario claims and snapshots the facts it is about, for review.
 //!
 //! `cfg(test)` on the whole file tells clippy that the helpers below are test code, where `clippy.toml` lets them panic.
 
@@ -43,8 +42,7 @@ fn index_with(fixture: &str, packs: Vec<Pack>) -> Tree {
     run(root, packs, None)
 }
 
-/// A tree written to a temporary directory from `(path, text)` pairs and indexed like a fixture, for the inputs that
-/// fit in a few lines.
+/// A tree written to a temporary directory from `(path, text)` pairs and indexed like a fixture, for the inputs that fit in a few lines.
 fn index_files(files: &[(&str, &str)]) -> Tree {
     index_files_with(files, builtin_packs(PACKS).unwrap())
 }
@@ -257,9 +255,7 @@ fn the_root_project_opens_only_for_python_files_outside_every_project() {
 #[test]
 fn requirements_files_include_each_other() {
     let tree = index("requirement_includes");
-    // `fastapi` is declared two includes away from `requirements.txt` and `sqlalchemy` three, each include relative to
-    // the file that names it. `common/shared.txt` includes `requirements/base.txt` back, and `requirements/dev.txt`
-    // starts with two includes that name nothing in the repository: the walk reads each file once and goes on.
+    // `fastapi` is declared two includes away from `requirements.txt` and `sqlalchemy` three, each include relative to the file that names it. `common/shared.txt` includes `requirements/base.txt` back, and `requirements/dev.txt` starts with two includes that name nothing in the repository: the walk reads each file once and goes on.
     assert_eq!(tree.contracts("app.py"), ["serves http GET /ping@6"]);
     assert_eq!(tree.contracts("models.py"), ["declares table bookings@5"]);
     // Nothing in the name of `common/shared.txt` says it is a manifest, so it is read through the include and no more.
@@ -269,9 +265,7 @@ fn requirements_files_include_each_other() {
 #[gsttt_scenario::scenario("python", "A requirement continues on the next line")]
 #[test]
 fn a_requirement_continues_on_the_next_line() {
-    // `base.txt` is named by an include whose file name is on the next line and declares `fastapi`. The comment line
-    // ends with a backslash and does not continue, so `sqlalchemy` after it is a requirement of its own; `flask` is
-    // split from its specifier. Each pack is told by a file of its own.
+    // `base.txt` is named by an include whose file name is on the next line and declares `fastapi`. The comment line ends with a backslash and does not continue, so `sqlalchemy` after it is a requirement of its own; `flask` is split from its specifier. Each pack is told by a file of its own.
     let tree = index_files(&[
         ("pyproject.toml", "[project]\nname = \"svc\"\n"),
         (
@@ -297,12 +291,10 @@ fn a_requirement_continues_on_the_next_line() {
     assert_eq!(tree.contracts("models.py"), ["declares table bookings@5"]);
 }
 
-#[cfg(unix)]
 #[gsttt_scenario::scenario("python", "A manifest that is a symbolic link is not read")]
 #[test]
 fn a_manifest_that_is_a_symbolic_link_is_not_read() {
-    // The repository is a directory of a temporary one, and `dev.txt` is a link to a file beside it that declares
-    // `fastapi`. The file set lists the link, as a set made from git does.
+    // The repository is a directory of a temporary one, and `dev.txt` is a link to a file beside it that declares `fastapi`. The file set lists the link, as a set made from git does.
     let outer = tempfile::tempdir().unwrap();
     let root = outer.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
@@ -487,8 +479,7 @@ fn a_relative_dynamic_import_with_no_package_is_taken_from_the_files() {
 #[test]
 fn a_dynamic_import_with_a_package_that_cannot_be_read_is_an_unread_site() {
     let tree = index("dynamic_imports");
-    // Line 3 climbs out of `p.q`, which `importlib` rejects, and line 6 has no package at all; lines 4 and 5 name
-    // theirs only at run time.
+    // Line 3 climbs out of `p.q`, which `importlib` rejects, and line 6 has no package at all; lines 4 and 5 name theirs only at run time.
     assert_eq!(tree.unresolved_lines("app/unread.py"), [3, 4, 5, 6]);
     assert_eq!(
         dynamic_imports(&tree, "app/unread.py"),
@@ -556,8 +547,7 @@ fn guarded_imports_are_flagged() {
 fn a_recoverable_error_keeps_the_imports() {
     let tree = index("imports");
     let broken = tree.file("broken.py");
-    // The parser puts the error of the bracket left open at the end of the text, a line the file does not have: the
-    // file has four lines, and the error is on the last of them.
+    // The parser puts the error of the bracket left open at the end of the text, a line the file does not have: the file has four lines, and the error is on the last of them.
     assert!(
         matches!(
             broken.facts.status,
@@ -1038,8 +1028,7 @@ fn model_tables_are_declared() {
 #[test]
 fn a_table_name_outside_a_model_declares_nothing() {
     let tree = index("model_scopes");
-    // Line 4 and 5 assign the names at module level, 16 and 17 in a method, 35 in a class `Meta` that sits in no class
-    // and 40 in a class that is not called `Meta`.
+    // Line 4 and 5 assign the names at module level, 16 and 17 in a method, 35 in a class `Meta` that sits in no class and 40 in a class that is not called `Meta`.
     assert_eq!(
         tree.contracts("models.py"),
         [
@@ -1063,12 +1052,16 @@ fn a_table_name_outside_a_model_declares_nothing() {
 )]
 #[test]
 fn a_target_of_one_segment_matches_wherever_the_name_is_assigned() {
-    let pack = r#"return {
-        name = "anywhere",
-        language = "python",
-        assigns = { { target = "db_table", kind = "table", role = "declares", key = "$arg1" } },
-    }"#;
-    let packs = builtin_packs(&[("anywhere.lua", pack)]).unwrap();
+    let pack = r#"name = "anywhere"
+language = "python"
+
+[[assigns]]
+target = "db_table"
+kind = "table"
+role = "declares"
+key = "$arg1"
+"#;
+    let packs = builtin_packs(&[("anywhere", pack)]).unwrap();
     let tree = index_with("model_scopes", packs);
     assert_eq!(
         tree.contracts("models.py"),
@@ -1144,8 +1137,7 @@ fn raw_sql_is_embedded() {
     insta::assert_json_snapshot!("raw_sql_is_embedded", tree.file_json("db.py"));
 }
 
-/// The line of `needle` in the file, counting the lines of the document from the one it starts on, which is how a
-/// reader of the document places what it finds in it.
+/// The line of `needle` in the file, counting the lines of the document from the one it starts on, which is how a reader of the document places what it finds in it.
 fn line_in(document: &Embedded, needle: &str) -> Line {
     assert!(
         document.text.contains(needle),
@@ -1198,8 +1190,7 @@ fn a_line_break_written_as_an_escape_adds_no_line() {
 #[gsttt_scenario::scenario("python", "A line break in the source stays beside an escape")]
 #[test]
 fn a_line_break_in_the_source_stays_beside_an_escape() {
-    // One escape in a literal over several lines must not take the lines of the source away: each `--` comment ends
-    // where its line does.
+    // One escape in a literal over several lines must not take the lines of the source away: each `--` comment ends where its line does.
     let tree = index_files(&[(
         "db.py",
         r#"def read(cursor):
@@ -1275,8 +1266,7 @@ fn a_comment_before_an_escape_made_line_break_is_an_unread_site() {
 #[test]
 fn a_sql_string_built_at_run_time_is_an_unread_site() {
     let tree = index("sql_arguments");
-    // An f-string, `+` and `%` on a literal, and `.format` on a text joined with `+`; the plain literal on line 6 is
-    // read.
+    // An f-string, `+` and `%` on a literal, and `.format` on a text joined with `+`; the plain literal on line 6 is read.
     assert_eq!(
         tree.unread("built.py"),
         [
@@ -1345,8 +1335,7 @@ fn an_argument_that_is_not_a_string_records_nothing() {
 #[test]
 fn a_text_call_with_a_variable_is_still_an_unread_site() {
     let tree = index("sql_arguments");
-    // `text(query)` can only hold a statement, so what it holds is unread; `execute(text(…))` holds a call and adds
-    // none.
+    // `text(query)` can only hold a statement, so what it holds is unread; `execute(text(…))` holds a call and adds none.
     assert_eq!(tree.unread("named.py"), ["L5 text"]);
     let embedded = &tree.file("named.py").facts.embedded;
     assert_eq!(embedded.len(), 1, "{embedded:?}");
@@ -1414,8 +1403,7 @@ fn a_settings_prefix_is_applied() {
 #[test]
 fn a_settings_field_with_an_alias_is_read_under_the_alias() {
     let tree = index("settings_alias");
-    // `validation_alias` wins over `alias`, an alias is not prefixed, and a field whose alias is not a literal is an
-    // unread site rather than a variable named after the field.
+    // `validation_alias` wins over `alias`, an alias is not prefixed, and a field whose alias is not a literal is an unread site rather than a variable named after the field.
     assert_eq!(
         tree.contracts("settings.py"),
         [
@@ -1526,8 +1514,7 @@ fn a_module_imported_under_another_name_is_followed() {
 #[test]
 fn a_name_imported_from_a_module_is_followed() {
     let tree = index("aliases");
-    // `from requests import post as send` calls `post`: the verb is the one of the function, not of the name it is
-    // imported as.
+    // `from requests import post as send` calls `post`: the verb is the one of the function, not of the name it is imported as.
     assert_eq!(
         tree.contracts("requests_name.py"),
         [
@@ -1581,8 +1568,7 @@ fn a_function_imported_under_another_name_embeds_its_document() {
 #[test]
 fn a_router_class_imported_under_another_name_serves_its_routes() {
     let tree = index("aliases");
-    // `app = fa.FastAPI()` is an application and its route a fact of the file; `router = R(prefix=…)` is a router,
-    // which `link` serves behind its prefix.
+    // `app = fa.FastAPI()` is an application and its route a fact of the file; `router = R(prefix=…)` is a router, which `link` serves behind its prefix.
     assert_eq!(
         tree.contracts("fastapi_router.py"),
         ["serves http GET /ping@8"]
@@ -1653,8 +1639,7 @@ fn a_name_imported_twice_is_listed_once() {
 #[test]
 fn a_setup_py_with_bracketed_requirements_is_read() {
     let tree = index("setup_py");
-    // `fastapi[standard]` is what switches the FastAPI pack on, and a comment with an apostrophe follows it. The
-    // route is on a router nothing includes, which `link` serves behind the router's own prefix.
+    // `fastapi[standard]` is what switches the FastAPI pack on, and a comment with an apostrophe follows it. The route is on a router nothing includes, which `link` serves behind the router's own prefix.
     assert_eq!(
         tree.linked("lib/bookings/api.py"),
         ["serves http GET /ping@6"]
@@ -1815,10 +1800,17 @@ fn a_repository_without_a_manifest_gets_a_root_project() {
 fn the_built_in_packs_are_python_packs_named_after_their_files() {
     let packs = builtin_packs(PACKS).unwrap();
     assert_eq!(packs.len(), PACKS.len());
-    for (pack, (file, _)) in packs.iter().zip(PACKS) {
+    for (pack, (name, _)) in packs.iter().zip(PACKS) {
         assert_eq!(pack.language, "python");
-        assert_eq!(format!("{}.lua", pack.name), *file);
+        assert_eq!(pack.name, *name);
     }
+}
+
+/// The snapshot holds every rule of every pack, so a change to the way packs are written cannot change what they say without a reviewer seeing it.
+#[test]
+fn every_built_in_pack_says_what_it_said() {
+    let packs = builtin_packs(PACKS).unwrap();
+    insta::assert_json_snapshot!(packs);
 }
 
 // Review fixes, round 3. Each test fails on the code the second round left and passes on its fix.
@@ -1982,8 +1974,7 @@ fn a_router_whose_every_chain_is_cut_serves_nothing() {
         ("app/a.py", &router("/x", "b", "/b", "/one")),
         ("app/b.py", &router("/y", "a", "/a", "/two")),
     ]);
-    // Each router is included by the other and by nothing else, so no chain ends at a router nobody includes: a path
-    // at the router's own prefix would be one that nothing serves.
+    // Each router is included by the other and by nothing else, so no chain ends at a router nobody includes: a path at the router's own prefix would be one that nothing serves.
     assert_eq!(tree.linked("app/a.py"), Vec::<String>::new());
     assert_eq!(tree.linked("app/b.py"), Vec::<String>::new());
 }
@@ -2003,8 +1994,7 @@ fn a_prefix_that_is_not_a_literal_cuts_the_chain() {
             "from fastapi import FastAPI\n\nfrom app import items\n\nPREFIX = \"/api\"\napp = FastAPI()\napp.include_router(items.router, prefix=PREFIX)\napp.include_router(items.router, prefix=\"/v2\")\n",
         ),
     ]);
-    // The mount with the prefix held in a variable serves the router at a path that is not known, so only the other
-    // mount is followed; the call is an unread site of the file that makes it.
+    // The mount with the prefix held in a variable serves the router at a path that is not known, so only the other mount is followed; the call is an unread site of the file that makes it.
     assert_eq!(
         tree.linked("app/items.py"),
         ["serves http GET /v2/items/{}@6"]
@@ -2090,8 +2080,7 @@ fn a_router_included_with_a_prefix_and_without_is_served_at_both() {
             "from fastapi import FastAPI\n\nfrom app import bookings\n\napp = FastAPI()\napp.include_router(bookings.router, prefix=\"/api\")\napp.include_router(bookings.router)\n",
         ),
     ]);
-    // The mount with no prefix is a mount like the other: the router is served at the root as well, and the file keeps
-    // no copy of the route of its own.
+    // The mount with no prefix is a mount like the other: the router is served at the root as well, and the file keeps no copy of the route of its own.
     assert_eq!(
         tree.linked("app/bookings.py"),
         [
@@ -2115,8 +2104,7 @@ fn an_attribute_assignment_declares_no_table() {
             "from sqlalchemy.orm import DeclarativeBase\n\n\nclass Base(DeclarativeBase):\n    pass\n\n\nclass Booking(Base):\n    __tablename__ = \"bookings\"\n\n    def rename(self):\n        self.__tablename__ = \"scratch\"\n\n\nBooking.__tablename__ = \"v2\"\nBooking.Meta.db_table = \"x\"\n",
         ),
     ]);
-    // A name written with dots is an attribute of an object, which the qualified targets of the packs, `*.__tablename__`
-    // and `*.Meta.db_table`, are not about: they name the classes around a plain assignment.
+    // A name written with dots is an attribute of an object, which the qualified targets of the packs, `*.__tablename__` and `*.Meta.db_table`, are not about: they name the classes around a plain assignment.
     assert_eq!(tree.contracts("models.py"), ["declares table bookings@9"]);
 }
 
@@ -2130,8 +2118,7 @@ fn a_settings_prefix_that_is_not_a_literal_leaves_its_fields_unread() {
         "settings.py",
         "from pydantic_settings import BaseSettings, SettingsConfigDict\n\nPREFIX = \"APP_\"\n\n\nclass Call(BaseSettings):\n    model_config = SettingsConfigDict(env_prefix=PREFIX)\n\n    port: int\n    token: str = Field(alias=\"API_TOKEN\")\n\n\nclass Table(BaseSettings):\n    model_config = {\"env_prefix\": f\"{PREFIX}X_\"}\n\n    host: str\n\n\nclass Inner(BaseSettings):\n    class Config:\n        env_prefix = PREFIX\n\n    region: str\n\n\nclass Literal(BaseSettings):\n    model_config = SettingsConfigDict(env_prefix=\"LIT_\")\n\n    mode: str\n",
     )]);
-    // The prefix is part of the name of each field that has no alias, so a field cannot be named when the prefix is
-    // computed; an alias is never prefixed and stays read.
+    // The prefix is part of the name of each field that has no alias, so a field cannot be named when the prefix is computed; an alias is never prefixed and stays read.
     assert_eq!(
         tree.contracts("settings.py"),
         ["calls env API_TOKEN@10", "calls env LIT_MODE@29"]
@@ -2155,8 +2142,7 @@ fn a_function_imported_by_name_is_no_method_of_a_receiver() {
             "import sqlite3\nfrom mylib import execute, get\nfrom pydantic_settings import BaseSettings as Base\n\n\nclass Settings(Base):\n    port: int\n\n\ndef run(table):\n    execute(\"rm -rf /tmp/x\")\n    execute(f\"SELECT * FROM {table}\")\n    get(\"https://example.com/x\")\n    cursor = sqlite3.connect(\"db\").cursor()\n    cursor.execute(\"SELECT 1 FROM bookings\")\n",
         ),
     ]);
-    // `mylib.execute` and `mylib.get` match `*.execute` and `*.get` only when the module a name was imported from is
-    // taken for the receiver, which it is not. A pack that wants a library's own spelling names the library.
+    // `mylib.execute` and `mylib.get` match `*.execute` and `*.get` only when the module a name was imported from is taken for the receiver, which it is not. A pack that wants a library's own spelling names the library.
     let file = tree.file("app.py");
     let embedded: Vec<_> = file
         .facts
@@ -2273,8 +2259,7 @@ fn a_stub_without_its_source_loses_to_a_declared_distribution() {
     );
 }
 
-/// A file with seven layers of two routers, each router included in both routers of the layer above, so that `a0`
-/// is reached in 128 ways. The `include_router` calls come from the lowest layer up, or the other way round.
+/// A file with seven layers of two routers, each router included in both routers of the layer above, so that `a0` is reached in 128 ways. The `include_router` calls come from the lowest layer up, or the other way round.
 fn layered_routers(reversed: bool) -> String {
     let mut text = String::from("from fastapi import APIRouter\n\n");
     for layer in 0..=7 {
@@ -2340,20 +2325,23 @@ fn a_router_reached_in_more_than_64_ways_is_served_in_the_first_64_by_path() {
     }
 }
 
-/// A call rule that serves HTTP is an entry of its module's URL list whichever pack it comes from, so a Django
-/// include of the module puts its prefix in front, as it does for `path()`. Nothing else mounts the list, so a module
-/// no urlconf includes keeps the path the call wrote.
+/// A call rule that serves HTTP is an entry of its module's URL list whichever pack it comes from, so a Django include of the module puts its prefix in front, as it does for `path()`. Nothing else mounts the list, so a module no urlconf includes keeps the path the call wrote.
 #[test]
 fn a_serving_call_of_a_pack_is_served_behind_the_includes_of_its_module() {
-    let pack = r#"return {
-        name = "aiohttp",
-        language = "python",
-        calls = { { callee = "web.get", kind = "http", role = "serves", key = "$arg1", method = "GET" } },
-    }"#;
+    let pack = r#"name = "aiohttp"
+language = "python"
+
+[[calls]]
+callee = "web.get"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "GET"
+"#;
     let routes = "from aiohttp import web\n\nroutes = [web.get(\"/things\", handler)]\n";
     let packs = || {
         let mut packs = builtin_packs(PACKS).unwrap();
-        packs.extend(builtin_packs(&[("aiohttp.lua", pack)]).unwrap());
+        packs.extend(builtin_packs(&[("aiohttp", pack)]).unwrap());
         packs
     };
     // Nothing includes the module: the route keeps the path it was written with.

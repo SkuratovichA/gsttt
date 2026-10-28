@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use gsttt_config::{builtin_packs, eval_pack};
+use gsttt_config::{builtin_packs, read_pack};
 use gsttt_core::contract::{ContractKey, Role};
 use gsttt_core::fact::ContractFact;
 use gsttt_core::rules::Pack;
@@ -14,8 +14,17 @@ use ra_ap_syntax::ast;
 use super::{Sites, read};
 use crate::link::{Extra, Function, Group, Mount, Prefix, Target};
 
+/// Reads a pack the way a pack file is read. A pack is named after its file, so the file is `<name>.toml`.
+fn pack_named(name: &str, text: &str) -> Pack {
+    read_pack(&format!("{name}.toml"), text).unwrap()
+}
+
+/// Reads `source` with `pack`, a TOML pack called `t`.
 fn sites(source: &str, pack: &str) -> Sites {
-    let pack = eval_pack("test.lua", pack).unwrap();
+    sites_with(source, pack_named("t", pack))
+}
+
+fn sites_with(source: &str, pack: Pack) -> Sites {
     let parse = ast::SourceFile::parse(source, Edition::CURRENT);
     read(
         &parse.syntax_node(),
@@ -52,10 +61,22 @@ fn unresolved(sites: &Sites) -> Vec<(u32, &str)> {
 
 #[test]
 fn calls_method_calls_and_macros_are_sites() {
-    let pack = r#"return { name = "t", language = "rust", calls = {
-        { callee = { "env.var", "env!" }, kind = "env", role = "calls", key = "$arg1" },
-        { callee = "*.route", kind = "http", role = "serves", key = "$arg1", method = "$arg2.method" },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[calls]]
+callee = ["env.var", "env!"]
+kind = "env"
+role = "calls"
+key = "$arg1"
+
+[[calls]]
+callee = "*.route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$arg2.method"
+"#;
     let source = r#"fn main() {
     let a = env::var("a");
     let b = env!("b");
@@ -81,9 +102,15 @@ fn calls_method_calls_and_macros_are_sites() {
 
 #[test]
 fn a_method_call_is_where_its_method_is_written() {
-    let pack = r#"return { name = "t", language = "rust", calls = {
-        { callee = "*.route", kind = "http", role = "serves", key = "$arg1" },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[calls]]
+callee = "*.route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+"#;
     let source =
         "fn main() {\n    Router::new()\n        .layer(l)\n        .route(\"/r\", h);\n}\n";
     assert_eq!(found(&sites(source, pack)), ["4 http * /r"]);
@@ -91,12 +118,35 @@ fn a_method_call_is_where_its_method_is_written() {
 
 #[test]
 fn attributes_are_sites_with_keywords() {
-    let pack = r#"return { name = "t", language = "rust", decorators = {
-        { decorator = { "get", "post" }, kind = "http", role = "serves", key = "$arg1", method = "$callee" },
-        { decorator = "route", kind = "http", role = "serves", key = "$arg1", method = "$method" },
-        { decorator = "orm", kind = "table", role = "declares", key = "$table_name" },
-        { decorator = "var", kind = "env", role = "calls", key = "$member" },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[decorators]]
+decorator = ["get", "post"]
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$callee"
+
+[[decorators]]
+decorator = "route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$method"
+
+[[decorators]]
+decorator = "orm"
+kind = "table"
+role = "declares"
+key = "$table_name"
+
+[[decorators]]
+decorator = "var"
+kind = "env"
+role = "calls"
+key = "$member"
+"#;
     let source = r#"#[get("/a")]
 async fn a() {}
 
@@ -128,9 +178,15 @@ fn watched() {}
 
 #[test]
 fn an_attribute_with_a_computed_value_is_a_blind_spot() {
-    let pack = r#"return { name = "t", language = "rust", decorators = {
-        { decorator = "orm", kind = "table", role = "declares", key = "$table_name" },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[decorators]]
+decorator = "orm"
+kind = "table"
+role = "declares"
+key = "$table_name"
+"#;
     let source = "#[orm(table_name = TABLE)]\nstruct Booking;\n";
     let out = sites(source, pack);
     assert_eq!(found(&out), Vec::<String>::new());
@@ -139,10 +195,18 @@ fn an_attribute_with_a_computed_value_is_a_blind_spot() {
 
 #[test]
 fn embed_rules_take_the_literal_sql() {
-    let pack = r#"return { name = "t", language = "rust", embeds = {
-        { callee = { "query_as!", "sqlx.query_as!" }, lang = "sql", text = "$arg2" },
-        { callee = "sqlx.query", lang = "sql" },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[embeds]]
+callee = ["query_as!", "sqlx.query_as!"]
+lang = "sql"
+text = "$arg2"
+
+[[embeds]]
+callee = "sqlx.query"
+lang = "sql"
+"#;
     let source = r#"fn f() {
     sqlx::query_as!(Booking, "SELECT id FROM bookings", id);
     sqlx::query("SELECT 1");
@@ -174,10 +238,21 @@ fn embed_rules_take_the_literal_sql() {
 
 #[test]
 fn chain_rules_read_paths_fields_and_indexes() {
-    let pack = r#"return { name = "t", language = "rust", chains = {
-        { root = "settings.env", kind = "env", role = "calls", segments = 1 },
-        { root = "Config", kind = "env", role = "calls", segments = 1 },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[chains]]
+root = "settings.env"
+kind = "env"
+role = "calls"
+segments = 1
+
+[[chains]]
+root = "Config"
+kind = "env"
+role = "calls"
+segments = 1
+"#;
     let source = r#"fn f(name: &str) {
     let a = settings.env.database_url;
     let b = settings.env.port.to_string();
@@ -202,10 +277,22 @@ fn chain_rules_read_paths_fields_and_indexes() {
 
 #[test]
 fn assign_rules_read_constants_lets_fields_and_assignments() {
-    let pack = r#"return { name = "t", language = "rust", assigns = {
-        { target = "TABLE", kind = "table", role = "declares", key = "$arg1" },
-        { target = "table_name", class = "Entity", kind = "table", role = "declares", key = "$arg1" },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[assigns]]
+target = "TABLE"
+kind = "table"
+role = "declares"
+key = "$arg1"
+
+[[assigns]]
+target = "table_name"
+class = "Entity"
+kind = "table"
+role = "declares"
+key = "$arg1"
+"#;
     let source = r#"const TABLE: &str = "bookings";
 static OTHER: &str = "nope";
 impl Entity for Booking {
@@ -234,21 +321,45 @@ fn g() {
 
 #[test]
 fn a_site_is_one_blind_spot_however_many_rules_read_it() {
-    let pack = r#"return { name = "t", language = "rust", calls = {
-        { callee = "*.run", kind = "queue", role = "calls", key = "$arg1" },
-        { callee = "*.run", kind = "table", role = "calls", key = "$arg1" },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[calls]]
+callee = "*.run"
+kind = "queue"
+role = "calls"
+key = "$arg1"
+
+[[calls]]
+callee = "*.run"
+kind = "table"
+role = "calls"
+key = "$arg1"
+"#;
     let out = sites("fn f() { worker.run(name); }\n", pack);
     assert_eq!(unresolved(&out), [(1, "worker.run")]);
 }
 
 #[test]
 fn a_fact_beats_a_blind_spot_at_the_same_site() {
-    let pack = r#"return { name = "t", language = "rust", calls = {
-        { callee = "*.route", kind = "http", role = "serves", key = "$arg1", method = "$arg2.method" },
-        { callee = "*.route", kind = "http", role = "serves", key = "", method = "$arg1.method",
-          receiver = { from = "web.resource", key = "$arg1" } },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[calls]]
+callee = "*.route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$arg2.method"
+
+[[calls]]
+callee = "*.route"
+kind = "http"
+role = "serves"
+key = ""
+method = "$arg1.method"
+receiver = { from = "web.resource", key = "$arg1" }
+"#;
     let source = r#"fn f(path: &str) {
     web::resource("/x").route(web::get().to(show));
     app.route(path, web::get().to(show));
@@ -261,12 +372,25 @@ fn a_fact_beats_a_blind_spot_at_the_same_site() {
 
 #[test]
 fn a_receiver_is_what_the_file_says_it_is() {
-    let pack = r#"return { name = "t", language = "rust", calls = {
-        { callee = { "*.get", "*.delete" }, kind = "http", role = "calls", key = "$arg1", method = "$callee",
-          receiver = { from = { "reqwest.Client.new", "Client.new", "Client.builder" } } },
-        { callee = "*.request", kind = "http", role = "calls", key = "$arg2", method = "$arg1.last",
-          receiver = { from = "Client.new" } },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[calls]]
+callee = ["*.get", "*.delete"]
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "$callee"
+receiver = { from = ["reqwest.Client.new", "Client.new", "Client.builder"] }
+
+[[calls]]
+callee = "*.request"
+kind = "http"
+role = "calls"
+key = "$arg2"
+method = "$arg1.last"
+receiver = { from = "Client.new" }
+"#;
     let source = r#"struct Api { http: reqwest::Client, cache: HashMap<String, String> }
 static SHARED: LazyLock<Client> = LazyLock::new(|| Client::new());
 impl Api {
@@ -311,10 +435,17 @@ fn b(client: &Client, map: &HashMap<String, String>) {
 
 #[test]
 fn a_rebound_name_is_the_latest_binding() {
-    let pack = r#"return { name = "t", language = "rust", calls = {
-        { callee = "*.get", kind = "http", role = "calls", key = "$arg1", method = "$callee",
-          receiver = { from = "Client.new" } },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[calls]]
+callee = "*.get"
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "$callee"
+receiver = { from = "Client.new" }
+"#;
     let source = r#"fn f() {
     let c = HashMap::new();
     c.get("/before");
@@ -327,10 +458,17 @@ fn a_rebound_name_is_the_latest_binding() {
 
 #[test]
 fn a_let_in_a_nested_function_binds_nothing_outside_it() {
-    let pack = r#"return { name = "t", language = "rust", calls = {
-        { callee = "*.get", kind = "http", role = "calls", key = "$arg1", method = "$callee",
-          receiver = { from = "Client.new" } },
-    } }"#;
+    let pack = r#"name = "t"
+language = "rust"
+
+[[calls]]
+callee = "*.get"
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "$callee"
+receiver = { from = "Client.new" }
+"#;
     let source = r#"fn outer() {
     let c = HashMap::new();
     fn inner() {
@@ -344,14 +482,38 @@ fn a_let_in_a_nested_function_binds_nothing_outside_it() {
 }
 
 /// The axum pack in the small: `route` serves the verb of its second argument.
-const AXUM: &str = r#"return { name = "axum", language = "rust", calls = {
-    { callee = "*.route", kind = "http", role = "serves", key = "$arg1", method = "$arg2.method" },
-} }"#;
+fn axum() -> Pack {
+    pack_named(
+        "axum",
+        r#"name = "axum"
+language = "rust"
+
+[[calls]]
+callee = "*.route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$arg2.method"
+"#,
+    )
+}
 
 /// The actix pack in the small: an attribute named for the verb serves its path.
-const ACTIX: &str = r#"return { name = "actix", language = "rust", decorators = {
-    { decorator = "get", kind = "http", role = "serves", key = "$arg1", method = "$callee" },
-} }"#;
+fn actix() -> Pack {
+    pack_named(
+        "actix",
+        r#"name = "actix"
+language = "rust"
+
+[[decorators]]
+decorator = "get"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$callee"
+"#,
+    )
+}
 
 /// Where `needle` starts in `source`, the way a group is told apart from the others of its file.
 fn anchor(source: &str, needle: &str) -> u32 {
@@ -375,7 +537,7 @@ fn routers_become_groups_for_the_link_step() {
     Router::new().nest("/v1", users).merge(extra::router()).nest(prefix, other::router())
 }
 "#;
-    let out = sites(source, AXUM);
+    let out = sites_with(source, axum());
     let users = anchor(source, "Router::new().route");
     let admin = anchor(source, "Router::new().nest");
     let expected = Extra {
@@ -427,7 +589,7 @@ fn app() -> Scope {
     web::scope("/bookings").service(bookings::show)
 }
 "#;
-    let out = sites(source, ACTIX);
+    let out = sites_with(source, actix());
     let show = anchor(source, "#[get");
     let scope = anchor(source, "web::scope");
     let expected = Extra {
@@ -477,7 +639,7 @@ fn unrelated() -> u32 {
     app()
 }
 "#;
-    let out = sites(source, AXUM);
+    let out = sites_with(source, axum());
     let first = anchor(source, "Router::new().route");
     let second = anchor(source, "app.route");
     let mounts: Vec<_> = out
@@ -513,33 +675,81 @@ fn unrelated() -> u32 {
 #[test]
 fn nothing_is_recorded_without_the_pack_that_mounts_routers() {
     let source = "fn f() { Router::new().route(\"/a\", get(h)).nest(\"/b\", r); }\n";
-    let pack = r#"return { name = "other", language = "rust", calls = {
-        { callee = "*.route", kind = "http", role = "serves", key = "$arg1", method = "$arg2.method" },
-    } }"#;
-    assert_eq!(sites(source, pack).extra, Extra::default());
+    let pack = r#"name = "other"
+language = "rust"
+
+[[calls]]
+callee = "*.route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$arg2.method"
+"#;
+    assert_eq!(
+        sites_with(source, pack_named("other", pack)).extra,
+        Extra::default()
+    );
 }
 
 /// A pack with a rule of every kind, so that the properties below reach all of the reader.
-const EVERY_KIND: &str = r#"return { name = "every", language = "rust",
-    calls = {
-        { callee = "*.route", kind = "http", role = "serves", key = "$arg1", method = "$arg2.method" },
-        { callee = "*.get", kind = "http", role = "calls", key = "$arg1", method = "$callee",
-          receiver = { from = "Client.new" } },
-        { callee = "env!", kind = "env", role = "calls", key = "$arg1" },
-    },
-    decorators = {
-        { decorator = "get", kind = "http", role = "serves", key = "$arg1", method = "$callee" },
-        { decorator = "orm", kind = "table", role = "declares", key = "$table_name" },
-    },
-    chains = { { root = "settings", kind = "env", role = "calls", segments = 1 } },
-    embeds = { { callee = "sqlx.query", lang = "sql" } },
-    assigns = { { target = "TABLE", kind = "table", role = "declares", key = "$arg1" } },
-}"#;
+const EVERY_KIND: &str = r#"name = "every"
+language = "rust"
+
+[[calls]]
+callee = "*.route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$arg2.method"
+
+[[calls]]
+callee = "*.get"
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "$callee"
+receiver = { from = "Client.new" }
+
+[[calls]]
+callee = "env!"
+kind = "env"
+role = "calls"
+key = "$arg1"
+
+[[decorators]]
+decorator = "get"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$callee"
+
+[[decorators]]
+decorator = "orm"
+kind = "table"
+role = "declares"
+key = "$table_name"
+
+[[chains]]
+root = "settings"
+kind = "env"
+role = "calls"
+segments = 1
+
+[[embeds]]
+callee = "sqlx.query"
+lang = "sql"
+
+[[assigns]]
+target = "TABLE"
+kind = "table"
+role = "declares"
+key = "$arg1"
+"#;
 
 /// Every pack the properties read with: the built-in ones and one with a rule of every kind.
 fn every_pack() -> Vec<Pack> {
     let mut packs = builtin_packs(crate::PACKS).unwrap();
-    packs.push(eval_pack("every.lua", EVERY_KIND).unwrap());
+    packs.push(pack_named("every", EVERY_KIND));
     packs
 }
 
