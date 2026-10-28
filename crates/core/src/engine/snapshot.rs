@@ -129,7 +129,7 @@ pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), Snapsh
     })
 }
 
-/// Removes the temporary files of [`write`] in `dir` that nobody has touched for [`STALE`].
+/// Removes the temporary files of [`write()`] in `dir` that nobody has touched for [`STALE`].
 fn remove_stale(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
