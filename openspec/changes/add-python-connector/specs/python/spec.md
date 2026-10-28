@@ -463,6 +463,13 @@ A line of a requirements file that ends with a backslash SHALL be read together 
 - **WHEN** `requirements.txt` has `-r \` followed by an indented `base.txt` that declares `fastapi`, then a comment line ending with a backslash followed by `sqlalchemy`, then `flask \` followed by an indented `>=3.0`
 - **THEN** the `fastapi`, `sqlalchemy` and `flask` packs are in force
 
+### Requirement: Manifests that are not regular files
+A manifest or an included requirements file that is not a regular file, such as a symbolic link, SHALL NOT be read, even when the file set lists it, so that a link cannot bring in a file from outside the repository. The project SHALL still open, without what the file would have said.
+
+#### Scenario: A manifest that is a symbolic link is not read
+- **WHEN** `requirements.txt` includes `dev.txt`, which is a symbolic link to a file outside the repository that declares `fastapi`, and the file set lists the link
+- **THEN** the `fastapi` pack is not in force, so `app.py` records no route
+
 ### Requirement: Keywords of a setup.py
 The `install_requires` list and the `package_dir` dict of a `setup.py` SHALL be read only when a bracket of the right kind follows the keyword's `=` directly. A keyword whose value is a name or a call, and a bracket that belongs to a later keyword such as `extras_require` or `entry_points`, SHALL give nothing. A backslash in a string SHALL make the character after it part of the string.
 

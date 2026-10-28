@@ -314,7 +314,20 @@ fn read_requirement_files(repo: &RepoView, files: &[&RepoPath], manifest: &mut M
     }
 }
 
+/// The text of a manifest, or `None` when it is not a regular file or cannot be read. A file set made from git lists a
+/// symbolic link as a file, and a link can point out of the repository, which nothing here may read.
 fn read_text(repo: &RepoView, path: &str) -> Option<String> {
+    if repo
+        .absolute(path)
+        .symlink_metadata()
+        .is_ok_and(|meta| !meta.is_file())
+    {
+        tracing::warn!(
+            file = path,
+            "a manifest that is not a regular file is skipped"
+        );
+        return None;
+    }
     match repo.read_to_string(path) {
         Ok(text) => Some(text),
         Err(error) => {

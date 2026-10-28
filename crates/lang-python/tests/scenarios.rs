@@ -15,6 +15,7 @@ use gsttt_core::fact::{
     ContractFact, Embedded, FileTags, ImportFlags, ImportKind, Line, ParseStatus, Resolution,
 };
 use gsttt_core::ids::FileId;
+use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
 use gsttt_lang_python::{PACKS, PYTHON};
@@ -61,7 +62,11 @@ fn index_files_with(files: &[(&str, &str)], packs: Vec<Pack>) -> Tree {
 }
 
 fn run(root: String, packs: Vec<Pack>, dir: Option<tempfile::TempDir>) -> Tree {
-    let repo = RepoView::scan(root).unwrap();
+    run_view(RepoView::scan(root).unwrap(), packs, dir)
+}
+
+/// Like [`run`], on a file set the test built: one made from `git ls-files` lists symbolic links, which a scan skips.
+fn run_view(repo: RepoView, packs: Vec<Pack>, dir: Option<tempfile::TempDir>) -> Tree {
     let modules = [Module {
         connector: &PYTHON,
         options: Value::Null,
@@ -290,6 +295,35 @@ fn a_requirement_continues_on_the_next_line() {
     assert_eq!(tree.contracts("app.py"), ["serves http GET /ping@6"]);
     assert_eq!(tree.contracts("views.py"), ["serves http GET /health@6"]);
     assert_eq!(tree.contracts("models.py"), ["declares table bookings@5"]);
+}
+
+#[cfg(unix)]
+#[gsttt_scenario::scenario("python", "A manifest that is a symbolic link is not read")]
+#[test]
+fn a_manifest_that_is_a_symbolic_link_is_not_read() {
+    // The repository is a directory of a temporary one, and `dev.txt` is a link to a file beside it that declares
+    // `fastapi`. The file set lists the link, as a set made from git does.
+    let outer = tempfile::tempdir().unwrap();
+    let root = outer.path().join("repo");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(outer.path().join("outside.txt"), "fastapi\n").unwrap();
+    let files = [
+        ("pyproject.toml", "[project]\nname = \"svc\"\n"),
+        ("requirements.txt", "-r dev.txt\n"),
+        (
+            "app.py",
+            "from fastapi import FastAPI\n\napp = FastAPI()\n\n\n@app.get(\"/ping\")\ndef ping():\n    return \"pong\"\n",
+        ),
+    ];
+    for (path, text) in files {
+        std::fs::write(root.join(path), text).unwrap();
+    }
+    std::os::unix::fs::symlink("../outside.txt", root.join("dev.txt")).unwrap();
+    let listed = ["app.py", "dev.txt", "pyproject.toml", "requirements.txt"]
+        .map(|path| RepoPath::normalize(path).unwrap());
+    let repo = RepoView::new(root.to_str().unwrap().to_owned(), listed.to_vec());
+    let tree = run_view(repo, builtin_packs(PACKS).unwrap(), Some(outer));
+    assert_eq!(tree.contracts("app.py"), Vec::<String>::new());
 }
 
 #[gsttt_scenario::scenario("python", "A requirements directory holds manifests")]
