@@ -22,4 +22,4 @@
 
 - [x] 4.1 A test annotated `#[scenario("rust", …)]` for every scenario of the `rust` spec, on fixture trees with reviewed `insta` snapshots
 - [x] 4.2 gsttt indexes its own repository with no unresolved import other than those its blind spots name
-- [ ] 4.3 `cargo nextest run -p gsttt-lang-rust`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+- [x] 4.3 `cargo nextest run -p gsttt-lang-rust`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
