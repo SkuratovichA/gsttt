@@ -112,12 +112,12 @@ type Key = (String, String);
 struct Open {
     name: String,
     progress: Progress,
-    /// The requirements that the change modifies, removes or renames: `openspec archive` stops at
-    /// one that is missing.
+    /// The requirements that the change modifies, removes or renames: `openspec archive` stops at one that is missing.
     needs: Vec<Key>,
-    /// The requirements that the change adds or renames to, which the changes archived after it can
-    /// then modify, remove or rename.
+    /// The requirements that the change adds or renames to, which the changes archived after it can then modify, remove or rename.
     gives: Vec<Key>,
+    /// The requirements that the change removes or renames away, which the changes archived after it no longer find, each with the entry of the delta that says so.
+    takes: Vec<(Key, Site)>,
 }
 
 /// Everything the gate found out.
@@ -146,10 +146,7 @@ impl Judgement {
             .map(|open| open.progress)
     }
 
-    /// The open changes that can be archived, in an order that `openspec archive` can take them in:
-    /// every task ticked, every scenario proven, no failure that mentions them, and every
-    /// requirement they modify, remove or rename in the main specs or added by a change listed
-    /// before them. Of the changes that can go next, the one with the first name goes first.
+    /// The open changes that can be archived, in an order that `openspec archive` can take them in: every task ticked, every scenario proven, no failure that mentions them, and every requirement they modify, remove or rename in the main specs or added by a change listed before them and not taken away by one. A change that removes or renames a requirement goes after the waiting changes that need it. Of the changes that can go next, the one with the first name goes first.
     pub(super) fn ready(&self) -> Vec<&str> {
         let mut waiting: Vec<&Open> = self
             .changes
@@ -170,11 +167,18 @@ impl Judgement {
             .collect();
         let mut have: BTreeSet<&Key> = self.main.iter().collect();
         let mut listed = Vec::new();
-        while let Some(next) = waiting
-            .iter()
-            .position(|change| change.needs.iter().all(|need| have.contains(need)))
-        {
+        while let Some(next) = waiting.iter().position(|change| {
+            change.needs.iter().all(|need| have.contains(need))
+                && change.takes.iter().all(|(key, _)| {
+                    waiting
+                        .iter()
+                        .all(|other| other.name == change.name || !other.needs.contains(key))
+                })
+        }) {
             let change = waiting.remove(next);
+            for (key, _) in &change.takes {
+                have.remove(key);
+            }
             have.extend(&change.gives);
             listed.push(change.name.as_str());
         }
@@ -212,6 +216,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
             progress: Progress::of(change),
             needs: change.deltas.iter().flat_map(needs).collect(),
             gives: change.deltas.iter().flat_map(gives).collect(),
+            takes: change.deltas.iter().flat_map(takes).collect(),
         })
         .collect();
     let main: BTreeSet<Key> = openspec
@@ -273,6 +278,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
         });
     }
     failures.extend(purpose::failures(openspec));
+    failures.extend(rivals(&changes));
 
     entries.sort_by(|a, b| {
         (&a.capability, &a.source, &a.site).cmp(&(&b.capability, &b.source, &b.site))
@@ -365,19 +371,34 @@ fn main_name<'a>(delta: &'a Delta, modified: &'a Requirement) -> &'a String {
         .map_or(&modified.name, |renamed| &renamed.from)
 }
 
-/// The requirements that `delta` modifies, removes or renames, under the names they have before the
-/// change is archived.
+/// The requirements that `delta` modifies, removes or renames, under the names they have before the change is archived.
 fn needs(delta: &Delta) -> impl Iterator<Item = Key> {
-    let removed = delta.removed.iter().map(|removed| &removed.name);
-    let renamed = delta.renamed.iter().map(|renamed| &renamed.from);
-    let modified = delta
-        .modified
+    let modified = delta.modified.iter().map(|requirement| {
+        (
+            delta.capability.clone(),
+            main_name(delta, requirement).clone(),
+        )
+    });
+    takes(delta).map(|(key, _)| key).chain(modified)
+}
+
+/// The requirements that `delta` removes and the names it renames requirements away from, each with the line of the entry that says so.
+fn takes(delta: &Delta) -> impl Iterator<Item = (Key, Site)> {
+    let removed = delta
+        .removed
         .iter()
-        .map(|requirement| main_name(delta, requirement));
-    removed
-        .chain(renamed)
-        .chain(modified)
-        .map(|name| (delta.capability.clone(), name.clone()))
+        .map(|removed| (&removed.name, removed.line));
+    let renamed = delta
+        .renamed
+        .iter()
+        .map(|renamed| (&renamed.from, renamed.line));
+    removed.chain(renamed).map(|(name, line)| {
+        let site = Site {
+            file: delta.file.clone(),
+            line,
+        };
+        ((delta.capability.clone(), name.clone()), site)
+    })
 }
 
 /// The requirements that `delta` adds, and the names it renames requirements to.
@@ -445,6 +466,37 @@ fn duplicate(capability: &str, title: &str, places: &[(Site, Source)]) -> Failur
             })
             .collect(),
     }
+}
+
+/// A failure for each requirement that more than one open change removes or renames away: whichever is archived second would not find it, and `ready` would make each of them wait for the other.
+fn rivals(changes: &[Open]) -> Vec<Failure> {
+    let mut takers: BTreeMap<&Key, BTreeMap<&str, &Site>> = BTreeMap::new();
+    for change in changes {
+        for (key, site) in &change.takes {
+            takers
+                .entry(key)
+                .or_default()
+                .entry(change.name.as_str())
+                .or_insert(site);
+        }
+    }
+    takers
+        .into_iter()
+        .filter(|(_, by_change)| by_change.len() > 1)
+        .map(|((capability, requirement), by_change)| Failure {
+            site: by_change
+                .values()
+                .next()
+                .map(|site| (*site).clone())
+                .unwrap_or_default(),
+            message: format!(
+                "requirement `{requirement}` of capability `{capability}` is removed or renamed away by changes {}, and only the first of them to be archived finds it: {}",
+                join(by_change.keys().map(|name| format!("`{name}`"))),
+                join(by_change.values().map(ToString::to_string))
+            ),
+            changes: by_change.keys().map(|name| (*name).to_owned()).collect(),
+        })
+        .collect()
 }
 
 /// A claim on a scenario the specs do not have.

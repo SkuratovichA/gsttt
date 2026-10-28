@@ -130,7 +130,7 @@ The report SHALL list, per capability, the scenarios proven, pending and failing
 - **THEN** `--ready` does not print the change until the test stops claiming the scenario
 
 ### Requirement: Archive order
-`--ready` SHALL NOT print a change that modifies, removes or renames a requirement which `openspec/specs/` lacks and no change printed before it adds, and SHALL print a change after the changes it depends on in that way, the others in the order of their names.
+`--ready` SHALL print a change only when every requirement it modifies, removes or renames is in `openspec/specs/` or added or renamed to by a change printed before it, and no change printed before it removed or renamed away that requirement. It SHALL print a change that removes or renames a requirement after every ready change that modifies it, and the others in the order of their names. Two open changes that remove or rename away the same requirement SHALL fail the gate.
 
 #### Scenario: A change that names a missing requirement is not ready
 - **WHEN** a change with every task ticked and every scenario proven modifies, removes or renames a requirement that `openspec/specs/` lacks and no other change adds
@@ -140,6 +140,23 @@ The report SHALL list, per capability, the scenarios proven, pending and failing
 - **WHEN** a change with every task ticked modifies a requirement that another change adds, and the other change has every task ticked too
 - **THEN** `--ready` prints the other change and then the first
 - **AND** it prints neither while the other change has a task unticked
+
+#### Scenario: A change that modifies a requirement comes before the change that removes it
+- **WHEN** a change with every task ticked and every scenario proven removes a requirement of `openspec/specs/`, another such change modifies it, and the remover has the first name
+- **THEN** `--ready` prints the modifier and then the remover
+
+#### Scenario: A change that modifies a requirement comes before the change that renames it
+- **WHEN** a change with every task ticked and every scenario proven renames a requirement of `openspec/specs/`, another such change modifies it under its old name, and the renamer has the first name
+- **THEN** `--ready` prints the modifier and then the renamer
+
+#### Scenario: A change that modifies a renamed requirement comes after the rename
+- **WHEN** a change with every task ticked and every scenario proven renames a requirement of `openspec/specs/`, another such change modifies it under its new name, and the modifier has the first name
+- **THEN** `--ready` prints the renamer and then the modifier
+
+#### Scenario: Two changes that take one requirement away fail
+- **WHEN** two open changes remove the same requirement of `openspec/specs/`, or one removes it and the other renames it away
+- **THEN** the gate exits non-zero and names both changes, the capability and the requirement, with the line of each delta's entry
+- **AND** `--ready` prints neither change
 
 ### Requirement: Purposes
 A spec whose `## Purpose` is the placeholder that `openspec archive` writes when a delta gives none (`TBD - created by archiving change <name>. Update Purpose after archive.`) SHALL fail the gate at the line of the placeholder, and so SHALL an open change whose delta adds requirements to a capability that `openspec/specs/` lacks and has no `## Purpose`, at the line of its first requirement; `--ready` SHALL NOT print that change.

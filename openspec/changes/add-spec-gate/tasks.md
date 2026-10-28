@@ -42,3 +42,4 @@
 - [x] 6.2 Write the third-level heading that is not a requirement as `### Rule: R` in the reader's test, so that `typos` no longer flags the misspelt word that stood in it
 - [x] 6.3 Read the `## Purpose` of specs and deltas, and fail a spec whose purpose is the placeholder that `openspec archive` writes and an open change whose delta creates a capability without a `## Purpose`, so that no archived spec lands without the purpose its change gave it
 - [x] 6.4 List the ready changes in an order that `openspec archive` can take them in, so that a change that modifies, removes or renames a requirement comes after the change that adds it, which the archive would otherwise not find
+- [x] 6.5 List a change that removes or renames a requirement after the ready changes that modify it, and fail the gate when two open changes remove or rename away the same requirement, so that `openspec archive` does not stop at a requirement an earlier change took away

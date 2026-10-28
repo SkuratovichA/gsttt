@@ -661,6 +661,137 @@ fn a_change_that_names_a_requirement_main_lacks_is_not_ready() {
     );
 }
 
+#[gsttt_scenario::scenario(
+    "spec-gate",
+    "A change that modifies a requirement comes before the change that removes it"
+)]
+#[test]
+fn a_change_that_modifies_a_requirement_comes_before_the_change_that_removes_it() {
+    let tree = Tree::new();
+    // `a-removes` sorts first, but once it is archived `openspec archive` finds no requirement for `b-modifies` to modify.
+    tree.spec("queries", &main_spec(&[requirement("R", &["R works"])]))
+        .change(
+            "a-removes",
+            TICKED,
+            &[("queries", &delta("REMOVED", &[removal("R")]))],
+        )
+        .change(
+            "b-modifies",
+            TICKED,
+            &[(
+                "queries",
+                &delta("MODIFIED", &[requirement("R", &["R works better"])]),
+            )],
+        )
+        .source("tests/better.rs", &proof("queries", "R works better"));
+    assert!(tree.gate().passed);
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "b-modifies\na-removes\n"
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "spec-gate",
+    "A change that modifies a requirement comes before the change that renames it"
+)]
+#[test]
+fn a_change_that_modifies_a_requirement_comes_before_the_change_that_renames_it() {
+    let tree = Tree::new();
+    // Once `a-renames` is archived the main spec has `R2` and no `R`, which `b-modifies` names.
+    tree.spec("queries", &main_spec(&[requirement("R", &["R works"])]))
+        .change(
+            "a-renames",
+            TICKED,
+            &[("queries", &delta("RENAMED", &[renaming("R", "R2")]))],
+        )
+        .change(
+            "b-modifies",
+            TICKED,
+            &[(
+                "queries",
+                &delta("MODIFIED", &[requirement("R", &["R works better"])]),
+            )],
+        )
+        .source("tests/better.rs", &proof("queries", "R works better"));
+    assert!(tree.gate().passed);
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "b-modifies\na-renames\n"
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "spec-gate",
+    "A change that modifies a renamed requirement comes after the rename"
+)]
+#[test]
+fn a_change_that_modifies_a_renamed_requirement_comes_after_the_rename() {
+    let tree = Tree::new();
+    // `a-modifies` sorts first, but the main spec has `R2` only once `b-renames` is archived.
+    tree.spec("queries", &main_spec(&[requirement("R", &["R works"])]))
+        .change(
+            "a-modifies",
+            TICKED,
+            &[(
+                "queries",
+                &delta("MODIFIED", &[requirement("R2", &["R2 works better"])]),
+            )],
+        )
+        .change(
+            "b-renames",
+            TICKED,
+            &[("queries", &delta("RENAMED", &[renaming("R", "R2")]))],
+        )
+        .source("tests/works.rs", &proof("queries", "R works"))
+        .source("tests/better.rs", &proof("queries", "R2 works better"));
+    assert!(tree.gate().passed);
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "b-renames\na-modifies\n"
+    );
+}
+
+#[gsttt_scenario::scenario("spec-gate", "Two changes that take one requirement away fail")]
+#[test]
+fn two_changes_that_take_one_requirement_away_fail() {
+    let removes = delta("REMOVED", &[removal("R")]);
+    let renames = delta("RENAMED", &[renaming("R", "R2")]);
+    let tree = Tree::new();
+    tree.spec("queries", &main_spec(&[requirement("R", &["R works"])]))
+        .change("a-removes", TICKED, &[("queries", &removes)]);
+    assert!(tree.gate().passed);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "a-removes\n");
+
+    // The failure lists the delta's entry of each change: the heading of a removal, the `FROM` of a rename.
+    let a_removes = format!(
+        "openspec/changes/a-removes/specs/queries/spec.md:{}",
+        line_of(&removes, "Requirement: R")
+    );
+    let b_removes = format!(
+        "openspec/changes/b-removes/specs/queries/spec.md:{}",
+        line_of(&removes, "Requirement: R")
+    );
+    let b_renames = format!(
+        "openspec/changes/b-renames/specs/queries/spec.md:{}",
+        line_of(&renames, "FROM")
+    );
+    for (other, text, site) in [
+        ("b-removes", &removes, &b_removes),
+        ("b-renames", &renames, &b_renames),
+    ] {
+        tree.change(other, TICKED, &[("queries", text)]);
+        let outcome = tree.gate();
+        assert!(!outcome.passed, "{}", outcome.output);
+        let failure = format!(
+            "{a_removes}: requirement `R` of capability `queries` is removed or renamed away by changes `a-removes`, `{other}`, and only the first of them to be archived finds it: {a_removes}, {site}"
+        );
+        assert!(outcome.output.contains(&failure), "{}", outcome.output);
+        assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+        fs::remove_dir_all(tree.dir.path().join("openspec/changes").join(other)).unwrap();
+    }
+}
+
 #[gsttt_scenario::scenario("spec-gate", "A change that a failure names is not ready")]
 #[test]
 fn a_change_that_a_failure_names_is_not_ready() {
