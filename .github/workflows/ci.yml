@@ -158,6 +158,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      packages: write
     steps:
       # The whole history and every tag: the notes start at the previous release, and a release is named after a tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -200,3 +201,40 @@ jobs:
           highest="$({ echo "$tag"; git tag --list 'v[0-9]*'; } | sort -V | tail -n 1)"
           if [ "$highest" = "$tag" ]; then latest=true; fi
           gh release create "$tag" packages/* --title "$tag" --notes-file notes.md --target "$GITHUB_SHA" --latest="$latest"
+      # The image packs the Linux packages of this release once their checksums match and compiles nothing, so the token this step is given reaches docker login alone. A version has one image the way it has one release, and a run for a release that was made already still gets here.
+      - name: Container image
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          image="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          # The check follows the login, because a package is private until its owner makes it public.
+          if docker buildx imagetools inspect "${image}:${VERSION}" > /dev/null 2>&1; then
+            echo "${image}:${VERSION} is already published"
+            exit 0
+          fi
+          for platform in amd64:x86_64 arm64:aarch64; do
+            archive="gsttt-${VERSION}-${platform#*:}-unknown-linux-musl.tar.gz"
+            (cd packages && sha256sum --check "${archive}.sha256")
+            mkdir -p "image/${platform%:*}"
+            tar -xzf "packages/${archive}" -C "image/${platform%:*}" gsttt
+          done
+          # The rule of the Release step: only the highest version is the latest.
+          tag="v${VERSION}"
+          latest=false
+          highest="$({ echo "$tag"; git tag --list 'v[0-9]*'; } | sort -V | tail -n 1)"
+          if [ "$highest" = "$tag" ]; then latest=true; fi
+          tags=(--tag "${image}:${VERSION}")
+          if [ "$latest" = true ]; then tags+=(--tag "${image}:latest"); fi
+          # BuildKit handles the login, so it is pinned by the digest of its image, which a tag is not.
+          docker buildx create --use --driver docker-container --driver-opt image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+          # GitHub reads the description and the repository of a multi-platform image from its index, so the labels of the Dockerfile are repeated there.
+          docker buildx build --file Dockerfile --platform linux/amd64,linux/arm64 --provenance=false --push "${tags[@]}" \
+            --build-arg "VERSION=${VERSION}" --build-arg "REVISION=${GITHUB_SHA}" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/SkuratovichA/gsttt" \
+            --annotation "index:org.opencontainers.image.description=What a code change affects, across files, packages and languages" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            --annotation "index:org.opencontainers.image.version=${VERSION}" \
+            --annotation "index:org.opencontainers.image.revision=${GITHUB_SHA}" \
+            image

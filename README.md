@@ -22,6 +22,15 @@ curl -fsSL https://raw.githubusercontent.com/SkuratovichA/gsttt/main/install.sh 
 
 The installer checks the SHA-256 of what it downloads and puts `gsttt` in `~/.local/bin`, or in `GSTTT_INSTALL_DIR` when that is set. Linux and macOS, on x86-64 and arm64.
 
+Without the installer, each release is also a container image on ghcr.io, for CI pipelines and for MCP clients that start their servers through `docker run`:
+
+```sh
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" ghcr.io/skuratovicha/gsttt impact --changed
+docker run --rm -i --user "$(id -u):$(id -g)" -v "$PWD:/repo" ghcr.io/skuratovicha/gsttt mcp   # the MCP server, over standard input and output
+```
+
+`--user` is there because the index is written to `.git/gsttt` of the repository, which would otherwise belong to root.
+
 Then, in a repository:
 
 ```sh
