@@ -8,11 +8,7 @@ use clap_complete::Shell;
 
 use crate::streams::{Io, Outcome};
 
-/// The version `--version` prints: `GSTTT_VERSION` as it was at build time, or the package version followed by `-dev` when it was unset or empty.
-pub const VERSION: &str = match option_env!("GSTTT_VERSION") {
-    Some(version) if !version.is_empty() => version,
-    _ => concat!(env!("CARGO_PKG_VERSION"), "-dev"),
-};
+pub use gsttt_core::VERSION;
 
 /// What does a change affect, across files, packages, languages and the contracts between services?
 #[derive(Debug, Parser)]

@@ -282,7 +282,7 @@ impl<'a> Engine<'a> {
         let parsed = output.files.len().saturating_sub(reused);
         let dirty = self.dirty(&states, &mut problems);
         let info = IndexInfo {
-            built_by: snapshot::VERSION.to_owned(),
+            built_by: crate::VERSION.to_owned(),
             head,
             dirty,
             reused: to_u32(reused),
@@ -308,7 +308,7 @@ impl<'a> Engine<'a> {
         index.coverage.finish();
 
         let header = Header {
-            built_by: snapshot::VERSION.to_owned(),
+            built_by: crate::VERSION.to_owned(),
             built_at: snapshot::now(),
             head: index.info.head.clone(),
             dirty,
@@ -922,7 +922,7 @@ mod tests {
         // Make the snapshot look as if another version wrote it: one digit of the version in its header.
         let path = main.workspace().snapshot_path();
         let mut bytes = fs::read(&path).unwrap();
-        let version = snapshot::VERSION.as_bytes();
+        let version = crate::VERSION.as_bytes();
         let at = bytes
             .windows(version.len())
             .position(|window| window == version)
@@ -1398,7 +1398,7 @@ mod tests {
         bytes.extend([0xa5_u8; 64]);
         fs::write(&path, bytes).unwrap();
         let header = engine.peek().unwrap();
-        assert_eq!(header.built_by, snapshot::VERSION);
+        assert_eq!(header.built_by, crate::VERSION);
         assert_eq!(header.head, run.index.info.head);
         assert_eq!((header.dirty, header.files), (0, 2));
         assert!(engine.load().is_none());

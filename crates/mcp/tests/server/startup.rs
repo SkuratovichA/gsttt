@@ -46,6 +46,6 @@ async fn the_server_names_itself_and_offers_tools() {
 
     let identity = info.server_info.as_ref().expect("the server names itself");
     assert_eq!(identity.name, "gsttt");
-    assert_eq!(identity.version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(identity.version, gsttt_core::VERSION);
     assert!(info.capabilities.tools.is_some());
 }

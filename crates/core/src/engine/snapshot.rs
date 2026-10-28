@@ -15,16 +15,13 @@ use xxhash_rust::xxh3::xxh3_64;
 
 use super::files::{self, Stamp};
 use super::keys::FactKey;
-use crate::atomic;
 use crate::fact::{FileFacts, ParseFailure, ParseStatus};
 use crate::index::Index;
 use crate::path::RepoPath;
-
-/// The version of gsttt that writes snapshots. A snapshot another version wrote is not read.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+use crate::{VERSION, atomic};
 
 const MAGIC: &[u8; 8] = b"GSTTSNAP";
-/// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape, or the index in the body comes out of another rule, because a stored index answers as it is. The package version cannot do that, because it stays the same across the commits of a branch in development.
+/// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape, or the index in the body comes out of another rule, because a stored index answers as it is. [`VERSION`] cannot do that, because every development build has the same one, whatever commit of a branch it was built from.
 const LAYOUT: u32 = 4;
 /// Magic, layout, header length and the hash of the body.
 const PREFIX: usize = 24;
