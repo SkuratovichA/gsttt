@@ -18,3 +18,7 @@
 
 - [x] 3.1 A test annotated `#[scenario("contract-formats", …)]` for every scenario of the `contract-formats` spec, with reviewed `insta` snapshots
 - [x] 3.2 `cargo nextest run -p gsttt-contracts`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+
+## 4. Review fixes
+
+- [x] 4.1 Drop the dependencies nothing uses (`gsttt-config`, `tempfile`, `thiserror`) and keep `serde_json` for the tests only

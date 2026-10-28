@@ -17,17 +17,14 @@ protox-parse.workspace = true
 saphyr.workspace = true
 schemars.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 sqlparser.workspace = true
-thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-gsttt-config.workspace = true
 gsttt-scenario.workspace = true
 insta.workspace = true
 proptest.workspace = true
-tempfile.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

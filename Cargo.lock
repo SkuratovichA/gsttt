@@ -1833,7 +1833,6 @@ version = "0.1.0"
 dependencies = [
  "apollo-parser",
  "globset",
- "gsttt-config",
  "gsttt-core",
  "gsttt-scenario",
  "insta",
@@ -1845,8 +1844,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlparser",
- "tempfile",
- "thiserror",
  "tracing",
 ]
 
