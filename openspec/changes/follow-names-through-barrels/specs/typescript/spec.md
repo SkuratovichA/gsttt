@@ -17,3 +17,11 @@ The connector SHALL record the names a file exports itself, sorted: its exported
 #### Scenario: Exports of a file read past errors are unknown
 - **WHEN** a file with `export const a = 1` is read past a syntax error
 - **THEN** its exports are unknown
+
+### Requirement: Mounts through a star
+The link phase SHALL find the router a mount names behind a file that re-exports another with `export * from`, and SHALL NOT find a router imported as `default` there, because a star forwards every name but `default`. The impact walk makes the same distinction between the names a barrel exports and those it does not.
+
+#### Scenario: A star does not forward default to a mount
+- **WHEN** `routes.ts` has only `export * from './users'`, `users.ts` has a router `users` exported by name and a router `fallback` exported as `default` with one route each, `by-name.ts` mounts `users` imported by name from `./routes` under `/users`, and `by-default.ts` mounts `fallback` imported as `default` from `./routes` under `/old`
+- **THEN** `users.ts` serves the route of `users` under `/users` and the route of `fallback` without the prefix `/old`
+- **AND** a change to `users.ts` reaches `routes.ts` as a re-export of `users`, `by-name.ts` as an importer of `users` and `by-default.ts` as an importer of `default`, which `routes.ts` does not export

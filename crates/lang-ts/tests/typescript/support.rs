@@ -9,7 +9,8 @@ use gsttt_core::RepoView;
 use gsttt_core::engine::build::build_index;
 use gsttt_core::engine::pipeline::{self, Module, Output};
 use gsttt_core::fact::{FileTags, ImportFlags};
-use gsttt_core::index::IndexInfo;
+use gsttt_core::index::{Freshness, Index, IndexInfo};
+use gsttt_core::query::{ImpactRequest, impact};
 use serde_json::Value;
 
 /// The size above which a file is left unread; the fixtures are far below it.
@@ -40,10 +41,21 @@ pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
     Ok(json)
 }
 
-/// Every site of the graph the engine builds from the output for `fixture`, as `<role> <key> @<line> in <path>`, in byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query would answer from.
-pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
+/// The index the engine builds from the output for `fixture`. Unlike the output, its graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query would answer from.
+fn index_of(fixture: &str) -> Result<Index, Box<dyn Error>> {
     let (repo, output) = pipeline_of(fixture)?;
-    let index = build_index(&repo, &output, &["ts"], &[], IndexInfo::default());
+    Ok(build_index(
+        &repo,
+        &output,
+        &["ts"],
+        &[],
+        IndexInfo::default(),
+    ))
+}
+
+/// Every site of the graph for `fixture`, as `<role> <key> @<line> in <path>`, in byte order.
+pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let index = index_of(fixture)?;
     let graph = &index.graph;
     let mut sites: Vec<String> = graph
         .contracts()
@@ -56,6 +68,20 @@ pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
         .collect();
     sites.sort();
     Ok(sites)
+}
+
+/// What a change to the file at `path` affects in `fixture`, as `<path> <distance> <reason>` in the order of the answer, without the tests.
+pub(crate) fn affected_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let request = ImpactRequest {
+        files: vec![path.to_owned()],
+        ..ImpactRequest::default()
+    };
+    let answer = impact(&index_of(fixture)?, Freshness::Fresh, &request);
+    Ok(answer
+        .affected
+        .iter()
+        .map(|entry| format!("{} {} {}", entry.path, entry.distance, entry.reason))
+        .collect())
 }
 
 /// The roots of the projects, in the order of the output.

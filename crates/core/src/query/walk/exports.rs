@@ -8,6 +8,8 @@ use crate::ids::{FileId, NameId};
 /// The names `file` exports itself and those it takes in through `export *`, in byte order. `export *` never forwards `default`, so the default export of a file reached through a star is left out. `None` when the exports of `file`, or of a file it re-exports everything from, are unknown, because nothing can then be said about a name it does not list.
 ///
 /// The star lines are followed to a fixpoint with a visited set, so a cycle of them ends, and every member of the cycle gets the same names up to `default`.
+///
+/// The TypeScript linker follows the same stars to find where a name is defined (`export_of` in `crates/lang-ts/src/link.rs`). The two cannot share code, because the core knows no language, so a test in `crates/lang-ts/tests/typescript/exports.rs` pins them against each other on one barrel.
 pub(super) fn exported(
     graph: &Graph,
     file: FileId,

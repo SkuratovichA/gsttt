@@ -1,10 +1,10 @@
-//! What a file exports itself, and when the connector cannot tell.
+//! What a file exports itself, when the connector cannot tell, and what a star passes on.
 
 use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{exported_as, exports, run, status};
+use crate::support::{affected_by, exported_as, exports, run, sites, status};
 
 #[test]
 #[scenario("typescript", "Every export form is named")]
@@ -61,5 +61,29 @@ fn exports_of_a_file_read_past_errors_are_unknown() -> Result<(), Box<dyn Error>
     assert_eq!(status(&json, "src/clean.ts"), "ok");
     assert_eq!(exports(&json, "src/clean.ts"), Some(vec!["c"]));
     insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A star does not forward default to a mount")]
+fn a_star_does_not_forward_default_to_a_mount() -> Result<(), Box<dyn Error>> {
+    // The linker resolves the mounts against the same barrel the walk of `impact` reads, so the two must agree on what a star forwards.
+    assert_eq!(
+        sites("star-default")?,
+        [
+            "serves http GET /legacy @7 in src/users.ts",
+            "serves http GET /users/{} @4 in src/users.ts",
+        ],
+        "`users` is found behind the star and `fallback` is not, so only the first is mounted"
+    );
+    assert_eq!(
+        affected_by("star-default", "src/users.ts")?,
+        [
+            "src/routes.ts 1 re-exports users from src/users.ts",
+            "src/by-default.ts 2 imports default from src/routes.ts",
+            "src/by-name.ts 2 imports users from src/routes.ts",
+        ],
+        "an import of `default` takes a name the barrel does not export"
+    );
     Ok(())
 }
