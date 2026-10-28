@@ -66,7 +66,8 @@ A chain rule SHALL read a chain that starts at a name bound by `const <name> = t
 #### Scenario: A name bound to anything else is no alias of this
 - **WHEN** `src/self-alias.ts` has a class with the field `prisma = new PrismaClient()` and a method that binds `const self = this` and calls `self.prisma.tenant.findFirst()`, and a function with the parameter `self: Mock` that calls `self.prisma.tenant.findMany()`
 - **AND** `src/consistent.ts` has a class with the field `prisma = new PrismaClient()`, a method that binds `const self = this` and calls `self.prisma.tenant.findFirst()` on line 8, and a method that binds `let self = this` and calls `self.prisma.booking.count()` on line 13
-- **THEN** `src/self-alias.ts` calls no table
+- **AND** `src/earlier.ts` has a function with the parameter `self` and no type that calls `self.prisma.tenant.findMany()`, before a class with the field `prisma = new PrismaClient()` and a method that binds `const self = this` and calls `self.prisma.tenant.findFirst()`
+- **THEN** `src/self-alias.ts` and `src/earlier.ts` call no table
 - **AND** `src/consistent.ts` calls `table tenant` at line 8 and `table booking` at line 13
 
 ### Requirement: Roots by type
@@ -89,7 +90,8 @@ A name or a property that the file also declares anywhere in it with another typ
 - **WHEN** `src/names.ts` has a function with the parameter `tx2: Pick<Prisma.TransactionClient, 'tenant'>` and a function with the parameter `tx2: { tenant: { findFirst(): void } }`, and both call `tx2.tenant.findFirst()`
 - **AND** `src/properties.ts` has a class with the property `client: PrismaClient` and a class with the property `client: { tenant: { findFirst(): void } }`, and a method of each calls `this.client.tenant.findFirst()`
 - **AND** `src/consistent.ts` has a function with the parameter `client: PrismaClient` that calls `client.tenant.findFirst()` on line 4 and a function with the parameter `client: PrismaClient | null` that calls `client.booking.count()` on line 8
-- **THEN** `src/names.ts` and `src/properties.ts` call no table
+- **AND** `src/earlier.ts` has a function with the parameter `tx2` and no type before a function with the parameter `tx2: PrismaClient`, and a class with the property `client = makeClient()` before a class with the property `client: PrismaClient`, and each of them calls `.tenant.findFirst()` on its name
+- **THEN** `src/names.ts`, `src/properties.ts` and `src/earlier.ts` call no table
 - **AND** `src/consistent.ts` calls `table tenant` at line 4 and `table booking` at line 8
 
 ### Requirement: Signatures bind nothing

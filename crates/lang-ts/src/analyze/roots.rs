@@ -60,31 +60,32 @@ impl Roots<'_> {
     }
 }
 
-/// The aliases of `this` and the typed roots of `program`. A project whose rules start at no `this` and list no root types skips the walk.
+/// The chain rules of `packs`.
+fn chain_rules(packs: &[Pack]) -> impl Iterator<Item = &ChainRule> {
+    packs.iter().flat_map(|pack| &pack.chains)
+}
+
+/// The aliases of `this` and the typed roots of `program`. A project whose rules start at no `this` and list no root types skips the walk, and so does a file that binds no name which could start a chain.
 pub(super) fn collect<'p>(program: &Program<'_>, packs: &'p [Pack]) -> Roots<'p> {
-    let rules = || packs.iter().flat_map(|pack| &pack.chains);
-    let wanted: Vec<&str> = rules()
-        .flat_map(|rule| &rule.root_types)
-        .map(String::as_str)
-        .collect();
-    let starts_at_this = rules().any(|rule| {
+    let reads_types = chain_rules(packs).any(|rule| !rule.root_types.is_empty());
+    let starts_at_this = chain_rules(packs).any(|rule| {
         rule.root
             .iter()
             .any(|root| root == "this" || root.starts_with("this."))
     });
-    if wanted.is_empty() && !starts_at_this {
+    if !reads_types && !starts_at_this {
         return Roots::default();
     }
-    let mut collector = Collector {
-        wanted,
-        heads: Vec::new(),
-        declared: Vec::new(),
-        types: BTreeMap::new(),
-        this_bound: BTreeSet::new(),
-        others: Vec::new(),
-    };
-    collector.visit_program(program);
-    collector.finish()
+    // Whether another binding takes a name back is known only at the end of the file, because that binding may come before the one that makes the name a root. So the first walk finds the names that could start a chain, and a second one, made only when there is such a name, finds the other bindings of those names: the bindings of every other name are never kept.
+    let mut first = Collector::new(packs, reads_types, BTreeSet::new());
+    first.visit_program(program);
+    let watched = first.candidates();
+    if watched.is_empty() {
+        return Roots::default();
+    }
+    let mut second = Collector::new(packs, reads_types, watched);
+    second.visit_program(program);
+    second.finish()
 }
 
 /// What a binding binds: a name in scope, or the property `this.<name>` of a class.
@@ -106,8 +107,10 @@ impl Name<'_> {
 
 /// What the walk saw, before the aliases of types are followed: a type alias may come after the name that uses it.
 struct Collector<'p, 'a> {
-    /// Every root type of every rule.
-    wanted: Vec<&'p str>,
+    /// The packs, which list the root types.
+    packs: &'p [Pack],
+    /// Whether some pack lists a root type: when none does, the types of the file are not read.
+    reads_types: bool,
     /// The names that the types of the bindings stand for at their head, the rows of one binding after another.
     heads: Vec<Cow<'a, str>>,
     /// A binding that has a type, with the rows of `heads` that hold the type.
@@ -116,11 +119,26 @@ struct Collector<'p, 'a> {
     types: BTreeMap<&'a str, Vec<Cow<'a, str>>>,
     /// Every name that `const name = this` binds.
     this_bound: BTreeSet<&'a str>,
-    /// Every binding that is neither `this` nor given a type: a name bound to anything else is no alias and no root for the whole file.
-    others: Vec<Name<'a>>,
+    /// The names that could start a chain, which the first walk found, and the only ones whose other bindings are kept. Empty during the first walk.
+    watched: BTreeSet<Name<'a>>,
+    /// Every binding of a watched name that is neither `this` nor given a type: a name bound to anything else is no alias and no root for the whole file.
+    others: BTreeSet<Name<'a>>,
 }
 
-impl<'a> Collector<'_, 'a> {
+impl<'p, 'a> Collector<'p, 'a> {
+    fn new(packs: &'p [Pack], reads_types: bool, watched: BTreeSet<Name<'a>>) -> Self {
+        Self {
+            packs,
+            reads_types,
+            heads: Vec::new(),
+            declared: Vec::new(),
+            types: BTreeMap::new(),
+            this_bound: BTreeSet::new(),
+            watched,
+            others: BTreeSet::new(),
+        }
+    }
+
     /// Binds each of `names` to the type `annotation` when it stands for some name at its head, and to something else when it does not.
     fn bind(
         &mut self,
@@ -128,32 +146,48 @@ impl<'a> Collector<'_, 'a> {
         annotation: Option<&TSTypeAnnotation<'a>>,
     ) {
         let start = self.heads.len();
-        if let Some(annotation) = annotation.filter(|_| !self.wanted.is_empty()) {
+        if let Some(annotation) = annotation.filter(|_| self.reads_types) {
             heads(&annotation.type_annotation, &mut |head| {
                 self.heads.push(head);
             });
         }
         let rows = start..self.heads.len();
         if rows.is_empty() {
-            self.others.extend(names);
+            for name in names {
+                self.other(name);
+            }
         } else {
             self.declared
                 .extend(names.into_iter().map(|name| (name, rows.clone())));
         }
     }
 
+    /// The file binds `name` to something that is neither `this` nor given a type. Only a watched name keeps it.
+    fn other(&mut self, name: Name<'a>) {
+        if self.watched.contains(&name) {
+            self.others.insert(name);
+        }
+    }
+
     /// The file declares a type called `name`.
     fn declare_type(&mut self, name: &'a str) {
-        if !self.wanted.is_empty() {
+        if self.reads_types {
             self.types.entry(name).or_default();
         }
     }
-}
 
-impl<'p> Collector<'p, '_> {
-    fn finish(&self) -> Roots<'p> {
-        let mut typed: BTreeMap<Name<'_>, Vec<&'p str>> = BTreeMap::new();
-        let mut untyped = Vec::new();
+    /// The root type that some pack lists under `name`.
+    fn root_type(&self, name: &str) -> Option<&'p str> {
+        chain_rules(self.packs)
+            .flat_map(|rule| &rule.root_types)
+            .map(String::as_str)
+            .find(|root_type| *root_type == name)
+    }
+
+    /// The declared names whose types stand for root types, with the root types, and the declared names whose types do not.
+    fn resolve(&self) -> (BTreeMap<Name<'a>, Vec<&'p str>>, BTreeSet<Name<'a>>) {
+        let mut typed: BTreeMap<Name<'a>, Vec<&'p str>> = BTreeMap::new();
+        let mut untyped = BTreeSet::new();
         let mut work = Vec::new();
         let mut seen = BTreeSet::new();
         for (name, rows) in &self.declared {
@@ -168,13 +202,27 @@ impl<'p> Collector<'p, '_> {
             let mut found = Vec::new();
             self.root_types(&mut work, &mut seen, &mut found);
             if found.is_empty() {
-                untyped.push(*name);
+                untyped.insert(*name);
             } else {
                 typed.entry(*name).or_default().extend(found);
             }
         }
+        (typed, untyped)
+    }
+
+    /// The names that could start a chain: the declared names with a root type, and the names bound to `this`.
+    fn candidates(&self) -> BTreeSet<Name<'a>> {
+        let (typed, _) = self.resolve();
+        typed
+            .into_keys()
+            .chain(self.this_bound.iter().copied().map(Name::Local))
+            .collect()
+    }
+
+    fn finish(&self) -> Roots<'p> {
+        let (typed, untyped) = self.resolve();
         let bound_otherwise =
-            |name: Name<'_>| self.others.contains(&name) || untyped.contains(&name);
+            |name: Name<'a>| self.others.contains(&name) || untyped.contains(&name);
         Roots {
             this_aliases: self
                 .this_bound
@@ -203,7 +251,7 @@ impl<'p> Collector<'p, '_> {
             }
             match self.types.get(head) {
                 Some(rows) => work.extend(rows.iter().map(Cow::as_ref)),
-                None => found.extend(self.wanted.iter().copied().find(|wanted| *wanted == head)),
+                None => found.extend(self.root_type(head)),
             }
         }
     }
@@ -212,7 +260,7 @@ impl<'p> Collector<'p, '_> {
 impl<'a> Visit<'a> for Collector<'_, 'a> {
     /// Every name that no visitor below classifies is bound to something else: a destructured parameter, a function, a class, an import, a catch clause.
     fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
-        self.others.push(Name::Local(it.name.as_str()));
+        self.other(Name::Local(it.name.as_str()));
     }
 
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
@@ -274,7 +322,7 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
     }
 
     fn visit_ts_type_alias_declaration(&mut self, it: &TSTypeAliasDeclaration<'a>) {
-        if !self.wanted.is_empty() {
+        if self.reads_types {
             let rows = self.types.entry(it.id.name.as_str()).or_default();
             heads(&it.type_annotation, &mut |head| rows.push(head));
         }

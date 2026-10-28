@@ -63,6 +63,31 @@ expression: json
           "kind": "static",
           "line": 1,
           "names": [
+            "PrismaClient"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/earlier.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 1,
+          "kind": "static",
+          "line": 1,
+          "names": [
             "Prisma"
           ],
           "spec": "@prisma/client",

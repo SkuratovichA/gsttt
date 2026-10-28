@@ -136,6 +136,7 @@ fn long_chain(length: usize) -> Result<String, fmt::Error> {
 fn a_name_bound_to_anything_else_is_no_alias_of_this() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-mixed-aliases")?;
     assert_eq!(contracts(&json, "src/self-alias.ts"), NOTHING);
+    assert_eq!(contracts(&json, "src/earlier.ts"), NOTHING);
     assert_eq!(
         contracts(&json, "src/consistent.ts"),
         ["calls table tenant @8", "calls table booking @13"]
@@ -150,6 +151,7 @@ fn a_name_declared_with_another_type_is_no_root() -> Result<(), Box<dyn Error>> 
     let json = run("prisma-mixed-types")?;
     assert_eq!(contracts(&json, "src/names.ts"), NOTHING);
     assert_eq!(contracts(&json, "src/properties.ts"), NOTHING);
+    assert_eq!(contracts(&json, "src/earlier.ts"), NOTHING);
     assert_eq!(
         contracts(&json, "src/consistent.ts"),
         ["calls table tenant @4", "calls table booking @8"]

@@ -71,6 +71,31 @@ expression: json
           }
         }
       ],
+      "path": "src/earlier.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "PrismaClient"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
       "path": "src/self-alias.ts",
       "project": "ts .",
       "status": {
