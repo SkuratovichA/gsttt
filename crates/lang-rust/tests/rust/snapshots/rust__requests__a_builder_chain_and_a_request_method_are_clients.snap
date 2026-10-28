@@ -1,0 +1,22 @@
+---
+source: crates/lang-rust/tests/rust/requests.rs
+expression: "out.sites(\"src/builder.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "http POST /bookings",
+      "role": "calls",
+      "line": 5,
+      "via": "reqwest"
+    },
+    {
+      "key": "http PUT /bookings/1",
+      "role": "calls",
+      "line": 7,
+      "via": "reqwest"
+    }
+  ],
+  "embedded": [],
+  "unresolved": []
+}

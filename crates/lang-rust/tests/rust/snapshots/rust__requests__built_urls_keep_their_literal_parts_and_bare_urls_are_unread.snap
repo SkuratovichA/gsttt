@@ -1,0 +1,24 @@
+---
+source: crates/lang-rust/tests/rust/requests.rs
+expression: "out.sites(\"src/client.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "http DELETE /bookings/{}",
+      "role": "calls",
+      "line": 12,
+      "via": "reqwest"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [
+    {
+      "line": 13,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "client.get"
+    }
+  ]
+}

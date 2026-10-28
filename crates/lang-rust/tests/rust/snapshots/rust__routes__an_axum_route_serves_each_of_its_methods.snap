@@ -1,0 +1,48 @@
+---
+source: crates/lang-rust/tests/rust/routes.rs
+expression: "out.sites(\"src/main.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "http DELETE /bookings/{}",
+      "role": "serves",
+      "line": 12,
+      "via": "axum"
+    },
+    {
+      "key": "http GET /bookings/{}",
+      "role": "serves",
+      "line": 12,
+      "via": "axum"
+    },
+    {
+      "key": "http POST /bookings",
+      "role": "serves",
+      "line": 13,
+      "via": "axum"
+    },
+    {
+      "key": "http TRACE /probe",
+      "role": "serves",
+      "line": 14,
+      "via": "axum"
+    },
+    {
+      "key": "http * /anything",
+      "role": "serves",
+      "line": 15,
+      "via": "axum"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [
+    {
+      "line": 19,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "_.route"
+    }
+  ]
+}

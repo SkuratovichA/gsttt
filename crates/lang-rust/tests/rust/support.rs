@@ -60,6 +60,33 @@ impl Indexed {
             .clone()
     }
 
+    /// What the sites of one file say: its contracts, its embedded documents and its unread sites.
+    pub(crate) fn sites(&self, path: &str) -> Value {
+        let file = self.file(path);
+        json!({
+            "contracts": file["contracts"],
+            "embedded": file["embedded"],
+            "unresolved": file["unresolved"],
+        })
+    }
+
+    /// The contract sites of one file as `<line> <role> <key>`, in the order the engine prints them.
+    pub(crate) fn contracts(&self, path: &str) -> Vec<String> {
+        self.file(path)["contracts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|site| {
+                format!(
+                    "{} {} {}",
+                    site["line"],
+                    site["role"].as_str().unwrap(),
+                    site["key"].as_str().unwrap()
+                )
+            })
+            .collect()
+    }
+
     /// Where the first import of `spec` in `path` points, as the engine prints it.
     pub(crate) fn to(&self, path: &str, spec: &str) -> Value {
         self.file(path)["imports"]

@@ -62,7 +62,14 @@ pub struct Rust;
 pub static RUST: Erased<Rust> = Erased(Rust);
 
 /// The built-in rule packs as `(file name, Lua source)` pairs, for the binary to evaluate with the config crate.
-pub const PACKS: &[(&str, &str)] = &[];
+pub const PACKS: &[(&str, &str)] = &[
+    ("axum.lua", include_str!("../packs/axum.lua")),
+    ("actix.lua", include_str!("../packs/actix.lua")),
+    ("reqwest.lua", include_str!("../packs/reqwest.lua")),
+    ("sqlx.lua", include_str!("../packs/sqlx.lua")),
+    ("sea_orm.lua", include_str!("../packs/sea_orm.lua")),
+    ("env.lua", include_str!("../packs/env.lua")),
+];
 
 impl Connector for Rust {
     type Options = RustOptions;
