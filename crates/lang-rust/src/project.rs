@@ -19,6 +19,7 @@ use xxhash_rust::xxh3::xxh3_64;
 use crate::imports;
 use crate::link;
 use crate::manifest::Package;
+use crate::provides;
 use crate::resolve::{Aliases, Resolver};
 use crate::sites;
 use crate::syntax::line_at;
@@ -130,7 +131,7 @@ impl Project for RustProject {
     }
 
     fn provides(&self) -> Vec<Provide> {
-        Vec::new()
+        provides::provides(&self.packs)
     }
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<link::Extra> {

@@ -12,6 +12,7 @@ mod imports;
 mod link;
 mod manifest;
 mod project;
+mod provides;
 mod resolve;
 mod sites;
 mod syntax;

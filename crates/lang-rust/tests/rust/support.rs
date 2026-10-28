@@ -113,6 +113,17 @@ impl Indexed {
             .clone()
     }
 
+    /// What the project rooted at `root` (`.` for the repository root) reports it provides, as the engine prints it.
+    pub(crate) fn provides(&self, root: &str) -> Value {
+        self.json()["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|project| project["root"] == root)
+            .unwrap_or_else(|| panic!("no project is rooted at `{root}`"))["provides"]
+            .clone()
+    }
+
     /// The roots of the projects that opened, in the order they were returned.
     pub(crate) fn roots(&self) -> Vec<String> {
         self.json()["projects"]
