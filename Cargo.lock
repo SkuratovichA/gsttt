@@ -1823,6 +1823,7 @@ dependencies = [
  "mlua",
  "proptest",
  "rayon",
+ "rustix",
  "schemars",
  "serde",
  "serde_json",

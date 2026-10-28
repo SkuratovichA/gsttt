@@ -13,6 +13,7 @@ gsttt-core.workspace = true
 globset.workspace = true
 memchr.workspace = true
 mlua.workspace = true
+rustix = { workspace = true, features = ["fs", "process"] }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

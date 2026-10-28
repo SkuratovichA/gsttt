@@ -9,4 +9,6 @@ mod external;
 mod fakes;
 mod packs;
 #[cfg(test)]
+mod source;
+#[cfg(test)]
 mod tree;

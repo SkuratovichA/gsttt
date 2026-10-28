@@ -53,6 +53,21 @@ Tables passed to the gsttt module SHALL become JSON values: a table whose keys a
 - **WHEN** the config calls `require("../secrets")`
 - **THEN** evaluation fails with a message naming the module
 
+### Requirement: Source files
+The config and its local modules SHALL be read only from a regular file of at most 1 MiB that, once symbolic links are resolved, lies inside the repository (`.gsttt/init.lua`) or inside `.gsttt/lua` (a module). Any other file SHALL fail the evaluation at once with a message that names the file and says why, and nothing SHALL wait for a named pipe to be written.
+
+#### Scenario: A config that links outside the repository is refused
+- **WHEN** `.gsttt/init.lua` is a symbolic link to a file outside the repository
+- **THEN** evaluation fails with a message that names `.gsttt/init.lua` and says it resolves outside the repository, and the file is not run
+
+#### Scenario: A pipe is not a config
+- **WHEN** `.gsttt/init.lua` is a named pipe that nothing writes to
+- **THEN** evaluation fails at once with a message that names `.gsttt/init.lua` and says it is not a regular file
+
+#### Scenario: A huge config is refused
+- **WHEN** `.gsttt/init.lua` is larger than 1 MiB
+- **THEN** evaluation fails with a message that names `.gsttt/init.lua` and the limit
+
 ### Requirement: Sandbox
 The config, its modules and every pack SHALL be evaluated with only the `table`, `string`, `math` and `utf8` libraries and the base functions that cannot reach outside the state: no `io`, `os`, `package`, `debug`, `load`, `loadfile`, `dofile`, `collectgarbage`, `math.random` or `math.randomseed`.
 

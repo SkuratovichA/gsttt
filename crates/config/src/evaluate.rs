@@ -3,8 +3,6 @@
 //! The config sees one module, `require("gsttt")`, whose functions fill the setup as they run, and a `require` that loads only from `.gsttt/lua/`. Both are Rust callbacks inside the sandbox of [`crate::sandbox`], so a refused call fails with the file and line of the config that made it.
 
 use std::cell::RefCell;
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -20,6 +18,7 @@ use serde::de::DeserializeOwned;
 use crate::error::ConfigError;
 use crate::external::{check_env, glob_set};
 use crate::sandbox::{Sandbox, raise, text_chunk};
+use crate::source::read_source;
 use crate::value::to_json;
 
 /// The config file, relative to the repository root. Also the chunk name, so that errors start with it.
@@ -63,13 +62,13 @@ struct Evaluation {
 ///
 /// `registry` lists the modules the binary ships: the gsttt module has one function per name in it, and a name outside it is an error that lists the known ones.
 pub fn evaluate(root: &Path, registry: &[&dyn DynConnector]) -> Result<Setup, ConfigError> {
-    let source = match fs::read_to_string(root.join(INIT_PATH)) {
-        Ok(source) => source,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Setup::default()),
+    let source = match read_source(root, INIT_PATH, None) {
+        Ok(Some(source)) => source,
+        Ok(None) => return Ok(Setup::default()),
         Err(error) => {
             return Err(ConfigError::Read {
                 path: INIT_PATH.to_owned(),
-                message: format!("{error}; expected a UTF-8 text file"),
+                message: error.to_string(),
             });
         }
     };
@@ -415,41 +414,27 @@ fn module_path(name: &str) -> Option<String> {
     valid.then(|| name.replace('.', "/"))
 }
 
-/// The first of `<relative>.lua` and `<relative>/init.lua` that exists, as its display path and its text. A file that resolves outside `.gsttt/lua` through a symbolic link is refused.
+/// The first of `<relative>.lua` and `<relative>/init.lua` that exists, as its display path and its text. A file that is not a regular file inside `.gsttt/lua` once its links are resolved is refused, and so is one that is too large.
 fn find_module(
     lua: &Lua,
     state: &Evaluation,
     name: &str,
     relative: &str,
 ) -> mlua::Result<Option<(String, String)>> {
-    let Ok(base) = fs::canonicalize(state.root.join(MODULES)) else {
-        return Ok(None);
-    };
     for file in [
         format!("{MODULES}/{relative}.lua"),
         format!("{MODULES}/{relative}/init.lua"),
     ] {
-        let Ok(real) = fs::canonicalize(state.root.join(&file)) else {
-            continue;
-        };
-        if !real.starts_with(&base) {
-            return Err(raise(
-                lua,
-                format!("module `{name}` is {file}, which resolves outside {MODULES}"),
-            ));
+        match read_source(&state.root, &file, Some(MODULES)) {
+            Ok(Some(source)) => return Ok(Some((file, source))),
+            Ok(None) => {}
+            Err(error) => {
+                return Err(raise(
+                    lua,
+                    format!("cannot read module `{name}` at {file}: {error}"),
+                ));
+            }
         }
-        if !real.is_file() {
-            continue;
-        }
-        let source = fs::read_to_string(&real).map_err(|error| {
-            raise(
-                lua,
-                format!(
-                    "cannot read module `{name}` at {file}: {error}; expected a UTF-8 text file"
-                ),
-            )
-        })?;
-        return Ok(Some((file, source)));
     }
     Ok(None)
 }

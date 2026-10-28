@@ -12,6 +12,7 @@ pub mod external;
 mod fingerprint;
 pub mod pack;
 mod sandbox;
+mod source;
 #[cfg(test)]
 mod testlog;
 mod text;
