@@ -167,6 +167,62 @@ fn a_table_that_expands_is_refused_before_it_is_built() {
     );
 }
 
+#[gsttt_scenario::scenario("config", "A long error message is cut")]
+#[test]
+fn a_long_error_message_is_cut() {
+    let message = failure("error(string.rep(\"x\", 100000))\n");
+    assert_eq!(message.len(), 1024, "{message:.100}");
+    assert!(
+        message.starts_with(".gsttt/init.lua:1: xxx") && message.ends_with("x…"),
+        "{message:.100}"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "Patterns are not available")]
+#[test]
+fn the_pattern_functions_are_not_there() {
+    for (call, missing) in [
+        (r#"("abc"):match("a.c")"#, "method 'match'"),
+        (r#"string.gsub("abc", "b", "x")"#, "field 'gsub'"),
+        (r#"string.gmatch("abc", ".")"#, "field 'gmatch'"),
+    ] {
+        let message = failure(&format!("{call}\n"));
+        assert!(
+            message.contains("attempt to call a nil value") && message.contains(missing),
+            "{call}: {message}"
+        );
+    }
+}
+
+#[gsttt_scenario::scenario("config", "Find reads its text as given")]
+#[test]
+fn find_looks_for_the_text_and_never_for_a_pattern() {
+    let setup = Tree::with_init(
+        r#"
+        local first, last = ("a.b"):find(".")
+        require("gsttt").setup {
+            exclude = { first .. "," .. last, tostring(("a.b"):find("%.")), tostring(("axb"):find("a.b", 1, false)) },
+        }
+        "#,
+    )
+    .evaluate()
+    .unwrap();
+    assert_eq!(setup.exclude, ["2,2", "nil", "nil"]);
+}
+
+#[gsttt_scenario::scenario("config", "Addresses stay out of a config")]
+#[test]
+fn a_config_cannot_read_an_address() {
+    let setup = Tree::with_init(
+        r#"require("gsttt").setup { exclude = { tostring({}), tostring(print), ("%s"):format({}) } }"#,
+    )
+    .evaluate()
+    .unwrap();
+    assert_eq!(setup.exclude, ["table", "function", "table"]);
+    let message = failure("local _ = string.format(\"%p\", {})\n");
+    assert!(message.contains("`%p`"), "{message}");
+}
+
 #[gsttt_scenario::scenario("config", "Iteration order is fixed")]
 #[test]
 fn pairs_visits_keys_in_a_fixed_order() {

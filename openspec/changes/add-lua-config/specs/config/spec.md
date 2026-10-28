@@ -54,7 +54,7 @@ Tables passed to the gsttt module SHALL become JSON values: a table whose keys a
 - **THEN** evaluation fails with a message naming the module
 
 ### Requirement: Sandbox
-The config, its modules and every pack SHALL be evaluated with only the `table`, `string`, `math` and `utf8` libraries and the base functions that cannot reach outside the state: no `io`, `os`, `package`, `debug`, `load`, `loadfile`, `dofile`, `collectgarbage`, `math.random` or `math.randomseed`. `print` SHALL write to the log.
+The config, its modules and every pack SHALL be evaluated with only the `table`, `string`, `math` and `utf8` libraries and the base functions that cannot reach outside the state: no `io`, `os`, `package`, `debug`, `load`, `loadfile`, `dofile`, `collectgarbage`, `math.random` or `math.randomseed`.
 
 #### Scenario: The machine is out of reach
 - **WHEN** the config calls `io.open("/etc/passwd")`, `os.getenv("HOME")` or `dofile("/etc/passwd")`
@@ -64,8 +64,37 @@ The config, its modules and every pack SHALL be evaluated with only the `table`,
 - **WHEN** a pack source calls `loadfile("x.lua")`
 - **THEN** reading the pack fails with a message naming the pack
 
+### Requirement: Strings without patterns
+The `string` library SHALL have no pattern matcher: `string.match`, `string.gmatch` and `string.gsub` are absent, and `string.find` looks only for the text it is given, whatever its fourth argument says.
+
+#### Scenario: Patterns are not available
+- **WHEN** the config calls `("abc"):match("a.c")`, `string.gsub("abc", "b", "x")` or `string.gmatch("abc", ".")`
+- **THEN** evaluation fails because the function is nil, and the message names it
+
+#### Scenario: Find reads its text as given
+- **WHEN** the config evaluates `("a.b"):find(".")`, `("a.b"):find("%.")` and `("axb"):find("a.b", 1, false)`
+- **THEN** the first finds positions 2 and 2, the others find nothing, because the text is never a pattern
+
+### Requirement: No addresses
+Nothing SHALL show an address, which differs from run to run: `tostring` of a table or a function without a `__tostring` gives its type, and `string.format` refuses `%p`.
+
+#### Scenario: Addresses stay out of a config
+- **WHEN** the config shows a table and a function with `tostring`, formats a table with `%s`, or formats one with `%p`
+- **THEN** the first three give `table`, `function` and `table`, and `%p` fails with a message that names it
+
+### Requirement: Log output
+`print` and `warn` SHALL write to the log, at most a thousand lines in one evaluation and at most 4 KiB in a line, a line without control characters other than tab, and after the thousandth line one more line SHALL say that the rest is dropped.
+
+#### Scenario: Output is bounded
+- **WHEN** the config prints five thousand lines
+- **THEN** the log holds the first thousand of them and then one line that says the rest is dropped
+
+#### Scenario: A printed line is plain text
+- **WHEN** the config prints a line of ten thousand characters, and another with an escape sequence and a newline in it
+- **THEN** the first is cut to 4 KiB and ends in `…`, and the second is one line without the control characters
+
 ### Requirement: Limits
-Evaluation SHALL stop with an error naming the limit when it allocates more than 64 MiB or runs more than 100 million instructions. A table handed to the gsttt module SHALL be refused, with an error that names where in it the limit was reached, when it holds more than a million values, a table that appears twice counting twice.
+Evaluation SHALL stop with an error naming the limit when it allocates more than 64 MiB, runs more than 100 million instructions or takes more than two seconds. A table handed to the gsttt module SHALL be refused, with an error that names where in it the limit was reached, when it holds more than a million values, a table that appears twice counting twice. An error message that reaches the caller SHALL be cut at 1 KiB, so that a config cannot make its own text as long as it likes.
 
 #### Scenario: Runaway configs stop
 - **WHEN** the config runs `while true do end`, or builds a string of a billion bytes
@@ -75,8 +104,16 @@ Evaluation SHALL stop with an error naming the limit when it allocates more than
 - **WHEN** the config builds a table that holds the table below it twice, forty levels deep, and passes it to `g.setup`
 - **THEN** evaluation fails with a message that names `g.setup.exclude` and the limit of a million values
 
+#### Scenario: A loop of cheap calls stops at the time limit
+- **WHEN** the config loops over a call that is cheap in instructions and dear in time, so that the instruction limit would stop it only after minutes
+- **THEN** evaluation fails with a message naming the time limit
+
+#### Scenario: A long error message is cut
+- **WHEN** the config raises an error with a message of a hundred thousand characters
+- **THEN** the evaluation error is 1 KiB long and ends in `…`
+
 ### Requirement: Iteration order
-`pairs` SHALL visit list keys in order and then the other keys sorted, so that evaluation is deterministic.
+`pairs` SHALL visit list keys in order and then the other keys sorted, so that evaluation is deterministic. `next` SHALL not be available, because it would show the order of the table itself.
 
 #### Scenario: Iteration order is fixed
 - **WHEN** the config builds `exclude` by iterating `pairs` over a table with the keys `b`, `a` and `c`
@@ -97,11 +134,14 @@ The crate SHALL generate LuaLS annotations from the registry's module names and 
 - **THEN** the output declares `---@class gsttt.TsOptions` with `---@field tsconfig? string` and `---@field conditions? string[]` and their descriptions, and a function `ts` that takes `gsttt.TsOptions`
 
 ### Requirement: External connectors
-An external SHALL be a connector that claims the files its `files` globs match and speaks JSON lines with one process started in the repository root on its first request, so that a run answered from the snapshot starts none. The process SHALL get only the variables `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE` and `TMPDIR` of gsttt's own environment, when gsttt has them, and the ones named in the `env` of its declaration; the rest of the environment, where secrets live, SHALL stay out of its reach.
+An external SHALL be a connector that claims the files its `files` globs match and speaks JSON lines with one process started in the repository root on its first request, so that a run answered from the snapshot starts none.
 
 #### Scenario: An unused external starts nothing
 - **WHEN** a run opens an external whose files are all answered from the snapshot, so it parses and resolves nothing
 - **THEN** its command never runs
+
+### Requirement: External environment
+An external's process SHALL get only the variables `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE` and `TMPDIR` of gsttt's own environment, when gsttt has them, and the ones named in the `env` of its declaration; the rest of the environment, where secrets live, SHALL stay out of its reach.
 
 #### Scenario: A process sees only the environment it was given
 - **WHEN** gsttt runs with `PATH`, a variable listed in `env` and a variable that is neither inherited nor listed, and an external's process writes its environment

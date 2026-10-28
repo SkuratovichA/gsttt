@@ -24,3 +24,6 @@
 
 - [x] 5.1 An external's process starts with a cleared environment: a short allowlist and the names its `env` lists
 - [x] 5.2 Tables handed to the gsttt module are converted under a budget of a million values
+- [x] 5.3 The `string` library has no pattern matcher and its `find` looks only for the text it is given
+- [x] 5.4 A run stops after two seconds, `print` and `warn` write a bounded plain log, and an error message is cut at 1 KiB
+- [x] 5.5 `next` is gone, and no address reaches a config through `tostring` or `string.format`

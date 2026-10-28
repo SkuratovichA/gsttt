@@ -12,6 +12,9 @@ pub mod external;
 mod fingerprint;
 pub mod pack;
 mod sandbox;
+#[cfg(test)]
+mod testlog;
+mod text;
 mod value;
 
 pub use editor::{ANNOTATIONS_PATH, LUARC_PATH, annotations, luarc, starter};

@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 gsttt-core.workspace = true
 globset.workspace = true
+memchr.workspace = true
 mlua.workspace = true
 schemars.workspace = true
 serde.workspace = true
