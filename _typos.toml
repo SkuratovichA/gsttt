@@ -7,7 +7,12 @@ extend-exclude = [
   "openspec/changes/archive/**",
 ]
 
-[default.extend-words]
-# Test data that is misspelled or encoded on purpose: a misspelled option name in the Lua config spec, and "café" as the bytes of Latin-1 in the engine tests.
-exlude = "exlude"
-caf = "caf"
+[default]
+# Test data that is misspelled or encoded on purpose, allowed where it stands and nowhere else, so that "exlude" or "caf" anywhere else is still reported.
+extend-ignore-re = [
+  # The Lua config spec sets up a misspelled option to check that it is rejected.
+  'exlude = \{',
+  'naming `exlude`',
+  # "café" as the bytes of Latin-1, in the engine test of a file that is not UTF-8.
+  'b"caf\\xe9',
+]

@@ -23,7 +23,7 @@
 
 ## 5. Review fixes
 
-- [x] 5.1 Tasks find the repository with `git rev-parse --show-toplevel` from any directory of it, and `flate2`, `sha2` and `tar` are workspace dependencies
+- [x] 5.1 Tasks find the repository with `git rev-parse --show-toplevel` from any directory of it, and the three crates that write a package in-process are workspace dependencies
 - [x] 5.2 A version is released from one commit only, only the highest version is the latest release, and releases run one at a time
 - [x] 5.3 The release token is given to the commands that publish and to no step that compiles code
 - [x] 5.4 Clippy, the tests and the release build run with `--locked`
@@ -38,3 +38,4 @@
 - [x] 5.13 `install.sh` looks for a SHA-256 tool before it downloads, fetches GitHub over HTTPS with a bounded wait and retries, refuses a version that is not numbers joined by single dots, picks the Apple Silicon package under Rosetta, stages the binary in a `mktemp` file that the exit cleanup removes, and says how to put the install directory on `PATH`; a test pins its default directory against the wrapper's
 - [x] 5.14 A test pins the fields that make a package the same on every machine (the times, owners and format of the tar headers, and the time and system byte of the gzip header), the code says what else the bytes depend on, and AGENTS.md says that the tests need `cargo-deny`
 - [x] 5.15 `docs/architecture.md` says that the manifest declares the server and the hook inline and that the wrapper runs both, and where the wrapper looks for the binary
+- [x] 5.16 `_typos.toml` lets the two deliberate test strings (a misspelled option name and a Latin-1 byte string) pass only where they stand, by patterns that name the text around them, and the same words anywhere else are still reported
