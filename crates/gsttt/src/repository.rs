@@ -29,14 +29,14 @@ pub enum RepositoryError {
     #[error(transparent)]
     Root(#[from] RootError),
 
-    /// A rule pack that ships with gsttt does not evaluate.
+    /// A rule pack that ships with gsttt does not read.
     #[error(
         "{0}; this is a bug in gsttt, please report it at {issues}",
         issues = concat!(env!("CARGO_PKG_REPOSITORY"), "/issues")
     )]
     Packs(#[from] PackError),
 
-    /// `.gsttt/init.lua` does not evaluate.
+    /// `.gsttt/config.toml`, or a pack beside it, does not read into a setup.
     #[error(transparent)]
     Config(#[from] ConfigError),
 
@@ -102,11 +102,11 @@ pub struct Repository {
 
 impl Repository {
     /// The repository around `start`, which should be a canonical directory: finds the root, refuses the home
-    /// directory and `/`, builds the registry and evaluates `.gsttt/init.lua`.
+    /// directory and `/`, builds the registry and reads `.gsttt/config.toml`.
     ///
     /// # Errors
     ///
-    /// When there is no root, the root is refused, a built-in pack does not evaluate or the config does not.
+    /// When there is no root, the root is refused, a built-in pack does not read or the config does not.
     pub fn open(start: &Utf8Path) -> Result<Self, RepositoryError> {
         let workspace = root::locate(start)?;
         let registry = Registry::builtin()?;

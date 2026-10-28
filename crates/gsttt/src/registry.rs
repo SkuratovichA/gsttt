@@ -4,7 +4,7 @@ use gsttt_config::{PackError, builtin_packs};
 use gsttt_core::DynConnector;
 use gsttt_core::rules::Pack;
 
-/// A connector and the sources of the rule packs written for it, as `(name, Lua source)` pairs.
+/// A connector and the sources of the rule packs written for it, as `(name, TOML source)` pairs.
 struct Builtin {
     connector: Box<dyn DynConnector>,
     packs: &'static [(&'static str, &'static str)],
@@ -29,11 +29,11 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// The built-in connectors, with every built-in pack evaluated once, in one sandbox.
+    /// The built-in connectors, with every built-in pack read once.
     ///
     /// # Errors
     ///
-    /// When a pack that ships with gsttt does not evaluate, which is a bug in that pack.
+    /// When a pack that ships with gsttt does not read, which is a bug in that pack.
     pub fn builtin() -> Result<Self, PackError> {
         let (connectors, sources): (Vec<_>, Vec<_>) = builtins()
             .into_iter()
