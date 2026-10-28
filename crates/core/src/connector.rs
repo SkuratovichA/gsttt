@@ -8,7 +8,7 @@
 
 use std::fmt;
 
-use schemars::{JsonSchema, Schema};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::Xxh3;
@@ -243,8 +243,7 @@ impl LinkedFact {
     }
 }
 
-/// One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run
-/// time`.
+/// One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run time`.
 #[derive(
     Clone,
     Debug,
@@ -252,12 +251,17 @@ impl LinkedFact {
     Eq,
     Serialize,
     Deserialize,
+    JsonSchema,
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
 pub struct Provide {
+    /// The family of contract: `http`, `graphql`, `grpc`, `trpc`, `table`, `queue`, `env`, or a name of your own.
+    // serde reads a kind from a string, which the derive cannot see; the rules say the same.
+    #[schemars(with = "String")]
     pub kind: ContractKind,
+    /// What the connector does with it: `declares`, `serves` or `calls`.
     pub role: Role,
     /// The packs or formats that find it.
     pub via: Vec<String>,
@@ -284,8 +288,8 @@ pub enum ConnectorError {
 pub trait DynConnector: Send + Sync {
     fn meta(&self) -> Meta;
     fn detect(&self, repo: &RepoView) -> bool;
-    /// The JSON schema of the options, for `gsttt schema lua` and for checking a config.
-    fn options_schema(&self) -> Schema;
+    /// The JSON schema of the options, for an editor that checks the config. The types it uses are described in `generator` and referenced from the schema returned, so that the schema of a whole config describes each type once.
+    fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema;
     /// The default options as JSON.
     fn default_options(&self) -> serde_json::Value;
     /// Opens the projects with options as JSON; `null` means the defaults.
@@ -350,8 +354,8 @@ impl<C: Connector> DynConnector for Erased<C> {
         self.0.detect(repo)
     }
 
-    fn options_schema(&self) -> Schema {
-        schemars::schema_for!(C::Options)
+    fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema {
+        generator.subschema_for::<C::Options>()
     }
 
     fn default_options(&self) -> serde_json::Value {
@@ -632,13 +636,13 @@ mod tests {
             panic!("one connector")
         };
         assert!(connector.detect(&repo));
-        assert!(
-            connector
-                .options_schema()
-                .as_value()
-                .to_string()
-                .contains("tag")
-        );
+
+        // The options are a reference into the generator, which holds what they say.
+        let mut generator = SchemaGenerator::default();
+        let schema = connector.options_schema(&mut generator);
+        assert!(schema.get("$ref").is_some(), "{schema:?}");
+        let definitions = serde_json::Value::Object(generator.take_definitions(false));
+        assert!(definitions.to_string().contains("tag"), "{definitions}");
 
         let bad = connector.open(&repo, &serde_json::json!({ "tag": 3 }), &[]);
         assert_eq!(

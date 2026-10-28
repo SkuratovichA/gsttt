@@ -39,7 +39,7 @@ pub(crate) const KEYS: [&str; 7] = [
     "external",
 ];
 
-/// The keys of the top level that are not modules. A key that is left out keeps the default of [`Setup`].
+/// The config of a repository: these keys, and a table named after a module, like `[ts]`, which turns the module on and holds its options. A key that is left out keeps its default.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Keys {

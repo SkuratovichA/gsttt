@@ -2,7 +2,7 @@
 //!
 //! - [`evaluate()`] reads the config and the packs into the [`Setup`](gsttt_core::Setup); [`fingerprint()`] hashes it.
 //! - [`pack`]: a rule pack is a TOML file with the fields of a [`Pack`](gsttt_core::rules::Pack); [`read_pack()`] reads one.
-//! - [`starter()`] is the config `gsttt init` writes, and [`CONFIG_SCHEMA_PATH`] and [`PACK_SCHEMA_PATH`] are where it writes the schemas an editor checks the files with.
+//! - [`starter()`] is the config `gsttt init` writes, and [`CONFIG_SCHEMA_PATH`] and [`PACK_SCHEMA_PATH`] are where it writes the schemas an editor checks the files with: [`config_schema()`] and [`pack_schema()`] generate them.
 //! - [`external`]: an [`External`] is the connector for one `[[external]]` of the setup, and [`protocol_schema()`] is the JSON schema of the messages it exchanges with its process.
 
 mod depth;
@@ -13,6 +13,7 @@ mod evaluate;
 pub mod external;
 mod fingerprint;
 pub mod pack;
+mod schema;
 mod source;
 #[cfg(test)]
 mod testlog;
@@ -25,3 +26,4 @@ pub use external::protocol::{PROTOCOL, schema as protocol_schema};
 pub use external::{External, ExternalProject};
 pub use fingerprint::fingerprint;
 pub use pack::{PackError, builtin_packs, read_pack};
+pub use schema::{config_schema, pack_schema};

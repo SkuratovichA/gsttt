@@ -22,8 +22,8 @@
 
 ## 4. Editor support
 
-- [ ] 4.1 `DynConnector::options_schema` takes a shared `SchemaGenerator`, and `Provide` derives `JsonSchema`
-- [ ] 4.2 `config_schema` and `pack_schema`, draft-07, each type once under `definitions`
+- [x] 4.1 `DynConnector::options_schema` takes a shared `SchemaGenerator`, and `Provide` derives `JsonSchema`
+- [x] 4.2 `config_schema` and `pack_schema`, draft-07, each type once under `definitions`
 - [x] 4.3 The starter with its `#:schema` line, read back as the defaults
 
 ## 5. Removal

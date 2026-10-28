@@ -13,6 +13,8 @@ mod nesting;
 #[cfg(test)]
 mod packs;
 #[cfg(test)]
+mod schema;
+#[cfg(test)]
 mod source;
 #[cfg(test)]
 mod tree;
