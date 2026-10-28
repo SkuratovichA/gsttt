@@ -177,3 +177,26 @@ A spec whose `## Purpose` is empty or is the placeholder that `openspec archive`
 #### Scenario: An unfinished change needs a purpose too
 - **WHEN** an open change with an unticked task adds requirements to a capability that `openspec/specs/` lacks and its delta has no `## Purpose`
 - **THEN** the gate exits non-zero and names the delta's file and the line of its first requirement
+
+### Requirement: Changes on top of each other
+The gate SHALL read the open changes in the order `--ready` would archive them, applying each to what the main specs and the changes before it leave: a requirement it adds is put in, one it modifies replaces the one with that name, one it removes is taken away, one it renames has its new name. The scenarios of what is left need a proof, and no test may claim one that a change took away. Changes that cannot be placed come last, in the order of their names, and apply as far as their deltas reach.
+
+#### Scenario: A title that a later change keeps counts once
+- **WHEN** an open change modifies a requirement that another open change adds, and keeps one of its scenario titles
+- **THEN** the title counts once, as the later change's, and one proof of it passes
+
+#### Scenario: A requirement that a later change removes needs no proof
+- **WHEN** an open change removes a requirement that another open change adds, and no test claims its scenarios
+- **THEN** the gate exits zero
+
+#### Scenario: Scenarios that a later change removes may not be claimed
+- **WHEN** an open change removes a requirement that another open change adds, and a test still claims one of its scenarios
+- **THEN** the gate exits non-zero and names the test and the change that removes the requirement
+
+#### Scenario: A renamed requirement is found under its new name
+- **WHEN** an open change renames a requirement that another open change adds, and a third open change modifies it under the new name and keeps one of its scenario titles
+- **THEN** the title counts once, as the third change's
+
+#### Scenario: A change that nothing places still counts
+- **WHEN** an open change modifies a requirement that no spec and no other open change has
+- **THEN** its scenarios need a proof like those of any other change, and `--ready` does not print the change
