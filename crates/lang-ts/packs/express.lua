@@ -1,0 +1,19 @@
+-- Express: a verb called on an app or router made in the same file serves that route.
+return {
+  name = "express",
+  language = "ts",
+  detect = { "express" },
+  calls = {
+    {
+      callee = {
+        "*.get", "*.post", "*.put", "*.patch", "*.delete", "*.options", "*.head", "*.all",
+        "*.*.get", "*.*.post", "*.*.put", "*.*.patch", "*.*.delete", "*.*.options", "*.*.head", "*.*.all",
+      },
+      kind = "http",
+      role = "serves",
+      key = "$arg1",
+      method = "$callee",
+      receiver = { from = { "express", "express.Router", "Router" } },
+    },
+  },
+}

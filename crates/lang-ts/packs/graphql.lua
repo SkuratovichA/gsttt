@@ -1,0 +1,12 @@
+-- GraphQL: a `gql` or `graphql` template carries a document, which the GraphQL connector reads.
+return {
+  name = "graphql",
+  language = "ts",
+  detect = {
+    "graphql", "graphql-tag", "@apollo/client", "apollo-server", "@apollo/server", "graphql-request", "urql",
+    "@urql/core", "graphql-yoga", "@nestjs/graphql",
+  },
+  embeds = {
+    { callee = { "gql", "graphql" }, lang = "graphql" },
+  },
+}

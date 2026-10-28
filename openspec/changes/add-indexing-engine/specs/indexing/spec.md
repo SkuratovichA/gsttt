@@ -169,37 +169,42 @@ The engine SHALL call each project's `prepare` once with every file it owns befo
 - **THEN** the graph has that site on that file
 
 ### Requirement: Linked facts replace the facts they re-key
-A site from the link phase SHALL replace the site of each own fact of the same file with the same line, role and contract kind, so that a declaration a mount re-keys is a site once, under its linked key. A link that re-keys a line SHALL return a fact for every own fact of that line, role and kind, one per mount, the root included. Embedded facts are never replaced, and a file whose link returned nothing or panicked keeps its own facts.
+A linked fact MAY name the own fact of its file, line and role that it keys again, such as a route a mount serves under a prefix. Each named own fact SHALL give way to the linked sites, and an own fact that no linked fact names SHALL keep its site, whatever shares its line. A link that keys an own fact again SHALL return it under every mount, the root included. Embedded facts are never replaced, and a file whose link returned nothing or panicked keeps its own facts.
 
 #### Scenario: A linked fact replaces the own fact it re-keys
-- **WHEN** a file has the own fact `serves http GET /bookings/{}` at line 1 and its project's `link` returns `serves http GET /api/bookings/{}` at line 1 of the same file
+- **WHEN** a file has the own fact `serves http GET /bookings/{}` at line 1 and its project's `link` returns `serves http GET /api/bookings/{}` at line 1 of the same file, naming `http GET /bookings/{}` as the own fact it keys again
 - **THEN** the graph has a site on that file under the linked key
 - **AND** it has no site on that file under the own key
 
 #### Scenario: An own fact on another line keeps its site
-- **WHEN** a file has own facts at lines 1 and 2 and `link` returns a fact for line 1 only
+- **WHEN** a file has the own fact `serves http GET /bookings/{}` at line 1 and the same own fact at line 2, and `link` returns a fact for line 1 that names that key
 - **THEN** the graph keeps the site of the own fact at line 2
+- **AND** it has no site under the own key at line 1
 
 #### Scenario: An own fact of another kind or role keeps its site
-- **WHEN** a file has, on the line a linked fact re-keys, an own fact of another contract kind and an own fact of another role
+- **WHEN** a linked fact names an own key at a line, and the file has on that line an own fact of the same key in another role and an own fact of another contract kind
 - **THEN** the graph keeps the sites of both
 
 #### Scenario: An own fact of another file keeps its site
-- **WHEN** a linked fact re-keys a line of one file and another file has an own fact at the same line, role and kind
+- **WHEN** a linked fact names an own key at a line of one file and another file has an own fact with that key at the same line and role
 - **THEN** the graph keeps the site of the other file's own fact
 
 #### Scenario: A declaration mounted under two prefixes has two linked sites
-- **WHEN** a file has an own fact at line 1 and `link` returns two facts for that line, one under each of two prefixes
+- **WHEN** a file has an own fact at line 1 and `link` returns two facts for that line, one under each of two prefixes, each naming the own key
 - **THEN** the graph has two sites on that file at line 1, one under each linked key
 - **AND** it has no site under the own key
 
-#### Scenario: An own fact the link leaves out of a re-keyed line loses its site
-- **WHEN** a file has the own facts `serves http GET /a` and `serves http GET /b` at line 1 and `link` returns only `serves http GET /api/a` at line 1
-- **THEN** the graph has a site under `/api/a`
-- **AND** it has no site under `/a` or under `/b`
+#### Scenario: An own fact no linked fact names keeps its site
+- **WHEN** a file has the own facts `serves http GET /a` and `serves http GET /b` at line 1 and `link` returns `serves http GET /api/a` at line 1, naming `http GET /a`
+- **THEN** the graph has a site under `/api/a` and a site under `/b`
+- **AND** it has no site under `/a`
+
+#### Scenario: A linked fact that names no own fact replaces nothing
+- **WHEN** a file has the own fact `serves http GET /b` at line 1 and `link` returns `serves http GET /api/x` at line 1, naming no own fact
+- **THEN** the graph has a site under `/api/x` and a site under `/b`
 
 #### Scenario: An embedded fact is not replaced by a linked one
-- **WHEN** a linked fact has the file, line, role and contract kind of a fact read from an embedded document
+- **WHEN** a linked fact names the key of a fact read from an embedded document, at the file, line and role of that fact
 - **THEN** the graph keeps the site of the embedded fact
 
 ### Requirement: Failure containment

@@ -30,7 +30,7 @@ A run turns the working tree into an `Index`. Every query runs one first (a refr
 8. **Resolve.** Every import of every file goes through its project's `resolve` against the `RepoView`; nothing touches the disk. `File` and `Files` become edges; `External`, `Builtin` and `Unresolved` are counted in coverage.
 9. **Embedded documents.** A GraphQL template or an SQL string inside code goes to the first project, in registry order, whose `embeds()` names its language; that project's `parse_embedded` returns contract facts with lines offset to the host file. A language nobody embeds becomes a blind spot in coverage. Embedded documents are re-read on every run; the host file's facts carry their text.
 10. **Link.** Each project's `link` sees all its files with facts, resolved imports and connector extras, and returns facts that need more than one file: Express `app.use('/api', router)`, FastAPI `include_router(prefix=…)`, Django `include()`, tRPC router composition, axum `nest`.
-11. **Build.** `GraphBuilder` takes the files, their tags, the edges and every contract site (parsed, embedded and linked); coverage counts files by status, imports by resolution and unread sites by reason. A linked site replaces the parsed site of the same file, line, role and contract kind, so a declaration that a mount re-keys is a site once, under its linked key; a link that re-keys a line returns a fact for every parsed fact of that line, role and kind, one per mount, the root included. Embedded sites are never replaced, and a file whose link returned nothing or panicked keeps its parsed sites.
+11. **Build.** `GraphBuilder` takes the files, their tags, the edges and every contract site (parsed, embedded and linked); coverage counts files by status, imports by resolution and unread sites by reason. A linked fact may name the parsed fact of its file, line and role that it keys again (`LinkedFact::replaces`, set by `LinkedFact::rekeyed`), and the build drops the site of each parsed fact so named, so a declaration that a mount re-keys is a site under each linked key and not under its parsed one; a parsed fact that no linked fact names keeps its site, whatever shares its line. A link that keys a parsed fact again returns it under every mount, the root included. Embedded sites are never replaced, and a file whose link returned nothing or panicked keeps its parsed sites.
 12. **Store.** The index and every file's key, content id, size, mtime, facts and extra go into the snapshot. A run whose keys, file set, config fingerprint and gsttt version all match the snapshot skips steps 7–12 and answers from it.
 
 Phases 6, 8 and 9 run file-parallel and 7 and 10 project-parallel. Output never depends on scheduling: results are collected by `FileId`, and anything emitted from a hash map is sorted first.
@@ -43,7 +43,7 @@ A panic is caught around every connector call: per file for `parse`, `resolve` a
 
 `<state dir>/snapshot.gsttt` holds:
 
-- a 24-byte prefix: the magic `GSTTSNAP`, a `u32` layout version (`LAYOUT`, now 3, bumped by hand whenever the prefix, the header or the body changes shape, or the index in the body comes out of another rule, because a stored index answers as it is), a `u32` header length and the xxh3_64 checksum of the body as a `u64`;
+- a 24-byte prefix: the magic `GSTTSNAP`, a `u32` layout version (`LAYOUT`, now 4, bumped by hand whenever the prefix, the header or the body changes shape, or the index in the body comes out of another rule, because a stored index answers as it is), a `u32` header length and the xxh3_64 checksum of the body as a `u64`;
 - a JSON header: `built_by`, `built_at` (RFC 3339), `head`, `dirty`, `files`, the connectors that ran and a one-line coverage summary;
 - padding to 16 bytes and the rkyv body (`Index`, the per-file records of step 12, the config and registry fingerprints).
 
@@ -127,12 +127,12 @@ g.ts { tsconfig = "tsconfig.base.json" }  -- turn a module on, with options
 g.disable "openapi"
 g.pack(require("packs.billing"))          -- .gsttt/lua/packs/billing.lua
 g.disable_pack "axios"
-g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" }, version = "1" }
+g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" }, version = "1", env = {}, provides = {…}, options = {} }  -- env: variables it may read; provides: what it finds and cannot see; options: sent in "open"
 ```
 
 - `g.<module>` exists for every module in the registry; an unknown name fails with the list of known ones. Options are checked against the module's schema when the engine opens it.
 - `require` loads only from `.gsttt/lua/`. The sandbox has `table`, `string`, `math` and `utf8`, no `io`, `os`, `package`, `debug`, `load`, `loadfile` or `dofile`, a memory limit and an instruction limit; `print` goes to the log. Evaluation is deterministic.
-- `gsttt init` writes `.gsttt/init.lua`, LuaLS annotations generated from the module schemas (`.gsttt/types/gsttt.lua`) and `.gsttt/.luarc.json`, so an editor completes and checks the config.
+- `gsttt init` writes `.gsttt/init.lua`, LuaLS annotations generated from the module schemas (`.gsttt/types/gsttt.lua`) and `.gsttt/.luarc.json`, so an editor completes and checks the config. `.gsttt/` is the editor workspace: LuaLS reads `.luarc.json` only from the root of the folder it is opened in, so the config is edited with `.gsttt/` opened as the folder, and the paths in `.luarc.json` are relative to it.
 
 Pack merging is the engine's: built-in packs, minus `disable_packs`, with user packs replacing built-ins of the same name, grouped by `language`.
 
@@ -140,9 +140,9 @@ Pack merging is the engine's: built-in packs, minus `disable_packs`, with user p
 
 ```
 → {"type":"open","protocol":1,"root":"","options":{}}
-← {"type":"ready","name":"kotlin","version":"0.1.0","provides":[…]}
+← {"type":"ready","name":"kotlin","version":"0.1.0"}
 → {"type":"parse","path":"src/A.kt","text":"…"}                      ← {"type":"facts","path":"src/A.kt","facts":{…FileFacts…}}
-→ {"type":"resolve","from":"src/A.kt","import":{…Import…}}            ← {"type":"resolution","resolution":{…}}
+→ {"type":"resolve","from":"src/A.kt","import":{…Import…}}            ← {"type":"resolution","from":"src/A.kt","import":{…Import…},"resolution":{…}}
 → {"type":"done"}
 ```
 
