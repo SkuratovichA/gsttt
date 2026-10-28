@@ -1816,11 +1816,13 @@ name = "gsttt-config"
 version = "0.1.0"
 dependencies = [
  "gsttt-core",
+ "gsttt-scenario",
  "insta",
  "mlua",
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
 ]
@@ -1830,7 +1832,9 @@ name = "gsttt-contracts"
 version = "0.1.0"
 dependencies = [
  "apollo-parser",
+ "gsttt-config",
  "gsttt-core",
+ "gsttt-scenario",
  "insta",
  "jsonc-parser",
  "protox-parse",
@@ -1839,6 +1843,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlparser",
+ "tempfile",
  "thiserror",
  "tracing",
 ]
@@ -1852,6 +1857,7 @@ dependencies = [
  "foldhash",
  "gix",
  "globset",
+ "gsttt-scenario",
  "ignore",
  "insta",
  "memchr",
@@ -1872,7 +1878,9 @@ dependencies = [
 name = "gsttt-lang-python"
 version = "0.1.0"
 dependencies = [
+ "gsttt-config",
  "gsttt-core",
+ "gsttt-scenario",
  "insta",
  "ruff_python_ast",
  "ruff_python_parser",
@@ -1881,6 +1889,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "toml",
  "tracing",
@@ -1890,13 +1899,16 @@ dependencies = [
 name = "gsttt-lang-rust"
 version = "0.1.0"
 dependencies = [
+ "gsttt-config",
  "gsttt-core",
+ "gsttt-scenario",
  "insta",
  "ra_ap_edition",
  "ra_ap_syntax",
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "toml",
  "tracing",
@@ -1906,7 +1918,9 @@ dependencies = [
 name = "gsttt-lang-ts"
 version = "0.1.0"
 dependencies = [
+ "gsttt-config",
  "gsttt-core",
+ "gsttt-scenario",
  "insta",
  "jsonc-parser",
  "oxc_allocator",
@@ -1919,6 +1933,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
 ]

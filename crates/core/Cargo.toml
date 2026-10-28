@@ -27,6 +27,7 @@ tracing.workspace = true
 xxhash-rust.workspace = true
 
 [dev-dependencies]
+gsttt-scenario.workspace = true
 insta.workspace = true
 proptest.workspace = true
 similar-asserts.workspace = true
