@@ -144,11 +144,20 @@ The engine SHALL store the index, every file's key, content id, size, modificati
 - **THEN** it returns the header with `built_by`, `head`, `dirty` and `files`
 
 ### Requirement: Unchanged trees answer from the snapshot
-A refresh whose file set, keys, setup fingerprint and gsttt version all match the snapshot SHALL return the stored index without calling `parse`, `prepare`, `resolve` or `link`.
+A refresh whose file set, content id of every file, keys, setup fingerprint, HEAD commit and gsttt version all match the snapshot SHALL return the stored index without calling `parse`, `prepare`, `resolve` or `link`. A refresh that differs in any of them SHALL rebuild the index and store it.
 
 #### Scenario: A no-op refresh calls no connector work
 - **WHEN** the engine refreshes twice with nothing changed in between
 - **THEN** the second refresh calls none of `parse`, `prepare`, `resolve` and `link` and reports the index unchanged
+
+#### Scenario: An edit to an unclaimed file is not a no-op
+- **WHEN** a file no connector reads is edited after indexing and the engine refreshes
+- **THEN** the refresh rebuilds the index and parses no file
+- **AND** the index counts one dirty file and the snapshot reports the tree as fresh
+
+#### Scenario: A new commit is not a no-op
+- **WHEN** the dirty files are committed after indexing and the engine refreshes
+- **THEN** the refresh rebuilds the index with the new head and no dirty file
 
 ### Requirement: Freshness
 The engine SHALL report, without building an index, how many files were added, removed and changed since a given index was built.

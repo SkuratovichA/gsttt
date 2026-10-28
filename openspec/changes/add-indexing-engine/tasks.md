@@ -24,3 +24,7 @@
 
 - [x] 4.1 A test annotated `#[scenario("indexing", …)]` for every scenario of the `indexing` spec
 - [x] 4.2 `cargo nextest run -p gsttt-core`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+
+## 5. Review fixes
+
+- [x] 5.1 A refresh answers from the snapshot only when the content id of every file and the HEAD commit match too, so an edit to a file no connector reads and a new commit rebuild the index

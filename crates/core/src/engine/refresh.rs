@@ -184,11 +184,19 @@ impl<'a> Engine<'a> {
             }
         }
         let config = keys::config_fingerprint(self.setup, self.connectors, self.builtin_packs);
+        let head = head_commit(self.workspace.root());
 
         match previous {
             Some(stored)
                 if !unverifiable
-                    && is_current(&stored, config, &states, &file_keys, &assigned.projects()) =>
+                    && is_current(
+                        &stored,
+                        config,
+                        &states,
+                        &file_keys,
+                        &assigned.projects(),
+                        head.as_deref(),
+                    ) =>
             {
                 Ok(Refresh {
                     reused: to_u32(claims.len()),
@@ -205,6 +213,7 @@ impl<'a> Engine<'a> {
                 states,
                 file_keys,
                 config,
+                head,
                 own,
                 started,
                 listed,
@@ -222,6 +231,7 @@ impl<'a> Engine<'a> {
             states,
             file_keys,
             config,
+            head,
             own,
             started,
             listed,
@@ -237,7 +247,7 @@ impl<'a> Engine<'a> {
             .map_or(0, |changes| to_u32(changes.len()));
         let info = IndexInfo {
             built_by: snapshot::VERSION.to_owned(),
-            head: head_commit(self.workspace.root()),
+            head,
             dirty,
             reused: to_u32(reused),
             parsed: to_u32(parsed),
@@ -373,21 +383,26 @@ struct Rebuild<'r, 'a> {
     states: Vec<FileState>,
     file_keys: Vec<Option<FactKey>>,
     config: u128,
+    head: Option<String>,
     own: Option<Stored>,
     started: Instant,
     listed: Duration,
 }
 
-/// Whether a stored index is what a run over this tree would build again: same configuration, same projects, same
-/// files and the same fact key for every file a project took.
+/// Whether a stored index is what a run over this tree would build again: same configuration, same commit, same
+/// projects, and for every file the same content and the same fact key. The content is compared for every file,
+/// not only for those a project took, because the dirty count and the freshness of the snapshot depend on all of
+/// them.
 fn is_current(
     stored: &Stored,
     config: u128,
     states: &[FileState],
     file_keys: &[Option<FactKey>],
     projects: &[ProjectRun],
+    head: Option<&str>,
 ) -> bool {
     stored.config == config
+        && stored.index.info.head.as_deref() == head
         && stored.index.projects.len() == projects.len()
         && stored
             .index
@@ -403,6 +418,7 @@ fn is_current(
             .zip(file_keys)
             .all(|((old, new), key)| {
                 old.path == new.path
+                    && old.stamp.id == new.stamp.id
                     && old.key == *key
                     // A failed read says nothing about the content, so it is tried again.
                     && !matches!(
@@ -882,6 +898,48 @@ mod tests {
         assert!(second.unchanged);
         assert_eq!(rig.counters.take(), [0, 0, 0, 0]);
         assert_eq!(second.index, first.index);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "An edit to an unclaimed file is not a no-op")]
+    #[test]
+    fn an_edit_to_an_unclaimed_file_is_not_a_no_op() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            ("a.txt", "use b.txt\n"),
+            ("b.txt", ""),
+            ("README.md", "one\n"),
+        ]);
+        let setup = Setup::default();
+        let connectors = rig.connectors();
+        let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
+        assert_eq!(engine.refresh().unwrap().index.info.dirty, 0);
+        write(dir.path(), "README.md", "two\n");
+        let second = engine.refresh().unwrap();
+        assert!(!second.unchanged);
+        assert_eq!((second.parsed, second.reused), (0, 2));
+        assert_eq!(second.index.info.dirty, 1);
+        assert_eq!(engine.freshness().unwrap(), Some(Freshness::Fresh));
+        assert!(engine.refresh().unwrap().unchanged);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A new commit is not a no-op")]
+    #[test]
+    fn a_new_commit_is_not_a_no_op() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "use b.txt\n"), ("b.txt", "")]);
+        write(dir.path(), "a.txt", "use b.txt\n\n");
+        let setup = Setup::default();
+        let connectors = rig.connectors();
+        let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
+        let before = engine.refresh().unwrap();
+        assert_eq!(before.index.info.dirty, 1);
+        git(dir.path(), &["commit", "-q", "-am", "edit a"]);
+        let after = engine.refresh().unwrap();
+        assert!(!after.unchanged);
+        assert_eq!((after.parsed, after.reused), (0, 2));
+        assert_eq!(after.index.info.dirty, 0);
+        assert_ne!(after.index.info.head, before.index.info.head);
+        assert!(engine.refresh().unwrap().unchanged);
     }
 
     #[gsttt_scenario::scenario("indexing", "An edit after indexing makes the index stale")]
