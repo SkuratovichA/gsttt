@@ -112,6 +112,11 @@ impl<'a> Session<'a> {
 fn check_arguments(flags: &Flags, command: &Command) -> Result<(), CliError> {
     match command {
         Command::Index if flags.no_refresh => Err(CliError::NoRefreshWithIndex),
+        Command::Mcp if flags.json => Err(CliError::McpTakesNoFlag { flag: "--json" }),
+        Command::Mcp if flags.all => Err(CliError::McpTakesNoFlag { flag: "--all" }),
+        Command::Mcp if flags.no_refresh => Err(CliError::McpTakesNoFlag {
+            flag: "--no-refresh",
+        }),
         Command::Impact(ImpactArgs {
             changed: false,
             base: Some(_),

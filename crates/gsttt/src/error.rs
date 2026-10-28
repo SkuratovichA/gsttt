@@ -76,6 +76,14 @@ pub(crate) enum CliError {
     #[error("`index` always refreshes the index, so it cannot run with `--no-refresh`")]
     #[diagnostic(help("drop `--no-refresh`"))]
     NoRefreshWithIndex,
+
+    #[error(
+        "`gsttt mcp` takes none of `--json`, `--all` and `--no-refresh`, and `{flag}` was given"
+    )]
+    #[diagnostic(help(
+        "drop `{flag}`: the server answers in protocol messages, a tool that lists entries takes `all` as an argument, and every call refreshes the index first"
+    ))]
+    McpTakesNoFlag { flag: &'static str },
 }
 
 impl From<RepositoryError> for CliError {
@@ -113,7 +121,8 @@ impl CliError {
             | Self::Base(_)
             | Self::EmptyQuery
             | Self::BaseNeedsChanged
-            | Self::NoRefreshWithIndex => Outcome::Usage,
+            | Self::NoRefreshWithIndex
+            | Self::McpTakesNoFlag { .. } => Outcome::Usage,
         }
     }
 

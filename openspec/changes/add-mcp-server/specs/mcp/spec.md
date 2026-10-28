@@ -86,7 +86,7 @@ stdout SHALL carry only protocol messages, with logs on stderr. The server SHALL
 
 ### Requirement: The binary serves its repository
 
-`gsttt mcp` SHALL serve the repository found from the directory it was started in, as the CLI finds it, opening it again on every call, so that edits to the config and the trust store take effect without a restart. A directory the CLI refuses SHALL fail the call, not the server.
+`gsttt mcp` SHALL serve the repository found from the directory it was started in, as the CLI finds it, opening it again on every call, so that edits to the config and the trust store take effect without a restart. A directory the CLI refuses SHALL fail the call, not the server. `gsttt mcp` SHALL refuse `--json`, `--all` and `--no-refresh` as a usage error.
 
 #### Scenario: gsttt mcp answers about its repository
 - **WHEN** `gsttt mcp` is started in a repository and `dependents` is called for a file that another file imports
@@ -95,3 +95,7 @@ stdout SHALL carry only protocol messages, with logs on stderr. The server SHALL
 #### Scenario: A refused root fails the call, not the server
 - **WHEN** `gsttt mcp` is started in the home directory and `coverage` is called
 - **THEN** `initialize` succeeded, the result has `isError` set and says gsttt does not index the home directory, and the server keeps running
+
+#### Scenario: gsttt mcp refuses the flags of the command line
+- **WHEN** `gsttt mcp` runs with `--json`, with `--all` or with `--no-refresh`
+- **THEN** it exits 2, stdout is empty, and stderr names the flag
