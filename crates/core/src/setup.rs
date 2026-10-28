@@ -1,4 +1,4 @@
-//! What a config asks for. The config crate builds a [`Setup`] from `.gsttt/init.lua`; the engine runs it.
+//! What a config asks for. The config crate builds a [`Setup`] from `.gsttt/config.toml`; the engine runs it.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,7 @@ impl Default for Setup {
     }
 }
 
-/// A module turned on by the config: `g.ts { tsconfig = "tsconfig.base.json" }`.
+/// A module turned on by the config: a `[ts]` table holding `tsconfig = "tsconfig.base.json"`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModuleSetup {
@@ -58,7 +58,7 @@ pub struct ModuleSetup {
     pub options: serde_json::Value,
 }
 
-/// A connector that runs as a command: `g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" } }`.
+/// A connector that runs as a command, one `[[external]]` entry of the config: `name = "kotlin"`, `cmd = ["gsttt-kotlin"]`, `files = ["**/*.kt"]`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExternalSetup {
@@ -74,13 +74,13 @@ pub struct ExternalSetup {
     /// Names of environment variables the process may read, on top of the few every program needs (`PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TMPDIR`). The rest of gsttt's environment, where secrets live, stays out of its reach.
     #[serde(default)]
     pub env: Vec<String>,
-    /// What the connector finds and what it cannot see, as `Provide` values with `kind`, `role`, `via` and `blind_spots`. They are declared here and not asked of the process, because a run answered from the snapshot never starts it and must still report the same coverage as a run that did.
+    /// What the connector finds and what it cannot see, as `[[external.provides]]` tables with `kind`, `role`, `via` and `blind_spots`. They are declared here and not asked of the process, because a run answered from the snapshot never starts it and must still report the same coverage as a run that did.
     #[serde(default)]
-    // `Provide` has no schema yet; once it derives `JsonSchema`, this names the type.
-    #[schemars(with = "Vec<serde_json::Value>")]
     pub provides: Vec<Provide>,
     /// The options of the connector: a table of named values, sent to the process in `open` and mixed into the cache key. `{}` when it has none.
     #[serde(default = "no_options")]
+    // The reader refuses anything but a table, which `Value` alone would not tell an editor.
+    #[schemars(with = "serde_json::Map<String, serde_json::Value>")]
     pub options: serde_json::Value,
 }
 

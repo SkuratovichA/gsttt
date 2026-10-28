@@ -25,6 +25,33 @@ impl LineIndex {
         let line = self.starts.partition_point(|&start| start <= offset);
         u32::try_from(line).unwrap_or(u32::MAX).max(1)
     }
+
+    /// The 1-based column of the byte at `offset` on its line, counted in characters, so that it is the column an editor shows. `text` is the text the index was built from. An offset inside a character is the column of that character, and one past the end of the text is the column after the last character.
+    pub fn column(&self, text: &str, offset: u32) -> u32 {
+        let start = usize::try_from(self.line(offset))
+            .ok()
+            .and_then(|line| line.checked_sub(1))
+            .and_then(|index| self.starts.get(index))
+            .map_or(0, |&start| usize::try_from(start).unwrap_or(usize::MAX));
+        let mut end = usize::try_from(offset).map_or(text.len(), |offset| offset.min(text.len()));
+        // Offset 0 is always a boundary, so this ends.
+        while !text.is_char_boundary(end) {
+            end = end.saturating_sub(1);
+        }
+        let before = text
+            .get(start..end)
+            .map_or(0, |before| before.chars().count());
+        u32::try_from(before).unwrap_or(u32::MAX).saturating_add(1)
+    }
+}
+
+/// `message` of a deserialization error, led by where in the value it happened: `` `external[0].cmd`: invalid type … ``. Serde's own message names a field only for an unknown one, and the path names it for every kind. An error at the root of the value has no path to name.
+pub fn with_path(path: &serde_path_to_error::Path, message: &str) -> String {
+    if path.iter().next().is_none() {
+        message.to_owned()
+    } else {
+        format!("`{path}`: {message}")
+    }
 }
 
 /// A count with a thousands separator: `4,213`.
@@ -117,6 +144,24 @@ mod tests {
         assert_eq!(lines, vec![1, 1, 2, 3, 4, 4]);
     }
 
+    #[test]
+    fn columns_count_characters_from_one() {
+        // `ä` and `ü` are two bytes each: `ab\n` is bytes 0 to 2, `ä` is 3 and 4, and the last `ü` is 9 and 10.
+        let text = "ab\näb = ü";
+        let index = LineIndex::new(text);
+        let columns: Vec<u32> = [0, 1, 2, 3, 4, 5, 9, 10, 11, 99]
+            .map(|offset| index.column(text, offset))
+            .to_vec();
+        assert_eq!(columns, vec![1, 2, 3, 1, 1, 2, 6, 6, 7, 7]);
+    }
+
+    #[test]
+    fn a_column_of_an_empty_text_is_one() {
+        let index = LineIndex::new("");
+        assert_eq!(index.column("", 0), 1);
+        assert_eq!(index.column("", 7), 1);
+    }
+
     fn names(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| (*name).to_owned()).collect()
     }
@@ -201,5 +246,38 @@ mod tests {
     #[test]
     fn a_unit_of_zero_gives_zero() {
         assert_eq!(tenths(1_500, 0), "0.0");
+    }
+
+    #[test]
+    fn an_error_is_led_by_the_path_it_happened_at() {
+        #[derive(Debug, serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Outer {
+            #[expect(dead_code, reason = "read by the deserializer, never by the test")]
+            list: Vec<Inner>,
+        }
+        #[derive(Debug, serde::Deserialize)]
+        struct Inner {
+            #[expect(dead_code, reason = "read by the deserializer, never by the test")]
+            size: u32,
+        }
+        let message = |value: serde_json::Value| {
+            let error = serde_path_to_error::deserialize::<_, Outer>(value).unwrap_err();
+            with_path(error.path(), &error.inner().to_string())
+        };
+        let nested = message(serde_json::json!({ "list": [{ "size": 1 }, { "size": "big" }] }));
+        assert!(
+            nested.starts_with("`list[1].size`: invalid type"),
+            "{nested}"
+        );
+        // The path of an unknown key is the key, which serde names too.
+        let unknown = message(serde_json::json!({ "list": [], "extra": 1 }));
+        assert!(
+            unknown.starts_with("`extra`: unknown field `extra`"),
+            "{unknown}"
+        );
+        // An error about the whole value has no path to lead with, so it keeps serde's words alone.
+        let root = message(serde_json::json!(5));
+        assert!(root.starts_with("invalid type: integer `5`"), "{root}");
     }
 }

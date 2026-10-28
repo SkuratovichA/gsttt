@@ -3,7 +3,7 @@
 use std::io;
 use std::sync::{Arc, Mutex};
 
-/// The lines `run` writes to the log on this thread, each as its level, its target and its text: ` INFO gsttt_config::lua: hello`. A subscriber is local to a thread, so a line another thread writes is not here.
+/// The lines `run` writes to the log on this thread, each as its level, its target and its text: ` INFO gsttt_config::external: hello`. A subscriber is local to a thread, so a line another thread writes is not here.
 pub(crate) fn capture(run: impl FnOnce()) -> Vec<String> {
     let buffer = Buffer::default();
     let writer = buffer.clone();

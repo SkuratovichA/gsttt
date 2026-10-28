@@ -3,8 +3,8 @@
 //! A pack tells one language connector which calls, decorators, member chains and embedded documents name a
 //! contract, and where the key is: `fetch("/bookings")` calls `http GET /bookings`, `@Get(":id")` inside
 //! `@Controller("bookings")` serves `http GET /bookings/{}`, `process.env.API_URL` calls `env API_URL`. Packs are
-//! Lua files: the built-in ones live next to the connector they are for (`crates/lang-ts/packs/`), a user's own in
-//! `.gsttt/lua/`. They arrive here through serde. A language connector finds the sites a rule names with
+//! TOML files: the built-in ones live next to the connector they are for (`crates/lang-ts/packs/`), a user's own in
+//! `.gsttt/packs/`. They arrive here through serde. A language connector finds the sites a rule names with
 //! [`callee_matches`] and hands each one to the rule's `apply`, which makes every decision after that: where the
 //! key is, whether the site is a contract at all, and whether it is a blind spot. So a rule means the same thing in
 //! TypeScript, Python and Rust.
@@ -27,7 +27,7 @@ use crate::fact::{ContractFact, Embedded, Line, UnresolvedReason, UnresolvedSite
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Pack {
-    /// The framework: `nestjs`, `fastapi`, `axios`. Answers name it as the way a contract was found.
+    /// The framework: `nestjs`, `fastapi`, `axios`. Answers name it as the way a contract was found. In a file of `.gsttt/packs/` it is the name of the file without `.toml`.
     pub name: String,
     /// The language connector the rules are for: `ts`, `python` or `rust`.
     pub language: String,
@@ -165,8 +165,8 @@ pub struct AssignRule {
 /// Every connector reads it the same way. For `class`, the innermost enclosing class must carry a decorator matching
 /// `from`, or the rule does not apply. For `receiver`, the site's receiver must be a name bound in the same file to a
 /// call matching `from` (`router = APIRouter(prefix="/x")`, `const app = express()`), or the rule does not apply;
-/// a receiver imported from another file is left to [`Project::link`](crate::connector::Project::link), which sees
-/// both files. So `receiver` is also how a rule stays off `cache.get("/x")`.
+/// a receiver imported from another file is left to the connector's `link` step, which sees both files. So
+/// `receiver` is also how a rule stays off `cache.get("/x")`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Prefix {
@@ -189,7 +189,7 @@ impl Prefix {
     }
 }
 
-/// One pattern or several: `callee = "fetch"` or `callee = { "axios.*", "api.*" }`.
+/// One pattern or several: `callee = "fetch"` or `callee = ["axios.*", "api.*"]`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum OneOrMany {
