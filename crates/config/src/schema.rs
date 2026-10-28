@@ -11,10 +11,15 @@ use serde_json::{Value, json};
 
 use crate::evaluate::Keys;
 
+/// The transforms every schema gets, in one place so that a transform added here reaches all of them: the generator applies them to the root and its definitions, and [`config_schema`] to the inline schema of each module.
+fn transform(schema: &mut Schema) {
+    RecursiveTransform(without_null).transform(schema);
+}
+
 /// The generator both schemas are made with.
 fn generator() -> SchemaGenerator {
     SchemaSettings::draft07()
-        .with_transform(RecursiveTransform(without_null))
+        .with_transform(transform)
         .into_generator()
 }
 
@@ -80,7 +85,7 @@ pub fn config_schema(registry: &[&dyn DynConnector]) -> Schema {
         .map(|connector| {
             let mut schema = connector.options_schema(&mut generator);
             // The generator transforms the root and its definitions, not a schema written inline here.
-            RecursiveTransform(without_null).transform(&mut schema);
+            transform(&mut schema);
             (connector.meta().name.to_owned(), module_table(schema))
         })
         .collect();
