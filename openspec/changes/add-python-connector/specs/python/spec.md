@@ -195,6 +195,13 @@ A route on an `APIRouter` SHALL be served once for each chain of `include_router
 - **WHEN** `app/api/bookings.py` has `router = APIRouter(prefix="/bookings")` and `@router.get("/{booking_id}")`, `app/api/v1.py` has `sub = APIRouter(prefix="/v1")` and `sub.include_router(bookings.router, prefix="/b")`, and `app/main.py` has `app.include_router(v1.sub, prefix="/api")`
 - **THEN** `app/api/bookings.py` serves `http GET /api/v1/b/bookings/{}` and no other path
 
+### Requirement: Re-exported routers
+A router that a mount names through a package that re-exports it, with an import in the package's `__init__.py` such as `from .bookings import router as bookings_router`, SHALL be the router of the module the import names, so that its routes are served behind the mount.
+
+#### Scenario: A router mounted through a re-export
+- **WHEN** `app/api/__init__.py` has `from .bookings import router as bookings_router`, `app/api/bookings.py` has `router = APIRouter(prefix="/bookings")` and `@router.get("/{booking_id}")`, and `app/main.py` has `from app.api import bookings_router` and `app.include_router(bookings_router, prefix="/api")`
+- **THEN** `app/api/bookings.py` serves `http GET /api/bookings/{}` and no other path
+
 ### Requirement: Repeated and cyclic mounts
 A call that includes a router without a `prefix` SHALL add no second copy of its routes, and a chain of calls that comes back to a router it has passed SHALL end there, the routes being served by the chains that end at a router nobody includes.
 

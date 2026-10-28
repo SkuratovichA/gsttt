@@ -17,7 +17,8 @@ pub struct PyExtra {
     /// Routers and URL modules this file mounts under a prefix.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) mounts: Vec<Mount>,
-    /// Local names the file's imports bind; kept only in a file that mounts something.
+    /// Local names the file's imports bind; kept in a file that mounts something and in a package's `__init__`, which
+    /// may import a router from one of its modules and give it another name.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) binds: Vec<Bind>,
 }

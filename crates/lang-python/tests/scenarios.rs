@@ -1530,3 +1530,56 @@ fn a_regular_package_hides_the_same_name_further_along() {
     // The standard library is looked in before the later roots, as the order says, so it still has its own module.
     assert_eq!(tree.target("c/main.py", "logging.handlers", &[]), "builtin");
 }
+
+const BOOKINGS_ROUTER: &str = "from fastapi import APIRouter\n\nrouter = APIRouter(prefix=\"/bookings\")\n\n\n@router.get(\"/{booking_id}\")\ndef get_booking(booking_id: int):\n    return {}\n";
+
+const FASTAPI_PROJECT: &str =
+    "[project]\nname = \"bookings\"\ndependencies = [\"fastapi>=0.110\"]\n";
+
+#[gsttt_scenario::scenario("python", "A router mounted through a re-export")]
+#[test]
+fn a_router_mounted_through_a_reexport() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/api/__init__.py",
+            "from .bookings import router as bookings_router\n",
+        ),
+        ("app/api/bookings.py", BOOKINGS_ROUTER),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app.api import bookings_router\n\napp = FastAPI()\napp.include_router(bookings_router, prefix=\"/api\")\n",
+        ),
+    ]);
+    // The name `main.py` mounts is the one the package gives the router of `bookings`, not a router of the package.
+    assert_eq!(
+        tree.linked("app/api/bookings.py"),
+        ["serves http GET /api/bookings/{}@6"]
+    );
+    assert_eq!(tree.contracts("app/api/bookings.py"), Vec::<String>::new());
+}
+
+#[test]
+fn a_router_reexported_by_two_packages_is_found_through_both() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        (
+            "app/__init__.py",
+            "from .api import bookings_router as exported\n",
+        ),
+        (
+            "app/api/__init__.py",
+            "from .bookings import router as bookings_router\n",
+        ),
+        ("app/api/bookings.py", BOOKINGS_ROUTER),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import exported\n\napp = FastAPI()\napp.include_router(exported, prefix=\"/v2\")\n",
+        ),
+    ]);
+    assert_eq!(
+        tree.linked("app/api/bookings.py"),
+        ["serves http GET /v2/bookings/{}@6"]
+    );
+}

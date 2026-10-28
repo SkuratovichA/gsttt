@@ -4,7 +4,8 @@
 //! prefixes of every mount and router on the way.
 //!
 //! A router's routes are no facts of its file, so the path a router serves on its own appears only when no mount
-//! reaches it.
+//! reaches it. A mount names its router by an expression of its own file, and a package that re-exports the router
+//! under another name is followed to the module that makes it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -28,12 +29,22 @@ const MAX_DEPTH: usize = 32;
 /// a router mounted in dozens of places is unlike any real application.
 const MAX_WAYS: usize = 64;
 
+/// How many imports are followed from the name a mount writes to the module that makes the router. A re-export is one
+/// or two imports deep, and modules that import each other's names end at the bound.
+const MAX_HOPS: usize = 8;
+
 /// A router: the file it lives in and the variable that holds it. Django's `urlpatterns` is the module itself and
 /// has the empty name.
 type Router<'a> = (FileId, &'a str);
 
 /// Finds the file of the module a specifier names, as the file `from` imports it.
 type ModuleFile<'f> = &'f dyn Fn(&RepoPath, &str) -> Option<FileId>;
+
+/// What the names of the files of a project stand for: the files themselves and where their imports lead.
+struct Names<'i, 'a> {
+    input: &'i LinkInput<'a, PyExtra>,
+    module_file: ModuleFile<'i>,
+}
 
 /// A mount seen from the router it mounts.
 struct Parent<'a> {
@@ -98,7 +109,7 @@ pub(crate) fn link(project: &PythonProject, input: &LinkInput<'_, PyExtra>) -> V
 }
 
 fn compose<'a>(input: &LinkInput<'a, PyExtra>, module_file: ModuleFile<'_>) -> Composed<'a> {
-    let mounts = Mounts::read(input, module_file);
+    let mounts = Mounts::read(&Names { input, module_file });
     let mut cuts = BTreeSet::new();
     // The ways up depend on the router alone, so every route of a router shares them.
     let mut ways: BTreeMap<Router<'a>, Vec<String>> = BTreeMap::new();
@@ -134,14 +145,15 @@ fn compose<'a>(input: &LinkInput<'a, PyExtra>, module_file: ModuleFile<'_>) -> C
 }
 
 impl<'a> Mounts<'a> {
-    fn read(input: &LinkInput<'a, PyExtra>, module_file: ModuleFile<'_>) -> Self {
+    fn read(names: &Names<'_, 'a>) -> Self {
         let mut parents: BTreeMap<Router<'a>, Vec<Parent<'a>>> = BTreeMap::new();
         let mut own = BTreeMap::new();
-        for file in input.files().iter().copied() {
+        for file in names.input.files().iter().copied() {
             for mount in &file.extra.mounts {
-                if let Some(child) = mounted(file, mount, module_file) {
+                if let Some(child) = names.mounted(file, mount) {
                     // The receiver may be a router imported from another file, which then holds its prefix.
-                    let router = named(file, &mount.receiver, module_file)
+                    let router = names
+                        .named(file, &mount.receiver, 0)
                         .unwrap_or((file.id, mount.receiver.as_str()));
                     parents.entry(child).or_default().push(Parent {
                         router,
@@ -238,46 +250,51 @@ impl<'a> Climb<'_, 'a, '_> {
     }
 }
 
-/// The router `mount` of `file` mounts, when it can be found.
-fn mounted<'a>(
-    file: LinkFile<'a, PyExtra>,
-    mount: &'a Mount,
-    module_file: ModuleFile<'_>,
-) -> Option<Router<'a>> {
-    match &mount.target {
-        Target::Module(spec) => Some((module_file(file.path, spec)?, "")),
-        Target::Name(name) => named(file, name, module_file),
+impl<'a> Names<'_, 'a> {
+    /// The router `mount` of `file` mounts, when it can be found.
+    fn mounted(&self, file: LinkFile<'a, PyExtra>, mount: &'a Mount) -> Option<Router<'a>> {
+        match &mount.target {
+            Target::Module(spec) => Some(((self.module_file)(file.path, spec)?, "")),
+            Target::Name(name) => self.named(file, name, 0),
+        }
     }
-}
 
-/// The router an expression names in `file`: a variable of the file itself, or a name its imports bind.
-fn named<'a>(
-    file: LinkFile<'a, PyExtra>,
-    expr: &'a str,
-    module_file: ModuleFile<'_>,
-) -> Option<Router<'a>> {
-    let (head, rest) = expr.split_once('.').unwrap_or((expr, ""));
-    let Some(bind) = file
-        .extra
-        .binds
-        .iter()
-        .rev()
-        .find(|bind| bind.local == head)
-    else {
-        return Some((file.id, expr));
-    };
-    match (bind.name.as_deref(), rest) {
-        // `import app.api.bookings as bookings`: the alias is the module, and a module is no router.
-        (None, "") => None,
-        // `import app.api.bookings as bookings; bookings.router`: the router is inside the module.
-        (None, rest) => Some((module_file(file.path, &bind.spec)?, rest)),
-        // `from app.api.bookings import router`: the module holds the router, even when it is also called `router`.
-        (Some(name), "") => Some((module_file(file.path, &bind.spec)?, name)),
-        // `from app.api import bookings; bookings.router`: the name is a module of the package, and the router is
-        // inside it.
-        (Some(name), rest) => {
-            let spec = submodule_spec(&bind.spec, name);
-            Some((module_file(file.path, &spec)?, rest))
+    /// The router an expression names in `file`: a variable of the file itself, or a name its imports bind. A module
+    /// that holds the name only by importing it from another, as a package does that re-exports a router, is
+    /// followed on to the module that makes it; `hops` counts the imports followed so far.
+    fn named(&self, file: LinkFile<'a, PyExtra>, expr: &'a str, hops: usize) -> Option<Router<'a>> {
+        if hops > MAX_HOPS {
+            return None;
+        }
+        let (head, rest) = expr.split_once('.').unwrap_or((expr, ""));
+        let Some(bind) = file
+            .extra
+            .binds
+            .iter()
+            .rev()
+            .find(|bind| bind.local == head)
+        else {
+            return Some((file.id, expr));
+        };
+        let (module, name) = match (bind.name.as_deref(), rest) {
+            // `import app.api.bookings as bookings`: the alias is the module, and a module is no router.
+            (None, "") => return None,
+            // `import app.api.bookings as bookings; bookings.router`: the router is inside the module.
+            (None, rest) => ((self.module_file)(file.path, &bind.spec)?, rest),
+            // `from app.api.bookings import router`: the module holds the router, even when it is also called
+            // `router`.
+            (Some(name), "") => ((self.module_file)(file.path, &bind.spec)?, name),
+            // `from app.api import bookings; bookings.router`: the name is a module of the package, and the router
+            // is inside it.
+            (Some(name), rest) => {
+                let spec = submodule_spec(&bind.spec, name);
+                ((self.module_file)(file.path, &spec)?, rest)
+            }
+        };
+        match self.input.get(module) {
+            Some(holder) => self.named(*holder, name, hops + 1),
+            // A file of another project is not in the input: its router is taken as named.
+            None => Some((module, name)),
         }
     }
 }
@@ -298,7 +315,7 @@ mod tests {
     use gsttt_core::fact::FileFacts;
 
     use super::*;
-    use crate::extra::{Route, RouterPrefix};
+    use crate::extra::{Bind, Route, RouterPrefix};
 
     /// The mounts of a project with one file, `app.py`, whose routers are all variables of that file.
     struct Project {
@@ -348,6 +365,11 @@ mod tests {
         }
 
         fn compose(&self) -> Composed<'_> {
+            self.compose_in(&|_, _| None)
+        }
+
+        /// Like [`Project::compose`], with `module_file` finding the files that specifiers name.
+        fn compose_in(&self, module_file: ModuleFile<'_>) -> Composed<'_> {
             let file = LinkFile {
                 id: FileId::from_raw(0),
                 path: &self.path,
@@ -355,7 +377,7 @@ mod tests {
                 imports: &[],
                 extra: &self.extra,
             };
-            compose(&LinkInput::new(vec![file]), &|_, _| None)
+            compose(&LinkInput::new(vec![file]), module_file)
         }
     }
 
@@ -445,6 +467,23 @@ mod tests {
         assert_eq!(keys(&composed), ["GET /own/leaf"]);
         assert_eq!(composed.cuts.len(), 1);
         assert!(composed.cuts.iter().all(|cut| cut.why == Why::TooDeep));
+    }
+
+    #[test]
+    fn a_name_a_module_imports_from_itself_ends_at_the_limit_of_imports() {
+        let mut project = Project::new();
+        // `from app import r` in `app.py`, which every specifier names: the import leads back to the same name.
+        project.extra.binds.push(Bind {
+            local: "r".to_owned(),
+            spec: "app".to_owned(),
+            line: 1,
+            name: Some("r".to_owned()),
+        });
+        project.mount("app", "r", "/x");
+        project.route("r", "/one");
+        let composed = project.compose_in(&|_, _| Some(FileId::from_raw(0)));
+        // The router is never found, so the mount reaches nothing and the route is served on its own.
+        assert_eq!(keys(&composed), ["GET /one"]);
     }
 
     #[test]

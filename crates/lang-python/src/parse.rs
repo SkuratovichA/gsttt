@@ -22,7 +22,7 @@ use ruff_python_parser::{ParseError, parse_unchecked_source};
 use ruff_text_size::{Ranged, TextSize};
 
 use crate::extra::{Mount, PyExtra, Route, RouterPrefix, Target};
-use crate::files::{is_python_source, tags_of};
+use crate::files::{is_package_init, is_python_source, tags_of};
 use crate::imports::{Imports, Name, absolute_name, specifier};
 use crate::manifest::{ManifestError, read_pyproject};
 use crate::project::PythonProject;
@@ -52,7 +52,7 @@ pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<Py
     let lines = LineIndex::new(file.text);
     let mut collector = Collector::new(&project.packs, &lines);
     collector.visit_body(parsed.suite());
-    let mut read = collector.finish();
+    let mut read = collector.finish(is_package_init(file.path));
     read.facts.tags = tags;
     read.facts.status = status_of(parsed.errors(), &lines, file.text.len());
     read
@@ -150,9 +150,11 @@ impl<'a> Collector<'a> {
         }
     }
 
-    fn finish(mut self) -> Parsed<PyExtra> {
+    /// `package_init` tells a package's `__init__`, whose imports `link` follows a router through when another file
+    /// mounts the name the package gives it.
+    fn finish(mut self, package_init: bool) -> Parsed<PyExtra> {
         // The prefix of a router matters to every file that makes one, because another file may fill it with routes or
-        // mount it; the binds matter to a file that mounts something.
+        // mount it; the binds matter to a file that mounts something and to the file a router is re-exported from.
         if self
             .bindings
             .values()
@@ -160,7 +162,7 @@ impl<'a> Collector<'a> {
         {
             self.extra.routers = self.router_prefixes();
         }
-        if !self.extra.mounts.is_empty() {
+        if package_init || !self.extra.mounts.is_empty() {
             self.extra.binds = self.imports.binds();
         }
         // Visit order is deterministic; a stable sort by line puts the facts of a decorator and of its body in order.

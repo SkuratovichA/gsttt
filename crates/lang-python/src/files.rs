@@ -22,6 +22,12 @@ pub(crate) fn is_python_source(path: &RepoPath) -> bool {
     matches!(path.extension(), Some("py" | "pyi"))
 }
 
+/// Whether `path` is the `__init__` of a package, where a router made in one of its modules is given the name the rest
+/// of the project imports it by.
+pub(crate) fn is_package_init(path: &RepoPath) -> bool {
+    matches!(path.file_name(), "__init__.py" | "__init__.pyi")
+}
+
 /// `requirements.txt`, `requirements-dev.txt` and the like, and the text files of a directory named `requirements`.
 pub(crate) fn is_requirements(path: &RepoPath) -> bool {
     path.extension()
