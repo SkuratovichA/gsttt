@@ -14,7 +14,6 @@ use xshell::Shell;
 
 use super::pins::{Language, Pins, Repository, Tool};
 use super::plan::Programs;
-use crate::digest::hex;
 use crate::dist::git::git;
 
 /// Installs the tools `needed` that are not installed at their pinned version yet.
@@ -258,7 +257,7 @@ fn checksum(file: &Path) -> anyhow::Result<String> {
         let length = piece.len();
         reader.consume(length);
     }
-    Ok(hex(&hasher.finalize()))
+    Ok(faster_hex::hex_string(&hasher.finalize()))
 }
 
 #[cfg(test)]

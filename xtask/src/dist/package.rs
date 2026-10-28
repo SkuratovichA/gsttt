@@ -11,7 +11,6 @@ use flate2::write::GzEncoder;
 use sha2::{Digest as _, Sha256};
 
 use super::version::release_version;
-use crate::digest::hex;
 use crate::root::repository_root;
 
 const USAGE: &str = "usage: cargo xtask package --target <target>";

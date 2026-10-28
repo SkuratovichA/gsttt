@@ -2,9 +2,9 @@
 //!
 //! - `spec`: the spec gate ([`spec`]).
 //! - `version`, `package`, `notes`, `check`: releases and repository checks ([`dist`]).
-//! - `bench`: the speed comparison with the tools people use today ([`bench`]).
+//! - `bench`: the speed comparison with the tools people use today ([`bench`](mod@bench)).
 //!
-//! [`root`] finds the repository a task works on, and [`digest`] writes a checksum as text.
+//! [`root`] finds the repository a task works on, and [`digest`] checks that a commit id or checksum is hexadecimal.
 
 mod bench;
 mod digest;

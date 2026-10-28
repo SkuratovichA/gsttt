@@ -1,13 +1,4 @@
-//! Digests as text: [`hex`] writes the lowercase hexadecimal form of a checksum, and [`is_hex`] checks that a pinned commit id or checksum has it.
-
-/// The lowercase hexadecimal digits of `bytes`.
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .flat_map(|byte| [byte >> 4, byte & 0x0f])
-        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
-        .collect()
-}
+//! Digests as text: [`is_hex`] checks that a pinned commit id or checksum is lowercase hexadecimal, the form [`faster_hex::hex_string`] writes.
 
 /// Whether `text` is `length` digits of lowercase hexadecimal.
 pub(crate) fn is_hex(text: &str, length: usize) -> bool {
@@ -19,13 +10,7 @@ pub(crate) fn is_hex(text: &str, length: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{hex, is_hex};
-
-    #[test]
-    fn hex_writes_two_lowercase_digits_per_byte() {
-        assert_eq!(hex(&[0x00, 0x0f, 0xa5, 0xff]), "000fa5ff");
-        assert_eq!(hex(&[]), "");
-    }
+    use super::is_hex;
 
     #[test]
     fn only_lowercase_hexadecimal_of_the_given_length_is_accepted() {
