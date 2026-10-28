@@ -112,16 +112,28 @@ fn read_packs(root: &Path) -> Result<Vec<Pack>, ConfigError> {
     let mut packs = Vec::with_capacity(names.len());
     for name in names {
         let file = format!("{PACKS_PATH}/{name}");
-        // The folder has just listed the file, so a file that does not resolve is a link that leads nowhere. It fails where the config does not: a missing config means every detected module with its defaults, and a pack that the folder lists has no such meaning, so skipping it would drop its rules without a word.
+        // The folder has just listed the file, so a file that does not resolve is a link that leads nowhere or a file removed since. Either fails where the config does not: a missing config means every detected module with its defaults, and a pack that the folder lists has no such meaning, so skipping it would drop its rules without a word.
         let Some(text) = read_text(root, &file, Some(PACKS_PATH))? else {
-            return Err(ConfigError::Read {
-                path: file,
-                message: "is a link that leads nowhere".to_owned(),
-            });
+            return Err(unresolved_pack(root, file));
         };
         packs.push(read_pack(&file, &text).map_err(|error| ConfigError::Invalid(error.message))?);
     }
     Ok(packs)
+}
+
+/// The error for a pack that the folder listed and that did not resolve: a link that leads nowhere or, when `file` is no link, a file removed after the folder was listed.
+fn unresolved_pack(root: &Path, file: String) -> ConfigError {
+    let link = fs::symlink_metadata(root.join(&file))
+        .is_ok_and(|metadata| metadata.file_type().is_symlink());
+    let message = if link {
+        "is a link that leads nowhere"
+    } else {
+        "was removed while the folder was read"
+    };
+    ConfigError::Read {
+        path: file,
+        message: message.to_owned(),
+    }
 }
 
 /// A top-level table named like a module of the registry.
@@ -330,5 +342,16 @@ mod tests {
             r#"{"c":1,"list":[{"x":2,"y":1}],"outer":{"a":3,"b":{"y":2,"z":1}}}"#
         );
         Ok(())
+    }
+
+    #[test]
+    fn a_pack_that_is_gone_and_is_no_link_was_removed() {
+        // The folder listed the file and it was gone when it was read, so there is nothing at its path, no link included.
+        let root = tempfile::tempdir().unwrap();
+        let error = unresolved_pack(root.path(), format!("{PACKS_PATH}/x.toml"));
+        assert_eq!(
+            error.to_string(),
+            "cannot read .gsttt/packs/x.toml: was removed while the folder was read"
+        );
     }
 }
