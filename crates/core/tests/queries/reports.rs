@@ -353,18 +353,39 @@ fn coverage_lists_the_problems_of_the_index() {
     );
 }
 
+/// The problems are listed whole, though every other list of the text stops at 30 entries. The program that embeds the engine adds its own lines after the engine's, and the last of them may be the one a person has to act on.
 #[test]
-fn the_problems_are_cut_like_every_other_list() {
-    let mut index = Tree::new().imports("b.ts", "a.ts").build();
-    index.coverage.problems = (0..31).map(|n| format!("problem {n:02}")).collect();
+fn the_problems_are_never_cut() {
+    let mut tree = Tree::new().imports("b.ts", "a.ts");
+    for n in 0..31 {
+        tree = tree.unread(&format!("notes/file.x{n:02}"));
+    }
+    let mut index = tree.build();
+    index.coverage.problems = (0..30).map(|n| format!("problem {n:02}")).collect();
+    index.coverage.problems.push(NOT_TRUSTED.to_owned());
     index.coverage.finish();
     let answer = coverage(&index, Freshness::Fresh);
 
-    let cut = answer.to_string();
-    assert!(cut.starts_with("problems (31):\n  problem 00\n"), "{cut}");
-    assert!(cut.contains("  problem 29\n… 1 more\n"), "{cut}");
-    assert!(!cut.contains("problem 30"), "{cut}");
-    assert!(answer.text(Entries::All).contains("  problem 30\n"));
+    // The 31 extensions of unread files show that the cut still reaches the lists that are not the problems.
+    for (entries, left_out) in [(Entries::Capped, vec!["… 1 more"]), (Entries::All, vec![])] {
+        let text = answer.text(entries);
+        let listed: Vec<&str> = text
+            .lines()
+            .skip(1)
+            .take_while(|line| line.starts_with("  "))
+            .collect();
+        assert!(text.starts_with("problems (31):\n  problem 00\n"), "{text}");
+        assert_eq!(listed.len(), 31, "{text}");
+        assert_eq!(listed.last(), Some(&format!("  {NOT_TRUSTED}").as_str()));
+        assert!(
+            text.lines()
+                .nth(32)
+                .is_some_and(|line| line.starts_with("ts: ")),
+            "{text}"
+        );
+        let cuts: Vec<&str> = text.lines().filter(|line| line.starts_with("… ")).collect();
+        assert_eq!(cuts, left_out, "{text}");
+    }
     let in_json = to_value(&answer).unwrap();
     assert_eq!(in_json["problems"].as_array().map(Vec::len), Some(31));
 }

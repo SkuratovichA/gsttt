@@ -7,7 +7,7 @@ Queries read an index and answer what a change affects and how files and contrac
 ## MODIFIED Requirements
 
 ### Requirement: Coverage answer
-`coverage` SHALL begin with the problems of the index, one line each (the key `problems` in JSON), and SHALL list, per connector, its projects, its files by parse status (read cleanly, read past syntax errors, failed, skipped), the share of imports resolved, the unresolved imports and unread sites by reason with the first place of each, and what it provides with its blind spots, followed by the unclaimed files by language and the files skipped before any connector read them.
+`coverage` SHALL begin with every problem of the index, one line each and never cut (the key `problems` in JSON), and SHALL list, per connector, its projects, its files by parse status (read cleanly, read past syntax errors, failed, skipped), the share of imports resolved, the unresolved imports and unread sites by reason with the first place of each, and what it provides with its blind spots, followed by the unclaimed files by language and the files skipped before any connector read them.
 
 #### Scenario: Coverage names failures and blind spots
 - **WHEN** an index has a TypeScript file that failed to parse, an unresolved import and a `fetch` with a computed URL

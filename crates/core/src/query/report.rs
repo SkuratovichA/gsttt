@@ -108,7 +108,7 @@ pub struct CoverageReport {
     /// Files left out before any connector saw them: over the size limit, not UTF-8, unreadable.
     pub skipped: Vec<Failure>,
     pub footer: Footer,
-    /// The problems of the index, one line each, sorted, as `Coverage::problems` holds them. The text lists them before the connectors; the document keeps this key last.
+    /// The problems of the index, one line each, sorted, as `Coverage::problems` holds them. The text lists every one of them before the connectors, whatever it cuts of its other lists; the document keeps this key last.
     pub problems: Vec<String>,
 }
 
@@ -301,7 +301,8 @@ fn write_reason(f: &mut fmt::Formatter<'_>, reasons: &Reasons, what: &str) -> fm
 
 impl Answer for CoverageReport {
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
-        list(f, "problems", &self.problems, entries, |f, problem| {
+        // Every problem, whatever `entries` says: the program that embeds the engine adds its lines after the engine's own, such as the note that tells a person to trust an external connector, and a cut would hide the last of them.
+        list(f, "problems", &self.problems, Entries::All, |f, problem| {
             write!(f, "  {problem}")
         })?;
         if self.connectors.is_empty() {
