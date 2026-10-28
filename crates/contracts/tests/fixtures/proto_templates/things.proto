@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package things.v1;
+
+service ThingService {
+  rpc CancelThing(Thing) returns (Thing) {
+    option (google.api.http) = { post: "/v1/things/{id}:cancel" };
+  }
+  rpc ListThings(Thing) returns (Thing) {
+    option (google.api.http) = { get: "/v1/{parent=projects/*/locations/*}/things" };
+  }
+}
+
+message Thing {
+  string id = 1;
+}

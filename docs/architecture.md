@@ -7,12 +7,13 @@ gsttt reads a repository into a graph of files and contracts and answers one fam
 | Crate | Role | Depends on |
 | --- | --- | --- |
 | `gsttt-core` | Data model, connector contract, rule packs, engine, snapshot, queries, answers | — |
-| `gsttt-lang-ts`, `-python`, `-rust` | Language connectors and their built-in packs (`packs/*.lua`, embedded with `include_str!` and exported as `PACKS: &[(&str, &str)]`) | core (config as a dev-dependency, to test packs) |
+| `gsttt-lang-ts`, `-python`, `-rust` | Language connectors and their built-in packs (`packs/*.toml`, embedded with `include_str!` and exported as `PACKS: &[(&str, &str)]`) | core (config as a dev-dependency, to test packs) |
 | `gsttt-contracts` | Contract-format connectors: OpenAPI, GraphQL, protobuf, Prisma, SQL, env files | core |
-| `gsttt-config` | `.gsttt/init.lua` → `Setup`, pack evaluation, LuaLS stubs, external connectors | core |
+| `gsttt-config` | `.gsttt/config.toml` and `.gsttt/packs/*.toml` → `Setup`, the JSON Schemas of both, external connectors | core |
 | `gsttt-mcp` | MCP server over the queries | core |
 | `gsttt` | The binary: connector registry, CLI, hook, output | everything |
-| `gsttt-spec`, `gsttt-scenario`, `xtask` | Spec parser, `#[scenario]`, the spec gate | — |
+| `gsttt-spec`, `gsttt-scenario` | Spec parser, `#[scenario]` | — |
+| `xtask` | The spec gate (`xtask/src/spec/`), and the build and checks of a release: `cargo xtask package`, `check`, `notes`, `version` (`xtask/src/dist/`) | — |
 
 A module crate never depends on another module crate; the binary wires them. Libraries never print; they return values and log with `tracing`.
 
@@ -66,11 +67,13 @@ A contract is a seam between files that imports do not show. Its key is `<kind> 
 | `env` | `env DATABASE_URL` | upper case: pydantic settings read `database_url` from `DATABASE_URL`, and no project tells two variables apart by case alone |
 | other | `<kind> <key>` | kinds a pack or an external connector introduces; trimmed |
 
+An origin, which `path_after_origin` reads in one place, may be written with placeholders: a placeholder scheme and host as in `${}://${}/v1/x`, or a placeholder, `//` and a host that holds a placeholder as in `${}//${}/v1/x`, which is what a protocol that holds its own colon leaves. Every segment of an HTTP path is trimmed of whitespace, so `/bookings /{id}` and `/bookings/{id}` are one key.
+
 Every site has a role. `declares`: a schema or spec defines it (OpenAPI, `.proto`, GraphQL SDL, a Prisma model, a migration, `.env.example`). `serves`: code implements it (a controller, a resolver). `calls`: code uses it (a fetch, a query, an env read). A Prisma model declares both its model name and its mapped table, so `prisma.bookingItem` and `FROM booking_items` meet at the schema.
 
 Keys meet by equality, except HTTP: a call and a route meet when the methods are equal or either is `*`, and the paths, after `Setup.http_prefixes` is stripped from either side, have the same number of segments, each equal or `{}` on either side. `GET /api/bookings/me` meets `GET /bookings/{}` under the prefix `/api`.
 
-Framework knowledge lives in rule packs (`gsttt_core::rules`), not in connector code. A pack is a Lua table of call, decorator, chain, embed and assignment rules; a connector finds the sites with `callee_matches` and hands each to the rule's `apply`, which returns a fact, a blind spot or nothing. A pack is active in a project when one of its `detect` package names is a dependency in that project's manifest, or always when `detect` is empty. Built-in packs live beside their connector; a user's packs come from the config and replace a built-in pack of the same name.
+Framework knowledge lives in rule packs (`gsttt_core::rules`), not in connector code. A pack is a TOML file of call, decorator, chain, embed and assignment rules; a connector finds the sites with `callee_matches` and hands each to the rule's `apply`, which returns a fact, a blind spot or nothing. A pack is active in a project when one of its `detect` package names is a dependency in that project's manifest, or always when `detect` is empty. Built-in packs live beside their connector; a user's packs come from `.gsttt/packs/` and replace a built-in pack of the same name.
 
 A call or decorator rule can take a key prefix from where its receiver was made (`receiver`: `router = APIRouter(prefix="/x")`, `Blueprint(url_prefix=…)`) or from a decorator of the enclosing class (`class`: NestJS `@Controller("bookings")`), and a decorator rule can add one read at the decorator itself (`prefix`). A rule with `receiver` or `class` applies only where that maker is found: the receiver is a name bound in the same file to a call matching `from`, or the innermost enclosing class carries a decorator matching `from`. A receiver imported from another file is left to `link`, which sees both files. A `Prefix` without `key` only gates the rule (`const app = express()`), which is also how a rule stays off `cache.get("/x")`.
 
@@ -103,7 +106,7 @@ gsttt dependents <path>   gsttt dependencies <path>   gsttt path <from> <to>
 gsttt contract <query>    gsttt coverage              gsttt status
 gsttt mcp                           MCP server on stdio
 gsttt hook session-start            one line of context for a Claude Code session
-gsttt init                          write .gsttt/init.lua and LuaLS stubs
+gsttt init                          write .gsttt/config.toml and the JSON Schemas that check it
 gsttt config check | show           evaluate the config; print errors or the effective setup
 ```
 
@@ -113,26 +116,42 @@ Global flags: `-C <dir>`, `--json`, `--all`, `--no-refresh`. `--changed` takes t
 
 **Hook.** `gsttt hook session-start` reads the snapshot header with `peek` and prints one line (`gsttt: 4,213 files indexed at a1b2c3d (3 dirty), 2 h ago; use the gsttt tools for impact before changing shared code`) or nothing when there is no snapshot. It runs no git command and finishes in under 10 ms.
 
-**Plugin.** `plugin/` is a Claude Code plugin: `.claude-plugin/plugin.json`, `.mcp.json` starting `gsttt mcp`, `hooks/hooks.json` running the hook on `SessionStart`, and a skill that says when to ask gsttt. The repository root carries `.claude-plugin/marketplace.json`, so `/plugin marketplace add SkuratovichA/gsttt` installs it. The plugin expects `gsttt` on `PATH`, and its hook prints an install hint when the binary is missing.
+**Plugin.** `plugin/` is a Claude Code plugin: `.claude-plugin/plugin.json`, which declares the MCP server (`gsttt mcp`) and the hook that runs on `SessionStart` inline, `scripts/gsttt.sh`, which runs both, and a skill that says when to ask gsttt. The repository root carries `.claude-plugin/marketplace.json`, so `/plugin marketplace add SkuratovichA/gsttt` installs it. The wrapper finds `gsttt` on `PATH` or in the directory `install.sh` puts it in, and when it is in neither, the hook prints an install hint for the user and still ends with status 0, so a missing binary never breaks a session.
 
 ## Configuration
 
-`.gsttt/init.lua` is optional; without it every detected module runs with defaults.
+`.gsttt/config.toml` is optional; without it every detected module runs with defaults.
 
-```lua
-local g = require("gsttt")
+```toml
+#:schema ./schema/config.json
 
-g.setup { exclude = { "fixtures/**" }, http_prefixes = { "/api" } }
-g.ts { tsconfig = "tsconfig.base.json" }  -- turn a module on, with options
-g.disable "openapi"
-g.pack(require("packs.billing"))          -- .gsttt/lua/packs/billing.lua
-g.disable_pack "axios"
-g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" }, version = "1", env = {}, provides = {…}, options = {} }  -- env: variables it may read; provides: what it finds and cannot see; options: sent in "open"
+exclude = ["fixtures/**"]
+http_prefixes = ["/api"]
+disable = ["openapi"]
+disable_packs = ["axios"]
+
+[ts]                                 # a table turns a module on, and holds its options
+tsconfig = "tsconfig.base.json"
+
+[[external]]
+name = "kotlin"
+cmd = ["gsttt-kotlin"]
+files = ["**/*.kt"]
+version = "1"
+env = ["JAVA_HOME"]                  # variables it may read
+options = { strict = true }          # sent in "open"
+
+[[external.provides]]                # what it finds and cannot see
+kind = "http"
+role = "serves"
+via = ["ktor"]
+blind_spots = ["routes built at run time"]
 ```
 
-- `g.<module>` exists for every module in the registry; an unknown name fails with the list of known ones. Options are checked against the module's schema when the engine opens it.
-- `require` loads only from `.gsttt/lua/`. The sandbox has `table`, `string`, `math` and `utf8`, no `io`, `os`, `package`, `debug`, `load`, `loadfile` or `dofile`, a memory limit and an instruction limit; `print` goes to the log. Evaluation is deterministic.
-- `gsttt init` writes `.gsttt/init.lua`, LuaLS annotations generated from the module schemas (`.gsttt/types/gsttt.lua`) and `.gsttt/.luarc.json`, so an editor completes and checks the config. `.gsttt/` is the editor workspace: LuaLS reads `.luarc.json` only from the root of the folder it is opened in, so the config is edited with `.gsttt/` opened as the folder, and the paths in `.luarc.json` are relative to it.
+- The top level holds `exclude`, `http_prefixes`, `max_file_bytes`, `detect`, `disable`, `disable_packs`, the `[[external]]` entries and one table per module of the registry. Any other key fails with the keys and the modules it could have been. Modules enter the setup in the order of the registry, whatever the order of the tables, and externals in the order of the file. A module's table is checked against the module's own options when the engine opens it.
+- A pack is a file in `.gsttt/packs/` named for the pack: `billing.toml` holds `name = "billing"`, `language`, `detect` and the rules as `[[calls]]`, `[[decorators]]`, `[[chains]]`, `[[embeds]]` and `[[assigns]]` tables. Only files that end in `.toml` and do not start with `.` are read, in the order of their names. The built-in packs are TOML files read by the same reader.
+- A file is data: nothing in it runs, so the same file gives the same setup. The reader refuses a file that is not a regular file, one that links outside the repository, one over 1 MiB, a date or a time, a float that is not finite, and nesting deeper than 64 levels, where an array of tables counts twice. An error reads `<file>:<line>:<column>: <message>` and is cut at 1 KiB.
+- `gsttt init` writes `.gsttt/config.toml` with its `#:schema` line, and the JSON Schemas of the config and of a pack in `.gsttt/schema/`, so an editor with a TOML language server (taplo, Even Better TOML) completes and checks both. The schemas are generated from the types the reader reads into, `config_schema` for the modules of the registry and `pack_schema`, so a key the editor accepts is a key the reader accepts.
 
 Pack merging is the engine's: built-in packs, minus `disable_packs`, with user packs replacing built-ins of the same name, grouped by `language`.
 

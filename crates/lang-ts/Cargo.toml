@@ -11,7 +11,6 @@ publish.workspace = true
 [dependencies]
 globset.workspace = true
 gsttt-core.workspace = true
-jsonc-parser.workspace = true
 oxc_allocator.workspace = true
 oxc_ast.workspace = true
 oxc_ast_visit.workspace = true
@@ -21,7 +20,6 @@ oxc_syntax.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use gsttt_core::connector::{
     LinkInput, LinkedFact, Parsed, PrepareFile, Project, Provide, SourceFile, salt_of,
 };
-use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseStatus, Resolution};
+use gsttt_core::fact::{ErrorCount, FileFacts, FileTags, Import, ImportKind, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
@@ -43,8 +43,7 @@ pub struct RustProject {
     salt: u64,
 }
 
-/// The salt of a project: what besides the file text decides what `parse` returns. The edition decides the syntax and
-/// the packs decide the contracts, so a change in either reads every file again.
+/// The salt of a project: what besides the file text decides what `parse` returns. The edition decides the syntax and the packs decide the contracts, so a change in either reads every file again.
 fn salt_for(edition: Edition, packs: &[Pack]) -> u64 {
     let packs_json = serde_json::to_string(packs).unwrap_or_default();
     salt_of(&[&edition.to_string(), &packs_json])
@@ -102,8 +101,7 @@ impl RustProject {
         self.packs.iter().any(|pack| pack.name == "sqlx")
     }
 
-    /// Whether `path` is a test file by its place in the package: under a `tests` directory, or named `tests`, `test`,
-    /// `*_test` or `*_tests`.
+    /// Whether `path` is a test file by its place in the package: under a `tests` directory, or named `tests`, `test`, `*_test` or `*_tests`.
     fn is_test(&self, path: &RepoPath) -> bool {
         let relative = path
             .as_str()
@@ -146,14 +144,11 @@ impl Project for RustProject {
         }
         let parse = ast::SourceFile::parse(file.text, self.edition);
         let lines = LineIndex::new(file.text);
-        let errors = parse.errors();
-        let status = match errors.iter().map(|error| error.range().start()).min() {
-            Some(first) => ParseStatus::Recovered {
-                errors: u32::try_from(errors.len()).unwrap_or(u32::MAX),
-                first_error_line: line_at(&lines, first),
-            },
-            None => ParseStatus::Ok,
-        };
+        let mut errors = ErrorCount::default();
+        for error in parse.errors() {
+            errors.note(line_at(&lines, error.range().start()));
+        }
+        let status = errors.status();
         let root = parse.syntax_node();
         let imports = imports::read(&root, &lines, self.reads_query_files(), self.edition);
         let sites = sites::read(&root, &lines, &self.packs, self.edition, &imports);
@@ -210,8 +205,7 @@ impl Project for RustProject {
     }
 }
 
-/// The names each file brings in with `use` or `extern crate`, each with the path it stands for. The first `use` of
-/// a name wins.
+/// The names each file brings in with `use` or `extern crate`, each with the path it stands for. The first `use` of a name wins.
 fn aliases(files: &[PrepareFile<'_>]) -> Aliases {
     files
         .iter()

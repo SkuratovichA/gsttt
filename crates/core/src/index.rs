@@ -1,5 +1,7 @@
 //! One run's result: the graph, what each file said, the projects, the coverage and where it all came from.
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::coverage::Coverage;
@@ -7,8 +9,7 @@ use crate::fact::{ParseStatus, ResolvedImport, UnresolvedSite};
 use crate::graph::Graph;
 use crate::ids::{FileId, Id, ProjectId};
 
-/// Everything a query reads. `records` has one entry per file of the graph, by [`FileId`], and `projects` one
-/// per [`ProjectId`]; the accessors return `None` past either.
+/// Everything a query reads. `records` has one entry per file of the graph, by [`FileId`], and `projects` one per [`ProjectId`]; the accessors return `None` past either.
 #[derive(
     Clone,
     Debug,
@@ -27,8 +28,7 @@ pub struct Index {
     pub records: Vec<FileRecord>,
     pub coverage: Coverage,
     pub info: IndexInfo,
-    /// [`Setup::http_prefixes`](crate::setup::Setup::http_prefixes) of the run, so a query that answers from a
-    /// snapshot matches HTTP paths the way the config asked.
+    /// [`Setup::http_prefixes`](crate::setup::Setup::http_prefixes) of the run, so a query that answers from a snapshot matches HTTP paths the way the config asked.
     pub http_prefixes: Vec<String>,
 }
 
@@ -125,8 +125,7 @@ pub struct Timings {
     pub total: u64,
 }
 
-/// How an index stands against the working tree when an answer is read from it. The engine works it out and the
-/// answers print it, so it lives here where both can reach it.
+/// How an index stands against the working tree when an answer is read from it. The engine works it out and the answers print it, so it lives here where both can reach it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum Freshness {
@@ -153,6 +152,15 @@ impl Freshness {
             }
         }
     }
+}
+
+/// An index and how it stands against the tree it describes. The command line and the MCP server both answer from one, so it lives here beside [`Freshness`] where both can reach it.
+#[derive(Clone, Debug)]
+pub struct Loaded {
+    /// The index to answer from.
+    pub index: Arc<Index>,
+    /// Whether the tree has changed since the index was built.
+    pub freshness: Freshness,
 }
 
 impl Index {

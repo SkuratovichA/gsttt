@@ -1,5 +1,4 @@
-//! Distribution names: the PEP 503 normaliser, the reader of one requirement and the import names that differ
-//! from the name of the distribution that ships them.
+//! Distribution names: the PEP 503 normaliser, the reader of one requirement and the import names that differ from the name of the distribution that ships them.
 
 use std::borrow::Cow;
 
@@ -24,9 +23,7 @@ pub(crate) fn normalize_distribution(name: &str) -> String {
     normalized
 }
 
-/// The normalised distribution a requirement line names: `PyYAML>=6; python_version < "3.12"` gives `pyyaml`,
-/// `requests[socks]==2.0` gives `requests` and `pkg @ https://example.com/pkg.zip` gives `pkg`. `None` for a line
-/// that does not start with a name, such as an option (`-r base.txt`), a path or a URL.
+/// The normalised distribution a requirement line names: `PyYAML>=6; python_version < "3.12"` gives `pyyaml`, `requests[socks]==2.0` gives `requests` and `pkg @ https://example.com/pkg.zip` gives `pkg`. `None` for a line that does not start with a name, such as an option (`-r base.txt`), a path or a URL.
 pub(crate) fn requirement_name(requirement: &str) -> Option<String> {
     let text = requirement.trim();
     let end = text
@@ -36,8 +33,7 @@ pub(crate) fn requirement_name(requirement: &str) -> Option<String> {
     if !name.starts_with(|ch: char| ch.is_ascii_alphanumeric()) {
         return None;
     }
-    // After the name come extras, a version specifier, a marker or ` @ url`. Anything else, such as the `+` of
-    // `git+https://…` or the `:` of `file:///…`, means the line is a URL or a path and no name.
+    // After the name come extras, a version specifier, a marker or ` @ url`. Anything else, such as the `+` of `git+https://…` or the `:` of `file:///…`, means the line is a URL or a path and no name.
     let after = text.get(end..)?.trim_start();
     if !after.is_empty() && !after.starts_with(['[', '(', '<', '>', '=', '!', '~', ';', '@', ',']) {
         return None;
@@ -45,8 +41,7 @@ pub(crate) fn requirement_name(requirement: &str) -> Option<String> {
     Some(normalize_distribution(name))
 }
 
-/// [`normalize_distribution`] for a name that is likely to be normal already: a name of lower-case letters and digits
-/// is its own normal form, and most import names are, so it is borrowed.
+/// [`normalize_distribution`] for a name that is likely to be normal already: a name of lower-case letters and digits is its own normal form, and most import names are, so it is borrowed.
 fn normalized(name: &str) -> Cow<'_, str> {
     if name
         .bytes()
@@ -58,9 +53,7 @@ fn normalized(name: &str) -> Cow<'_, str> {
     }
 }
 
-/// The distributions that may ship the import `module` (a dotted name), most specific first, each normalised, and each
-/// worked out only when the caller asks for it. Most distributions ship a package named like themselves; the ones that
-/// do not are listed in [`known_distribution`].
+/// The distributions that may ship the import `module` (a dotted name), most specific first, each normalised, and each worked out only when the caller asks for it. Most distributions ship a package named like themselves; the ones that do not are listed in [`known_distribution`].
 pub(crate) fn distributions_for_import(module: &str) -> impl Iterator<Item = Cow<'_, str>> {
     let mut segments = module.split('.');
     let top = segments.next().unwrap_or_default();

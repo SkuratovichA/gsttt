@@ -1,5 +1,4 @@
-//! Reads one Python file into facts with the ruff parser: its imports, the contract sites the packs in force
-//! name, and what `link` needs to compose route prefixes across files.
+//! Reads one Python file into facts with the ruff parser: its imports, the contract sites the packs in force name, and what `link` needs to compose route prefixes across files.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -7,8 +6,8 @@ use std::collections::HashMap;
 use gsttt_core::connector::{Parsed, SourceFile};
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
-    FileFacts, Import, ImportFlags, ImportKind, Line, ParseFailure, ParseStatus, UnresolvedReason,
-    UnresolvedSite,
+    ErrorCount, FileFacts, Import, ImportFlags, ImportKind, Line, ParseFailure, ParseStatus,
+    UnresolvedReason, UnresolvedSite,
 };
 use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
@@ -18,7 +17,7 @@ use ruff_python_ast::{
     Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtImport,
     StmtImportFrom, StmtTry, WithItem,
 };
-use ruff_python_parser::{ParseError, parse_unchecked_source};
+use ruff_python_parser::parse_unchecked_source;
 use ruff_text_size::{Ranged, TextSize};
 
 use crate::extra::{Mount, PyExtra, Route, RouterPrefix, Target};
@@ -31,8 +30,7 @@ use crate::site::{
     join_prefixes, literal_of, text_of,
 };
 
-/// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags, and with the status
-/// `manifest_status` gives it.
+/// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags, and with the status `manifest_status` gives it.
 pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<PyExtra> {
     let tags = tags_of(file.path);
     if !is_python_source(file.path) {
@@ -54,12 +52,17 @@ pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<Py
     collector.visit_body(parsed.suite());
     let mut read = collector.finish(is_package_init(file.path));
     read.facts.tags = tags;
-    read.facts.status = status_of(parsed.errors(), &lines, file.text.len());
+    // The parser puts the error of a bracket left open one byte past the last line, which `error_line` holds to the last byte.
+    let mut errors = ErrorCount::default();
+    for error in parsed.errors() {
+        let offset = usize::from(error.location.start());
+        errors.note(error_line(&lines, offset, file.text.len()));
+    }
+    read.facts.status = errors.status();
     read
 }
 
-/// A `pyproject.toml` that is not valid TOML has failed: the project reads nothing from it, and the packs it would have
-/// switched on are missing, which the coverage should not hide. Every other manifest is read leniently and is fine.
+/// A `pyproject.toml` that is not valid TOML has failed: the project reads nothing from it, and the packs it would have switched on are missing, which the coverage should not hide. Every other manifest is read leniently and is fine.
 fn manifest_status(file: &SourceFile<'_>) -> ParseStatus {
     if file.path.file_name() != "pyproject.toml" {
         return ParseStatus::Ok;
@@ -75,30 +78,13 @@ fn manifest_status(file: &SourceFile<'_>) -> ParseStatus {
     }
 }
 
-/// `len` is the length of the text: the parser puts the error of a bracket left open at the end of the text, one byte
-/// past the last line, so an offset is held to the last byte to name a line the file has.
-fn status_of(errors: &[ParseError], lines: &LineIndex, len: usize) -> ParseStatus {
-    let Some(first) = errors
-        .iter()
-        .map(|error| usize::from(error.location.start()))
-        .min()
-    else {
-        return ParseStatus::Ok;
-    };
-    ParseStatus::Recovered {
-        errors: u32::try_from(errors.len()).unwrap_or(u32::MAX),
-        first_error_line: error_line(lines, first, len),
-    }
-}
-
 /// The line of the byte at `offset` in a text of `len` bytes, an offset past the end being held to the last byte.
 fn error_line(lines: &LineIndex, offset: usize, len: usize) -> Line {
     let last_byte = len.saturating_sub(1);
-    lines.line(u32::try_from(offset.min(last_byte)).unwrap_or(u32::MAX))
+    lines.line_at(offset.min(last_byte))
 }
 
-/// A name assigned a call, `router = APIRouter(prefix="/bookings")`. Rules written for a receiver read it to tell
-/// what the receiver was made by.
+/// A name assigned a call, `router = APIRouter(prefix="/bookings")`. Rules written for a receiver read it to tell what the receiver was made by.
 struct Binding<'a> {
     callee: Name,
     arguments: &'a Arguments,
@@ -130,8 +116,7 @@ struct Collector<'a> {
     imports: Imports<'a>,
     flags: ImportFlags,
     frames: Vec<Frame<'a>>,
-    /// Names assigned a call anywhere in the file. A name assigned twice keeps its last assignment: the file is
-    /// read as one scope, which is how a module-level router or client is used.
+    /// Names assigned a call anywhere in the file. A name assigned twice keeps its last assignment: the file is read as one scope, which is how a module-level router or client is used.
     bindings: HashMap<String, Binding<'a>>,
     /// The buffers the name of each call and subscript is read into, so that none of them allocates.
     scratch: Name,
@@ -153,11 +138,9 @@ impl<'a> Collector<'a> {
         }
     }
 
-    /// `package_init` tells a package's `__init__`, whose imports `link` follows a router through when another file
-    /// mounts the name the package gives it.
+    /// `package_init` tells a package's `__init__`, whose imports `link` follows a router through when another file mounts the name the package gives it.
     fn finish(mut self, package_init: bool) -> Parsed<PyExtra> {
-        // The prefix of a router matters to every file that makes one, because another file may fill it with routes or
-        // mount it; the binds matter to a file that mounts something and to the file a router is re-exported from.
+        // The prefix of a router matters to every file that makes one, because another file may fill it with routes or mount it; the binds matter to a file that mounts something and to the file a router is re-exported from.
         if self
             .bindings
             .values()
@@ -286,8 +269,7 @@ impl<'a> Collector<'a> {
         self.frames.pop();
     }
 
-    /// Applies the decorator rules to one decorator of the function or class called `member`, then reads what the
-    /// decorator's own arguments hold.
+    /// Applies the decorator rules to one decorator of the function or class called `member`, then reads what the decorator's own arguments hold.
     fn decorator(&mut self, decorator: &'a Decorator, member: &str) {
         let line = self.line_of(decorator.expression.start());
         let (call, name) = match &decorator.expression {
@@ -320,8 +302,7 @@ impl<'a> Collector<'a> {
                             continue;
                         };
                         if self.is_router(receiver) {
-                            // Whether a router's own prefix applies depends on how the router is mounted, and
-                            // `link` knows that; the route keeps the path it was written with.
+                            // Whether a router's own prefix applies depends on how the router is mounted, and `link` knows that; the route keeps the path it was written with.
                             prefix = Some(prefix.unwrap_or_default());
                             router = receiver;
                         } else {
@@ -360,8 +341,7 @@ impl<'a> Collector<'a> {
         })
     }
 
-    /// The prefix a rule's `receiver` reads from the call that made `var`, when `var` is a name of this file made
-    /// by one of the callees the rule names.
+    /// The prefix a rule's `receiver` reads from the call that made `var`, when `var` is a name of this file made by one of the callees the rule names.
     fn receiver_prefix(&self, maker: &Prefix, var: Option<&str>) -> Option<String> {
         let binding = self.bindings.get(var?)?;
         prefix_made_by(maker, &binding.callee, binding.arguments)
@@ -373,8 +353,7 @@ impl<'a> Collector<'a> {
             .is_some_and(|binding| is_router_type(&binding.callee))
     }
 
-    /// The prefix each router variable of the file declares in its own constructor, read the way the packs read the
-    /// receiver of a route. A router without a prefix is left out, which `link` reads as the empty prefix.
+    /// The prefix each router variable of the file declares in its own constructor, read the way the packs read the receiver of a route. A router without a prefix is left out, which `link` reads as the empty prefix.
     fn router_prefixes(&self) -> Vec<RouterPrefix> {
         let makers: Vec<&Prefix> = self
             .packs
@@ -404,8 +383,7 @@ impl<'a> Collector<'a> {
         routers
     }
 
-    /// Keeps what a rule made of a site. A route a rule finds on `router` is not a fact of the file: `link` serves
-    /// it behind the prefixes of the mounts above the router.
+    /// Keeps what a rule made of a site. A route a rule finds on `router` is not a fact of the file: `link` serves it behind the prefixes of the mounts above the router.
     fn record(&mut self, outcome: Outcome, router: Option<&str>) {
         match outcome {
             Outcome::Fact(fact) => match router {
@@ -425,8 +403,7 @@ impl<'a> Collector<'a> {
         }
     }
 
-    /// Reads `expr` as a name into the collector's buffers and hands it to `read`. A call or a subscript on anything
-    /// else, `make()()` or `(a or b)()`, has no name to match.
+    /// Reads `expr` as a name into the collector's buffers and hands it to `read`. A call or a subscript on anything else, `make()()` or `(a or b)()`, has no name to match.
     fn named(&mut self, expr: &Expr, read: impl FnOnce(&mut Self, &Name)) {
         let mut name = std::mem::take(&mut self.scratch);
         if name.read(expr, &self.imports) {
@@ -464,16 +441,14 @@ impl<'a> Collector<'a> {
                         let Some(read) = read else {
                             continue;
                         };
-                        // A client made with no base URL adds nothing, so its calls are read as the module-level
-                        // ones are, which is what tells a URL with no literal path.
+                        // A client made with no base URL adds nothing, so its calls are read as the module-level ones are, which is what tells a URL with no literal path.
                         (!read.is_empty()).then_some(read)
                     }
                     None => None,
                 };
                 let outcome =
                     rule.apply(&pack.name, &site, prefix.as_deref(), line, callee.written());
-                // A route a call declares, Django's `path()`, belongs to the module's URL list, which an
-                // including module mounts like a router.
+                // A route a call declares, Django's `path()`, belongs to the module's URL list, which an including module mounts like a router.
                 self.record(outcome, Some(""));
             }
             for rule in &pack.embeds {
@@ -485,8 +460,7 @@ impl<'a> Collector<'a> {
                     arguments: Some(&call.arguments),
                     member: None,
                 };
-                // The document starts where the text the rule read does, which is not the line of the call when
-                // the argument is on a line of its own.
+                // The document starts where the text the rule read does, which is not the line of the call when the argument is on a line of its own.
                 let embed =
                     EmbedSite::new(site, Source::new(self.source, self.lines, &rule.lang), line);
                 match rule.apply(&pack.name, &embed, line, callee.written()) {
@@ -504,9 +478,7 @@ impl<'a> Collector<'a> {
         }
     }
 
-    /// `importlib.import_module("a.b")` and `__import__("a.b")`. Returns whether the call was one. A bare
-    /// `import_module` is a function the file defines or gets from elsewhere, not importlib's, whose import the file
-    /// would have spelled out.
+    /// `importlib.import_module("a.b")` and `__import__("a.b")`. Returns whether the call was one. A bare `import_module` is a function the file defines or gets from elsewhere, not importlib's, whose import the file would have spelled out.
     fn dynamic_import(&mut self, call: &ExprCall, callee: &Name, line: Line) -> bool {
         let imported = callee.imported();
         if !matches!(imported, "importlib.import_module" | "__import__") {
@@ -529,8 +501,7 @@ impl<'a> Collector<'a> {
 
     /// A call that mounts a router or an included URL module under a prefix. Returns whether the call was one.
     fn mount(&mut self, call: &ExprCall, callee: &Name, line: Line) -> bool {
-        // The function is told by the name its import gives it, `path` for `p` after `from django.urls import path as
-        // p`; the router the mount is called on is read as written, because `link` follows it through the binds.
+        // The function is told by the name its import gives it, `path` for `p` after `from django.urls import path as p`; the router the mount is called on is read as written, because `link` follows it through the binds.
         let called = callee.imported();
         let last = called.rsplit('.').next().unwrap_or(called);
         match last {
@@ -550,8 +521,7 @@ impl<'a> Collector<'a> {
         }
     }
 
-    /// `app.include_router(router, prefix="/api")`; `keywords` name the router's and the prefix's keyword, and
-    /// `replaces` tells a prefix that stands in for the router's own from one that goes in front of it.
+    /// `app.include_router(router, prefix="/api")`; `keywords` name the router's and the prefix's keyword, and `replaces` tells a prefix that stands in for the router's own from one that goes in front of it.
     fn router_mount(
         &mut self,
         call: &ExprCall,
@@ -690,11 +660,7 @@ impl<'a> Collector<'a> {
 
     /// Whether the name assigned here matches one of the `patterns` of a rule.
     ///
-    /// A bare name in a class body is also matched as qualified by the classes around it, as many as the pattern has
-    /// segments before its last, so `*.Meta.db_table` reads a `db_table` in a class `Meta` that sits in another class
-    /// and `*.__tablename__` a `__tablename__` in the body of a class. A pattern of one segment matches the name
-    /// wherever it is assigned. A name written with dots, `self.x` or `Model.x`, sets an attribute of an object and is
-    /// no class-body assignment, so no pattern matches it.
+    /// A bare name in a class body is also matched as qualified by the classes around it, as many as the pattern has segments before its last, so `*.Meta.db_table` reads a `db_table` in a class `Meta` that sits in another class and `*.__tablename__` a `__tablename__` in the body of a class. A pattern of one segment matches the name wherever it is assigned. A name written with dots, `self.x` or `Model.x`, sets an attribute of an object and is no class-body assignment, so no pattern matches it.
     fn target_matches(&self, patterns: &OneOrMany, name: &str) -> bool {
         if name.contains('.') {
             return false;
@@ -824,11 +790,7 @@ impl<'a> Collector<'a> {
 
 /// Whether a call whose document `rule` could not read leaves something unread, given the call's first argument.
 ///
-/// A string built at run time is a document that cannot be read, whoever calls. For the rest the callee tells:
-/// `text(query)` can only hold a statement, but `pool.execute(task)` matched `*.execute` by its name alone and may be
-/// no SQL at all, so a rule matched through a wildcard stays silent about a name, an attribute or a subscript. A call
-/// holds a document or a query object of its own, read where it is (`conn.execute(text("…"))`,
-/// `session.execute(select(…))`), and a call with no argument holds nothing.
+/// A string built at run time is a document that cannot be read, whoever calls. For the rest the callee tells: `text(query)` can only hold a statement, but `pool.execute(task)` matched `*.execute` by its name alone and may be no SQL at all, so a rule matched through a wildcard stays silent about a name, an attribute or a subscript. A call holds a document or a query object of its own, read where it is (`conn.execute(text("…"))`, `session.execute(select(…))`), and a call with no argument holds nothing.
 fn leaves_unread(rule: &EmbedRule, matched: &str, argument: Option<&Expr>) -> bool {
     let Some(argument) = argument else {
         return false;
@@ -839,8 +801,7 @@ fn leaves_unread(rule: &EmbedRule, matched: &str, argument: Option<&Expr>) -> bo
     !matches!(argument, Expr::Call(_)) && rule.callee.iter().any(|pattern| pattern == matched)
 }
 
-/// The prefix a rule's `receiver` reads from the call of `callee` that made the receiver, when the rule names that
-/// callee.
+/// The prefix a rule's `receiver` reads from the call of `callee` that made the receiver, when the rule names that callee.
 fn prefix_made_by(maker: &Prefix, callee: &Name, arguments: &Arguments) -> Option<String> {
     let matched = callee.matching(&maker.from)?;
     Some(maker.read(&CallSite {
@@ -850,8 +811,7 @@ fn prefix_made_by(maker: &Prefix, callee: &Name, arguments: &Arguments) -> Optio
     }))
 }
 
-/// The call a method is called on where it is written, `httpx.Client(base_url="…")` of
-/// `httpx.Client(base_url="…").get(…)`: a receiver that no name holds.
+/// The call a method is called on where it is written, `httpx.Client(base_url="…")` of `httpx.Client(base_url="…").get(…)`: a receiver that no name holds.
 fn inline_maker<'e>(func: &'e Expr, imports: &Imports<'_>) -> Option<(Name, &'e Arguments)> {
     let Expr::Attribute(attribute) = func else {
         return None;
@@ -862,8 +822,7 @@ fn inline_maker<'e>(func: &'e Expr, imports: &Imports<'_>) -> Option<(Name, &'e 
     Some((Name::of(&made.func, imports)?, &made.arguments))
 }
 
-/// Whether a callee builds an object that routes are declared on and that is mounted somewhere else, as opposed to
-/// an application, which nothing mounts.
+/// Whether a callee builds an object that routes are declared on and that is mounted somewhere else, as opposed to an application, which nothing mounts.
 fn is_router_type(callee: &Name) -> bool {
     matches!(
         callee.imported().rsplit('.').next(),
@@ -871,8 +830,7 @@ fn is_router_type(callee: &Name) -> bool {
     )
 }
 
-/// The part of a dotted callee before its last segment: `router` of `router.get`, `self.client` of
-/// `self.client.get`. `None` for a bare name.
+/// The part of a dotted callee before its last segment: `router` of `router.get`, `self.client` of `self.client.get`. `None` for a bare name.
 fn receiver_of(callee: &str) -> Option<&str> {
     callee.rsplit_once('.').map(|(receiver, _)| receiver)
 }
@@ -912,8 +870,7 @@ fn names_import_error(expr: &Expr) -> bool {
     }
 }
 
-/// Whether an assignment in a class body declares a field the way pydantic reads one: an annotated public name
-/// that is not the model's own configuration.
+/// Whether an assignment in a class body declares a field the way pydantic reads one: an annotated public name that is not the model's own configuration.
 fn is_field(name: &str, annotated: bool) -> bool {
     annotated && !name.starts_with('_') && name != "model_config"
 }
@@ -922,10 +879,7 @@ fn is_name(expr: &Expr, wanted: &str) -> bool {
     matches!(expr, Expr::Name(name) if name.id.as_str() == wanted)
 }
 
-/// The specifier `importlib.import_module(name, package)` imports. A relative name is taken from the literal `package`;
-/// with no package, or with `__package__`, it is taken from the package of the file, as a relative import is. `None`
-/// when the package is only known at run time or the name climbs out of it. `__import__` reads the package a
-/// relative name starts from out of `globals` and not out of an argument, so its name stays as written.
+/// The specifier `importlib.import_module(name, package)` imports. A relative name is taken from the literal `package`; with no package, or with `__package__`, it is taken from the package of the file, as a relative import is. `None` when the package is only known at run time or the name climbs out of it. `__import__` reads the package a relative name starts from out of `globals` and not out of an argument, so its name stays as written.
 fn dynamic_spec(call: &ExprCall, imported: &str, name: &str) -> Option<String> {
     if imported == "__import__" || !name.starts_with('.') {
         return Some(name.to_owned());
@@ -938,9 +892,7 @@ fn dynamic_spec(call: &ExprCall, imported: &str, name: &str) -> Option<String> {
     }
 }
 
-/// The `env_prefix` a settings class declares, in `model_config = SettingsConfigDict(env_prefix="APP_")`, in a
-/// `model_config` dict or in an inner `class Config`. Empty when there is none, and the computed text when it is held
-/// in a variable, so that the name of a field built on it is an unread site.
+/// The `env_prefix` a settings class declares, in `model_config = SettingsConfigDict(env_prefix="APP_")`, in a `model_config` dict or in an inner `class Config`. Empty when there is none, and the computed text when it is held in a variable, so that the name of a field built on it is an unread site.
 fn env_prefix(body: &[Stmt]) -> String {
     body.iter()
         .find_map(|stmt| match stmt {

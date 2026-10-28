@@ -2,10 +2,9 @@
 
 use gsttt_core::fact::{Import, ImportFlags, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::Freshness;
-use gsttt_core::query::{External, Neighbour, dependencies, dependents};
+use gsttt_core::query::{Answer, External, Neighbour, dependencies, dependents};
+use gsttt_core::testing::{To, Tree, file, package};
 use gsttt_scenario::scenario;
-
-use crate::fixture::{To, Tree, file, package};
 
 fn neighbour(path: &str, kinds: &[ImportKind], type_only: bool) -> Neighbour {
     Neighbour {
@@ -242,8 +241,7 @@ fn missing(spec: &str, kind: ImportKind, line: u32) -> (Import, To) {
 
 #[test]
 fn possible_misses_are_ordered_by_path_then_line_then_specifier() {
-    // Each file lists its imports out of line order, as a connector that finds dynamic imports after static ones
-    // would.
+    // Each file lists its imports out of line order, as a connector that finds dynamic imports after static ones would.
     let mut tree = Tree::new().read_by("ts", "src/old.ts");
     for (from, spec, kind, line) in [
         ("src/b.ts", "./old", ImportKind::Static, 9),
@@ -393,6 +391,19 @@ fn a_path_no_connector_read_is_not_in_the_index() {
     let answer = dependents(&index, Freshness::Fresh, "notes.txt");
     assert!(!answer.in_index);
     assert_eq!(answer.path, "notes.txt");
+}
+
+#[test]
+fn an_answer_holds_its_file_when_the_index_does() {
+    let index = Tree::new()
+        .imports("b.ts", "a.ts")
+        .unread("notes.txt")
+        .build();
+
+    assert!(dependents(&index, Freshness::Fresh, "a.ts").held());
+    assert!(dependencies(&index, Freshness::Fresh, "b.ts").held());
+    assert!(!dependents(&index, Freshness::Fresh, "notes.txt").held());
+    assert!(!dependencies(&index, Freshness::Fresh, "nowhere.ts").held());
 }
 
 #[test]

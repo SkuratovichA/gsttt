@@ -7,10 +7,9 @@ use gsttt_core::query::{
     Answer, Entries, ImpactRequest, contract, coverage, dependencies, dependents, impact, path,
     status,
 };
+use gsttt_core::testing::{To, Tree, package, resolving};
 use gsttt_scenario::scenario;
 use serde_json::{Value, json, to_value};
-
-use crate::fixture::{To, Tree, package, resolving};
 
 fn hub(count: usize) -> Tree {
     (0..count).fold(Tree::new(), |tree, n| {
@@ -72,7 +71,7 @@ fn json_keeps_the_edge_kinds_of_a_dependent() {
         .import(
             "b.ts",
             Import::new("./a", ImportKind::ReExportAll, 1),
-            crate::fixture::file("a.ts"),
+            gsttt_core::testing::file("a.ts"),
         )
         .build();
 

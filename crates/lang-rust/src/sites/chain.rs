@@ -1,12 +1,8 @@
 //! The two rule kinds that read names rather than calls.
 //!
-//! A chain is a path followed by field accesses, method names and string indexes: `Config::DATABASE.url` is the root
-//! `Config` with the segments `DATABASE` and `url`, and `settings["db"].host()` is the root `settings` with the
-//! segments `db` and `host`. A segment that is computed, as in `settings[key]`, is unknown.
+//! A chain is a path followed by field accesses, method names and string indexes: `Config::DATABASE.url` is the root `Config` with the segments `DATABASE` and `url`, and `settings["db"].host()` is the root `settings` with the segments `db` and `host`. A segment that is computed, as in `settings[key]`, is unknown.
 //!
-//! An assignment is a `const`, a `static`, a `let`, a field given a value in a struct literal, or `target = value`.
-//! The target is the last name written, and the value is the first argument of the site. Where Python has a base
-//! class, Rust has the trait of the enclosing `impl` block, which is what a rule's `class` is matched against.
+//! An assignment is a `const`, a `static`, a `let`, a field given a value in a struct literal, or `target = value`. The target is the last name written, and the value is the first argument of the site. Where Python has a base class, Rust has the trait of the enclosing `impl` block, which is what a rule's `class` is matched against.
 
 use gsttt_core::rules::{AssignRule, Pack, callee_matches};
 use ra_ap_edition::Edition;
@@ -81,8 +77,7 @@ impl Reader<'_> {
     }
 }
 
-/// `pattern` as a root of `names`, with the root as written and the segments after it. `None` when the chain does not
-/// start with the root, or when a name inside the root is computed.
+/// `pattern` as a root of `names`, with the root as written and the segments after it. `None` when the chain does not start with the root, or when a name inside the root is computed.
 fn split_root<'n>(
     pattern: &str,
     names: &'n [Option<&'n str>],
