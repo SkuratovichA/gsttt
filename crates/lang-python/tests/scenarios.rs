@@ -1820,6 +1820,13 @@ fn the_built_in_packs_are_python_packs_named_after_their_files() {
     }
 }
 
+/// The snapshot holds every rule of every pack, so a change to the way packs are written cannot change what they say without a reviewer seeing it.
+#[test]
+fn every_built_in_pack_says_what_it_said() {
+    let packs = builtin_packs(PACKS).unwrap();
+    insta::assert_json_snapshot!(packs);
+}
+
 // Review fixes, round 3. Each test fails on the code the second round left and passes on its fix.
 
 const API_DECLARES_COMMON: &str =

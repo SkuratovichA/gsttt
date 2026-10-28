@@ -14,6 +14,7 @@ mod env;
 mod gates;
 mod imports;
 mod modules;
+mod packs;
 mod provides;
 mod requests;
 mod routes;
