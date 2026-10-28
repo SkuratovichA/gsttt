@@ -1149,6 +1149,24 @@ mod tests {
         assert!(own.is_empty(), "{own:?}");
     }
 
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "An own fact the link leaves out of a re-keyed line loses its site"
+    )]
+    #[test]
+    fn an_own_fact_the_link_leaves_out_of_a_re_keyed_line_loses_its_site() {
+        let rig = Rig::new();
+        // The place holds no key, so the engine cannot tell which own fact the linked one re-keys.
+        let text = "fact 1 serves http GET /a\nfact 1 serves http GET /b\nlinked 1 serves http GET /api/a\n";
+        let dir = init_repo(&[("a.txt", text)]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(sites_of(&run.index, "http GET /api/a"), ["a.txt:1 serves"]);
+        for own in ["http GET /a", "http GET /b"] {
+            let sites = sites_of(&run.index, own);
+            assert!(sites.is_empty(), "{own}: {sites:?}");
+        }
+    }
+
     #[gsttt_scenario::scenario("indexing", "An embedded fact is not replaced by a linked one")]
     #[test]
     fn an_embedded_fact_is_not_replaced_by_a_linked_one() {

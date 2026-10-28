@@ -63,3 +63,4 @@
 - [x] 6.1 A site from the link phase replaces the site of each own fact of the same file with the same line, role and contract kind, so a declaration a mount re-keys is a site once under its linked key: embedded facts are never replaced, a file whose link returned nothing or panicked keeps its own facts, each case has a scenario and a test, and step 11 of the architecture document states the rule
 - [x] 6.2 The snapshot layout is 3, because a stored index answers as it is and a snapshot of layout 2 holds both the parsed and the linked site of a re-keyed declaration; the prefix test pins that layout 2 counts as absent
 - [x] 6.3 `ConnectorCoverage.projects` documents the repository root as `.`, the spelling the engine writes to people
+- [x] 6.4 A link that re-keys a line returns a fact for every own fact of that line, role and kind, one per mount: the requirement says so, and a scenario pins that an own fact the link leaves out loses its site
