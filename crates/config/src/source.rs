@@ -108,6 +108,22 @@ mod tests {
     }
 
     #[test]
+    fn a_file_that_leaves_the_repository_and_the_bound_names_the_repository() {
+        let (root, outside) = tree();
+        fs::create_dir_all(root.path().join(".gsttt/packs")).unwrap();
+        fs::write(outside.path().join("x.toml"), "name = \"x\"\n").unwrap();
+        symlink(
+            outside.path().join("x.toml"),
+            root.path().join(".gsttt/packs/x.toml"),
+        )
+        .unwrap();
+        let error =
+            read_source(root.path(), ".gsttt/packs/x.toml", Some(".gsttt/packs")).unwrap_err();
+        // Both checks fail for this file, and the repository is the one that comes first: the error names the wider of the two.
+        assert_eq!(error.to_string(), "resolves outside the repository");
+    }
+
+    #[test]
     fn a_file_inside_the_repository_and_outside_the_bound_says_which_it_leaves() {
         let (root, _outside) = tree();
         fs::create_dir_all(root.path().join(".gsttt/packs")).unwrap();
