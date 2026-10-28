@@ -1,6 +1,5 @@
 //! `cargo xtask package`.
 
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Read as _;
 use std::path::Path;
@@ -39,12 +38,7 @@ fn headers(archive: &Path) -> Vec<tar::Header> {
 }
 
 fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .fold(String::new(), |mut hex, byte| {
-            write!(hex, "{byte:02x}").unwrap();
-            hex
-        })
+    faster_hex::hex_string(&Sha256::digest(bytes))
 }
 
 #[gsttt_scenario::scenario("distribution", "A package holds the binary and its checksum")]
@@ -82,6 +76,20 @@ fn a_package_holds_the_binary_and_its_checksum() {
         checksum,
         format!("{}  {name}\n", sha256(&std::fs::read(&archive).unwrap()))
     );
+    // The test and the code under test share one hex encoder, so the shape of the line is read on its own: 64 lower-case hex digits, two spaces and the name of the archive.
+    let (digest, listed) = checksum
+        .strip_suffix('\n')
+        .unwrap()
+        .split_once("  ")
+        .unwrap();
+    assert_eq!(digest.len(), 64, "{checksum:?}");
+    assert!(
+        digest
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')),
+        "{checksum:?}"
+    );
+    assert_eq!(listed, name);
 }
 
 /// Packing twice gives the same bytes. This alone would also hold for a header that holds the time of the packing, as long as both runs fall in the same second, so `the_archive_holds_nothing_of_the_machine_or_the_moment` pins the fields.

@@ -10,7 +10,7 @@ rust-version = "1.99"
 license = "Apache-2.0"
 repository = "https://github.com/SkuratovichA/gsttt"
 homepage = "https://gsttt.arstoien.com"
-description = "Glass sphere telling the truth: what a code change affects, across files, packages and languages"
+description = "What a code change affects, across files, packages and languages"
 keywords = ["impact-analysis", "dependency-graph", "mcp", "monorepo", "static-analysis"]
 categories = ["command-line-utilities", "development-tools"]
 publish = false
@@ -69,6 +69,10 @@ fixedbitset = "0.5.7"
 memchr = "2.8.3"
 papaya = "0.2.5"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
+# The key a person's trust is recorded under. Unlike the xxh3 of the fact keys it is a hash that nobody can steer to a chosen value.
+sha2 = "0.11.1"
+# The hex form of content ids, the trust key and the checksums of the release packages. `gix` already brings it.
+faster-hex = { version = "0.10.1", default-features = false, features = ["std"] }
 tempfile = "3.27.0"
 # Process groups and opening files without waiting. Only for unix, which gsttt is.
 rustix = "1.1.6"
@@ -95,9 +99,8 @@ mimalloc = "0.1.52"
 anyhow = "1.0.104"
 xshell = "0.2.7"
 
-# Release packages, written in-process (xtask) so that an archive is the same on every machine, whatever `tar` and `sha256sum` the machine has.
+# Release packages, written in-process (xtask) so that an archive is the same on every machine, whatever `tar` and `sha256sum` the machine has. Their checksums use `sha2`, above.
 flate2 = "1.1.10"
-sha2 = "0.11.1"
 tar = { version = "0.4.46", default-features = false }
 
 # Proc macros.

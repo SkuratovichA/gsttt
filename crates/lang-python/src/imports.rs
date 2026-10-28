@@ -1,6 +1,4 @@
-//! What the imports of a file bind, and the dotted names of the file read through them. After `import requests as r`,
-//! `r.get` is also `requests.get`, which is the spelling the packs name; after `from requests import post as send`,
-//! `send` is `requests.post`.
+//! What the imports of a file bind, and the dotted names of the file read through them. After `import requests as r`, `r.get` is also `requests.get`, which is the spelling the packs name; after `from requests import post as send`, `send` is `requests.post`.
 
 use std::collections::HashMap;
 
@@ -24,9 +22,7 @@ struct Bound<'a> {
     line: Line,
 }
 
-/// The names the imports of a file bind, in source order. The file is read as one scope, which is how a module-level
-/// alias is used, so from an import on, a name stands for the last import that bound it. A name used above its import
-/// is not followed.
+/// The names the imports of a file bind, in source order. The file is read as one scope, which is how a module-level alias is used, so from an import on, a name stands for the last import that bound it. A name used above its import is not followed.
 #[derive(Debug, Default)]
 pub(crate) struct Imports<'a> {
     bound: Vec<Bound<'a>>,
@@ -45,8 +41,7 @@ impl<'a> Imports<'a> {
                 name: None,
                 line,
             }),
-            // `import a.b.c` binds `a`, which is not the module the import resolves to: no router is reached through
-            // it, and the name stands for itself.
+            // `import a.b.c` binds `a`, which is not the module the import resolves to: no router is reached through it, and the name stands for itself.
             None if module.contains('.') => {
                 let first = module.split('.').next().unwrap_or(module);
                 self.renamed.remove(first);
@@ -89,9 +84,7 @@ impl<'a> Imports<'a> {
         self.bound.push(bound);
     }
 
-    /// Appends `name` to `out` with its first segment replaced by what an import binds that segment to, and tells
-    /// whether one did. A name bound by a relative import is left as written: it names a module of the repository,
-    /// which the packs do not.
+    /// Appends `name` to `out` with its first segment replaced by what an import binds that segment to, and tells whether one did. A name bound by a relative import is left as written: it names a module of the repository, which the packs do not.
     fn rewrite(&self, name: &str, out: &mut String) -> bool {
         let head_end = name.find('.').unwrap_or(name.len());
         let Some((head, tail)) = name.split_at_checked(head_end) else {
@@ -134,10 +127,7 @@ pub(crate) fn specifier(level: u32, module: &str) -> String {
     format!("{}{module}", ".".repeat(dots))
 }
 
-/// The module `importlib.import_module(name, package)` imports, as an absolute name. A name that starts with dots is
-/// taken from `package`: the first dot stands for `package` itself and each further one climbs a component out of it.
-/// `None` when `package` is empty or the name climbs out of it, which `importlib` rejects; a name with no leading dot
-/// is already absolute.
+/// The module `importlib.import_module(name, package)` imports, as an absolute name. A name that starts with dots is taken from `package`: the first dot stands for `package` itself and each further one climbs a component out of it. `None` when `package` is empty or the name climbs out of it, which `importlib` rejects; a name with no leading dot is already absolute.
 pub(crate) fn absolute_name(name: &str, package: &str) -> Option<String> {
     let level = name.bytes().take_while(|byte| *byte == b'.').count();
     if level == 0 {
@@ -156,10 +146,7 @@ pub(crate) fn absolute_name(name: &str, package: &str) -> Option<String> {
     })
 }
 
-/// A dotted name as a file writes it and, when an import binds its first segment to another name, as the import
-/// spells it: `r.get` is also `requests.get` after `import requests as r`. A rule applies when its pattern matches
-/// either, so a pack written for the local spelling, `op.create_table`, keeps working next to one written for the
-/// library's, `alembic.op.create_table`.
+/// A dotted name as a file writes it and, when an import binds its first segment to another name, as the import spells it: `r.get` is also `requests.get` after `import requests as r`. A rule applies when its pattern matches either, so a pack written for the local spelling, `op.create_table`, keeps working next to one written for the library's, `alembic.op.create_table`.
 ///
 /// It owns its text so that a name read for each call of a file can reuse one buffer.
 #[derive(Debug, Default)]
@@ -205,8 +192,7 @@ impl Name {
 
     /// The spelling that `patterns` match, the one as written first.
     ///
-    /// The imported spelling meets only the patterns that start with a module or a package. A `*` there stands for a
-    /// receiver, and the module a name was imported from is none: `execute` taken from `mylib` is no `*.execute`.
+    /// The imported spelling meets only the patterns that start with a module or a package. A `*` there stands for a receiver, and the module a name was imported from is none: `execute` taken from `mylib` is no `*.execute`.
     pub(crate) fn matching(&self, patterns: &OneOrMany) -> Option<&str> {
         if patterns.matches(&self.written) {
             Some(&self.written)

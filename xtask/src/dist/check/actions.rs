@@ -8,6 +8,8 @@ use anyhow::Context as _;
 use gsttt_spec::{Entry, read_directory};
 use serde_norway::{Mapping, Value};
 
+use crate::digest::is_hex;
+
 /// Where the workflows are, from the repository root.
 const WORKFLOWS: &str = ".github/workflows";
 
@@ -119,17 +121,9 @@ fn pinned(reference: &str) -> bool {
     if reference.starts_with("docker://") {
         return id
             .strip_prefix("sha256:")
-            .is_some_and(|digest| hexadecimal(digest, 64));
+            .is_some_and(|digest| is_hex(digest, 64));
     }
-    hexadecimal(id, 40)
-}
-
-/// Whether `text` is `length` digits of lower-case hexadecimal.
-fn hexadecimal(text: &str, length: usize) -> bool {
-    text.len() == length
-        && text
-            .bytes()
-            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    is_hex(id, 40)
 }
 
 /// The lines of `text` that hold a `uses` key, as the line number and the value. Comments and the lines of block scalars (`run: |`) are skipped.

@@ -1,8 +1,6 @@
 //! Refreshing an index: the one entry point the commands and the server call.
 //!
-//! A refresh lists the files, works out which facts it already has (from the snapshot of this work tree or of a
-//! sibling work tree of the same repository), runs the pipeline over the rest and writes the snapshot back. When
-//! nothing that shapes the index changed, it stops after opening the connectors and computing the fact keys.
+//! A refresh lists the files, works out which facts it already has (from the snapshot of this work tree or of a sibling work tree of the same repository), runs the pipeline over the rest and writes the snapshot back. When nothing that shapes the index changed, it stops after opening the connectors and computing the fact keys.
 
 use std::time::{Duration, Instant};
 
@@ -63,8 +61,7 @@ pub struct Engine<'a> {
 }
 
 impl<'a> Engine<'a> {
-    /// An engine over `workspace`. `connectors` are in registry order, which decides between two connectors that
-    /// claim the same file; `builtin_packs` are the rule packs that ship with the connectors.
+    /// An engine over `workspace`. `connectors` are in registry order, which decides between two connectors that claim the same file; `builtin_packs` are the rule packs that ship with the connectors.
     pub const fn new(
         workspace: Workspace,
         connectors: &'a [&'a dyn DynConnector],
@@ -120,6 +117,23 @@ impl<'a> Engine<'a> {
         Ok(Some(Freshness::since(added, removed, changed)))
     }
 
+    /// The connectors that find themselves in the tree, in registry order, whatever the setup says about them: the ones `detect` alone would turn on. A connector whose `detect` panics is left out.
+    pub fn detected(&self) -> Result<Vec<&'static str>, IndexError> {
+        let snapshot = Snapshot::open(self.workspace.snapshot_path().as_std_path());
+        let mut states = self
+            .listing(snapshot.as_ref().and_then(Snapshot::stored))?
+            .files;
+        let repo = self.view_of(&mut states);
+        let mut problems = Vec::new();
+        let mut detected = Vec::new();
+        for &connector in self.connectors {
+            if pipeline::detect(connector, &repo, &mut problems) {
+                detected.push(connector.meta().name);
+            }
+        }
+        Ok(detected)
+    }
+
     /// The files that differ from HEAD, or from the best common ancestor of HEAD and `base` when one is given.
     pub fn changed_files(&self, base: Option<&str>) -> Result<Vec<Change>, IndexError> {
         let snapshot = Snapshot::open(self.workspace.snapshot_path().as_std_path());
@@ -141,12 +155,8 @@ impl<'a> Engine<'a> {
             files: mut states,
             unreadable,
         } = self.listing(previous)?;
-        states.sort_by(|a, b| a.path.cmp(&b.path));
+        let repo = self.view_of(&mut states);
         let listed = started.elapsed();
-        let repo = RepoView::new(
-            self.workspace.root().to_owned(),
-            states.iter().map(|state| state.path.clone()).collect(),
-        );
 
         let mut modules = Vec::new();
         let mut detect_problems = Vec::new();
@@ -256,8 +266,7 @@ impl<'a> Engine<'a> {
         let (seeds, siblings) = self.seeds(&claims, &states, &file_keys, own);
 
         let (output, phases) = pipeline::execute(assigned, repo, max, &states, seeds);
-        // A file saved between the listing and the read is filed under the bytes that were read, not under the
-        // id of the listing: a revert or a sibling must not find its facts under the old id.
+        // A file saved between the listing and the read is filed under the bytes that were read, not under the id of the listing: a revert or a sibling must not find its facts under the old id.
         for (claim, run) in claims.iter().zip(&output.files) {
             let Some(stamp) = run.stamp else {
                 continue;
@@ -273,7 +282,7 @@ impl<'a> Engine<'a> {
         let parsed = output.files.len().saturating_sub(reused);
         let dirty = self.dirty(&states, &mut problems);
         let info = IndexInfo {
-            built_by: snapshot::VERSION.to_owned(),
+            built_by: crate::VERSION.to_owned(),
             head,
             dirty,
             reused: to_u32(reused),
@@ -299,7 +308,7 @@ impl<'a> Engine<'a> {
         index.coverage.finish();
 
         let header = Header {
-            built_by: snapshot::VERSION.to_owned(),
+            built_by: crate::VERSION.to_owned(),
             built_at: snapshot::now(),
             head: index.info.head.clone(),
             dirty,
@@ -313,8 +322,7 @@ impl<'a> Engine<'a> {
             listed_at,
             files: stored_files(states, file_keys, output.files),
         };
-        // The index is built, so a snapshot that cannot be stored (a read-only `.git`, a full disk) costs the next
-        // run its head start and nothing else.
+        // The index is built, so a snapshot that cannot be stored (a read-only `.git`, a full disk) costs the next run its head start and nothing else.
         let snapshot_path = self.workspace.snapshot_path();
         if let Err(error) = snapshot::write(snapshot_path.as_std_path(), &header, &stored) {
             tracing::warn!(%error, "the snapshot was not stored; the index is returned without it");
@@ -329,9 +337,7 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// The facts a snapshot already holds for each claimed file, from this work tree's snapshot first and then, when
-    /// that one cannot answer for most files, from the snapshots of sibling work trees; with the number of those
-    /// that were read. A file over the size limit never gets a seed: it is rejected before any cache is asked.
+    /// The facts a snapshot already holds for each claimed file, from this work tree's snapshot first and then, when that one cannot answer for most files, from the snapshots of sibling work trees; with the number of those that were read. A file over the size limit never gets a seed: it is rejected before any cache is asked.
     fn seeds(
         &self,
         claims: &[Claim<'_>],
@@ -391,8 +397,7 @@ impl<'a> Engine<'a> {
         (seeds, read)
     }
 
-    /// The commit HEAD points at, and a line saying why it is unknown when git cannot tell. Outside git there is
-    /// neither a commit nor a problem.
+    /// The commit HEAD points at, and a line saying why it is unknown when git cannot tell. Outside git there is neither a commit nor a problem.
     fn head(&self) -> (Option<String>, Vec<String>) {
         if self.workspace.git().is_none() {
             return (None, Vec::new());
@@ -403,8 +408,7 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// How many files differ from HEAD. When git cannot say, the count is 0 and `problems` gets a line; outside git
-    /// nothing is counted, and neither is anything when HEAD itself could not be read, which already has its line.
+    /// How many files differ from HEAD. When git cannot say, the count is 0 and `problems` gets a line; outside git nothing is counted, and neither is anything when HEAD itself could not be read, which already has its line.
     fn dirty(&self, states: &[FileState], problems: &mut Vec<String>) -> u32 {
         if self.workspace.git().is_none() || !problems.is_empty() {
             return 0;
@@ -420,8 +424,16 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// The files of the work tree, with the stamps of the previous snapshot to spare hashing what did not change.
-    /// A stamp of a file written too close to the listing it was taken in is left out: the file is read again.
+    /// Puts `states` in path order, which is the order of the file ids, and the view the connectors detect against.
+    fn view_of(&self, states: &mut [FileState]) -> RepoView {
+        states.sort_by(|a, b| a.path.cmp(&b.path));
+        RepoView::new(
+            self.workspace.root().to_owned(),
+            states.iter().map(|state| state.path.clone()).collect(),
+        )
+    }
+
+    /// The files of the work tree, with the stamps of the previous snapshot to spare hashing what did not change. A stamp of a file written too close to the listing it was taken in is left out: the file is read again.
     fn listing(&self, previous: Option<&ArchivedStored>) -> Result<Scanned, FilesError> {
         let listed_at = previous.map(|stored| stored.listed_at.to_native());
         files::scan(
@@ -458,9 +470,7 @@ impl<'a> Engine<'a> {
 /// How many files the own snapshot may lack facts for before the snapshots of sibling work trees are read.
 const OWN_MISSES_FLOOR: usize = 64;
 
-/// Whether the snapshots of sibling work trees are worth reading: the own snapshot lacks the facts of more than
-/// 64 files and more than a twentieth of the claimed ones. A sibling is validated whole, which costs more than
-/// parsing the handful of files a normal edit touches.
+/// Whether the snapshots of sibling work trees are worth reading: the own snapshot lacks the facts of more than 64 files and more than a twentieth of the claimed ones. A sibling is validated whole, which costs more than parsing the handful of files a normal edit touches.
 fn siblings_pay(misses: usize, claimed: usize) -> bool {
     misses > OWN_MISSES_FLOOR.max(claimed / 20)
 }
@@ -490,8 +500,7 @@ struct Rebuild<'r, 'a> {
     listed: Duration,
 }
 
-/// The key a claimed file's facts are filed under when its content has the id `id`. A file of unknown content has
-/// none, so its facts are never reused.
+/// The key a claimed file's facts are filed under when its content has the id `id`. A file of unknown content has none, so its facts are never reused.
 fn claim_key(
     module_states: &[Xxh3],
     projects: &[ProjectRun],
@@ -504,10 +513,7 @@ fn claim_key(
         .then(|| keys::file_key(module, &project.root, project.salt, claim.path, id))
 }
 
-/// Whether a stored index is what a run over this tree would build again: same configuration, same commit, same
-/// projects, and for every file the same content and the same fact key. The content is compared for every file,
-/// not only for those a project took, because the dirty count and the freshness of the snapshot depend on all of
-/// them.
+/// Whether a stored index is what a run over this tree would build again: same configuration, same commit, same projects, and for every file the same content and the same fact key. The content is compared for every file, not only for those a project took, because the dirty count and the freshness of the snapshot depend on all of them.
 fn is_current(
     stored: &ArchivedStored,
     config: u128,
@@ -559,8 +565,7 @@ fn stored_files(
                 || (FileFacts::default(), Vec::new()),
                 |run| (run.facts, run.extra),
             );
-            // A failed read says nothing about the content, so the file is tried again: no key stands for it, and
-            // the next run finds the stored key different from the one it computes.
+            // A failed read says nothing about the content, so the file is tried again: no key stands for it, and the next run finds the stored key different from the one it computes.
             let key = key.filter(|_| {
                 !matches!(
                     facts.status,
@@ -917,7 +922,7 @@ mod tests {
         // Make the snapshot look as if another version wrote it: one digit of the version in its header.
         let path = main.workspace().snapshot_path();
         let mut bytes = fs::read(&path).unwrap();
-        let version = snapshot::VERSION.as_bytes();
+        let version = crate::VERSION.as_bytes();
         let at = bytes
             .windows(version.len())
             .position(|window| window == version)
@@ -1279,9 +1284,7 @@ mod tests {
     #[gsttt_scenario::scenario("indexing", "One thread and eight agree")]
     #[test]
     fn one_thread_and_eight_agree() {
-        // Enough files for the threads to really share the work, spread over projects: every file imports two
-        // others (some in another project) and every ninth one a file that does not exist, every fifth one
-        // carries an embedded document and every 97th one panics when it is parsed.
+        // Enough files for the threads to really share the work, spread over projects: every file imports two others (some in another project) and every ninth one a file that does not exist, every fifth one carries an embedded document and every 97th one panics when it is parsed.
         const FILES: usize = 500;
         const PROJECTS: usize = 20;
         let path = |index: usize| format!("p{:02}/f{index:03}.txt", index % PROJECTS);
@@ -1395,7 +1398,7 @@ mod tests {
         bytes.extend([0xa5_u8; 64]);
         fs::write(&path, bytes).unwrap();
         let header = engine.peek().unwrap();
-        assert_eq!(header.built_by, snapshot::VERSION);
+        assert_eq!(header.built_by, crate::VERSION);
         assert_eq!(header.head, run.index.info.head);
         assert_eq!((header.dirty, header.files), (0, 2));
         assert!(engine.load().is_none());
@@ -1587,6 +1590,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn detected_lists_the_connectors_that_find_themselves_whatever_the_setup_says() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "one\n")]);
+        let setup = Setup {
+            detect: false,
+            disable: vec!["graphs".to_owned()],
+            ..Setup::default()
+        };
+        let connectors = rig.connectors();
+        let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
+
+        assert_eq!(engine.detected().unwrap(), ["notes", "graphs"]);
+
+        // A connector whose `detect` panics finds nothing, and the others are still asked.
+        write(dir.path(), "DETECT_BOOM", "");
+        assert_eq!(engine.detected().unwrap(), ["graphs"]);
+    }
+
     #[gsttt_scenario::scenario("indexing", "A HEAD git cannot read is a coverage line")]
     #[test]
     fn a_head_git_cannot_read_is_a_coverage_line() {
@@ -1674,9 +1696,7 @@ mod tests {
         assert_eq!(again.index.coverage.problems, *problems);
     }
 
-    /// Indexes a tree outside git whose directory `locked` has the permissions `mode`: the run succeeds, the index
-    /// leaves `locked/b.txt` out and the coverage names `locked`. A process that can reach the directory anyway
-    /// checks nothing.
+    /// Indexes a tree outside git whose directory `locked` has the permissions `mode`: the run succeeds, the index leaves `locked/b.txt` out and the coverage names `locked`. A process that can reach the directory anyway checks nothing.
     fn assert_directory_reported_outside_git(mode: u32) {
         let rig = Rig::new();
         let plain = tempfile::tempdir().unwrap();
@@ -1699,9 +1719,7 @@ mod tests {
         );
     }
 
-    /// Indexes a repository, gives its tracked directory `locked` the permissions `mode` and indexes it again: the
-    /// files of `locked` have left the index, they count as removed from HEAD and the coverage names `locked`. A
-    /// process that can reach the directory anyway checks nothing.
+    /// Indexes a repository, gives its tracked directory `locked` the permissions `mode` and indexes it again: the files of `locked` have left the index, they count as removed from HEAD and the coverage names `locked`. A process that can reach the directory anyway checks nothing.
     fn assert_tracked_files_removed(mode: u32) {
         let rig = Rig::new();
         let dir = init_repo(&[("a.txt", ""), ("locked/b.txt", "")]);

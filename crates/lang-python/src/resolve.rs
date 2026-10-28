@@ -1,7 +1,6 @@
 //! Where an import points: files of the repository, the standard library, a declared dependency or nothing.
 //!
-//! Resolution never touches the disk. It asks the project's view of the repository for one candidate path at a time,
-//! and looks for a module in this order, the first place that has it winning:
+//! Resolution never touches the disk. It asks the project's view of the repository for one candidate path at a time, and looks for a module in this order, the first place that has it winning:
 //!
 //! 1. the project's own source roots, as a package or a module;
 //! 2. the standard library;
@@ -9,13 +8,9 @@
 //! 4. the distributions the project declares;
 //! 5. a namespace package, under the project's own source roots and then under the others'.
 //!
-//! A namespace package comes last because it is only a directory. Python takes a regular package or a module of the
-//! same name from anywhere on its path before it, so a folder called `logging` beside the code never hides the
-//! standard library.
+//! A namespace package comes last because it is only a directory. Python takes a regular package or a module of the same name from anywhere on its path before it, so a folder called `logging` beside the code never hides the standard library.
 //!
-//! A regular package or a module that has the first segment of a path and not the rest ends the search of the source
-//! roots, as it does in Python: the first one on the path is the package, and a package of the same name further along
-//! supplies nothing.
+//! A regular package or a module that has the first segment of a path and not the rest ends the search of the source roots, as it does in Python: the first one on the path is the package, and a package of the same name further along supplies nothing.
 
 use std::borrow::Cow;
 
@@ -29,8 +24,7 @@ use crate::files::is_python_source;
 use crate::names::distributions_for_import;
 use crate::project::PythonProject;
 
-/// The source and the stub of one module or package, whichever of the two exist. Both are reached: the source is
-/// what runs, and a type checker reads the stub in its place.
+/// The source and the stub of one module or package, whichever of the two exist. Both are reached: the source is what runs, and a type checker reads the stub in its place.
 #[derive(Clone, Copy, Debug)]
 struct Files {
     source: Option<FileId>,
@@ -78,9 +72,7 @@ struct Query<'a> {
 enum Reach {
     /// Every segment is there.
     Found {
-        /// The files the import runs or reads: the packages it passes through, the module, and the submodules among
-        /// its names. The packages the importing file sits in are not among them, for they are initialised before
-        /// the file runs.
+        /// The files the import runs or reads: the packages it passes through, the module, and the submodules among its names. The packages the importing file sits in are not among them, for they are initialised before the file runs.
         files: Vec<FileId>,
         /// The file of the module the path names, even when `files` leaves it out.
         target: Option<FileId>,
@@ -89,8 +81,7 @@ enum Reach {
     },
     /// The first segment is there and the rest is not: a typo, or a module that was deleted.
     Partial {
-        /// The first segment is a regular package or a module, which Python takes before anything of that name
-        /// further along the path, so the rest is not looked for there.
+        /// The first segment is a regular package or a module, which Python takes before anything of that name further along the path, so the rest is not looked for there.
         shadows: bool,
     },
     Absent,
@@ -165,8 +156,7 @@ impl<'a> Probe<'a> {
         }
     }
 
-    /// What `name` is inside the directory the path names. A package comes before a module of the same name, as
-    /// Python's finder takes it, and a namespace package is only what is left when neither is there.
+    /// What `name` is inside the directory the path names. A package comes before a module of the same name, as Python's finder takes it, and a namespace package is only what is left when neither is there.
     fn spot(&mut self, name: &str) -> Spot {
         let outer = self.path.len();
         self.enter(name);
@@ -185,10 +175,7 @@ impl<'a> Probe<'a> {
 
     /// What `from <module> import <names>` of the file `query.from` reaches below the directory `base`.
     ///
-    /// An import runs every package on the way to its module, so their `__init__` files are reached too, except
-    /// those of the packages the importing file sits in. A name that is a submodule is imported as the module file;
-    /// a name that is not is an attribute of the module, so the module's own file is reached. When every name is a
-    /// submodule and the importing file sits in the module's package, the package's file is not.
+    /// An import runs every package on the way to its module, so their `__init__` files are reached too, except those of the packages the importing file sits in. A name that is a submodule is imported as the module file; a name that is not is an attribute of the module, so the module's own file is reached. When every name is a submodule and the importing file sits in the module's package, the package's file is not.
     fn reach(&mut self, query: Query<'_>, base: &str) -> Reach {
         self.path.clear();
         self.path.push_str(base);
@@ -250,8 +237,7 @@ impl<'a> Probe<'a> {
         }
         files.sort_unstable();
         files.dedup();
-        // A namespace package holds no file of its own. Importing it is fine; importing a name it does not have is
-        // not.
+        // A namespace package holds no file of its own. Importing it is fine; importing a name it does not have is not.
         if files.is_empty() && named > 0 {
             return first.map_or(Reach::Absent, partial);
         }
@@ -266,8 +252,7 @@ impl<'a> Probe<'a> {
     }
 }
 
-/// What a path that stopped short comes to, given what its first segment is: a first segment that is there makes
-/// the rest a typo.
+/// What a path that stopped short comes to, given what its first segment is: a first segment that is there makes the rest a typo.
 fn miss(head: Spot) -> Reach {
     match head {
         Spot::Missing => Reach::Absent,
@@ -275,8 +260,7 @@ fn miss(head: Spot) -> Reach {
     }
 }
 
-/// A path whose first segment is `head` and whose rest is not there. Only a namespace package leaves the rest to be
-/// looked for further along the path.
+/// A path whose first segment is `head` and whose rest is not there. Only a namespace package leaves the rest to be looked for further along the path.
 fn partial(head: Spot) -> Reach {
     Reach::Partial {
         shadows: !matches!(head, Spot::Namespace),
@@ -297,8 +281,7 @@ enum Hit {
 }
 
 impl Hit {
-    /// Whether the hit is stub files and nothing else. A stub holds no code that runs, so the import loads
-    /// something else.
+    /// Whether the hit is stub files and nothing else. A stub holds no code that runs, so the import loads something else.
     fn is_stubs_only(&self, repo: &RepoView) -> bool {
         match self {
             Hit::Files { files, .. } => {
@@ -316,19 +299,16 @@ impl Hit {
 /// What the search of the source roots passed on its way, for when nothing better turns up.
 #[derive(Default)]
 struct Seen {
-    /// The first segment of the path is a package or a directory of the repository, so a path that does not resolve
-    /// is a typo and no library.
+    /// The first segment of the path is a package or a directory of the repository, so a path that does not resolve is a typo and no library.
     first_party: bool,
-    /// A regular package or a module has the first segment and not the rest. It is the one Python imports, so no
-    /// regular package or module of that name further along supplies the module.
+    /// A regular package or a module has the first segment and not the rest. It is the one Python imports, so no regular package or module of that name further along supplies the module.
     shadowed: bool,
     /// The first hit under a namespace package.
     namespace: Option<Hit>,
 }
 
 impl Seen {
-    /// The hit under the first of `roots` that holds the module as a regular package or module. A namespace package
-    /// is kept for later, and a regular package or module that lacks the module ends the search.
+    /// The hit under the first of `roots` that holds the module as a regular package or module. A namespace package is kept for later, and a regular package or module that lacks the module ends the search.
     fn search(&mut self, probe: &mut Probe<'_>, roots: &[String], query: Query<'_>) -> Option<Hit> {
         for base in roots {
             match probe.reach(query, base) {
@@ -428,8 +408,7 @@ pub(crate) fn resolve(project: &PythonProject, from: &RepoPath, import: &Import)
     }
 }
 
-/// The file of the module `spec` names for the file `from`, when it is a file of the repository: the module a
-/// router lives in, found the way an import of it would be.
+/// The file of the module `spec` names for the file `from`, when it is a file of the repository: the module a router lives in, found the way an import of it would be.
 pub(crate) fn module_file(project: &PythonProject, from: &RepoPath, spec: &str) -> Option<FileId> {
     match locate(project, from, spec, &[]) {
         Hit::Files { target, .. } => target,
@@ -449,8 +428,7 @@ fn package_dir(from: &RepoPath, level: usize) -> Option<&str> {
     Some(dir)
 }
 
-/// The resolution of an import that reaches `files`. An import that reaches none names a namespace package, which
-/// has no file to depend on.
+/// The resolution of an import that reaches `files`. An import that reaches none names a namespace package, which has no file to depend on.
 fn found(files: Vec<FileId>) -> Resolution {
     match files.as_slice() {
         [] => Resolution::Unresolved(UnresolvedReason::NotFound),
@@ -459,8 +437,7 @@ fn found(files: Vec<FileId>) -> Resolution {
     }
 }
 
-/// Whether `top` is a standard-library module of some Python from 3.7 on. The project does not say which Python
-/// it runs, so a module that any of them ships counts.
+/// Whether `top` is a standard-library module of some Python from 3.7 on. The project does not say which Python it runs, so a module that any of them ships counts.
 fn is_standard_library(top: &str) -> bool {
     (7..=15).any(|minor| is_known_standard_library(minor, top) || is_builtin_module(minor, top))
 }
@@ -491,8 +468,7 @@ mod tests {
         project
     }
 
-    /// `project` with the source roots of the projects it declares set by hand: the manifests are not read here, so
-    /// which projects a project declares is not known.
+    /// `project` with the source roots of the projects it declares set by hand: the manifests are not read here, so which projects a project declares is not known.
     fn declaring(mut project: PythonProject, roots: &[&str]) -> PythonProject {
         project.sibling_roots = roots.iter().map(|root| (*root).to_owned()).collect();
         project.sibling_tops = roots
@@ -508,8 +484,7 @@ mod tests {
         import
     }
 
-    /// What the import resolves to, as these tests read it: the paths of its files joined by ` + `, `builtin`,
-    /// `package <name>` or `unresolved <reason>`.
+    /// What the import resolves to, as these tests read it: the paths of its files joined by ` + `, `builtin`, `package <name>` or `unresolved <reason>`.
     fn shown(project: &PythonProject, from: &str, spec: &str, names: &[&str]) -> String {
         let from = RepoPath::normalize(from).unwrap();
         let paths = |files: &[FileId]| {

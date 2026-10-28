@@ -1,5 +1,4 @@
-//! Which sources the gate reads for proofs: the ones a library, binary or test target compiles, and
-//! what keeps a test in them from running.
+//! Which sources the gate reads for proofs: the ones a library, binary or test target compiles, and what keeps a test in them from running.
 
 use std::fs;
 
@@ -20,8 +19,7 @@ fn claim(before: &str) -> String {
     format!("#[scenario(\"queries\", \"{TITLE}\")]\n#[test]\n{before}fn proof() {{}}\n")
 }
 
-/// The line the gate prints for the `#[scenario]` on the `proof` function of `source`, which is in
-/// `file` and proves nothing for the reason `why`.
+/// The line the gate prints for the `#[scenario]` on the `proof` function of `source`, which is in `file` and proves nothing for the reason `why`.
 fn misuse(file: &str, source: &str, why: &str) -> String {
     format!(
         "{file}:{}: `proof` is marked with #[scenario] but {why}, so it proves nothing",
@@ -35,8 +33,7 @@ const UNREACHED: &str =
 #[gsttt_scenario::scenario("spec-gate", "Modules of a target are followed")]
 #[test]
 fn modules_of_a_target_are_followed() {
-    // Each file proves a scenario titled with its own path, and no target names it but through the
-    // `mod` declarations of the files above it.
+    // Each file proves a scenario titled with its own path, and no target names it but through the `mod` declarations of the files above it.
     let files = [
         (
             "src/lib.rs",
@@ -311,8 +308,7 @@ fn a_module_without_a_file_is_an_error_naming_its_declaration() {
 #[test]
 fn copies_of_the_tree_inside_a_package_are_left_out() {
     let ghost = proof("queries", "Impact goes through wormholes");
-    // A package at the root holds the whole tree, copies of it included. Each copy is kept out by
-    // one rule alone: its directory is `target`, it is hidden, or it has a manifest of its own.
+    // A package at the root holds the whole tree, copies of it included. Each copy is kept out by one rule alone: its directory is `target`, it is hidden, or it has a manifest of its own.
     let tree = Tree::rooted();
     tree.spec("queries", &main_spec(&[requirement("Defaults", &[TITLE])]))
         .write("tests/defaults.rs", &claim(""))
@@ -414,8 +410,7 @@ mod unix {
 
     #[test]
     fn a_symbolic_link_is_not_followed() {
-        // Followed, the link would show the proof again at every depth the system allows, as a
-        // file that no target reaches.
+        // Followed, the link would show the proof again at every depth the system allows, as a file that no target reaches.
         let tree = tree_with_scenario("");
         tree.source("tests/plain.rs", &claim(""));
         symlink(

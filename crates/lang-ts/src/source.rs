@@ -27,8 +27,7 @@ pub(crate) fn is_code(path: &str) -> bool {
         .is_some_and(|(_, extension)| CODE_EXTENSIONS.contains(&extension))
 }
 
-/// Parses `file`. A file whose parse cannot go on has the line of its first error blanked and is parsed again, so the
-/// imports above and below one bad line survive; only a file that still fails after that is reported as failed.
+/// Parses `file`. A file whose parse cannot go on has the line of its first error blanked and is parsed again, so the imports above and below one bad line survive; only a file that still fails after that is reported as failed.
 pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtra> {
     let source_type =
         SourceType::from_path(file.path.as_str()).unwrap_or_else(|_| SourceType::ts());
@@ -99,8 +98,7 @@ fn assemble(text: &str, analysis: Analysis, status: ParseStatus) -> Parsed<TsExt
     }
 }
 
-/// The text with the non-blank characters of `line` (1-based) replaced by spaces of the same byte length, so every
-/// offset and line number stays the same. `None` when the line has nothing left to blank.
+/// The text with the non-blank characters of `line` (1-based) replaced by spaces of the same byte length, so every offset and line number stays the same. `None` when the line has nothing left to blank.
 fn blank_line(text: &str, line: Line) -> Option<String> {
     let wanted = usize::try_from(line).ok()?.checked_sub(1)?;
     let mut changed = false;

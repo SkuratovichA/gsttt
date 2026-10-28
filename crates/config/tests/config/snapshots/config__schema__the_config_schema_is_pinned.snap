@@ -197,7 +197,7 @@ expression: config_schema(&registry.connectors())
       "description": "What a site does with a contract.",
       "oneOf": [
         {
-          "description": "A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration,\n`.env.example`.",
+          "description": "A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration, `.env.example`.",
           "type": "string",
           "const": "declares"
         },

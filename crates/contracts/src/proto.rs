@@ -1,8 +1,6 @@
-//! Protobuf: each `rpc` of a `service` declares `grpc <package>.<Service>/<Method>`, and the `google.api.http`
-//! option of an `rpc` declares the `http <METHOD> <path>` of each of its bindings.
+//! Protobuf: each `rpc` of a `service` declares `grpc <package>.<Service>/<Method>`, and the `google.api.http` option of an `rpc` declares the `http <METHOD> <path>` of each of its bindings.
 //!
-//! Imports resolve against the module roots that `buf.yaml` and `buf.work.yaml` name and then against each
-//! directory above the importing file, which is how `protoc -I` and `buf` find a file in practice.
+//! Imports resolve against the module roots that `buf.yaml` and `buf.work.yaml` name and then against each directory above the importing file, which is how `protoc -I` and `buf` find a file in practice.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -156,9 +154,7 @@ fn parent_dir(dir: &str) -> Option<&str> {
 
 /// The module roots named by the `buf.yaml` and `buf.work.yaml` files of the repository.
 ///
-/// A `buf.yaml` of version 2 lists `modules` with a `path`, a `buf.yaml` of version 1 is the module at its own
-/// directory, and a `buf.work.yaml` lists `directories`; all of them count from the directory of the file. A file
-/// that cannot be read is skipped and logged, since the ancestors of the importing file still resolve most imports.
+/// A `buf.yaml` of version 2 lists `modules` with a `path`, a `buf.yaml` of version 1 is the module at its own directory, and a `buf.work.yaml` lists `directories`; all of them count from the directory of the file. A file that cannot be read is skipped and logged, since the ancestors of the importing file still resolve most imports.
 fn buf_roots(repo: &RepoView) -> Vec<String> {
     let mut roots = BTreeSet::new();
     for (_, path) in repo.files() {
@@ -231,8 +227,7 @@ fn read(name: &str, text: &str) -> Result<Read, SyntaxError> {
             .map_or(1, |span| LineIndex::new(text).line_at(span.start)),
         message: error.to_string(),
     })?;
-    // The descriptor numbers its locations by path (`[6, 0, 2, 1]` is the second rpc of the first service); the
-    // first line of each is what the sites need.
+    // The descriptor numbers its locations by path (`[6, 0, 2, 1]` is the second rpc of the first service); the first line of each is what the sites need.
     let mut lines_at: BTreeMap<&[i32], Line> = BTreeMap::new();
     if let Some(info) = &descriptor.source_code_info {
         for location in &info.location {
@@ -344,9 +339,7 @@ enum Field {
     Message(Vec<(String, Field)>),
 }
 
-/// The bindings one `option (google.api.http)` statement sets. The parser keeps `= { get: "/a" }` as the text of the
-/// rule, and `.get = "/a"`, which sets one field of the rule, as the name of the field with its value: the bytes of
-/// a string or, for a message field, its text.
+/// The bindings one `option (google.api.http)` statement sets. The parser keeps `= { get: "/a" }` as the text of the rule, and `.get = "/a"`, which sets one field of the rule, as the name of the field with its value: the bytes of a string or, for a message field, its text.
 fn option_bindings(
     field: Option<&str>,
     message: Option<&str>,
@@ -368,8 +361,7 @@ fn option_bindings(
     found
 }
 
-/// The bindings of a rule in the text format the parser keeps it in: `get : "/v1/a" additional_bindings { post :
-/// "/v1/b" }`. Only the shapes of the `HttpRule` message are read; anything else in it is skipped.
+/// The bindings of a rule in the text format the parser keeps it in: `get : "/v1/a" additional_bindings { post : "/v1/b" }`. Only the shapes of the `HttpRule` message are read; anything else in it is skipped.
 fn bindings(rule: &str) -> Vec<Binding> {
     let mut found = Vec::new();
     collect_bindings(&fields_of(rule), &mut found);

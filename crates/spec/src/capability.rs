@@ -105,8 +105,7 @@ pub fn parse_spec(capability: &str, file: &Path, text: &str) -> Result<Spec, Err
 ///
 /// # Errors
 ///
-/// Fails with the file and line of the first heading that does not follow the format, or when the
-/// file has none of the four sections.
+/// Fails with the file and line of the first heading that does not follow the format, or when the file has none of the four sections.
 pub fn parse_delta(capability: &str, file: &Path, text: &str) -> Result<Delta, Error> {
     let parser = Parser::read(Kind::Delta, file, text)?;
     Ok(Delta {
@@ -188,8 +187,7 @@ struct OpenScenario {
     then: bool,
 }
 
-/// Reads one file line by line, the way OpenSpec's own parsers do: fenced code is skipped and a
-/// heading closes whatever it ends.
+/// Reads one file line by line, the way OpenSpec's own parsers do: fenced code is skipped and a heading closes whatever it ends.
 struct Parser<'a> {
     file: &'a Path,
     kind: Kind,
@@ -232,8 +230,7 @@ impl<'a> Parser<'a> {
                 None => parser.body(line.text, line.number)?,
             }
         }
-        // Checked before the scenario and the requirement are closed: a fence that hides a step is
-        // the cause of the step missing.
+        // Checked before the scenario and the requirement are closed: a fence that hides a step is the cause of the step missing.
         if let Some(line) = read.unclosed {
             return Err(parser.fail(line, Problem::UnclosedFence));
         }

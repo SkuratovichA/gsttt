@@ -10,13 +10,10 @@ use gsttt_core::repo::RepoView;
 
 use crate::manifest::{Target, TargetKind, at};
 
-/// How many files deep `mod` declarations are followed. A `#[path]` that points back at an ancestor would otherwise
-/// loop.
+/// How many files deep `mod` declarations are followed. A `#[path]` that points back at an ancestor would otherwise loop.
 const MAX_DEPTH: usize = 64;
 
-/// How many modules one crate target holds. Declarations that fan out through `#[path]`, several modules to a file
-/// and every file declaring several more, would otherwise grow without bound. A tree that reaches it is cut, the cut
-/// is logged, and every project names it among its blind spots.
+/// How many modules one crate target holds. Declarations that fan out through `#[path]`, several modules to a file and every file declaring several more, would otherwise grow without bound. A tree that reaches it is cut, the cut is logged, and every project names it among its blind spots.
 pub(crate) const MAX_MODULES: usize = 10_000;
 
 /// One module of a crate.
@@ -62,8 +59,7 @@ pub(crate) struct Located {
     dir: String,
 }
 
-/// The file of the module `name` declared in `parent`: `<name>.rs` or `<name>/mod.rs` in the directory the parent
-/// looks in, or the file a `#[path]` attribute names.
+/// The file of the module `name` declared in `parent`: `<name>.rs` or `<name>/mod.rs` in the directory the parent looks in, or the file a `#[path]` attribute names.
 pub(crate) fn locate(
     repo: &RepoView,
     parent: &Module,
@@ -71,8 +67,7 @@ pub(crate) fn locate(
     path_attribute: Option<&str>,
 ) -> Option<Located> {
     if let Some(attribute) = path_attribute {
-        // An attribute on a declaration inside an inline module counts from that module's directory; otherwise it
-        // counts from the directory of the declaring file.
+        // An attribute on a declaration inside an inline module counts from that module's directory; otherwise it counts from the directory of the declaring file.
         let base = if parent.inline {
             parent.dir.as_str()
         } else {
@@ -148,8 +143,7 @@ impl CrateTree {
         Some(tree)
     }
 
-    /// Adds the modules declared in the file of the module at `key`, and then theirs. `chain` holds the files
-    /// above, so a file that includes itself is entered once.
+    /// Adds the modules declared in the file of the module at `key`, and then theirs. `chain` holds the files above, so a file that includes itself is entered once.
     fn expand(
         &mut self,
         key: &str,
@@ -211,11 +205,7 @@ impl CrateTree {
         }
     }
 
-    /// The key for the module `name` declared in the module at `parent` and written in `file`: its own name, or
-    /// `name#2`, `name#3` and on when an earlier declaration of that name is written in another file, as one `mod`
-    /// under different `cfg`s is. A copy is no name that code can write, so a path into the module reaches the first
-    /// declaration, while the copy's file still has a module of its own to resolve `self::` and `super::` from.
-    /// `None` when the module is already there.
+    /// The key for the module `name` declared in the module at `parent` and written in `file`: its own name, or `name#2`, `name#3` and on when an earlier declaration of that name is written in another file, as one `mod` under different `cfg`s is. A copy is no name that code can write, so a path into the module reaches the first declaration, while the copy's file still has a module of its own to resolve `self::` and `super::` from. `None` when the module is already there.
     fn key_for(&self, parent: &str, name: &str, file: &RepoPath) -> Option<String> {
         let mut key = child_key(parent, name);
         let mut copies = 1_usize;
@@ -244,8 +234,7 @@ impl CrateTree {
         self.modules.contains_key(&child_key(key, name))
     }
 
-    /// The deepest module that following `names` from the module at `key` reaches. A name that is no module ends the
-    /// walk: it is an item, a function or a type in the module before it.
+    /// The deepest module that following `names` from the module at `key` reaches. A name that is no module ends the walk: it is an item, a function or a type in the module before it.
     pub(crate) fn walk<'n>(
         &self,
         key: &str,
@@ -278,8 +267,7 @@ pub(crate) struct Trees {
 }
 
 impl Trees {
-    /// Builds the tree of each target from the facts of the package's files. A file reached from several targets
-    /// belongs to the first, and targets come library first.
+    /// Builds the tree of each target from the facts of the package's files. A file reached from several targets belongs to the first, and targets come library first.
     pub(crate) fn build(
         targets: &[Target],
         repo: &RepoView,
@@ -317,9 +305,7 @@ impl Trees {
     }
 }
 
-/// The module trees of every package, by package directory, so that a path can continue into the library of a
-/// workspace crate. Projects publish in `prepare` and read in `resolve`, and the engine finishes every `prepare`
-/// before it starts any `resolve`.
+/// The module trees of every package, by package directory, so that a path can continue into the library of a workspace crate. Projects publish in `prepare` and read in `resolve`, and the engine finishes every `prepare` before it starts any `resolve`.
 #[derive(Debug, Default)]
 pub(crate) struct Registry {
     trees: RwLock<BTreeMap<String, Arc<Trees>>>,

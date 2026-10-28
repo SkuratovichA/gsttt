@@ -4,6 +4,7 @@
 .DS_Store
 node_modules/
 /bench/repos
+/bench/tools
 /bench/results/*.tmp
 /.claude/worktrees/
 /.claude/settings.local.json

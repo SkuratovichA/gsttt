@@ -32,8 +32,7 @@ const TOOLS: &[&str] = &[
     "rust_analyzer",
 ];
 
-/// The imports of a file written in `edition`. `query_files` also reads sqlx's `query_file!` family, whose path starts
-/// at the manifest.
+/// The imports of a file written in `edition`. `query_files` also reads sqlx's `query_file!` family, whose path starts at the manifest.
 pub(crate) fn read(
     root: &SyntaxNode,
     lines: &LineIndex,
@@ -85,8 +84,7 @@ pub(crate) fn read(
     imports
 }
 
-/// The names that `imports` bring into a file, each with the path it stands for: one for every `use` or `extern crate`
-/// leaf that binds a single name, and none for a glob or a `mod`.
+/// The names that `imports` bring into a file, each with the path it stands for: one for every `use` or `extern crate` leaf that binds a single name, and none for a glob or a `mod`.
 pub(crate) fn bindings(imports: &[Import]) -> impl Iterator<Item = (&str, &str)> {
     imports
         .iter()
@@ -97,8 +95,7 @@ pub(crate) fn bindings(imports: &[Import]) -> impl Iterator<Item = (&str, &str)>
         })
 }
 
-/// Whether the module that holds the `use` of `leaf` declares `macro_rules! name` before it. A `macro_rules!` macro is
-/// in scope only after its declaration, so the declaration cannot come later.
+/// Whether the module that holds the `use` of `leaf` declares `macro_rules! name` before it. A `macro_rules!` macro is in scope only after its declaration, so the declaration cannot come later.
 fn declares_macro(leaf: &SyntaxNode, name: &str) -> bool {
     leaf.ancestors()
         .find_map(ast::Use::cast)
@@ -211,9 +208,7 @@ impl Reader<'_> {
         out.push(import);
     }
 
-    /// The specifier of a `use` leaf. A leading `::` is kept, since the resolver reads it by edition. In 2015 a `use`
-    /// path that does not start with `crate`, `self` or `super` is relative to the crate root, so it is written the
-    /// way `::` writes that.
+    /// The specifier of a `use` leaf. A leading `::` is kept, since the resolver reads it by edition. In 2015 a `use` path that does not start with `crate`, `self` or `super` is relative to the crate root, so it is written the way `::` writes that.
     fn use_spec(&self, tree: &ast::UseTree, path: &[String], rooted: bool) -> String {
         let relative = matches!(
             path.first().map(String::as_str),
@@ -339,8 +334,7 @@ impl Reader<'_> {
         macro_args(call, self.edition).into_iter().next()
     }
 
-    /// `mod name;` inside a `cfg_if!` block, whose items the parser leaves as tokens. Such a module is conditional,
-    /// whatever the macro call itself sits under.
+    /// `mod name;` inside a `cfg_if!` block, whose items the parser leaves as tokens. Such a module is conditional, whatever the macro call itself sits under.
     fn macro_modules(&self, call: &ast::MacroCall, tokens: &[SyntaxToken], out: &mut Vec<Import>) {
         for window in tokens.windows(3) {
             let [keyword, name, end] = window else {
@@ -393,8 +387,7 @@ impl Reader<'_> {
         }
     }
 
-    /// The qualified paths among `tokens`, the arguments of a macro or an attribute, which are not parsed. `context`
-    /// is the node they are written in.
+    /// The qualified paths among `tokens`, the arguments of a macro or an attribute, which are not parsed. `context` is the node they are written in.
     fn token_paths(
         &self,
         context: &SyntaxNode,
@@ -437,8 +430,7 @@ impl Reader<'_> {
     }
 }
 
-/// How many tokens the `::` at `index` takes: one `COLON2`, or two touching `COLON`s, which is how a token tree keeps
-/// the separator. `None` when the token is no separator.
+/// How many tokens the `::` at `index` takes: one `COLON2`, or two touching `COLON`s, which is how a token tree keeps the separator. `None` when the token is no separator.
 fn separator_width(tokens: &[SyntaxToken], index: usize) -> Option<usize> {
     let first = tokens.get(index)?;
     match first.kind() {
@@ -460,8 +452,7 @@ fn starts_segment(kind: SyntaxKind) -> bool {
     )
 }
 
-/// Whether a path of a module or a crate is meant: two or more segments, starting with `crate`, `self`, `super` or a
-/// lower case name that is no primitive type. `Vec::new` and `u32::MAX` are not.
+/// Whether a path of a module or a crate is meant: two or more segments, starting with `crate`, `self`, `super` or a lower case name that is no primitive type. `Vec::new` and `u32::MAX` are not.
 fn qualifies(names: &[String]) -> bool {
     let Some(first) = names.first() else {
         return false;
@@ -480,8 +471,7 @@ fn significant_tokens(node: &SyntaxNode) -> Vec<SyntaxToken> {
         .collect()
 }
 
-/// The file named by `#[path = "..."]` on a module, written as a plain or a raw string, or inside
-/// `#[cfg_attr(.., path = "..")]`. Which `cfg` the latter holds under is not evaluated, so the first one wins.
+/// The file named by `#[path = "..."]` on a module, written as a plain or a raw string, or inside `#[cfg_attr(.., path = "..")]`. Which `cfg` the latter holds under is not evaluated, so the first one wins.
 fn path_attribute(module: &ast::Module) -> Option<String> {
     module.attrs().find_map(|attr| {
         if !matches!(attr.simple_name().as_deref(), Some("path" | "cfg_attr")) {

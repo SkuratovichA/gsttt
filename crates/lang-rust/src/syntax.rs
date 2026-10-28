@@ -45,10 +45,7 @@ pub(crate) fn cfg_flags(node: &SyntaxNode) -> ImportFlags {
     flags
 }
 
-/// Whether a child of a node can stand before the node's last attribute. The parser reads the outer attributes of an
-/// item, a field or a statement before anything else of it, doc comments among them, and the inner attributes of a
-/// file or of a body right after its `{`, so the walk over the children of an ancestor ends at the first child that is
-/// none of these. Reading all of them would cost every module of a file of ten thousand a pass over its siblings.
+/// Whether a child of a node can stand before the node's last attribute. The parser reads the outer attributes of an item, a field or a statement before anything else of it, doc comments among them, and the inner attributes of a file or of a body right after its `{`, so the walk over the children of an ancestor ends at the first child that is none of these. Reading all of them would cost every module of a file of ten thousand a pass over its siblings.
 fn leads(kind: SyntaxKind) -> bool {
     matches!(
         kind,
@@ -125,9 +122,7 @@ pub(crate) fn inline_path(node: &SyntaxNode) -> Vec<String> {
     names
 }
 
-/// A path written at `node`, made relative to the module of the file (see [`file_relative`]). A path that starts with
-/// an inline module declared beside it is made explicit first: `shapes::X` next to `mod shapes { … }` is
-/// `self::shapes::X`, which the module tree follows as far as it goes and so ends at the file that holds the module.
+/// A path written at `node`, made relative to the module of the file (see [`file_relative`]). A path that starts with an inline module declared beside it is made explicit first: `shapes::X` next to `mod shapes { … }` is `self::shapes::X`, which the module tree follows as far as it goes and so ends at the file that holds the module.
 pub(crate) fn file_path(node: &SyntaxNode, segments: &[String]) -> Vec<String> {
     let inline = inline_path(node);
     match segments.first() {
@@ -163,8 +158,7 @@ fn declares_inline(node: &SyntaxNode, name: &str) -> bool {
         })
 }
 
-/// A path written inside inline modules, made relative to the module of the file: `super::X` in `mod a` is `self::X`
-/// of the file, and `self::X` in `mod a` is `self::a::X`.
+/// A path written inside inline modules, made relative to the module of the file: `super::X` in `mod a` is `self::X` of the file, and `self::X` in `mod a` is `self::a::X`.
 fn file_relative(segments: &[String], inline: &[String]) -> Vec<String> {
     let rest = |skip: usize| segments.iter().skip(skip).cloned();
     match segments.first().map(String::as_str) {

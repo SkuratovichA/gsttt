@@ -25,7 +25,7 @@
 - [x] 4.1 `DynConnector::options_schema` takes a shared `SchemaGenerator`, and `Provide` derives `JsonSchema`
 - [x] 4.2 `config_schema` and `pack_schema`, draft-07, each type once under `definitions`
 - [x] 4.3 The starter with its `#:schema` line, read back as the defaults
-- [ ] 4.4 Every comment and doc comment that breaks a sentence or a paragraph across lines joined into one line, across the workspace (about 375 lines, most of them in `crates/core/src/rules.rs` and on `Role` in `crates/core/src/contract.rs`), with a test that no description in either schema breaks inside a paragraph; done at the top of the stack once this change merges there, so that the layers between do not conflict
+- [x] 4.4 Every comment and doc comment that breaks a sentence or a paragraph across lines joined into one line, across the workspace (1093 lines in 180 files, most of them in `crates/lang-python/src/parse.rs`, `crates/core/src/engine/files.rs` and `crates/core/src/rules.rs`), with a test that no description in either schema breaks inside a paragraph; done at the top of the stack once this change merges there, so that the layers between do not conflict
 
 ## 5. Removal
 
