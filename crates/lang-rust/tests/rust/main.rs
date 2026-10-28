@@ -11,6 +11,7 @@ mod data;
 mod dogfood;
 mod editions;
 mod env;
+mod gates;
 mod imports;
 mod modules;
 mod provides;
