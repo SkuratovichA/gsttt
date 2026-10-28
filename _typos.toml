@@ -17,9 +17,9 @@ extend-ignore-re = [
   'contains\("`exlude`"\)',
   # "café" as the bytes of Latin-1, in the engine test of a file that is not UTF-8.
   'b"caf\\xe9',
-  # The Python linker test mounts a package at "/ba", a path that is not a word.
+  # The Python linker test has router "a" include router "b" under the prefix "/ba", and "b" include "a" under "/ab"; the prefixes are made of the two names and are not words.
   'mount\("a", "b", "/ba"\)',
-  # The TypeScript resolver test matches the glob "ab*ba" against "aba", letters that are not a word.
+  # The TypeScript resolver test checks that the pattern "ab*ba" does not match "aba", where its prefix and suffix would overlap; the letters are not words.
   'capture\("ab\*ba", "aba"\)',
   # gix names the path of a directory entry `rela_path`, short for relative.
   'entry\.rela_path',
