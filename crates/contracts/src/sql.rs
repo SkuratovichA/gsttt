@@ -3,6 +3,8 @@
 //! `CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, declare `table <name>`; queries and
 //! statements that change rows call the tables they name, leaving out the names of common table expressions.
 //! Statements are read one by one, so a statement that does not parse is counted and the others still count.
+//!
+//! The connector always opens a project, even where no file is claimed, because code in any language can embed SQL.
 
 use std::collections::BTreeSet;
 use std::ops::ControlFlow;
@@ -26,7 +28,7 @@ use sqlparser::dialect::{Dialect, PostgreSqlDialect, dialect_from_str};
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
-use crate::common::{Errors, any_claimed, provide, salt_of, site, syntax_failure};
+use crate::common::{Errors, provide, salt_of, site, syntax_failure};
 use crate::tree::SyntaxError;
 
 const VIA: &str = "sql";
@@ -95,13 +97,14 @@ impl Connector for Sql {
         }
     }
 
-    fn detect(&self, repo: &RepoView) -> bool {
-        any_claimed(repo, claims)
+    fn detect(&self, _: &RepoView) -> bool {
+        // Code in any language can embed SQL, so there is always something it may have to read.
+        true
     }
 
     fn open(
         &self,
-        repo: &RepoView,
+        _: &RepoView,
         options: &SqlOptions,
         _: &[Pack],
     ) -> Result<Vec<SqlProject>, ConnectorError> {
@@ -122,11 +125,7 @@ impl Connector for Sql {
                 lowered
             }
         };
-        Ok(if any_claimed(repo, claims) {
-            vec![SqlProject { dialect }]
-        } else {
-            Vec::new()
-        })
+        Ok(vec![SqlProject { dialect }])
     }
 }
 

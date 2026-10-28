@@ -106,23 +106,31 @@ fn one_bad_statement_does_not_hide_the_rest() {
 fn embedded_sql_reports_lines_within_the_document() {
     // The document starts on line 7 of its host file; the engine, not the connector, moves its lines there.
     assert_eq!(
-        read_embedded(&SQL, "sql_queries", "sql", 7, "SELECT id FROM bookings"),
+        read_embedded(&SQL, "sql_embedded", "sql", 7, "SELECT id FROM bookings"),
         vec!["calls table bookings @1"]
     );
-    // A statement further down reports its own line within the document, with or without a placeholder to read
-    // around.
+    // A statement further down reports its own line within the document, also when it is read with its placeholder
+    // replaced.
     let text = "SELECT 1;\nSELECT id FROM bookings WHERE a = %s";
     assert_eq!(
-        read_embedded(&SQL, "sql_queries", "sql", 7, text),
+        read_embedded(&SQL, "sql_embedded", "sql", 7, text),
         vec!["calls table bookings @2"]
     );
 }
 
-/// The pipeline hands the host's document to the connector and keeps what it reads. The snapshot shows the lines
-/// as the engine places them, so it changes when the engine moves them to the host file.
+/// The tree holds one Python file and no SQL file, so the connector has only the embedded document to read. The
+/// snapshot shows the lines as the engine places them, so it changes when the engine moves them to the host file.
+#[gsttt_scenario::scenario("contract-formats", "Embedded SQL is read without an SQL file")]
 #[test]
-fn embedded_sql_is_read_when_a_host_carries_it() {
+fn embedded_sql_is_read_without_an_sql_file() {
     let run = Run::new("sql_embedded", &[module(&HOST), module(&SQL)]);
+    let connectors: Vec<&str> = run
+        .output
+        .projects
+        .iter()
+        .map(|project| project.connector.name)
+        .collect();
+    assert_eq!(connectors, vec!["host", "sql"]);
     assert_eq!(
         run.embedded("app/repo.py"),
         vec![(Some("sql"), vec!["calls table bookings".to_owned()])]

@@ -7,12 +7,16 @@ The contract-format connectors read the files that define seams rather than impl
 ## ADDED Requirements
 
 ### Requirement: Connectors and files
-The crate SHALL provide the connectors `openapi`, `graphql`, `proto`, `prisma`, `sql` and `env`, each opening one project at the repository root when the file list holds a file it claims, and none otherwise.
+The crate SHALL provide the connectors `openapi`, `graphql`, `proto`, `prisma`, `sql` and `env`. `openapi`, `proto`, `prisma` and `env` SHALL each open one project at the repository root when the file list holds a file it claims, and none otherwise; `graphql` and `sql` SHALL always run and open one, because code in any language can embed their documents.
 
 #### Scenario: A connector opens a project only for files it claims
 - **WHEN** the file list holds `schema.graphql` and `.env.example` and no other contract file
-- **THEN** the `graphql` and `env` connectors each open one project at the repository root
-- **AND** the `openapi`, `proto`, `prisma` and `sql` connectors open none
+- **THEN** the `graphql`, `sql` and `env` connectors each open one project at the repository root
+- **AND** the `openapi`, `proto` and `prisma` connectors open none
+
+#### Scenario: Embedded SQL is read without an SQL file
+- **WHEN** the file list holds no file that `sql` claims and a file of another connector embeds `SELECT id FROM bookings`
+- **THEN** the `sql` connector reads it and that file calls `table bookings`
 
 ### Requirement: File claims
 `openapi` SHALL claim `openapi.*`, `swagger.*` and `*.openapi.*` with the extensions `yaml`, `yml` and `json`, the files its `files` option names, and, as fragments, the `yaml`, `yml` and `json` files that their `$ref`s reach; `graphql` SHALL claim `graphql`, `graphqls` and `gql` files; `proto` SHALL claim `proto` files; `prisma` SHALL claim `prisma` files; `sql` SHALL claim `sql` files; and `env` SHALL claim `.env`, `.env.*` and `*.env` files.

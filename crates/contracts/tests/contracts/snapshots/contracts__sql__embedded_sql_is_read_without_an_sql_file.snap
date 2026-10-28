@@ -41,25 +41,6 @@ expression: run.snapshot()
       "unresolved": [],
       "path": "app/repo.py",
       "project": "host ."
-    },
-    {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "imports": [],
-      "contracts": [
-        {
-          "key": "table bookings",
-          "role": "declares",
-          "line": 1,
-          "via": "sql"
-        }
-      ],
-      "embedded": [],
-      "unresolved": [],
-      "path": "migrations/001_init.sql",
-      "project": "sql ."
     }
   ],
   "linked": [],

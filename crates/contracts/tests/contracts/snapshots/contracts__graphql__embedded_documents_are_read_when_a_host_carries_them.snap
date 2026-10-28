@@ -20,25 +20,6 @@ expression: run.snapshot()
       },
       "tags": 0,
       "imports": [],
-      "contracts": [
-        {
-          "key": "graphql Query.bookings",
-          "role": "declares",
-          "line": 2,
-          "via": "graphql"
-        }
-      ],
-      "embedded": [],
-      "unresolved": [],
-      "path": "schema.graphql",
-      "project": "graphql ."
-    },
-    {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "imports": [],
       "contracts": [],
       "embedded": [
         {

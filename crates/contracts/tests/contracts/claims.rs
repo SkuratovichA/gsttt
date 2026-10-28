@@ -31,7 +31,7 @@ fn a_connector_opens_a_project_only_for_files_it_claims() {
             ("graphql", one_at_the_root.clone()),
             ("proto", vec![]),
             ("prisma", vec![]),
-            ("sql", vec![]),
+            ("sql", one_at_the_root.clone()),
             ("env", one_at_the_root),
         ]
     );

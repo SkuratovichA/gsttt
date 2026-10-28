@@ -3,6 +3,9 @@
 //!
 //! A schema declares `graphql Query.bookings` for each field of a root type, an operation calls the root fields it
 //! selects, and a `#import "path"` comment is an import, the convention graphql-import and graphql-tag loaders use.
+//!
+//! The connector always opens a project, even where no file is claimed, because code in any language can embed
+//! GraphQL documents.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,9 +23,7 @@ use gsttt_core::text::LineIndex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{
-    Errors, any_claimed, byte_offset, line_number, provide, resolve_relative, site,
-};
+use crate::common::{Errors, byte_offset, line_number, provide, resolve_relative, site};
 
 const VIA: &str = "graphql";
 
@@ -61,8 +62,9 @@ impl Connector for Graphql {
         }
     }
 
-    fn detect(&self, repo: &RepoView) -> bool {
-        any_claimed(repo, claims)
+    fn detect(&self, _: &RepoView) -> bool {
+        // Code in any language can embed a GraphQL document, so there is always something it may have to read.
+        true
     }
 
     fn open(
@@ -71,11 +73,7 @@ impl Connector for Graphql {
         _: &GraphqlOptions,
         _: &[Pack],
     ) -> Result<Vec<GraphqlProject>, ConnectorError> {
-        Ok(if any_claimed(repo, claims) {
-            vec![GraphqlProject { repo: repo.clone() }]
-        } else {
-            Vec::new()
-        })
+        Ok(vec![GraphqlProject { repo: repo.clone() }])
     }
 }
 

@@ -60,7 +60,7 @@ fn embedded_documents_report_lines_within_the_document() {
     assert_eq!(
         read_embedded(
             &GRAPHQL,
-            "claims_graphql_env",
+            "graphql_embedded",
             "graphql",
             5,
             "query { bookings { id } }"
@@ -70,7 +70,7 @@ fn embedded_documents_report_lines_within_the_document() {
     assert_eq!(
         read_embedded(
             &GRAPHQL,
-            "claims_graphql_env",
+            "graphql_embedded",
             "graphql",
             5,
             "query Bookings {\n  me { id }\n  bookings { id }\n}"
