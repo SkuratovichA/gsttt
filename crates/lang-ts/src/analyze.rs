@@ -761,10 +761,14 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        let argument = it.arguments.first().and_then(Argument::as_expression);
         if is_require(it) {
-            let argument = it.arguments.first().and_then(Argument::as_expression);
             self.load(it.span, argument, ImportKind::Require, None);
         } else if let Some(callee) = chain_of(&it.callee).and_then(|names| dotted(&names)) {
+            // A module named at run time is neither an import nor a blind spot, so only a literal one goes to `load`.
+            if is_module_call(&callee) && argument.and_then(literal_text).is_some() {
+                self.load(it.span, argument, ImportKind::Dynamic, None);
+            }
             self.call(it, &callee);
         }
         walk::walk_call_expression(self, it);
@@ -854,6 +858,25 @@ fn peel<'e, 'a>(expr: &'e Expression<'a>) -> &'e Expression<'a> {
 
 fn is_require(call: &CallExpression<'_>) -> bool {
     matches!(&call.callee, Expression::Identifier(name) if name.name.as_str() == "require")
+}
+
+/// The calls of Vitest and Jest whose first argument is a module: the one to mock and the one to load as it is.
+fn is_module_call(callee: &str) -> bool {
+    matches!(
+        callee,
+        "vi.mock"
+            | "vi.doMock"
+            | "vi.unmock"
+            | "vi.doUnmock"
+            | "vi.importActual"
+            | "vi.importMock"
+            | "jest.mock"
+            | "jest.doMock"
+            | "jest.unmock"
+            | "jest.dontMock"
+            | "jest.requireActual"
+            | "jest.requireMock"
+    )
 }
 
 fn is_resolvers_name(name: &str) -> bool {

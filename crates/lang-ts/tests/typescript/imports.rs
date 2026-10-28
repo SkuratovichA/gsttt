@@ -100,6 +100,58 @@ fn a_nested_import_type_is_read_at_the_line_of_its_specifier() -> Result<(), Box
 }
 
 #[test]
+#[scenario("typescript", "A mocked or actual module is a dynamic import")]
+fn a_mocked_or_actual_module_is_a_dynamic_import() -> Result<(), Box<dyn Error>> {
+    let json = run("mocked-modules")?;
+    let expected: Vec<String> = (1..=13)
+        .map(|line| format!("./lib dynamic @{line} -> file src/lib.ts"))
+        .collect();
+    assert_eq!(imports(&json, "src/runners.test.ts"), expected);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A module named at run time is no import")]
+fn a_module_named_at_run_time_is_no_import() -> Result<(), Box<dyn Error>> {
+    let json = run("computed-mocks")?;
+    assert_eq!(imports(&json, "src/computed.test.ts"), NOTHING);
+    assert_eq!(
+        unread(&json, "src/computed.test.ts"),
+        ["@5 non-literal import(name)"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A mock call on another receiver is no import")]
+fn a_mock_call_on_another_receiver_is_no_import() -> Result<(), Box<dyn Error>> {
+    let json = run("foreign-mock-calls")?;
+    assert_eq!(imports(&json, "src/others.test.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A mock that asks for the actual module reaches it")]
+fn a_mock_that_asks_for_the_actual_module_reaches_it() -> Result<(), Box<dyn Error>> {
+    let json = run("mocks-with-actual")?;
+    assert_eq!(
+        imports(&json, "src/lib.test.ts"),
+        [
+            "./lib dynamic @1 -> file src/lib.ts",
+            "./lib dynamic @2 -> file src/lib.ts",
+            "./lib static @2 type-only -> file src/lib.ts",
+            "./editor dynamic @5 -> file src/editor.ts",
+            "./editor static @6 type-only -> file src/editor.ts",
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A computed import is a blind spot")]
 fn a_computed_import_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
     let json = run("computed-import")?;
