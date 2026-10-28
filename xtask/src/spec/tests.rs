@@ -617,6 +617,35 @@ fn a_change_that_names_a_requirement_main_lacks_is_not_ready() {
     );
 }
 
+#[gsttt_scenario::scenario("spec-gate", "A change that a failure names is not ready")]
+#[test]
+fn a_change_that_a_failure_names_is_not_ready() {
+    let tree = Tree::new();
+    // The change is finished, adds nothing that lacks a proof and removes a requirement the main
+    // spec has, so only the failure of the test that still claims the removed scenario holds it
+    // back.
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Wormholes", &["Impact goes through wormholes"])]),
+    )
+    .change(
+        "removes-wormholes",
+        TICKED,
+        &[("queries", &delta("REMOVED", &[removal("Wormholes")]))],
+    )
+    .source(
+        "tests/wormholes.rs",
+        &proof("queries", "Impact goes through wormholes"),
+    );
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+
+    fs::remove_file(tree.dir.path().join("crates/app/tests/wormholes.rs")).unwrap();
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "removes-wormholes\n"
+    );
+}
+
 #[test]
 fn a_change_without_tasks_is_never_ready() {
     let tree = Tree::new();
