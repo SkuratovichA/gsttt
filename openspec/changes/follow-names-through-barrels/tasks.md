@@ -33,3 +33,4 @@
 - [x] 6.5 The TypeScript linker does not forward `default` through `export *`, pinned against the core by a test; one `owned` for the tests; the cut after three names comes from `summary`
 - [x] 6.6 A named re-export of a name the barrel does not export is reached like a use of it, as the oracle of 6.3 requires
 - [x] 6.7 A cycle of `export *` is pinned through the linker and the walk on one fixture, and a router required in place has a test and a scenario
+- [x] 6.8 The Python and the Rust connector are pinned to leave `exports` unknown, so that a reader of `__all__` or `pub` that flips them to by-name has to be decided and tested in the walk

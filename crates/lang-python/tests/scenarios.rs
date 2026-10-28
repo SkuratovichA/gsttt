@@ -422,6 +422,8 @@ fn every_import_form_is_read() {
         .map(|site| site.line)
         .collect();
     assert_eq!(unresolved, [13]);
+    // The names of a Python file are not read, `__all__` included, so `impact` follows an import of it as the whole file. A reader of them would make the walk follow the names instead, which has to be decided and then pinned by the tests of the walk.
+    assert_eq!(forms.facts.exports, None);
     insta::assert_json_snapshot!(
         "every_import_form_is_read",
         tree.file_json("pkg/sub/forms.py")
