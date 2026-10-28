@@ -1,0 +1,34 @@
+---
+source: crates/lang-rust/tests/rust/data.rs
+expression: "out.sites(\"crates/db/src/queries.rs\")"
+---
+{
+  "contracts": [],
+  "embedded": [
+    {
+      "contracts": [],
+      "lang": "sql",
+      "line": 9,
+      "read_by": null,
+      "text": "SELECT id FROM bookings WHERE id = $1",
+      "via": "sqlx"
+    },
+    {
+      "contracts": [],
+      "lang": "sql",
+      "line": 23,
+      "read_by": null,
+      "text": "SELECT count(*) FROM rooms",
+      "via": "sqlx"
+    }
+  ],
+  "unresolved": [
+    {
+      "detail": "sqlx.query_scalar",
+      "line": 27,
+      "reason": {
+        "reason": "non-literal"
+      }
+    }
+  ]
+}

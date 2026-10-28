@@ -3,9 +3,8 @@
 use gsttt_core::contract::Role;
 use gsttt_core::index::Freshness;
 use gsttt_core::query::{ContractLookup, ContractLookupError, Found, Match, Site, contract};
+use gsttt_core::testing::Tree;
 use gsttt_scenario::scenario;
-
-use crate::fixture::Tree;
 
 fn lookup(tree: Tree, query: &str) -> ContractLookup {
     contract(&tree.build(), Freshness::Fresh, query).unwrap()

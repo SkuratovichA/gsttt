@@ -1,0 +1,145 @@
+---
+source: crates/config/tests/config/external.rs
+expression: run.output.to_json(&run.repo)
+---
+{
+  "projects": [
+    {
+      "connector": "plain",
+      "root": ".",
+      "provides": []
+    },
+    {
+      "connector": "kotlin",
+      "root": ".",
+      "provides": []
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "one",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [],
+          "to": "builtin"
+        },
+        {
+          "spec": "two",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [],
+          "to": "builtin"
+        }
+      ],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "notes/a.txt",
+      "project": "plain ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "./B",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "file": "src/B.kt"
+          }
+        }
+      ],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/A.kt",
+      "project": "kotlin ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "okio",
+          "kind": "static",
+          "line": 1,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "external": "okio"
+          }
+        },
+        {
+          "spec": "kotlin.io",
+          "kind": "static",
+          "line": 2,
+          "flags": 0,
+          "names": [],
+          "to": "builtin"
+        },
+        {
+          "spec": "./gen",
+          "kind": "static",
+          "line": 3,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "files": [
+              "src/A.kt",
+              "src/B.kt"
+            ]
+          }
+        },
+        {
+          "spec": "./ghost",
+          "kind": "static",
+          "line": 4,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        }
+      ],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/B.kt",
+      "project": "kotlin ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/C.kt",
+      "project": "kotlin ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [
+    "kotlin.sh"
+  ],
+  "problems": []
+}

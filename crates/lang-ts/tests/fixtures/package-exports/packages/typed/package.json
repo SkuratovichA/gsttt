@@ -1,0 +1,1 @@
+{ "name": "typed", "exports": { ".": { "types": "./src/types.d.ts", "default": "./src/runtime.ts" } } }

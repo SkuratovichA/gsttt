@@ -2,7 +2,7 @@
 
 ## Why
 
-Specs drift from code unless something fails when they do. Tying each scenario to one test by name, and checking that tie on every push, makes a scenario a promise the build keeps, and lets work land change by change without breaking the build while a change is half done.
+Specs drift from code unless something fails when they do. Tying each scenario to one test by name, and checking that tie with `cargo xtask spec`, makes a scenario a promise the build keeps, and lets work land change by change without breaking the build while a change is half done. This change runs the gate in the archive workflow, on the specs it produces; the CI workflow that runs it on pull requests and pushes comes with `add-distribution`.
 
 ## What Changes
 
@@ -23,4 +23,6 @@ None.
 
 ## Impact
 
-`crates/spec/`, `crates/scenario/`, `xtask/src/spec.rs` with `xtask/src/spec/`, `xtask/tests/spec*`, and the archive workflow. Every other crate uses `gsttt-scenario` as a dev-dependency.
+`crates/spec/`, `crates/scenario/`, `xtask/src/spec.rs` with `xtask/src/spec/`, and the archive workflow. Every other crate uses `gsttt-scenario` as a dev-dependency, and `gsttt-scenario` itself uses `trybuild` for the compile-fail tests of the attribute.
+
+The root `Cargo.toml` pins `serde_json` with `preserve_order` for every crate, so that a run of one package (`-p`) and a run of the workspace (`--workspace`) print JSON keys in the same order; this change carries that pin.

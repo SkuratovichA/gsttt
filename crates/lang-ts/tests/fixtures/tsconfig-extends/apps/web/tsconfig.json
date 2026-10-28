@@ -1,0 +1,5 @@
+{
+  // The shared options live at the root.
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}

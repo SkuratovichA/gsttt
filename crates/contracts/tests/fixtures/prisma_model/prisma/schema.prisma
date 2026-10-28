@@ -1,0 +1,3 @@
+datasource db { url = env("DATABASE_URL") }
+
+model BookingItem { id Int @id @@map("booking_items") }

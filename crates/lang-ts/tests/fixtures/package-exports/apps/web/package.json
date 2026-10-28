@@ -1,0 +1,9 @@
+{
+  "name": "web",
+  "dependencies": { "lib": "workspace:*", "typed": "workspace:*", "fields": "workspace:*" },
+  "imports": {
+    "#utils/*": "./src/utils/*.ts",
+    "#fs": "node:fs",
+    "#dep": { "import": "./src/dep-esm.ts", "default": "./src/dep.ts" }
+  }
+}

@@ -1,0 +1,93 @@
+---
+source: crates/contracts/tests/contracts/openapi.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "openapi",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "./paths/carts.yaml",
+          "kind": "reference",
+          "line": 16,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "file": "api/paths/carts.yaml"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "http GET /v1/bookings",
+          "role": "declares",
+          "line": 12,
+          "via": "openapi"
+        },
+        {
+          "key": "http GET /v2/bookings",
+          "role": "declares",
+          "line": 12,
+          "via": "openapi"
+        },
+        {
+          "key": "http GET /v3/bookings",
+          "role": "declares",
+          "line": 12,
+          "via": "openapi"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/openapi.yaml",
+      "project": "openapi ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/paths/carts.yaml",
+      "project": "openapi ."
+    }
+  ],
+  "linked": [
+    {
+      "key": "http GET /v1/carts",
+      "role": "declares",
+      "line": 1,
+      "via": "openapi",
+      "file": "api/paths/carts.yaml"
+    },
+    {
+      "key": "http GET /v2/carts",
+      "role": "declares",
+      "line": 1,
+      "via": "openapi",
+      "file": "api/paths/carts.yaml"
+    },
+    {
+      "key": "http GET /v3/carts",
+      "role": "declares",
+      "line": 1,
+      "via": "openapi",
+      "file": "api/paths/carts.yaml"
+    }
+  ],
+  "unclaimed": [],
+  "problems": []
+}
