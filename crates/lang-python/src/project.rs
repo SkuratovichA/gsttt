@@ -205,6 +205,6 @@ impl Project for PythonProject {
     }
 
     fn link(&self, input: &LinkInput<'_, PyExtra>) -> Vec<LinkedFact> {
-        crate::link::link(input)
+        crate::link::link(self, input)
     }
 }

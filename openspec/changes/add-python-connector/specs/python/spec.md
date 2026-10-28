@@ -68,18 +68,49 @@ A standard library module SHALL resolve to a builtin, a module of a declared dep
 - **THEN** `json` resolves to a builtin, `yaml` to the package `pyyaml`, `fastapi.routing` to the package `fastapi`, `requests` to an unknown package and `app.missing` to not found
 
 ### Requirement: HTTP routes
-With the `fastapi` pack, `get`, `post`, `put`, `patch`, `delete`, `options`, `head` and `api_route` decorators on a receiver made by `FastAPI()` or `APIRouter()` SHALL serve the receiver's `prefix` joined with the path, and `include_router(router, prefix=…)` SHALL serve the included router's routes under the prefix, across files.
+With the `fastapi` pack, `get`, `post`, `put`, `patch`, `delete`, `options`, `head` and `api_route` decorators on a receiver made by `FastAPI()` or `APIRouter()` SHALL serve the path, and `include_router(router, prefix=…)` SHALL serve the included router's routes under the prefix, across files.
 
 #### Scenario: A FastAPI router included with a prefix
 - **WHEN** `app/api/bookings.py` has `router = APIRouter(prefix="/bookings")` and `@router.get("/{booking_id}")`, and `app/main.py` has `app.include_router(bookings.router, prefix="/api")`
 - **THEN** `app/api/bookings.py` serves `http GET /api/bookings/{}` at the line of the decorator
+- **AND** it serves no other path
+
+### Requirement: FastAPI router chains
+A route on an `APIRouter` SHALL be served once for each chain of `include_router(router, prefix=…)` calls that reaches the router, at the path made by joining, from the outermost router inwards, the `prefix` of each call and then the `prefix` of the router it includes, and last the path of the route. A router that no call includes SHALL serve its own `prefix` joined with the path.
+
+#### Scenario: A FastAPI router mounted through another router
+- **WHEN** `app/api/bookings.py` has `router = APIRouter(prefix="/bookings")` and `@router.get("/{booking_id}")`, `app/api/v1.py` has `sub = APIRouter(prefix="/v1")` and `sub.include_router(bookings.router, prefix="/b")`, and `app/main.py` has `app.include_router(v1.sub, prefix="/api")`
+- **THEN** `app/api/bookings.py` serves `http GET /api/v1/b/bookings/{}` and no other path
+
+### Requirement: Repeated and cyclic mounts
+A call that includes a router without a `prefix` SHALL add no second copy of its routes, and a chain of calls that comes back to a router it has passed SHALL end there, the routes being served by the chains that end at a router nobody includes.
+
+#### Scenario: A router is served once for each way it is mounted
+- **WHEN** `app/main.py` has `app.include_router(health.router)`, `app.include_router(items.router)` and `app.include_router(items.router, prefix="/v2")`, and `@app.get("/ping")`, where `health.router` is `APIRouter()` with `@router.get("/health")` and `items.router` is `APIRouter(prefix="/items")` with `@router.get("/{item_id}")`
+- **THEN** `app/health.py` serves `http GET /health` once, `app/items.py` serves `http GET /items/{}` and `http GET /v2/items/{}`, and `app/main.py` serves `http GET /ping`
+
+#### Scenario: Routers that mount each other still serve their routes
+- **WHEN** `app/a.py` has `router = APIRouter(prefix="/x")`, `router.include_router(b.router, prefix="/b")` and `@router.get("/one")`, `app/b.py` has `router = APIRouter(prefix="/y")`, `router.include_router(a.router, prefix="/a")` and `@router.get("/two")`, and `app/main.py` has `app.include_router(a.router, prefix="/a")`
+- **THEN** `app/a.py` serves `http GET /a/x/one` and `app/b.py` serves `http GET /a/x/b/y/two`
 
 ### Requirement: Flask routes
-With the `flask` pack, `route` and the verb decorators on a receiver made by `Flask()` or `Blueprint()` SHALL serve the `url_prefix` joined with the path, the method taken from the first entry of `methods` and `GET` when it is absent, and `register_blueprint(bp, url_prefix=…)` SHALL add its prefix across files.
+With the `flask` pack, `route` and the verb decorators on a receiver made by `Flask()` or `Blueprint()` SHALL serve the path, the method taken from the first entry of `methods` and `GET` when it is absent, and `register_blueprint(bp, url_prefix=…)` SHALL serve the blueprint's routes under the prefix, across files.
 
 #### Scenario: A Flask blueprint serves under its prefix
 - **WHEN** a file has `bp = Blueprint("b", __name__, url_prefix="/bookings")` and `@bp.route("/<int:id>", methods=["DELETE"])`
 - **THEN** it serves `http DELETE /bookings/{}`
+
+### Requirement: Flask blueprint prefixes
+A route on a `Blueprint` SHALL be served once for each chain of `register_blueprint(bp, url_prefix=…)` calls that reaches the blueprint. A blueprint SHALL be served under the `url_prefix` of its registration, which replaces the one it was made with, and under its own when the registration gives none. A blueprint registered on another blueprint SHALL be served under its parent's prefix, found the same way, followed by its own, and one that no registration reaches under its own.
+
+#### Scenario: A registration prefix replaces a blueprint's own
+- **WHEN** `app/bookings.py` has `bp = Blueprint("bookings", __name__, url_prefix="/bookings")` and `@bp.get("/<int:id>")`, `app/reports.py` has `reports = Blueprint("reports", __name__, url_prefix="/reports")` and `@reports.get("/daily")`, and `app/__init__.py` has `app.register_blueprint(bp, url_prefix="/api")` and `app.register_blueprint(reports)`
+- **THEN** `app/bookings.py` serves `http GET /api/{}` and not `http GET /bookings/{}`
+- **AND** `app/reports.py` serves `http GET /reports/daily`
+
+#### Scenario: Blueprints nest under their parent's prefix
+- **WHEN** `admin = Blueprint("admin", __name__, url_prefix="/admin")` registers `reports`, made with `url_prefix="/reports"` and `@reports.get("/daily")`, `shop = Blueprint("shop", __name__, url_prefix="/shop")` registers `items`, made with `url_prefix="/items"` and `@items.get("/<int:id>")`, with `url_prefix="/goods"`, and the app registers `admin` and `shop` with `url_prefix="/store"`
+- **THEN** `reports` serves `http GET /admin/reports/daily` and `items` serves `http GET /store/goods/{}`
 
 ### Requirement: Django routes
 With the `django` pack, `path()` entries in `urlpatterns` SHALL serve their routes, with `include("<module>")` adding the including route as a prefix across files.

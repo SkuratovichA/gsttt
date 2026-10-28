@@ -1,145 +1,260 @@
-//! The cross-file half of routing. `parse` records, for every file, which route facts sit under which router
-//! variable and which routers the file mounts under a prefix; here the mounts are followed from each route up to the
-//! router nobody mounts, and every way up gives the route once more, with the prefixes in front of its path.
+//! The cross-file half of routing. `parse` records, for every file, the routes declared on routers, the prefix each
+//! router declares for itself and the routers the file mounts under a prefix; here the mounts are followed from the
+//! router of each route up to the routers nobody mounts, and the route is served once for every way up, behind the
+//! prefixes of every mount and router on the way.
 //!
-//! The route's own fact stays in its file: linked facts are added to the facts a file already has.
+//! A router's routes are no facts of its file, so the path a router serves on its own appears only when no mount
+//! reaches it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::connector::{LinkFile, LinkInput, LinkedFact};
-use gsttt_core::contract::{ContractKey, ContractKind, Role};
-use gsttt_core::fact::{ContractFact, ImportKind, Resolution};
+use gsttt_core::contract::ContractKind;
+use gsttt_core::fact::{ContractFact, Line};
 use gsttt_core::ids::FileId;
 use gsttt_core::path::RepoPath;
+use gsttt_core::rules::contract_key;
 
 use crate::extra::{Mount, PyExtra, Target};
+use crate::project::PythonProject;
+use crate::resolve::module_file;
 use crate::site::join_prefixes;
 
-/// How many mounts are followed upward from a route, so that routers mounted into each other in a circle end.
-const MAX_DEPTH: usize = 16;
+/// How many mounts are followed upward from one router, so that a very deep tree of mounts cannot exhaust the
+/// stack. Routers that mount each other end sooner, at the first router seen twice.
+const MAX_DEPTH: usize = 32;
+
+/// How many ways up are followed from one router, whole or cut. Mounts shared at every level multiply the ways, and
+/// a router mounted in dozens of places is unlike any real application.
+const MAX_WAYS: usize = 64;
 
 /// A router: the file it lives in and the variable that holds it. Django's `urlpatterns` is the module itself and
 /// has the empty name.
 type Router<'a> = (FileId, &'a str);
 
+/// Finds the file of the module a specifier names, as the file `from` imports it.
+type ModuleFile<'f> = &'f dyn Fn(&RepoPath, &str) -> Option<FileId>;
+
 /// A mount seen from the router it mounts.
 struct Parent<'a> {
     /// The router the mount is called on: `app` in `app.include_router(…)`.
     router: Router<'a>,
-    prefix: &'a str,
+    prefix: Option<&'a str>,
+    replaces: bool,
+    /// Where the mount is, for a cut way to name.
+    file: FileId,
+    line: Line,
 }
 
-/// The route facts of the project once more for each way their router is mounted, behind the mount prefixes.
-pub(crate) fn link<'a>(input: &LinkInput<'a, PyExtra>) -> Vec<LinkedFact> {
-    let mut parents: BTreeMap<Router<'a>, Vec<Parent<'a>>> = BTreeMap::new();
+/// Why a way up from a router was not followed to its end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Why {
+    /// The way came back to a router it had passed: routers mounted into each other.
+    Cycle,
+    TooDeep,
+    TooMany,
+}
+
+/// A mount that a way up from a router stopped at. Coverage should count it as a site `link` could not read.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Cut<'a> {
+    file: FileId,
+    line: Line,
+    /// The router the mount mounts.
+    router: &'a str,
+    why: Why,
+}
+
+/// The mounts of one project, read from the `extra` of its files.
+struct Mounts<'a> {
+    /// The mounts by the router they mount.
+    parents: BTreeMap<Router<'a>, Vec<Parent<'a>>>,
+    /// The prefix each router declares for itself.
+    own: BTreeMap<Router<'a>, &'a str>,
+}
+
+/// What `link` made, and the ways it could not follow.
+struct Composed<'a> {
+    facts: Vec<LinkedFact>,
+    cuts: BTreeSet<Cut<'a>>,
+}
+
+/// The routes declared on routers, once for each way their router is mounted, behind the prefixes of the mounts and
+/// of the routers above it.
+pub(crate) fn link(project: &PythonProject, input: &LinkInput<'_, PyExtra>) -> Vec<LinkedFact> {
+    let Composed { facts, cuts } = compose(input, &|from, spec| module_file(project, from, spec));
+    // `Project::link` returns facts only, so a way that was cut is told to the log until coverage can take it.
+    for cut in &cuts {
+        let file = input.get(cut.file).map_or("", |file| file.path.as_str());
+        tracing::warn!(
+            file,
+            line = cut.line,
+            router = cut.router,
+            why = ?cut.why,
+            "the mounts above a router were not followed to the end"
+        );
+    }
+    facts
+}
+
+fn compose<'a>(input: &LinkInput<'a, PyExtra>, module_file: ModuleFile<'_>) -> Composed<'a> {
+    let mounts = Mounts::read(input, module_file);
+    let mut cuts = BTreeSet::new();
+    // The ways up depend on the router alone, so every route of a router shares them.
+    let mut ways: BTreeMap<Router<'a>, Vec<String>> = BTreeMap::new();
+    let mut facts = Vec::new();
     for file in input.files().iter().copied() {
-        for mount in &file.extra.mounts {
-            if let Some(child) = mounted(input, file, mount) {
-                parents.entry(child).or_default().push(Parent {
-                    router: (file.id, mount.receiver.as_str()),
-                    prefix: mount.prefix.as_str(),
+        for route in &file.extra.routes {
+            let Some((method, path)) = route.fact.key.http_parts() else {
+                continue;
+            };
+            let router = (file.id, route.var.as_str());
+            let prefixes = ways
+                .entry(router)
+                .or_insert_with(|| mounts.prefixes(router, &mut cuts));
+            for prefix in prefixes.iter() {
+                facts.push(LinkedFact {
+                    file: file.id,
+                    fact: ContractFact {
+                        key: contract_key(&ContractKind::Http, Some(prefix), path, Some(method)),
+                        role: route.fact.role,
+                        line: route.fact.line,
+                        via: route.fact.via.clone(),
+                    },
                 });
             }
         }
     }
+    // Two routes of one file can be reached the same way, and the engine only sorts by file.
+    facts.sort_by(|a, b| {
+        (a.file, a.fact.line, a.fact.key.key()).cmp(&(b.file, b.fact.line, b.fact.key.key()))
+    });
+    facts.dedup();
+    Composed { facts, cuts }
+}
 
-    let mut linked = Vec::new();
-    for file in input.files().iter().copied() {
-        for route in &file.extra.routes {
-            let mut prefixes = Vec::new();
-            climb(
-                &parents,
-                (file.id, route.var.as_str()),
-                &mut Vec::new(),
-                &mut prefixes,
-            );
-            let serves = file
-                .facts
-                .contracts
-                .iter()
-                .filter(|fact| fact.line == route.line && matches!(fact.role, Role::Serves));
-            for fact in serves {
-                let Some((method, path)) = fact.key.http_parts() else {
-                    continue;
-                };
-                for prefix in &prefixes {
-                    let path = join_prefixes(&ContractKind::Http, prefix, path);
-                    linked.push(LinkedFact {
+impl<'a> Mounts<'a> {
+    fn read(input: &LinkInput<'a, PyExtra>, module_file: ModuleFile<'_>) -> Self {
+        let mut parents: BTreeMap<Router<'a>, Vec<Parent<'a>>> = BTreeMap::new();
+        let mut own = BTreeMap::new();
+        for file in input.files().iter().copied() {
+            for mount in &file.extra.mounts {
+                if let Some(child) = mounted(file, mount, module_file) {
+                    // The receiver may be a router imported from another file, which then holds its prefix.
+                    let router = named(file, &mount.receiver, module_file)
+                        .unwrap_or((file.id, mount.receiver.as_str()));
+                    parents.entry(child).or_default().push(Parent {
+                        router,
+                        prefix: mount.prefix.as_deref(),
+                        replaces: mount.replaces,
                         file: file.id,
-                        fact: ContractFact {
-                            key: ContractKey::http(method, &path),
-                            role: fact.role,
-                            line: fact.line,
-                            via: fact.via.clone(),
-                        },
+                        line: mount.line,
                     });
                 }
             }
+            for router in &file.extra.routers {
+                own.insert((file.id, router.var.as_str()), router.prefix.as_str());
+            }
         }
+        Self { parents, own }
     }
-    // Two routes of one file can be reached the same way, and the engine only sorts by file.
-    linked.sort_by(|a, b| {
-        (a.file, a.fact.line, a.fact.key.key()).cmp(&(b.file, b.fact.line, b.fact.key.key()))
-    });
-    linked.dedup();
-    linked
+
+    fn own_prefix(&self, router: Router<'a>) -> &'a str {
+        self.own.get(&router).copied().unwrap_or_default()
+    }
+
+    /// Every prefix `start` is served behind, sorted: one for each way up through the mounts to a router nobody
+    /// mounts. A router that no mount reaches, or whose every way up is cut, is served behind its own prefix.
+    fn prefixes(&self, start: Router<'a>, cuts: &mut BTreeSet<Cut<'a>>) -> Vec<String> {
+        let mut climb = Climb {
+            mounts: self,
+            ways: BTreeSet::new(),
+            ended: 0,
+            cuts,
+        };
+        climb.up(start, "", &mut vec![start]);
+        if climb.ways.is_empty() {
+            return vec![self.own_prefix(start).to_owned()];
+        }
+        climb.ways.into_iter().collect()
+    }
 }
 
-/// Every prefix `router` is served under: the prefixes of the mounts between it and a router nobody mounts, outermost
-/// first. `trail` holds the prefixes passed so far, innermost first. A router that is not mounted has no prefix to
-/// add, so it gives none.
-fn climb<'a>(
-    parents: &BTreeMap<Router<'a>, Vec<Parent<'a>>>,
-    router: Router<'a>,
-    trail: &mut Vec<&'a str>,
-    found: &mut Vec<String>,
-) {
-    let Some(mounts) = parents.get(&router) else {
-        if !trail.is_empty() {
-            let joined = trail.iter().rev().fold(String::new(), |outer, inner| {
-                join_prefixes(&ContractKind::Http, &outer, inner)
-            });
-            found.push(joined);
+/// One climb from a router to the routers above it.
+struct Climb<'m, 'a, 'c> {
+    mounts: &'m Mounts<'a>,
+    /// The prefix of each way that reached a router nobody mounts.
+    ways: BTreeSet<String>,
+    /// Ways ended so far, whole or cut.
+    ended: usize,
+    cuts: &'c mut BTreeSet<Cut<'a>>,
+}
+
+impl<'a> Climb<'_, 'a, '_> {
+    /// Climbs from `node`. `below` is the path between `node` and the route: everything the routers and mounts
+    /// below `node` put in front of it, except `node`'s own prefix, which a replacing mount may drop. `trail` holds
+    /// the routers passed, `node` last.
+    fn up(&mut self, node: Router<'a>, below: &str, trail: &mut Vec<Router<'a>>) {
+        let own = self.mounts.own_prefix(node);
+        let Some(parents) = self.mounts.parents.get(&node) else {
+            self.ended += 1;
+            self.ways
+                .insert(join_prefixes(&ContractKind::Http, own, below));
+            return;
+        };
+        for parent in parents {
+            let why = if self.ended >= MAX_WAYS {
+                Some(Why::TooMany)
+            } else if trail.contains(&parent.router) {
+                Some(Why::Cycle)
+            } else if trail.len() >= MAX_DEPTH {
+                Some(Why::TooDeep)
+            } else {
+                None
+            };
+            if let Some(why) = why {
+                self.ended += 1;
+                self.cuts.insert(Cut {
+                    file: parent.file,
+                    line: parent.line,
+                    router: node.1,
+                    why,
+                });
+                continue;
+            }
+            // FastAPI and Django put the mount's prefix in front of the router's own; Flask's registration prefix
+            // stands where the blueprint's own would have been, and the blueprint keeps its own only without one.
+            let local = match (parent.replaces, parent.prefix) {
+                (true, prefix) => prefix.unwrap_or(own).to_owned(),
+                (false, prefix) => {
+                    join_prefixes(&ContractKind::Http, prefix.unwrap_or_default(), own)
+                }
+            };
+            let below = join_prefixes(&ContractKind::Http, &local, below);
+            trail.push(parent.router);
+            self.up(parent.router, &below, trail);
+            trail.pop();
         }
-        return;
-    };
-    if trail.len() >= MAX_DEPTH {
-        return;
-    }
-    for parent in mounts {
-        trail.push(parent.prefix);
-        climb(parents, parent.router, trail, found);
-        trail.pop();
     }
 }
 
 /// The router `mount` of `file` mounts, when it can be found.
 fn mounted<'a>(
-    input: &LinkInput<'a, PyExtra>,
     file: LinkFile<'a, PyExtra>,
     mount: &'a Mount,
+    module_file: ModuleFile<'_>,
 ) -> Option<Router<'a>> {
     match &mount.target {
-        Target::Module(spec) => {
-            let import = file.imports.iter().find(|resolved| {
-                resolved.import.kind == ImportKind::Dynamic
-                    && resolved.import.line == mount.line
-                    && resolved.import.spec == *spec
-            })?;
-            match import.to {
-                Resolution::File { file } => Some((file, "")),
-                _ => None,
-            }
-        }
-        Target::Name(name) => named(input, file, name),
+        Target::Module(spec) => Some((module_file(file.path, spec)?, "")),
+        Target::Name(name) => named(file, name, module_file),
     }
 }
 
 /// The router an expression names in `file`: a variable of the file itself, or a name its imports bind.
 fn named<'a>(
-    input: &LinkInput<'a, PyExtra>,
     file: LinkFile<'a, PyExtra>,
     expr: &'a str,
+    module_file: ModuleFile<'_>,
 ) -> Option<Router<'a>> {
     let (head, rest) = expr.split_once('.').unwrap_or((expr, ""));
     let Some(bind) = file
@@ -151,39 +266,215 @@ fn named<'a>(
     else {
         return Some((file.id, expr));
     };
-    let resolved = file
-        .imports
-        .iter()
-        .find(|resolved| resolved.import.line == bind.line && resolved.import.spec == bind.spec)?;
-    let files = resolved.to.files();
-    let Some(name) = bind.name.as_deref() else {
-        // `import app.api.bookings as bookings`: the alias is the module, and the router is inside it.
-        return match files {
-            [module] if !rest.is_empty() => Some((*module, rest)),
-            _ => None,
-        };
-    };
-    // `from app.api import bookings`: a name that is a module of the resolution is that module, and the router is
-    // inside it; any other name is a router that the module itself holds.
-    let submodule = files.iter().copied().find(|id| {
-        input
-            .get(*id)
-            .is_some_and(|candidate| module_name(candidate.path) == name)
-    });
-    match (submodule, files) {
-        (Some(module), _) if !rest.is_empty() => Some((module, rest)),
-        (None, [module]) if rest.is_empty() => Some((*module, name)),
-        _ => None,
+    match (bind.name.as_deref(), rest) {
+        // `import app.api.bookings as bookings`: the alias is the module, and a module is no router.
+        (None, "") => None,
+        // `import app.api.bookings as bookings; bookings.router`: the router is inside the module.
+        (None, rest) => Some((module_file(file.path, &bind.spec)?, rest)),
+        // `from app.api.bookings import router`: the module holds the router, even when it is also called `router`.
+        (Some(name), "") => Some((module_file(file.path, &bind.spec)?, name)),
+        // `from app.api import bookings; bookings.router`: the name is a module of the package, and the router is
+        // inside it.
+        (Some(name), rest) => {
+            let spec = submodule_spec(&bind.spec, name);
+            Some((module_file(file.path, &spec)?, rest))
+        }
     }
 }
 
-/// The module a file answers to: `bookings` for `bookings.py` and for `bookings/__init__.py`.
-fn module_name(path: &RepoPath) -> &str {
-    let file = path.file_name();
-    let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
-    if stem == "__init__" {
-        path.parent().rsplit('/').next().unwrap_or_default()
+/// The specifier of the module `name` inside the package `spec`: `app.api` and `bookings` give `app.api.bookings`,
+/// and `.` gives `.bookings`.
+fn submodule_spec(spec: &str, name: &str) -> String {
+    if spec.ends_with('.') {
+        format!("{spec}{name}")
     } else {
-        stem
+        format!("{spec}.{name}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gsttt_core::contract::{ContractKey, Role};
+    use gsttt_core::fact::FileFacts;
+
+    use super::*;
+    use crate::extra::{Route, RouterPrefix};
+
+    /// The mounts of a project with one file, `app.py`, whose routers are all variables of that file.
+    struct Project {
+        path: RepoPath,
+        facts: FileFacts,
+        extra: PyExtra,
+    }
+
+    impl Project {
+        fn new() -> Self {
+            Self {
+                path: RepoPath::normalize("app.py").unwrap(),
+                facts: FileFacts::default(),
+                extra: PyExtra::default(),
+            }
+        }
+
+        /// `parent.include_router(child, prefix=prefix)` on the next line.
+        fn mount(&mut self, parent: &str, child: &str, prefix: &str) {
+            let line = Line::try_from(self.extra.mounts.len() + 1).unwrap();
+            self.extra.mounts.push(Mount {
+                line,
+                receiver: parent.to_owned(),
+                target: Target::Name(child.to_owned()),
+                prefix: Some(prefix.to_owned()),
+                replaces: false,
+            });
+        }
+
+        fn declare(&mut self, router: &str, prefix: &str) {
+            self.extra.routers.push(RouterPrefix {
+                var: router.to_owned(),
+                prefix: prefix.to_owned(),
+            });
+        }
+
+        fn route(&mut self, router: &str, path: &str) {
+            self.extra.routes.push(Route {
+                var: router.to_owned(),
+                fact: ContractFact {
+                    key: ContractKey::http("GET", path),
+                    role: Role::Serves,
+                    line: 1,
+                    via: "fastapi".to_owned(),
+                },
+            });
+        }
+
+        fn compose(&self) -> Composed<'_> {
+            let file = LinkFile {
+                id: FileId::from_raw(0),
+                path: &self.path,
+                facts: &self.facts,
+                imports: &[],
+                extra: &self.extra,
+            };
+            compose(&LinkInput::new(vec![file]), &|_, _| None)
+        }
+    }
+
+    fn keys(composed: &Composed<'_>) -> Vec<String> {
+        composed
+            .facts
+            .iter()
+            .map(|linked| linked.fact.key.key().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn routers_that_mount_each_other_end_at_the_first_router_seen_twice() {
+        let mut project = Project::new();
+        project.declare("a", "/x");
+        project.declare("b", "/y");
+        project.mount("b", "a", "/ab");
+        project.mount("a", "b", "/ba");
+        project.mount("app", "a", "/top");
+        project.route("a", "/one");
+        let composed = project.compose();
+        // The way up through `b` comes back to `a`; the way through `app` is whole.
+        assert_eq!(keys(&composed), ["GET /top/x/one"]);
+        let cuts: Vec<(&str, Why)> = composed
+            .cuts
+            .iter()
+            .map(|cut| (cut.router, cut.why))
+            .collect();
+        assert_eq!(cuts, [("b", Why::Cycle)]);
+    }
+
+    #[test]
+    fn routers_that_are_only_mounted_into_each_other_are_served_on_their_own() {
+        let mut project = Project::new();
+        project.declare("a", "/x");
+        project.mount("b", "a", "/ab");
+        project.mount("a", "b", "/ba");
+        project.route("a", "/one");
+        let composed = project.compose();
+        assert_eq!(keys(&composed), ["GET /x/one"]);
+        assert!(composed.cuts.iter().all(|cut| cut.why == Why::Cycle));
+        assert!(!composed.cuts.is_empty());
+    }
+
+    #[test]
+    fn a_router_mounted_into_itself_is_served_on_its_own() {
+        let mut project = Project::new();
+        project.declare("a", "/x");
+        project.mount("a", "a", "/again");
+        project.route("a", "/one");
+        let composed = project.compose();
+        assert_eq!(keys(&composed), ["GET /x/one"]);
+        assert_eq!(composed.cuts.len(), 1);
+    }
+
+    #[test]
+    fn the_ways_up_from_one_router_are_capped() {
+        // Seven layers of two routers, each router mounted into both routers of the layer above: 2^7 ways up.
+        let mut project = Project::new();
+        for layer in 0..7 {
+            for from in ["a", "b"] {
+                for to in ["a", "b"] {
+                    project.mount(
+                        &format!("{to}{}", layer + 1),
+                        &format!("{from}{layer}"),
+                        &format!("/{layer}{from}{to}"),
+                    );
+                }
+            }
+        }
+        project.route("a0", "/leaf");
+        let composed = project.compose();
+        assert_eq!(composed.facts.len(), MAX_WAYS);
+        assert!(!composed.cuts.is_empty());
+        assert!(composed.cuts.iter().all(|cut| cut.why == Why::TooMany));
+    }
+
+    #[test]
+    fn a_chain_of_mounts_deeper_than_the_limit_is_cut() {
+        let mut project = Project::new();
+        for level in 0..=MAX_DEPTH + 8 {
+            project.mount(&format!("r{}", level + 1), &format!("r{level}"), "/up");
+        }
+        project.declare("r0", "/own");
+        project.route("r0", "/leaf");
+        let composed = project.compose();
+        assert_eq!(keys(&composed), ["GET /own/leaf"]);
+        assert_eq!(composed.cuts.len(), 1);
+        assert!(composed.cuts.iter().all(|cut| cut.why == Why::TooDeep));
+    }
+
+    #[test]
+    fn a_replacing_mount_drops_the_routers_own_prefix() {
+        let mut project = Project::new();
+        project.declare("bp", "/bookings");
+        project.mount("app", "bp", "/api");
+        project
+            .extra
+            .mounts
+            .iter_mut()
+            .for_each(|mount| mount.replaces = true);
+        project.route("bp", "/{}");
+        let composed = project.compose();
+        assert_eq!(keys(&composed), ["GET /api/{}"]);
+    }
+
+    #[test]
+    fn a_mount_without_a_prefix_serves_the_route_once() {
+        let mut project = Project::new();
+        project.declare("r", "/items");
+        project.extra.mounts.push(Mount {
+            line: 1,
+            receiver: "app".to_owned(),
+            target: Target::Name("r".to_owned()),
+            prefix: None,
+            replaces: false,
+        });
+        project.route("r", "/{}");
+        let composed = project.compose();
+        assert_eq!(keys(&composed), ["GET /items/{}"]);
     }
 }

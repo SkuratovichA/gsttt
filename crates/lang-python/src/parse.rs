@@ -20,7 +20,7 @@ use ruff_python_ast::{
 use ruff_python_parser::{ParseError, parse_unchecked_source};
 use ruff_text_size::{Ranged, TextSize};
 
-use crate::extra::{Bind, Mount, PyExtra, Route, Target};
+use crate::extra::{Bind, Mount, PyExtra, Route, RouterPrefix, Target};
 use crate::files::{is_python_source, tags_of};
 use crate::project::PythonProject;
 use crate::site::{AssignSite, CallSite, dict_prop, dotted, join_prefixes, literal_of, text_of};
@@ -114,7 +114,15 @@ impl<'a> Collector<'a> {
     }
 
     fn finish(mut self) -> Parsed<PyExtra> {
-        // The binds of a file only matter to a file that mounts something.
+        // The prefix of a router matters to every file that makes one, because another file may fill it with routes or
+        // mount it; the binds matter to a file that mounts something.
+        if self
+            .bindings
+            .values()
+            .any(|binding| is_router_type(&binding.callee))
+        {
+            self.extra.routers = self.router_prefixes();
+        }
         if !self.extra.mounts.is_empty() {
             self.extra.binds = self.binds;
         }
@@ -275,19 +283,25 @@ impl<'a> Collector<'a> {
                         };
                         prefix = Some(read);
                     }
-                    let mut scope = None;
+                    let mut router = None;
                     if let Some(maker) = &rule.receiver {
                         let Some(read) = self.receiver_prefix(maker, receiver) else {
                             continue;
                         };
-                        prefix = Some(match prefix {
-                            Some(outer) => join_prefixes(&rule.kind, &outer, &read),
-                            None => read,
-                        });
-                        scope = receiver;
+                        if self.is_router(receiver) {
+                            // Whether a router's own prefix applies depends on how the router is mounted, and
+                            // `link` knows that; the route keeps the path it was written with.
+                            prefix = Some(prefix.unwrap_or_default());
+                            router = receiver;
+                        } else {
+                            prefix = Some(match prefix {
+                                Some(outer) => join_prefixes(&rule.kind, &outer, &read),
+                                None => read,
+                            });
+                        }
                     }
                     let outcome = rule.apply(&pack.name, &site, prefix.as_deref(), line, &name);
-                    self.record(outcome, scope);
+                    self.record(outcome, router);
                 }
             }
         }
@@ -320,32 +334,62 @@ impl<'a> Collector<'a> {
     /// The prefix a rule's `receiver` reads from the call that made `var`, when `var` is a name of this file made
     /// by one of the callees the rule names.
     fn receiver_prefix(&self, maker: &Prefix, var: Option<&str>) -> Option<String> {
-        let binding = self.bindings.get(var?)?;
-        if !maker.from.matches(&binding.callee) {
-            return None;
-        }
-        Some(maker.read(&CallSite {
-            callee: &binding.callee,
-            arguments: Some(binding.arguments),
-            member: None,
-        }))
+        prefix_made_by(maker, self.bindings.get(var?)?)
     }
 
-    /// Keeps what a rule made of a site. A serves fact under `scope` is a route `link` may need to move.
-    fn record(&mut self, outcome: Outcome, scope: Option<&str>) {
+    /// Whether `var` is a name of this file made by a router constructor, as opposed to an application or a client.
+    fn is_router(&self, var: Option<&str>) -> bool {
+        var.and_then(|var| self.bindings.get(var))
+            .is_some_and(|binding| is_router_type(&binding.callee))
+    }
+
+    /// The prefix each router variable of the file declares in its own constructor, read the way the packs read the
+    /// receiver of a route. A router without a prefix is left out, which `link` reads as the empty prefix.
+    fn router_prefixes(&self) -> Vec<RouterPrefix> {
+        let makers: Vec<&Prefix> = self
+            .packs
+            .iter()
+            .flat_map(|pack| {
+                let decorators = pack.decorators.iter().map(|rule| rule.receiver.as_ref());
+                let calls = pack.calls.iter().map(|rule| rule.receiver.as_ref());
+                decorators.chain(calls).flatten()
+            })
+            .collect();
+        let mut routers: Vec<RouterPrefix> = self
+            .bindings
+            .iter()
+            .filter(|(_, binding)| is_router_type(&binding.callee))
+            .filter_map(|(var, binding)| {
+                let prefix = makers
+                    .iter()
+                    .find_map(|maker| prefix_made_by(maker, binding))?;
+                (!prefix.is_empty()).then(|| RouterPrefix {
+                    var: var.clone(),
+                    prefix,
+                })
+            })
+            .collect();
+        // The map has no order, and the cache entry has to be the same for the same file.
+        routers.sort_by(|a, b| a.var.cmp(&b.var));
+        routers
+    }
+
+    /// Keeps what a rule made of a site. A route a rule finds on `router` is not a fact of the file: `link` serves
+    /// it behind the prefixes of the mounts above the router.
+    fn record(&mut self, outcome: Outcome, router: Option<&str>) {
         match outcome {
-            Outcome::Fact(fact) => {
-                if let Some(var) = scope
-                    && matches!(fact.role, Role::Serves)
-                    && matches!(fact.key.kind(), ContractKind::Http)
+            Outcome::Fact(fact) => match router {
+                Some(var)
+                    if matches!(fact.role, Role::Serves)
+                        && matches!(fact.key.kind(), ContractKind::Http) =>
                 {
                     self.extra.routes.push(Route {
                         var: var.to_owned(),
-                        line: fact.line,
+                        fact,
                     });
                 }
-                self.facts.contracts.push(fact);
-            }
+                _ => self.facts.contracts.push(fact),
+            },
             Outcome::Blind(site) => self.facts.unresolved.push(site),
             Outcome::Skip => {}
         }
@@ -381,7 +425,8 @@ impl<'a> Collector<'a> {
                     None => None,
                 };
                 let outcome = rule.apply(&pack.name, &site, prefix.as_deref(), line, &callee);
-                // A route a call declares, Django's `path()`, belongs to the module's URL list.
+                // A route a call declares, Django's `path()`, belongs to the module's URL list, which an
+                // including module mounts like a router.
                 self.record(outcome, Some(""));
             }
             for rule in &pack.embeds {
@@ -426,23 +471,26 @@ impl<'a> Collector<'a> {
         let last = callee.rsplit('.').next().unwrap_or(callee);
         match last {
             "include_router" if self.has_pack("fastapi") => {
-                self.router_mount(call, callee, line, ("router", "prefix"))
+                self.router_mount(call, callee, line, ("router", "prefix"), false)
             }
+            // Flask replaces the blueprint's own `url_prefix` with the registration's; FastAPI puts it in front.
             "register_blueprint" if self.has_pack("flask") => {
-                self.router_mount(call, callee, line, ("blueprint", "url_prefix"))
+                self.router_mount(call, callee, line, ("blueprint", "url_prefix"), true)
             }
             "path" | "re_path" | "url" if self.has_pack("django") => self.include_mount(call, line),
             _ => false,
         }
     }
 
-    /// `app.include_router(router, prefix="/api")`; `keywords` name the router's and the prefix's keyword.
+    /// `app.include_router(router, prefix="/api")`; `keywords` name the router's and the prefix's keyword, and
+    /// `replaces` tells a prefix that stands in for the router's own from one that goes in front of it.
     fn router_mount(
         &mut self,
         call: &ExprCall,
         callee: &str,
         line: Line,
         keywords: (&str, &str),
+        replaces: bool,
     ) -> bool {
         let Some(receiver) = receiver_of(callee) else {
             return false;
@@ -460,9 +508,9 @@ impl<'a> Collector<'a> {
             arguments: Some(&call.arguments),
             member: None,
         };
-        let mut prefix = String::new();
+        let mut prefix = None;
         if let Some(read) = site.keyword(keywords.1) {
-            prefix = read.into_owned();
+            prefix = Some(read.into_owned());
         } else if call.arguments.find_keyword(keywords.1).is_some() {
             // A prefix held in a variable: the router is still mounted, only its prefix is unknown.
             self.unresolved(line, callee);
@@ -472,6 +520,7 @@ impl<'a> Collector<'a> {
             receiver: receiver.to_owned(),
             target: Target::Name(target),
             prefix,
+            replaces,
         });
         true
     }
@@ -484,14 +533,11 @@ impl<'a> Collector<'a> {
         if dotted(&include.func).is_none_or(|name| name.rsplit('.').next() != Some("include")) {
             return false;
         }
-        let mut prefix = String::new();
+        let mut prefix = None;
         if let Some(route) = call.arguments.find_positional(0).and_then(text_of) {
             // The anchors of a `re_path` pattern are not part of the path.
             let route = route.strip_prefix('^').unwrap_or(&route);
-            route
-                .strip_suffix('$')
-                .unwrap_or(route)
-                .clone_into(&mut prefix);
+            prefix = Some(route.strip_suffix('$').unwrap_or(route).to_owned());
         } else {
             self.unresolved(line, "path");
         }
@@ -505,6 +551,7 @@ impl<'a> Collector<'a> {
                     receiver: String::new(),
                     target: Target::Module(module),
                     prefix,
+                    replaces: false,
                 });
             }
             None => self.unresolved(line, "include"),
@@ -663,6 +710,24 @@ impl<'a> Collector<'a> {
         self.visit_body(&attempt.orelse);
         self.visit_body(&attempt.finalbody);
     }
+}
+
+/// The prefix a rule's `receiver` reads from the call that made `binding`, when the rule names that callee.
+fn prefix_made_by(maker: &Prefix, binding: &Binding<'_>) -> Option<String> {
+    if !maker.from.matches(&binding.callee) {
+        return None;
+    }
+    Some(maker.read(&CallSite {
+        callee: &binding.callee,
+        arguments: Some(binding.arguments),
+        member: None,
+    }))
+}
+
+/// Whether a callee builds an object that routes are declared on and that is mounted somewhere else, as opposed to
+/// an application, which nothing mounts.
+fn is_router_type(callee: &str) -> bool {
+    matches!(callee.rsplit('.').next(), Some("APIRouter" | "Blueprint"))
 }
 
 /// The part of a dotted callee before its last segment: `router` of `router.get`, `self.client` of

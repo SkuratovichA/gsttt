@@ -22,14 +22,7 @@ expression: "json!({\n    \"bookings\": tree.file_json(\"app/api/bookings.py\"),
         }
       }
     ],
-    "contracts": [
-      {
-        "key": "http GET /bookings/{}",
-        "role": "serves",
-        "line": 6,
-        "via": "fastapi"
-      }
-    ],
+    "contracts": [],
     "embedded": [],
     "unresolved": [],
     "path": "app/api/bookings.py",

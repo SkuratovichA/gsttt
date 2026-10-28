@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use gsttt_core::connector::PrepareFile;
-use gsttt_core::fact::{Import, Resolution, UnresolvedReason};
+use gsttt_core::fact::{Import, ImportKind, Resolution, UnresolvedReason};
 use gsttt_core::ids::FileId;
 use gsttt_core::path::RepoPath;
 use ruff_python_stdlib::sys::{is_builtin_module, is_known_standard_library};
@@ -115,6 +115,15 @@ pub(crate) fn resolve(project: &PythonProject, from: &RepoPath, import: &Import)
         return Resolution::Unresolved(UnresolvedReason::NotFound);
     }
     external(project, module)
+}
+
+/// The file of the module `spec` names for the file `from`, when it is a single file of the project: the module a
+/// router lives in, found the way an import of it would be.
+pub(crate) fn module_file(project: &PythonProject, from: &RepoPath, spec: &str) -> Option<FileId> {
+    match resolve(project, from, &Import::new(spec, ImportKind::Static, 0)) {
+        Resolution::File { file } => Some(file),
+        _ => None,
+    }
 }
 
 /// The directory `level` dots start from: one dot is the package of the file, each further dot its parent.

@@ -70,14 +70,7 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
         }
       }
     ],
-    "contracts": [
-      {
-        "key": "http * /bookings/{}",
-        "role": "serves",
-        "line": 6,
-        "via": "django"
-      }
-    ],
+    "contracts": [],
     "embedded": [],
     "unresolved": [],
     "path": "bookings/urls.py",

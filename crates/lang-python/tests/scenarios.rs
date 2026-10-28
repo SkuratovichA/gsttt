@@ -369,11 +369,8 @@ fn a_fastapi_router_included_with_a_prefix() {
         tree.linked("app/api/bookings.py"),
         ["serves http GET /api/bookings/{}@6"]
     );
-    // The route's own fact stays, behind the router's prefix alone.
-    assert_eq!(
-        tree.contracts("app/api/bookings.py"),
-        ["serves http GET /bookings/{}@6"]
-    );
+    // The router's own path is no route of the file: only the mounted one is served.
+    assert_eq!(tree.contracts("app/api/bookings.py"), Vec::<String>::new());
     insta::assert_json_snapshot!(
         "a_fastapi_router_included_with_a_prefix",
         json!({ "bookings": tree.file_json("app/api/bookings.py"), "linked": tree.json["linked"] })
@@ -384,26 +381,130 @@ fn a_fastapi_router_included_with_a_prefix() {
 #[test]
 fn a_flask_blueprint_serves_under_its_prefix() {
     let tree = index("flask_blueprint");
-    assert_eq!(
-        tree.contracts("app.py"),
-        ["serves http DELETE /bookings/{}@6"]
-    );
+    // No `register_blueprint` reaches the blueprint, so it is served under its own prefix.
+    assert_eq!(tree.linked("app.py"), ["serves http DELETE /bookings/{}@6"]);
+    assert_eq!(tree.contracts("app.py"), Vec::<String>::new());
     insta::assert_json_snapshot!(
         "a_flask_blueprint_serves_under_its_prefix",
-        tree.file_json("app.py")
+        json!({ "app": tree.file_json("app.py"), "linked": tree.json["linked"] })
     );
 }
 
 #[test]
 fn a_blueprint_registered_under_a_prefix_serves_under_it() {
     let tree = index("flask_register");
-    assert_eq!(
-        tree.contracts("app/bookings.py"),
-        ["serves http GET /bookings/{}@6"]
-    );
+    assert_eq!(tree.contracts("app/bookings.py"), Vec::<String>::new());
     assert_eq!(
         tree.linked("app/bookings.py"),
         ["serves http GET /api/bookings/{}@6"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A FastAPI router mounted through another router")]
+#[test]
+fn a_fastapi_router_mounted_through_another_router() {
+    let tree = index("fastapi_chain");
+    // `app` adds `/api`, `sub` its own `/v1`, the mount in `sub` `/b`, and the router its own `/bookings`.
+    assert_eq!(
+        tree.linked("app/api/bookings.py"),
+        ["serves http GET /api/v1/b/bookings/{}@6"]
+    );
+    assert_eq!(tree.contracts("app/api/bookings.py"), Vec::<String>::new());
+    insta::assert_json_snapshot!(
+        "a_fastapi_router_mounted_through_another_router",
+        json!({ "bookings": tree.file_json("app/api/bookings.py"), "linked": tree.json["linked"] })
+    );
+}
+
+#[test]
+fn a_router_mounted_into_an_imported_router_keeps_the_chain() {
+    let tree = index("fastapi_remote");
+    // `sub` is made in `v1.py`, which declares no route and mounts nothing, and filled in `wiring.py`.
+    assert_eq!(
+        tree.linked("app/bookings.py"),
+        ["serves http GET /api/v1/b/bookings/{}@6"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A router is served once for each way it is mounted")]
+#[test]
+fn a_router_is_served_once_for_each_way_it_is_mounted() {
+    let tree = index("fastapi_mounts");
+    // A mount with no prefix adds no second copy of the route.
+    assert_eq!(tree.linked("app/health.py"), ["serves http GET /health@6"]);
+    // Mounted plainly and under `/v2`: one copy per mount.
+    assert_eq!(
+        tree.linked("app/items.py"),
+        [
+            "serves http GET /items/{}@6",
+            "serves http GET /v2/items/{}@6"
+        ]
+    );
+    // A route on the application itself is not a router's route and stays in the file.
+    assert_eq!(tree.contracts("app/main.py"), ["serves http GET /ping@11"]);
+    assert_eq!(tree.linked("app/main.py"), Vec::<String>::new());
+    for path in ["app/health.py", "app/items.py"] {
+        assert_eq!(tree.contracts(path), Vec::<String>::new(), "{path}");
+    }
+    insta::assert_json_snapshot!(
+        "a_router_is_served_once_for_each_way_it_is_mounted",
+        json!({ "main": tree.file_json("app/main.py"), "linked": tree.json["linked"] })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Routers that mount each other still serve their routes")]
+#[test]
+fn routers_that_mount_each_other_still_serve_their_routes() {
+    let tree = index("fastapi_cycle");
+    // `a` and `b` mount each other; the way up through the app is the only one that ends.
+    assert_eq!(tree.linked("app/a.py"), ["serves http GET /a/x/one@9"]);
+    assert_eq!(tree.linked("app/b.py"), ["serves http GET /a/x/b/y/two@9"]);
+    insta::assert_json_snapshot!(
+        "routers_that_mount_each_other_still_serve_their_routes",
+        tree.json["linked"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A registration prefix replaces a blueprint's own")]
+#[test]
+fn a_registration_prefix_replaces_a_blueprints_own() {
+    let tree = index("flask_replace");
+    // `Blueprint(url_prefix="/bookings")` registered with `url_prefix="/api"` is served under `/api` alone.
+    assert_eq!(
+        tree.linked("app/bookings.py"),
+        ["serves http GET /api/{}@6"]
+    );
+    // Registered with no prefix, the blueprint keeps its own.
+    assert_eq!(
+        tree.linked("app/reports.py"),
+        ["serves http GET /reports/daily@6"]
+    );
+    for path in ["app/bookings.py", "app/reports.py"] {
+        assert_eq!(tree.contracts(path), Vec::<String>::new(), "{path}");
+    }
+    insta::assert_json_snapshot!(
+        "a_registration_prefix_replaces_a_blueprints_own",
+        tree.json["linked"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Blueprints nest under their parent's prefix")]
+#[test]
+fn blueprints_nest_under_their_parents_prefix() {
+    let tree = index("flask_nested");
+    // The parent keeps its own `/admin` when it is registered plainly, and the child its own `/reports`.
+    assert_eq!(
+        tree.linked("app/reports.py"),
+        ["serves http GET /admin/reports/daily@6"]
+    );
+    // `/store` replaces `/shop` and `/goods` replaces `/items`.
+    assert_eq!(
+        tree.linked("app/items.py"),
+        ["serves http GET /store/goods/{}@6"]
+    );
+    insta::assert_json_snapshot!(
+        "blueprints_nest_under_their_parents_prefix",
+        tree.json["linked"]
     );
 }
 
@@ -415,10 +516,8 @@ fn django_includes_compose() {
         tree.linked("bookings/urls.py"),
         ["serves http * /api/bookings/{}@6"]
     );
-    assert_eq!(
-        tree.contracts("bookings/urls.py"),
-        ["serves http * /bookings/{}@6"]
-    );
+    // The module's own path is no route of the file: only the included one is served.
+    assert_eq!(tree.contracts("bookings/urls.py"), Vec::<String>::new());
     // The including `path` is a mount and no route of its own.
     assert_eq!(tree.contracts("project/urls.py"), Vec::<String>::new());
     insta::assert_json_snapshot!(

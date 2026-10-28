@@ -1,15 +1,19 @@
-//! The per-file data the link step needs, cached with the facts: which route facts sit under which router, where
-//! routers are mounted and what the file's imports bound.
+//! The per-file data the link step needs, cached with the facts: the routes declared on routers, the prefixes
+//! routers declare for themselves, where routers are mounted and what the file's imports bound.
 
-use gsttt_core::fact::Line;
+use gsttt_core::fact::{ContractFact, Line};
 use serde::{Deserialize, Serialize};
 
 /// What `parse` keeps for `link`. Empty vectors are left out of the cache entry.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PyExtra {
-    /// Route facts of this file and the router each sits under.
+    /// The routes declared on a router object, `APIRouter` or `Blueprint`, and on a Django URL module. They are
+    /// not facts of the file: `link` serves each of them behind the prefixes of the mounts above its router.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) routes: Vec<Route>,
+    /// The prefix each router of this file declares for itself, when it declares one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) routers: Vec<RouterPrefix>,
     /// Routers and URL modules this file mounts under a prefix.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) mounts: Vec<Mount>,
@@ -18,12 +22,22 @@ pub struct PyExtra {
     pub(crate) binds: Vec<Bind>,
 }
 
-/// A route fact, found by its line, and the router it sits under. Django's `urlpatterns` list is the module
-/// itself and has the empty name.
+/// A route fact and the router it sits under. Django's `urlpatterns` list is the module itself and has the empty
+/// name.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Route {
     pub(crate) var: String,
-    pub(crate) line: Line,
+    /// The fact as the route's own decorator or call reads it: the router's own prefix is not in it, because
+    /// whether that prefix applies depends on how the router is mounted.
+    pub(crate) fact: ContractFact,
+}
+
+/// The prefix a router variable declares in its own constructor, `APIRouter(prefix="/bookings")` or
+/// `Blueprint("b", __name__, url_prefix="/bookings")`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct RouterPrefix {
+    pub(crate) var: String,
+    pub(crate) prefix: String,
 }
 
 /// `app.include_router(bookings.router, prefix="/api")`, `app.register_blueprint(bp, url_prefix="/api")` or
@@ -34,8 +48,13 @@ pub(crate) struct Mount {
     /// The router the mount is called on, `app` in `app.include_router(…)`; empty for Django.
     pub(crate) receiver: String,
     pub(crate) target: Target,
-    /// The prefix as written; empty when there is none or when it is not a literal.
-    pub(crate) prefix: String,
+    /// The prefix as written; `None` when there is none or when it is not a literal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) prefix: Option<String>,
+    /// Whether the prefix replaces the mounted router's own, as Flask's `register_blueprint(url_prefix=…)` does,
+    /// or comes before it, as FastAPI's `include_router(prefix=…)` and Django's `include` do.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) replaces: bool,
 }
 
 /// What a mount points at.

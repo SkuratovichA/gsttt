@@ -16,7 +16,7 @@ expression: "tree.json[\"projects\"]"
         ],
         "blind_spots": [
           "Flask routes with several methods beyond the first",
-          "blueprints registered under a url_prefix are read with it added to their own",
+          "mounts of a router by a file of another Python project, in a cycle, or in more ways than are followed",
           "prefixes held in variables",
           "re_path and regex routes",
           "routers and blueprints created in another module than the one that declares their routes",

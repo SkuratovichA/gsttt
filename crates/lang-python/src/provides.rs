@@ -12,6 +12,10 @@ use gsttt_core::rules::Pack;
 const ROUTERS_ELSEWHERE: &str =
     "routers and blueprints created in another module than the one that declares their routes";
 
+/// `link` sees one project at a time and follows each router up through the mounts it can find, so a mount it cannot
+/// read leaves the router served behind its own prefix alone.
+const MOUNTS_UNFOLLOWED: &str = "mounts of a router by a file of another Python project, in a cycle, or in more ways than are followed";
+
 /// Gaps of every Python project, whatever its packs: contracts no pack of this connector reads.
 fn always() -> Vec<(ContractKind, Role, &'static str)> {
     vec![
@@ -38,18 +42,20 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
             serves("prefixes held in variables"),
             serves(ROUTERS_ELSEWHERE),
             serves("routes registered by calls to add_api_route"),
+            serves(MOUNTS_UNFOLLOWED),
         ],
         "flask" => vec![
             serves("Flask routes with several methods beyond the first"),
             serves("prefixes held in variables"),
             serves(ROUTERS_ELSEWHERE),
             serves("routes registered by calls to add_url_rule and class-based views"),
-            serves("blueprints registered under a url_prefix are read with it added to their own"),
+            serves(MOUNTS_UNFOLLOWED),
         ],
         "django" => vec![
             serves("prefixes held in variables"),
             serves("re_path and regex routes"),
             serves("routes made by Django REST framework routers"),
+            serves(MOUNTS_UNFOLLOWED),
             tables("Django default table names"),
         ],
         "requests" => vec![
