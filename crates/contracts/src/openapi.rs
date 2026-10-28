@@ -276,17 +276,18 @@ impl Project for OpenApiProject {
                 let Some(fragment) = target.and_then(|id| input.get(id)) else {
                     continue;
                 };
+                // A fragment's operations have no route of their own, so they are no facts of the fragment and a linked one replaces nothing.
                 for operation in &fragment.extra.operations {
-                    linked.push(LinkedFact {
-                        file: fragment.id,
-                        fact: http_site(
+                    linked.push(LinkedFact::found(
+                        fragment.id,
+                        http_site(
                             &operation.method,
                             &path_ref.route,
                             Role::Declares,
                             operation.line,
                             VIA,
                         ),
-                    });
+                    ));
                 }
             }
         }

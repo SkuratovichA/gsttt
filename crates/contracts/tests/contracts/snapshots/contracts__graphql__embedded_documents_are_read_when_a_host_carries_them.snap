@@ -32,7 +32,7 @@ expression: run.snapshot()
             {
               "key": "graphql Query.bookings",
               "role": "calls",
-              "line": 1,
+              "line": 5,
               "via": "graphql"
             }
           ]
