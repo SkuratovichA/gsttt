@@ -5,10 +5,10 @@ use std::io::Write as _;
 use std::ops::RangeInclusive;
 
 use anyhow::ensure;
-use sha2::{Digest as _, Sha256};
 
 use super::functions::Candidate;
 use super::questions::{Kind, Question, prompt};
+use crate::digest::sha256_hex;
 
 /// How many other files may refer to a function that a question about its users is drawn for.
 const USERS: RangeInclusive<usize> = 3..=30;
@@ -28,7 +28,7 @@ fn hash(seed: &str, repository: &str, candidate: &Candidate) -> String {
         "{seed}\0{repository}\0{}\0{}",
         candidate.file, candidate.name
     );
-    faster_hex::hex_string(&Sha256::digest(text.as_bytes()))
+    sha256_hex(text.as_bytes())
 }
 
 /// The candidates in the order the draw takes them: by hash, and by file and name where two share one.
@@ -253,7 +253,7 @@ mod tests {
         // The hashed text is spelled out here, so that its form cannot drift unnoticed.
         assert_eq!(
             hash("seed", "vite", &a),
-            faster_hex::hex_string(&Sha256::digest(b"seed\0vite\0src/a.ts\0alpha"))
+            sha256_hex(b"seed\0vite\0src/a.ts\0alpha")
         );
         let (low, high) = if hash("seed", "vite", &a) < hash("seed", "vite", &b) {
             (&a, &b)

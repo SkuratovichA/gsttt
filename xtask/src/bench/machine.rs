@@ -6,7 +6,7 @@ use anyhow::{Context as _, bail};
 use xshell::Shell;
 
 /// One line naming the CPU, the cores, the memory and the operating system with its version. It never names the host or the user.
-pub(super) fn describe() -> anyhow::Result<String> {
+pub(crate) fn describe() -> anyhow::Result<String> {
     match std::env::consts::OS {
         "macos" => macos(),
         "linux" => linux(),
@@ -15,7 +15,7 @@ pub(super) fn describe() -> anyhow::Result<String> {
 }
 
 /// The current time in UTC as an RFC 3339 time.
-pub(super) fn now_utc() -> anyhow::Result<String> {
+pub(crate) fn now_utc() -> anyhow::Result<String> {
     Ok(Shell::new()?
         .cmd("date")
         .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])

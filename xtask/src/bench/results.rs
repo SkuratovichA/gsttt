@@ -80,13 +80,19 @@ pub(super) fn write(out: &Path, results: &Results, local: &[&str]) -> anyhow::Re
     results.check()?;
     let mut text = serde_json::to_string_pretty(results)?;
     text.push('\n');
+    refuse_local_paths(&text, local)?;
+    write_atomically(out, &text)
+}
+
+/// Fails when `text` holds one of the paths of `local`: the results are published, and a path of this machine is not.
+pub(crate) fn refuse_local_paths(text: &str, local: &[&str]) -> anyhow::Result<()> {
     for path in local {
         ensure!(
             path.is_empty() || !text.contains(path),
             "the results hold the local path {path}, which must not be published"
         );
     }
-    write_atomically(out, &text)
+    Ok(())
 }
 
 /// Writes `text` to `out` through a temporary file beside it, so that a failed run leaves no half of a file.
@@ -104,7 +110,7 @@ pub(crate) fn write_atomically(out: &Path, text: &str) -> anyhow::Result<()> {
 }
 
 /// Whether `text` is `YYYY-MM-DDTHH:MM:SSZ`.
-fn is_utc_time(text: &str) -> bool {
+pub(crate) fn is_utc_time(text: &str) -> bool {
     text.len() == 20
         && text.bytes().enumerate().all(|(at, byte)| match at {
             4 | 7 => byte == b'-',

@@ -17,7 +17,7 @@ use super::plan::Programs;
 use crate::dist::git::git;
 
 /// Installs the tools `needed` that are not installed at their pinned version yet.
-pub(super) fn install(
+pub(crate) fn install(
     programs: &Programs,
     pins: &Pins,
     needed: &BTreeSet<Tool>,
@@ -35,7 +35,7 @@ pub(super) fn install(
 }
 
 /// What `<tool> --version` prints, or for grimp, which has no such flag, what its package metadata says: the last word of the first line.
-pub(super) fn installed_version(tool: Tool, programs: &Programs) -> anyhow::Result<String> {
+pub(crate) fn installed_version(tool: Tool, programs: &Programs) -> anyhow::Result<String> {
     let sh = Shell::new()?;
     let program = programs.of(tool);
     let cmd = match tool {
@@ -134,7 +134,7 @@ pub(crate) fn node_tools(programs: &Programs, pins: &Pins) -> anyhow::Result<()>
 }
 
 /// The version of a package in the `node_modules` of `dir`, as the manifest of the package says.
-fn node_version(dir: &Path, package: &str) -> Option<String> {
+pub(crate) fn node_version(dir: &Path, package: &str) -> Option<String> {
     #[derive(Deserialize)]
     struct Manifest {
         version: String,

@@ -4,7 +4,7 @@
 
 pub(crate) mod args;
 mod hyperfine;
-mod machine;
+pub(crate) mod machine;
 pub(crate) mod pins;
 pub(crate) mod plan;
 pub(crate) mod results;

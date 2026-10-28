@@ -51,7 +51,7 @@ impl Programs {
     }
 
     /// The `HOME` codebase-memory-mcp runs with, so that it writes nothing into the home of the user.
-    fn cbm_home(&self) -> PathBuf {
+    pub(crate) fn cbm_home(&self) -> PathBuf {
         self.cbm.join("home")
     }
 
@@ -63,14 +63,14 @@ impl Programs {
 
 /// A command, in the two forms it is needed in: as a reader types it in the checkout, and as hyperfine runs it.
 #[derive(Debug)]
-pub(super) struct Command {
-    pub(super) tool: Tool,
+pub(crate) struct Command {
+    pub(crate) tool: Tool,
     /// The program by its path on this machine.
-    pub(super) program: PathBuf,
+    pub(crate) program: PathBuf,
     /// The arguments, relative to the checkout the command runs in.
-    pub(super) args: Vec<String>,
+    pub(crate) args: Vec<String>,
     /// Variables that are part of the command a reader types.
-    pub(super) env: Vec<(&'static str, &'static str)>,
+    pub(crate) env: Vec<(&'static str, &'static str)>,
 }
 
 impl Command {
@@ -108,19 +108,19 @@ pub(super) struct Measure {
 
 /// One tool on one repository.
 #[derive(Debug)]
-pub(super) struct Run {
-    pub(super) tool: Tool,
-    pub(super) command: Command,
+pub(crate) struct Run {
+    pub(crate) tool: Tool,
+    pub(crate) command: Command,
     /// Every run starts without the cache of the tool.
     pub(super) cold: Measure,
     /// The runs follow one that left the cache in place.
     pub(super) warm: Measure,
     /// Variables the tool runs with that a reader does not type.
-    pub(super) isolation: Vec<(&'static str, PathBuf)>,
+    pub(crate) isolation: Vec<(&'static str, PathBuf)>,
 }
 
 /// The runs of `repository`: one per tool of its language.
-pub(super) fn plan(repository: &Repository, programs: &Programs) -> Vec<Run> {
+pub(crate) fn plan(repository: &Repository, programs: &Programs) -> Vec<Run> {
     repository
         .language
         .tools()
