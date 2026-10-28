@@ -2,7 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use gsttt_core::connector::{ConnectorError, Parsed, PrepareFile, Project, Provide, SourceFile};
+use gsttt_core::connector::{
+    ConnectorError, LinkInput, LinkedFact, Parsed, PrepareFile, Project, Provide, SourceFile,
+};
 use gsttt_core::fact::{Import, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
@@ -25,10 +27,6 @@ pub struct PythonProject {
     /// The declared distributions, normalised.
     pub(crate) dependencies: BTreeSet<String>,
     /// The packs in force: those written for Python whose `detect` list meets a declared distribution.
-    #[expect(
-        dead_code,
-        reason = "parse reads the packs once the rule sites are wired in"
-    )]
     pub(crate) packs: Vec<Pack>,
     salt: u64,
     /// The project's Python files by path, built in `prepare`.
@@ -191,11 +189,11 @@ impl Project for PythonProject {
     }
 
     fn provides(&self) -> Vec<Provide> {
-        Vec::new()
+        crate::provides::provides(&self.packs)
     }
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<PyExtra> {
-        crate::parse::parse(file)
+        crate::parse::parse(self, file)
     }
 
     fn prepare(&mut self, files: &[PrepareFile<'_>]) {
@@ -204,5 +202,9 @@ impl Project for PythonProject {
 
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution {
         crate::resolve::resolve(self, from, import)
+    }
+
+    fn link(&self, input: &LinkInput<'_, PyExtra>) -> Vec<LinkedFact> {
+        crate::link::link(input)
     }
 }

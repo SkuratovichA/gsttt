@@ -3,8 +3,8 @@
 ## 1. Reading files
 
 - [x] 1.1 `Connector` for `python`: detection, projects, manifests, source roots, options with a JSON schema
-- [ ] 1.2 Parsing with ruff: imports of every form, type-checking and optional flags, names, lines, test tags, recovered status
-- [ ] 1.3 A `Site` over calls, decorators and assignments (class fields included), and matching of every rule kind
+- [x] 1.2 Parsing with ruff: imports of every form, type-checking and optional flags, names, lines, test tags, recovered status
+- [x] 1.3 A `Site` over calls, decorators and assignments (class fields included), and matching of every rule kind
 
 ## 2. Resolution
 
@@ -13,9 +13,9 @@
 
 ## 3. Packs and link
 
-- [ ] 3.1 Packs: `fastapi`, `flask`, `django`, `requests`, `httpx`, `sqlalchemy`, `alembic`, `dbapi`, `env`
-- [ ] 3.2 `link`: `include_router`, `register_blueprint` and Django `include` across files
-- [ ] 3.3 `provides` with blind spots per project
+- [x] 3.1 Packs: `fastapi`, `flask`, `django`, `requests`, `httpx`, `sqlalchemy`, `alembic`, `dbapi`, `env`
+- [x] 3.2 `link`: `include_router`, `register_blueprint` and Django `include` across files
+- [x] 3.3 `provides` with blind spots per project
 
 ## 4. Proof
 

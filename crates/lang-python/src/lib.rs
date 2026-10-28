@@ -4,11 +4,14 @@
 
 mod extra;
 mod files;
+mod link;
 mod manifest;
 mod names;
 mod parse;
 mod project;
+mod provides;
 mod resolve;
+mod site;
 
 use gsttt_core::connector::{Connector, ConnectorError, Erased, Meta};
 use gsttt_core::repo::RepoView;
@@ -20,7 +23,17 @@ pub use extra::PyExtra;
 pub use project::PythonProject;
 
 /// The Lua sources of the built-in packs, `(file name, source)`.
-pub const PACKS: &[(&str, &str)] = &[];
+pub const PACKS: &[(&str, &str)] = &[
+    ("alembic.lua", include_str!("../packs/alembic.lua")),
+    ("dbapi.lua", include_str!("../packs/dbapi.lua")),
+    ("django.lua", include_str!("../packs/django.lua")),
+    ("env.lua", include_str!("../packs/env.lua")),
+    ("fastapi.lua", include_str!("../packs/fastapi.lua")),
+    ("flask.lua", include_str!("../packs/flask.lua")),
+    ("httpx.lua", include_str!("../packs/httpx.lua")),
+    ("requests.lua", include_str!("../packs/requests.lua")),
+    ("sqlalchemy.lua", include_str!("../packs/sqlalchemy.lua")),
+];
 
 /// The Python connector, ready for the registry.
 pub static PYTHON: Erased<Python> = Erased(Python);
