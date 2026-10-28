@@ -6,6 +6,8 @@ use std::path::Path;
 use anyhow::{Context as _, ensure};
 use serde::Deserialize;
 
+use crate::digest::is_hex;
+
 /// Where the pins are, relative to the repository root.
 const FILE: &str = "bench/bench.toml";
 
@@ -263,14 +265,6 @@ impl Pins {
     }
 }
 
-/// Whether `text` is `length` lower-case hexadecimal digits.
-pub(super) fn is_hex(text: &str, length: usize) -> bool {
-    text.len() == length
-        && text
-            .bytes()
-            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-}
-
 fn is_name(text: &str) -> bool {
     !text.is_empty()
         && text
@@ -333,13 +327,6 @@ sha256 = "8453015145f072c1b9b019cbdd02cea8cc6f18cc5e116036dd20992631c638c7"
         Pins::parse(&std::fs::read_to_string(file).unwrap()).unwrap()
     }
 
-    fn all_hex(text: &str, length: usize) -> bool {
-        text.len() == length
-            && text
-                .chars()
-                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
-    }
-
     #[gsttt_scenario::scenario("benchmarks", "Every repository is pinned at a commit")]
     #[test]
     fn every_repository_is_pinned_at_a_commit() {
@@ -358,7 +345,7 @@ sha256 = "8453015145f072c1b9b019cbdd02cea8cc6f18cc5e116036dd20992631c638c7"
                 repository.name
             );
             assert!(!repository.tag.is_empty(), "{}", repository.name);
-            assert!(all_hex(&repository.commit, 40), "{}", repository.name);
+            assert!(is_hex(&repository.commit, 40), "{}", repository.name);
         }
     }
 
@@ -386,7 +373,7 @@ sha256 = "8453015145f072c1b9b019cbdd02cea8cc6f18cc5e116036dd20992631c638c7"
         let archives = &pins.tools.codebase_memory.archives;
         assert!(!archives.is_empty());
         for (platform, archive) in archives {
-            assert!(all_hex(&archive.sha256, 64), "{platform}");
+            assert!(is_hex(&archive.sha256, 64), "{platform}");
         }
     }
 
