@@ -680,6 +680,22 @@ mod tests {
         index.record(file).unwrap().imports.len()
     }
 
+    /// The sites of the contract `key` as `path:line role`, none when the graph has no such contract.
+    fn sites_of(index: &Index, key: &str) -> Vec<String> {
+        let graph = &index.graph;
+        let Some(contract) = graph.contract_id(&ContractKey::parse(key).unwrap()) else {
+            return Vec::new();
+        };
+        graph
+            .sites(contract)
+            .iter()
+            .map(|site| {
+                let path = graph.path(site.file).unwrap();
+                format!("{path}:{} {}", site.line, site.role)
+            })
+            .collect()
+    }
+
     fn pack(name: &str, language: &str, detect: &str) -> Pack {
         serde_json::from_value(json!({"name": name, "language": language, "detect": [detect]}))
             .unwrap()
@@ -1045,6 +1061,107 @@ mod tests {
         assert_eq!(files, [graph.file_id("a.txt").unwrap()]);
     }
 
+    #[gsttt_scenario::scenario("indexing", "A linked fact replaces the own fact it re-keys")]
+    #[test]
+    fn a_linked_fact_replaces_the_own_fact_it_re_keys() {
+        let rig = Rig::new();
+        let text =
+            "fact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /api/bookings/{}\n";
+        let dir = init_repo(&[("a.txt", text)]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(
+            sites_of(&run.index, "http GET /api/bookings/{}"),
+            ["a.txt:1 serves"]
+        );
+        let own = sites_of(&run.index, "http GET /bookings/{}");
+        assert!(own.is_empty(), "{own:?}");
+    }
+
+    #[gsttt_scenario::scenario("indexing", "An own fact on another line keeps its site")]
+    #[test]
+    fn an_own_fact_on_another_line_keeps_its_site() {
+        let rig = Rig::new();
+        let text = "fact 1 serves http GET /bookings/{}\nfact 2 serves http GET /health\nlinked 1 serves http GET /api/bookings/{}\n";
+        let dir = init_repo(&[("a.txt", text)]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(
+            sites_of(&run.index, "http GET /api/bookings/{}"),
+            ["a.txt:1 serves"]
+        );
+        assert_eq!(sites_of(&run.index, "http GET /health"), ["a.txt:2 serves"]);
+        let own = sites_of(&run.index, "http GET /bookings/{}");
+        assert!(own.is_empty(), "{own:?}");
+    }
+
+    #[gsttt_scenario::scenario("indexing", "An own fact of another kind or role keeps its site")]
+    #[test]
+    fn an_own_fact_of_another_kind_or_role_keeps_its_site() {
+        let rig = Rig::new();
+        let text = "fact 1 serves http GET /bookings/{}\nfact 1 calls http GET /bookings/{}\nfact 1 serves queue bookings\nlinked 1 serves http GET /api/bookings/{}\n";
+        let dir = init_repo(&[("a.txt", text)]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(
+            sites_of(&run.index, "http GET /api/bookings/{}"),
+            ["a.txt:1 serves"]
+        );
+        assert_eq!(
+            sites_of(&run.index, "http GET /bookings/{}"),
+            ["a.txt:1 calls"]
+        );
+        assert_eq!(sites_of(&run.index, "queue bookings"), ["a.txt:1 serves"]);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "An own fact of another file keeps its site")]
+    #[test]
+    fn an_own_fact_of_another_file_keeps_its_site() {
+        let rig = Rig::new();
+        let declared = "fact 1 serves http GET /bookings/{}\n";
+        let mounted = format!("{declared}linked 1 serves http GET /api/bookings/{{}}\n");
+        let dir = init_repo(&[("a.txt", mounted.as_str()), ("b.txt", declared)]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(
+            sites_of(&run.index, "http GET /api/bookings/{}"),
+            ["a.txt:1 serves"]
+        );
+        assert_eq!(
+            sites_of(&run.index, "http GET /bookings/{}"),
+            ["b.txt:1 serves"]
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A declaration mounted under two prefixes has two linked sites"
+    )]
+    #[test]
+    fn a_declaration_mounted_under_two_prefixes_has_two_linked_sites() {
+        let rig = Rig::new();
+        let text = "fact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /v1/bookings/{}\nlinked 1 serves http GET /v2/bookings/{}\n";
+        let dir = init_repo(&[("a.txt", text)]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        for prefix in ["v1", "v2"] {
+            assert_eq!(
+                sites_of(&run.index, &format!("http GET /{prefix}/bookings/{{}}")),
+                ["a.txt:1 serves"]
+            );
+        }
+        let own = sites_of(&run.index, "http GET /bookings/{}");
+        assert!(own.is_empty(), "{own:?}");
+    }
+
+    #[gsttt_scenario::scenario("indexing", "An embedded fact is not replaced by a linked one")]
+    #[test]
+    fn an_embedded_fact_is_not_replaced_by_a_linked_one() {
+        let rig = Rig::new();
+        let text = "embed graphql query Q\nfact 1 calls queue own\nlinked 1 calls queue other\n";
+        let dir = init_repo(&[("a.txt", text)]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(sites_of(&run.index, "queue other"), ["a.txt:1 calls"]);
+        assert_eq!(sites_of(&run.index, "queue query-Q"), ["a.txt:1 calls"]);
+        let own = sites_of(&run.index, "queue own");
+        assert!(own.is_empty(), "{own:?}");
+    }
+
     #[gsttt_scenario::scenario("indexing", "A panicking parse fails one file")]
     #[test]
     fn a_panicking_parse_fails_one_file() {
@@ -1072,11 +1189,17 @@ mod tests {
     #[test]
     fn a_panicking_link_loses_only_linked_facts() {
         let rig = Rig::new();
-        let dir = init_repo(&[("a.txt", "use b.txt\nuse linkboom\n"), ("b.txt", "")]);
+        let text = "use b.txt\nuse linkboom\nfact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /api/bookings/{}\n";
+        let dir = init_repo(&[("a.txt", text), ("b.txt", "")]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         let graph = &run.index.graph;
         assert_eq!(graph.file_count(), 2);
-        assert_eq!(graph.contract_count(), 0);
+        // The parsed fact stays, though the fact that would have re-keyed it was lost with the link.
+        assert_eq!(graph.contract_count(), 1);
+        assert_eq!(
+            sites_of(&run.index, "http GET /bookings/{}"),
+            ["a.txt:1 serves"]
+        );
         let a = graph.file_id("a.txt").unwrap();
         assert_eq!(graph.dependencies(a).len(), 1);
         assert!(

@@ -57,3 +57,7 @@
 - [x] 5.28 A directory the scan outside git cannot read no longer fails the run: `RepoView::scan_reporting` skips each one the walk cannot read and returns it (`.` for the root and for an error that names no path), and the engine names it in the coverage problems, as it does in git
 - [x] 5.29 A directory with mode `r--`, which can be listed but not searched, no longer fails the run or goes unreported: a file that cannot be looked at puts its directory in the coverage problems, the walk in git tries a directory for both, and tests pin that the tracked files of an unreadable directory count as removed, with their facts gone from the index
 - [x] 5.30 Step 2 of the architecture document says that a directory the process cannot list or search is skipped and named in the coverage problems, in git and outside it, and names `RepoView::scan_reporting` as the listing outside git
+
+## 6. Integration fixes
+
+- [x] 6.1 A site from the link phase replaces the site of each own fact of the same file with the same line, role and contract kind, so a declaration a mount re-keys is a site once under its linked key: embedded facts are never replaced, a file whose link returned nothing or panicked keeps its own facts, each case has a scenario and a test, and step 11 of the architecture document states the rule

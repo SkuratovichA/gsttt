@@ -1,14 +1,29 @@
 //! Building an index from the output of the pipeline: the graph, the record of every file and the coverage.
 
+use std::collections::HashSet;
 use std::time::Instant;
 
+use foldhash::fast::RandomState;
+
 use super::pipeline::{Output, display_root};
+use crate::contract::{ContractKind, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
-use crate::fact::{ParseFailure, ParseStatus, UnresolvedReason, UnresolvedSite};
+use crate::fact::{
+    ContractFact, Line, ParseFailure, ParseStatus, UnresolvedReason, UnresolvedSite,
+};
 use crate::graph::{ContractSite, Edge, GraphBuilder};
-use crate::ids::Id;
+use crate::ids::{FileId, Id};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
 use crate::repo::RepoView;
+
+/// Where a fact sits in a file, without its key: the file, the line, the role and the kind of contract.
+type Place<'a> = (FileId, Line, Role, &'a ContractKind);
+
+/// The place of `fact` in `file`. A link that keys a declaration again returns a fact at the place of the one the
+/// connector parsed, so the two are the same declaration.
+fn place_of(file: FileId, fact: &ContractFact) -> Place<'_> {
+    (file, fact.line, fact.role, fact.key.kind())
+}
 
 /// Builds the index of the files of `repo` from what the pipeline found. `ran` names the connectors that took part
 /// in registry order, so one that opened no project still has its line in the coverage. The time the build took is
@@ -59,6 +74,13 @@ pub fn build_index(
         })
         .collect();
 
+    // Probed per own fact and never iterated, so the order of a hash set cannot reach the output.
+    let rekeyed: HashSet<Place<'_>, RandomState> = output
+        .linked
+        .iter()
+        .map(|linked| place_of(linked.file, &linked.fact))
+        .collect();
+
     let mut skipped = Vec::new();
     for file in &output.files {
         let Some(entry) = slot_of_project
@@ -96,6 +118,10 @@ pub fn build_index(
             entry.count_blind(file.id, site);
         }
         for fact in &file.facts.contracts {
+            if rekeyed.contains(&place_of(file.id, fact)) {
+                // The link keyed this declaration again, once per mount, so the parsed key would be a second site.
+                continue;
+            }
             let site = ContractSite {
                 file: file.id,
                 line: fact.line,

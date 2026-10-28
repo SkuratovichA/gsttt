@@ -168,6 +168,35 @@ The engine SHALL call each project's `prepare` once with every file it owns befo
 - **WHEN** a project's `link` returns a fact for one of its files
 - **THEN** the graph has that site on that file
 
+### Requirement: Linked facts replace the facts they re-key
+A site from the link phase SHALL replace the site of each own fact of the same file with the same line, role and contract kind, so that a declaration a mount re-keys is a site once, under its linked key. A link that re-keys a line SHALL return one fact per mount, the root included. Embedded facts are never replaced, and a file whose link returned nothing or panicked keeps its own facts.
+
+#### Scenario: A linked fact replaces the own fact it re-keys
+- **WHEN** a file has the own fact `serves http GET /bookings/{}` at line 1 and its project's `link` returns `serves http GET /api/bookings/{}` at line 1 of the same file
+- **THEN** the graph has a site on that file under the linked key
+- **AND** it has no site on that file under the own key
+
+#### Scenario: An own fact on another line keeps its site
+- **WHEN** a file has own facts at lines 1 and 2 and `link` returns a fact for line 1 only
+- **THEN** the graph keeps the site of the own fact at line 2
+
+#### Scenario: An own fact of another kind or role keeps its site
+- **WHEN** a file has, on the line a linked fact re-keys, an own fact of another contract kind and an own fact of another role
+- **THEN** the graph keeps the sites of both
+
+#### Scenario: An own fact of another file keeps its site
+- **WHEN** a linked fact re-keys a line of one file and another file has an own fact at the same line, role and kind
+- **THEN** the graph keeps the site of the other file's own fact
+
+#### Scenario: A declaration mounted under two prefixes has two linked sites
+- **WHEN** a file has an own fact at line 1 and `link` returns two facts for that line, one under each of two prefixes
+- **THEN** the graph has two sites on that file at line 1, one under each linked key
+- **AND** it has no site under the own key
+
+#### Scenario: An embedded fact is not replaced by a linked one
+- **WHEN** a linked fact has the file, line, role and contract kind of a fact read from an embedded document
+- **THEN** the graph keeps the site of the embedded fact
+
 ### Requirement: Failure containment
 The engine SHALL catch a panic in every connector call. A panic in `parse` SHALL record the file as `Panicked` with the message, a panic in any other call SHALL become a coverage line naming the connector, the project and the call, and the run SHALL finish. Options that do not deserialise SHALL fail the run with an error naming the module and the problem.
 

@@ -261,11 +261,13 @@ pub(crate) struct Options {
 }
 
 /// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link`
-/// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. A file called `explode.txt` makes
-/// `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in
-/// every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves
-/// the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names,
-/// and keeps the packs it received for [`Counters::opened_with`].
+/// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a
+/// contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link`
+/// returns for it, the way a mount keys a route again. A file called `explode.txt` makes `matches` panic, and a file
+/// called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a
+/// `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file
+/// [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps
+/// the packs it received for [`Counters::opened_with`].
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -328,7 +330,8 @@ impl Connector for Notes {
 }
 
 impl Project for NotesProject {
-    type Extra = ();
+    /// The facts `link` returns for the file, which are the `linked` lines of its text.
+    type Extra = Vec<ContractFact>;
 
     fn root(&self) -> &str {
         self.counters.roots.fetch_add(1, Ordering::Relaxed);
@@ -348,9 +351,10 @@ impl Project for NotesProject {
         Vec::new()
     }
 
-    fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
+    fn parse(&self, file: &SourceFile<'_>) -> Parsed<Vec<ContractFact>> {
         self.counters.parse.fetch_add(1, Ordering::Relaxed);
         let mut facts = FileFacts::default();
+        let mut linked = Vec::new();
         for (index, line) in file.text.lines().enumerate() {
             let number = u32::try_from(index + 1).unwrap();
             if line == "boom" {
@@ -369,9 +373,16 @@ impl Project for NotesProject {
                     text: text.to_owned(),
                     via: "notes".to_owned(),
                 });
+            } else if let Some(text) = line.strip_prefix("fact ") {
+                facts.contracts.push(declared_fact(text));
+            } else if let Some(text) = line.strip_prefix("linked ") {
+                linked.push(declared_fact(text));
             }
         }
-        Parsed::new(facts)
+        Parsed {
+            facts,
+            extra: linked,
+        }
     }
 
     fn prepare(&mut self, files: &[PrepareFile<'_>]) {
@@ -400,7 +411,7 @@ impl Project for NotesProject {
         }
     }
 
-    fn link(&self, input: &LinkInput<'_, ()>) -> Vec<LinkedFact> {
+    fn link(&self, input: &LinkInput<'_, Vec<ContractFact>>) -> Vec<LinkedFact> {
         self.counters.link.fetch_add(1, Ordering::Relaxed);
         assert!(
             !input.files().iter().any(|file| file
@@ -410,7 +421,7 @@ impl Project for NotesProject {
                 .any(|import| import.spec == "linkboom")),
             "boom in link"
         );
-        input
+        let imported = input
             .files()
             .iter()
             .filter(|file| {
@@ -421,8 +432,28 @@ impl Project for NotesProject {
             .map(|file| LinkedFact {
                 file: file.id,
                 fact: fact("queue linked"),
+            });
+        let keyed_again = input.files().iter().flat_map(|file| {
+            file.extra.iter().map(|declared| LinkedFact {
+                file: file.id,
+                fact: declared.clone(),
             })
-            .collect()
+        });
+        imported.chain(keyed_again).collect()
+    }
+}
+
+/// The contract fact that `<line> <role> <contract key>` spells: `1 serves http GET /bookings/{}`.
+fn declared_fact(text: &str) -> ContractFact {
+    let mut parts = text.splitn(3, ' ');
+    let line = parts.next().unwrap().parse().unwrap();
+    let role = serde_json::from_value(Value::from(parts.next().unwrap())).unwrap();
+    let key = ContractKey::parse(parts.next().unwrap()).unwrap();
+    ContractFact {
+        key,
+        role,
+        line,
+        via: "notes".to_owned(),
     }
 }
 
