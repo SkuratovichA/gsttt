@@ -61,6 +61,26 @@ expression: json
           "to": {
             "file": "src/lib.ts"
           }
+        },
+        {
+          "flags": 0,
+          "kind": "dynamic",
+          "line": 4,
+          "names": [],
+          "spec": "./lib",
+          "to": {
+            "file": "src/lib.ts"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "dynamic",
+          "line": 5,
+          "names": [],
+          "spec": "./lib",
+          "to": {
+            "file": "src/lib.ts"
+          }
         }
       ],
       "path": "src/made.test.ts",

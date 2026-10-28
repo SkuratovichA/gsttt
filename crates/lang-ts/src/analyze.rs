@@ -903,6 +903,8 @@ fn is_module_call(callee: &str) -> bool {
             | "jest.setMock"
             | "jest.createMockFromModule"
             | "jest.genMockFromModule"
+            | "jest.unstable_mockModule"
+            | "jest.deepUnmock"
     )
 }
 

@@ -33,3 +33,4 @@
 - [x] 3.11 A name taken from a package that `from` does not list names nothing, which the tests pin with a client generated to a custom `output` path and with a package that re-exports the client
 - [x] 3.12 No requirement of the TypeScript spec has more than 500 characters of text: the consistency of a root, the root types that are not read, the import types and the model types of other packages are requirements of their own, with the scenarios they had
 - [x] 3.13 The name of a class property is read with `field_name` and the key `resolvers` with `property_str` instead of a copy of the first and a `String` for the second, and `run_within` lives in the shared test support next to `run`
+- [x] 3.14 The first argument of `jest.unstable_mockModule` and `jest.deepUnmock` is a dynamic import, as it is for the other mock calls; both take the module first in `jest-runtime` 29.7.0 and 30.5.2

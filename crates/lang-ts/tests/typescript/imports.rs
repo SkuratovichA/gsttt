@@ -118,7 +118,7 @@ fn a_mocked_or_actual_module_is_a_dynamic_import() -> Result<(), Box<dyn Error>>
 )]
 fn a_mock_made_from_a_module_or_set_for_it_is_a_dynamic_import() -> Result<(), Box<dyn Error>> {
     let json = run("mocks-from-modules")?;
-    let expected: Vec<String> = (1..=3)
+    let expected: Vec<String> = (1..=5)
         .map(|line| format!("./lib dynamic @{line} -> file src/lib.ts"))
         .collect();
     assert_eq!(imports(&json, "src/made.test.ts"), expected);
