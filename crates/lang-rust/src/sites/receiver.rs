@@ -4,13 +4,73 @@
 //! the same file binds the receiver to a call the rule names, or declares it with a type the rule names. Nothing is
 //! inferred past that: a client that comes out of another function is not seen.
 
+use std::collections::HashMap;
+
 use gsttt_core::rules::{OneOrMany, Prefix};
 use ra_ap_syntax::ast::{self, HasName};
-use ra_ap_syntax::{AstNode, SyntaxNode};
+use ra_ap_syntax::{AstNode, SyntaxKind, SyntaxNode, TextSize};
 
 use super::Reader;
 use super::candidate::{Candidate, View, path_callee, peel};
 use crate::syntax::{segments, text};
+
+/// What a receiver can be traced to in a file, found in one pass the first time a rule with a receiver asks. Every
+/// candidate of the file asks the same questions, and answering each by walking the file again would be quadratic.
+#[derive(Default)]
+pub(super) struct Scope {
+    /// The fields of structs, with the type each is declared with.
+    fields: Vec<(String, ast::Type)>,
+    /// The `static` and `const` items, with their types.
+    items: Vec<(String, ast::Type)>,
+    /// The `let` statements of each function in source order, by where the function starts. `None` holds the ones
+    /// outside any function.
+    lets: HashMap<Option<TextSize>, Vec<ast::LetStmt>>,
+}
+
+impl Scope {
+    fn of(root: &SyntaxNode) -> Self {
+        let mut scope = Self::default();
+        for node in root.descendants() {
+            match node.kind() {
+                SyntaxKind::RECORD_FIELD => {
+                    if let Some(field) = ast::RecordField::cast(node) {
+                        scope.fields.extend(typed(field.name(), field.ty()));
+                    }
+                }
+                SyntaxKind::STATIC => {
+                    if let Some(item) = ast::Static::cast(node) {
+                        scope.items.extend(typed(item.name(), item.ty()));
+                    }
+                }
+                SyntaxKind::CONST => {
+                    if let Some(item) = ast::Const::cast(node) {
+                        scope.items.extend(typed(item.name(), item.ty()));
+                    }
+                }
+                SyntaxKind::LET_STMT => {
+                    if let Some(statement) = ast::LetStmt::cast(node) {
+                        let function = function_start(statement.syntax());
+                        scope.lets.entry(function).or_default().push(statement);
+                    }
+                }
+                _ => {}
+            }
+        }
+        scope
+    }
+}
+
+/// A name and a type, when a declaration has both.
+fn typed(name: Option<ast::Name>, ty: Option<ast::Type>) -> Option<(String, ast::Type)> {
+    Some((text(&name?), ty?))
+}
+
+/// Where the function around `node` starts.
+fn function_start(node: &SyntaxNode) -> Option<TextSize> {
+    node.ancestors()
+        .find_map(ast::Fn::cast)
+        .map(|function| function.syntax().text_range().start())
+}
 
 /// How the file shows a receiver to be what a rule wants.
 enum Origin {
@@ -34,6 +94,10 @@ impl Reader<'_> {
         }
     }
 
+    fn traced(&self) -> &Scope {
+        self.traced.get_or_init(|| Scope::of(self.root))
+    }
+
     fn origin(&self, receiver: &ast::Expr, from: &OneOrMany) -> Option<Origin> {
         match peel(receiver)? {
             ast::Expr::PathExpr(path) => {
@@ -42,13 +106,10 @@ impl Reader<'_> {
             }
             ast::Expr::FieldExpr(field) => {
                 let name = text(&field.name_ref()?);
-                self.root
-                    .descendants()
-                    .filter_map(ast::RecordField::cast)
-                    .any(|declared| {
-                        declared.name().is_some_and(|field| text(&field) == name)
-                            && declared.ty().is_some_and(|ty| type_names(&ty, from))
-                    })
+                self.traced()
+                    .fields
+                    .iter()
+                    .any(|(declared, ty)| *declared == name && type_names(ty, from))
                     .then_some(Origin::Declared)
             }
             other => maker(&other, from).map(Origin::Call),
@@ -62,16 +123,21 @@ impl Reader<'_> {
             return None;
         }
         let function = at.ancestors().find_map(ast::Fn::cast);
-        let scope = function
-            .as_ref()
-            .map_or_else(|| self.root.clone(), |function| function.syntax().clone());
         let start = at.text_range().start();
-        let bound = scope
-            .descendants()
-            .filter_map(ast::LetStmt::cast)
-            .filter(|statement| statement.syntax().text_range().end() <= start)
-            .filter(|statement| is_named(statement.pat(), name))
-            .last();
+        let traced = self.traced();
+        let bound = traced
+            .lets
+            .get(
+                &function
+                    .as_ref()
+                    .map(|function| function.syntax().text_range().start()),
+            )
+            .into_iter()
+            .flatten()
+            .rev()
+            .find(|statement| {
+                statement.syntax().text_range().end() <= start && is_named(statement.pat(), name)
+            });
         if let Some(statement) = bound {
             if let Some(call) = statement.initializer().and_then(|init| maker(&init, from)) {
                 return Some(Origin::Call(call));
@@ -88,14 +154,10 @@ impl Reader<'_> {
             .any(|param| {
                 is_named(param.pat(), name) && param.ty().is_some_and(|ty| type_names(&ty, from))
             });
-        let item = self.root.descendants().any(|node| {
-            let typed = |item_name: Option<ast::Name>, ty: Option<ast::Type>| {
-                item_name.is_some_and(|item| text(&item) == name)
-                    && ty.is_some_and(|ty| type_names(&ty, from))
-            };
-            ast::Static::cast(node.clone()).is_some_and(|item| typed(item.name(), item.ty()))
-                || ast::Const::cast(node).is_some_and(|item| typed(item.name(), item.ty()))
-        });
+        let item = traced
+            .items
+            .iter()
+            .any(|(declared, ty)| declared == name && type_names(ty, from));
         (parameter || item).then_some(Origin::Declared)
     }
 }

@@ -17,6 +17,7 @@ use gsttt_core::rules::{AssignRule, CallRule, ChainRule, DecoratorRule, EmbedRul
 use gsttt_core::text::LineIndex;
 use ra_ap_edition::Edition;
 use ra_ap_syntax::{SyntaxKind, SyntaxNode};
+use std::cell::OnceCell;
 
 use self::candidate::{Candidate, Prepared, View, apply_per_verb, lacks_keywords};
 use crate::link::Extra;
@@ -96,6 +97,8 @@ struct Reader<'a> {
     actix: bool,
     /// The edition of the file, which the arguments of macros and attributes are parsed in.
     edition: Edition,
+    /// What the receivers of the file can be traced to, found when a rule with a receiver first asks.
+    traced: OnceCell<receiver::Scope>,
 }
 
 /// What the rules produced at one site. A site that yields a contract is not also a blind spot.
@@ -162,6 +165,7 @@ impl<'a> Reader<'a> {
             axum: packs.iter().any(|pack| pack.name == "axum"),
             actix: packs.iter().any(|pack| pack.name == "actix"),
             edition,
+            traced: OnceCell::new(),
         }
     }
 
