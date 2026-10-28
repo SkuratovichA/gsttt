@@ -3,133 +3,75 @@ source: crates/lang-ts/tests/typescript/resolution.rs
 expression: json
 ---
 {
-  "projects": [
-    {
-      "connector": "ts",
-      "root": ".",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    },
-    {
-      "connector": "ts",
-      "root": "apps/web",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    }
-  ],
   "files": [
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "apps/web/package.json",
+      "project": "ts apps/web",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "apps/web/package.json",
-      "project": "ts apps/web"
+      "unresolved": []
     },
     {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
+      "contracts": [],
+      "embedded": [],
       "imports": [
         {
-          "spec": "react",
+          "flags": 0,
           "kind": "static",
           "line": 1,
-          "flags": 0,
           "names": [
             "useState"
           ],
+          "spec": "react",
           "to": {
             "external": "react"
           }
         },
         {
-          "spec": "react-dom/client",
+          "flags": 0,
           "kind": "static",
           "line": 2,
-          "flags": 0,
           "names": [
             "createRoot"
           ],
+          "spec": "react-dom/client",
           "to": {
             "external": "react-dom"
           }
         },
         {
-          "spec": "node:fs",
+          "flags": 0,
           "kind": "static",
           "line": 3,
-          "flags": 0,
           "names": [
             "readFileSync"
           ],
+          "spec": "node:fs",
           "to": "builtin"
         },
         {
-          "spec": "path",
+          "flags": 0,
           "kind": "static",
           "line": 4,
-          "flags": 0,
           "names": [
             "join"
           ],
+          "spec": "path",
           "to": "builtin"
         },
         {
-          "spec": "left-pad",
+          "flags": 0,
           "kind": "static",
           "line": 5,
-          "flags": 0,
           "names": [
             "default"
           ],
+          "spec": "left-pad",
           "to": {
             "unresolved": {
               "reason": "unknown-package"
@@ -137,13 +79,13 @@ expression: json
           }
         },
         {
-          "spec": "./nope",
+          "flags": 0,
           "kind": "static",
           "line": 6,
-          "flags": 0,
           "names": [
             "missing"
           ],
+          "spec": "./nope",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -151,26 +93,84 @@ expression: json
           }
         }
       ],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
       "path": "apps/web/src/main.ts",
-      "project": "ts apps/web"
+      "project": "ts apps/web",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
     },
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "package.json",
-      "project": "ts ."
+      "unresolved": []
     }
   ],
   "linked": [],
-  "unclaimed": [],
-  "problems": []
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    },
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "apps/web"
+    }
+  ],
+  "unclaimed": []
 }

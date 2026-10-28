@@ -3,123 +3,123 @@ source: crates/lang-ts/tests/typescript/resolution.rs
 expression: json
 ---
 {
-  "projects": [
-    {
-      "connector": "ts",
-      "root": ".",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    }
-  ],
   "files": [
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "package.json",
-      "project": "ts ."
+      "unresolved": []
     },
     {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
+      "contracts": [],
+      "embedded": [],
       "imports": [
         {
-          "spec": "./util",
+          "flags": 0,
           "kind": "static",
           "line": 1,
-          "flags": 0,
           "names": [
             "util"
           ],
+          "spec": "./util",
           "to": {
             "file": "src/util.ts"
           }
         },
         {
-          "spec": "./util.js",
+          "flags": 0,
           "kind": "static",
           "line": 2,
-          "flags": 0,
           "names": [
             "again"
           ],
+          "spec": "./util.js",
           "to": {
             "file": "src/util.ts"
           }
         },
         {
-          "spec": "./components",
+          "flags": 0,
           "kind": "static",
           "line": 3,
-          "flags": 0,
           "names": [
             "Panel"
           ],
+          "spec": "./components",
           "to": {
             "file": "src/components/index.tsx"
           }
         }
       ],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
       "path": "src/a.ts",
-      "project": "ts ."
-    },
-    {
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 0,
-      "imports": [],
+      "unresolved": []
+    },
+    {
       "contracts": [],
       "embedded": [],
-      "unresolved": [],
+      "imports": [],
       "path": "src/components/index.tsx",
-      "project": "ts ."
-    },
-    {
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 0,
-      "imports": [],
+      "unresolved": []
+    },
+    {
       "contracts": [],
       "embedded": [],
-      "unresolved": [],
+      "imports": [],
       "path": "src/util.ts",
-      "project": "ts ."
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
     }
   ],
   "linked": [],
-  "unclaimed": [],
-  "problems": []
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
 }

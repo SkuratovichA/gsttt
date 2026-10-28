@@ -3,60 +3,29 @@ source: crates/lang-ts/tests/typescript/imports.rs
 expression: json
 ---
 {
-  "projects": [
-    {
-      "connector": "ts",
-      "root": ".",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    }
-  ],
   "files": [
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "package.json",
-      "project": "ts ."
+      "unresolved": []
     },
     {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
+      "contracts": [],
+      "embedded": [],
       "imports": [
         {
-          "spec": "./globals.d.ts",
+          "flags": 0,
           "kind": "reference",
           "line": 1,
-          "flags": 0,
           "names": [],
+          "spec": "./globals.d.ts",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -64,15 +33,15 @@ expression: json
           }
         },
         {
-          "spec": "./named",
+          "flags": 0,
           "kind": "static",
           "line": 2,
-          "flags": 0,
           "names": [
             "default",
             "a",
             "b"
           ],
+          "spec": "./named",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -80,13 +49,13 @@ expression: json
           }
         },
         {
-          "spec": "./namespace",
+          "flags": 0,
           "kind": "static",
           "line": 3,
-          "flags": 0,
           "names": [
             "*"
           ],
+          "spec": "./namespace",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -94,11 +63,11 @@ expression: json
           }
         },
         {
-          "spec": "./side-effect",
+          "flags": 0,
           "kind": "side-effect",
           "line": 4,
-          "flags": 0,
           "names": [],
+          "spec": "./side-effect",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -106,13 +75,13 @@ expression: json
           }
         },
         {
-          "spec": "./types",
+          "flags": 1,
           "kind": "static",
           "line": 5,
-          "flags": 1,
           "names": [
             "T"
           ],
+          "spec": "./types",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -120,14 +89,14 @@ expression: json
           }
         },
         {
-          "spec": "./re-exported",
+          "flags": 0,
           "kind": "re-export",
           "line": 6,
-          "flags": 0,
           "names": [
             "x",
             "y"
           ],
+          "spec": "./re-exported",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -135,11 +104,11 @@ expression: json
           }
         },
         {
-          "spec": "./all",
+          "flags": 0,
           "kind": "re-export-all",
           "line": 7,
-          "flags": 0,
           "names": [],
+          "spec": "./all",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -147,13 +116,13 @@ expression: json
           }
         },
         {
-          "spec": "./star",
+          "flags": 0,
           "kind": "re-export",
           "line": 8,
-          "flags": 0,
           "names": [
             "*"
           ],
+          "spec": "./star",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -161,13 +130,13 @@ expression: json
           }
         },
         {
-          "spec": "./lazy",
+          "flags": 0,
           "kind": "dynamic",
           "line": 9,
-          "flags": 0,
           "names": [
             "*"
           ],
+          "spec": "./lazy",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -175,13 +144,13 @@ expression: json
           }
         },
         {
-          "spec": "./cjs",
+          "flags": 0,
           "kind": "require",
           "line": 10,
-          "flags": 0,
           "names": [
             "default"
           ],
+          "spec": "./cjs",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -189,13 +158,13 @@ expression: json
           }
         },
         {
-          "spec": "./legacy",
+          "flags": 0,
           "kind": "require",
           "line": 11,
-          "flags": 0,
           "names": [
             "default"
           ],
+          "spec": "./legacy",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -203,14 +172,45 @@ expression: json
           }
         }
       ],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
       "path": "src/forms.ts",
-      "project": "ts ."
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
     }
   ],
   "linked": [],
-  "unclaimed": [],
-  "problems": []
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
 }

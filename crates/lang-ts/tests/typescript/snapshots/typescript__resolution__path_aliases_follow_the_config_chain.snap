@@ -3,200 +3,200 @@ source: crates/lang-ts/tests/typescript/resolution.rs
 expression: json
 ---
 {
-  "projects": [
-    {
-      "connector": "ts",
-      "root": ".",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    },
-    {
-      "connector": "ts",
-      "root": "apps/web",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    },
-    {
-      "connector": "ts",
-      "root": "packages/db",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    }
-  ],
   "files": [
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "apps/web/package.json",
+      "project": "ts apps/web",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "apps/web/package.json",
-      "project": "ts apps/web"
+      "unresolved": []
     },
     {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
+      "contracts": [],
+      "embedded": [],
       "imports": [
         {
-          "spec": "@db/client",
+          "flags": 0,
           "kind": "static",
           "line": 1,
-          "flags": 0,
           "names": [
             "client"
           ],
+          "spec": "@db/client",
           "to": {
             "file": "packages/db/src/client.ts"
           }
         }
       ],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
       "path": "apps/web/src/page.ts",
-      "project": "ts apps/web"
-    },
-    {
+      "project": "ts apps/web",
       "status": {
         "status": "ok"
       },
-      "tags": 4,
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
       "imports": [
         {
-          "spec": "../../tsconfig.base.json",
+          "flags": 0,
           "kind": "reference",
           "line": 1,
-          "flags": 0,
           "names": [],
+          "spec": "../../tsconfig.base.json",
           "to": {
             "file": "tsconfig.base.json"
           }
         }
       ],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
       "path": "apps/web/tsconfig.json",
-      "project": "ts apps/web"
-    },
-    {
+      "project": "ts apps/web",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
+      "unresolved": []
+    },
+    {
       "contracts": [],
       "embedded": [],
-      "unresolved": [],
+      "imports": [],
       "path": "package.json",
-      "project": "ts ."
-    },
-    {
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "packages/db/package.json",
-      "project": "ts packages/db"
+      "unresolved": []
     },
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "packages/db/package.json",
+      "project": "ts packages/db",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "packages/db/src/client.ts",
+      "project": "ts packages/db",
       "status": {
         "status": "ok"
       },
       "tags": 0,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "packages/db/src/client.ts",
-      "project": "ts packages/db"
+      "unresolved": []
     },
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "tsconfig.base.json",
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "tsconfig.base.json",
-      "project": "ts ."
+      "unresolved": []
     }
   ],
   "linked": [],
-  "unclaimed": [],
-  "problems": []
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    },
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "apps/web"
+    },
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "packages/db"
+    }
+  ],
+  "unclaimed": []
 }

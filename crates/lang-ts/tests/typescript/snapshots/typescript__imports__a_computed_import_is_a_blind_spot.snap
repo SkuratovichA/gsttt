@@ -3,70 +3,70 @@ source: crates/lang-ts/tests/typescript/imports.rs
 expression: json
 ---
 {
-  "projects": [
-    {
-      "connector": "ts",
-      "root": ".",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    }
-  ],
   "files": [
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "package.json",
-      "project": "ts ."
+      "unresolved": []
     },
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "src/load.ts",
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 0,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
       "unresolved": [
         {
+          "detail": "import(name)",
           "line": 2,
           "reason": {
             "reason": "non-literal"
-          },
-          "detail": "import(name)"
+          }
         }
-      ],
-      "path": "src/load.ts",
-      "project": "ts ."
+      ]
     }
   ],
   "linked": [],
-  "unclaimed": [],
-  "problems": []
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
 }

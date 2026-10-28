@@ -3,186 +3,77 @@ source: crates/lang-ts/tests/typescript/projects.rs
 expression: json
 ---
 {
-  "projects": [
-    {
-      "connector": "ts",
-      "root": ".",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    },
-    {
-      "connector": "ts",
-      "root": "apps/api",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "serves",
-          "via": [
-            "nestjs"
-          ],
-          "blind_spots": [
-            "file-system routes (Next.js, Remix, SvelteKit) are not read",
-            "routers mounted from another package are not followed",
-            "prefixes and paths held in variables are not followed",
-            "a global prefix set at start-up (NestJS setGlobalPrefix) is not applied"
-          ]
-        },
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "graphql",
-          "role": "serves",
-          "via": [
-            "nestjs"
-          ],
-          "blind_spots": [
-            "resolvers built at run time are not read",
-            "schema-first resolvers outside a resolvers map are not read"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    },
-    {
-      "connector": "ts",
-      "root": "apps/web",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    }
-  ],
   "files": [
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "apps/api/package.json",
+      "project": "ts apps/api",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "apps/api/package.json",
-      "project": "ts apps/api"
+      "unresolved": []
     },
     {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
+      "contracts": [
+        {
+          "key": "http GET /status/live",
+          "line": 5,
+          "role": "serves",
+          "via": "nestjs"
+        }
+      ],
+      "embedded": [],
       "imports": [
         {
-          "spec": "@nestjs/common",
+          "flags": 0,
           "kind": "static",
           "line": 1,
-          "flags": 0,
           "names": [
             "Controller",
             "Get"
           ],
+          "spec": "@nestjs/common",
           "to": {
             "external": "@nestjs/common"
           }
         }
       ],
-      "contracts": [
-        {
-          "key": "http GET /status/live",
-          "role": "serves",
-          "line": 5,
-          "via": "nestjs"
-        }
-      ],
-      "embedded": [],
-      "unresolved": [],
       "path": "apps/api/src/status.controller.ts",
-      "project": "ts apps/api"
-    },
-    {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "apps/web/package.json",
-      "project": "ts apps/web"
-    },
-    {
+      "project": "ts apps/api",
       "status": {
         "status": "ok"
       },
       "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "apps/web/package.json",
+      "project": "ts apps/web",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
       "imports": [
         {
-          "spec": "@nestjs/common",
+          "flags": 0,
           "kind": "static",
           "line": 1,
-          "flags": 0,
           "names": [
             "Controller",
             "Get"
           ],
+          "spec": "@nestjs/common",
           "to": {
             "unresolved": {
               "reason": "unknown-package"
@@ -190,26 +81,135 @@ expression: json
           }
         }
       ],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
       "path": "apps/web/src/status.controller.ts",
-      "project": "ts apps/web"
+      "project": "ts apps/web",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
     },
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "package.json",
-      "project": "ts ."
+      "unresolved": []
     }
   ],
   "linked": [],
-  "unclaimed": [],
-  "problems": []
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    },
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "file-system routes (Next.js, Remix, SvelteKit) are not read",
+            "routers mounted from another package are not followed",
+            "prefixes and paths held in variables are not followed",
+            "a global prefix set at start-up (NestJS setGlobalPrefix) is not applied"
+          ],
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "resolvers built at run time are not read",
+            "schema-first resolvers outside a resolvers map are not read"
+          ],
+          "kind": "graphql",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "apps/api"
+    },
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "apps/web"
+    }
+  ],
+  "unclaimed": []
 }

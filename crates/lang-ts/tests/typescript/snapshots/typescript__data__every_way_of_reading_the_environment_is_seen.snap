@@ -3,93 +3,93 @@ source: crates/lang-ts/tests/typescript/data.rs
 expression: json
 ---
 {
-  "projects": [
-    {
-      "connector": "ts",
-      "root": ".",
-      "provides": [
-        {
-          "kind": "http",
-          "role": "calls",
-          "via": [
-            "fetch"
-          ],
-          "blind_spots": [
-            "URLs held in variables are not followed",
-            "clients created in another file are not recognised"
-          ]
-        },
-        {
-          "kind": "env",
-          "role": "calls",
-          "via": [
-            "env"
-          ],
-          "blind_spots": [
-            "variables read through an alias of the environment object are not seen"
-          ]
-        }
-      ]
-    }
-  ],
   "files": [
     {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
       "status": {
         "status": "ok"
       },
       "tags": 4,
-      "imports": [],
-      "contracts": [],
-      "embedded": [],
-      "unresolved": [],
-      "path": "package.json",
-      "project": "ts ."
+      "unresolved": []
     },
     {
-      "status": {
-        "status": "ok"
-      },
-      "tags": 0,
-      "imports": [],
       "contracts": [
         {
           "key": "env A",
-          "role": "calls",
           "line": 1,
+          "role": "calls",
           "via": "env"
         },
         {
           "key": "env B",
-          "role": "calls",
           "line": 2,
+          "role": "calls",
           "via": "env"
         },
         {
           "key": "env VITE_C",
-          "role": "calls",
           "line": 3,
+          "role": "calls",
           "via": "env"
         },
         {
           "key": "env D",
-          "role": "calls",
           "line": 4,
+          "role": "calls",
           "via": "env"
         },
         {
           "key": "env E",
-          "role": "calls",
           "line": 4,
+          "role": "calls",
           "via": "env"
         }
       ],
       "embedded": [],
-      "unresolved": [],
+      "imports": [],
       "path": "src/config.ts",
-      "project": "ts ."
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
     }
   ],
   "linked": [],
-  "unclaimed": [],
-  "problems": []
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
 }
