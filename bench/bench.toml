@@ -1,0 +1,76 @@
+# What `cargo xtask bench` measures: public repositories pinned at a release tag and the full commit the tag points at, and the tools pinned at a version. Resolved on 28.10.2026, with `git ls-remote --tags` for the repositories (the commit of an annotated tag is the peeled one) and the release pages for the tools. gsttt is not pinned: it is the binary the task is given.
+
+# vite, a TypeScript monorepo; it has no tsconfig.json at its root.
+[[repository]]
+name = "vite"
+url = "https://github.com/vitejs/vite"
+tag = "v8.3.5"
+commit = "981f07fa4580fb88b333c4450431e4715d2a0b82"
+language = "typescript"
+
+# excalidraw, a TypeScript application with a tsconfig.json at its root.
+[[repository]]
+name = "excalidraw"
+url = "https://github.com/excalidraw/excalidraw"
+tag = "v0.18.1"
+commit = "a2ec2889babf7d2295469c6d90ebe77fae57df84"
+language = "typescript"
+tsconfig = "tsconfig.json"
+
+# django, a Python project whose package grimp reads.
+[[repository]]
+name = "django"
+url = "https://github.com/django/django"
+tag = "6.1.2"
+commit = "2212534bae393714e1e51db2341d4fd5545e19f6"
+language = "python"
+packages = ["django"]
+
+# ripgrep, a Rust project.
+[[repository]]
+name = "ripgrep"
+url = "https://github.com/BurntSushi/ripgrep"
+tag = "15.2.0"
+commit = "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f"
+language = "rust"
+
+# dependency-cruiser, installed by pnpm into bench/tools/node.
+[tools.dependency-cruiser]
+version = "18.7.0"
+
+# madge, installed by pnpm into bench/tools/node.
+[tools.madge]
+version = "8.0.0"
+
+# typescript, installed beside the two Node tools so that they find their TypeScript parser; 5.9.3 is the newest release that both support (dependency-cruiser needs one below 7.0.0, madge asks for ^5.4.4).
+[tools.typescript]
+version = "5.9.3"
+
+# grimp, installed by uv into the virtual environment bench/tools/python.
+[tools.grimp]
+version = "3.18"
+
+# codebase-memory-mcp, downloaded as the release archive of the platform; a download URL is releases, then v<version>, then the file of the archive.
+[tools.codebase-memory-mcp]
+version = "0.12.1"
+releases = "https://github.com/DeusData/codebase-memory-mcp/releases/download"
+
+# The archive for macOS on Apple silicon.
+[tools.codebase-memory-mcp.archives.darwin-arm64]
+file = "codebase-memory-mcp-darwin-arm64.tar.gz"
+sha256 = "9bfcbe38414b47969a3e1d1c1999f5357409387c86fa3d24221b5458267660d2"
+
+# The archive for macOS on Intel.
+[tools.codebase-memory-mcp.archives.darwin-amd64]
+file = "codebase-memory-mcp-darwin-amd64.tar.gz"
+sha256 = "ca6e64397a8ae80cec898a8205a6aa16750ac798acc05a0c3ed983837944a581"
+
+# The archive for Linux on x86-64, built against the system libraries.
+[tools.codebase-memory-mcp.archives.linux-amd64]
+file = "codebase-memory-mcp-linux-amd64.tar.gz"
+sha256 = "8453015145f072c1b9b019cbdd02cea8cc6f18cc5e116036dd20992631c638c7"
+
+# The archive for Linux on ARM64, built against the system libraries.
+[tools.codebase-memory-mcp.archives.linux-arm64]
+file = "codebase-memory-mcp-linux-arm64.tar.gz"
+sha256 = "8575f126092660b93b170bdc2e06f3ef2dd28d3cc49ad6d0895dc3e4767219cd"

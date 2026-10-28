@@ -6,7 +6,7 @@
 
 ## 2. The pins
 
-- [ ] 2.1 `bench/bench.toml`: four repositories at a release tag and commit, the tools at a version, the archives of codebase-memory-mcp with their SHA-256, and `/bench/tools` in `.gitignore`
+- [x] 2.1 `bench/bench.toml`: four repositories at a release tag and commit, the tools at a version, the archives of codebase-memory-mcp with their SHA-256, and `/bench/tools` in `.gitignore`
 
 ## 3. The task
 
