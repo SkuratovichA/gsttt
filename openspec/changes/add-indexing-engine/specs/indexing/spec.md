@@ -35,7 +35,7 @@ The engine SHALL index the tracked files present in the work tree, conflicted on
 - **THEN** the index holds that file with the id of the work tree file, conflict markers included
 
 ### Requirement: Content ids
-The engine SHALL identify each file's content by its git blob id, SHALL take the id of a clean tracked file from the git index without reading the file, and SHALL hash a modified or untracked file. Outside git a file whose size and modification time match the snapshot SHALL keep its stored id. A file above `max_file_bytes` is never parsed, so it SHALL NOT be read for its id: its size and modification time SHALL stand in for it, and touching such a file makes it count as modified.
+The engine SHALL identify each file's content by its git blob id and SHALL take the id of a clean tracked file from the git index without reading the file. Any other file whose size and modification time match the snapshot SHALL keep its stored id, and the rest SHALL be hashed. A file above `max_file_bytes` is never parsed, so it SHALL NOT be read for its id: its size and modification time SHALL stand in for it, and touching such a file makes it count as modified.
 
 #### Scenario: A file above the size limit is not read for its id
 - **WHEN** a file larger than `max_file_bytes` is in the work tree and the process is not allowed to read it
@@ -45,6 +45,10 @@ The engine SHALL identify each file's content by its git blob id, SHALL take the
 - **WHEN** a tree holds a file larger than `max_file_bytes` that the process cannot read, and it is indexed twice
 - **THEN** the second refresh is a no-op
 
+#### Scenario: An old file that did not change is not read again
+- **WHEN** a modified or untracked file with a modification time an hour old cannot be read, and the tree is indexed twice
+- **THEN** the second refresh is a no-op, in a repository and outside one
+
 #### Scenario: An edited file gets the id git would give it
 - **WHEN** a committed file is edited and the engine refreshes
 - **THEN** the file's content id equals what `git hash-object` prints for it
@@ -52,6 +56,13 @@ The engine SHALL identify each file's content by its git blob id, SHALL take the
 #### Scenario: A clean tree is not parsed again
 - **WHEN** a committed, clean repository is indexed twice
 - **THEN** the second run parses no file and reuses the facts of every file
+
+### Requirement: A fresh stamp proves nothing
+A size and modification time kept in the snapshot SHALL NOT stand for a file whose modification time lies within two seconds of the start of the listing that took them, because a save in the same tick of the file system's clock leaves both as they were. The engine SHALL hash such a file again.
+
+#### Scenario: A same-size edit in the same clock tick is noticed
+- **WHEN** an indexed file is saved again with the same size and its old modification time put back, within two seconds
+- **THEN** the next refresh gives the file the id of its new content and parses it, in a repository and outside one
 
 ### Requirement: Facts follow the bytes that were read
 A file saved between the listing and the read of a run SHALL have its facts filed under the content id of the bytes that were read, so that saving the earlier text back, or a sibling worktree holding it, never finds them under the earlier id. A file that changed while it was being read SHALL have no id, so nothing is filed under it. A file unchanged since the listing SHALL keep the id the listing gave it.

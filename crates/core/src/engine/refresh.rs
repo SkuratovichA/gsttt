@@ -130,6 +130,7 @@ impl<'a> Engine<'a> {
     /// Brings the stored index up to date with the tree and returns it.
     pub fn refresh(&self) -> Result<Refresh, IndexError> {
         let started = Instant::now();
+        let listed_at = files::unix_now();
         let snapshot_path = self.workspace.snapshot_path();
         let snapshot = Snapshot::open(snapshot_path.as_std_path());
         let previous = snapshot.as_ref().and_then(Snapshot::stored);
@@ -218,6 +219,7 @@ impl<'a> Engine<'a> {
             problems,
             own: previous,
             started,
+            listed_at,
             listed,
         }))
     }
@@ -237,6 +239,7 @@ impl<'a> Engine<'a> {
             mut problems,
             own,
             started,
+            listed_at,
             listed,
         } = run;
         let max = self.setup.max_file_bytes;
@@ -291,6 +294,7 @@ impl<'a> Engine<'a> {
         let stored = Stored {
             index,
             config,
+            listed_at,
             files: stored_files(states, file_keys, output.files),
         };
         // The index is built, so a snapshot that cannot be stored (a read-only `.git`, a full disk) costs the next
@@ -401,12 +405,18 @@ impl<'a> Engine<'a> {
     }
 
     /// The files of the work tree, with the stamps of the previous snapshot to spare hashing what did not change.
+    /// A stamp of a file written too close to the listing it was taken in is left out: the file is read again.
     fn listing(&self, previous: Option<&ArchivedStored>) -> Result<Vec<FileState>, FilesError> {
+        let listed_at = previous.map(|stored| stored.listed_at.to_native());
         files::scan(
             &self.workspace,
             &self.setup.exclude,
             self.setup.max_file_bytes,
-            &|path| previous?.stamp_of(path),
+            &|path| {
+                previous?
+                    .stamp_of(path)
+                    .filter(|stamp| listed_at.is_some_and(|at| stamp.is_settled(at)))
+            },
         )
     }
 
@@ -455,6 +465,8 @@ struct Rebuild<'r, 'a> {
     problems: Vec<String>,
     own: Option<&'r ArchivedStored>,
     started: Instant,
+    /// The unix second at which the listing began.
+    listed_at: i64,
     listed: Duration,
 }
 
@@ -561,6 +573,7 @@ fn micros(duration: Duration) -> u64 {
 mod tests {
     use std::fs;
     use std::path::Path;
+    use std::time::{Duration, SystemTime};
 
     use camino::Utf8PathBuf;
     use serde_json::json;
@@ -610,6 +623,23 @@ mod tests {
     fn index(rig: &Rig, dir: &tempfile::TempDir, setup: &Setup) -> Result<Refresh, IndexError> {
         let connectors = rig.connectors();
         Engine::new(workspace(dir), &connectors, &[], setup).refresh()
+    }
+
+    /// Indexes `dir`, a repository or not; outside a repository the snapshot goes into `cache`.
+    fn index_at(rig: &Rig, dir: &Path, cache: &Path, setup: &Setup) -> Refresh {
+        let connectors = rig.connectors();
+        let root = Utf8PathBuf::from_path_buf(dir.to_path_buf()).unwrap();
+        let cache = Utf8PathBuf::from_path_buf(cache.to_path_buf()).unwrap();
+        let workspace = Workspace::locate_with(&root, Some(cache)).unwrap();
+        Engine::new(workspace, &connectors, &[], setup)
+            .refresh()
+            .unwrap()
+    }
+
+    /// Sets the modification time of `path` to `time`.
+    fn touch(path: &Path, time: SystemTime) {
+        let file = fs::File::options().write(true).open(path).unwrap();
+        file.set_modified(time).unwrap();
     }
 
     fn kinds(changes: Vec<Change>) -> Vec<(String, ChangeKind)> {
@@ -675,6 +705,67 @@ mod tests {
         let run = index(&rig, &dir, &setup).unwrap();
         assert_eq!((run.parsed, run.reused), (1, 2));
         assert_eq!(rig.counters.take()[0], 1);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A same-size edit in the same clock tick is noticed")]
+    #[test]
+    fn a_same_size_edit_in_the_same_clock_tick_is_noticed() {
+        let setup = Setup::default();
+        let cache = tempfile::tempdir().unwrap();
+        let repo = init_repo(&[("a.txt", "use b.txt\n"), ("b.txt", "")]);
+        let plain = tempfile::tempdir().unwrap();
+        write(plain.path(), "a.txt", "use b.txt\n");
+        write(plain.path(), "b.txt", "");
+        // In a repository a.txt is a modified file, which the git index cannot vouch for; outside one no index does.
+        for dir in [repo.path(), plain.path()] {
+            let rig = Rig::new();
+            index_at(&rig, dir, cache.path(), &setup);
+            rig.counters.take();
+            let a = dir.join("a.txt");
+            let saved = fs::metadata(&a).unwrap().modified().unwrap();
+            fs::write(&a, "use c.txt\n").unwrap();
+            touch(&a, saved);
+
+            let run = index_at(&rig, dir, cache.path(), &setup);
+
+            assert!(!run.unchanged, "{}", dir.display());
+            assert_eq!(rig.counters.take()[0], 1, "{}", dir.display());
+        }
+    }
+
+    #[cfg(unix)]
+    #[gsttt_scenario::scenario("indexing", "An old file that did not change is not read again")]
+    #[test]
+    fn an_old_file_that_did_not_change_is_not_read_again() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let setup = Setup::default();
+        let cache = tempfile::tempdir().unwrap();
+        let repo = init_repo(&[("a.txt", "use b.txt\n"), ("b.txt", "")]);
+        let plain = tempfile::tempdir().unwrap();
+        write(plain.path(), "b.txt", "");
+        let an_hour_ago = SystemTime::now() - Duration::from_secs(3_600);
+        for dir in [repo.path(), plain.path()] {
+            let rig = Rig::new();
+            // a.txt is modified in the repository, old.txt is untracked: the git index vouches for neither.
+            write(dir, "a.txt", "use old.txt\n");
+            write(dir, "old.txt", "");
+            for name in ["a.txt", "old.txt"] {
+                touch(&dir.join(name), an_hour_ago);
+            }
+            index_at(&rig, dir, cache.path(), &setup);
+            for name in ["a.txt", "old.txt"] {
+                fs::set_permissions(dir.join(name), fs::Permissions::from_mode(0o000)).unwrap();
+            }
+            // A process that can read the files anyway cannot show that they were not read.
+            if fs::read(dir.join("old.txt")).is_ok() {
+                return;
+            }
+
+            let run = index_at(&rig, dir, cache.path(), &setup);
+
+            assert!(run.unchanged, "{}", dir.display());
+        }
     }
 
     #[gsttt_scenario::scenario("indexing", "Changed options parse that module's files again")]

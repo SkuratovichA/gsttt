@@ -6,11 +6,15 @@
 //!
 //! A file is identified by the git blob id of its content. One above `Setup.max_file_bytes` is never parsed, so it
 //! is not read for its id either: its size and modification time stand in for it.
+//!
+//! A file that is not clean in the git index keeps the id of the last run when its size and modification time are
+//! still the ones that run saw, unless it was written too close to that run's listing for the pair to prove
+//! anything ([`Stamp::is_settled`]).
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs::{self, Metadata};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use gix::index::entry::{Flags, Mode, Stat, stat};
@@ -68,6 +72,9 @@ impl ContentId {
     }
 }
 
+/// The coarsest resolution of a modification time among the file systems a work tree lives on: FAT's two seconds.
+const RACY_SECONDS: i64 = 2;
+
 /// What the engine knows about a file's content without parsing it: the id, and the size and modification time
 /// that let a later run skip hashing outside git.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -115,6 +122,14 @@ impl Stamp {
             ContentId::UNKNOWN
         };
         Some(Self::of(id, &after))
+    }
+
+    /// Whether the stamp can tell this file from a later save. File systems keep a modification time to one second
+    /// (HFS+, ext3) or two (FAT) at best, so a file written within that of `listed_at`, the unix second at which
+    /// the listing began, can be saved again with the same size and the same time. The stamp of such a file proves
+    /// nothing: it is git's "racy" rule applied to the engine's own stamps.
+    pub fn is_settled(&self, listed_at: i64) -> bool {
+        self.mtime_secs < listed_at.saturating_sub(RACY_SECONDS)
     }
 
     /// Whether `meta` is the file as this stamp saw it: the same size and the same modification time.
@@ -173,8 +188,9 @@ impl Excluder {
 }
 
 /// The files of the work tree in path order, each with its stamp. `previous` gives the stamp a file had in the
-/// last snapshot; outside git a file whose size and modification time still match keeps that id unread. A file
-/// above `max_file_bytes` is not read: its id is made of its size and modification time ([`ContentId::from_stat`]).
+/// last snapshot, when that stamp can be trusted ([`Stamp::is_settled`]); a file whose size and modification time
+/// still match it keeps its id unread, unless the git index vouches for the file. A file above `max_file_bytes` is
+/// not read: its id is made of its size and modification time ([`ContentId::from_stat`]).
 pub fn scan(
     workspace: &Workspace,
     exclude: &[String],
@@ -183,7 +199,7 @@ pub fn scan(
 ) -> Result<Vec<FileState>, FilesError> {
     let excluder = Excluder::new(workspace.root(), exclude)?;
     let mut states = match workspace.git() {
-        Some(git) => scan_git(workspace.root(), git, &excluder, max_file_bytes)?,
+        Some(git) => scan_git(workspace.root(), git, &excluder, max_file_bytes, previous)?,
         None => scan_plain(workspace.root(), &excluder, max_file_bytes, previous)?,
     };
     states.sort_unstable_by(|a, b| a.path.cmp(&b.path));
@@ -209,6 +225,7 @@ fn scan_git(
     git: &GitDirs,
     excluder: &Excluder,
     max_file_bytes: u64,
+    previous: &(dyn Fn(&RepoPath) -> Option<Stamp> + Sync),
 ) -> Result<Vec<FileState>, FilesError> {
     let index_error = |message: String| FilesError::Index {
         root: root.to_owned(),
@@ -260,22 +277,26 @@ fn scan_git(
     );
     candidates.retain(|(path, _)| !excluder.excludes(path));
 
+    // The id git's index gives a file that is clean, without reading it.
+    let clean_oid = |path: &RepoPath, tracked: Option<&Tracked>| {
+        let tracked = tracked?;
+        // The index compares its own stat type, which only gix can build from a path.
+        let metadata =
+            gix::index::fs::Metadata::from_path_no_follow(root.join(path.as_str()).as_std_path())
+                .ok()?;
+        let current = Stat::from_fs(&metadata).ok()?;
+        // A stat that matches is only proof of a clean file when the index was written well after the file was:
+        // git's "racy" rule.
+        (tracked.stat.matches(&current, options) && !tracked.stat.is_racy(timestamp, options))
+            .then_some(tracked.oid)
+    };
     Ok(candidates
         .into_par_iter()
         .filter_map(|(path, tracked)| {
-            stamp_file(root, &path, max_file_bytes, |_| {
-                let tracked = tracked.as_ref()?;
-                // The index compares its own stat type, which only gix can build from a path.
-                let metadata = gix::index::fs::Metadata::from_path_no_follow(
-                    root.join(path.as_str()).as_std_path(),
-                )
-                .ok()?;
-                let current = Stat::from_fs(&metadata).ok()?;
-                // A stat that matches is only proof of a clean file when the index was written well after the
-                // file was: git's "racy" rule.
-                (tracked.stat.matches(&current, options)
-                    && !tracked.stat.is_racy(timestamp, options))
-                .then_some(tracked.oid)
+            stamp_file(root, &path, max_file_bytes, |meta| {
+                // A file that is not clean in the index is the same as in the last run when its stamp says so.
+                clean_oid(&path, tracked.as_ref())
+                    .or_else(|| previous(&path)?.id_of_unchanged(meta))
             })
         })
         .collect())
@@ -391,6 +412,15 @@ fn hash_file(path: &Utf8Path) -> ContentId {
 fn stat_of(meta: &Metadata) -> (u64, i64, u32) {
     let (secs, nanos) = mtime(meta);
     (meta.len(), secs, nanos)
+}
+
+/// The current time in seconds since the Unix epoch, on the clock that stamps a file with its modification time.
+pub fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
+        })
 }
 
 fn mtime(meta: &Metadata) -> (i64, u32) {
@@ -552,6 +582,47 @@ mod tests {
         assert_eq!(dump_id(4), ContentId::from_stat(size, secs, nanos));
         // Under the limit the file is read for its id, and this one cannot be.
         assert_eq!(dump_id(100), ContentId::UNKNOWN);
+    }
+
+    #[test]
+    fn a_stamp_is_settled_two_seconds_before_the_listing() {
+        let stamp = |mtime_secs| Stamp {
+            id: blob_id(b"content"),
+            size: 7,
+            mtime_secs,
+            mtime_nanos: 0,
+        };
+
+        assert!(stamp(97).is_settled(100));
+        assert!(!stamp(98).is_settled(100));
+        assert!(!stamp(100).is_settled(100));
+        assert!(!stamp(101).is_settled(100));
+        assert!(!stamp(i64::MAX).is_settled(i64::MIN));
+    }
+
+    #[test]
+    fn a_file_the_index_does_not_vouch_for_keeps_its_stored_id() {
+        let dir = init_repo(&[("tracked.ts", "tracked")]);
+        write(dir.path(), "tracked.ts", "edited");
+        write(dir.path(), "new.ts", "new");
+        let workspace =
+            Workspace::locate_with(Utf8Path::from_path(dir.path()).unwrap(), None).unwrap();
+        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
+        assert_eq!(paths(&first), ["new.ts", "tracked.ts"]);
+        let stored = |path: &RepoPath| {
+            let stamp = first.iter().find(|state| &state.path == path)?.stamp;
+            Some(Stamp {
+                id: blob_id(path.as_str().as_bytes()),
+                ..stamp
+            })
+        };
+
+        let second = scan(&workspace, &[], u64::MAX, &stored).unwrap();
+
+        // The ids are the ones the previous run stored, not those of the contents.
+        for state in &second {
+            assert_eq!(state.stamp.id, blob_id(state.path.as_str().as_bytes()));
+        }
     }
 
     #[test]

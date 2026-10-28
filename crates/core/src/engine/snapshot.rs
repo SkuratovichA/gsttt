@@ -8,13 +8,12 @@
 use std::fs;
 use std::io::{Read, Seek, Write};
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rkyv::rancor::Error as RkyvError;
 use rkyv::util::AlignedVec;
 use serde::{Deserialize, Serialize};
 
-use super::files::Stamp;
+use super::files::{self, Stamp};
 use super::keys::FactKey;
 use crate::fact::{FileFacts, ParseFailure, ParseStatus};
 use crate::index::Index;
@@ -60,6 +59,11 @@ pub struct Stored {
     pub index: Index,
     /// A hash of everything besides file content that shapes facts and graph: the setup, the connectors, the packs.
     pub config: u128,
+    /// The unix second at which the listing of the files began. A stamp of a file written within two seconds of it
+    /// proves nothing to a later run ([`Stamp::is_settled`]). It is the start of the listing and not the time of the
+    /// write because a file is stamped while the listing runs, and a parse in between can take far longer than the
+    /// margin.
+    pub listed_at: i64,
     /// One entry per file of the index, in file id order.
     pub files: Vec<StoredFile>,
 }
@@ -228,10 +232,7 @@ fn parse_header(json: &[u8]) -> Option<Header> {
 
 /// The current time as RFC 3339 in UTC.
 pub fn now() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
-    rfc3339(secs)
+    rfc3339(u64::try_from(files::unix_now()).unwrap_or(0))
 }
 
 /// Seconds since the Unix epoch as `YYYY-MM-DDTHH:MM:SSZ`. Written out here because a calendar crate would be a
@@ -304,6 +305,7 @@ mod tests {
         let stored = Stored {
             index: Index::default(),
             config: 9,
+            listed_at: 11,
             files,
         };
         write(&path, &header, &stored).unwrap();
