@@ -12,6 +12,7 @@ use serde::Deserialize;
 
 use super::draw::{BROKEN, Verdict};
 use super::functions::Candidate;
+use super::process::kill_group;
 use crate::dist::git::git;
 
 /// The wall-clock limit of each of the two runs without a throw.
@@ -287,13 +288,7 @@ fn run_limited(
             return Ok(true);
         }
         if started.elapsed() >= limit {
-            // The whole group: a test runner starts workers of its own, and std has no call for a group.
-            Command::new("kill")
-                .args(["-s", "KILL", "--"])
-                .arg(format!("-{}", child.id()))
-                .status()
-                .context("cannot run kill")?;
-            child.wait()?;
+            kill_group(&mut child)?;
             return Ok(false);
         }
         std::thread::sleep(POLL);

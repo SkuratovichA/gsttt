@@ -1,13 +1,25 @@
-//! `cargo xtask agents`: the questions the agent benchmarks ask. Specified in `openspec/changes/add-agent-benchmarks/`.
+//! `cargo xtask agents`: the agent benchmarks, which ask Claude Code questions about a repository in four setups and score the answers. Specified in `openspec/changes/add-agent-benchmarks/`.
 //!
 //! `questions` draws them from the repositories that ask for them in `bench/bench.toml` and writes `bench/agents/questions.json`, the file the runs read. The answers come from the TypeScript language service for the users of a function and from Vitest's own report for the tests it breaks, so no tool under test marks its own work.
+//!
+//! `run` asks them, one run at a time, and writes `bench/results/agents.json` after every run. `table` prints the means of a results file.
 
 mod args;
 pub(crate) mod checkout;
 mod draw;
+mod exec;
 mod functions;
+mod guard;
+mod init;
 mod oracle;
+mod process;
 pub(crate) mod questions;
+mod results;
+mod runs;
+mod score;
+mod setups;
+mod stream;
+mod table;
 
 use std::io::Write as _;
 use std::path::Path;
@@ -15,6 +27,8 @@ use std::process::ExitCode;
 
 use anyhow::{Context as _, bail, ensure};
 
+use self::args::Task;
+use self::checkout::Purpose;
 use self::functions::Candidate;
 use self::oracle::Oracle;
 use self::questions::{Question, Questions};
@@ -24,22 +38,30 @@ use crate::bench::results::write_atomically;
 use crate::bench::{select, setup};
 use crate::root::repository_root;
 
-const USAGE: &str = "usage: cargo xtask agents questions [--repository <name>]... [--out <file>]";
+const USAGE: &str = "usage:
+  cargo xtask agents questions [--repository <name>]... [--out <file>]
+  cargo xtask agents run --gsttt <binary> [--repository <name>]... [--question <id>]... [--repeats <n>] [--out <file>]
+  cargo xtask agents table [<results file>]";
 
 /// Where the questions are written, relative to the root of the repository.
 pub(crate) const QUESTIONS: &str = "bench/agents/questions.json";
+
+/// Where the results of the runs are written, relative to the root of the repository.
+pub(crate) const RESULTS: &str = "bench/results/agents.json";
 
 /// Runs `cargo xtask agents <task>`.
 pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     match args.split_first() {
         Some((task, rest)) if task == "questions" => draw(rest),
+        Some((task, rest)) if task == "run" => runs::run(rest),
+        Some((task, rest)) if task == "table" => table::run(rest),
         _ => bail!("{USAGE}"),
     }
 }
 
 /// Draws the questions of the repositories that ask for them and writes them.
 fn draw(args: &[String]) -> anyhow::Result<ExitCode> {
-    let args = args::parse(args)?;
+    let args = args::parse(Task::Questions, args)?;
     let root = repository_root()?;
     let pins = Pins::load(&root)?;
     let repositories = asking(&pins, &args.repositories)?;
@@ -118,7 +140,7 @@ fn questions_of(
         .tsconfig
         .as_deref()
         .with_context(|| format!("`{name}` has no tsconfig"))?;
-    let checkout = checkout::prepare(repository, agents)?;
+    let checkout = checkout::prepare(repository, agents, Purpose::Draw)?;
     let candidates = functions::list(script, &programs.node, &checkout, &agents.scope, tsconfig)?;
     writeln!(
         std::io::stderr().lock(),
