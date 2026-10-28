@@ -182,20 +182,27 @@ Indexing the same tree with the same setup SHALL give equal indexes apart from `
 - **THEN** the two indexes are equal apart from `IndexInfo`
 
 ### Requirement: Snapshot
-The engine SHALL store the index, every file's key, content id, size, modification time, facts and connector extra in `<state dir>/snapshot.gsttt`, written to a temporary file and renamed. The file SHALL start with the magic `GSTTSNAP`, a format version and a JSON header, followed by a validated rkyv body. A snapshot with another magic, format or `built_by`, or one that fails validation, SHALL be treated as absent. `peek` SHALL read the header without reading the body.
+The engine SHALL store the index, every file's key, content id, size, modification time, facts and connector extra in `<state dir>/snapshot.gsttt`, written to a temporary file, synced to disk and renamed. The file SHALL start with the magic `GSTTSNAP`, a layout number, the header length and the xxh3 hash of the body, then a JSON header, then a validated rkyv body. `peek` SHALL read the header without reading the body.
 
 #### Scenario: A stored index loads back equal
 - **WHEN** an index is stored and loaded
 - **THEN** the loaded index equals the stored one
+
+#### Scenario: Peek reads only the header
+- **WHEN** `peek` runs on a snapshot whose body bytes are garbage
+- **THEN** it returns the header with `built_by`, `head`, `dirty` and `files`
+
+### Requirement: A snapshot that cannot be trusted counts as absent
+A snapshot with another magic, layout number or `built_by`, one whose body does not match the hash in its prefix, and one whose body fails validation SHALL be treated as absent. The next refresh SHALL build the index and replace it.
 
 #### Scenario: A corrupt snapshot counts as none
 - **WHEN** the snapshot's body is truncated
 - **THEN** loading returns no index
 - **AND** the next refresh rebuilds and replaces the snapshot
 
-#### Scenario: Peek reads only the header
-- **WHEN** `peek` runs on a snapshot whose body bytes are garbage
-- **THEN** it returns the header with `built_by`, `head`, `dirty` and `files`
+#### Scenario: A flipped byte in the body counts as none
+- **WHEN** one byte of the snapshot's body is changed to another value, as a disk can do
+- **THEN** loading returns no index
 
 ### Requirement: Snapshot write failure
 A snapshot that cannot be written SHALL be logged and SHALL NOT fail the run.

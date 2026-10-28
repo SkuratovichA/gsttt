@@ -1,9 +1,10 @@
 //! The snapshot file: an index and the facts it was built from, on disk.
 //!
-//! `snapshot.gsttt` starts with the magic `GSTTSNAP`, the format number and the length of the header as two
-//! little-endian `u32`, then the header as JSON, then zero padding up to a multiple of 16 bytes, then the body. The
-//! header says what the index is without touching the body. The body is rkyv, validated before anything reads it,
-//! so a truncated or corrupted file counts as no snapshot instead of taking the process down.
+//! `snapshot.gsttt` starts with the magic `GSTTSNAP`, the layout number and the length of the header as two
+//! little-endian `u32`, and the xxh3 hash of the body as a little-endian `u64`; then comes the header as JSON, then
+//! zero padding up to a multiple of 16 bytes, then the body. The header says what the index is without touching the
+//! body. The body is rkyv. It is checked against its hash and then validated before anything reads it, so a
+//! truncated or damaged file counts as no snapshot instead of taking the process down or answering wrongly.
 
 use std::fs;
 use std::io::{Read, Seek, Write};
@@ -12,6 +13,7 @@ use std::path::Path;
 use rkyv::rancor::Error as RkyvError;
 use rkyv::util::AlignedVec;
 use serde::{Deserialize, Serialize};
+use xxhash_rust::xxh3::xxh3_64;
 
 use super::files::{self, Stamp};
 use super::keys::FactKey;
@@ -19,15 +21,15 @@ use crate::fact::{FileFacts, ParseFailure, ParseStatus};
 use crate::index::Index;
 use crate::path::RepoPath;
 
-/// The version of gsttt that writes snapshots. A snapshot another version wrote is not read, because the layout
-/// of the body may differ.
+/// The version of gsttt that writes snapshots. A snapshot another version wrote is not read.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const MAGIC: &[u8; 8] = b"GSTTSNAP";
-/// The layout of the file around the body. Bump it when the prefix or the header changes shape.
-const FORMAT: u32 = 1;
-/// Magic, format and header length.
-const PREFIX: usize = 16;
+/// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape.
+/// The package version cannot do that, because it stays the same across the commits of a branch in development.
+const LAYOUT: u32 = 2;
+/// Magic, layout, header length and the hash of the body.
+const PREFIX: usize = 24;
 /// The body starts at a multiple of this, so the archived values in it sit where rkyv needs them.
 const ALIGN: usize = 16;
 /// A header is a few hundred bytes; a length far beyond that means the file is not a snapshot.
@@ -106,8 +108,9 @@ pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), Snapsh
 
     let mut bytes = Vec::with_capacity(PREFIX + json.len() + ALIGN + body.len());
     bytes.extend_from_slice(MAGIC);
-    bytes.extend_from_slice(&FORMAT.to_le_bytes());
+    bytes.extend_from_slice(&LAYOUT.to_le_bytes());
     bytes.extend_from_slice(&length.to_le_bytes());
+    bytes.extend_from_slice(&xxh3_64(&body).to_le_bytes());
     bytes.extend_from_slice(&json);
     bytes.resize(bytes.len().next_multiple_of(ALIGN), 0);
     bytes.extend_from_slice(&body);
@@ -117,6 +120,11 @@ pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), Snapsh
     let mut file =
         tempfile::NamedTempFile::new_in(dir).map_err(|error| failed_to_write(error.to_string()))?;
     file.write_all(&bytes)
+        .map_err(|error| failed_to_write(error.to_string()))?;
+    // The rename below makes the new file the snapshot at once; without this, a crash after it can leave a file
+    // whose blocks never reached the disk.
+    file.as_file()
+        .sync_all()
         .map_err(|error| failed_to_write(error.to_string()))?;
     file.persist(path)
         .map_err(|error| failed_to_write(error.to_string()))?;
@@ -130,15 +138,15 @@ pub fn peek(path: &Path) -> Option<Header> {
     read_header(&mut file).map(|(header, _)| header)
 }
 
-/// The header of the snapshot `file` holds, and the offset where the header ends. `None` unless the file starts
-/// like a snapshot of this format and version.
-fn read_header(file: &mut fs::File) -> Option<(Header, usize)> {
-    let mut prefix = [0_u8; PREFIX];
-    file.read_exact(&mut prefix).ok()?;
-    let length = parse_prefix(&prefix)?;
-    let mut json = vec![0_u8; length];
+/// The header of the snapshot `file` holds, and what its prefix says about the rest. `None` unless the file starts
+/// like a snapshot of this layout and version.
+fn read_header(file: &mut fs::File) -> Option<(Header, Prefix)> {
+    let mut bytes = [0_u8; PREFIX];
+    file.read_exact(&mut bytes).ok()?;
+    let prefix = parse_prefix(&bytes)?;
+    let mut json = vec![0_u8; prefix.header];
     file.read_exact(&mut json).ok()?;
-    Some((parse_header(&json)?, PREFIX + length))
+    Some((parse_header(&json)?, prefix))
 }
 
 /// A snapshot read into memory, aligned for rkyv, so that its body is looked into where it lies instead of being
@@ -149,20 +157,22 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// The snapshot at `path`. `None` when the file is missing or is not a snapshot of this version: the body of
-    /// such a file is not read.
+    /// The snapshot at `path`. `None` when the file is missing, is not a snapshot of this layout and version (the
+    /// body of such a file is not read), or has a body that does not match the hash in its prefix.
     pub fn open(path: &Path) -> Option<Self> {
         let mut file = fs::File::open(path).ok()?;
-        let (_, header_end) = read_header(&mut file)?;
+        let (_, prefix) = read_header(&mut file)?;
+        let header_end = PREFIX + prefix.header;
         let padding = header_end.next_multiple_of(ALIGN) - header_end;
         file.seek_relative(i64::try_from(padding).ok()?).ok()?;
         let mut body = AlignedVec::<ALIGN>::new();
         body.extend_from_reader(&mut file).ok()?;
-        Some(Self { body })
+        (xxh3_64(&body) == prefix.checksum).then_some(Self { body })
     }
 
     /// The body as rkyv archived it. Validating it walks all of it, so a caller asks once and keeps the answer.
-    /// `None` when the body is truncated or damaged: the caller builds the index again.
+    /// `None` when the body does not validate, for instance because another build wrote it: the caller builds the
+    /// index again.
     pub fn stored(&self) -> Option<&ArchivedStored> {
         rkyv::access::<ArchivedStored, RkyvError>(&self.body).ok()
     }
@@ -213,16 +223,29 @@ pub fn is_reusable(facts: &FileFacts) -> bool {
     )
 }
 
-/// The length of the header when `bytes` start like a snapshot of this format.
-fn parse_prefix(bytes: &[u8]) -> Option<usize> {
+/// What the first bytes of a snapshot say about the rest of the file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Prefix {
+    /// The length of the JSON header that follows the prefix.
+    header: usize,
+    /// The xxh3 hash the body has to have.
+    checksum: u64,
+}
+
+/// What the prefix says when `bytes` start like a snapshot of this layout.
+fn parse_prefix(bytes: &[u8]) -> Option<Prefix> {
     let magic = bytes.first_chunk::<8>()?;
-    let format = bytes.get(8..)?.first_chunk::<4>()?;
+    let layout = bytes.get(8..)?.first_chunk::<4>()?;
     let length = bytes.get(12..)?.first_chunk::<4>()?;
-    if magic != MAGIC || u32::from_le_bytes(*format) != FORMAT {
+    let checksum = bytes.get(16..)?.first_chunk::<8>()?;
+    if magic != MAGIC || u32::from_le_bytes(*layout) != LAYOUT {
         return None;
     }
-    let length = usize::try_from(u32::from_le_bytes(*length)).ok()?;
-    (length <= MAX_HEADER).then_some(length)
+    let header = usize::try_from(u32::from_le_bytes(*length)).ok()?;
+    (header <= MAX_HEADER).then_some(Prefix {
+        header,
+        checksum: u64::from_le_bytes(*checksum),
+    })
 }
 
 fn parse_header(json: &[u8]) -> Option<Header> {
@@ -316,10 +339,11 @@ mod tests {
         RepoPath::normalize(text).unwrap()
     }
 
-    fn prefix(magic: &[u8], format: u32, length: u32) -> Vec<u8> {
+    fn prefix(magic: &[u8], layout: u32, length: u32, checksum: u64) -> Vec<u8> {
         let mut bytes = magic.to_vec();
-        bytes.extend(format.to_le_bytes());
+        bytes.extend(layout.to_le_bytes());
         bytes.extend(length.to_le_bytes());
+        bytes.extend(checksum.to_le_bytes());
         bytes
     }
 
@@ -382,11 +406,25 @@ mod tests {
 
     #[test]
     fn a_body_that_fails_validation_has_no_stored_view() {
-        let (dir, _) = stored_in(vec![entry("a.txt", None, FileFacts::default())]);
+        let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("snapshot.gsttt");
-        let mut bytes = fs::read(&file).unwrap();
-        let end = bytes.len();
-        bytes.truncate(end - 24);
+        let json = serde_json::to_vec(&Header {
+            built_by: VERSION.to_owned(),
+            built_at: now(),
+            head: None,
+            dirty: 0,
+            files: 0,
+            connectors: Vec::new(),
+            coverage: String::new(),
+        })
+        .unwrap();
+        // Bytes rkyv cannot read as a snapshot body, behind a prefix that vouches for them.
+        let body = [0xa5_u8; 64];
+        let length = u32::try_from(json.len()).unwrap();
+        let mut bytes = prefix(MAGIC, LAYOUT, length, xxh3_64(&body));
+        bytes.extend(json);
+        bytes.resize(bytes.len().next_multiple_of(ALIGN), 0);
+        bytes.extend(body);
         fs::write(&file, bytes).unwrap();
 
         let snapshot = Snapshot::open(&file).unwrap();
@@ -394,12 +432,39 @@ mod tests {
         assert!(snapshot.stored().is_none());
     }
 
+    #[gsttt_scenario::scenario("indexing", "A flipped byte in the body counts as none")]
     #[test]
-    fn a_prefix_of_another_file_or_format_is_rejected() {
-        assert_eq!(parse_prefix(&prefix(MAGIC, FORMAT, 40)), Some(40));
-        assert_eq!(parse_prefix(&prefix(b"NOTASNAP", FORMAT, 40)), None);
-        assert_eq!(parse_prefix(&prefix(MAGIC, FORMAT + 1, 40)), None);
-        assert_eq!(parse_prefix(&prefix(MAGIC, FORMAT, u32::MAX)), None);
+    fn a_flipped_byte_in_the_body_counts_as_none() {
+        let mut damaged = entry("a.txt", None, FileFacts::default());
+        damaged.extra = vec![0x5a; 16];
+        let (dir, snapshot) = stored_in(vec![damaged]);
+        assert!(snapshot.stored().is_some());
+        let file = dir.path().join("snapshot.gsttt");
+        let mut bytes = fs::read(&file).unwrap();
+        // Connector data is bytes of any value, so no validation can object to a changed one.
+        let at = bytes
+            .windows(16)
+            .position(|window| window == [0x5a; 16])
+            .unwrap();
+        bytes[at + 8] = 0x5b;
+        fs::write(&file, bytes).unwrap();
+
+        assert!(Snapshot::open(&file).is_none());
+    }
+
+    #[test]
+    fn a_prefix_of_another_file_or_layout_is_rejected() {
+        let expected = Prefix {
+            header: 40,
+            checksum: 7,
+        };
+        assert_eq!(parse_prefix(&prefix(MAGIC, LAYOUT, 40, 7)), Some(expected));
+        assert_eq!(parse_prefix(&prefix(b"NOTASNAP", LAYOUT, 40, 7)), None);
+        assert_eq!(parse_prefix(&prefix(MAGIC, LAYOUT + 1, 40, 7)), None);
+        assert_eq!(parse_prefix(&prefix(MAGIC, LAYOUT, u32::MAX, 7)), None);
+        // The prefix of the layout before the checksum was added.
+        assert_eq!(parse_prefix(&prefix(MAGIC, 1, 40, 7)), None);
+        assert_eq!(parse_prefix(&prefix(MAGIC, LAYOUT, 40, 7)[..20]), None);
         assert_eq!(parse_prefix(b"GSTT"), None);
     }
 }

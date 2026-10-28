@@ -1173,9 +1173,10 @@ mod tests {
         let run = engine.refresh().unwrap();
         let path = engine.workspace().snapshot_path();
         let mut bytes = fs::read(&path).unwrap();
+        // The prefix is 24 bytes (magic, layout, header length, hash of the body); the length is at byte 12.
         let header_len =
             usize::try_from(u32::from_le_bytes(bytes[12..16].try_into().unwrap())).unwrap();
-        bytes.truncate(16 + header_len);
+        bytes.truncate(24 + header_len);
         bytes.extend([0xa5_u8; 64]);
         fs::write(&path, bytes).unwrap();
         let header = engine.peek().unwrap();

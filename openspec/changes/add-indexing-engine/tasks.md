@@ -38,3 +38,4 @@
 - [x] 5.9 The no-op comparison, the stamps of the listing and the seeds read the snapshot where it lies, found by path with a binary search, and copy out only the index and the facts of the files that are taken; a file whose read failed is stored without a key
 - [x] 5.10 A file above `max_file_bytes` is not read for its id (its size and modification time stand in), the 256 MiB hashing limit is gone, and only a file that cannot be read has no content id
 - [x] 5.11 A stored size and modification time vouches for a file only when the file was written more than two seconds before the listing that took it, and a modified or untracked file in git keeps its stored id the way one outside git does
+- [x] 5.12 A snapshot is synced before it is renamed, holds an xxh3 hash of its body in its prefix that opening checks, and names its layout by a number bumped by hand beside the package version
