@@ -1845,6 +1845,7 @@ dependencies = [
  "gsttt-core",
  "gsttt-scenario",
  "insta",
+ "proptest",
  "ra_ap_edition",
  "ra_ap_syntax",
  "schemars",
@@ -1854,6 +1855,7 @@ dependencies = [
  "thiserror",
  "toml",
  "tracing",
+ "xxhash-rust",
 ]
 
 [[package]]

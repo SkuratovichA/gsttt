@@ -1,0 +1,10 @@
+-- sea-orm: an entity names its table in an attribute.
+return {
+  name = "sea_orm",
+  language = "rust",
+  -- Cargo takes `-` and `_` in a package name to be the same, so a manifest may spell either.
+  detect = { "sea-orm", "sea_orm" },
+  decorators = {
+    { decorator = "sea_orm", kind = "table", role = "declares", key = "$table_name" },
+  },
+}

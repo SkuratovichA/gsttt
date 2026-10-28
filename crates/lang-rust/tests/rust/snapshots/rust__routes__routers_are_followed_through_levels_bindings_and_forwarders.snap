@@ -1,0 +1,48 @@
+---
+source: crates/lang-rust/tests/rust/routes.rs
+expression: "out.json()[\"linked\"]"
+---
+[
+  {
+    "file": "src/admin.rs",
+    "key": "http GET /admin/v1/users",
+    "line": 7,
+    "role": "serves",
+    "via": "axum"
+  },
+  {
+    "file": "src/bookings.rs",
+    "key": "http GET /api/bookings/{}",
+    "line": 5,
+    "role": "serves",
+    "via": "axum"
+  },
+  {
+    "file": "src/bookings.rs",
+    "key": "http GET /api/rooms/{}",
+    "line": 5,
+    "role": "serves",
+    "via": "axum"
+  },
+  {
+    "file": "src/main.rs",
+    "key": "http GET /api/reports",
+    "line": 16,
+    "role": "serves",
+    "via": "axum"
+  },
+  {
+    "file": "src/rings.rs",
+    "key": "http GET /rings/ping",
+    "line": 7,
+    "role": "serves",
+    "via": "axum"
+  },
+  {
+    "file": "src/rings.rs",
+    "key": "http GET /rings/pong/pong",
+    "line": 11,
+    "role": "serves",
+    "via": "axum"
+  }
+]

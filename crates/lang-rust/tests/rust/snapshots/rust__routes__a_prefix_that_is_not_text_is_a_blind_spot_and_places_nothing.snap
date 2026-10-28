@@ -1,0 +1,30 @@
+---
+source: crates/lang-rust/tests/rust/routes.rs
+expression: "out.sites(\"src/main.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "http GET /health",
+      "line": 12,
+      "role": "serves",
+      "via": "axum"
+    },
+    {
+      "key": "http GET /reports",
+      "line": 16,
+      "role": "serves",
+      "via": "axum"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [
+    {
+      "detail": "_.nest",
+      "line": 32,
+      "reason": {
+        "reason": "non-literal"
+      }
+    }
+  ]
+}

@@ -1,0 +1,161 @@
+---
+source: crates/lang-rust/tests/rust/imports.rs
+expression: "out.file(\"src/forms.rs\")"
+---
+{
+  "contracts": [],
+  "embedded": [],
+  "imports": [
+    {
+      "flags": 0,
+      "kind": "static",
+      "line": 1,
+      "names": [
+        "helper"
+      ],
+      "spec": "crate::a::helper",
+      "to": {
+        "file": "src/a.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "static",
+      "line": 2,
+      "names": [
+        "a"
+      ],
+      "spec": "crate::a",
+      "to": {
+        "file": "src/a.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "static",
+      "line": 2,
+      "names": [
+        "Renamed"
+      ],
+      "spec": "crate::a::c::Thing",
+      "to": {
+        "file": "src/a/c.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "re-export",
+      "line": 3,
+      "names": [
+        "SAMPLE"
+      ],
+      "spec": "crate::a::SAMPLE",
+      "to": {
+        "file": "src/a.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "static",
+      "line": 4,
+      "names": [
+        "*"
+      ],
+      "spec": "crate::a::c",
+      "to": {
+        "file": "src/a/c.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "re-export-all",
+      "line": 5,
+      "names": [
+        "*"
+      ],
+      "spec": "crate::a::c",
+      "to": {
+        "file": "src/a/c.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "static",
+      "line": 6,
+      "names": [
+        "sd"
+      ],
+      "spec": "serde",
+      "to": {
+        "external": "serde"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "module",
+      "line": 7,
+      "names": [],
+      "spec": "local",
+      "to": {
+        "file": "src/forms/local.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "static",
+      "line": 10,
+      "names": [],
+      "spec": "crate::a::helper",
+      "to": {
+        "file": "src/a.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "static",
+      "line": 10,
+      "names": [],
+      "spec": "self::local::go",
+      "to": {
+        "file": "src/forms/local.rs"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "include",
+      "line": 13,
+      "names": [],
+      "spec": "data.txt",
+      "to": {
+        "file": "src/data.txt"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "include",
+      "line": 14,
+      "names": [],
+      "spec": "data.txt",
+      "to": {
+        "file": "src/data.txt"
+      }
+    },
+    {
+      "flags": 0,
+      "kind": "include",
+      "line": 15,
+      "names": [],
+      "spec": "snippet.rs",
+      "to": {
+        "file": "src/snippet.rs"
+      }
+    }
+  ],
+  "path": "src/forms.rs",
+  "project": "rust .",
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "unresolved": []
+}
