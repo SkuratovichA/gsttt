@@ -11,7 +11,7 @@ use gsttt_core::connector::{
     Connector, ConnectorError, Erased, LinkInput, LinkedFact, Meta, Parsed, Project, Provide,
     SourceFile,
 };
-use gsttt_core::contract::{ContractKind, Role};
+use gsttt_core::contract::{ContractKind, Role, path_after_origin};
 use gsttt_core::fact::{ContractFact, FileFacts, Import, ImportKind, Line, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
@@ -397,25 +397,24 @@ fn server_paths(root: &Value) -> Vec<&str> {
     paths
 }
 
-/// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route
-/// and is written three ways: `https://host`, which the key normaliser drops by itself, and `//host` and
-/// `{variable}`, which it would keep as the first segment.
+/// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route and is written three ways: `https://host`, which [`path_after_origin`] drops as the key normaliser does, and `//host` and `{variable}`, which the normaliser would keep as the first segment. A variable may stand for the scheme, as in `{scheme}://host/v1`, or for the whole origin, as in `{baseUrl}/v1`.
 fn path_of_server(url: &str) -> &str {
     let url = url.trim();
-    let after_scheme = if let Some((scheme, rest)) = url.split_once("://")
-        && !scheme.contains('/')
-    {
-        rest
-    } else if let Some(rest) = url.strip_prefix("//") {
+    if let Some(path) = path_after_origin(url) {
+        return path.trim_end_matches('/');
+    }
+    let host_and_path = if let Some(rest) = url.strip_prefix("//") {
         rest
     } else if url.starts_with('{') {
-        url
+        url.split_once("://")
+            .filter(|(variable, _)| !variable.contains('/'))
+            .map_or(url, |(_, rest)| rest)
     } else {
         return url.trim_end_matches('/');
     };
-    after_scheme
+    host_and_path
         .find('/')
-        .and_then(|slash| after_scheme.get(slash..))
+        .and_then(|slash| host_and_path.get(slash..))
         .unwrap_or_default()
         .trim_end_matches('/')
 }

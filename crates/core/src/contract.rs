@@ -253,21 +253,33 @@ impl fmt::Display for ContractKey {
     }
 }
 
+/// What follows the scheme and host of `url`: `https://api.example.com/v1/x` gives `/v1/x`, and `http://h` gives the empty string. `None` when `url` does not start with a scheme, which is a letter followed by letters, digits, `+`, `-` or `.` (RFC 3986 section 3.1), so the `://` of a query string or of a deeper path segment, as in `/a?next=https://b/c`, is no origin.
+pub fn path_after_origin(url: &str) -> Option<&str> {
+    let (scheme, rest) = url.split_once("://")?;
+    let mut characters = scheme.chars();
+    let is_scheme = characters
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic())
+        && characters.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
+        });
+    is_scheme.then(|| {
+        rest.find('/')
+            .and_then(|slash| rest.get(slash..))
+            .unwrap_or_default()
+    })
+}
+
 /// Puts an HTTP path in the form servers and clients are matched on.
 ///
-/// - A scheme and host go: `https://api.example.com/v1/x` becomes `/v1/x`.
+/// - A scheme and host go: `https://api.example.com/v1/x` becomes `/v1/x`. Only text that starts with a scheme has a host, see [`path_after_origin`]: in `/a?next=https://b/c` the path `/a` stays.
 /// - The query string and fragment go.
 /// - Parameter segments become `{}`: `:id`, `{id}`, `{id:int}`, `<id>`, `<int:id>`, any segment that holds a `{` followed later by a `}`, such as the custom method `{id}:cancel`, and any segment holding a `${…}` or `{}` placeholder from a template string or a concatenation.
 /// - A placeholder before the first `/` is a base URL and goes: `${API}/bookings` becomes `/bookings`.
 /// - Repeated and trailing slashes go; the result starts with `/`.
 pub fn normalize_http_path(raw: &str) -> String {
     let raw = raw.trim();
-    let without_host = match raw.split_once("://") {
-        Some((_, rest)) => rest
-            .find('/')
-            .map_or("", |slash| rest.get(slash..).unwrap_or("")),
-        None => raw,
-    };
+    let without_host = path_after_origin(raw).unwrap_or(raw);
     let path = without_host.split(['?', '#']).next().unwrap_or("");
     let mut segments = path.split('/').peekable();
     if !path.starts_with('/') && segments.peek().is_some_and(|first| is_placeholder(first)) {
@@ -325,6 +337,21 @@ mod tests {
             normalize_http_path("/v1/things/{id}:cancel"),
             "/v1/things/{}"
         );
+        // A `://` inside a query string is no origin: the path before it stays.
+        assert_eq!(normalize_http_path("/a?next=https://b/c"), "/a");
+    }
+
+    #[test]
+    fn an_origin_is_a_scheme_at_the_start_of_the_text() {
+        assert_eq!(
+            path_after_origin("https://api.example.com/v1/x"),
+            Some("/v1/x")
+        );
+        assert_eq!(path_after_origin("http://h"), Some(""));
+        assert_eq!(path_after_origin("ftp://h/a/b"), Some("/a/b"));
+        assert_eq!(path_after_origin("/a?next=https://b/c"), None);
+        assert_eq!(path_after_origin("a?next=https://b/c"), None);
+        assert_eq!(path_after_origin("/v1/x"), None);
     }
 
     #[test]
