@@ -1,5 +1,4 @@
-//! `gsttt hook session-start`: one line about the stored index, for an editor or an agent to show at the start of
-//! a session.
+//! `gsttt hook session-start`: one line about the stored index, for an editor or an agent to show at the start of a session.
 
 use gsttt_core::engine::snapshot::{self, Header};
 use gsttt_core::text::{noun, short, thousands};
@@ -17,8 +16,7 @@ const TWO_DAYS: u64 = 2 * DAY;
 
 /// Prints the session-start line when the tree has an index, and nothing otherwise.
 ///
-/// It reads the header of the snapshot and nothing else: no `git` process, no config, no registry. Whatever goes
-/// wrong, it ends without a word, because a hook that complains would disturb the session that called it.
+/// It reads the header of the snapshot and nothing else: no `git` process, no config, no registry. Whatever goes wrong, it ends without a word, because a hook that complains would disturb the session that called it.
 pub(crate) fn session_start(flags: &Flags, io: &mut Io<'_>) {
     if let Some(line) = line_for_the_tree(flags) {
         // A closed stdout is no reason to disturb the session either.
@@ -37,11 +35,9 @@ fn line_for_the_tree(flags: &Flags) -> Option<String> {
     session_line(&header, Timestamp::now())
 }
 
-/// The line for the snapshot `header` as it stands at `now`: how many files are indexed, at which commit and how
-/// many files differ from it, how long ago, and what the reader should do with that.
+/// The line for the snapshot `header` as it stands at `now`: how many files are indexed, at which commit and how many files differ from it, how long ago, and what the reader should do with that.
 ///
-/// It is `None` when `built_at` is not a time or lies after `now`: no line is better than one that says the index
-/// was built a few minutes from now.
+/// It is `None` when `built_at` is not a time or lies after `now`: no line is better than one that says the index was built a few minutes from now.
 pub fn session_line(header: &Header, now: Timestamp) -> Option<String> {
     let built: Timestamp = header.built_at.parse().ok()?;
     let seconds = u64::try_from(now.as_second().checked_sub(built.as_second())?).ok()?;
@@ -79,8 +75,7 @@ mod tests {
         "2026-10-28T12:00:00Z".parse().unwrap()
     }
 
-    /// The header of an index of 4,213 files at a commit, with 3 files that differ from it, written `seconds_ago`
-    /// before [`now`].
+    /// The header of an index of 4,213 files at a commit, with 3 files that differ from it, written `seconds_ago` before [`now`].
     fn header(seconds_ago: i64) -> Header {
         Header {
             built_by: "0.1.0".to_owned(),

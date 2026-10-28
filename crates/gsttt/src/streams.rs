@@ -30,8 +30,7 @@ impl Outcome {
     }
 }
 
-/// The output streams of the process, replaced by buffers in tests. Text is written to them with its ANSI styling
-/// in place: the process wraps its streams so that the styling reaches a terminal and nothing else.
+/// The output streams of the process, replaced by buffers in tests. Text is written to them with its ANSI styling in place: the process wraps its streams so that the styling reaches a terminal and nothing else.
 pub struct Io<'a> {
     /// The answer, and nothing else.
     pub stdout: &'a mut dyn Write,
@@ -78,15 +77,12 @@ pub fn stderr() -> AutoStream<io::Stderr> {
     wrap(io::stderr())
 }
 
-/// Whether styling written to `stream` is shown. The logs are written past the wrapper, so they ask this to decide
-/// whether to style themselves.
+/// Whether styling written to `stream` is shown. The logs are written past the wrapper, so they ask this to decide whether to style themselves.
 pub fn shows_styling<S: RawStream>(stream: &AutoStream<S>) -> bool {
     stream.current_choice() != ColorChoice::Never
 }
 
-/// Colour is for a terminal: on one, `anstream` decides from `NO_COLOR`, `CLICOLOR` and `TERM`; anywhere else the
-/// styling is stripped. `anstream` alone would let `CLICOLOR_FORCE` push escape sequences into a pipe, and a pipe is
-/// read by a program that does not expect them.
+/// Colour is for a terminal: on one, `anstream` decides from `NO_COLOR`, `CLICOLOR` and `TERM`; anywhere else the styling is stripped. `anstream` alone would let `CLICOLOR_FORCE` push escape sequences into a pipe, and a pipe is read by a program that does not expect them.
 fn wrap<S: RawStream>(stream: S) -> AutoStream<S> {
     let choice = if stream.is_terminal() {
         AutoStream::choice(&stream)

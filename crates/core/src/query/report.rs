@@ -60,16 +60,14 @@ pub struct ConnectorReport {
     pub recovered: u32,
     /// Files it could not read.
     pub failed: Vec<Failure>,
-    /// Files it owns that were left out before it read them: over the size limit, not UTF-8, unreadable. They are
-    /// listed in [`CoverageReport::skipped`], with the files of the other connectors.
+    /// Files it owns that were left out before it read them: over the size limit, not UTF-8, unreadable. They are listed in [`CoverageReport::skipped`], with the files of the other connectors.
     pub skipped: u32,
     pub imports: u32,
     /// Imports that point at files of the repository.
     pub internal: u32,
     /// Imports of packages and of the language's own modules.
     pub external: u32,
-    /// The share of imports that resolved to a file, a package or a builtin, from 0 to 1, for scripts. The text
-    /// computes its percentage from `internal`, `external` and `imports`.
+    /// The share of imports that resolved to a file, a package or a builtin, from 0 to 1, for scripts. The text computes its percentage from `internal`, `external` and `imports`.
     pub resolved: f64,
     /// Imports that point nowhere, by reason, most first.
     pub unresolved: Vec<Reasons>,

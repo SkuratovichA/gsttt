@@ -1,6 +1,4 @@
-//! Contracts: the seams between files that imports do not show. An HTTP route joins a controller and the
-//! frontend that calls it; a table joins a schema, its migrations and every query; an env var joins
-//! `.env.example` and the code that reads it.
+//! Contracts: the seams between files that imports do not show. An HTTP route joins a controller and the frontend that calls it; a table joins a schema, its migrations and every query; an env var joins `.env.example` and the code that reads it.
 
 use std::fmt;
 
@@ -32,13 +30,11 @@ pub enum ContractKind {
     Grpc,
     /// `trpc booking.get`: the procedure path.
     Trpc,
-    /// `table booking`: a table or an ORM model. SQL folds unquoted names and ORMs map them loosely, so table
-    /// keys are lower case: Prisma's `model Booking`, `prisma.booking` and `FROM Booking` meet.
+    /// `table booking`: a table or an ORM model. SQL folds unquoted names and ORMs map them loosely, so table keys are lower case: Prisma's `model Booking`, `prisma.booking` and `FROM Booking` meet.
     Table,
     /// `queue booking-created`: a topic, queue or event name.
     Queue,
-    /// `env DATABASE_URL`. Keys are upper case: pydantic settings read `database_url` from `DATABASE_URL`, and no
-    /// project tells two variables apart by case alone.
+    /// `env DATABASE_URL`. Keys are upper case: pydantic settings read `database_url` from `DATABASE_URL`, and no project tells two variables apart by case alone.
     Env,
     /// A kind a user rule or an external connector introduced.
     Other(String),
@@ -110,8 +106,7 @@ impl fmt::Display for ContractKind {
 #[serde(rename_all = "lowercase")]
 #[rkyv(derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug))]
 pub enum Role {
-    /// A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration,
-    /// `.env.example`.
+    /// A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration, `.env.example`.
     Declares,
     /// Code implements it: a controller, a resolver, a gRPC server.
     Serves,
@@ -165,9 +160,7 @@ pub enum ContractKeyError {
 }
 
 impl ContractKey {
-    /// A key of `kind`, put in that kind's canonical form. HTTP keys are `<METHOD> <path>`, with the method in
-    /// upper case (`*` when unknown) and the path through [`normalize_http_path`]; table keys are lower case and env
-    /// keys upper case; other keys are trimmed.
+    /// A key of `kind`, put in that kind's canonical form. HTTP keys are `<METHOD> <path>`, with the method in upper case (`*` when unknown) and the path through [`normalize_http_path`]; table keys are lower case and env keys upper case; other keys are trimmed.
     pub fn new(kind: ContractKind, key: &str) -> Self {
         let key = key.trim();
         match kind {
@@ -190,8 +183,7 @@ impl ContractKey {
         }
     }
 
-    /// `http <METHOD> <path>`. A method that names no single verb (`ALL`, `ANY`, empty) becomes `*`, which
-    /// matches every method.
+    /// `http <METHOD> <path>`. A method that names no single verb (`ALL`, `ANY`, empty) becomes `*`, which matches every method.
     pub fn http(method: &str, path: &str) -> Self {
         let method = method.trim().to_ascii_uppercase();
         let method = match method.as_str() {

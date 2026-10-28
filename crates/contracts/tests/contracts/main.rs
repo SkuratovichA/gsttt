@@ -1,6 +1,4 @@
-//! Tests of the contract-format connectors, run through the engine's pipeline on the fixture trees under
-//! `tests/fixtures`. Every scenario of the `contract-formats` capability has its test here, named by
-//! `#[gsttt_scenario::scenario]`.
+//! Tests of the contract-format connectors, run through the engine's pipeline on the fixture trees under `tests/fixtures`. Every scenario of the `contract-formats` capability has its test here, named by `#[gsttt_scenario::scenario]`.
 
 #[cfg(test)]
 mod claims;

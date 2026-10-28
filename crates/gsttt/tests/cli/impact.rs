@@ -1,5 +1,4 @@
-//! `impact` takes paths or `--changed`, passes what is gone as deleted, and follows dependents as far as `--depth`
-//! lets it.
+//! `impact` takes paths or `--changed`, passes what is gone as deleted, and follows dependents as far as `--depth` lets it.
 
 use std::fs;
 

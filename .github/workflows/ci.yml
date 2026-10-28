@@ -77,8 +77,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # `native` says whether the runner can execute the target (an x86_64 Linux runner, an arm64 macOS runner), which is where the package is run.
-          # The Linux builds are static (musl) and cross-compiled with zig as the C compiler, so one runner type builds both.
+          # `native` says whether the runner can execute the target (an x86_64 Linux runner, an arm64 macOS runner), which is where the package is run. The Linux builds are static (musl) and cross-compiled with zig as the C compiler, so one runner type builds both.
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             build: zigbuild

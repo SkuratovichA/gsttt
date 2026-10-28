@@ -32,22 +32,18 @@ pub struct Change {
 }
 
 impl Change {
-    /// Whether every task is ticked. A change with no task at all is a proposal that has not been
-    /// broken into work yet, so it is not finished and is never archived.
+    /// Whether every task is ticked. A change with no task at all is a proposal that has not been broken into work yet, so it is not finished and is never archived.
     #[must_use]
     pub fn is_finished(&self) -> bool {
         !self.tasks.is_empty() && self.tasks.iter().all(|task| task.done)
     }
 }
 
-/// Reads `openspec/specs/**/spec.md` and, for each directory of `openspec/changes/` other than
-/// `archive`, its `tasks.md` and `specs/**/spec.md`. `root` is the repository root; the files in
-/// the result and in errors are named relative to it.
+/// Reads `openspec/specs/**/spec.md` and, for each directory of `openspec/changes/` other than `archive`, its `tasks.md` and `specs/**/spec.md`. `root` is the repository root; the files in the result and in errors are named relative to it.
 ///
 /// # Errors
 ///
-/// Fails when `root` has no `openspec` directory, when a file cannot be read, and with the file
-/// and line of the first one that does not follow the format.
+/// Fails when `root` has no `openspec` directory, when a file cannot be read, and with the file and line of the first one that does not follow the format.
 pub fn read(root: &Path) -> Result<OpenSpec, Error> {
     let base = Path::new("openspec");
     if !root.join(base).is_dir() {
@@ -91,8 +87,7 @@ fn read_change(root: &Path, dir: &Path, name: String) -> Result<Change, Error> {
     })
 }
 
-/// Every `spec.md` below `dir` with its capability, sorted by capability. A `spec.md` directly in
-/// `dir` has no capability and is left out.
+/// Every `spec.md` below `dir` with its capability, sorted by capability. A `spec.md` directly in `dir` has no capability and is left out.
 fn find_specs(root: &Path, dir: &Path) -> Result<Vec<(String, PathBuf)>, Error> {
     let mut found = Vec::new();
     collect_specs(root, dir, "", &mut found)?;

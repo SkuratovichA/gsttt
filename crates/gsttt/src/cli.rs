@@ -8,12 +8,7 @@ use clap_complete::Shell;
 
 use crate::streams::{Io, Outcome};
 
-/// The version `--version` prints: `GSTTT_VERSION` as it was at build time, or the package version followed by
-/// `-dev` when it was unset or empty.
-pub const VERSION: &str = match option_env!("GSTTT_VERSION") {
-    Some(version) if !version.is_empty() => version,
-    _ => concat!(env!("CARGO_PKG_VERSION"), "-dev"),
-};
+pub use gsttt_core::VERSION;
 
 /// What does a change affect, across files, packages, languages and the contracts between services?
 #[derive(Debug, Parser)]
@@ -67,6 +62,8 @@ pub enum Command {
     Coverage,
     /// Report how the stored index stands against the tree, without refreshing it
     Status,
+    /// Answer an agent's questions over the Model Context Protocol, on stdin and stdout
+    Mcp,
     /// Commands for the hooks of an editor or an agent
     #[command(subcommand, flatten_help = true)]
     Hook(HookCommand),
@@ -180,6 +177,7 @@ impl Command {
             Self::Contract(_) => "contract",
             Self::Coverage => "coverage",
             Self::Status => "status",
+            Self::Mcp => "mcp",
             Self::Hook(HookCommand::SessionStart) => "hook session-start",
             Self::Init => "init",
             Self::Config(ConfigCommand::Check) => "config check",
@@ -194,8 +192,7 @@ impl Command {
 
 /// Reads the command line `args`, the program name first.
 ///
-/// A request for help or the version is printed to stdout, and a command line that cannot be read is reported on
-/// stderr. Either way the caller gets the [`Outcome`] to exit with in place of a command.
+/// A request for help or the version is printed to stdout, and a command line that cannot be read is reported on stderr. Either way the caller gets the [`Outcome`] to exit with in place of a command.
 pub fn parse<I, T>(args: I, io: &mut Io<'_>) -> Result<Cli, Outcome>
 where
     I: IntoIterator<Item = T>,

@@ -192,3 +192,26 @@ fn status_without_an_index_exits_1() {
     assert!(ran.stderr.contains("there is no index yet for"), "{ran:?}");
     assert!(is_empty(sandbox.cache.path()), "status built an index");
 }
+
+#[scenario("cli", "status names the version --version prints")]
+#[test]
+fn status_names_the_version_of_the_binary() {
+    let sandbox = Sandbox::new();
+    typescript_project(sandbox.work.path());
+    assert_eq!(sandbox.run(&["index"]).code, Some(0));
+
+    let printed = sandbox.run(&["--version"]).stdout;
+    let version = printed.trim_end().strip_prefix("gsttt ").unwrap();
+    let status = sandbox.run(&["status"]);
+    assert_eq!(status.code, Some(0), "{status:?}");
+    let built_by = status
+        .stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("built by gsttt "))
+        .unwrap_or_else(|| panic!("status does not say what built the index: {status:?}"));
+    assert_eq!(
+        built_by.split([' ', ',']).next(),
+        Some(version),
+        "{status:?}"
+    );
+}

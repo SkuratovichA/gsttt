@@ -112,8 +112,7 @@ fn config_show_lists_the_modules_in_registry_order() {
     );
 }
 
-/// An option that a module does not take stops every command that opens the repository, not only `config check`,
-/// and the error names the module and the option.
+/// An option that a module does not take stops every command that opens the repository, not only `config check`, and the error names the module and the option.
 #[test]
 fn a_bad_option_stops_every_command_that_opens_the_repository() {
     let sandbox = Sandbox::new();

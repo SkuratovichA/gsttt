@@ -1,13 +1,8 @@
-//! GraphQL schemas and operations, in `.graphql`, `.graphqls` and `.gql` files and in the documents other
-//! connectors find embedded in code.
+//! GraphQL schemas and operations, in `.graphql`, `.graphqls` and `.gql` files and in the documents other connectors find embedded in code.
 //!
-//! A schema declares `graphql Query.bookings` for each field of a root type, an operation calls the root fields it
-//! selects, and a `#import "path"` comment is an import, the convention of the graphql-tag loaders. The
-//! `# import <names> from "<file>"` form of graphql-import is not read, and neither is a root type renamed in
-//! another file than the one that defines it; both are blind spots of the connector.
+//! A schema declares `graphql Query.bookings` for each field of a root type, an operation calls the root fields it selects, and a `#import "path"` comment is an import, the convention of the graphql-tag loaders. The `# import <names> from "<file>"` form of graphql-import is not read, and neither is a root type renamed in another file than the one that defines it; both are blind spots of the connector.
 //!
-//! The connector always opens a project, even where no file is claimed, because code in any language can embed
-//! GraphQL documents.
+//! The connector always opens a project, even where no file is claimed, because code in any language can embed GraphQL documents.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -218,8 +213,7 @@ impl Root {
 /// The sites of a document: the root fields its schema declares and the root fields its operations call.
 fn read_document(document: &cst::Document, lines: &LineIndex) -> Vec<ContractFact> {
     let definitions: Vec<Definition> = document.definitions().collect();
-    // A type looks itself up among the roots and a spread looks up its fragment, so a document without a type or
-    // without a fragment, the usual embedded one, builds neither map.
+    // A type looks itself up among the roots and a spread looks up its fragment, so a document without a type or without a fragment, the usual embedded one, builds neither map.
     let roots = if definitions.iter().any(|definition| {
         matches!(
             definition,
@@ -271,8 +265,7 @@ fn read_document(document: &cst::Document, lines: &LineIndex) -> Vec<ContractFac
     facts
 }
 
-/// The type that plays each root: `Query`, `Mutation` and `Subscription` unless a `schema` definition or extension
-/// names another, which then replaces the default for that operation.
+/// The type that plays each root: `Query`, `Mutation` and `Subscription` unless a `schema` definition or extension names another, which then replaces the default for that operation.
 fn root_types(definitions: &[Definition]) -> BTreeMap<String, Root> {
     let mut named: BTreeMap<Root, String> = Root::ALL
         .iter()
@@ -359,8 +352,7 @@ fn call_roots(
     walk(&selections, root, fragments, lines, &mut spread, facts);
 }
 
-/// Calls the fields written at the root of a selection set. A fragment spread or an inline fragment at the root
-/// holds more root fields; `spread` keeps a cycle of fragments from running forever.
+/// Calls the fields written at the root of a selection set. A fragment spread or an inline fragment at the root holds more root fields; `spread` keeps a cycle of fragments from running forever.
 fn walk(
     selections: &cst::SelectionSet,
     root: Root,

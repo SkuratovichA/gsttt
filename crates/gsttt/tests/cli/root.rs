@@ -53,8 +53,7 @@ fn the_home_directory_is_refused() {
     }
 }
 
-/// `init` and the commands about the config find their root the way `index` does, so they refuse the home
-/// directory too.
+/// `init` and the commands about the config find their root the way `index` does, so they refuse the home directory too.
 #[test]
 fn init_and_the_commands_about_the_config_refuse_the_home_directory() {
     let sandbox = Sandbox::new();
@@ -158,8 +157,7 @@ fn c_works_from_another_directory() {
         "{ran_index:?}"
     );
 
-    // The snapshot belongs to the repository and not to `src`: `status` never builds one, and from the root of the
-    // repository it finds this one.
+    // The snapshot belongs to the repository and not to `src`: `status` never builds one, and from the root of the repository it finds this one.
     assert_eq!(listing(&src), before, "`src` gained a file");
     let inside_git = listing(&repo.join(".git"));
     assert!(

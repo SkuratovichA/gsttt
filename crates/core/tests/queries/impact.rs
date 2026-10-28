@@ -6,10 +6,9 @@ use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{Affected, Answer, Entries, Impact, ImpactRequest, impact};
+use gsttt_core::testing::{To, Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
-
-use crate::fixture::{To, Tree, file};
 
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];
@@ -359,9 +358,7 @@ fn several_changed_files_are_walked_together() {
 #[scenario("queries", "The reason comes from the file with the smallest path")]
 #[test]
 fn the_reason_comes_from_the_file_with_the_smallest_path() {
-    // `w.ts` is reached from both changed files, `x.ts` from both of the files at distance 1 that it imports. `z.ts`
-    // is found before `y.ts`, because the file it imports is the smaller one, so the order of discovery is not the
-    // order of paths.
+    // `w.ts` is reached from both changed files, `x.ts` from both of the files at distance 1 that it imports. `z.ts` is found before `y.ts`, because the file it imports is the smaller one, so the order of discovery is not the order of paths.
     let index = Tree::new()
         .imports("w.ts", "a.ts")
         .imports("w.ts", "b.ts")
@@ -404,8 +401,7 @@ fn from_one_file_an_import_comes_before_a_contract() {
 
 #[test]
 fn a_smaller_path_comes_before_an_import_from_a_larger_one() {
-    // `x.ts` is reached at distance 1 from `a.ts` by a contract and from `b.ts` by an import: the file comes first,
-    // and an import is not preferred over every contract of the walk, only over those of the same file.
+    // `x.ts` is reached at distance 1 from `a.ts` by a contract and from `b.ts` by an import: the file comes first, and an import is not preferred over every contract of the walk, only over those of the same file.
     let index = Tree::new()
         .serves("a.ts", "http GET /x")
         .calls("x.ts", "http GET /x")
@@ -440,8 +436,7 @@ fn from_one_file_contracts_come_in_key_order() {
 #[scenario("queries", "A file's first site by line gives the reason")]
 #[test]
 fn a_file_that_serves_and_calls_a_contract_gives_its_first_site_by_line() {
-    // Each file has both sites, in opposite order of line, so that neither the role order nor the order the sites
-    // were written in decides.
+    // Each file has both sites, in opposite order of line, so that neither the role order nor the order the sites were written in decides.
     let index = Tree::new()
         .declares("schema.yaml", "http GET /x")
         .site("early-server.ts", "http GET /x", Role::Calls, 9)
@@ -496,8 +491,7 @@ fn a_changed_file_that_serves_and_calls_a_contract_is_a_server() {
 
 #[test]
 fn a_declarer_reached_after_a_server_still_reaches_the_other_servers() {
-    // `server.ts` crosses the contract first, as a server, and reaches only its caller. `schema.ts` imports it and
-    // declares the contract, so it crosses the same contract again, as a declarer, and reaches the other server.
+    // `server.ts` crosses the contract first, as a server, and reaches only its caller. `schema.ts` imports it and declares the contract, so it crosses the same contract again, as a declarer, and reaches the other server.
     let index = Tree::new()
         .imports("server.ts", "lib.ts")
         .serves("server.ts", "http GET /x")

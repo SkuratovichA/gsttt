@@ -1,5 +1,4 @@
-//! The workspace as `cargo metadata` describes it: where the targets whose tests run have their
-//! crate roots. The proofs of the gate are looked for in the sources those roots reach, nowhere else.
+//! The workspace as `cargo metadata` describes it: where the targets whose tests run have their crate roots. The proofs of the gate are looked for in the sources those roots reach, nowhere else.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -7,8 +6,7 @@ use anyhow::Context as _;
 use serde::Deserialize;
 use xshell::{Shell, cmd};
 
-/// A target whose tests `cargo test` runs: a library, a binary or a test target, with its tests on.
-/// Examples and benchmarks are left out unless their manifest turns their tests on.
+/// A target whose tests `cargo test` runs: a library, a binary or a test target, with its tests on. Examples and benchmarks are left out unless their manifest turns their tests on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Target {
     /// The name cargo gives the target.
@@ -88,8 +86,7 @@ impl Workspace {
     }
 }
 
-/// `path` with its `.` and `..` components resolved by name alone, as a path in a diagnostic reads
-/// best: a `[[test]]` path or a `#[path]` attribute may climb out of a directory and back.
+/// `path` with its `.` and `..` components resolved by name alone, as a path in a diagnostic reads best: a `[[test]]` path or a `#[path]` attribute may climb out of a directory and back.
 pub(super) fn clean(path: &Path) -> PathBuf {
     let mut clean = PathBuf::new();
     for component in path.components() {

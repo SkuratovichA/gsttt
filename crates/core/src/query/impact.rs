@@ -23,8 +23,7 @@ use super::walk::{Cause, reach};
 pub struct ImpactRequest {
     /// The paths that changed, relative to the repository root.
     pub files: Vec<String>,
-    /// The paths the caller knows were deleted. One the index still holds is traced like any changed file; one it no
-    /// longer holds is listed, with the unresolved imports that may have pointed at it, and not traced.
+    /// The paths the caller knows were deleted. One the index still holds is traced like any changed file; one it no longer holds is listed, with the unresolved imports that may have pointed at it, and not traced.
     pub deleted: Vec<String>,
     /// Stop the walk after this many hops from a changed file.
     pub depth: Option<u32>,
@@ -58,8 +57,7 @@ pub struct Affected {
     pub path: String,
     /// Hops from the nearest changed file.
     pub distance: u32,
-    /// The first way the walk got here: of the equally near ways, the one from the file with the smallest path, and
-    /// from that file an import before a contract.
+    /// The first way the walk got here: of the equally near ways, the one from the file with the smallest path, and from that file an import before a contract.
     pub reason: Reason,
 }
 
@@ -91,15 +89,12 @@ pub struct Deleted {
     pub possible_misses: Vec<Miss>,
 }
 
-/// Which files a change to `request.files` affects, through imports followed backwards and through the contracts
-/// the files share.
+/// Which files a change to `request.files` affects, through imports followed backwards and through the contracts the files share.
 pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> Impact {
     let graph = &index.graph;
     let mut changed: Vec<FileId> = Vec::new();
     let mut seen = IdSet::with_universe(graph.file_count());
-    // Paths the index does not hold, by the path to print, with the order each was first asked in and whether the
-    // caller reported it deleted under any spelling. A change can name thousands of files nobody indexed, so each
-    // one must cost a lookup and not a scan of the others.
+    // Paths the index does not hold, by the path to print, with the order each was first asked in and whether the caller reported it deleted under any spelling. A change can name thousands of files nobody indexed, so each one must cost a lookup and not a scan of the others.
     let mut absent: BTreeMap<String, (usize, bool)> = BTreeMap::new();
     let asked = request
         .files
@@ -187,8 +182,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     }
 }
 
-/// The absent paths with whether each was reported deleted, in the order they were first asked. The map holds them by
-/// path, which is the order of nothing a person typed.
+/// The absent paths with whether each was reported deleted, in the order they were first asked. The map holds them by path, which is the order of nothing a person typed.
 fn in_asked_order(absent: BTreeMap<String, (usize, bool)>) -> Vec<(String, bool)> {
     let mut asked: Vec<(usize, String, bool)> = absent
         .into_iter()

@@ -1,10 +1,6 @@
 //! The routers of a file, for the link step: what serves routes together, and which other routers it mounts.
 //!
-//! A chain of method calls is one group, whether it is `Router::new().route(..).nest(..)`, a `web::scope("/a")` with
-//! services, or a `web::resource("/r")` with routes, and so is a function that an attribute gives a path to. A mount
-//! is a `nest`, `merge` or `service` call; what it mounts is a group of this file, or a function whose routers the
-//! link step looks up by name, because the router may be built in another file. A router bound with `let` is followed
-//! to what it was bound to, so no group needs a name.
+//! A chain of method calls is one group, whether it is `Router::new().route(..).nest(..)`, a `web::scope("/a")` with services, or a `web::resource("/r")` with routes, and so is a function that an attribute gives a path to. A mount is a `nest`, `merge` or `service` call; what it mounts is a group of this file, or a function whose routers the link step looks up by name, because the router may be built in another file. A router bound with `let` is followed to what it was bound to, so no group needs a name.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -216,8 +212,7 @@ fn routes(found: &[Found]) -> BTreeMap<u32, Vec<ContractFact>> {
     routes
 }
 
-/// The routers a function hands back: the group its attribute makes, and what its last expression stands for. A
-/// function that only forwards another's call is followed when its signature says it returns a router.
+/// The routers a function hands back: the group its attribute makes, and what its last expression stands for. A function that only forwards another's call is followed when its signature says it returns a router.
 fn returned_by(
     function: &ast::Fn,
     groups: &BTreeMap<u32, Group>,

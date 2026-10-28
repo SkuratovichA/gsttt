@@ -1,5 +1,4 @@
-//! What each project reports it provides, on the `packs` fixture: `crates/api` depends on axum and `crates/cli` on
-//! nothing a pack looks for.
+//! What each project reports it provides, on the `packs` fixture: `crates/api` depends on axum and `crates/cli` on nothing a pack looks for.
 
 use gsttt_scenario::scenario;
 use insta::assert_json_snapshot;

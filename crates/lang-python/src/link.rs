@@ -1,11 +1,6 @@
-//! The cross-file half of routing. `parse` records, for every file, the routes declared on routers, the prefix each
-//! router declares for itself and the routers the file mounts under a prefix; here the mounts are followed from the
-//! router of each route up to the routers nobody mounts, and the route is served once for every way up, behind the
-//! prefixes of every mount and router on the way.
+//! The cross-file half of routing. `parse` records, for every file, the routes declared on routers, the prefix each router declares for itself and the routers the file mounts under a prefix; here the mounts are followed from the router of each route up to the routers nobody mounts, and the route is served once for every way up, behind the prefixes of every mount and router on the way.
 //!
-//! A router's routes are no facts of its file, so the path a router serves on its own appears only when no mount
-//! reaches it. A mount names its router by an expression of its own file, and a package that re-exports the router
-//! under another name is followed to the module that makes it.
+//! A router's routes are no facts of its file, so the path a router serves on its own appears only when no mount reaches it. A mount names its router by an expression of its own file, and a package that re-exports the router under another name is followed to the module that makes it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,24 +16,19 @@ use crate::project::PythonProject;
 use crate::resolve::module_file;
 use crate::site::join_prefixes;
 
-/// How many mounts are followed upward from one router, so that a very deep tree of mounts cannot exhaust the
-/// stack. Routers that mount each other end sooner, at the first router seen twice.
+/// How many mounts are followed upward from one router, so that a very deep tree of mounts cannot exhaust the stack. Routers that mount each other end sooner, at the first router seen twice.
 pub(crate) const MAX_DEPTH: usize = 32;
 
-/// How many ways up are kept for one router: the first by path. Mounts shared at every level multiply the ways, and
-/// a router mounted in dozens of places is unlike any real application.
+/// How many ways up are kept for one router: the first by path. Mounts shared at every level multiply the ways, and a router mounted in dozens of places is unlike any real application.
 pub(crate) const MAX_WAYS: usize = 64;
 
-/// How many ways up the walk from one router ends, whole or cut, before it stops. The ways kept are the first by path
-/// among these, so that moving a mount in a file changes them only when it adds or removes a way.
+/// How many ways up the walk from one router ends, whole or cut, before it stops. The ways kept are the first by path among these, so that moving a mount in a file changes them only when it adds or removes a way.
 const MAX_WALKED: usize = 16 * MAX_WAYS;
 
-/// How many imports are followed from the name a mount writes to the module that makes the router. A re-export is one
-/// or two imports deep, and modules that import each other's names end at the bound.
+/// How many imports are followed from the name a mount writes to the module that makes the router. A re-export is one or two imports deep, and modules that import each other's names end at the bound.
 const MAX_HOPS: usize = 8;
 
-/// A router: the file it lives in and the variable that holds it. Django's `urlpatterns` is the module itself and
-/// has the empty name.
+/// A router: the file it lives in and the variable that holds it. Django's `urlpatterns` is the module itself and has the empty name.
 type Router<'a> = (FileId, &'a str);
 
 /// Finds the file of the module a specifier names, as the file `from` imports it.
@@ -50,8 +40,7 @@ struct Names<'i, 'a> {
     module_file: ModuleFile<'i>,
 }
 
-/// A mount seen from the router it mounts. The order is by content, so that the walk goes through the mounts of a
-/// router in an order the files do not decide.
+/// A mount seen from the router it mounts. The order is by content, so that the walk goes through the mounts of a router in an order the files do not decide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Parent<'a> {
     /// The router the mount is called on: `app` in `app.include_router(…)`.
@@ -101,8 +90,7 @@ struct Composed<'a> {
     cuts: BTreeSet<Cut<'a>>,
 }
 
-/// The routes declared on routers, once for each way their router is mounted, behind the prefixes of the mounts and
-/// of the routers above it.
+/// The routes declared on routers, once for each way their router is mounted, behind the prefixes of the mounts and of the routers above it.
 pub(crate) fn link(project: &PythonProject, input: &LinkInput<'_, PyExtra>) -> Vec<LinkedFact> {
     let Composed { facts, cuts } = compose(input, &|from, spec| module_file(project, from, spec));
     // `Project::link` returns facts only, so a way that was cut is told to the log until coverage can take it.
@@ -190,10 +178,7 @@ impl<'a> Mounts<'a> {
         self.own.get(&router).copied().unwrap_or_default()
     }
 
-    /// Every prefix `start` is served behind, sorted: one for each way up through the mounts to a router nobody
-    /// mounts, the first [`MAX_WAYS`] by path when there are more. A router that no mount reaches is served behind its
-    /// own prefix. One whose every way up is cut is mounted, by a mount that cannot be followed to its end, so it is
-    /// served behind no prefix that is known.
+    /// Every prefix `start` is served behind, sorted: one for each way up through the mounts to a router nobody mounts, the first [`MAX_WAYS`] by path when there are more. A router that no mount reaches is served behind its own prefix. One whose every way up is cut is mounted, by a mount that cannot be followed to its end, so it is served behind no prefix that is known.
     fn prefixes(&self, start: Router<'a>, cuts: &mut BTreeSet<Cut<'a>>) -> Vec<String> {
         let mut climb = Climb {
             mounts: self,
@@ -214,8 +199,7 @@ impl<'a> Mounts<'a> {
 /// One climb from a router to the routers above it.
 struct Climb<'m, 'a, 'c> {
     mounts: &'m Mounts<'a>,
-    /// The prefix of each way that reached a router nobody mounts, with the last mount the way passed, which is the
-    /// one to name when the way is not among those kept.
+    /// The prefix of each way that reached a router nobody mounts, with the last mount the way passed, which is the one to name when the way is not among those kept.
     ways: BTreeMap<String, Option<Cut<'a>>>,
     /// Ways ended so far, whole or cut.
     ended: usize,
@@ -223,9 +207,7 @@ struct Climb<'m, 'a, 'c> {
 }
 
 impl<'a> Climb<'_, 'a, '_> {
-    /// Climbs from `node`. `below` is the path between `node` and the route: everything the routers and mounts
-    /// below `node` put in front of it, except `node`'s own prefix, which a replacing mount may drop. `trail` holds
-    /// the routers passed, `node` last, and `via` the mount that led to `node`.
+    /// Climbs from `node`. `below` is the path between `node` and the route: everything the routers and mounts below `node` put in front of it, except `node`'s own prefix, which a replacing mount may drop. `trail` holds the routers passed, `node` last, and `via` the mount that led to `node`.
     fn up(
         &mut self,
         node: Router<'a>,
@@ -263,8 +245,7 @@ impl<'a> Climb<'_, 'a, '_> {
                 self.cuts.insert(Cut { why, ..mount });
                 continue;
             }
-            // FastAPI and Django put the mount's prefix in front of the router's own; Flask's registration prefix
-            // stands where the blueprint's own would have been, and the blueprint keeps its own only without one.
+            // FastAPI and Django put the mount's prefix in front of the router's own; Flask's registration prefix stands where the blueprint's own would have been, and the blueprint keeps its own only without one.
             let local = match (parent.replaces, parent.prefix) {
                 (true, prefix) => prefix.unwrap_or(own).to_owned(),
                 (false, prefix) => {
@@ -288,9 +269,7 @@ impl<'a> Names<'_, 'a> {
         }
     }
 
-    /// The router an expression names in `file`: a variable of the file itself, or a name its imports bind. A module
-    /// that holds the name only by importing it from another, as a package does that re-exports a router, is
-    /// followed on to the module that makes it; `hops` counts the imports followed so far.
+    /// The router an expression names in `file`: a variable of the file itself, or a name its imports bind. A module that holds the name only by importing it from another, as a package does that re-exports a router, is followed on to the module that makes it; `hops` counts the imports followed so far.
     fn named(&self, file: LinkFile<'a, PyExtra>, expr: &'a str, hops: usize) -> Option<Router<'a>> {
         if hops > MAX_HOPS {
             return None;
@@ -310,11 +289,9 @@ impl<'a> Names<'_, 'a> {
             (None, "") => return None,
             // `import app.api.bookings as bookings; bookings.router`: the router is inside the module.
             (None, rest) => ((self.module_file)(file.path, &bind.spec)?, rest),
-            // `from app.api.bookings import router`: the module holds the router, even when it is also called
-            // `router`.
+            // `from app.api.bookings import router`: the module holds the router, even when it is also called `router`.
             (Some(name), "") => ((self.module_file)(file.path, &bind.spec)?, name),
-            // `from app.api import bookings; bookings.router`: the name is a module of the package, and the router
-            // is inside it.
+            // `from app.api import bookings; bookings.router`: the name is a module of the package, and the router is inside it.
             (Some(name), rest) => {
                 let spec = submodule_spec(&bind.spec, name);
                 ((self.module_file)(file.path, &spec)?, rest)
@@ -328,8 +305,7 @@ impl<'a> Names<'_, 'a> {
     }
 }
 
-/// The specifier of the module `name` inside the package `spec`: `app.api` and `bookings` give `app.api.bookings`,
-/// and `.` gives `.bookings`.
+/// The specifier of the module `name` inside the package `spec`: `app.api` and `bookings` give `app.api.bookings`, and `.` gives `.bookings`.
 fn submodule_spec(spec: &str, name: &str) -> String {
     if spec.ends_with('.') {
         format!("{spec}{name}")
@@ -490,9 +466,7 @@ mod tests {
         assert_eq!(cuts, [(7, Why::Prefix)]);
     }
 
-    /// `count` layers of two routers, each router mounted into both routers of the layer above, so that `a0` is
-    /// reached in 2^`count` ways and has the route `/leaf`. The mounts are written from the lowest layer up, or the
-    /// other way round.
+    /// `count` layers of two routers, each router mounted into both routers of the layer above, so that `a0` is reached in 2^`count` ways and has the route `/leaf`. The mounts are written from the lowest layer up, or the other way round.
     fn layers(count: usize, reversed: bool) -> Project {
         let mut mounts = Vec::new();
         for layer in 0..count {

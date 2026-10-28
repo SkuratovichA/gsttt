@@ -14,9 +14,7 @@ use crate::error::CliError;
 use crate::repository::{Repository, RepositoryError};
 use crate::streams::{Io, Outcome};
 
-/// `gsttt config show`: prints the modules with whether each is on and why, the options the config gives them, the
-/// packs they receive, the external connectors with whether the user trusts each, and the settings that apply to
-/// the whole run. Under `--json` it is one JSON document with the same parts.
+/// `gsttt config show`: prints the modules with whether each is on and why, the options the config gives them, the packs they receive, the external connectors with whether the user trusts each, and the settings that apply to the whole run. Under `--json` it is one JSON document with the same parts.
 pub(in crate::commands) fn show(
     session: &Session<'_>,
     io: &mut Io<'_>,
@@ -146,8 +144,7 @@ impl Shown {
         })
     }
 
-    /// The text, a line at a time: a heading for each list with its entries two spaces in, and `(none)` where a list
-    /// is empty.
+    /// The text, a line at a time: a heading for each list with its entries two spaces in, and `(none)` where a list is empty.
     fn lines(&self) -> Vec<String> {
         let mut lines = vec![format!("root: {}", self.root), "modules:".to_owned()];
         lines.extend(self.modules.iter().map(ModuleLine::line));
@@ -204,8 +201,7 @@ impl ModuleLine {
     }
 }
 
-/// Whether the config or the built-in packs wrote the pack `name` of `language` that a module receives. A pack of
-/// the setup with that name and language is the one received: it replaced the built-in pack, or was added.
+/// Whether the config or the built-in packs wrote the pack `name` of `language` that a module receives. A pack of the setup with that name and language is the one received: it replaced the built-in pack, or was added.
 fn origin_of(setup: &Setup, language: &str, name: &str) -> Origin {
     if setup
         .packs

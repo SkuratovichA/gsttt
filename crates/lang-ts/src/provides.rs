@@ -6,8 +6,7 @@ use gsttt_core::connector::Provide;
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::rules::Pack;
 
-/// One entry per kind and role the active packs produce, naming the packs behind it and the blind spots of reading code
-/// for it.
+/// One entry per kind and role the active packs produce, naming the packs behind it and the blind spots of reading code for it.
 pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut groups: BTreeMap<(ContractKind, Role), BTreeSet<&str>> = BTreeMap::new();
     for pack in packs {

@@ -19,8 +19,7 @@ pub(super) fn index(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, C
     print::answer(&Summary::of(&refreshed), session.flags, io)
 }
 
-/// `gsttt status`: how the stored index stands against the tree. It never refreshes, so that asking changes
-/// nothing about the answer to the next question.
+/// `gsttt status`: how the stored index stands against the tree. It never refreshes, so that asking changes nothing about the answer to the next question.
 pub(super) fn status(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, CliError> {
     let loaded = session.stored()?;
     print::answer(
@@ -79,8 +78,7 @@ fn in_milliseconds<S: Serializer>(elapsed: &Duration, serializer: S) -> Result<S
     serializer.serialize_u64(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
 }
 
-/// `Indexed 4,213 files at a1b2c3d (3 dirty) in 1.2 s: 112 parsed, 4,101 reused.` and the coverage line, or
-/// `The index already describes the tree: 4,213 files at a1b2c3d.` and the coverage line.
+/// `Indexed 4,213 files at a1b2c3d (3 dirty) in 1.2 s: 112 parsed, 4,101 reused.` and the coverage line, or `The index already describes the tree: 4,213 files at a1b2c3d.` and the coverage line.
 impl Answer for Summary {
     fn write_text(&self, f: &mut fmt::Formatter<'_>, _entries: Entries) -> fmt::Result {
         if self.unchanged {

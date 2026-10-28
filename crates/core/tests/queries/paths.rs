@@ -5,11 +5,10 @@ use std::collections::VecDeque;
 use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind};
 use gsttt_core::index::{Freshness, Index};
-use gsttt_core::query::{Link, Route, path};
+use gsttt_core::query::{Answer, Link, Route, path};
+use gsttt_core::testing::{Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
-
-use crate::fixture::{Tree, file};
 
 fn route(index: &Index, from: &str, to: &str) -> Route {
     path(index, Freshness::Fresh, from, to)
@@ -150,8 +149,7 @@ fn of_equally_short_chains_the_one_through_the_smallest_path_wins() {
 
 #[test]
 fn a_smaller_path_comes_before_an_import_from_a_larger_one() {
-    // `z.ts` is found by an import and `a.ts` by a contract, both from `start.ts`, so `z.ts` is found first. The
-    // chain still goes through `a.ts`, because the files one hop from the start are visited in path order.
+    // `z.ts` is found by an import and `a.ts` by a contract, both from `start.ts`, so `z.ts` is found first. The chain still goes through `a.ts`, because the files one hop from the start are visited in path order.
     let index = Tree::new()
         .imports("start.ts", "z.ts")
         .calls("start.ts", "http GET /x")
@@ -207,8 +205,7 @@ fn from_one_file_contracts_come_in_key_order() {
 
 #[test]
 fn a_file_that_calls_a_contract_after_a_server_reached_it_still_reaches_the_other_servers() {
-    // `server.ts` crosses the contract first, as a server, and reaches only its declarers. `caller.ts` is one hop
-    // farther, so it crosses the same contract again, as a caller, and reaches the other server.
+    // `server.ts` crosses the contract first, as a server, and reaches only its declarers. `caller.ts` is one hop farther, so it crosses the same contract again, as a caller, and reaches the other server.
     let index = Tree::new()
         .imports("start.ts", "server.ts")
         .serves("server.ts", "http GET /x")
@@ -365,6 +362,20 @@ fn a_hop_across_http_follows_keys_that_meet() {
             ("controller.ts", Some("by http GET /bookings/{}".to_owned()))
         ]
     );
+}
+
+#[test]
+fn a_route_holds_its_files_when_the_index_holds_both() {
+    let index = Tree::new()
+        .imports("a.ts", "b.ts")
+        .unread("notes.txt")
+        .build();
+
+    assert!(route(&index, "a.ts", "b.ts").held());
+    // Both files are held and nothing leads from the one to the other: that is an answer, not a missing file.
+    assert!(route(&index, "b.ts", "a.ts").held());
+    assert!(!route(&index, "a.ts", "notes.txt").held());
+    assert!(!route(&index, "nowhere.ts", "b.ts").held());
 }
 
 #[test]

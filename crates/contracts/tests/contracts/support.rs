@@ -1,5 +1,4 @@
-//! Shared pieces of the connector tests: fixture trees, a pipeline run over one, the answers the tests read out
-//! of it, and a host connector that embeds documents the way a language connector does.
+//! Shared pieces of the connector tests: fixture trees, a pipeline run over one, the answers the tests read out of it, and a host connector that embeds documents the way a language connector does.
 
 use std::io;
 use std::sync::{Arc, Mutex};
@@ -128,8 +127,7 @@ impl Run {
         describe(&self.file(path).facts.contracts)
     }
 
-    /// The embedded documents of a file: who read each one, and the sites it gave as `<role> <key>`. Lines are left
-    /// out because placing them in the host file is the engine's job; the snapshots show what it did.
+    /// The embedded documents of a file: who read each one, and the sites it gave as `<role> <key>`. Lines are left out because placing them in the host file is the engine's job; the snapshots show what it did.
     pub(crate) fn embedded(&self, path: &str) -> Vec<(Option<&'static str>, Vec<String>)> {
         self.file(path)
             .embedded
@@ -177,8 +175,7 @@ impl Run {
             .collect()
     }
 
-    /// The whole output as JSON for a snapshot, without the provides of each project: every run repeats them, and
-    /// the scenario about them keeps them.
+    /// The whole output as JSON for a snapshot, without the provides of each project: every run repeats them, and the scenario about them keeps them.
     pub(crate) fn snapshot(&self) -> Value {
         let mut json = self.output.to_json(&self.repo);
         if let Some(Value::Array(projects)) = json.get_mut("projects") {
@@ -210,8 +207,7 @@ fn without_line(site: String) -> String {
     }
 }
 
-/// What the project of a connector reads out of one document embedded in code at `line` of its host file, asked
-/// directly and without the pipeline: the sites as `<role> <key> @<line>`, lines counted from the document's first.
+/// What the project of a connector reads out of one document embedded in code at `line` of its host file, asked directly and without the pipeline: the sites as `<role> <key> @<line>`, lines counted from the document's first.
 pub(crate) fn read_embedded(
     connector: &dyn DynConnector,
     repo: &str,
@@ -248,9 +244,7 @@ pub(crate) fn describe(facts: &[ContractFact]) -> Vec<String> {
     sites.into_iter().map(|(_, site)| site).collect()
 }
 
-/// A stand-in for a language connector: it claims `.ts` and `.py` files and reads each line `embed <lang> <text>`
-/// as a document of that language at that line, which is all the pipeline needs from a host. A module crate does
-/// not depend on another module crate, so the real hosts cannot stand here.
+/// A stand-in for a language connector: it claims `.ts` and `.py` files and reads each line `embed <lang> <text>` as a document of that language at that line, which is all the pipeline needs from a host. A module crate does not depend on another module crate, so the real hosts cannot stand here.
 pub(crate) struct Host;
 
 /// The host takes no options.

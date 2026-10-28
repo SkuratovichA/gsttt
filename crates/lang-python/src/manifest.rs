@@ -1,6 +1,4 @@
-//! The manifests of a Python project, read for the two things the connector needs from them: the distributions
-//! the project declares (they switch rule packs on and tell a dependency from an unknown module) and the
-//! directories its package settings name as source roots.
+//! The manifests of a Python project, read for the two things the connector needs from them: the distributions the project declares (they switch rule packs on and tell a dependency from an unknown module) and the directories its package settings name as source roots.
 
 use std::collections::BTreeSet;
 
@@ -11,8 +9,7 @@ use crate::names::{normalize_distribution, requirement_name};
 /// What one project's manifests say.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Manifest {
-    /// The distribution the manifest names for the project itself, normalised: what another project writes in its
-    /// dependencies to depend on this one.
+    /// The distribution the manifest names for the project itself, normalised: what another project writes in its dependencies to depend on this one.
     pub(crate) name: Option<String>,
     /// The declared distributions, normalised.
     pub(crate) dependencies: BTreeSet<String>,
@@ -61,8 +58,7 @@ pub(crate) enum ManifestError {
     },
 }
 
-/// Reads `pyproject.toml`: `[project]` dependencies and optional dependencies, dependency groups, Poetry and
-/// PDM and uv dependency tables, and the package settings of setuptools, Poetry, Hatch and PDM.
+/// Reads `pyproject.toml`: `[project]` dependencies and optional dependencies, dependency groups, Poetry and PDM and uv dependency tables, and the package settings of setuptools, Poetry, Hatch and PDM.
 pub(crate) fn read_pyproject(file: &str, text: &str) -> Result<Manifest, ManifestError> {
     let table: Table = text
         .parse()
@@ -156,8 +152,7 @@ fn poetry_names(manifest: &mut Manifest, dependencies: Option<&Value>) {
     }
 }
 
-/// Reads `setup.cfg`: the name of the distribution, `install_requires`, the keys of `extras_require`, `package_dir`
-/// and `packages.find` `where`.
+/// Reads `setup.cfg`: the name of the distribution, `install_requires`, the keys of `extras_require`, `package_dir` and `packages.find` `where`.
 pub(crate) fn read_setup_cfg(text: &str) -> Manifest {
     let mut manifest = Manifest::default();
     let mut section = String::new();
@@ -203,8 +198,7 @@ pub(crate) fn read_setup_cfg(text: &str) -> Manifest {
     manifest
 }
 
-/// Reads `setup.py` without running it: the string of `name=`, the quoted strings of `install_requires=[…]` and the
-/// `""` entry of `package_dir={…}`. Anything computed is not read.
+/// Reads `setup.py` without running it: the string of `name=`, the quoted strings of `install_requires=[…]` and the `""` entry of `package_dir={…}`. Anything computed is not read.
 pub(crate) fn read_setup_py(text: &str) -> Manifest {
     let mut manifest = Manifest {
         name: keyword_value(text, "name")
@@ -223,10 +217,7 @@ pub(crate) fn read_setup_py(text: &str) -> Manifest {
     manifest
 }
 
-/// Calls `each` with the lines of a requirements file that say something, read as pip reads them: a line that ends in
-/// a backslash continues on the next one, then a comment is cut off the end of a line, and blank and comment lines are
-/// dropped. A comment line never continues, so the line after one is read on its own; a joined line is built only when
-/// there is something to join.
+/// Calls `each` with the lines of a requirements file that say something, read as pip reads them: a line that ends in a backslash continues on the next one, then a comment is cut off the end of a line, and blank and comment lines are dropped. A comment line never continues, so the line after one is read on its own; a joined line is built only when there is something to join.
 fn each_requirement_line(text: &str, mut each: impl FnMut(&str)) {
     let mut say = |line: &str| {
         let line = without_comment(line).trim();
@@ -255,8 +246,7 @@ fn each_requirement_line(text: &str, mut each: impl FnMut(&str)) {
     say(&open);
 }
 
-/// `line` up to its comment, which starts at a `#` that begins the line or follows whitespace, as pip reads it: the
-/// `#` of `git+https://example.com/x.git#egg=x` is part of the requirement.
+/// `line` up to its comment, which starts at a `#` that begins the line or follows whitespace, as pip reads it: the `#` of `git+https://example.com/x.git#egg=x` is part of the requirement.
 fn without_comment(line: &str) -> &str {
     line.match_indices('#')
         .find_map(|(index, _)| {
@@ -277,8 +267,7 @@ pub(crate) fn read_requirements(text: &str) -> Manifest {
     manifest
 }
 
-/// The files a requirements file includes, as it writes them: relative to the file that includes them. They are owned
-/// because an include on a continued line is not a slice of the text.
+/// The files a requirements file includes, as it writes them: relative to the file that includes them. They are owned because an include on a continued line is not a slice of the text.
 pub(crate) fn requirement_includes(text: &str) -> Vec<String> {
     let mut includes = Vec::new();
     each_requirement_line(text, |line| {
@@ -287,8 +276,7 @@ pub(crate) fn requirement_includes(text: &str) -> Vec<String> {
     includes
 }
 
-/// The file an include line names: `-r base.txt`, `-rbase.txt`, `--requirement base.txt` or `--requirement=base.txt`.
-/// A constraints file (`-c`) limits versions and requires nothing, so it is not an include.
+/// The file an include line names: `-r base.txt`, `-rbase.txt`, `--requirement base.txt` or `--requirement=base.txt`. A constraints file (`-c`) limits versions and requires nothing, so it is not an include.
 fn include_of(line: &str) -> Option<&str> {
     let target = match line.strip_prefix("--requirement") {
         Some(rest) => rest
@@ -300,8 +288,7 @@ fn include_of(line: &str) -> Option<&str> {
     (!target.is_empty()).then_some(target)
 }
 
-/// The directory a `package_dir` entry makes a source root: the entry `"" = "src"` makes `src`, and
-/// `"pkg" = "lib/pkg"` makes `lib`, the directory that holds the package.
+/// The directory a `package_dir` entry makes a source root: the entry `"" = "src"` makes `src`, and `"pkg" = "lib/pkg"` makes `lib`, the directory that holds the package.
 fn package_root<'a>(package: &str, dir: &'a str) -> &'a str {
     if package.is_empty() {
         return dir;
@@ -350,8 +337,7 @@ fn tables_array(value: Option<&Value>) -> impl Iterator<Item = &Table> {
         .filter_map(Value::as_table)
 }
 
-/// What follows `key=` in `text`, with the space after the `=` dropped. The key must stand as a word of its own, not as
-/// the end of `package_name` or of `meta.name`, and a mention in a comment is no argument.
+/// What follows `key=` in `text`, with the space after the `=` dropped. The key must stand as a word of its own, not as the end of `package_name` or of `meta.name`, and a mention in a comment is no argument.
 fn keyword_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     text.match_indices(key).find_map(|(at, _)| {
         let before = text.get(..at)?;
@@ -378,11 +364,7 @@ fn string_start(value: &str) -> Option<&str> {
     Some(content)
 }
 
-/// The contents of every single- or double-quoted string between the `open` that stands right after `key=` and the
-/// `close` that matches it, so a value that is a name or a call gives nothing, and neither does the bracket of a later
-/// keyword. A bracket inside a string belongs to the string, so `"fastapi[standard]>=0.1"` is one requirement, a
-/// backslash makes the character after it part of the string, and a comment is skipped whole, apostrophe and bracket
-/// included. A text that ends before the bracket closes gives the strings read so far.
+/// The contents of every single- or double-quoted string between the `open` that stands right after `key=` and the `close` that matches it, so a value that is a name or a call gives nothing, and neither does the bracket of a later keyword. A bracket inside a string belongs to the string, so `"fastapi[standard]>=0.1"` is one requirement, a backslash makes the character after it part of the string, and a comment is skipped whole, apostrophe and bracket included. A text that ends before the bracket closes gives the strings read so far.
 fn quoted_in(text: &str, key: &str, open: char, close: char) -> Vec<String> {
     let inner = keyword_value(text, key)
         .and_then(|value| value.strip_prefix(open))

@@ -35,8 +35,7 @@ pub enum StoreError {
         source: io::Error,
     },
 
-    /// A line holds one trust and ends at the line break, so a root with a line break in its path cannot be
-    /// recorded.
+    /// A line holds one trust and ends at the line break, so a root with a line break in its path cannot be recorded.
     #[error("cannot record trust for `{root:?}`: its path holds a line break")]
     Root {
         /// The root.
@@ -44,11 +43,9 @@ pub enum StoreError {
     },
 }
 
-/// The trust of the user: one line per trusted external, `<key> <canonical root>`, sorted, in
-/// `$XDG_STATE_HOME/gsttt/trust` or `~/.local/state/gsttt/trust`.
+/// The trust of the user: one line per trusted external, `<key> <canonical root>`, sorted, in `$XDG_STATE_HOME/gsttt/trust` or `~/.local/state/gsttt/trust`.
 ///
-/// A line is an opaque string to everything but the lookup of a root. The file is replaced through a temporary file
-/// in its own folder, so that a reader sees the old list or the new one.
+/// A line is an opaque string to everything but the lookup of a root. The file is replaced through a temporary file in its own folder, so that a reader sees the old list or the new one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Store {
     file: Utf8PathBuf,
@@ -314,8 +311,7 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(32))]
 
-        /// Whatever roots and keys go in, the lookup finds exactly the keys of its root, and forgetting a root
-        /// removes exactly its lines.
+        /// Whatever roots and keys go in, the lookup finds exactly the keys of its root, and forgetting a root removes exactly its lines.
         #[test]
         fn what_is_trusted_is_found_again_under_its_root_only(
             roots in proptest::collection::btree_set("/[a-z ]{1,8}(/[a-z ]{1,8}){0,2}", 1..4),

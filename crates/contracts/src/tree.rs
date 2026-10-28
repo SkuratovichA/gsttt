@@ -57,9 +57,7 @@ fn from_yaml(node: &MarkedYaml<'_>, depth: usize) -> Value {
         .map_or(Value::Other, |text| Value::Str(text.to_owned()))
 }
 
-/// Resolves the `<<` merge keys of a mapping, which the YAML loader leaves as entries named `<<` that hold the mapping
-/// they name. The entries of a merged mapping follow those the mapping sets itself and never replace one, and of
-/// several merged mappings the first wins. A `<<` that names no mapping stays an entry.
+/// Resolves the `<<` merge keys of a mapping, which the YAML loader leaves as entries named `<<` that hold the mapping they name. The entries of a merged mapping follow those the mapping sets itself and never replace one, and of several merged mappings the first wins. A `<<` that names no mapping stays an entry.
 fn merge_keys(entries: Vec<Entry>) -> Vec<Entry> {
     if !entries.iter().any(|entry| entry.key == MERGE_KEY) {
         return entries;

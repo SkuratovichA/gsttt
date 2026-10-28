@@ -13,8 +13,7 @@ use oxc_syntax::operator::BinaryOperator;
 /// How a computed part of a template or a concatenation is written in the text a rule reads.
 const COMPUTED: &str = "${}";
 
-/// A call or a decorator as the rules read it: the last segment of what is called, the declaration it sits on, and the
-/// text of each argument.
+/// A call or a decorator as the rules read it: the last segment of what is called, the declaration it sits on, and the text of each argument.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Shape {
     last: Option<String>,
@@ -131,8 +130,7 @@ pub(crate) fn property_name(key: &PropertyKey<'_>) -> Option<String> {
     }
 }
 
-/// The text of a string, a template or a concatenation, with each computed part written `${}`; the first element that has
-/// text for an array. `None` for anything else.
+/// The text of a string, a template or a concatenation, with each computed part written `${}`; the first element that has text for an array. `None` for anything else.
 pub(crate) fn text_of(expr: &Expression<'_>) -> Option<String> {
     match expr.get_inner_expression() {
         Expression::StringLiteral(text) => text.value.as_str().map(str::to_owned),
@@ -184,8 +182,7 @@ pub(crate) fn template_text(template: &TemplateLiteral<'_>, placeholder: &str) -
     text
 }
 
-/// The names of a chain of member accesses from its base, `process.env.A` as `["process", "env", "A"]`, with `None` for a
-/// segment that is computed. `None` when the chain does not start from a name, `this` or `import.meta`.
+/// The names of a chain of member accesses from its base, `process.env.A` as `["process", "env", "A"]`, with `None` for a segment that is computed. `None` when the chain does not start from a name, `this` or `import.meta`.
 pub(crate) fn chain_of(expr: &Expression<'_>) -> Option<Vec<Option<String>>> {
     let mut names = Vec::new();
     push_chain(expr, &mut names).then_some(names)

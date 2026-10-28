@@ -6,9 +6,8 @@ use gsttt_core::query::{
     Answer, Entries, ImpactRequest, contract, coverage, dependencies, dependents, impact, path,
     status,
 };
+use gsttt_core::testing::{To, Tree, package, resolving};
 use gsttt_scenario::scenario;
-
-use crate::fixture::{To, Tree, package, resolving};
 
 /// A tree where `count` files import `src/hub.ts`.
 fn hub(count: usize) -> Index {

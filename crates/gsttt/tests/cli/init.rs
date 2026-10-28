@@ -2,7 +2,9 @@
 
 use std::path::Path;
 
+use gsttt_core::testing::json::descriptions;
 use gsttt_scenario::scenario;
+use serde_json::Value;
 
 use super::support::{Sandbox, init_repo, json, write};
 
@@ -33,7 +35,7 @@ fn init_writes_the_starter_files() {
         let text = read(&root, schema);
         assert!(text.ends_with("}\n"), "{schema}: not newline-terminated");
         assert!(text.contains("\n  \""), "{schema}: not indented");
-        let document: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let document: Value = serde_json::from_str(&text).unwrap();
         let comment = document["$comment"].as_str().unwrap();
         assert!(comment.contains("gsttt init"), "{schema}: {comment}");
         assert!(comment.contains("lost"), "{schema}: {comment}");
@@ -133,8 +135,63 @@ fn the_config_schema_describes_the_options_of_the_modules() {
     assert!(schema.contains("tsconfig"), "{schema}");
 }
 
-/// A schema file that is a link is replaced by a file, and what the link led to stays as it was: a repository
-/// cannot make `init` overwrite a file elsewhere.
+/// No description in the schemas breaks a line inside a paragraph: `schemars` keeps the line breaks of a doc comment, so a wrapped one reaches the schemas `init` writes and an editor shows it broken.
+#[test]
+fn no_description_in_the_schemas_breaks_inside_a_paragraph() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.repository();
+    assert_eq!(sandbox.run_in(&root, &["init"]).code, Some(0));
+
+    let mut broken = Vec::new();
+    for schema in [CONFIG_SCHEMA, PACK_SCHEMA] {
+        let document: Value = serde_json::from_str(&read(&root, schema)).unwrap();
+        let all = descriptions(&document);
+        assert!(!all.is_empty(), "{schema}: the walk finds no description");
+        broken.extend(
+            all.into_iter()
+                .filter(|description| breaks_inside_a_paragraph(description))
+                .map(|description| format!("{schema}: {description:?}")),
+        );
+    }
+
+    assert!(
+        broken.is_empty(),
+        "{} descriptions break inside a paragraph:\n{}",
+        broken.len(),
+        broken.join("\n")
+    );
+}
+
+/// Whether a line of text sits right under another one, outside a code fence, and opens no list item, heading, table row, quote or fence: the paragraph above it goes on in a new line.
+fn breaks_inside_a_paragraph(description: &str) -> bool {
+    let mut fenced = false;
+    let mut above = false;
+    for line in description.lines().map(str::trim_start) {
+        if line.starts_with("```") || line.starts_with("~~~") {
+            fenced = !fenced;
+            above = false;
+        } else if !fenced {
+            if above && !line.is_empty() && !opens_a_block(line) {
+                return true;
+            }
+            above = !line.is_empty();
+        }
+    }
+    false
+}
+
+/// Whether a line opens a block of its own instead of going on with a paragraph: a list item, a heading, a table row or a quote.
+fn opens_a_block(line: &str) -> bool {
+    let digits = line.trim_start_matches(|c: char| c.is_ascii_digit());
+    let numbered =
+        digits.len() < line.len() && (digits.starts_with(". ") || digits.starts_with(") "));
+    numbered
+        || ["- ", "* ", "+ ", "#", "|", ">"]
+            .iter()
+            .any(|opener| line.starts_with(opener))
+}
+
+/// A schema file that is a link is replaced by a file, and what the link led to stays as it was: a repository cannot make `init` overwrite a file elsewhere.
 #[cfg(unix)]
 #[test]
 fn init_replaces_a_linked_schema_and_does_not_write_through_it() {

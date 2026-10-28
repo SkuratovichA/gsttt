@@ -18,9 +18,7 @@ use crate::manifest::{
     requirement_includes,
 };
 
-/// A directory with a `pyproject.toml`, `setup.py` or `setup.cfg`, or the repository root when a Python file lies
-/// under none of those directories. It knows its source roots, the distributions it declares and the packs they switch
-/// on.
+/// A directory with a `pyproject.toml`, `setup.py` or `setup.cfg`, or the repository root when a Python file lies under none of those directories. It knows its source roots, the distributions it declares and the packs they switch on.
 #[derive(Debug)]
 pub struct PythonProject {
     pub(crate) root: String,
@@ -35,13 +33,9 @@ pub struct PythonProject {
     salt: u64,
     /// The repository the project lives in, which resolution looks files up in.
     pub(crate) repo: RepoView,
-    /// The source roots of the other Python projects of the repository that this project declares as dependencies and
-    /// does not search itself, in the order of those projects' paths and each project's roots in the order it tries
-    /// them: where a library of the repository is found. A project nobody declares is not on the path of an import, so
-    /// what it holds is no module of this one.
+    /// The source roots of the other Python projects of the repository that this project declares as dependencies and does not search itself, in the order of those projects' paths and each project's roots in the order it tries them: where a library of the repository is found. A project nobody declares is not on the path of an import, so what it holds is no module of this one.
     pub(crate) sibling_roots: Vec<String>,
-    /// What a module in `sibling_roots` can be imported by, set with them: the directories and the file names, without
-    /// `.py` and `.pyi`, directly in those roots. A name that is none of them is held by no sibling root.
+    /// What a module in `sibling_roots` can be imported by, set with them: the directories and the file names, without `.py` and `.pyi`, directly in those roots. A name that is none of them is held by no sibling root.
     pub(crate) sibling_tops: BTreeSet<String>,
 }
 
@@ -56,8 +50,7 @@ pub(crate) fn open_projects(
         .filter(|(_, path)| PROJECT_MANIFESTS.contains(&path.file_name()))
         .map(|(_, path)| path.parent().to_owned())
         .collect();
-    // Python files without a manifest above them still need a project to be read; the repository root is it. Without
-    // such a file the root would be a project with nothing to read.
+    // Python files without a manifest above them still need a project to be read; the repository root is it. Without such a file the root would be a project with nothing to read.
     if !roots.contains("")
         && repo
             .files()
@@ -85,8 +78,7 @@ pub(crate) fn open_projects(
             open_project(repo, root, options, packs, own)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    // A project imports the libraries of the projects it declares, a dependency naming the distribution another
-    // project's manifest gives it, so each learns where those look for modules.
+    // A project imports the libraries of the projects it declares, a dependency naming the distribution another project's manifest gives it, so each learns where those look for modules.
     let mut named: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (index, project) in projects.iter().enumerate() {
         if let Some(name) = &project.distribution {
@@ -136,9 +128,7 @@ pub(crate) fn open_projects(
     Ok(projects)
 }
 
-/// The names a module in the directory `root` can be imported by: the directories and the files directly in it, a
-/// file without its `.py` or `.pyi`. A name that stands for no Python is in too, so the set is never smaller than the
-/// names that resolve.
+/// The names a module in the directory `root` can be imported by: the directories and the files directly in it, a file without its `.py` or `.pyi`. A name that stands for no Python is in too, so the set is never smaller than the names that resolve.
 pub(crate) fn top_names(repo: &RepoView, root: &str) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for (_, path) in repo.under(root) {
@@ -232,11 +222,7 @@ fn open_project(
 
 /// The salt of a project whose manifests switch on the packs at `positions` in the list the connector was given.
 ///
-/// Parsing depends on those packs and on nothing else the project holds. The engine's key for a file already holds the
-/// options and every pack the connector was given, in order, so what it cannot tell is which of them are in force
-/// here, and the manifests decide that. A pack is named by its position because two packs may share a name, which is
-/// sound only because that key also holds the body and the order of every pack: the core test
-/// `every_input_of_a_key_changes_it` pins that a changed body or order changes the key.
+/// Parsing depends on those packs and on nothing else the project holds. The engine's key for a file already holds the options and every pack the connector was given, in order, so what it cannot tell is which of them are in force here, and the manifests decide that. A pack is named by its position because two packs may share a name, which is sound only because that key also holds the body and the order of every pack: the core test `every_input_of_a_key_changes_it` pins that a changed body or order changes the key.
 fn packs_salt(positions: impl Iterator<Item = usize>) -> u64 {
     let positions: Vec<String> = positions.map(|position| position.to_string()).collect();
     let parts: Vec<&str> = positions.iter().map(String::as_str).collect();
@@ -249,8 +235,7 @@ fn push_unique(roots: &mut Vec<String>, dir: String) {
     }
 }
 
-/// What the project's own manifests and its requirements files declare. An unreadable manifest is logged and
-/// skipped: the project still opens, only without what the manifest would have said.
+/// What the project's own manifests and its requirements files declare. An unreadable manifest is logged and skipped: the project still opens, only without what the manifest would have said.
 fn read_manifests(repo: &RepoView, root: &str, requirements: &[&RepoPath]) -> Manifest {
     let mut manifest = Manifest::default();
     for name in PROJECT_MANIFESTS {
@@ -276,8 +261,7 @@ fn read_manifests(repo: &RepoView, root: &str, requirements: &[&RepoPath]) -> Ma
 
 /// Reads the requirements `files` and the files they include with `-r`, each file once however many name it.
 ///
-/// An include is relative to the file that names it, and a file that is not in the repository is skipped: one that
-/// git ignores is not part of the tree the index describes.
+/// An include is relative to the file that names it, and a file that is not in the repository is skipped: one that git ignores is not part of the tree the index describes.
 fn read_requirement_files(repo: &RepoView, files: &[&RepoPath], manifest: &mut Manifest) {
     let mut pending: Vec<RepoPath> = files.iter().map(|&file| file.clone()).collect();
     let mut seen = BTreeSet::new();
@@ -302,8 +286,7 @@ fn read_requirement_files(repo: &RepoView, files: &[&RepoPath], manifest: &mut M
     }
 }
 
-/// The text of a manifest, or `None` when it is not a regular file or cannot be read. A file set made from git lists a
-/// symbolic link as a file, and a link can point out of the repository, which nothing here may read.
+/// The text of a manifest, or `None` when it is not a regular file or cannot be read. A file set made from git lists a symbolic link as a file, and a link can point out of the repository, which nothing here may read.
 fn read_text(repo: &RepoView, path: &str) -> Option<String> {
     if repo
         .absolute(path)

@@ -1,5 +1,4 @@
-//! The spec gate: every scenario proven by exactly one test. Specified in `openspec/specs/spec-gate/`
-//! and, until that change is archived, in `openspec/changes/add-spec-gate/`.
+//! The spec gate: every scenario proven by exactly one test. Specified in `openspec/specs/spec-gate/` and, until that change is archived, in `openspec/changes/add-spec-gate/`.
 //!
 //! - [`workspace`] asks cargo which targets the workspace has.
 //! - [`proofs`] finds the `#[scenario]` attributes in the sources those targets compile.
@@ -52,9 +51,7 @@ impl Outcome {
 
 /// `cargo xtask spec [--ready]`.
 ///
-/// The exit code is non-zero exactly when the gate found something to fail. `--ready` only lists
-/// changes, so it succeeds whatever else is wrong; the archive workflow runs the gate itself on the
-/// archived specs.
+/// The exit code is non-zero exactly when the gate found something to fail. `--ready` only lists changes, so it succeeds whatever else is wrong; the archive workflow runs the gate itself on the archived specs.
 ///
 /// Like every other task it works on the repository that holds the current directory, whichever of its directories that is (`crate::root`).
 pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {

@@ -2,14 +2,15 @@
 
 use camino::Utf8PathBuf;
 use clap::CommandFactory;
+use gsttt_core::{Loaded, Target};
 
 use crate::cli::{
     Cli, Command, ConfigCommand, ContractArgs, Flags, HookCommand, ImpactArgs, SchemaCommand,
 };
 use crate::error::CliError;
-use crate::repository::{Loaded, Repository, Target};
+use crate::repository::Repository;
 use crate::streams::{Io, Outcome};
-use crate::{hook, root};
+use crate::{hook, mcp, root};
 
 mod config;
 mod impact;
@@ -61,6 +62,7 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
         Command::Impact(args) => impact::impact(&Session::open(flags)?, args, io),
         Command::Index => index::index(&Session::open(flags)?, io),
         Command::Status => index::status(&Session::open(flags)?, io),
+        Command::Mcp => mcp::run(flags),
         Command::Dependents(args) => questions::dependents(&Session::open(flags)?, args, io),
         Command::Dependencies(args) => questions::dependencies(&Session::open(flags)?, args, io),
         Command::Path(args) => questions::path(&Session::open(flags)?, args, io),
@@ -116,6 +118,11 @@ impl<'a> Session<'a> {
 fn check_arguments(flags: &Flags, command: &Command) -> Result<(), CliError> {
     match command {
         Command::Index if flags.no_refresh => Err(CliError::NoRefreshWithIndex),
+        Command::Mcp if flags.json => Err(CliError::McpTakesNoFlag { flag: "--json" }),
+        Command::Mcp if flags.all => Err(CliError::McpTakesNoFlag { flag: "--all" }),
+        Command::Mcp if flags.no_refresh => Err(CliError::McpTakesNoFlag {
+            flag: "--no-refresh",
+        }),
         Command::Impact(ImpactArgs {
             changed: false,
             base: Some(_),

@@ -1,5 +1,4 @@
-//! SQL files: what they declare, what they call, the dialect and the placeholders they are read with, and how a
-//! bad statement is told apart from the rest.
+//! SQL files: what they declare, what they call, the dialect and the placeholders they are read with, and how a bad statement is told apart from the rest.
 
 use gsttt_contracts::SQL;
 use gsttt_core::connector::ConnectorError;
@@ -98,8 +97,7 @@ fn driver_placeholders_are_parameters() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
-/// The first statement is read again with its `%s` replaced, and the second with its `:owner` and a string that holds
-/// a doubled quote; the sites keep the lines the tables are written on.
+/// The first statement is read again with its `%s` replaced, and the second with its `:owner` and a string that holds a doubled quote; the sites keep the lines the tables are written on.
 #[gsttt_scenario::scenario(
     "contract-formats",
     "A statement across lines keeps the lines of its tables"
@@ -137,8 +135,7 @@ fn one_bad_statement_does_not_hide_the_rest() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
-/// An unterminated string swallows the text up to the end of the file for the tokenizer, so the statement after the
-/// bad one is only read when reading resumes after the next semicolon.
+/// An unterminated string swallows the text up to the end of the file for the tokenizer, so the statement after the bad one is only read when reading resumes after the next semicolon.
 #[gsttt_scenario::scenario(
     "contract-formats",
     "A statement that does not tokenize does not hide the rest"
@@ -168,8 +165,7 @@ fn embedded_sql_reports_lines_within_the_document() {
         read_embedded(&SQL, "sql_embedded", "sql", 7, "SELECT id FROM bookings"),
         vec!["calls table bookings @1"]
     );
-    // A statement further down reports its own line within the document, also when it is read with its placeholder
-    // replaced.
+    // A statement further down reports its own line within the document, also when it is read with its placeholder replaced.
     let text = "SELECT 1;\nSELECT id FROM bookings WHERE a = %s";
     assert_eq!(
         read_embedded(&SQL, "sql_embedded", "sql", 7, text),
@@ -177,8 +173,7 @@ fn embedded_sql_reports_lines_within_the_document() {
     );
 }
 
-/// The tree holds one Python file and no SQL file, so the connector has only the embedded document to read. The
-/// snapshot shows the lines as the engine places them, so it changes when the engine moves them to the host file.
+/// The tree holds one Python file and no SQL file, so the connector has only the embedded document to read. The snapshot shows the lines as the engine places them, so it changes when the engine moves them to the host file.
 #[gsttt_scenario::scenario("contract-formats", "Embedded SQL is read without an SQL file")]
 #[test]
 fn embedded_sql_is_read_without_an_sql_file() {

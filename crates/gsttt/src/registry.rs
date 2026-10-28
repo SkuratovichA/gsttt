@@ -79,8 +79,7 @@ impl Registry {
         })
     }
 
-    /// The registry with `externals` after the connectors it has, in the order given: the trusted externals of a
-    /// config, which the registry cannot know before the config is read.
+    /// The registry with `externals` after the connectors it has, in the order given: the trusted externals of a config, which the registry cannot know before the config is read.
     #[must_use]
     pub fn with_externals(mut self, externals: impl IntoIterator<Item = External>) -> Self {
         self.connectors.extend(
