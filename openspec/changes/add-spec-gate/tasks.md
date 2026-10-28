@@ -27,3 +27,4 @@
 - [x] 5.3 Report a `proptest!` attribute that does not parse instead of dropping it
 - [x] 5.4 Test the workspace listing and the mapping from the verdict to the exit code
 - [x] 5.5 Test the compile errors of `#[scenario]` through the attribute itself with `trybuild`
+- [x] 5.6 Keep a change out of `--ready` when it modifies, removes or renames a requirement that `openspec/specs/` does not have

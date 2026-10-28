@@ -6,10 +6,10 @@
 //! way keeps a modified scenario from counting twice, and makes the tests follow a change as it
 //! lands: once a change removes or retitles a scenario, no test may keep claiming the old one.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use gsttt_spec::{Change, OpenSpec, Scenario};
+use gsttt_spec::{Change, Delta, OpenSpec, Requirement, Scenario};
 
 use super::proofs::{Claim, Marks, Site};
 
@@ -85,6 +85,9 @@ pub(super) struct Failure {
 struct Open {
     name: String,
     finished: bool,
+    /// Whether the main specs have every requirement that the change modifies, removes or renames:
+    /// `openspec archive` stops at one that is missing.
+    applies: bool,
 }
 
 /// Everything the gate found out.
@@ -103,12 +106,13 @@ impl Judgement {
         self.failures.is_empty()
     }
 
-    /// The open changes that can be archived: every task ticked, every scenario proven, and no
-    /// failure that mentions them. In the order of their names.
+    /// The open changes that can be archived: every task ticked, every scenario proven, every
+    /// requirement they modify, remove or rename in the main specs, and no failure that mentions
+    /// them. In the order of their names.
     pub(super) fn ready(&self) -> Vec<&str> {
         self.changes
             .iter()
-            .filter(|change| change.finished)
+            .filter(|change| change.finished && change.applies)
             .filter(|change| {
                 self.entries
                     .iter()
@@ -213,6 +217,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
         .map(|change| Open {
             name: change.name.clone(),
             finished: change.is_finished(),
+            applies: change.deltas.iter().all(|delta| applies(openspec, delta)),
         })
         .collect();
     Judgement {
@@ -276,16 +281,10 @@ fn replaced(changes: &[Change]) -> Replaced {
                 .removed
                 .iter()
                 .map(|removed| (&removed.name, Replacement::Removed));
-            let modifications = delta.modified.iter().map(|requirement| {
-                // A requirement that is renamed and modified appears under its new name in the
-                // delta and under its old name in the main spec.
-                let old = delta
-                    .renamed
-                    .iter()
-                    .find(|renamed| renamed.to == requirement.name)
-                    .map_or(&requirement.name, |renamed| &renamed.from);
-                (old, Replacement::Modified)
-            });
+            let modifications = delta
+                .modified
+                .iter()
+                .map(|requirement| (main_name(delta, requirement), Replacement::Modified));
             for (name, how) in removals.chain(modifications) {
                 replaced
                     .entry((delta.capability.clone(), name.clone()))
@@ -294,6 +293,39 @@ fn replaced(changes: &[Change]) -> Replaced {
         }
     }
     replaced
+}
+
+/// The name under which the main spec has a requirement that `delta` modifies. A requirement that
+/// is renamed and modified appears under its new name in the delta and under its old name in the
+/// main spec.
+fn main_name<'a>(delta: &'a Delta, modified: &'a Requirement) -> &'a String {
+    delta
+        .renamed
+        .iter()
+        .find(|renamed| renamed.to == modified.name)
+        .map_or(&modified.name, |renamed| &renamed.from)
+}
+
+/// Whether the main spec of the capability of `delta` has every requirement that `delta` modifies,
+/// removes or renames. A capability with no main spec has none.
+fn applies(openspec: &OpenSpec, delta: &Delta) -> bool {
+    let main: BTreeSet<&String> = openspec
+        .specs
+        .iter()
+        .filter(|spec| spec.capability == delta.capability)
+        .flat_map(|spec| &spec.requirements)
+        .map(|requirement| &requirement.name)
+        .collect();
+    let removed = delta.removed.iter().map(|removed| &removed.name);
+    let renamed = delta.renamed.iter().map(|renamed| &renamed.from);
+    let modified = delta
+        .modified
+        .iter()
+        .map(|requirement| main_name(delta, requirement));
+    removed
+        .chain(renamed)
+        .chain(modified)
+        .all(|name| main.contains(name))
 }
 
 /// The status of a scenario that is written once, with the failure when it fails.

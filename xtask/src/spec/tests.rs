@@ -139,6 +139,11 @@ fn removal(name: &str) -> String {
     format!("### Requirement: {name}\n**Reason**: No longer needed.\n**Migration**: None.\n")
 }
 
+/// The `RENAMED` entry for one requirement.
+fn renaming(from: &str, to: &str) -> String {
+    format!("- FROM: `### Requirement: {from}`\n- TO: `### Requirement: {to}`\n")
+}
+
 /// A test that claims a scenario; its function starts on line 3.
 fn proof(capability: &str, scenario: &str) -> String {
     format!("#[scenario(\"{capability}\", \"{scenario}\")]\n#[test]\nfn proof() {{}}\n")
@@ -521,6 +526,61 @@ fn a_finished_change_with_a_scenario_unproven_is_not_ready() {
     let outcome = tree.try_run(Mode::Ready).unwrap();
     assert_eq!(outcome.output, "");
     assert!(outcome.passed, "listing changes does not fail the gate");
+}
+
+#[gsttt_scenario::scenario("spec-gate", "A change that names a missing requirement is not ready")]
+#[test]
+fn a_change_that_names_a_requirement_main_lacks_is_not_ready() {
+    let tree = Tree::new();
+    tree.spec(
+        "queries",
+        &main_spec(&[
+            requirement("Alpha", &["Alpha works"]),
+            requirement("Beta", &["Beta works"]),
+            requirement("Gamma", &["Gamma works"]),
+            requirement("Delta", &["Delta works"]),
+        ]),
+    );
+    // Every change is finished and proven. Those named `...-existing` find what they name in the
+    // main spec; `renames-and-modifies` refers to its modified requirement by the new name.
+    let renamed_and_modified = format!(
+        "{}\n## MODIFIED Requirements\n\n{}",
+        delta("RENAMED", &[renaming("Delta", "Delta renamed")]),
+        requirement("Delta renamed", &["Delta works"])
+    );
+    let changes = [
+        (
+            "modifies-existing",
+            delta("MODIFIED", &[requirement("Alpha", &["Alpha works"])]),
+        ),
+        (
+            "modifies-missing",
+            delta("MODIFIED", &[requirement("Nothing", &["Nothing works"])]),
+        ),
+        ("removes-existing", delta("REMOVED", &[removal("Beta")])),
+        ("removes-missing", delta("REMOVED", &[removal("Nothing")])),
+        (
+            "renames-existing",
+            delta("RENAMED", &[renaming("Gamma", "Gamma renamed")]),
+        ),
+        (
+            "renames-missing",
+            delta("RENAMED", &[renaming("Nothing", "Something")]),
+        ),
+        ("renames-and-modifies", renamed_and_modified),
+    ];
+    for (name, text) in &changes {
+        tree.change(name, TICKED, &[("queries", text.as_str())]);
+    }
+    tree.source("tests/alpha.rs", &proof("queries", "Alpha works"))
+        .source("tests/gamma.rs", &proof("queries", "Gamma works"))
+        .source("tests/delta.rs", &proof("queries", "Delta works"))
+        .source("tests/nothing.rs", &proof("queries", "Nothing works"));
+    let outcome = tree.try_run(Mode::Ready).unwrap();
+    assert_eq!(
+        outcome.output,
+        "modifies-existing\nremoves-existing\nrenames-and-modifies\nrenames-existing\n"
+    );
 }
 
 #[test]
