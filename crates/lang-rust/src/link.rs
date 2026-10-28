@@ -383,15 +383,15 @@ impl<'a> Walk<'a> {
             let Some((method, path)) = route.key.http_parts() else {
                 continue;
             };
-            self.out.push(LinkedFact {
-                file: node.file,
-                fact: ContractFact {
+            self.out.push(LinkedFact::found(
+                node.file,
+                ContractFact {
                     key: contract_key(&ContractKind::Http, Some(&prefix), path, Some(method)),
                     role: route.role,
                     line: route.line,
                     via: route.via.clone(),
                 },
-            });
+            ));
         }
     }
 }
