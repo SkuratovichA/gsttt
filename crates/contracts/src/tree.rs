@@ -102,6 +102,7 @@ mod tests {
 
     use super::*;
 
+    // The same walk as `lines_of` in the tests of `crates/core/src/tree.rs`: a test module of another crate cannot be imported, so each crate keeps its copy.
     fn lines_of(value: &Value, out: &mut Vec<Line>) {
         match value {
             Value::Map(entries) => {
