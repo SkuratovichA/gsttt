@@ -7,21 +7,19 @@ use gsttt_core::connector::{LinkInput, LinkedFact, Parsed, Project, Provide, Sou
 use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseFailure, Resolution};
 use gsttt_core::rules::Pack;
 use gsttt_core::{RepoPath, RepoView};
+use xxhash_rust::xxh3::Xxh3;
 
 use crate::config::extends_of;
 use crate::extra::TsExtra;
 use crate::json;
 use crate::options::TypeScriptOptions;
-use crate::pathing::{file_dir, file_name, has_segment, is_config_name, is_json};
+use crate::pathing::{has_segment, is_config_name, is_json};
 use crate::shared::Shared;
 use crate::source::{is_code, parse_code};
 use crate::{link, provides, resolve};
 
 /// Changes whenever the facts this reader produces for the same text and packs could change.
 const READER_VERSION: u32 = 1;
-
-const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 /// A TypeScript project and the rule packs active in it.
 #[derive(Debug)]
@@ -67,21 +65,15 @@ impl TsProject {
     }
 }
 
-/// FNV-1a over the reader version and the active packs, so a pack change reads every file again.
+/// A hash of the reader version and the active packs, so a pack change reads every file again.
 fn salt_of(packs: &[Pack]) -> u64 {
-    let mut hash = FNV_OFFSET;
-    let mut feed = |bytes: &[u8]| {
-        for byte in bytes {
-            hash ^= u64::from(*byte);
-            hash = hash.wrapping_mul(FNV_PRIME);
-        }
-    };
-    feed(&READER_VERSION.to_le_bytes());
+    let mut hasher = Xxh3::new();
+    hasher.update(&READER_VERSION.to_le_bytes());
     for pack in packs {
-        feed(format!("{pack:?}").as_bytes());
-        feed(&[0]);
+        hasher.update(format!("{pack:?}").as_bytes());
+        hasher.update(&[0]);
     }
-    hash
+    hasher.digest()
 }
 
 impl Project for TsProject {
@@ -92,11 +84,10 @@ impl Project for TsProject {
     }
 
     fn matches(&self, path: &RepoPath) -> bool {
-        let path = path.as_str();
-        if has_segment(path, "node_modules") {
+        if has_segment(path.as_str(), "node_modules") {
             return false;
         }
-        let name = file_name(path);
+        let name = path.file_name();
         (is_code(name) || is_config_name(name) || name == "package.json")
             && self.shared.owner(path) == Some(self.root.as_str())
     }
@@ -110,10 +101,9 @@ impl Project for TsProject {
     }
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<TsExtra> {
-        let path = file.path.as_str();
-        let tags = tags_of(path);
-        if is_json(file_name(path)) {
-            return parse_json(path, file.text, tags);
+        let tags = tags_of(file.path);
+        if is_json(file.path.file_name()) {
+            return parse_json(file.path, file.text, tags);
         }
         let mut parsed = parse_code(file, &self.packs);
         parsed.facts.tags = tags;
@@ -121,7 +111,7 @@ impl Project for TsProject {
     }
 
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution {
-        resolve::resolve(&self.shared, &self.root, from.as_str(), import)
+        resolve::resolve(&self.shared, &self.root, from, import)
     }
 
     fn link(&self, input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
@@ -131,11 +121,11 @@ impl Project for TsProject {
 
 /// A `package.json` or a tsconfig: tagged as a manifest, and a tsconfig's `extends` are its imports. A file that is not
 /// JSON fails alone.
-fn parse_json(path: &str, text: &str, tags: FileTags) -> Parsed<TsExtra> {
+fn parse_json(path: &RepoPath, text: &str, tags: FileTags) -> Parsed<TsExtra> {
     let mut facts = match json::parse(text) {
         Ok(json) => {
             let mut facts = FileFacts::default();
-            if is_config_name(file_name(path)) {
+            if is_config_name(path.file_name()) {
                 facts.imports = extends_of(&json)
                     .into_iter()
                     .map(|(spec, line)| Import::new(spec, ImportKind::Reference, line))
@@ -153,15 +143,15 @@ fn parse_json(path: &str, text: &str, tags: FileTags) -> Parsed<TsExtra> {
 }
 
 /// The tags a file carries by its name and place.
-fn tags_of(path: &str) -> FileTags {
-    let name = file_name(path);
+fn tags_of(path: &RepoPath) -> FileTags {
+    let name = path.file_name();
     let mut tags = FileTags::NONE;
     if name == "package.json" || is_config_name(name) {
         tags = tags | FileTags::MANIFEST;
     }
     let in_test_dir = ["__tests__", "test", "tests"]
         .iter()
-        .any(|dir| has_segment(file_dir(path), dir));
+        .any(|dir| has_segment(path.parent(), dir));
     if is_code(name) && (name.contains(".test.") || name.contains(".spec.") || in_test_dir) {
         tags = tags | FileTags::TEST;
     }
@@ -172,18 +162,41 @@ fn tags_of(path: &str) -> FileTags {
 mod tests {
     use super::*;
 
+    fn tags(path: &str) -> FileTags {
+        tags_of(&RepoPath::normalize(path).expect("a repository path"))
+    }
+
     #[test]
     fn tests_and_manifests_are_tagged_by_name() {
-        assert!(tags_of("src/a.test.ts").contains(FileTags::TEST));
-        assert!(tags_of("src/__tests__/a.ts").contains(FileTags::TEST));
-        assert!(!tags_of("src/a.ts").contains(FileTags::TEST));
-        assert!(tags_of("packages/ui/package.json").contains(FileTags::MANIFEST));
-        assert!(tags_of("tsconfig.base.json").contains(FileTags::MANIFEST));
-        assert!(!tags_of("package.json").contains(FileTags::TEST));
+        assert!(tags("src/a.test.ts").contains(FileTags::TEST));
+        assert!(tags("src/__tests__/a.ts").contains(FileTags::TEST));
+        assert!(!tags("src/a.ts").contains(FileTags::TEST));
+        assert!(tags("packages/ui/package.json").contains(FileTags::MANIFEST));
+        assert!(tags("tsconfig.base.json").contains(FileTags::MANIFEST));
+        assert!(!tags("package.json").contains(FileTags::TEST));
+    }
+
+    fn pack(name: &str) -> Pack {
+        Pack {
+            name: name.to_owned(),
+            language: "ts".to_owned(),
+            detect: Vec::new(),
+            calls: Vec::new(),
+            decorators: Vec::new(),
+            chains: Vec::new(),
+            embeds: Vec::new(),
+            assigns: Vec::new(),
+        }
     }
 
     #[test]
     fn the_salt_follows_the_packs() {
-        assert_eq!(salt_of(&[]), salt_of(&[]));
+        assert_eq!(salt_of(&[pack("a")]), salt_of(&[pack("a")]));
+        assert_ne!(salt_of(&[]), salt_of(&[pack("a")]));
+        assert_ne!(salt_of(&[pack("a")]), salt_of(&[pack("b")]));
+        assert_ne!(
+            salt_of(&[pack("a"), pack("b")]),
+            salt_of(&[pack("b"), pack("a")])
+        );
     }
 }

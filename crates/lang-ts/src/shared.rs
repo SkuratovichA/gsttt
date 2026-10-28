@@ -4,14 +4,14 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use gsttt_core::RepoView;
+use gsttt_core::{RepoPath, RepoView};
 
 use crate::config::{ConfigFile, Effective};
 use crate::json::{self, Json};
 use crate::manifest::Manifest;
 use crate::options::TypeScriptOptions;
 use crate::pathing::{
-    ancestors, file_dir, file_name, has_segment, is_config_name, is_relative, join_dir, join_file,
+    ancestors, file_dir, has_segment, is_config_name, is_relative, join_dir, join_file,
     split_package, strip_dir,
 };
 use crate::source::is_code;
@@ -50,10 +50,10 @@ impl fmt::Debug for Shared {
 
 impl Shared {
     pub(crate) fn build(repo: &RepoView, options: &TypeScriptOptions) -> Self {
-        let mut paths: Vec<&str> = repo
+        let mut paths: Vec<&RepoPath> = repo
             .files()
-            .map(|(_, path)| path.as_str())
-            .filter(|path| !has_segment(path, "node_modules"))
+            .map(|(_, path)| path)
+            .filter(|path| !has_segment(path.as_str(), "node_modules"))
             .collect();
         paths.sort_unstable();
 
@@ -61,18 +61,18 @@ impl Shared {
         let mut raw = BTreeMap::new();
         let mut code_dirs = Vec::new();
         for path in paths {
-            let name = file_name(path);
+            let name = path.file_name();
             if name == "package.json" {
-                let manifest = read_json(repo, path)
+                let manifest = read_json(repo, path.as_str())
                     .map(|json| Manifest::from_json(&json))
                     .unwrap_or_default();
-                manifests.insert(file_dir(path).to_owned(), manifest);
+                manifests.insert(path.parent().to_owned(), manifest);
             } else if is_config_name(name) {
-                if let Some(json) = read_json(repo, path) {
-                    raw.insert(path.to_owned(), ConfigFile::from_json(&json));
+                if let Some(json) = read_json(repo, path.as_str()) {
+                    raw.insert(path.as_str().to_owned(), ConfigFile::from_json(&json));
                 }
             } else if is_code(name) {
-                code_dirs.push(file_dir(path));
+                code_dirs.push(path.parent());
             }
         }
 
@@ -125,10 +125,10 @@ impl Shared {
     }
 
     /// The root of the project that owns `path`: the deepest one that contains it.
-    pub(crate) fn owner(&self, path: &str) -> Option<&str> {
+    pub(crate) fn owner(&self, path: &RepoPath) -> Option<&str> {
         self.roots
             .iter()
-            .filter(|root| strip_dir(path, root).is_some())
+            .filter(|root| path.is_under(root))
             .max_by_key(|root| root.len())
             .map(String::as_str)
     }

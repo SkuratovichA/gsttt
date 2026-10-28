@@ -20,14 +20,11 @@ pub(crate) fn join_file(dir: &str, name: &str) -> String {
     }
 }
 
-/// The directory part of a repository path, `""` at the root.
+/// The directory part of a path kept as text: the parent of a directory too, which reaches the root `""` that a
+/// [`RepoPath`] cannot name. For a path that is a `RepoPath`, `RepoPath::parent` is the same function, and a test pins
+/// the two together.
 pub(crate) fn file_dir(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(dir, _)| dir)
-}
-
-/// The last segment of a repository path.
-pub(crate) fn file_name(path: &str) -> &str {
-    path.rsplit_once('/').map_or(path, |(_, name)| name)
 }
 
 /// `path` relative to `dir` when it lies under it, so `dist/a.js` under `dist` is `a.js`.
@@ -136,6 +133,23 @@ mod tests {
         fn joins_never_panic(dir in "[a-z/.]{0,12}", relative in "[a-z/.]{0,12}") {
             drop(join_dir(&dir, &relative));
             let _ = strip_dir(&relative, &dir);
+        }
+
+        #[test]
+        fn the_directory_of_a_path_is_its_parent(raw in "[a-z]{1,3}(/[a-z.]{1,3}){0,4}") {
+            if let Ok(path) = RepoPath::normalize(&raw) {
+                prop_assert_eq!(file_dir(path.as_str()), path.parent());
+            }
+        }
+
+        #[test]
+        fn lying_under_a_directory_is_the_same_test_as_stripping_it(
+            raw in "[a-z]{1,3}(/[a-z.]{1,3}){0,4}",
+            dir in "[a-z]{1,3}(/[a-z]{1,3}){0,2}",
+        ) {
+            if let Ok(path) = RepoPath::normalize(&raw) {
+                prop_assert_eq!(strip_dir(path.as_str(), &dir).is_some(), path.is_under(&dir));
+            }
         }
     }
 }

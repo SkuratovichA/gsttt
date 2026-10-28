@@ -1,14 +1,13 @@
 //! Import resolution over the repository's own file list; the disk is never touched.
 
-use gsttt_core::FileId;
 use gsttt_core::fact::{Import, ImportKind, Resolution, UnresolvedReason};
+use gsttt_core::{FileId, RepoPath};
 
 use crate::builtins::is_builtin;
 use crate::config::Effective;
 use crate::json::Json;
 use crate::pathing::{
-    ancestors, file_dir, file_name, is_config_name, is_relative, join_dir, join_file,
-    split_package, strip_dir,
+    ancestors, is_config_name, is_relative, join_dir, join_file, split_package, strip_dir,
 };
 use crate::shared::Shared;
 
@@ -29,12 +28,12 @@ const BUILT: [(&str, &[&str]); 7] = [
 ];
 
 /// Where `import` written in the file `from` of the project rooted at `root` leads.
-pub(crate) fn resolve(shared: &Shared, root: &str, from: &str, import: &Import) -> Resolution {
+pub(crate) fn resolve(shared: &Shared, root: &str, from: &RepoPath, import: &Import) -> Resolution {
     let spec = import.spec.as_str();
-    let dir = file_dir(from);
+    let dir = from.parent();
     if matches!(import.kind, ImportKind::Reference) {
-        return if is_config_name(file_name(from)) {
-            config_reference(shared, root, from, spec)
+        return if is_config_name(from.file_name()) {
+            config_reference(shared, root, from.as_str(), spec)
         } else {
             relative(shared, dir, spec)
         };
