@@ -22,7 +22,7 @@ use gsttt_core::{RepoPath, RepoView};
 use serde_json::{Value, json};
 
 use crate::fakes::NoOptions;
-use crate::tree::Tree;
+use crate::tree::{Tree, failure};
 
 /// The size limit of a run, far above any file here.
 const LIMIT: u64 = 1 << 20;
@@ -515,6 +515,23 @@ fn declared_provides_need_no_process() {
         !tree.root().join("started").exists(),
         "the command ran to say what it provides"
     );
+
+    // A key that is misspelt is refused where it is written: in place of the right one it would read as a missing one, and beside it, be ignored.
+    let in_place = DECLARED.replace("blind_spots", "blind_spot");
+    let beside = DECLARED.replace("via = [\"ktor\"]", "via = [\"ktor\"]\nblind_spot = []");
+    for config in [in_place, beside] {
+        let line = config
+            .lines()
+            .position(|line| line.starts_with("blind_spot "))
+            .unwrap()
+            + 1;
+        let message = failure(&config);
+        assert!(
+            message.starts_with(&format!("{CONFIG_PATH}:{line}:"))
+                && message.contains("unknown field `blind_spot`"),
+            "{message}"
+        );
+    }
 }
 
 #[gsttt_scenario::scenario("config", "Options reach the process")]

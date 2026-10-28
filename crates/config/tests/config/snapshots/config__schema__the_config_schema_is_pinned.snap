@@ -185,6 +185,7 @@ expression: config_schema(&registry.connectors())
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "kind",
         "role",

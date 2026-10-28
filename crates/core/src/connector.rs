@@ -256,6 +256,7 @@ impl LinkedFact {
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[serde(deny_unknown_fields)]
 pub struct Provide {
     /// The family of contract: `http`, `graphql`, `grpc`, `trpc`, `table`, `queue`, `env`, or a name of your own.
     // serde reads a kind from a string, which the derive cannot see; the rules say the same.
