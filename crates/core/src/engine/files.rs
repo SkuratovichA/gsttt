@@ -468,9 +468,10 @@ fn mtime(meta: &Metadata) -> (i64, u32) {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::time::Duration;
 
     use super::*;
-    use crate::engine::testing::{add_worktree, git, init_repo, merge_with_conflict, write};
+    use crate::engine::testing::{add_worktree, git, init_repo, merge_with_conflict, touch, write};
 
     fn scan_dir(dir: &Path, exclude: &[&str]) -> Vec<FileState> {
         scan_limited(dir, exclude, u64::MAX)
@@ -735,6 +736,44 @@ mod tests {
         for state in &second {
             assert_eq!(state.stamp.id, blob_id(state.path.as_str().as_bytes()));
         }
+    }
+
+    #[test]
+    fn a_clean_tracked_file_takes_its_id_from_the_index() {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q", "-b", "main"]);
+        write(dir.path(), "old.ts", "old");
+        write(dir.path(), "future.ts", "future");
+        // The index can tell a file from its stat only when the file is older than the index: one written in the
+        // second `git add` runs in, or after it, may have been saved again within that second.
+        let now = SystemTime::now();
+        touch(&dir.path().join("old.ts"), now - Duration::from_secs(3_600));
+        touch(
+            &dir.path().join("future.ts"),
+            now + Duration::from_secs(3_600),
+        );
+        git(dir.path(), &["add", "-A"]);
+        git(dir.path(), &["commit", "-q", "-m", "initial"]);
+        let workspace =
+            Workspace::locate_with(Utf8Path::from_path(dir.path()).unwrap(), None).unwrap();
+        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
+        // Stored stamps that fit both files and carry an id that is not the one of the content.
+        let stored = |path: &RepoPath| {
+            let stamp = first.iter().find(|state| &state.path == path)?.stamp;
+            Some(Stamp {
+                id: blob_id(b"stored"),
+                ..stamp
+            })
+        };
+
+        let second = scan(&workspace, &[], u64::MAX, &stored).unwrap();
+
+        let id_of = |name: &str| {
+            let state = second.iter().find(|state| state.path.as_str() == name);
+            state.unwrap().stamp.id
+        };
+        assert_eq!(id_of("old.ts"), blob_id(b"old"));
+        assert_eq!(id_of("future.ts"), blob_id(b"stored"));
     }
 
     #[test]

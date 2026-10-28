@@ -594,7 +594,9 @@ mod tests {
     use crate::connector::Erased;
     use crate::contract::ContractKey;
     use crate::engine::changes::ChangeKind;
-    use crate::engine::testing::{Counters, Graphs, Notes, add_worktree, git, init_repo, write};
+    use crate::engine::testing::{
+        Counters, Graphs, Notes, add_worktree, git, init_repo, touch, write,
+    };
     use crate::fact::UnresolvedReason;
     use crate::setup::ModuleSetup;
 
@@ -646,12 +648,6 @@ mod tests {
         Engine::new(workspace, &connectors, &[], setup)
             .refresh()
             .unwrap()
-    }
-
-    /// Sets the modification time of `path` to `time`.
-    fn touch(path: &Path, time: SystemTime) {
-        let file = fs::File::options().write(true).open(path).unwrap();
-        file.set_modified(time).unwrap();
     }
 
     fn kinds(changes: Vec<Change>) -> Vec<(String, ChangeKind)> {
@@ -708,12 +704,30 @@ mod tests {
         let rig = Rig::new();
         let dir = init_repo(&[("a.txt", ""), ("b.txt", ""), ("c.txt", "")]);
         let setup = Setup::default();
+        let depends_on = |run: &Refresh, from: &str, to: &str| {
+            let graph = &run.index.graph;
+            let (from, to) = (graph.file_id(from).unwrap(), graph.file_id(to).unwrap());
+            graph.dependencies(from).iter().any(|(file, _)| *file == to)
+        };
         index(&rig, &dir, &setup).unwrap();
         rig.counters.take();
+        // Saved long ago, so the stamp the run files for it is old enough to be trusted by the next one.
         write(dir.path(), "b.txt", "use a.txt\n");
+        touch(
+            &dir.path().join("b.txt"),
+            SystemTime::now() - Duration::from_secs(3600),
+        );
         let run = index(&rig, &dir, &setup).unwrap();
         assert_eq!((run.parsed, run.reused), (1, 2));
         assert_eq!(rig.counters.take()[0], 1);
+        assert!(depends_on(&run, "b.txt", "a.txt"));
+
+        // A save of the same size: only the modification time tells it from the one before.
+        write(dir.path(), "b.txt", "use c.txt\n");
+        let run = index(&rig, &dir, &setup).unwrap();
+        assert_eq!((run.parsed, run.reused), (1, 2));
+        assert_eq!(rig.counters.take()[0], 1);
+        assert!(depends_on(&run, "b.txt", "c.txt"));
     }
 
     #[gsttt_scenario::scenario("indexing", "A same-size edit in the same clock tick is noticed")]
@@ -1102,13 +1116,36 @@ mod tests {
     #[gsttt_scenario::scenario("indexing", "One thread and eight agree")]
     #[test]
     fn one_thread_and_eight_agree() {
-        let files = [
-            ("a.txt", "use b.txt\nembed graphql query Q\n"),
-            ("b.txt", ""),
-            ("pkg/ROOT", ""),
-            ("pkg/c.txt", "use a.txt\nuse missing.txt\n"),
-            ("q.graphql", "type Query\n"),
-        ];
+        // Enough files for the threads to really share the work, spread over projects: every file imports two
+        // others (some in another project) and every ninth one a file that does not exist, every fifth one
+        // carries an embedded document and every 97th one panics when it is parsed.
+        const FILES: usize = 500;
+        const PROJECTS: usize = 20;
+        let path = |index: usize| format!("p{:02}/f{index:03}.txt", index % PROJECTS);
+        let mut owned: Vec<(String, String)> = (0..FILES)
+            .map(|index| {
+                let mut lines = vec![
+                    format!("use {}", path((index + 1) % FILES)),
+                    format!("use {}", path(index * 7 % FILES)),
+                ];
+                if index % 9 == 0 {
+                    lines.push(format!("use missing{index}.txt"));
+                }
+                if index % 5 == 0 {
+                    lines.push(format!("embed graphql query Q{index}"));
+                }
+                if index % 97 == 0 {
+                    lines.push("boom".to_owned());
+                }
+                (path(index), lines.join("\n") + "\n")
+            })
+            .collect();
+        owned.extend((0..PROJECTS).map(|project| (format!("p{project:02}/ROOT"), String::new())));
+        owned.push(("q.graphql".to_owned(), "type Query\n".to_owned()));
+        let files: Vec<(&str, &str)> = owned
+            .iter()
+            .map(|(path, text)| (path.as_str(), text.as_str()))
+            .collect();
         let built = |threads| {
             let rig = Rig::new();
             let dir = init_repo(&files);
@@ -1120,7 +1157,13 @@ mod tests {
             index.info = IndexInfo::default();
             index
         };
-        assert_eq!(built(1), built(8));
+        let one = built(1);
+        // The fixture has to reach the work the threads share, or agreeing on it proves nothing.
+        let notes = &one.coverage.connectors[0];
+        assert_eq!(notes.projects.len(), PROJECTS + 1);
+        assert!(!notes.failed.is_empty() && !notes.unresolved.is_empty());
+        assert!(one.graph.contract_count() > 0);
+        assert_eq!(one, built(8));
     }
 
     #[gsttt_scenario::scenario("indexing", "A stored index loads back equal")]
@@ -1487,43 +1530,75 @@ mod tests {
         assert!(error.to_string().contains("no-such-branch"), "{error}");
     }
 
+    /// The `(name, detect)` of each pack a connector's `open` received, for every call.
+    fn received(counters: &Counters) -> Vec<Vec<(String, Vec<String>)>> {
+        counters
+            .opened_with()
+            .into_iter()
+            .map(|packs| {
+                packs
+                    .into_iter()
+                    .map(|pack| (pack.name, pack.detect))
+                    .collect()
+            })
+            .collect()
+    }
+
     #[gsttt_scenario::scenario("indexing", "A user pack replaces the built-in one")]
     #[test]
     fn a_user_pack_replaces_the_built_in_one() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "")]);
         let builtin = [
-            pack("express", "ts", "built-in"),
-            pack("axios", "ts", "built-in"),
+            pack("express", "notes", "built-in"),
+            pack("axios", "notes", "built-in"),
         ];
         let setup = Setup {
-            packs: vec![pack("express", "ts", "user")],
+            packs: vec![pack("express", "notes", "user")],
             ..Setup::default()
         };
-        let merged = merge_packs(&builtin, &setup, "ts");
-        let express: Vec<_> = merged
-            .iter()
-            .filter(|pack| pack.name == "express")
-            .collect();
-        assert_eq!(express.len(), 1);
-        assert_eq!(express[0].detect, ["user"]);
-        assert!(merged.iter().any(|pack| pack.name == "axios"));
+        let connectors = rig.connectors();
+        Engine::new(workspace(&dir), &connectors, &builtin, &setup)
+            .refresh()
+            .unwrap();
+        let [mut packs] = <[_; 1]>::try_from(received(rig.counters)).unwrap();
+        packs.sort();
+        assert_eq!(
+            packs,
+            [
+                ("axios".to_owned(), vec!["built-in".to_owned()]),
+                ("express".to_owned(), vec!["user".to_owned()]),
+            ]
+        );
     }
 
     #[gsttt_scenario::scenario("indexing", "A disabled pack reaches nobody")]
     #[test]
     fn a_disabled_pack_reaches_nobody() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", ""), ("q.graphql", "")]);
         let builtin = [
-            pack("axios", "ts", "built-in"),
-            pack("axios", "python", "built-in"),
-            pack("fastapi", "python", "built-in"),
+            pack("axios", "notes", "built-in"),
+            pack("axios", "graphs", "built-in"),
+            pack("fastapi", "graphs", "built-in"),
         ];
         let setup = Setup {
             disable_packs: vec!["axios".to_owned()],
             ..Setup::default()
         };
-        for language in ["ts", "python"] {
-            let merged = merge_packs(&builtin, &setup, language);
-            assert!(merged.iter().all(|pack| pack.name != "axios"));
-        }
+        let connectors = rig.connectors();
+        Engine::new(workspace(&dir), &connectors, &builtin, &setup)
+            .refresh()
+            .unwrap();
+        // The pack that stays proves the packs reach `open` at all.
+        assert_eq!(
+            received(rig.counters),
+            [Vec::<(String, Vec<String>)>::new()]
+        );
+        assert_eq!(
+            received(rig.graph_counters),
+            [vec![("fastapi".to_owned(), vec!["built-in".to_owned()])]]
+        );
     }
 
     #[gsttt_scenario::scenario("indexing", "Unclaimed files are counted by language")]

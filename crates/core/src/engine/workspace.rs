@@ -169,11 +169,66 @@ fn cache_home(xdg: Option<OsString>, home: Option<OsString>) -> Option<Utf8PathB
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+
     use super::*;
-    use crate::engine::testing::{git, init_repo};
+    use crate::engine::testing::{git, in_environment, init_repo};
 
     fn utf8(path: &Path) -> &Utf8Path {
         Utf8Path::from_path(path).unwrap()
+    }
+
+    /// The child side of [`locate_in`]: prints what `Workspace::locate` makes of the directory in
+    /// `GSTTT_TEST_START`, in the environment the parent chose.
+    #[test]
+    #[ignore = "runs in a child process of the tests that set the environment"]
+    fn locate_for_the_parent_process() {
+        let Some(start) = env::var_os("GSTTT_TEST_START") else {
+            return;
+        };
+        let start = Utf8PathBuf::from_path_buf(PathBuf::from(start)).unwrap();
+        // The harness has not ended its own line yet.
+        println!();
+        match Workspace::locate(&start) {
+            Ok(workspace) => {
+                println!("root={}", workspace.root());
+                println!("git={}", workspace.git().is_some());
+                println!("state_dir={}", workspace.state_dir());
+            }
+            Err(error) => println!("error={error}"),
+        }
+    }
+
+    /// What `Workspace::locate` prints for `start` in a process whose environment has `set` added and `remove`
+    /// taken out, as `name=value` lines.
+    fn locate_in(start: &Path, set: &[(&str, &str)], remove: &[&str]) -> String {
+        let mut set: Vec<(&str, &OsStr)> = set
+            .iter()
+            .map(|&(key, value)| (key, OsStr::new(value)))
+            .collect();
+        set.push(("GSTTT_TEST_START", start.as_os_str()));
+        in_environment(
+            "engine::workspace::tests::locate_for_the_parent_process",
+            &set,
+            remove,
+        )
+    }
+
+    /// The value printed under `name`.
+    fn printed<'a>(output: &'a str, name: &str) -> &'a str {
+        let prefix = format!("{name}=");
+        output
+            .lines()
+            .find_map(|line| line.strip_prefix(prefix.as_str()))
+            .unwrap_or_else(|| panic!("no `{name}` in {output}"))
+    }
+
+    /// The state dir `Workspace::locate` is meant to give a directory outside git: `cache_home/gsttt/<hash of the
+    /// root>`.
+    fn state_dir_under(cache_home: &str, dir: &Path) -> String {
+        let root = canonical(dir).unwrap();
+        let hash = format!("{:016x}", xxh3_64(root.as_str().as_bytes()));
+        format!("{cache_home}/gsttt/{hash}")
     }
 
     #[gsttt_scenario::scenario("indexing", "Linked worktree has its own state dir")]
@@ -211,18 +266,36 @@ mod tests {
     #[test]
     fn a_directory_outside_git_keeps_its_state_in_the_cache_home() {
         let dir = tempfile::tempdir().unwrap();
-        let cache = Utf8PathBuf::from("/c");
 
-        let workspace = Workspace::locate_with(utf8(dir.path()), Some(cache)).unwrap();
+        // HOME is set as well: the cache home wins over it.
+        let output = locate_in(dir.path(), &[("XDG_CACHE_HOME", "/c"), ("HOME", "/h")], &[]);
 
-        let root = canonical(dir.path()).unwrap();
-        let hash = format!("{:016x}", xxh3_64(root.as_str().as_bytes()));
-        assert_eq!(workspace.root(), root);
+        assert_eq!(printed(&output, "root"), canonical(dir.path()).unwrap());
         assert_eq!(
-            workspace.state_dir(),
-            Utf8Path::new("/c").join("gsttt").join(hash)
+            printed(&output, "state_dir"),
+            state_dir_under("/c", dir.path())
         );
-        assert!(workspace.git().is_none());
+        assert_eq!(printed(&output, "git"), "false");
+    }
+
+    #[test]
+    fn home_keeps_the_state_when_the_cache_home_is_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = locate_in(dir.path(), &[("HOME", "/h")], &["XDG_CACHE_HOME"]);
+        assert_eq!(
+            printed(&output, "state_dir"),
+            state_dir_under("/h/.cache", dir.path())
+        );
+    }
+
+    #[test]
+    fn a_directory_outside_git_needs_a_cache_home_or_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = locate_in(dir.path(), &[], &["XDG_CACHE_HOME", "HOME"]);
+        assert!(
+            printed(&output, "error").contains("neither XDG_CACHE_HOME nor HOME is set"),
+            "{output}"
+        );
     }
 
     #[test]

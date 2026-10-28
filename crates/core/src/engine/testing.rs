@@ -1,10 +1,12 @@
 //! Fixtures shared by the engine's tests: throw-away git repositories, a small tree to run the pipeline over and
 //! connectors that count their calls.
 
+use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, Output};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::SystemTime;
 
 use camino::Utf8PathBuf;
 use schemars::JsonSchema;
@@ -47,6 +49,35 @@ pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
+/// Runs the test `name` in a child process and returns what it printed. The test has to be `#[ignore]`d, so that a
+/// run of the suite skips it. The child's environment is the parent's with `set` added and `remove` taken out: the
+/// environment of a running process cannot be changed from safe code, and tests share one process under
+/// `cargo test`.
+pub(crate) fn in_environment(name: &str, set: &[(&str, &OsStr)], remove: &[&str]) -> String {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command.args([
+        "--ignored",
+        "--exact",
+        name,
+        "--nocapture",
+        "--test-threads=1",
+    ]);
+    for key in remove {
+        command.env_remove(key);
+    }
+    for (key, value) in set {
+        command.env(key, value);
+    }
+    let output = command.output().unwrap();
+    let printed = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(
+        output.status.success() && printed.contains("1 passed"),
+        "{name} did not pass in a child process: {printed}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    printed
+}
+
 /// Merges `branch` into the checked-out branch, which has to stop on a conflict and leave the index conflicted.
 pub(crate) fn merge_with_conflict(dir: &Path, branch: &str) {
     let output = run_git(dir, &["merge", "-q", branch]);
@@ -54,6 +85,12 @@ pub(crate) fn merge_with_conflict(dir: &Path, branch: &str) {
         !output.status.success(),
         "merging {branch} was meant to conflict"
     );
+}
+
+/// Sets the modification time of `path` to `time`.
+pub(crate) fn touch(path: &Path, time: SystemTime) {
+    let file = std::fs::File::options().write(true).open(path).unwrap();
+    file.set_modified(time).unwrap();
 }
 
 /// Writes `text` to `path` under `dir`, creating the directories above it.
@@ -109,6 +146,8 @@ pub(crate) struct Counters {
     prepared: Mutex<Vec<(String, Vec<String>)>>,
     /// A file, as `(path, text)`, that the next `open` saves again, or removes when there is no text.
     rewrite_on_open: Mutex<Option<(String, Option<String>)>>,
+    /// The packs each `open` received, one list per call.
+    opened_with: Mutex<Vec<Vec<Pack>>>,
 }
 
 impl Counters {
@@ -122,6 +161,7 @@ impl Counters {
             resolved_before_prepare: AtomicUsize::new(0),
             prepared: Mutex::new(Vec::new()),
             rewrite_on_open: Mutex::new(None),
+            opened_with: Mutex::new(Vec::new()),
         }
     }
 
@@ -150,6 +190,11 @@ impl Counters {
     /// Makes the next `open` of a [`Notes`] connector remove `path`: a file that is gone by the time it is read.
     pub(crate) fn remove_on_next_open(&self, path: &str) {
         *self.rewrite_on_open.lock().unwrap() = Some((path.to_owned(), None));
+    }
+
+    /// The packs each `open` received, in the order of the calls.
+    pub(crate) fn opened_with(&self) -> Vec<Vec<Pack>> {
+        self.opened_with.lock().unwrap().clone()
     }
 
     /// The `prepare` calls as `(project root, file paths)`, sorted.
@@ -181,7 +226,8 @@ pub(crate) struct Options {
 /// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. A file called `explode.txt` makes
 /// `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in
 /// every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves
-/// the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names.
+/// the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names,
+/// and keeps the packs it received for [`Counters::opened_with`].
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -214,8 +260,13 @@ impl Connector for Notes {
         &self,
         repo: &RepoView,
         _: &Options,
-        _: &[Pack],
+        packs: &[Pack],
     ) -> Result<Vec<NotesProject>, ConnectorError> {
+        self.counters
+            .opened_with
+            .lock()
+            .unwrap()
+            .push(packs.to_vec());
         let rewrite = self.counters.rewrite_on_open.lock().unwrap().take();
         if let Some((path, text)) = rewrite {
             match text {
@@ -338,7 +389,8 @@ impl Project for NotesProject {
 }
 
 /// Reads `.graphql` files as nothing and embedded GraphQL as one site per document. A document that starts with
-/// `@N ` has its fact on line N of the document instead of line 1.
+/// `@N ` has its fact on line N of the document instead of line 1. `open` keeps the packs it received for
+/// [`Counters::opened_with`].
 pub(crate) struct Graphs {
     pub(crate) counters: &'static Counters,
     /// The connector's name, so two of them can compete for the same files.
@@ -370,8 +422,13 @@ impl Connector for Graphs {
         &self,
         _: &RepoView,
         _: &Options,
-        _: &[Pack],
+        packs: &[Pack],
     ) -> Result<Vec<GraphsProject>, ConnectorError> {
+        self.counters
+            .opened_with
+            .lock()
+            .unwrap()
+            .push(packs.to_vec());
         Ok(vec![GraphsProject {
             counters: self.counters,
         }])

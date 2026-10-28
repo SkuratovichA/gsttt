@@ -44,3 +44,8 @@
 - [x] 5.15 The build time in the snapshot header is printed by `jiff` in place of a hand-written calendar
 - [x] 5.16 The untracked files are listed by `gix`'s directory walk, so the repository's own ignore settings (`core.excludesFile`, `core.ignorecase`, `info/exclude`) apply and the walk no longer copies the loop of `RepoView::scan`; an untracked directory that cannot be opened is left out; the unused `status` and `blob-diff` features of `gix` are gone
 - [x] 5.17 The spec and the architecture document name an unclaimed file the way coverage reports it: by its extension (`kt`) with the language of that extension (Kotlin)
+- [x] 5.18 A test reaches the git index shortcut: a clean tracked file with an old modification time takes the id git recorded, and one in the racy window is asked from its stored stamp
+- [x] 5.19 The packs a refresh gives `open` are checked through the engine: a pack of the setup replaces the built-in one, and a disabled pack reaches no connector
+- [x] 5.20 "One thread and eight agree" runs over 500 files in 20 projects, with imports across projects, unresolved ones, embedded documents and parses that panic
+- [x] 5.21 "Only edited files are parsed" also saves a file again with the same size, which only the modification time tells from the save before
+- [x] 5.22 "Directory outside git uses the cache home" runs `Workspace::locate` in a child process with `XDG_CACHE_HOME` set, and the fallback to `HOME` and the error without either are checked the same way
