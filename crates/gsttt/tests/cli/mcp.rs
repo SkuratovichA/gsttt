@@ -163,8 +163,7 @@ impl Server {
         }
     }
 
-    /// Calls `tool` with `arguments` and returns the text of its result, which fails the test unless the result has
-    /// `isError` set.
+    /// Calls `tool` with `arguments` and returns the text of its result, which fails the test unless the result has `isError` set.
     fn fail(&mut self, tool: &str, arguments: &Value) -> String {
         let reply = self.call(tool, arguments);
         assert!(reply.is_error, "{reply:?}");
