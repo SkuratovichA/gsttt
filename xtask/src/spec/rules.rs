@@ -289,7 +289,7 @@ struct Held<'a> {
     requirement: &'a Requirement,
 }
 
-/// The requirements that stand once the changes read so far are archived, by capability and name, the scenarios that those changes took away, and the modified requirements that `openspec archive` would refuse. A name holds more than one requirement only where two specs or two changes add it, which `openspec archive` takes only when the two are the same block: both stay, so that the gate reports the scenarios they share.
+/// The requirements that stand once the changes read so far are archived, by capability and name, the scenarios that those changes took away, and the blocks and renames that `openspec archive` would refuse. A name holds more than one requirement only where a spec writes it twice, a delta adds it twice or a change adds a name that already stands, which `openspec archive` takes only when the blocks are the same: all stay, so that the gate reports the scenarios they share, and a modified block is compared with the first.
 struct Fold<'a> {
     standing: BTreeMap<Key, Vec<Held<'a>>>,
     dropped: BTreeMap<Key, Dropped>,
@@ -436,9 +436,7 @@ fn effective(openspec: &OpenSpec, changes: &[Open]) -> Effective {
     }
 }
 
-/// The name under which the main spec has a requirement that `delta` modifies. A requirement that
-/// is renamed and modified appears under its new name in the delta and under its old name in the
-/// main spec.
+/// The name under which a requirement that `delta` modifies stands before the change is archived, in the main specs or in an earlier open change. A requirement that is renamed and modified appears under its new name in the delta and under its old name before the change.
 fn main_name<'a>(delta: &'a Delta, modified: &'a Requirement) -> &'a String {
     delta
         .renamed

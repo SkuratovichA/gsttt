@@ -50,7 +50,7 @@ pub struct Spec {
 /// A requirement that the `REMOVED` section of a delta names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removed {
-    /// The name of the requirement in the main spec.
+    /// The name the requirement stands under before the change is archived, in the main specs or in an earlier open change.
     pub name: String,
     /// The line where the delta names it, counted from 1.
     pub line: usize,
@@ -59,7 +59,7 @@ pub struct Removed {
 /// A `FROM` and `TO` pair in the `RENAMED` section of a delta.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Renamed {
-    /// The name of the requirement in the main spec.
+    /// The name the requirement stands under before the change is archived, in the main specs or in an earlier open change.
     pub from: String,
     /// The name it has after the change is archived.
     pub to: String,
@@ -78,7 +78,7 @@ pub struct Delta {
     pub purpose: Option<Purpose>,
     /// The requirements of the `ADDED` section.
     pub added: Vec<Requirement>,
-    /// The requirements of the `MODIFIED` section, each replacing the main requirement of that name.
+    /// The requirements of the `MODIFIED` section, each replacing the requirement of that name that stands once the `RENAMED` section is applied, in the main specs or in an earlier open change.
     pub modified: Vec<Requirement>,
     /// The requirements of the `REMOVED` section.
     pub removed: Vec<Removed>,
