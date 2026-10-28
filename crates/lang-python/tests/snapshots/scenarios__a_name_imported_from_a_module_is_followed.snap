@@ -1,0 +1,54 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"requests_name.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "requests",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "get"
+      ],
+      "to": {
+        "external": "requests"
+      }
+    },
+    {
+      "spec": "requests",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "post"
+      ],
+      "to": {
+        "external": "requests"
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "http GET /bookings/{}",
+      "role": "calls",
+      "line": 8,
+      "via": "requests"
+    },
+    {
+      "key": "http POST /bookings/{}/cancel",
+      "role": "calls",
+      "line": 12,
+      "via": "requests"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [],
+  "path": "requests_name.py",
+  "project": "python ."
+}

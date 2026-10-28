@@ -1,7 +1,6 @@
 //! Dense ids, and the vectors and sets keyed by them.
 //!
-//! Each file and each contract gets a `u32` at index time. A query then walks flat arrays instead of hashing
-//! paths, and a set of files is a bitset.
+//! Each file and each contract gets a `u32` at index time. A query then walks flat arrays instead of hashing paths, and a set of files is a bitset.
 
 use std::fmt;
 use std::hash::Hash;
@@ -13,8 +12,7 @@ use serde::{Deserialize, Serialize};
 
 /// A dense position in an [`IdVec`].
 pub trait Id: Copy + Eq + Ord + Hash + fmt::Debug + Send + Sync + 'static {
-    /// The id at `index`. An index past `u32::MAX` saturates; the engine refuses such repositories before it
-    /// makes any id.
+    /// The id at `index`. An index past `u32::MAX` saturates; the engine refuses such repositories before it makes any id.
     fn from_index(index: usize) -> Self;
     /// The position this id stands for.
     fn index(self) -> usize;
@@ -78,8 +76,7 @@ mod id_types {
     );
 
     define_id!(
-        /// A contract of the index. Contracts are numbered in key order: by kind, in the order
-        /// [`ContractKind`](crate::contract::ContractKind) declares them, then by name.
+        /// A contract of the index. Contracts are numbered in key order: by kind, in the order [`ContractKind`](crate::contract::ContractKind) declares them, then by name.
         ContractId
     );
 

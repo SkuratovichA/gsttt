@@ -1,8 +1,6 @@
 //! What a run could see, and what it could not.
 //!
-//! Every answer carries its coverage, because "nothing imports this file" means something only next to "41
-//! dynamic imports are computed at run time". A file a connector could not read, a file no connector reads, an
-//! import that points nowhere: each becomes a count here instead of a silent hole.
+//! Every answer carries its coverage, because "nothing imports this file" means something only next to "41 dynamic imports are computed at run time". A file a connector could not read, a file no connector reads, an import that points nowhere: each becomes a count here instead of a silent hole.
 
 use serde::{Deserialize, Serialize};
 
@@ -33,8 +31,7 @@ pub struct Coverage {
     pub unclaimed: Vec<Unclaimed>,
     /// Files left out before any connector saw them: over the size limit, not UTF-8, unreadable.
     pub skipped: Vec<FailedFile>,
-    /// Connector calls that failed outside the parse of one file (opening a project, preparing, linking), one line
-    /// each. The run went on without what they would have added.
+    /// What the run could not do, one line each: a connector call that failed outside the parse of one file (opening a project, preparing, linking), a HEAD or a history that git could not read, a directory that could not be read. The run went on without what they would have added. The program that embeds the engine may add lines of its own, such as an external connector that waits for trust; the coverage answer lists all of them, whatever it cuts of its other lists.
     #[serde(default)]
     pub problems: Vec<String>,
 }
@@ -68,8 +65,7 @@ pub struct ConnectorCoverage {
     pub external: u32,
     /// Imports that point nowhere, by reason, most first.
     pub unresolved: Vec<ReasonCount>,
-    /// Sites it saw but could not read, by reason, most first: an import computed at run time, a URL built from
-    /// variables.
+    /// Sites it saw but could not read, by reason, most first: an import computed at run time, a URL built from variables.
     pub blind: Vec<ReasonCount>,
     pub provides: Vec<Provide>,
 }
@@ -156,8 +152,7 @@ impl Unclaimed {
     }
 }
 
-/// Programming languages by extension, sorted by extension, so coverage can name the code nothing read:
-/// "Kotlin: 120 files, no connector".
+/// Programming languages by extension, sorted by extension, so coverage can name the code nothing read: "Kotlin: 120 files, no connector".
 const LANGUAGES: &[(&str, &str)] = &[
     ("c", "C"),
     ("cc", "C++"),

@@ -1,0 +1,49 @@
+---
+source: crates/contracts/tests/contracts/sql.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "host",
+      "root": "."
+    },
+    {
+      "connector": "sql",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [
+        {
+          "lang": "sql",
+          "line": 7,
+          "text": "SELECT id FROM bookings",
+          "via": "host",
+          "read_by": "sql",
+          "contracts": [
+            {
+              "key": "table bookings",
+              "role": "calls",
+              "line": 7,
+              "via": "sql"
+            }
+          ]
+        }
+      ],
+      "unresolved": [],
+      "path": "app/repo.py",
+      "project": "host ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

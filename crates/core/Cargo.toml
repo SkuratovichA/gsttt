@@ -10,12 +10,14 @@ publish.workspace = true
 
 [dependencies]
 camino = { workspace = true, features = ["serde1"] }
+faster-hex.workspace = true
 fixedbitset.workspace = true
 foldhash.workspace = true
 gix = { workspace = true, features = ["sha1", "dirwalk", "revision", "parallel"] }
 globset.workspace = true
 ignore.workspace = true
 jiff.workspace = true
+jsonc-parser.workspace = true
 memchr.workspace = true
 rayon.workspace = true
 rkyv.workspace = true
@@ -28,7 +30,12 @@ thiserror.workspace = true
 tracing.workspace = true
 xxhash-rust.workspace = true
 
+[features]
+# Indexes written as lists of facts, for tests. The tests of this crate turn it on through the dev-dependency on itself below, and the crates that put questions to an index turn it on in their own.
+testing = []
+
 [dev-dependencies]
+gsttt-core = { path = ".", features = ["testing"] }
 gsttt-scenario.workspace = true
 insta.workspace = true
 proptest.workspace = true

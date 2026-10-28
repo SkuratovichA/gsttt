@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::contract::{ContractKey, Role};
 use crate::ids::FileId;
+use crate::text::thousands;
 
 /// A 1-based line number.
 pub type Line = u32;
@@ -174,8 +175,7 @@ pub struct Import {
     pub kind: ImportKind,
     pub line: Line,
     pub flags: ImportFlags,
-    /// The names imported from `spec` when resolution depends on them: Python `from pkg import sub` may import
-    /// the module `pkg/sub.py`. Empty otherwise.
+    /// The names imported from `spec` when resolution depends on them: Python `from pkg import sub` may import the module `pkg/sub.py`. Empty otherwise.
     pub names: Vec<String>,
 }
 
@@ -310,6 +310,37 @@ pub enum ParseStatus {
     Recovered { errors: u32, first_error_line: Line },
     /// Nothing was read.
     Failed(ParseFailure),
+}
+
+/// Counts the syntax errors a recovering parser reports for one file and keeps the smallest line among them, because a parser does not always report its errors in the order of the text. [`ErrorCount::status`] turns the count into the [`ParseStatus`] of the file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ErrorCount {
+    errors: u32,
+    first_line: Line,
+}
+
+impl ErrorCount {
+    /// Counts one error at `line`. The count stops at `u32::MAX`, and the line kept is the smallest one noted.
+    pub fn note(&mut self, line: Line) {
+        self.first_line = if self.errors == 0 {
+            line
+        } else {
+            self.first_line.min(line)
+        };
+        self.errors = self.errors.saturating_add(1);
+    }
+
+    /// [`ParseStatus::Ok`] when no error was noted, otherwise [`ParseStatus::Recovered`] with the count and the smallest line noted.
+    pub fn status(self) -> ParseStatus {
+        if self.errors == 0 {
+            ParseStatus::Ok
+        } else {
+            ParseStatus::Recovered {
+                errors: self.errors,
+                first_error_line: self.first_line,
+            }
+        }
+    }
 }
 
 /// Why a file could not be parsed.
@@ -450,9 +481,70 @@ impl fmt::Display for UnresolvedReason {
     }
 }
 
+/// How a file failed, in a sentence part: `syntax error at line 3: unexpected token`.
+impl ParseFailure {
+    /// Whether the engine put the file aside before its connector saw it: past the size limit, not UTF-8 or not readable. Such a file is owned and counted, and it is not a failure of the connector's parse.
+    pub fn is_skipped(&self) -> bool {
+        match self {
+            Self::TooLarge { .. } | Self::NotUtf8 | Self::Unreadable { .. } => true,
+            Self::Panicked { .. } | Self::Syntax { .. } => false,
+        }
+    }
+}
+
+impl fmt::Display for ParseFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Panicked { message } => write!(f, "the parser panicked: {message}"),
+            Self::TooLarge { bytes, limit } => write!(
+                f,
+                "{} bytes, over the limit of {}",
+                thousands(*bytes),
+                thousands(*limit)
+            ),
+            Self::NotUtf8 => f.write_str("not valid UTF-8"),
+            Self::Unreadable { message } => write!(f, "could not be read: {message}"),
+            Self::Syntax { line, message } => write!(f, "syntax error at line {line}: {message}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn errors_are_counted_and_the_smallest_line_is_kept() {
+        assert_eq!(ErrorCount::default().status(), ParseStatus::Ok);
+        let mut count = ErrorCount::default();
+        for line in [9, 4, 7] {
+            count.note(line);
+        }
+        assert_eq!(
+            count.status(),
+            ParseStatus::Recovered {
+                errors: 3,
+                first_error_line: 4
+            }
+        );
+    }
+
+    #[test]
+    fn the_count_saturates_at_the_largest_u32() {
+        let mut count = ErrorCount {
+            errors: u32::MAX - 1,
+            first_line: 5,
+        };
+        count.note(8);
+        count.note(2);
+        assert_eq!(
+            count.status(),
+            ParseStatus::Recovered {
+                errors: u32::MAX,
+                first_error_line: 2
+            }
+        );
+    }
 
     #[test]
     fn flags_combine() {
@@ -460,6 +552,57 @@ mod tests {
         assert!(flags.contains(ImportFlags::TYPE_ONLY) && !flags.contains(ImportFlags::TEST_ONLY));
         assert_eq!(format!("{flags:?}"), r#"{"TYPE_ONLY", "OPTIONAL"}"#);
         assert!(ImportFlags::NONE.is_empty());
+    }
+
+    /// One failure of every kind.
+    fn every_failure() -> [ParseFailure; 5] {
+        [
+            ParseFailure::Panicked {
+                message: "boom".to_owned(),
+            },
+            ParseFailure::TooLarge {
+                bytes: 2_000_000,
+                limit: 1_000_000,
+            },
+            ParseFailure::NotUtf8,
+            ParseFailure::Unreadable {
+                message: "permission denied".to_owned(),
+            },
+            ParseFailure::Syntax {
+                line: 3,
+                message: "unexpected token".to_owned(),
+            },
+        ]
+    }
+
+    #[test]
+    fn a_failure_is_spelled_as_a_sentence_part() {
+        let failures = every_failure();
+        let spelled: Vec<String> = failures.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            spelled,
+            [
+                "the parser panicked: boom",
+                "2,000,000 bytes, over the limit of 1,000,000",
+                "not valid UTF-8",
+                "could not be read: permission denied",
+                "syntax error at line 3: unexpected token",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_put_aside_is_skipped_and_a_failed_parse_is_not() {
+        for failure in every_failure() {
+            // A match without a wildcard, so that a new variant does not compile until it is classified here as well.
+            let put_aside = match failure {
+                ParseFailure::TooLarge { .. }
+                | ParseFailure::NotUtf8
+                | ParseFailure::Unreadable { .. } => true,
+                ParseFailure::Panicked { .. } | ParseFailure::Syntax { .. } => false,
+            };
+            assert_eq!(failure.is_skipped(), put_aside, "{failure}");
+        }
     }
 
     #[test]

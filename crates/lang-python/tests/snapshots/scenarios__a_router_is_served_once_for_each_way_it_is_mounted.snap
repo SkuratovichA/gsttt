@@ -1,0 +1,77 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "json!({\n    \"main\": tree.file_json(\"app/main.py\"), \"linked\": tree.json[\"linked\"]\n})"
+---
+{
+  "main": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "fastapi",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [
+          "FastAPI"
+        ],
+        "to": {
+          "external": "fastapi"
+        }
+      },
+      {
+        "spec": "app",
+        "kind": "static",
+        "line": 3,
+        "flags": 0,
+        "names": [
+          "health",
+          "items"
+        ],
+        "to": {
+          "files": [
+            "app/health.py",
+            "app/items.py"
+          ]
+        }
+      }
+    ],
+    "contracts": [
+      {
+        "key": "http GET /ping",
+        "role": "serves",
+        "line": 11,
+        "via": "fastapi"
+      }
+    ],
+    "embedded": [],
+    "unresolved": [],
+    "path": "app/main.py",
+    "project": "python ."
+  },
+  "linked": [
+    {
+      "key": "http GET /health",
+      "role": "serves",
+      "line": 6,
+      "via": "fastapi",
+      "file": "app/health.py"
+    },
+    {
+      "key": "http GET /items/{}",
+      "role": "serves",
+      "line": 6,
+      "via": "fastapi",
+      "file": "app/items.py"
+    },
+    {
+      "key": "http GET /v2/items/{}",
+      "role": "serves",
+      "line": 6,
+      "via": "fastapi",
+      "file": "app/items.py"
+    }
+  ]
+}

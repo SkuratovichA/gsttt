@@ -8,15 +8,13 @@ use foldhash::fast::RandomState;
 use super::pipeline::{Output, display_root};
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
-use crate::fact::{Line, ParseFailure, ParseStatus, UnresolvedReason, UnresolvedSite};
+use crate::fact::{Line, ParseStatus, UnresolvedReason, UnresolvedSite};
 use crate::graph::{ContractSite, Edge, GraphBuilder};
 use crate::ids::{FileId, Id};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
 use crate::repo::RepoView;
 
-/// Builds the index of the files of `repo` from what the pipeline found. `ran` names the connectors that took part
-/// in registry order, so one that opened no project still has its line in the coverage. The time the build took is
-/// added to `info` as the graph phase.
+/// Builds the index of the files of `repo` from what the pipeline found. `ran` names the connectors that took part in registry order, so one that opened no project still has its line in the coverage. The time the build took is added to `info` as the graph phase.
 pub fn build_index(
     repo: &RepoView,
     output: &Output,
@@ -63,8 +61,7 @@ pub fn build_index(
         })
         .collect();
 
-    // The own facts that the link keyed again, each by the file, line and role of the linked fact that names it.
-    // Probed per own fact and never iterated, so the order of a hash set cannot reach the output.
+    // The own facts that the link keyed again, each by the file, line and role of the linked fact that names it. Probed per own fact and never iterated, so the order of a hash set cannot reach the output.
     let replaced: HashSet<(FileId, Line, Role, &ContractKey), RandomState> = output
         .linked
         .iter()
@@ -87,11 +84,7 @@ pub fn build_index(
             continue;
         };
         match &file.facts.status {
-            ParseStatus::Failed(
-                failure @ (ParseFailure::TooLarge { .. }
-                | ParseFailure::NotUtf8
-                | ParseFailure::Unreadable { .. }),
-            ) => {
+            ParseStatus::Failed(failure) if failure.is_skipped() => {
                 // The connector never saw this file, so it is listed apart from the files that failed in a parse.
                 entry.files = entry.files.saturating_add(1);
                 skipped.push(FailedFile {

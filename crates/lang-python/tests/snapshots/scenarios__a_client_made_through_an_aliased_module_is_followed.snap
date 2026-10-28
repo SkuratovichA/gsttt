@@ -1,0 +1,40 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"httpx_module.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "httpx",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "external": "httpx"
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "http GET /bookings/{}",
+      "role": "calls",
+      "line": 7,
+      "via": "httpx"
+    },
+    {
+      "key": "http GET /v1/bookings",
+      "role": "calls",
+      "line": 12,
+      "via": "httpx"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [],
+  "path": "httpx_module.py",
+  "project": "python ."
+}

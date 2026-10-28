@@ -1,5 +1,4 @@
-//! Fixtures shared by the engine's tests: throw-away git repositories, a small tree to run the pipeline over and
-//! connectors that count their calls.
+//! Fixtures shared by the engine's tests: throw-away git repositories, a small tree to run the pipeline over and connectors that count their calls.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -49,10 +48,7 @@ pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
-/// Runs the test `name` in a child process and returns what it printed. The test has to be `#[ignore]`d, so that a
-/// run of the suite skips it. The child's environment is the parent's with `set` added and `remove` taken out: the
-/// environment of a running process cannot be changed from safe code, and tests share one process under
-/// `cargo test`.
+/// Runs the test `name` in a child process and returns what it printed. The test has to be `#[ignore]`d, so that a run of the suite skips it. The child's environment is the parent's with `set` added and `remove` taken out: the environment of a running process cannot be changed from safe code, and tests share one process under `cargo test`.
 pub(crate) fn in_environment(name: &str, set: &[(&str, &OsStr)], remove: &[&str]) -> String {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command.args([
@@ -100,20 +96,16 @@ pub(crate) fn write(dir: &Path, path: &str, text: &str) {
     std::fs::write(target, text).unwrap();
 }
 
-/// A directory that the process cannot open until the value is dropped, which puts the permissions back: the
-/// temporary directory it is in can be removed even when the test fails first.
-#[cfg(unix)]
+/// A directory that the process cannot open until the value is dropped, which puts the permissions back: the temporary directory it is in can be removed even when the test fails first.
 pub(crate) struct Locked(PathBuf);
 
-#[cfg(unix)]
 impl Locked {
     /// Takes every permission off `dir`, so that it can be neither listed nor searched.
     pub(crate) fn new(dir: &Path) -> Option<Self> {
         Self::with_mode(dir, 0o000)
     }
 
-    /// Gives `dir` the permissions `mode`. `None` when the process can list `dir` and search it anyway, as one
-    /// running as root can: a test could not show that the directory was left out.
+    /// Gives `dir` the permissions `mode`. `None` when the process can list `dir` and search it anyway, as one running as root can: a test could not show that the directory was left out.
     pub(crate) fn with_mode(dir: &Path, mode: u32) -> Option<Self> {
         use std::os::unix::fs::PermissionsExt;
 
@@ -125,7 +117,6 @@ impl Locked {
     }
 }
 
-#[cfg(unix)]
 impl Drop for Locked {
     fn drop(&mut self) {
         use std::os::unix::fs::PermissionsExt;
@@ -150,8 +141,7 @@ pub(crate) fn init_repo(files: &[(&str, &str)]) -> tempfile::TempDir {
     dir
 }
 
-/// A linked work tree of the repository in `dir`, on a new branch `name`. The directory it is in goes when the
-/// first value does.
+/// A linked work tree of the repository in `dir`, on a new branch `name`. The directory it is in goes when the first value does.
 pub(crate) fn add_worktree(dir: &Path, name: &str) -> (tempfile::TempDir, Utf8PathBuf) {
     let holder = tempfile::tempdir().unwrap();
     let linked = holder.path().join(name);
@@ -219,8 +209,7 @@ impl Counters {
         self.roots.swap(0, Ordering::Relaxed)
     }
 
-    /// Makes the next `open` of a [`Notes`] connector save `text` to `path`: an editor saving after a run listed
-    /// the files and before it reads them.
+    /// Makes the next `open` of a [`Notes`] connector save `text` to `path`: an editor saving after a run listed the files and before it reads them.
     pub(crate) fn rewrite_on_next_open(&self, path: &str, text: &str) {
         *self.rewrite_on_open.lock().unwrap() = Some((path.to_owned(), Some(text.to_owned())));
     }
@@ -260,15 +249,7 @@ pub(crate) struct Options {
     pub(crate) tag: String,
 }
 
-/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link`
-/// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a
-/// contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link`
-/// returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount
-/// keys a route; without `replaces` it names none. A file called `explode.txt` makes `matches` panic, and a file
-/// called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a
-/// `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file
-/// [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps
-/// the packs it received for [`Counters::opened_with`].
+/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -442,8 +423,7 @@ impl Project for NotesProject {
     }
 }
 
-/// The fact that `<line> <role> <contract key>` spells and the key after ` replaces `, when there is one:
-/// `1 serves http GET /api/bookings/{} replaces http GET /bookings/{}`.
+/// The fact that `<line> <role> <contract key>` spells and the key after ` replaces `, when there is one: `1 serves http GET /api/bookings/{} replaces http GET /bookings/{}`.
 fn linked_line(text: &str) -> (ContractFact, Option<ContractKey>) {
     match text.split_once(" replaces ") {
         Some((declared, replaced)) => (
@@ -468,9 +448,7 @@ fn declared_fact(text: &str) -> ContractFact {
     }
 }
 
-/// Reads `.graphql` files as nothing and embedded GraphQL as one site per document. A document that starts with
-/// `@N ` has its fact on line N of the document instead of line 1. `open` keeps the packs it received for
-/// [`Counters::opened_with`].
+/// Reads `.graphql` files as nothing and embedded GraphQL as one site per document. A document that starts with `@N ` has its fact on line N of the document instead of line 1. `open` keeps the packs it received for [`Counters::opened_with`].
 pub(crate) struct Graphs {
     pub(crate) counters: &'static Counters,
     /// The connector's name, so two of them can compete for the same files.

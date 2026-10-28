@@ -1,0 +1,16 @@
+---
+source: crates/lang-rust/tests/rust/data.rs
+expression: "out.sites(\"crates/db/src/entity.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "table bookings",
+      "line": 4,
+      "role": "declares",
+      "via": "sea_orm"
+    }
+  ],
+  "embedded": [],
+  "unresolved": []
+}
