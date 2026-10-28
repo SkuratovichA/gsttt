@@ -48,3 +48,4 @@
 - [x] 7.8 The comment of the header loop of the depth check says what its stop bounds
 - [x] 7.9 `mod evaluation` of the test crate is under `cfg(test)` like its siblings
 - [x] 7.10 The path that `dotted` prints and the path of a typed error are pinned against each other, and `dotted` says where the other printer is
+- [x] 7.11 The TOML files are formatted by taplo, and `.editorconfig` indents them by two

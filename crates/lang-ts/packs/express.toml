@@ -5,8 +5,22 @@ detect = ["express"]
 
 [[calls]]
 callee = [
-  "*.get", "*.post", "*.put", "*.patch", "*.delete", "*.options", "*.head", "*.all",
-  "*.*.get", "*.*.post", "*.*.put", "*.*.patch", "*.*.delete", "*.*.options", "*.*.head", "*.*.all",
+  "*.get",
+  "*.post",
+  "*.put",
+  "*.patch",
+  "*.delete",
+  "*.options",
+  "*.head",
+  "*.all",
+  "*.*.get",
+  "*.*.post",
+  "*.*.put",
+  "*.*.patch",
+  "*.*.delete",
+  "*.*.options",
+  "*.*.head",
+  "*.*.all",
 ]
 kind = "http"
 role = "serves"

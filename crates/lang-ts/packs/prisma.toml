@@ -9,7 +9,20 @@ kind = "table"
 role = "calls"
 segments = 1
 terminals = [
-  "findMany", "findFirst", "findFirstOrThrow", "findUnique", "findUniqueOrThrow", "create", "createMany",
-  "createManyAndReturn", "update", "updateMany", "upsert", "delete", "deleteMany", "count", "aggregate",
+  "findMany",
+  "findFirst",
+  "findFirstOrThrow",
+  "findUnique",
+  "findUniqueOrThrow",
+  "create",
+  "createMany",
+  "createManyAndReturn",
+  "update",
+  "updateMany",
+  "upsert",
+  "delete",
+  "deleteMany",
+  "count",
+  "aggregate",
   "groupBy",
 ]

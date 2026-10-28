@@ -8,7 +8,23 @@ root = ["trpc", "api"]
 kind = "trpc"
 role = "calls"
 terminals = [
-  "useQuery", "useSuspenseQuery", "useInfiniteQuery", "useSuspenseInfiniteQuery", "useMutation",
-  "useSubscription", "query", "mutate", "subscribe", "prefetch", "prefetchInfinite", "fetch",
-  "fetchInfinite", "invalidate", "refetch", "cancel", "setData", "getData", "ensureData",
+  "useQuery",
+  "useSuspenseQuery",
+  "useInfiniteQuery",
+  "useSuspenseInfiniteQuery",
+  "useMutation",
+  "useSubscription",
+  "query",
+  "mutate",
+  "subscribe",
+  "prefetch",
+  "prefetchInfinite",
+  "fetch",
+  "fetchInfinite",
+  "invalidate",
+  "refetch",
+  "cancel",
+  "setData",
+  "getData",
+  "ensureData",
 ]
