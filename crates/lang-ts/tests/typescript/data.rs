@@ -60,6 +60,27 @@ fn a_parameter_typed_as_a_pick_of_the_client_is_a_root() -> Result<(), Box<dyn E
 }
 
 #[test]
+fn every_wrapper_of_a_client_type_keeps_the_root() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-wrapped-clients")?;
+    // One file per wrapper of the list in `roots.rs`, and one for a union with null, so that dropping an entry of the list fails the assertion of its own file.
+    for path in [
+        "src/pick.ts",
+        "src/omit.ts",
+        "src/partial.ts",
+        "src/required.ts",
+        "src/readonly.ts",
+        "src/non-nullable.ts",
+        "src/nullable.ts",
+    ] {
+        assert_eq!(contracts(&json, path), ["calls table tenant @4"], "{path}");
+    }
+    // The wrapper keeps the first type argument, so a pick of a type that is no root is no root.
+    assert_eq!(contracts(&json, "src/other.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A local type alias of a client type is a root")]
 fn a_local_type_alias_of_a_client_type_is_a_root() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-type-alias")?;
