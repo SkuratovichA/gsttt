@@ -6,43 +6,43 @@ expression: "out.sites(\"src/main.rs\")"
   "contracts": [
     {
       "key": "env E",
-      "role": "calls",
       "line": 6,
+      "role": "calls",
       "via": "env"
     },
     {
       "key": "env A",
-      "role": "calls",
       "line": 11,
+      "role": "calls",
       "via": "env"
     },
     {
       "key": "env B",
-      "role": "calls",
       "line": 12,
+      "role": "calls",
       "via": "env"
     },
     {
       "key": "env C",
-      "role": "calls",
       "line": 13,
+      "role": "calls",
       "via": "env"
     },
     {
       "key": "env D",
-      "role": "calls",
       "line": 14,
+      "role": "calls",
       "via": "env"
     }
   ],
   "embedded": [],
   "unresolved": [
     {
+      "detail": "env.var",
       "line": 16,
       "reason": {
         "reason": "non-literal"
-      },
-      "detail": "env.var"
+      }
     }
   ]
 }

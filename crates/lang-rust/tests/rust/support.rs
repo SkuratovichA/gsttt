@@ -7,9 +7,29 @@ use gsttt_lang_rust::{PACKS, RUST};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+/// `value` with the keys of every object in order. A snapshot is printed in the order of the keys, which with serde_json's
+/// `preserve_order` is the order they were inserted in, so sorting them keeps the snapshots from depending on a feature
+/// that any crate of the workspace may switch on or off.
+fn sorted(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, sorted(value)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sorted).collect()),
+        other => other,
+    }
+}
+
 /// A value the way the engine prints it: flags and tags are numbers there.
 pub(crate) fn printed(value: &impl Serialize) -> Value {
-    serde_json::to_value(value).unwrap()
+    sorted(serde_json::to_value(value).unwrap())
 }
 
 /// The engine's print of an import that points nowhere, for the reason `reason` (`not-found`, `generated`, …).
@@ -60,7 +80,7 @@ pub(crate) fn index_at(root: &str) -> Indexed {
 impl Indexed {
     /// The whole run as JSON, the shape the snapshots hold.
     pub(crate) fn json(&self) -> Value {
-        self.output.to_json(&self.repo)
+        sorted(self.output.to_json(&self.repo))
     }
 
     /// The entry of one file: its facts, its resolved imports and the project that took it.

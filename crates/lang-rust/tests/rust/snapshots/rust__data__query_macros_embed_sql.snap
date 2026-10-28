@@ -6,29 +6,29 @@ expression: "out.sites(\"crates/db/src/queries.rs\")"
   "contracts": [],
   "embedded": [
     {
+      "contracts": [],
       "lang": "sql",
       "line": 9,
-      "text": "SELECT id FROM bookings WHERE id = $1",
-      "via": "sqlx",
       "read_by": null,
-      "contracts": []
+      "text": "SELECT id FROM bookings WHERE id = $1",
+      "via": "sqlx"
     },
     {
+      "contracts": [],
       "lang": "sql",
       "line": 23,
-      "text": "SELECT count(*) FROM rooms",
-      "via": "sqlx",
       "read_by": null,
-      "contracts": []
+      "text": "SELECT count(*) FROM rooms",
+      "via": "sqlx"
     }
   ],
   "unresolved": [
     {
+      "detail": "sqlx.query_scalar",
       "line": 27,
       "reason": {
         "reason": "non-literal"
-      },
-      "detail": "sqlx.query_scalar"
+      }
     }
   ]
 }

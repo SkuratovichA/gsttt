@@ -6,8 +6,8 @@ expression: "out.sites(\"crates/db/src/entity.rs\")"
   "contracts": [
     {
       "key": "table bookings",
-      "role": "declares",
       "line": 4,
+      "role": "declares",
       "via": "sea_orm"
     }
   ],

@@ -3,29 +3,29 @@ source: crates/lang-rust/tests/rust/imports.rs
 expression: file
 ---
 {
-  "status": {
-    "status": "recovered",
-    "errors": 1,
-    "first_error_line": 3
-  },
-  "tags": 0,
+  "contracts": [],
+  "embedded": [],
   "imports": [
     {
-      "spec": "crate::a::B",
+      "flags": 0,
       "kind": "static",
       "line": 1,
-      "flags": 0,
       "names": [
         "B"
       ],
+      "spec": "crate::a::B",
       "to": {
         "file": "src/a.rs"
       }
     }
   ],
-  "contracts": [],
-  "embedded": [],
-  "unresolved": [],
   "path": "src/broken.rs",
-  "project": "rust ."
+  "project": "rust .",
+  "status": {
+    "errors": 1,
+    "first_error_line": 3,
+    "status": "recovered"
+  },
+  "tags": 0,
+  "unresolved": []
 }

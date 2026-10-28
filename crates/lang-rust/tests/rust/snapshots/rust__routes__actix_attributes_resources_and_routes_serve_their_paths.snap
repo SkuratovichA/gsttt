@@ -6,38 +6,38 @@ expression: "out.sites(\"src/main.rs\")"
   "contracts": [
     {
       "key": "http GET /health",
-      "role": "serves",
       "line": 5,
+      "role": "serves",
       "via": "actix"
     },
     {
       "key": "http GET /ping",
-      "role": "serves",
       "line": 8,
+      "role": "serves",
       "via": "actix"
     },
     {
       "key": "http HEAD /ping",
-      "role": "serves",
       "line": 8,
+      "role": "serves",
       "via": "actix"
     },
     {
       "key": "http GET /rooms",
-      "role": "serves",
       "line": 22,
+      "role": "serves",
       "via": "actix"
     },
     {
       "key": "http POST /rooms",
-      "role": "serves",
       "line": 23,
+      "role": "serves",
       "via": "actix"
     },
     {
       "key": "http GET /status",
-      "role": "serves",
       "line": 25,
+      "role": "serves",
       "via": "actix"
     }
   ],

@@ -4,47 +4,47 @@ expression: imports
 ---
 [
   {
-    "spec": "serde::Deserialize",
+    "flags": 0,
     "kind": "static",
     "line": 1,
-    "flags": 0,
     "names": [
       "Deserialize"
     ],
+    "spec": "serde::Deserialize",
     "to": {
       "external": "serde"
     }
   },
   {
-    "spec": "tokio::sync::Mutex",
+    "flags": 0,
     "kind": "static",
     "line": 2,
-    "flags": 0,
     "names": [
       "Mutex"
     ],
+    "spec": "tokio::sync::Mutex",
     "to": {
       "external": "tokio"
     }
   },
   {
-    "spec": "std::collections::HashMap",
+    "flags": 0,
     "kind": "static",
     "line": 3,
-    "flags": 0,
     "names": [
       "HashMap"
     ],
+    "spec": "std::collections::HashMap",
     "to": "builtin"
   },
   {
-    "spec": "rand::random",
+    "flags": 0,
     "kind": "static",
     "line": 4,
-    "flags": 0,
     "names": [
       "random"
     ],
+    "spec": "rand::random",
     "to": {
       "unresolved": {
         "reason": "unknown-package"

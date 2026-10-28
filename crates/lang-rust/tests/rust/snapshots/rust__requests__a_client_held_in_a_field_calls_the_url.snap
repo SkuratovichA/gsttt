@@ -6,14 +6,14 @@ expression: "out.sites(\"src/api.rs\")"
   "contracts": [
     {
       "key": "http GET /bookings/{}",
-      "role": "calls",
       "line": 11,
+      "role": "calls",
       "via": "reqwest"
     },
     {
       "key": "http GET /status",
-      "role": "calls",
       "line": 24,
+      "role": "calls",
       "via": "reqwest"
     }
   ],

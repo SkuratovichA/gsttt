@@ -6,43 +6,43 @@ expression: "out.sites(\"src/main.rs\")"
   "contracts": [
     {
       "key": "http DELETE /bookings/{}",
-      "role": "serves",
       "line": 12,
+      "role": "serves",
       "via": "axum"
     },
     {
       "key": "http GET /bookings/{}",
-      "role": "serves",
       "line": 12,
+      "role": "serves",
       "via": "axum"
     },
     {
       "key": "http POST /bookings",
-      "role": "serves",
       "line": 13,
+      "role": "serves",
       "via": "axum"
     },
     {
       "key": "http TRACE /probe",
-      "role": "serves",
       "line": 14,
+      "role": "serves",
       "via": "axum"
     },
     {
       "key": "http * /anything",
-      "role": "serves",
       "line": 15,
+      "role": "serves",
       "via": "axum"
     }
   ],
   "embedded": [],
   "unresolved": [
     {
+      "detail": "_.route",
       "line": 19,
       "reason": {
         "reason": "non-literal"
-      },
-      "detail": "_.route"
+      }
     }
   ]
 }

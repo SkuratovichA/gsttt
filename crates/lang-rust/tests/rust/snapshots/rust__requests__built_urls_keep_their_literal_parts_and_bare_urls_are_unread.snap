@@ -6,19 +6,19 @@ expression: "out.sites(\"src/client.rs\")"
   "contracts": [
     {
       "key": "http DELETE /bookings/{}",
-      "role": "calls",
       "line": 12,
+      "role": "calls",
       "via": "reqwest"
     }
   ],
   "embedded": [],
   "unresolved": [
     {
+      "detail": "client.get",
       "line": 13,
       "reason": {
         "reason": "non-literal"
-      },
-      "detail": "client.get"
+      }
     }
   ]
 }

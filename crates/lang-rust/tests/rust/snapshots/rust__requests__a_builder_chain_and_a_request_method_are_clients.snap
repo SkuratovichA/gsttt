@@ -6,14 +6,14 @@ expression: "out.sites(\"src/builder.rs\")"
   "contracts": [
     {
       "key": "http POST /bookings",
-      "role": "calls",
       "line": 5,
+      "role": "calls",
       "via": "reqwest"
     },
     {
       "key": "http PUT /bookings/1",
-      "role": "calls",
       "line": 7,
+      "role": "calls",
       "via": "reqwest"
     }
   ],

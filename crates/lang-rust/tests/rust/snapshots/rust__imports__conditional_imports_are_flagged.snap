@@ -4,35 +4,35 @@ expression: imports
 ---
 [
   {
-    "spec": "tests",
+    "flags": 8,
     "kind": "module",
     "line": 2,
-    "flags": 8,
     "names": [],
+    "spec": "tests",
     "to": {
       "file": "src/conditional/tests.rs"
     }
   },
   {
-    "spec": "crate::cli::Args",
+    "flags": 2,
     "kind": "static",
     "line": 4,
-    "flags": 2,
     "names": [
       "Args"
     ],
+    "spec": "crate::cli::Args",
     "to": {
       "file": "src/lib.rs"
     }
   },
   {
-    "spec": "self::Thing",
+    "flags": 8,
     "kind": "static",
     "line": 7,
-    "flags": 8,
     "names": [
       "Thing"
     ],
+    "spec": "self::Thing",
     "to": {
       "file": "src/conditional.rs"
     }
