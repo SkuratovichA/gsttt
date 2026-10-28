@@ -81,7 +81,9 @@ fn file_in(root: &Utf8Path, argument: &str) -> Option<(Utf8PathBuf, Utf8PathBuf)
     resolved.is_file().then_some((inside, resolved))
 }
 
-/// Writes `part` to `hasher` after its length.
+/// Writes `part` to `hasher` after its length, as eight bytes in big-endian order.
+///
+/// The cache keys of the engine frame their parts in the same way with a little-endian length (`feed` in `crates/core/src/connector.rs`, pinned by the value of a salt in `a_salt_hashes_its_parts_with_their_lengths`), and this key pins its own order in `the_key_hashes_the_framed_parts_in_order`. Neither side can take the other's order without breaking what pins it: another order for the engine would read every project again, and another for this key would ask for trust again. So the two functions are kept apart on purpose.
 fn feed(hasher: &mut Sha256, part: &[u8]) {
     let length = u64::try_from(part.len()).unwrap_or(u64::MAX);
     hasher.update(length.to_be_bytes());

@@ -126,8 +126,9 @@ pub fn salt_of(parts: &[&str]) -> u64 {
     hasher.digest()
 }
 
-/// Hashes `bytes` with their length in front, so two fields cannot trade bytes and keep the same hash. The one
-/// framing behind [`salt_of`] and the fact keys of the engine.
+/// Hashes `bytes` with their length in front, so two fields cannot trade bytes and keep the same hash. The one framing behind [`salt_of`] and the fact keys of the engine.
+///
+/// The length is a little-endian `u64`, which `a_salt_hashes_its_parts_with_their_lengths` pins with the value of a salt: another byte order would read the files of every project again. The trust key of the command line frames its parts in the same way with a big-endian length (`feed` in `crates/gsttt/src/trust/key.rs`, pinned by `the_key_hashes_the_framed_parts_in_order`), so the two are kept apart on purpose.
 pub(crate) fn feed(hasher: &mut Xxh3, bytes: &[u8]) {
     hasher.update(&u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_le_bytes());
     hasher.update(bytes);

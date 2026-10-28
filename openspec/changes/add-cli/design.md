@@ -132,6 +132,7 @@ fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorErro
 - The key is the SHA-256, as 64 lowercase hex digits, of the parts below, in this order. Every part is written as its length in bytes, as eight bytes in big-endian order, and then the part itself, so that no two lists of parts make the same input:
   - the canonical JSON of the external's setup, made by `keys::canonical_json`, the function the config's own fingerprint uses: name, cmd, files, version, env, options and provides;
   - then, for each element of `cmd`, in order, that names a regular file inside the root, read against the root with links resolved: the path of that file from the root, and its bytes. A `git pull` can change such a file without touching `.gsttt/config.toml`. Covering every element, not only `cmd[0]`, also covers `python3 tools/connector.py`. An element that names nothing, a directory or a file outside the root adds no part: it is a program found in `PATH`, a flag or the value of one.
+- The length is big-endian here and little-endian in the cache keys of the engine (`connector::feed` in core), which a test pins with the value of a salt, so the key keeps its own `feed` and the two functions name each other in their comments.
 - A file that the command names, that exists and cannot be read, makes the key fail. The external stays untrusted and `config trust` names the file, because a key that left it out would not change when the file did.
 
 ```rust
