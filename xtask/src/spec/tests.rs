@@ -1072,6 +1072,44 @@ fn changes_that_nothing_places_apply_in_the_order_of_their_names() {
     assert!(outcome.output.contains(&failure), "{}", outcome.output);
 }
 
+#[gsttt_scenario::scenario("spec-gate", "A finished change is read before an unfinished one")]
+#[test]
+fn a_finished_change_is_read_before_an_unfinished_one() {
+    let tree = Tree::new();
+    // `a-wip` sorts first, but `openspec archive` takes only finished changes, so `b-done` is archived first and modifies `R` as the main spec has it. Read after `a-wip`, it would lack the scenario that `a-wip` adds, and the gate would refuse it.
+    tree.spec("queries", &main_spec(&[requirement("R", &["R works"])]))
+        .change(
+            "a-wip",
+            OPEN,
+            &[(
+                "queries",
+                &delta(
+                    "MODIFIED",
+                    &[requirement("R", &["R works", "R works better"])],
+                ),
+            )],
+        )
+        .change(
+            "b-done",
+            TICKED,
+            &[(
+                "queries",
+                &delta("MODIFIED", &[requirement("R", &["R works"])]),
+            )],
+        )
+        .source("tests/works.rs", &proof("queries", "R works"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert!(
+        outcome
+            .output
+            .contains("queries: 1 proven, 1 pending, 0 failing"),
+        "{}",
+        outcome.output
+    );
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "b-done\n");
+}
+
 #[gsttt_scenario::scenario("spec-gate", "A modified requirement that leaves out a scenario fails")]
 #[test]
 fn a_modified_requirement_that_leaves_out_a_scenario_fails() {

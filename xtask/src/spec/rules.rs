@@ -1,6 +1,6 @@
 //! The rules of the gate.
 //!
-//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming it. The fold also shows what `openspec archive` would refuse: a modified requirement replaces the whole block, and the archive stops at one that lacks a scenario of the block it replaces, so the gate fails that change before the archive does and leaves its block out of the fold, where the requirement it would replace stands.
+//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them, a finished change before an unfinished one where that order leaves a choice, and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming it. The fold also shows what `openspec archive` would refuse: a modified requirement replaces the whole block, and the archive stops at one that lacks a scenario of the block it replaces, so the gate fails that change before the archive does and leaves its block out of the fold, where the requirement it would replace stands.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -429,18 +429,16 @@ fn main_name<'a>(delta: &'a Delta, modified: &'a Requirement) -> &'a String {
         .map_or(&modified.name, |renamed| &renamed.from)
 }
 
-/// The order in which `openspec archive` can take the changes in `waiting` one after the other, starting from the requirements `main` holds: a change goes next when every requirement it needs is in what `main` and the changes before it leave, and no other waiting change needs a requirement it takes away; the requirements it takes leave before the ones it gives enter. Of the changes that can go next, the first of `waiting` goes first, so changes given in the order of their names come out in it where nothing else decides. A change that cannot go, because what it needs is nowhere or because it and another wait for each other, is left out.
+/// The order in which `openspec archive` can take the changes in `waiting` one after the other, starting from the requirements `main` holds: a change goes next when every requirement it needs is in what `main` and the changes before it leave, and no other waiting change needs a requirement it takes away; the requirements it takes leave before the ones it gives enter. Of the changes that can go next, the first finished one goes first, because the archive takes only finished changes, and when none is finished the first of `waiting`; changes given in the order of their names therefore come out in it where nothing else decides. A change that cannot go, because what it needs is nowhere or because it and another wait for each other, is left out.
 fn archive_order<'a>(main: &BTreeSet<Key>, mut waiting: Vec<&'a Open>) -> Vec<&'a Open> {
     let mut have: BTreeSet<&Key> = main.iter().collect();
     let mut listed = Vec::new();
-    while let Some(next) = waiting.iter().position(|change| {
-        change.needs.iter().all(|need| have.contains(need))
-            && change.takes.iter().all(|(key, _)| {
-                waiting
-                    .iter()
-                    .all(|other| other.name == change.name || !other.needs.contains(key))
-            })
-    }) {
+    while let Some((next, _)) = waiting
+        .iter()
+        .enumerate()
+        .filter(|(_, change)| can_go(change, &have, &waiting))
+        .min_by_key(|(index, change)| (change.progress != Progress::Finished, *index))
+    {
         let change = waiting.remove(next);
         for (key, _) in &change.takes {
             have.remove(key);
@@ -449,6 +447,16 @@ fn archive_order<'a>(main: &BTreeSet<Key>, mut waiting: Vec<&'a Open>) -> Vec<&'
         listed.push(change);
     }
     listed
+}
+
+/// Whether `change` can be archived next, when `have` stands and the changes in `waiting` are not archived yet: every requirement it needs stands, and no other waiting change needs a requirement it takes away.
+fn can_go(change: &Open, have: &BTreeSet<&Key>, waiting: &[&Open]) -> bool {
+    change.needs.iter().all(|need| have.contains(need))
+        && change.takes.iter().all(|(key, _)| {
+            waiting
+                .iter()
+                .all(|other| other.name == change.name || !other.needs.contains(key))
+        })
 }
 
 /// The requirements that `delta` modifies, removes or renames, under the names they have before the change is archived.
