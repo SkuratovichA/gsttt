@@ -23,4 +23,4 @@ None.
 
 ## Impact
 
-`crates/lang-ts/` only, plus new entries in the root `[workspace.dependencies]` if needed. Known gaps, reported as blind spots: file-system routes (Next.js, Remix, SvelteKit), NestJS `setGlobalPrefix` (not applied: `http_prefixes` is a field of the core setup, not an option of this connector), routers mounted from another package, URLs and prefixes held in variables.
+`crates/lang-ts/` only, plus new entries in the root `[workspace.dependencies]` if needed. Known gaps, reported as blind spots: file-system routes (Next.js, Remix, SvelteKit), NestJS `setGlobalPrefix` (not applied: `http_prefixes` is a field of the core setup, not an option of this connector), routers mounted from another package, tRPC clients under a name other than `trpc` or `api`, URLs and prefixes held in variables.
