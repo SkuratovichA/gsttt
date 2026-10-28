@@ -23,7 +23,7 @@ use ruff_text_size::{Ranged, TextSize};
 
 use crate::extra::{Mount, PyExtra, Route, RouterPrefix, Target};
 use crate::files::{is_python_source, tags_of};
-use crate::imports::{Imports, Name, specifier};
+use crate::imports::{Imports, Name, absolute_name, specifier};
 use crate::manifest::{ManifestError, read_pyproject};
 use crate::project::PythonProject;
 use crate::site::{
@@ -500,15 +500,19 @@ impl<'a> Collector<'a> {
 
     /// `importlib.import_module("a.b")` and `__import__("a.b")`. Returns whether the call was one.
     fn dynamic_import(&mut self, call: &ExprCall, callee: &Name, line: Line) -> bool {
+        let imported = callee.imported();
         if !matches!(
-            callee.imported(),
+            imported,
             "importlib.import_module" | "import_module" | "__import__"
         ) {
             return false;
         }
-        match call.arguments.find_positional(0) {
+        match call.arguments.find_argument_value("name", 0) {
             Some(Expr::StringLiteral(name)) => {
-                self.push_import(Import::new(name.value.to_str(), ImportKind::Dynamic, line));
+                match dynamic_spec(call, imported, name.value.to_str()) {
+                    Some(spec) => self.push_import(Import::new(spec, ImportKind::Dynamic, line)),
+                    None => self.unresolved(line, callee.written()),
+                }
             }
             Some(_) => self.unresolved(line, callee.written()),
             None => {}
@@ -902,6 +906,22 @@ fn is_field(name: &str, annotated: bool) -> bool {
 
 fn is_name(expr: &Expr, wanted: &str) -> bool {
     matches!(expr, Expr::Name(name) if name.id.as_str() == wanted)
+}
+
+/// The specifier `importlib.import_module(name, package)` imports. A relative name is taken from the literal `package`;
+/// with no package, or with `__package__`, it is taken from the package of the file, as a relative import is. `None`
+/// when the package is only known at run time or the name climbs out of it. `__import__` reads the package a
+/// relative name starts from out of `globals` and not out of an argument, so its name stays as written.
+fn dynamic_spec(call: &ExprCall, imported: &str, name: &str) -> Option<String> {
+    if imported == "__import__" || !name.starts_with('.') {
+        return Some(name.to_owned());
+    }
+    match call.arguments.find_argument_value("package", 1) {
+        None => Some(name.to_owned()),
+        Some(package) if is_name(package, "__package__") => Some(name.to_owned()),
+        Some(Expr::StringLiteral(package)) => absolute_name(name, package.value.to_str()),
+        Some(_) => None,
+    }
 }
 
 /// The literal `env_prefix` a settings class declares, in `model_config = SettingsConfigDict(env_prefix="APP_")`,

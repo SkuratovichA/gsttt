@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use gsttt_config::pack::builtin_packs;
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
 use gsttt_core::fact::{
-    ContractFact, Embedded, FileTags, ImportFlags, Line, ParseStatus, Resolution,
+    ContractFact, Embedded, FileTags, ImportFlags, ImportKind, Line, ParseStatus, Resolution,
 };
 use gsttt_core::ids::FileId;
 use gsttt_core::repo::RepoView;
@@ -337,6 +337,66 @@ fn every_import_form_is_read() {
     insta::assert_json_snapshot!(
         "every_import_form_is_read",
         tree.file_json("pkg/sub/forms.py")
+    );
+}
+
+/// The dynamic imports of a file as `<specifier> L<line>`, in its order.
+fn dynamic_imports(tree: &Tree, path: &str) -> Vec<String> {
+    let imports = &tree.file(path).facts.imports;
+    imports
+        .iter()
+        .filter(|import| import.kind == ImportKind::Dynamic)
+        .map(|import| format!("{} L{}", import.spec, import.line))
+        .collect()
+}
+
+#[gsttt_scenario::scenario("python", "A relative dynamic import is taken from its package")]
+#[test]
+fn a_relative_dynamic_import_is_taken_from_its_package() {
+    let tree = index("dynamic_imports");
+    // Whichever way the arguments are written, the name is taken from the package the call names.
+    assert_eq!(
+        dynamic_imports(&tree, "app/named.py"),
+        ["p.m L4", "p.m L5", "p.q.n L6", "p.m L7"]
+    );
+    insta::assert_json_snapshot!(
+        "a_relative_dynamic_import_is_taken_from_its_package",
+        tree.file_json("app/named.py")
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A relative dynamic import with no package is taken from the file's"
+)]
+#[test]
+fn a_relative_dynamic_import_with_no_package_is_taken_from_the_files() {
+    let tree = index("dynamic_imports");
+    // A name with no leading dot has no use for the package beside it.
+    assert_eq!(
+        dynamic_imports(&tree, "app/own.py"),
+        [".local L3", ".local L4", "p.m L5"]
+    );
+    assert_eq!(tree.target("app/own.py", ".local", &[]), "app/local.py");
+    assert_eq!(
+        tree.target("app/own.py", "p.m", &[]),
+        "p/__init__.py + p/m.py"
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A dynamic import with a package that cannot be read is an unread site"
+)]
+#[test]
+fn a_dynamic_import_with_a_package_that_cannot_be_read_is_an_unread_site() {
+    let tree = index("dynamic_imports");
+    // Line 3 climbs out of `p.q`, which `importlib` rejects, and line 6 has no package at all; lines 4 and 5 name
+    // theirs only at run time.
+    assert_eq!(tree.unresolved_lines("app/unread.py"), [3, 4, 5, 6]);
+    assert_eq!(
+        dynamic_imports(&tree, "app/unread.py"),
+        Vec::<String>::new()
     );
 }
 

@@ -136,6 +136,21 @@ An import SHALL reach the `__init__` file of every package it passes through as 
 - **WHEN** `pkg/sub/sibling.py` has `import pkg.sub.leaf`, `from .leaf import value` and `from . import leaf`
 - **THEN** each resolves to `pkg/sub/leaf.py` only
 
+### Requirement: Dynamic imports with a package
+`importlib.import_module` with a relative literal name SHALL import the name taken from its literal `package`, given as the second argument or as a keyword, one component less out of the package than the name has dots. With no package, or with `__package__`, a relative name SHALL be taken from the package of the importing file. A package that is not a literal, or that the name climbs out of, SHALL make the call an unread site.
+
+#### Scenario: A relative dynamic import is taken from its package
+- **WHEN** a file calls `importlib.import_module(".m", package="p")`, `import_module("..m", "p.q")`, `import_module(".n", package="p.q")` and `import_module(name=".m", package="p")`
+- **THEN** they import `p.m`, `p.m`, `p.q.n` and `p.m`
+
+#### Scenario: A relative dynamic import with no package is taken from the file's
+- **WHEN** a file calls `importlib.import_module(".local", __package__)`, `importlib.import_module(".local")` and `importlib.import_module("p.m", package="other")`
+- **THEN** the first two import `.local`, which resolves beside the file, and the last imports `p.m`, since a name with no leading dot has no use for a package
+
+#### Scenario: A dynamic import with a package that cannot be read is an unread site
+- **WHEN** a file calls `importlib.import_module("...m", package="p.q")`, `importlib.import_module(".m", package=name)`, an f-string as the package, and `importlib.import_module(".m", package="")`
+- **THEN** each is an unread site and none is an import
+
 ### Requirement: Relative import resolution
 Relative imports SHALL resolve from the importing file's package, up to the root of the repository whatever project holds the file they reach, and one that climbs out of the repository SHALL be unresolved as not found.
 

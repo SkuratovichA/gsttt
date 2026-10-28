@@ -47,3 +47,4 @@
 - [x] 5.21 A requirements file is read together with the files it includes with `-r`, `-rFILE`, `--requirement FILE` and `--requirement=FILE`, each relative to the file that names it and read once, an include outside the repository is skipped and `-c` is not followed, and a comment starts at a `#` after any whitespace
 - [x] 5.22 The text files of a `requirements` directory are claimed as manifests of the project that holds them, like `requirements*.txt`
 - [x] 5.23 A fixture and a scenario pin the relative imports that climb above the project root, into a sibling project and out of the repository, which the tests left open
+- [x] 5.24 `importlib.import_module(".m", package="p")` with literals imports `p.m`, taken from the package with the rules of `importlib`; a relative name with no package or with `__package__` is taken from the importing file, and a package that is not a literal or that the name climbs out of makes the call an unread site

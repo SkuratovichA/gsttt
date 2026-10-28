@@ -134,6 +134,28 @@ pub(crate) fn specifier(level: u32, module: &str) -> String {
     format!("{}{module}", ".".repeat(dots))
 }
 
+/// The module `importlib.import_module(name, package)` imports, as an absolute name. A name that starts with dots is
+/// taken from `package`: the first dot stands for `package` itself and each further one climbs a component out of it.
+/// `None` when `package` is empty or the name climbs out of it, which `importlib` rejects; a name with no leading dot
+/// is already absolute.
+pub(crate) fn absolute_name(name: &str, package: &str) -> Option<String> {
+    let level = name.bytes().take_while(|byte| *byte == b'.').count();
+    if level == 0 {
+        return Some(name.to_owned());
+    }
+    if package.is_empty() {
+        return None;
+    }
+    let mut base = package;
+    for _ in 1..level {
+        base = base.rsplit_once('.')?.0;
+    }
+    Some(match name.get(level..) {
+        Some(module) if !module.is_empty() => format!("{base}.{module}"),
+        _ => base.to_owned(),
+    })
+}
+
 /// A dotted name as a file writes it and, when an import binds its first segment to another name, as the import
 /// spells it: `r.get` is also `requests.get` after `import requests as r`. A rule applies when its pattern matches
 /// either, so a pack written for the local spelling, `op.create_table`, keeps working next to one written for the
@@ -234,6 +256,47 @@ mod tests {
             rewritten(&imports, "ET.parse").as_deref(),
             Some("xml.etree.ElementTree.parse")
         );
+    }
+
+    #[test]
+    fn a_dotted_name_is_taken_from_its_package_the_way_importlib_does() {
+        for (name, package, expected) in [
+            (".m", "p", Some("p.m")),
+            (".m", "a.b", Some("a.b.m")),
+            ("..m", "a.b", Some("a.m")),
+            ("..m", "p", None),
+            ("...m", "a.b", None),
+            ("...m", "a.b.c", Some("a.m")),
+            (".", "p", Some("p")),
+            ("..", "a.b", Some("a")),
+            (".x.y", "p", Some("p.x.y")),
+            (".m", "", None),
+            ("m", "p", Some("m")),
+            ("m.n", "", Some("m.n")),
+        ] {
+            assert_eq!(
+                absolute_name(name, package).as_deref(),
+                expected,
+                "{name} in {package}"
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn a_name_with_dots_climbs_one_component_less_than_it_has_dots(
+            parts in prop::collection::vec("[a-z][a-z0-9_]{0,5}", 1..5),
+            dots in 1usize..7,
+            module in prop_oneof![Just(String::new()), "[a-z][a-z0-9_]{0,5}(\\.[a-z][a-z0-9_]{0,5}){0,2}"],
+        ) {
+            let climbed = dots - 1;
+            let expected = parts.len().checked_sub(climbed).filter(|kept| *kept > 0).map(|kept| {
+                let base = parts.iter().take(kept).cloned().collect::<Vec<_>>().join(".");
+                if module.is_empty() { base } else { format!("{base}.{module}") }
+            });
+            let name = format!("{}{module}", ".".repeat(dots));
+            prop_assert_eq!(absolute_name(&name, &parts.join(".")), expected);
+        }
     }
 
     #[test]
