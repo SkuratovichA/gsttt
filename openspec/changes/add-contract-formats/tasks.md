@@ -41,3 +41,4 @@
 ## 5. Integration fixes
 
 - [x] 5.1 A path segment that holds a `{…}` is a parameter of the key, so the custom method `{id}:cancel` of OpenAPI meets the protobuf binding of the same method
+- [x] 5.2 One counter of syntax errors in the core, `ErrorCount`, replaces the copies of the contract, Python, Rust and TypeScript connectors, and it keeps the smallest line noted, so a parser that reports out of order still names the first error of the file

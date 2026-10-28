@@ -2,9 +2,7 @@
 
 use gsttt_core::connector::Provide;
 use gsttt_core::contract::{ContractKey, ContractKind, Role};
-use gsttt_core::fact::{
-    ContractFact, FileFacts, Line, ParseFailure, ParseStatus, Resolution, UnresolvedReason,
-};
+use gsttt_core::fact::{ContractFact, FileFacts, Line, ParseFailure, Resolution, UnresolvedReason};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 
@@ -94,32 +92,4 @@ pub(crate) fn syntax_failure(line: Line, message: impl Into<String>) -> FileFact
         line,
         message: message.into(),
     })
-}
-
-/// Counts the errors a recovering parser reports and remembers where the first was.
-#[derive(Debug, Default)]
-pub(crate) struct Errors {
-    count: u32,
-    first_line: Line,
-}
-
-impl Errors {
-    pub(crate) fn note(&mut self, line: Line) {
-        self.count = self.count.saturating_add(1);
-        if self.first_line == 0 {
-            self.first_line = line;
-        }
-    }
-
-    /// Ok when nothing was noted, otherwise recovered with the count and the first line.
-    pub(crate) fn status(&self) -> ParseStatus {
-        if self.count == 0 {
-            ParseStatus::Ok
-        } else {
-            ParseStatus::Recovered {
-                errors: self.count,
-                first_error_line: self.first_line,
-            }
-        }
-    }
 }

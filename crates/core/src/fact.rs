@@ -313,6 +313,37 @@ pub enum ParseStatus {
     Failed(ParseFailure),
 }
 
+/// Counts the syntax errors a recovering parser reports for one file and keeps the smallest line among them, because a parser does not always report its errors in the order of the text. [`ErrorCount::status`] turns the count into the [`ParseStatus`] of the file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ErrorCount {
+    errors: u32,
+    first_line: Line,
+}
+
+impl ErrorCount {
+    /// Counts one error at `line`. The count stops at `u32::MAX`, and the line kept is the smallest one noted.
+    pub fn note(&mut self, line: Line) {
+        self.first_line = if self.errors == 0 {
+            line
+        } else {
+            self.first_line.min(line)
+        };
+        self.errors = self.errors.saturating_add(1);
+    }
+
+    /// [`ParseStatus::Ok`] when no error was noted, otherwise [`ParseStatus::Recovered`] with the count and the smallest line noted.
+    pub fn status(self) -> ParseStatus {
+        if self.errors == 0 {
+            ParseStatus::Ok
+        } else {
+            ParseStatus::Recovered {
+                errors: self.errors,
+                first_error_line: self.first_line,
+            }
+        }
+    }
+}
+
 /// Why a file could not be parsed.
 #[derive(
     Clone,
@@ -483,6 +514,39 @@ impl fmt::Display for ParseFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn errors_are_counted_and_the_smallest_line_is_kept() {
+        assert_eq!(ErrorCount::default().status(), ParseStatus::Ok);
+        let mut count = ErrorCount::default();
+        for line in [9, 4, 7] {
+            count.note(line);
+        }
+        assert_eq!(
+            count.status(),
+            ParseStatus::Recovered {
+                errors: 3,
+                first_error_line: 4
+            }
+        );
+    }
+
+    #[test]
+    fn the_count_saturates_at_the_largest_u32() {
+        let mut count = ErrorCount {
+            errors: u32::MAX - 1,
+            first_line: 5,
+        };
+        count.note(8);
+        count.note(2);
+        assert_eq!(
+            count.status(),
+            ParseStatus::Recovered {
+                errors: u32::MAX,
+                first_error_line: 2
+            }
+        );
+    }
 
     #[test]
     fn flags_combine() {

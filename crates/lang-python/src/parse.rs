@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use gsttt_core::connector::{Parsed, SourceFile};
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
-    FileFacts, Import, ImportFlags, ImportKind, Line, ParseFailure, ParseStatus, UnresolvedReason,
-    UnresolvedSite,
+    ErrorCount, FileFacts, Import, ImportFlags, ImportKind, Line, ParseFailure, ParseStatus,
+    UnresolvedReason, UnresolvedSite,
 };
 use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
@@ -18,7 +18,7 @@ use ruff_python_ast::{
     Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtImport,
     StmtImportFrom, StmtTry, WithItem,
 };
-use ruff_python_parser::{ParseError, parse_unchecked_source};
+use ruff_python_parser::parse_unchecked_source;
 use ruff_text_size::{Ranged, TextSize};
 
 use crate::extra::{Mount, PyExtra, Route, RouterPrefix, Target};
@@ -54,7 +54,13 @@ pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<Py
     collector.visit_body(parsed.suite());
     let mut read = collector.finish(is_package_init(file.path));
     read.facts.tags = tags;
-    read.facts.status = status_of(parsed.errors(), &lines, file.text.len());
+    // The parser puts the error of a bracket left open one byte past the last line, which `error_line` holds to the last byte.
+    let mut errors = ErrorCount::default();
+    for error in parsed.errors() {
+        let offset = usize::from(error.location.start());
+        errors.note(error_line(&lines, offset, file.text.len()));
+    }
+    read.facts.status = errors.status();
     read
 }
 
@@ -72,22 +78,6 @@ fn manifest_status(file: &SourceFile<'_>) -> ParseStatus {
             line: error_line(&LineIndex::new(file.text), offset, file.text.len()),
             message,
         }),
-    }
-}
-
-/// `len` is the length of the text: the parser puts the error of a bracket left open at the end of the text, one byte
-/// past the last line, so an offset is held to the last byte to name a line the file has.
-fn status_of(errors: &[ParseError], lines: &LineIndex, len: usize) -> ParseStatus {
-    let Some(first) = errors
-        .iter()
-        .map(|error| usize::from(error.location.start()))
-        .min()
-    else {
-        return ParseStatus::Ok;
-    };
-    ParseStatus::Recovered {
-        errors: u32::try_from(errors.len()).unwrap_or(u32::MAX),
-        first_error_line: error_line(lines, first, len),
     }
 }
 

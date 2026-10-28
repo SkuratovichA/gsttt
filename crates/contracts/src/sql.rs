@@ -17,7 +17,8 @@ use gsttt_core::connector::{
 };
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
-    ContractFact, Embedded, FileFacts, Import, Line, ParseStatus, Resolution, UnresolvedReason,
+    ContractFact, Embedded, ErrorCount, FileFacts, Import, Line, ParseStatus, Resolution,
+    UnresolvedReason,
 };
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
@@ -36,7 +37,7 @@ use sqlparser::dialect::{
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Location, Token, TokenWithSpan, Tokenizer, Whitespace};
 
-use crate::common::{Errors, provide, site};
+use crate::common::{provide, site};
 
 const VIA: &str = "sql";
 
@@ -214,7 +215,7 @@ impl Project for SqlProject {
 /// the statements before it are whole, and reading goes on after the next semicolon.
 fn read(dialect: &dyn Dialect, text: &str) -> (Vec<ContractFact>, ParseStatus) {
     let mut facts = Vec::new();
-    let mut errors = Errors::default();
+    let mut errors = ErrorCount::default();
     let mut rest = text;
     // The lines of `text` that come before `rest`.
     let mut before = 0;
@@ -277,7 +278,7 @@ fn read_group(
     dialect: &dyn Dialect,
     group: Vec<TokenWithSpan>,
     facts: &mut Vec<ContractFact>,
-    errors: &mut Errors,
+    errors: &mut ErrorCount,
 ) {
     let Some(start) = start_of(&group) else {
         return;

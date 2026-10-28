@@ -17,7 +17,9 @@ use gsttt_core::connector::{
     Connector, ConnectorError, Erased, Meta, Parsed, Project, Provide, SourceFile,
 };
 use gsttt_core::contract::{ContractKind, Role};
-use gsttt_core::fact::{ContractFact, Embedded, FileFacts, Import, ImportKind, Line, Resolution};
+use gsttt_core::fact::{
+    ContractFact, Embedded, ErrorCount, FileFacts, Import, ImportKind, Line, Resolution,
+};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
@@ -25,7 +27,7 @@ use gsttt_core::text::LineIndex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{Errors, byte_offset, line_number, provide, resolve_relative, site};
+use crate::common::{byte_offset, line_number, provide, resolve_relative, site};
 
 const VIA: &str = "graphql";
 
@@ -119,7 +121,7 @@ impl Project for GraphqlProject {
     }
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
-        let mut errors = Errors::default();
+        let mut errors = ErrorCount::default();
         let mut contracts = Vec::new();
         // A file of only comments is a valid, empty document here, though the grammar wants a definition.
         if !is_blank(file.text) {

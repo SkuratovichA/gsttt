@@ -6,7 +6,7 @@ use gsttt_core::connector::{
 };
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
-    ContractFact, FileFacts, Import, Line, ParseStatus, Resolution, UnresolvedReason,
+    ContractFact, ErrorCount, FileFacts, Import, Line, ParseStatus, Resolution, UnresolvedReason,
 };
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
@@ -14,7 +14,7 @@ use gsttt_core::rules::Pack;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{Errors, any_claimed, line_number, provide, site};
+use crate::common::{any_claimed, line_number, provide, site};
 
 const VIA: &str = "prisma";
 
@@ -129,7 +129,7 @@ enum Block {
 /// that closes nothing are the recovered errors.
 fn read(text: &str) -> (Vec<ContractFact>, ParseStatus) {
     let mut facts = Vec::new();
-    let mut errors = Errors::default();
+    let mut errors = ErrorCount::default();
     let mut open: Option<(Block, Line)> = None;
     for (index, raw) in text.lines().enumerate() {
         let number = line_number(index);

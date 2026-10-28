@@ -7,7 +7,7 @@ use std::sync::Arc;
 use gsttt_core::connector::{
     LinkInput, LinkedFact, Parsed, PrepareFile, Project, Provide, SourceFile, salt_of,
 };
-use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseStatus, Resolution};
+use gsttt_core::fact::{ErrorCount, FileFacts, FileTags, Import, ImportKind, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
@@ -146,14 +146,11 @@ impl Project for RustProject {
         }
         let parse = ast::SourceFile::parse(file.text, self.edition);
         let lines = LineIndex::new(file.text);
-        let errors = parse.errors();
-        let status = match errors.iter().map(|error| error.range().start()).min() {
-            Some(first) => ParseStatus::Recovered {
-                errors: u32::try_from(errors.len()).unwrap_or(u32::MAX),
-                first_error_line: line_at(&lines, first),
-            },
-            None => ParseStatus::Ok,
-        };
+        let mut errors = ErrorCount::default();
+        for error in parse.errors() {
+            errors.note(line_at(&lines, error.range().start()));
+        }
+        let status = errors.status();
         let root = parse.syntax_node();
         let imports = imports::read(&root, &lines, self.reads_query_files(), self.edition);
         let sites = sites::read(&root, &lines, &self.packs, self.edition, &imports);
