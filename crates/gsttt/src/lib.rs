@@ -14,6 +14,7 @@ pub mod registry;
 pub mod repository;
 pub mod root;
 pub mod streams;
+pub mod trust;
 
 pub use cli::{Cli, parse};
 pub use commands::run;

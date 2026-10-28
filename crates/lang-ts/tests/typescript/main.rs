@@ -5,6 +5,7 @@ mod data;
 mod graphql;
 mod http;
 mod imports;
+mod packs;
 mod projects;
 mod resolution;
 mod support;

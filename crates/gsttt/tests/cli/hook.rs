@@ -94,7 +94,7 @@ fn the_hook_does_not_read_the_config() {
     init_repo(tree);
     std::fs::write(tree.join("a.txt"), "a\n").unwrap();
     std::fs::create_dir(tree.join(".gsttt")).unwrap();
-    std::fs::write(tree.join(".gsttt/init.lua"), "g.ts {{{ this is not lua\n").unwrap();
+    std::fs::write(tree.join(".gsttt/config.toml"), "[ts\n").unwrap();
     index(&workspace(tree, sandbox.cache.path()));
 
     let hook = sandbox.run(&HOOK);

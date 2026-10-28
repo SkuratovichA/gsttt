@@ -1,3 +1,9 @@
+# Spec Delta
+
+## Purpose
+
+The command line is how a person at a terminal and a script in CI ask gsttt about a repository: it finds the root, keeps the index fresh before it answers, prints bounded or JSON answers with exit codes a script can act on, checks and shows the config, decides which external connectors may run, and gives an agent's session one line about the index when it starts.
+
 ## ADDED Requirements
 
 ### Requirement: Commands
@@ -190,7 +196,7 @@ Under `--json`, `gsttt index` SHALL print an object with `files`, `parsed`, `reu
 
 ### Requirement: The registry
 
-The binary SHALL register the built-in connectors in this order: `ts`, `python`, `rust`, `openapi`, `graphql`, `proto`, `prisma`, `sql`, `env`, followed by the trusted external connectors in the order the config declares them. The built-in packs SHALL be evaluated once per run, in the sandbox the config uses.
+The binary SHALL register the built-in connectors in this order: `ts`, `python`, `rust`, `openapi`, `graphql`, `proto`, `prisma`, `sql`, `env`, followed by the trusted external connectors in the order the config declares them. The built-in packs SHALL be read once per run.
 
 #### Scenario: config show lists the modules in registry order
 - **WHEN** `gsttt config show` runs in a repository with no config
@@ -213,7 +219,7 @@ An external connector SHALL start only when it is trusted for this root. An untr
 Trust SHALL be recorded under a key that covers the external's name, command, files, version, environment, options and provides, and the content of every element of its command that names a regular file inside the root, so that a change to any of them, from an edit or from a pull, needs trust again.
 
 #### Scenario: Editing the command takes trust away
-- **WHEN** a trusted external's arguments change in `init.lua`, and `gsttt index` runs
+- **WHEN** a trusted external's arguments change in `.gsttt/config.toml`, and `gsttt index` runs
 - **THEN** the external is not started and the coverage names it
 
 #### Scenario: Editing the program takes trust away
@@ -253,7 +259,7 @@ Trust SHALL be stored in `$XDG_STATE_HOME/gsttt/trust`, or in `~/.local/state/gs
 - **THEN** stdout and stderr are empty and the exit code is 0
 
 #### Scenario: The hook does not read the config
-- **WHEN** the repository has a snapshot and `.gsttt/init.lua` holds a syntax error, and `gsttt hook session-start` runs
+- **WHEN** the repository has a snapshot and `.gsttt/config.toml` holds a syntax error, and `gsttt hook session-start` runs
 - **THEN** stdout holds the line and the exit code is 0
 
 ### Requirement: The session-start line
@@ -266,30 +272,30 @@ With a snapshot the hook SHALL print one line, for example `gsttt: 4,213 files i
 
 ### Requirement: The init command
 
-`gsttt init` SHALL write `.gsttt/init.lua`, the starter config naming the modules whose connectors detect a project in the tree, and `.gsttt/.luarc.json`, each only when it is missing. It SHALL always write `.gsttt/types/gsttt.lua`, the annotations generated from the registry, whose first line says that `gsttt init` generated it and that edits to it are lost. It SHALL print each file it wrote and each it kept.
+`gsttt init` SHALL write `.gsttt/config.toml`, the starter config that names the config schema on its first line and the modules whose connectors detect a project in the tree, only when it is missing. It SHALL always write `.gsttt/schema/config.json` and `.gsttt/schema/pack.json`, the schemas generated from the registry, whose `$comment` says that `gsttt init` generated them and that edits to them are lost. It SHALL print each file it wrote and each it kept.
 
 #### Scenario: init writes the starter files
 - **WHEN** `gsttt init` runs in a repository with a `package.json`, a `tsconfig.json` and no `.gsttt/`
-- **THEN** `.gsttt/init.lua` names the `ts` module, `.gsttt/.luarc.json` and `.gsttt/types/gsttt.lua` exist, and the exit code is 0
+- **THEN** `.gsttt/config.toml` names the `ts` module, `.gsttt/schema/config.json` and `.gsttt/schema/pack.json` exist, and the exit code is 0
 
-#### Scenario: init keeps the config and rewrites the annotations
-- **WHEN** `.gsttt/init.lua` was edited and `.gsttt/types/gsttt.lua` was changed by hand, and `gsttt init` runs
-- **THEN** `init.lua` keeps the edit and `types/gsttt.lua` matches what the registry generates
+#### Scenario: init keeps the config and rewrites the schemas
+- **WHEN** `.gsttt/config.toml` was edited and `.gsttt/schema/config.json` was changed by hand, and `gsttt init` runs
+- **THEN** `config.toml` keeps the edit and `schema/config.json` matches what the registry generates
 
 ### Requirement: Checking the config
 
-`gsttt config check` SHALL evaluate the config and check each module's options against what the module accepts. When everything is valid it SHALL print `The config is valid.`, followed by a line for each untrusted external, and exit 0. Otherwise it SHALL print every error, with its file and line where Lua gives one, and exit 1.
+`gsttt config check` SHALL evaluate the config and check each module's options against what the module accepts. When everything is valid it SHALL print `The config is valid.`, followed by a line for each untrusted external, and exit 0. Otherwise it SHALL print every error, with its file, line and column where the config gives them, and exit 1.
 
 #### Scenario: config check names the file and line of an error
-- **WHEN** `.gsttt/init.lua` calls an undefined function on line 3, and `gsttt config check` runs
-- **THEN** stderr names `.gsttt/init.lua:3` and the exit code is 1
+- **WHEN** `.gsttt/config.toml` opens a table header on line 3 that it never closes, and `gsttt config check` runs
+- **THEN** stderr names `.gsttt/config.toml:3:` and the exit code is 1
 
 ### Requirement: Checking module options
 
 An option that a module does not declare, and an option whose value the module cannot read, SHALL be configuration errors that name the module and the option, for `gsttt config check` and for every command that evaluates the config.
 
 #### Scenario: config check rejects an option a module does not declare
-- **WHEN** `init.lua` passes `no_such_option = true` to the `ts` module, and `gsttt config check` runs
+- **WHEN** `.gsttt/config.toml` sets `no_such_option = true` in the `[ts]` table, and `gsttt config check` runs
 - **THEN** stderr names the `ts` module and `no_such_option`, and the exit code is 1
 
 ### Requirement: Showing the config

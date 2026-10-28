@@ -2,9 +2,11 @@
 #![cfg(test)]
 
 mod colour;
+mod config;
 mod hook;
 mod impact;
 mod index;
+mod init;
 mod logs;
 mod mcp;
 mod panics;
@@ -12,5 +14,7 @@ mod paths;
 mod questions;
 mod repository;
 mod root;
+mod schema;
 mod support;
+mod trust;
 mod usage;

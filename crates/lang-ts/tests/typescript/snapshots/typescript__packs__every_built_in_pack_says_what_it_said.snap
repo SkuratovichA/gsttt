@@ -1,0 +1,388 @@
+---
+source: crates/lang-ts/tests/typescript/packs.rs
+expression: packs
+---
+[
+  {
+    "name": "axios",
+    "language": "ts",
+    "detect": [
+      "axios"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "axios.get",
+          "axios.post",
+          "axios.put",
+          "axios.patch",
+          "axios.delete",
+          "axios.head",
+          "axios.options"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1",
+        "method": "$callee",
+        "receiver": null
+      },
+      {
+        "callee": [
+          "*.get",
+          "*.post",
+          "*.put",
+          "*.patch",
+          "*.delete",
+          "*.head",
+          "*.options",
+          "*.*.get",
+          "*.*.post",
+          "*.*.put",
+          "*.*.patch",
+          "*.*.delete",
+          "*.*.head",
+          "*.*.options"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1",
+        "method": "$callee",
+        "receiver": {
+          "from": "axios.create",
+          "key": "$arg1.baseURL"
+        }
+      },
+      {
+        "callee": "axios",
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1.url|$arg1",
+        "method": "$arg1.method|$arg2.method",
+        "receiver": null
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "drizzle",
+    "language": "ts",
+    "detect": [
+      "drizzle-orm"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "pgTable",
+          "mysqlTable",
+          "sqliteTable",
+          "singlestoreTable"
+        ],
+        "kind": "table",
+        "role": "declares",
+        "key": "$arg1",
+        "method": null,
+        "receiver": null
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "env",
+    "language": "ts",
+    "detect": [],
+    "calls": [],
+    "decorators": [],
+    "chains": [
+      {
+        "root": [
+          "process.env",
+          "import.meta.env"
+        ],
+        "kind": "env",
+        "role": "calls",
+        "segments": 1,
+        "terminals": [],
+        "case": null
+      }
+    ],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "express",
+    "language": "ts",
+    "detect": [
+      "express"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "*.get",
+          "*.post",
+          "*.put",
+          "*.patch",
+          "*.delete",
+          "*.options",
+          "*.head",
+          "*.all",
+          "*.*.get",
+          "*.*.post",
+          "*.*.put",
+          "*.*.patch",
+          "*.*.delete",
+          "*.*.options",
+          "*.*.head",
+          "*.*.all"
+        ],
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1",
+        "method": "$callee",
+        "receiver": {
+          "from": [
+            "express",
+            "express.Router",
+            "Router"
+          ],
+          "key": null
+        }
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "fetch",
+    "language": "ts",
+    "detect": [],
+    "calls": [
+      {
+        "callee": [
+          "fetch",
+          "window.fetch",
+          "globalThis.fetch"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1",
+        "method": "$arg2.method",
+        "receiver": null
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "graphql",
+    "language": "ts",
+    "detect": [
+      "graphql",
+      "graphql-tag",
+      "@apollo/client",
+      "apollo-server",
+      "@apollo/server",
+      "graphql-request",
+      "urql",
+      "@urql/core",
+      "graphql-yoga",
+      "@nestjs/graphql"
+    ],
+    "calls": [],
+    "decorators": [],
+    "chains": [],
+    "embeds": [
+      {
+        "callee": [
+          "gql",
+          "graphql"
+        ],
+        "lang": "graphql",
+        "text": null
+      }
+    ],
+    "assigns": []
+  },
+  {
+    "name": "nestjs",
+    "language": "ts",
+    "detect": [
+      "@nestjs/common",
+      "@nestjs/core",
+      "@nestjs/graphql"
+    ],
+    "calls": [],
+    "decorators": [
+      {
+        "decorator": [
+          "Get",
+          "Post",
+          "Put",
+          "Patch",
+          "Delete",
+          "Options",
+          "Head",
+          "All"
+        ],
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1|",
+        "method": "$callee",
+        "class": {
+          "from": "Controller",
+          "key": "$arg1|$arg1.path"
+        },
+        "receiver": null,
+        "prefix": null
+      },
+      {
+        "decorator": [
+          "Query",
+          "Mutation",
+          "Subscription"
+        ],
+        "kind": "graphql",
+        "role": "serves",
+        "key": "$arg1.name|$arg2.name|$arg1|$member",
+        "method": null,
+        "class": {
+          "from": "Resolver",
+          "key": null
+        },
+        "receiver": null,
+        "prefix": "$callee"
+      }
+    ],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "prisma",
+    "language": "ts",
+    "detect": [
+      "@prisma/client"
+    ],
+    "calls": [],
+    "decorators": [],
+    "chains": [
+      {
+        "root": [
+          "prisma",
+          "this.prisma",
+          "this.prismaService",
+          "ctx.prisma",
+          "ctx.db",
+          "this.db",
+          "db",
+          "tx"
+        ],
+        "kind": "table",
+        "role": "calls",
+        "segments": 1,
+        "terminals": [
+          "findMany",
+          "findFirst",
+          "findFirstOrThrow",
+          "findUnique",
+          "findUniqueOrThrow",
+          "create",
+          "createMany",
+          "createManyAndReturn",
+          "update",
+          "updateMany",
+          "upsert",
+          "delete",
+          "deleteMany",
+          "count",
+          "aggregate",
+          "groupBy"
+        ],
+        "case": null
+      }
+    ],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "trpc",
+    "language": "ts",
+    "detect": [
+      "@trpc/server",
+      "@trpc/client",
+      "@trpc/react-query",
+      "@trpc/next",
+      "@trpc/tanstack-react-query"
+    ],
+    "calls": [],
+    "decorators": [],
+    "chains": [
+      {
+        "root": [
+          "trpc",
+          "api"
+        ],
+        "kind": "trpc",
+        "role": "calls",
+        "segments": null,
+        "terminals": [
+          "useQuery",
+          "useSuspenseQuery",
+          "useInfiniteQuery",
+          "useSuspenseInfiniteQuery",
+          "useMutation",
+          "useSubscription",
+          "query",
+          "mutate",
+          "subscribe",
+          "prefetch",
+          "prefetchInfinite",
+          "fetch",
+          "fetchInfinite",
+          "invalidate",
+          "refetch",
+          "cancel",
+          "setData",
+          "getData",
+          "ensureData"
+        ],
+        "case": null
+      }
+    ],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "typeorm",
+    "language": "ts",
+    "detect": [
+      "typeorm",
+      "@nestjs/typeorm"
+    ],
+    "calls": [],
+    "decorators": [
+      {
+        "decorator": "Entity",
+        "kind": "table",
+        "role": "declares",
+        "key": "$arg1|$arg1.name|$member",
+        "method": null,
+        "class": null,
+        "receiver": null,
+        "prefix": null
+      }
+    ],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  }
+]

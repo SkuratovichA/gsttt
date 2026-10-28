@@ -116,6 +116,16 @@ impl Registry {
         ])
     }
 
+    /// The standard modules and two whose options hold a `null` in the schema of their type: `unit`, whose options are `()`, and `maybe`, whose options are optional.
+    pub(crate) fn with_null_options() -> Self {
+        let mut registry = Self::standard();
+        registry.0.push(Box::new(Erased(Fake::<()>::new("unit"))));
+        registry
+            .0
+            .push(Box::new(Erased(Fake::<Option<TsOptions>>::new("maybe"))));
+        registry
+    }
+
     pub(crate) fn connectors(&self) -> Vec<&dyn DynConnector> {
         self.0.iter().map(AsRef::as_ref).collect()
     }

@@ -12,6 +12,7 @@ use miette::{Diagnostic, GraphicalReportHandler, GraphicalTheme, Report};
 use crate::repository::RepositoryError;
 use crate::root::RootError;
 use crate::streams::{Io, Outcome, reader_left};
+use crate::trust::StoreError;
 
 /// Why a command did not answer. The message names what was expected, and the `help:` line, where there is one,
 /// says what the user can do.
@@ -52,8 +53,30 @@ pub(crate) enum CliError {
     #[diagnostic(help("run `gsttt index` to build one"))]
     NoIndex { root: Utf8PathBuf },
 
-    #[error("`gsttt {command}` is not built yet")]
-    NotBuilt { command: &'static str },
+    #[error(
+        "trusting an external connector needs a terminal, and stdin and stderr are not both one"
+    )]
+    #[diagnostic(help(
+        "run `gsttt config trust` yourself in a terminal: a program that drives gsttt cannot trust on your behalf"
+    ))]
+    TrustNeedsTerminal,
+
+    /// The key of an external cannot be made, which the person has to fix before there is anything to trust.
+    #[error("{0}")]
+    Key(String),
+
+    #[error(transparent)]
+    Store(#[from] StoreError),
+
+    /// A file that `gsttt init` writes cannot be written, or the folder above it cannot be made.
+    #[error("cannot write `{path}`")]
+    #[diagnostic(help(
+        "`gsttt init` writes into `.gsttt/` at the root of the repository; check that it can be written to"
+    ))]
+    Init {
+        path: Utf8PathBuf,
+        source: io::Error,
+    },
 
     #[error(transparent)]
     Serve(#[from] ServeError),
@@ -109,7 +132,9 @@ impl CliError {
             | Self::Json(_)
             | Self::Repository(_)
             | Self::NoIndex { .. }
-            | Self::NotBuilt { .. }
+            | Self::Key(_)
+            | Self::Store(_)
+            | Self::Init { .. }
             | Self::Serve(_)
             | Self::Runtime { .. }
             | Self::Root(RootError::Workspace(_) | RootError::CurrentDirectory { .. }) => {
@@ -122,6 +147,7 @@ impl CliError {
             | Self::EmptyQuery
             | Self::BaseNeedsChanged
             | Self::NoRefreshWithIndex
+            | Self::TrustNeedsTerminal
             | Self::McpTakesNoFlag { .. } => Outcome::Usage,
         }
     }

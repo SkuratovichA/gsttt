@@ -18,14 +18,14 @@
 ## 4. Registry and trust
 
 - [x] 4.1 Build the registry in its fixed order, evaluating the built-in packs once
-- [ ] 4.2 Key, store and check trust for externals; leave untrusted externals out with a coverage problem; add `config trust` behind the terminal check and `config untrust`
+- [x] 4.2 Key, store and check trust for externals; leave untrusted externals out with a coverage problem; add `config trust` behind the terminal check and `config untrust`
 
 ## 5. Config, init, hook and schema
 
-- [ ] 5.1 Add `DynConnector::check_options` to core and use it in `config check`; print the setup with `config show`
-- [ ] 5.2 Write the starter files with `init`
+- [x] 5.1 Add `DynConnector::check_options` to core and use it in `config check`; print the setup with `config show`
+- [x] 5.2 Write the starter files with `init`
 - [x] 5.3 Print the session-start line through `session_line(header, now)`
-- [ ] 5.4 Print the external protocol's schema with `schema external`
+- [x] 5.4 Print the external protocol's schema with `schema external`
 
 ## 6. Panics
 

@@ -1,6 +1,11 @@
 //! The questions `dependents`, `dependencies`, `path`, `contract` and `coverage`, which answer from the index.
 
-use gsttt_core::{Loaded, query};
+use std::fmt;
+
+use gsttt_core::Loaded;
+use gsttt_core::query::{self, Answer, CoverageReport, Entries};
+use gsttt_core::text::thousands;
+use serde::Serialize;
 
 use super::{Session, print};
 use crate::cli::{ContractArgs, FileArgs, PathArgs};
@@ -59,5 +64,40 @@ pub(super) fn contract(
 /// `gsttt coverage`: what the connectors read and what they could not.
 pub(super) fn coverage(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, CliError> {
     let Loaded { index, freshness } = session.loaded()?;
-    print::answer(&query::coverage(&index, freshness), session.flags, io)
+    let answer = Coverage {
+        report: query::coverage(&index, freshness),
+        problems: index.coverage.problems.clone(),
+    };
+    print::answer(&answer, session.flags, io)
+}
+
+/// The answer of `gsttt coverage`: the report of the engine and, before it, the problems of the index, which the
+/// report does not carry. One of them is an external connector that waits for trust, which is the only place the
+/// command line tells a person to run `gsttt config trust`.
+// When `CoverageReport` gains a `problems` field of its own, this type has to go: the document would hold the key
+// twice. `the_coverage_document_holds_problems_once` in `tests/cli/trust.rs` fails then.
+#[derive(Debug, Serialize)]
+struct Coverage {
+    #[serde(flatten)]
+    report: CoverageReport,
+    /// Connector calls that failed outside the parse of one file, and externals that wait for trust, one line each.
+    problems: Vec<String>,
+}
+
+impl Answer for Coverage {
+    fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
+        if !self.problems.is_empty() {
+            writeln!(f, "problems ({}):", thousands(self.problems.len()))?;
+            for problem in &self.problems {
+                writeln!(f, "  {problem}")?;
+            }
+        }
+        self.report.write_text(f, entries)
+    }
+}
+
+impl fmt::Display for Coverage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_text(f, Entries::Capped)
+    }
 }

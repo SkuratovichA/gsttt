@@ -4,12 +4,14 @@
 //! nothing between calls but the evaluated config, and a caller that outlives edits to the config, the trust store
 //! or the checked-out branch opens it again for every call.
 
+use std::fmt::Write as _;
 use std::io;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use gsttt_config::{ConfigError, PackError};
+use gsttt_config::{CONFIG_PATH, ConfigError, External, PackError};
+use gsttt_core::connector::ConnectorError;
 use gsttt_core::engine::changes::Change;
 use gsttt_core::engine::refresh::{Engine, IndexError};
 use gsttt_core::engine::workspace::Workspace;
@@ -18,6 +20,7 @@ use gsttt_core::{Freshness, Loaded, RepoPath, Setup, Target};
 
 use crate::registry::Registry;
 use crate::root::{self, RootError};
+use crate::trust::{self, Declared, Store};
 
 /// Why a repository cannot be opened or read.
 ///
@@ -29,16 +32,25 @@ pub enum RepositoryError {
     #[error(transparent)]
     Root(#[from] RootError),
 
-    /// A rule pack that ships with gsttt does not evaluate.
+    /// A rule pack that ships with gsttt does not read.
     #[error(
         "{0}; this is a bug in gsttt, please report it at {issues}",
         issues = concat!(env!("CARGO_PKG_REPOSITORY"), "/issues")
     )]
     Packs(#[from] PackError),
 
-    /// `.gsttt/init.lua` does not evaluate.
+    /// `.gsttt/config.toml`, or a pack beside it, does not read into a setup.
     #[error(transparent)]
     Config(#[from] ConfigError),
+
+    /// An `[[external]]` of the config cannot become a connector, though the user trusts it.
+    #[error("an `[[external]]` of {CONFIG_PATH} is not valid: {0}")]
+    External(#[source] ConnectorError),
+
+    /// Options of the config that the module they are for cannot read: one error for each module, in the order of
+    /// the config.
+    #[error("the options in {CONFIG_PATH} are not valid:{}", lines(.0))]
+    Options(Vec<ConnectorError>),
 
     /// A path argument is not a path inside the repository.
     #[error("{0}; name a file inside the repository")]
@@ -79,24 +91,86 @@ pub struct Repository {
     workspace: Workspace,
     registry: Registry,
     setup: Setup,
+    /// The `[[external]]` entries of the config in its order, with whether the user trusts each here.
+    externals: Vec<Declared>,
 }
 
 impl Repository {
     /// The repository around `start`, which should be a canonical directory: finds the root, refuses the home
-    /// directory and `/`, builds the registry and evaluates `.gsttt/init.lua`.
+    /// directory and `/`, builds the registry and reads `.gsttt/config.toml`. The external connectors of the config
+    /// that the user trusts in this root join the registry after the built-in ones, in the order of the config.
     ///
     /// # Errors
     ///
-    /// When there is no root, the root is refused, a built-in pack does not evaluate or the config does not.
+    /// When there is no root, the root is refused, a built-in pack does not read, the config does not, a module
+    /// cannot read its options or a trusted external does not become a connector.
     pub fn open(start: &Utf8Path) -> Result<Self, RepositoryError> {
         let workspace = root::locate(start)?;
         let registry = Registry::builtin()?;
         let setup = gsttt_config::evaluate(workspace.root().as_std_path(), &registry.connectors())?;
+        let store = Store::locate()
+            .inspect_err(|error| tracing::debug!(%error, "no trust store"))
+            .ok();
+        let externals = trust::declare(workspace.root(), &setup.externals, store.as_ref());
+        let trusted = externals
+            .iter()
+            .filter(|external| external.trusted())
+            .map(|external| External::new(external.setup()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(RepositoryError::External)?;
+        let registry = registry.with_externals(trusted);
+        let unreadable = unreadable_options(&setup, &registry);
+        if !unreadable.is_empty() {
+            return Err(RepositoryError::Options(unreadable));
+        }
         Ok(Self {
             workspace,
             registry,
             setup,
+            externals,
         })
+    }
+
+    /// The setup the config evaluated to.
+    pub const fn setup(&self) -> &Setup {
+        &self.setup
+    }
+
+    /// The connectors in registry order, and the built-in rule packs: the built-in connectors, then the
+    /// externals the user trusts in this root.
+    pub const fn registry(&self) -> &Registry {
+        &self.registry
+    }
+
+    /// The connectors that find themselves in the tree, in registry order, whatever the config says about them.
+    ///
+    /// # Errors
+    ///
+    /// When the engine cannot list the files.
+    #[expect(
+        clippy::redundant_closure_for_method_calls,
+        reason = "`Engine::detected` names one lifetime of the engine, and `with_engine` hands over any"
+    )]
+    pub fn detected(&self) -> Result<Vec<&'static str>, RepositoryError> {
+        self.with_engine(|engine| engine.detected())
+    }
+
+    /// The `[[external]]` entries of the config in its order, each with whether the user trusts it in this root.
+    pub fn externals(&self) -> &[Declared] {
+        &self.externals
+    }
+
+    /// `index` as every answer reads it: with a line in its coverage problems for each external that is not
+    /// trusted, so that a person who sees no file of it knows why and what to run.
+    fn answered(&self, mut index: Index) -> Arc<Index> {
+        let waiting = self
+            .externals
+            .iter()
+            .filter(|external| !external.trusted())
+            .map(Declared::problem);
+        index.coverage.problems.extend(waiting);
+        index.coverage.finish();
+        Arc::new(index)
     }
 
     /// The top directory of the work tree, by its canonical path.
@@ -118,7 +192,7 @@ impl Repository {
         })?;
         Ok(Refreshed {
             loaded: Loaded {
-                index: Arc::new(refresh.index),
+                index: self.answered(refresh.index),
                 freshness: Freshness::Fresh,
             },
             unchanged: refresh.unchanged,
@@ -142,7 +216,7 @@ impl Repository {
                 return Ok(None);
             };
             Ok(Some(Loaded {
-                index: Arc::new(index),
+                index: self.answered(index),
                 freshness,
             }))
         })
@@ -215,6 +289,32 @@ impl Repository {
         );
         Ok(ask(&engine)?)
     }
+}
+
+/// The modules of `setup` whose options the connector of that name cannot read, in the order of the config. A module
+/// that no connector is named after has nothing to read its options.
+fn unreadable_options(setup: &Setup, registry: &Registry) -> Vec<ConnectorError> {
+    let connectors = registry.connectors();
+    setup
+        .modules
+        .iter()
+        .filter_map(|module| {
+            connectors
+                .iter()
+                .find(|connector| connector.meta().name == module.module)?
+                .check_options(&module.options)
+                .err()
+        })
+        .collect()
+}
+
+/// A line break and two spaces before each of `errors`, so that they read as a list under the line above them.
+fn lines(errors: &[ConnectorError]) -> String {
+    errors.iter().fold(String::new(), |mut text, error| {
+        // Writing to a `String` cannot fail.
+        let _ = write!(text, "\n  {error}");
+        text
+    })
 }
 
 /// `path` with its longest prefix that exists resolved through the filesystem and the rest kept as text, so that a

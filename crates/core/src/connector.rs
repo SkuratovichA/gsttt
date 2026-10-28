@@ -8,7 +8,7 @@
 
 use std::fmt;
 
-use schemars::{JsonSchema, Schema};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::Xxh3;
@@ -19,6 +19,7 @@ use crate::ids::FileId;
 use crate::path::RepoPath;
 use crate::repo::RepoView;
 use crate::rules::Pack;
+use crate::text::with_path;
 
 /// What a connector is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,7 +37,7 @@ pub struct Meta {
 
 /// A language or contract-format module, written against its own types.
 pub trait Connector: Send + Sync + 'static {
-    /// The options a config passes in `g.<name>{ … }`. Their JSON schema becomes the Lua type stubs.
+    /// The options a config passes in the table named after the module, `[<name>]`. Their JSON schema is what an editor checks that table with.
     type Options: Serialize + DeserializeOwned + JsonSchema + Default + Send + Sync;
     type Project: Project;
 
@@ -242,8 +243,7 @@ impl LinkedFact {
     }
 }
 
-/// One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run
-/// time`.
+/// One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run time`.
 #[derive(
     Clone,
     Debug,
@@ -251,12 +251,18 @@ impl LinkedFact {
     Eq,
     Serialize,
     Deserialize,
+    JsonSchema,
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[serde(deny_unknown_fields)]
 pub struct Provide {
+    /// The family of contract: `http`, `graphql`, `grpc`, `trpc`, `table`, `queue`, `env`, or a name of your own.
+    // serde reads a kind from a string, which the derive cannot see; the rules say the same.
+    #[schemars(with = "String")]
     pub kind: ContractKind,
+    /// What the connector does with it: `declares`, `serves` or `calls`.
     pub role: Role,
     /// The packs or formats that find it.
     pub via: Vec<String>,
@@ -283,10 +289,19 @@ pub enum ConnectorError {
 pub trait DynConnector: Send + Sync {
     fn meta(&self) -> Meta;
     fn detect(&self, repo: &RepoView) -> bool;
-    /// The JSON schema of the options, for `gsttt schema lua` and for checking a config.
-    fn options_schema(&self) -> Schema;
+    /// The JSON schema of the options, for an editor that checks the config. The types it uses are described in `generator` and referenced from the schema returned, so that the schema of a whole config describes each type once.
+    fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema;
     /// The default options as JSON.
     fn default_options(&self) -> serde_json::Value;
+    /// Whether [`DynConnector::open`] can read `options`, without opening anything: the error is the one `open` would
+    /// give. A connector that takes no options needs no check.
+    ///
+    /// # Errors
+    ///
+    /// [`ConnectorError::Options`] when the options do not read as the options of the connector.
+    fn check_options(&self, _options: &serde_json::Value) -> Result<(), ConnectorError> {
+        Ok(())
+    }
     /// Opens the projects with options as JSON; `null` means the defaults.
     fn open(
         &self,
@@ -340,6 +355,21 @@ struct ErasedProject<P> {
     project: P,
 }
 
+/// Reads the options of the connector `connector` from the JSON of the config; `null` means the defaults. The one
+/// place that does it, so that checking options and opening with them cannot disagree.
+fn read_options<O: DeserializeOwned + Default>(
+    connector: &str,
+    options: &serde_json::Value,
+) -> Result<O, ConnectorError> {
+    if options.is_null() {
+        return Ok(O::default());
+    }
+    serde_path_to_error::deserialize(options).map_err(|error| ConnectorError::Options {
+        connector: connector.to_owned(),
+        message: with_path(error.path(), &error.inner().to_string()),
+    })
+}
+
 impl<C: Connector> DynConnector for Erased<C> {
     fn meta(&self) -> Meta {
         self.0.meta()
@@ -349,12 +379,16 @@ impl<C: Connector> DynConnector for Erased<C> {
         self.0.detect(repo)
     }
 
-    fn options_schema(&self) -> Schema {
-        schemars::schema_for!(C::Options)
+    fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema {
+        generator.subschema_for::<C::Options>()
     }
 
     fn default_options(&self) -> serde_json::Value {
         serde_json::to_value(C::Options::default()).unwrap_or(serde_json::Value::Null)
+    }
+
+    fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorError> {
+        read_options::<C::Options>(self.0.meta().name, options).map(drop)
     }
 
     fn open(
@@ -364,22 +398,7 @@ impl<C: Connector> DynConnector for Erased<C> {
         packs: &[Pack],
     ) -> Result<Vec<Box<dyn DynProject>>, ConnectorError> {
         let meta = self.0.meta();
-        let options = if options.is_null() {
-            C::Options::default()
-        } else {
-            serde_path_to_error::deserialize(options).map_err(|error| {
-                // serde's own message names the option only for an unknown one; the path names it for every kind.
-                let message = if error.path().iter().next().is_none() {
-                    error.inner().to_string()
-                } else {
-                    format!("`{}`: {}", error.path(), error.inner())
-                };
-                ConnectorError::Options {
-                    connector: meta.name.to_owned(),
-                    message,
-                }
-            })?
-        };
+        let options = read_options::<C::Options>(meta.name, options)?;
         let projects = self.0.open(repo, &options, packs)?;
         Ok(projects
             .into_iter()
@@ -526,6 +545,7 @@ mod tests {
     struct Lines;
 
     #[derive(Default, Serialize, Deserialize, JsonSchema)]
+    #[serde(deny_unknown_fields)]
     struct LinesOptions {
         #[serde(default)]
         tag: String,
@@ -632,6 +652,36 @@ mod tests {
     static REGISTRY: &[&dyn DynConnector] = &[&Erased(Lines)];
 
     #[test]
+    fn checking_options_gives_the_answer_that_opening_with_them_gives() {
+        let repo = RepoView::new("/repo", Vec::new());
+        let [connector] = REGISTRY else {
+            panic!("one connector")
+        };
+        for options in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({ "tag": "jobs" }),
+            serde_json::json!({ "tag": 3 }),
+            serde_json::json!({ "no_such_option": true }),
+            serde_json::json!("not a table"),
+        ] {
+            assert_eq!(
+                connector.check_options(&options),
+                connector.open(&repo, &options, &[]).map(drop),
+                "{options}"
+            );
+        }
+        assert_eq!(
+            connector.check_options(&serde_json::json!({ "no_such_option": true })),
+            Err(ConnectorError::Options {
+                connector: "lines".to_owned(),
+                message: "`no_such_option`: unknown field `no_such_option`, expected `tag`"
+                    .to_owned(),
+            })
+        );
+    }
+
+    #[test]
     fn erased_connectors_round_trip_options_and_extras() {
         let path = |name: &str| RepoPath::normalize(name).unwrap();
         let repo = RepoView::new("/repo", vec![path("a.txt"), path("b.txt")]);
@@ -639,13 +689,13 @@ mod tests {
             panic!("one connector")
         };
         assert!(connector.detect(&repo));
-        assert!(
-            connector
-                .options_schema()
-                .as_value()
-                .to_string()
-                .contains("tag")
-        );
+
+        // The options are a reference into the generator, which holds what they say.
+        let mut generator = SchemaGenerator::default();
+        let schema = connector.options_schema(&mut generator);
+        assert!(schema.get("$ref").is_some(), "{schema:?}");
+        let definitions = serde_json::Value::Object(generator.take_definitions(false));
+        assert!(definitions.to_string().contains("tag"), "{definitions}");
 
         let bad = connector.open(&repo, &serde_json::json!({ "tag": 3 }), &[]);
         assert_eq!(
