@@ -1815,16 +1815,21 @@ dependencies = [
 name = "gsttt-config"
 version = "0.1.0"
 dependencies = [
+ "globset",
  "gsttt-core",
  "gsttt-scenario",
  "insta",
  "mlua",
+ "proptest",
+ "rayon",
  "schemars",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
+ "xxhash-rust",
 ]
 
 [[package]]
