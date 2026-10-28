@@ -17,6 +17,8 @@
 //! roots, as it does in Python: the first one on the path is the package, and a package of the same name further along
 //! supplies nothing.
 
+use std::borrow::Cow;
+
 use gsttt_core::fact::{Import, Resolution, UnresolvedReason};
 use gsttt_core::ids::FileId;
 use gsttt_core::path::RepoPath;
@@ -360,8 +362,8 @@ impl Seen {
 /// The distribution that ships `module` among those the project declares, normalised.
 fn declared(project: &PythonProject, module: &str) -> Option<String> {
     distributions_for_import(module)
-        .into_iter()
-        .find(|name| project.dependencies.contains(name))
+        .find(|name| project.dependencies.contains(name.as_ref()))
+        .map(Cow::into_owned)
 }
 
 /// Where the import of `spec` with `names` in the file `from` points.
@@ -398,7 +400,10 @@ fn locate(project: &PythonProject, from: &RepoPath, spec: &str, names: &[String]
     if is_standard_library(module.split('.').next().unwrap_or_default()) {
         return Hit::Builtin;
     }
+    // A name no sibling root holds is found in none of them, so most imports, which name a library, skip the search.
+    let top = module.split('.').next().unwrap_or_default();
     if !seen.shadowed
+        && project.sibling_tops.contains(top)
         && let Some(hit) = seen.search(&mut probe, &project.sibling_roots, query)
     {
         return hit;
@@ -467,7 +472,7 @@ mod tests {
 
     use super::*;
     use crate::PythonOptions;
-    use crate::project::open_projects;
+    use crate::project::{open_projects, top_names};
 
     /// The project at `root` of a repository made of `paths`, declaring `dependencies`.
     fn project(paths: &[&str], root: &str, dependencies: &[&str]) -> PythonProject {
@@ -490,6 +495,10 @@ mod tests {
     /// which projects a project declares is not known.
     fn declaring(mut project: PythonProject, roots: &[&str]) -> PythonProject {
         project.sibling_roots = roots.iter().map(|root| (*root).to_owned()).collect();
+        project.sibling_tops = roots
+            .iter()
+            .flat_map(|root| top_names(&project.repo, root))
+            .collect();
         project
     }
 
@@ -528,6 +537,34 @@ mod tests {
                 "{from} imports {spec} {names:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_root_can_be_imported_by_its_directories_and_the_files_in_it_without_their_extension() {
+        let project = project(
+            &[
+                "lib/a/__init__.py",
+                "lib/a/b.py",
+                "lib/ns/deep/x.py",
+                "lib/m.py",
+                "lib/s.pyi",
+                "lib/notes.txt",
+                "lib2/other.py",
+                "top.py",
+            ],
+            "",
+            &[],
+        );
+        let names = |root| {
+            top_names(&project.repo, root)
+                .into_iter()
+                .collect::<Vec<_>>()
+        };
+        // `lib2` is a directory of its own, not a part of `lib`.
+        assert_eq!(names("lib"), ["a", "m", "notes.txt", "ns", "s"]);
+        assert_eq!(names(""), ["lib", "lib2", "top"]);
+        assert_eq!(names("lib/a"), ["__init__", "b"]);
+        assert_eq!(names("nowhere"), Vec::<String>::new());
     }
 
     #[test]

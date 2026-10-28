@@ -1,6 +1,8 @@
 //! Distribution names: the PEP 503 normaliser, the reader of one requirement and the import names that differ
 //! from the name of the distribution that ships them.
 
+use std::borrow::Cow;
+
 /// PEP 503 normalisation: lower case, each run of `-`, `_` and `.` becomes one `-`.
 pub(crate) fn normalize_distribution(name: &str) -> String {
     let mut normalized = String::with_capacity(name.len());
@@ -43,29 +45,42 @@ pub(crate) fn requirement_name(requirement: &str) -> Option<String> {
     Some(normalize_distribution(name))
 }
 
-/// The distributions that may ship the import `module` (a dotted name), most specific first, each normalised.
-/// Most distributions ship a package named like themselves; the ones that do not are listed in
-/// [`known_distribution`].
-pub(crate) fn distributions_for_import(module: &str) -> Vec<String> {
+/// [`normalize_distribution`] for a name that is likely to be normal already: a name of lower-case letters and digits
+/// is its own normal form, and most import names are, so it is borrowed.
+fn normalized(name: &str) -> Cow<'_, str> {
+    if name
+        .bytes()
+        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+    {
+        Cow::Borrowed(name)
+    } else {
+        Cow::Owned(normalize_distribution(name))
+    }
+}
+
+/// The distributions that may ship the import `module` (a dotted name), most specific first, each normalised, and each
+/// worked out only when the caller asks for it. Most distributions ship a package named like themselves; the ones that
+/// do not are listed in [`known_distribution`].
+pub(crate) fn distributions_for_import(module: &str) -> impl Iterator<Item = Cow<'_, str>> {
     let mut segments = module.split('.');
     let top = segments.next().unwrap_or_default();
     let second = segments.next();
-    let mut candidates = Vec::with_capacity(3);
-    if let Some(second) = second
-        && let Some(known) = known_distribution(&format!("{top}.{second}"))
-    {
-        candidates.push(known.to_owned());
-    }
-    if let Some(known) = known_distribution(top) {
-        candidates.push(known.to_owned());
-        return candidates;
-    }
+    let pair = second
+        .and_then(|second| module.get(..top.len() + 1 + second.len()))
+        .and_then(known_distribution);
+    let known = known_distribution(top);
     // A namespace distribution such as `ruamel.yaml` or `zope.interface` is named after its first two segments.
-    if let Some(second) = second {
-        candidates.push(normalize_distribution(&format!("{top}-{second}")));
-    }
-    candidates.push(normalize_distribution(top));
-    candidates
+    let namespace = second.filter(|_| known.is_none());
+    pair.into_iter()
+        .map(Cow::Borrowed)
+        .chain(
+            namespace
+                .into_iter()
+                .map(move |second| Cow::Owned(normalize_distribution(&format!("{top}-{second}")))),
+        )
+        .chain(std::iter::once_with(move || {
+            known.map_or_else(|| normalized(top), Cow::Borrowed)
+        }))
 }
 
 /// Distributions whose import name differs from their name on PyPI.
@@ -142,18 +157,36 @@ mod tests {
         }
     }
 
+    fn shipped_by(module: &str) -> Vec<String> {
+        distributions_for_import(module)
+            .map(Cow::into_owned)
+            .collect()
+    }
+
     #[test]
     fn import_names_map_to_their_distribution() {
-        assert_eq!(distributions_for_import("yaml.constructor"), ["pyyaml"]);
+        assert_eq!(shipped_by("yaml.constructor"), ["pyyaml"]);
+        assert_eq!(shipped_by("ruamel.yaml"), ["ruamel-yaml", "ruamel"]);
         assert_eq!(
-            distributions_for_import("ruamel.yaml"),
-            ["ruamel-yaml", "ruamel"]
-        );
-        assert_eq!(
-            distributions_for_import("google.protobuf.message"),
+            shipped_by("google.protobuf.message"),
             ["protobuf", "google-protobuf", "google"]
         );
-        assert_eq!(distributions_for_import("flask_cors"), ["flask-cors"]);
+        assert_eq!(shipped_by("flask_cors"), ["flask-cors"]);
+        assert_eq!(shipped_by("requests"), ["requests"]);
+    }
+
+    #[test]
+    fn a_name_that_is_normal_already_is_borrowed() {
+        assert!(matches!(normalized("requests"), Cow::Borrowed("requests")));
+        assert!(matches!(normalized("py3"), Cow::Borrowed("py3")));
+        assert!(matches!(normalized(""), Cow::Borrowed("")));
+        assert!(matches!(normalized("flask_cors"), Cow::Owned(_)));
+        assert!(matches!(normalized("Flask"), Cow::Owned(_)));
+        assert!(
+            distributions_for_import("requests.adapters")
+                .last()
+                .is_some_and(|last| matches!(last, Cow::Borrowed("requests")))
+        );
     }
 
     proptest! {
@@ -169,6 +202,11 @@ mod tests {
             prop_assert!(!normalized.contains("--"));
             prop_assert!(!normalized.contains(['_', '.']));
             prop_assert!(!normalized.chars().any(|ch| ch.is_ascii_uppercase()));
+        }
+
+        #[test]
+        fn the_borrowing_normaliser_agrees_with_the_owning_one(name in "\\PC{0,24}") {
+            prop_assert_eq!(normalized(&name), normalize_distribution(&name));
         }
 
         #[test]

@@ -41,6 +41,9 @@ pub struct PythonProject {
     /// them: where a library of the repository is found. A project nobody declares is not on the path of an import, so
     /// what it holds is no module of this one.
     pub(crate) sibling_roots: Vec<String>,
+    /// What a module in `sibling_roots` can be imported by, set with them: the directories and the file names, without
+    /// `.py` and `.pyi`, directly in those roots. A name that is none of them is held by no sibling root.
+    pub(crate) sibling_tops: BTreeSet<String>,
 }
 
 /// The projects of the repository, one per manifest directory, in path order.
@@ -115,10 +118,52 @@ pub(crate) fn open_projects(
             roots
         })
         .collect();
+    // What a root can be imported by is read once, however many projects declare the project it belongs to.
+    let mut tops: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for root in siblings.iter().flatten() {
+        tops.entry(root.clone())
+            .or_insert_with(|| top_names(repo, root));
+    }
     for (project, roots) in projects.iter_mut().zip(siblings) {
+        project.sibling_tops = roots
+            .iter()
+            .filter_map(|root| tops.get(root))
+            .flatten()
+            .cloned()
+            .collect();
         project.sibling_roots = roots;
     }
     Ok(projects)
+}
+
+/// The names a module in the directory `root` can be imported by: the directories and the files directly in it, a
+/// file without its `.py` or `.pyi`. A name that stands for no Python is in too, so the set is never smaller than the
+/// names that resolve.
+pub(crate) fn top_names(repo: &RepoView, root: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for (_, path) in repo.under(root) {
+        let below = if root.is_empty() {
+            Some(path.as_str())
+        } else {
+            path.as_str()
+                .strip_prefix(root)
+                .and_then(|rest| rest.strip_prefix('/'))
+        };
+        let Some(below) = below else {
+            continue;
+        };
+        let name = match below.split_once('/') {
+            Some((directory, _)) => directory,
+            None => below
+                .strip_suffix(".pyi")
+                .or_else(|| below.strip_suffix(".py"))
+                .unwrap_or(below),
+        };
+        if !names.contains(name) {
+            names.insert(name.to_owned());
+        }
+    }
+    names
 }
 
 /// Whether `path` lies under one of the project `roots`: its directory or one above it is a root.
@@ -184,6 +229,7 @@ fn open_project(
         salt,
         repo: repo.clone(),
         sibling_roots: Vec::new(),
+        sibling_tops: BTreeSet::new(),
     })
 }
 
