@@ -18,7 +18,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 tracing.workspace = true
-xxhash-rust.workspace = true
 
 [dev-dependencies]
 gsttt-config.workspace = true

@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use gsttt_core::connector::{
-    LinkInput, LinkedFact, Parsed, PrepareFile, Project, Provide, SourceFile,
+    LinkInput, LinkedFact, Parsed, PrepareFile, Project, Provide, SourceFile, salt_of,
 };
 use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseStatus, Resolution};
 use gsttt_core::path::RepoPath;
@@ -14,7 +14,6 @@ use gsttt_core::rules::Pack;
 use gsttt_core::text::LineIndex;
 use ra_ap_edition::Edition;
 use ra_ap_syntax::ast;
-use xxhash_rust::xxh3::xxh3_64;
 
 use crate::imports;
 use crate::link;
@@ -42,6 +41,13 @@ pub struct RustProject {
     trees: Arc<Trees>,
     aliases: Aliases,
     salt: u64,
+}
+
+/// The salt of a project: what besides the file text decides what `parse` returns. The edition decides the syntax and
+/// the packs decide the contracts, so a change in either reads every file again.
+fn salt_for(edition: Edition, packs: &[Pack]) -> u64 {
+    let packs_json = serde_json::to_string(packs).unwrap_or_default();
+    salt_of(&[&edition.to_string(), &packs_json])
 }
 
 impl RustProject {
@@ -77,10 +83,7 @@ impl RustProject {
             })
             .cloned()
             .collect();
-        // Anything but the file text that changes what `parse` returns: the edition decides the syntax, the
-        // packs decide the contracts.
-        let packs_json = serde_json::to_string(&packs).unwrap_or_default();
-        let salt = xxh3_64(format!("{edition};{packs_json}").as_bytes());
+        let salt = salt_for(edition, &packs);
         Self {
             root: root.to_owned(),
             package,
@@ -223,3 +226,6 @@ fn aliases(files: &[PrepareFile<'_>]) -> Aliases {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;
