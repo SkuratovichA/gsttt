@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use gsttt_config::pack::builtin_packs;
+use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
 use gsttt_core::fact::{
     ContractFact, Embedded, FileTags, ImportFlags, ImportKind, Line, ParseStatus, Resolution,
@@ -1181,6 +1182,12 @@ fn an_argument_that_is_not_a_string_records_nothing() {
     let facts = &tree.file("held.py").facts;
     assert!(facts.unresolved.is_empty(), "{:?}", facts.unresolved);
     assert!(facts.embedded.is_empty(), "{:?}", facts.embedded);
+    // What a call to a function builds is not known to be SQL, so it is named instead.
+    assert!(
+        tree.blind_spots().contains(&"SQL built by a function call"),
+        "{:?}",
+        tree.blind_spots()
+    );
 }
 
 #[test]
@@ -1530,6 +1537,69 @@ fn blind_spots_are_reported() {
         assert!(blind_spots.contains(&words), "{words}: {blind_spots:?}");
     }
     insta::assert_json_snapshot!("blind_spots_are_reported", tree.json["projects"]);
+}
+
+#[gsttt_scenario::scenario("python", "A table name given by a declared_attr is a blind spot")]
+#[test]
+fn a_table_name_given_by_a_declared_attr_is_a_blind_spot() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"shop\"\ndependencies = [\"sqlalchemy\"]\n",
+        ),
+        (
+            "models.py",
+            r"from sqlalchemy.orm import declarative_base, declared_attr
+
+Base = declarative_base()
+
+
+class TableNameMixin:
+    @declared_attr
+    def __tablename__(cls):
+        return cls.__name__.lower()
+
+
+class Booking(TableNameMixin, Base):
+    id = 1
+",
+        ),
+    ]);
+    assert_eq!(tree.contracts("models.py"), Vec::<String>::new());
+    let words = "table names given by a declared_attr or inherited from a mixin";
+    assert!(
+        tree.blind_spots().contains(&words),
+        "{:?}",
+        tree.blind_spots()
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A function from a star import is not followed")]
+#[test]
+fn a_function_from_a_star_import_is_not_followed() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"shop\"\ndependencies = [\"requests\"]\n",
+        ),
+        (
+            "client.py",
+            "from requests import *\n\n\ndef cancel(id):\n    get(f\"{BASE}/bookings/{id}\")\n",
+        ),
+    ]);
+    assert_eq!(tree.contracts("client.py"), Vec::<String>::new());
+    let words =
+        "names brought in by a star import, which are not matched to the module they come from";
+    let calls = tree.output.projects[0]
+        .provides
+        .iter()
+        .find(|provide| provide.kind == ContractKind::Http && provide.role == Role::Calls)
+        .expect("the requests pack gives the project http calls");
+    assert!(
+        calls.blind_spots.iter().any(|spot| spot == words),
+        "{:?}",
+        calls.blind_spots
+    );
 }
 
 #[test]

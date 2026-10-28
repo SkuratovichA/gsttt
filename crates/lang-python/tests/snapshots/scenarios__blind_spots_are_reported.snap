@@ -18,6 +18,7 @@ expression: "tree.json[\"projects\"]"
           "Flask routes whose methods are held in a variable, which are read as GET",
           "Flask routes with several methods beyond the first",
           "mounts of a router by a file of another Python project, in a cycle, deeper than 32 routers, in more than 64 ways, with a prefix held in a variable, through an import that cannot be resolved, or through a name that a module other than a package's __init__.py re-exports",
+          "names brought in by a star import, which are not matched to the module they come from",
           "prefixes held in variables",
           "re_path and regex routes",
           "routers and blueprints created in another module than the one that declares their routes",
@@ -42,8 +43,11 @@ expression: "tree.json[\"projects\"]"
         ],
         "blind_spots": [
           "Django default table names",
+          "SQL built by a function call",
           "SQL held in a variable",
           "execute and executemany calls on a receiver of more than three segments",
+          "names brought in by a star import, which are not matched to the module they come from",
+          "table names given by a declared_attr or inherited from a mixin",
           "table names held in variables"
         ]
       },
@@ -52,6 +56,7 @@ expression: "tree.json[\"projects\"]"
         "role": "calls",
         "via": [],
         "blind_spots": [
+          "SQL built by a function call",
           "SQL held in a variable",
           "execute and executemany calls on a receiver of more than three segments"
         ]
@@ -73,6 +78,7 @@ expression: "tree.json[\"projects\"]"
         "blind_spots": [
           "an alias written inside a field's annotation",
           "fields of a settings class that derives from another settings class",
+          "names brought in by a star import, which are not matched to the module they come from",
           "settings read by environs, django-environ or python-decouple",
           "variable names held in variables"
         ]

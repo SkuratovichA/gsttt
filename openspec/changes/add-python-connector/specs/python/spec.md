@@ -91,6 +91,14 @@ A name that two imports bind one after the other SHALL stand, from the second on
 - **WHEN** a project declares `requests` and `httpx`, and a file has `import requests as c` and `c.get("/x")` in one function, `import httpx as c` and `c.get("/y")` in the next, then `import httpx as http` in a `try`, `import requests as http` in its `except` and `http.get("/z")`
 - **THEN** the calls go with `requests`, `httpx` and `requests`, and the provides name a client library imported under one name in `try` and in `except` as a blind spot
 
+### Requirement: Names from a star import
+A name that `from <module> import *` brings in SHALL not be matched to the module, because the names it binds are not listed, and the provides of a project SHALL name such names as a blind spot of the contracts that the packs in force find by the imports of a file.
+
+#### Scenario: A function from a star import is not followed
+- **WHEN** a project with the `requests` pack has a file with `from requests import *` that calls `get(f"{BASE}/bookings/{id}")`
+- **THEN** the file calls no contract
+- **AND** the provides of the project name names brought in by a star import as a blind spot of the HTTP calls
+
 ### Requirement: Parse status
 A file with syntax errors from which the parser recovered SHALL be recorded as recovered with the number of errors and the line of the first, keeping what was read.
 
@@ -315,6 +323,14 @@ A pack's assignment rule SHALL match a name assigned in a class body as written 
 - **WHEN** a pack's rule has the target `db_table` and a file assigns `db_table` at module level, in a method, in a class `Meta` that is in no class and in the `Meta` of a model
 - **THEN** each of them declares a table
 
+### Requirement: Tables that a class gets from elsewhere
+With the `sqlalchemy` pack, a table name that a `declared_attr` function gives or that a model inherits from a mixin SHALL not be read, and the provides of the project SHALL name those table names as a blind spot of its tables.
+
+#### Scenario: A table name given by a declared_attr is a blind spot
+- **WHEN** a project with the `sqlalchemy` pack has a mixin whose `__tablename__` is a `declared_attr` function, and a model that derives from the mixin
+- **THEN** the files declare no table
+- **AND** the provides of the project name table names given by a `declared_attr` or inherited from a mixin as a blind spot
+
 ### Requirement: Alembic migrations
 With the `alembic` pack, `op.create_table`, `op.drop_table`, `op.rename_table`, `op.add_column`, `op.drop_column`, `op.alter_column` and `op.create_index` SHALL declare `table <name>` for the table they name.
 
@@ -358,7 +374,7 @@ With the `dbapi` pack, the first argument of `execute` and `executemany` on a re
 - **AND** the second call embeds an `sql` document with the text `SELECT a FROM t -- note`
 
 ### Requirement: DB-API arguments that are not literals
-With the `dbapi` pack, an `execute` or `executemany` call whose first argument is a string built at run time, an f-string, `+` or `%` on a string, or `.format` on a string, SHALL be an unread site. A call whose first argument is a variable, an attribute, a subscript or a call SHALL record nothing, because a method with that name need not take SQL.
+With the `dbapi` pack, an `execute` or `executemany` call whose first argument is a string built at run time, an f-string, `+` or `%` on a string, or `.format` on a string, SHALL be an unread site. A call whose first argument is a variable, an attribute, a subscript or a call SHALL record nothing, because a method with that name need not take SQL, and the provides of the project SHALL name SQL built by a function call as a blind spot of its tables.
 
 #### Scenario: A SQL string built at run time is an unread site
 - **WHEN** a file has `cursor.execute(f"SELECT id FROM {table}")`, `cursor.execute("SELECT id FROM " + table)`, `cursor.execute("SELECT id FROM bookings WHERE id = %s" % task)` and `.format` on a text joined with `+`, and one call with the plain literal `"SELECT id FROM bookings"`
@@ -373,6 +389,7 @@ With the `dbapi` pack, an `execute` or `executemany` call whose first argument i
 #### Scenario: An argument that is not a string records nothing
 - **WHEN** a file has `pool.execute(task)`, `cursor.execute(queries[0])`, `cursor.executemany(queries.insert, rows)`, `cursor.execute(compose(task))` and `cursor.execute()`
 - **THEN** none of them is an unread site and none embeds a document
+- **AND** the provides of the project name SQL built by a function call as a blind spot
 
 ### Requirement: DB-API receivers
 With the `dbapi` pack, `execute` and `executemany` called on a receiver of more than three segments SHALL not be read, and the provides of every project SHALL name those calls and SQL held in a variable as blind spots of its tables.

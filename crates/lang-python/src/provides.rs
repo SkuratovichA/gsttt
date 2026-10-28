@@ -26,10 +26,20 @@ const APPLICATIONS_MOUNTED: &str =
 /// `try: import httpx as http` and `except ImportError: import requests as http`, is the case that matters for clients.
 const CLIENTS_REBOUND: &str = "a client library imported under one name in try and in except, of which the last import is read";
 
+/// A callee is matched as written and as the imports of its file spell it, and `from module import *` lists no name, so
+/// a function it brings in is matched as the bare name it is written as, which no pack names.
+const STAR_IMPORTS: &str =
+    "names brought in by a star import, which are not matched to the module they come from";
+
+/// A model whose table name a `declared_attr` function gives, or that a mixin gives it, has no `__tablename__` in its
+/// body, and a function is not an assignment.
+const MIXIN_TABLES: &str = "table names given by a declared_attr or inherited from a mixin";
+
 /// What the `dbapi` pack leaves out. SQL is declared (`CREATE TABLE`) or called (`SELECT`), so each is told under both.
-const DBAPI_GAPS: [&str; 2] = [
+const DBAPI_GAPS: [&str; 3] = [
     "execute and executemany calls on a receiver of more than three segments",
     "SQL held in a variable",
+    "SQL built by a function call",
 ];
 
 /// Gaps of every Python project, whatever its packs: contracts no pack of this connector reads.
@@ -61,6 +71,7 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
             serves("routes registered by calls to add_api_route"),
             serves(APPLICATIONS_MOUNTED),
             serves(MOUNTS_UNFOLLOWED),
+            serves(STAR_IMPORTS),
         ],
         "flask" => vec![
             serves("Flask routes with several methods beyond the first"),
@@ -69,12 +80,14 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
             serves(ROUTERS_ELSEWHERE),
             serves("routes registered by calls to add_url_rule and class-based views"),
             serves(MOUNTS_UNFOLLOWED),
+            serves(STAR_IMPORTS),
         ],
         "django" => vec![
             serves("prefixes held in variables"),
             serves("re_path and regex routes"),
             serves("routes made by Django REST framework routers"),
             serves(MOUNTS_UNFOLLOWED),
+            serves(STAR_IMPORTS),
             tables("Django default table names"),
         ],
         "requests" => vec![
@@ -82,14 +95,24 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
             calls("HTTP clients other than requests and httpx"),
             calls("sessions created in another module than the one that uses them"),
             calls(CLIENTS_REBOUND),
+            calls(STAR_IMPORTS),
         ],
         "httpx" => vec![
             calls("URLs held in variables"),
             calls("HTTP clients other than requests and httpx"),
             calls("clients created in another module than the one that uses them"),
             calls(CLIENTS_REBOUND),
+            calls(STAR_IMPORTS),
         ],
-        "sqlalchemy" | "alembic" => vec![tables("table names held in variables")],
+        "sqlalchemy" => vec![
+            tables("table names held in variables"),
+            tables(MIXIN_TABLES),
+            tables(STAR_IMPORTS),
+        ],
+        "alembic" => vec![
+            tables("table names held in variables"),
+            tables(STAR_IMPORTS),
+        ],
         "dbapi" => DBAPI_GAPS
             .iter()
             .flat_map(|&words| [tables(words), table_calls(words)])
@@ -115,6 +138,7 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
                 Role::Calls,
                 "an alias written inside a field's annotation",
             ),
+            (ContractKind::Env, Role::Calls, STAR_IMPORTS),
         ],
         _ => Vec::new(),
     }
