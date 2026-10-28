@@ -197,6 +197,22 @@ fn a_re_exported_model_type_calls_its_table() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario("typescript", "An import type reaches the import rules")]
+fn an_import_type_reaches_the_import_rules() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-import-type")?;
+    assert_eq!(
+        contracts(&json, "src/types.ts"),
+        ["calls table tenant @1", "calls table tenantbranch @2"]
+    );
+    assert_eq!(
+        contracts(&json, "src/declared.ts"),
+        ["calls table tenant @1"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A namespace import of the client names nothing")]
 fn a_namespace_import_of_the_client_names_nothing() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-namespace-import")?;

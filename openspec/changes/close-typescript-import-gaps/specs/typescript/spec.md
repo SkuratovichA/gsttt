@@ -117,7 +117,7 @@ A name that the file declares itself, as a `type` alias, an `interface`, a `clas
 - **THEN** the three files call no table
 
 ### Requirement: Imported model types
-A pack MAY name a contract for each name a file takes from a package. With the `prisma` pack, a name imported or re-exported by name from `@prisma/client` SHALL call the table of that name at the line of the import, as the package exports it and not as the file renames it, except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`. A namespace import, a default import, a side-effect import and `export *` SHALL name nothing.
+A pack MAY name a contract for each name a file takes from a package. With the `prisma` pack, a name imported or re-exported by name from `@prisma/client` SHALL call the table of that name at the line of the import, as the package exports it and not as the file renames it, except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`. A namespace import, a default import, a side-effect import and `export *` SHALL name nothing. An import type `import('@prisma/client').Tenant` SHALL be read as the import of the first name of its qualifier is, at the line of its specifier, and one without a qualifier SHALL name nothing.
 
 #### Scenario: An imported model type calls its table
 - **WHEN** `src/models.ts` has `import type { Tenant, TenantBranch as Branch, Prisma, PrismaClient } from '@prisma/client'` over lines 1 to 6 and `import { BookingStatus } from '@prisma/client'` on line 7
@@ -128,6 +128,12 @@ A pack MAY name a contract for each name a file takes from a package. With the `
 #### Scenario: A re-exported model type calls its table
 - **WHEN** `src/models.ts` has `export type { Tenant, Prisma } from '@prisma/client'` on line 1
 - **THEN** the file calls `table tenant` at line 1 and no other table
+
+#### Scenario: An import type reaches the import rules
+- **WHEN** `src/types.ts` has `import('@prisma/client').Tenant` on line 1, `import('@prisma/client').TenantBranch[]` on line 2, `import('@prisma/client').Prisma.TenantWhereInput`, `import('@prisma/client').PrismaClient`, `typeof import('@prisma/client')` and `import('ui-kit').Tenant`
+- **AND** `src/declared.ts` has `import type { Tenant } from '@prisma/client'` on line 1
+- **THEN** `src/types.ts` calls `table tenant` at line 1 and `table tenantbranch` at line 2 and no other table
+- **AND** `src/declared.ts` calls `table tenant` at line 1, as the import type does
 
 #### Scenario: A namespace import of the client names nothing
 - **WHEN** `src/client.ts` has `import * as client from '@prisma/client'`, a default import of it, `import { default as other } from '@prisma/client'`, `import '@prisma/client'`, `export * from '@prisma/client'`, `export * as models from '@prisma/client'` and `export { default as Client } from '@prisma/client'`
