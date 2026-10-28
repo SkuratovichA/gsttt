@@ -23,3 +23,4 @@
 ## 5. Review fixes
 
 - [x] 5.1 An external's process starts with a cleared environment: a short allowlist and the names its `env` lists
+- [x] 5.2 Tables handed to the gsttt module are converted under a budget of a million values

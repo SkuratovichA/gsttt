@@ -8,6 +8,9 @@ use serde_json::{Map, Number, Value as Json};
 /// Tables nested deeper than this are refused, which also stops a table that contains itself.
 const MAX_DEPTH: usize = 64;
 
+/// How many values one conversion may build. A table that is used twice is converted twice, so a few lines of Lua make a table that stands for billions of JSON values, and neither the memory limit nor the instruction limit of the sandbox sees what Rust builds from it.
+const MAX_NODES: usize = 1_000_000;
+
 /// Why a Lua value cannot be part of the setup. Every variant says where in the value the problem is.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ValueError {
@@ -20,6 +23,10 @@ pub(crate) enum ValueError {
     NotUtf8 { path: String },
     #[error("{path}: tables nest deeper than {limit} levels, or contain themselves")]
     TooDeep { path: String, limit: usize },
+    #[error(
+        "{path}: the value holds more than {limit} values, a table that appears twice counting twice"
+    )]
+    TooLarge { path: String, limit: usize },
     #[error("{path}: two keys both become `{key}` in JSON")]
     DuplicateKey { path: String, key: String },
     #[error("{path}: {source}")]
@@ -28,10 +35,25 @@ pub(crate) enum ValueError {
 
 /// Reads `value` as JSON. `label` starts the path that errors report, such as `g.ts` in `g.ts.paths[2]`.
 pub(crate) fn to_json(value: &Value, label: &str) -> Result<Json, ValueError> {
-    convert(value, label, 0)
+    let mut budget = MAX_NODES;
+    convert(value, label, 0, &mut budget)
 }
 
-fn convert(value: &Value, path: &str, depth: usize) -> Result<Json, ValueError> {
+fn too_large(path: &str) -> ValueError {
+    ValueError::TooLarge {
+        path: path.to_owned(),
+        limit: MAX_NODES,
+    }
+}
+
+/// Converts `value` and everything below it. `budget` is how many more values may be built: each call takes one, and the call that finds it spent is the one that names its path.
+fn convert(
+    value: &Value,
+    path: &str,
+    depth: usize,
+    budget: &mut usize,
+) -> Result<Json, ValueError> {
+    *budget = budget.checked_sub(1).ok_or_else(|| too_large(path))?;
     match value {
         Value::Nil => Ok(Json::Null),
         Value::Boolean(flag) => Ok(Json::Bool(*flag)),
@@ -50,7 +72,7 @@ fn convert(value: &Value, path: &str, depth: usize) -> Result<Json, ValueError> 
             .map_err(|_| ValueError::NotUtf8 {
                 path: path.to_owned(),
             }),
-        Value::Table(table) => convert_table(table, path, depth),
+        Value::Table(table) => convert_table(table, path, depth, budget),
         other => Err(ValueError::Unsupported {
             path: path.to_owned(),
             what: format!("a {}", other.type_name()),
@@ -66,20 +88,29 @@ fn finite(number: f64) -> Option<Number> {
     number.to_string().parse().ok()
 }
 
-fn convert_table(table: &Table, path: &str, depth: usize) -> Result<Json, ValueError> {
+fn convert_table(
+    table: &Table,
+    path: &str,
+    depth: usize,
+    budget: &mut usize,
+) -> Result<Json, ValueError> {
     if depth >= MAX_DEPTH {
         return Err(ValueError::TooDeep {
             path: path.to_owned(),
             limit: MAX_DEPTH,
         });
     }
-    let entries = table
-        .pairs::<Value, Value>()
-        .collect::<mlua::Result<Vec<_>>>()
-        .map_err(|source| ValueError::Lua {
+    // The entries are collected before they are converted, so the budget is checked as they come: a table of millions of entries must not be copied whole just to be refused.
+    let mut entries = Vec::new();
+    for entry in table.pairs::<Value, Value>() {
+        if entries.len() >= *budget {
+            return Err(too_large(path));
+        }
+        entries.push(entry.map_err(|source| ValueError::Lua {
             path: path.to_owned(),
             source,
-        })?;
+        })?);
+    }
     let count = entries.len();
     // Keys are distinct, so `count` integer keys inside `1..=count` are exactly `1..=count`. An empty table passes too.
     let is_list = entries.iter().all(|(key, _)| {
@@ -87,25 +118,40 @@ fn convert_table(table: &Table, path: &str, depth: usize) -> Result<Json, ValueE
             if usize::try_from(*index).is_ok_and(|index| (1..=count).contains(&index)))
     });
     if is_list {
-        list(entries, path, depth)
+        list(entries, path, depth, budget)
     } else {
-        map(entries, path, depth)
+        map(entries, path, depth, budget)
     }
 }
 
-fn list(mut entries: Vec<(Value, Value)>, path: &str, depth: usize) -> Result<Json, ValueError> {
+fn list(
+    mut entries: Vec<(Value, Value)>,
+    path: &str,
+    depth: usize,
+    budget: &mut usize,
+) -> Result<Json, ValueError> {
     entries.sort_by_key(|(key, _)| key.as_integer());
     entries
         .iter()
         .enumerate()
         .map(|(position, (_, value))| {
-            convert(value, &format!("{path}[{}]", position + 1), depth + 1)
+            convert(
+                value,
+                &format!("{path}[{}]", position + 1),
+                depth + 1,
+                budget,
+            )
         })
         .collect::<Result<Vec<_>, _>>()
         .map(Json::Array)
 }
 
-fn map(entries: Vec<(Value, Value)>, path: &str, depth: usize) -> Result<Json, ValueError> {
+fn map(
+    entries: Vec<(Value, Value)>,
+    path: &str,
+    depth: usize,
+    budget: &mut usize,
+) -> Result<Json, ValueError> {
     let mut named = Vec::with_capacity(entries.len());
     for (key, value) in entries {
         named.push((key_text(&key, path)?, value));
@@ -113,7 +159,7 @@ fn map(entries: Vec<(Value, Value)>, path: &str, depth: usize) -> Result<Json, V
     named.sort_by(|(left, _), (right, _)| left.cmp(right));
     let mut object = Map::new();
     for (key, value) in named {
-        let converted = convert(&value, &format!("{path}.{key}"), depth + 1)?;
+        let converted = convert(&value, &format!("{path}.{key}"), depth + 1, budget)?;
         if object.insert(key.clone(), converted).is_some() {
             return Err(ValueError::DuplicateKey {
                 path: path.to_owned(),
@@ -154,6 +200,14 @@ mod tests {
         let lua = Lua::new();
         let value: Value = lua.load(source).eval().unwrap();
         to_json(&value, "t")
+    }
+
+    /// The message for a value that must be refused. One that is accepted is reported without printing it, as it may be enormous.
+    fn refused(source: &str) -> String {
+        match read(source) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("the value was accepted: {source}"),
+        }
     }
 
     #[test]
@@ -229,6 +283,22 @@ mod tests {
                 .contains("tables nest deeper than 64 levels"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn a_table_that_is_used_twice_per_level_is_stopped_by_the_budget() {
+        // 21 levels are 2^21 leaves: far over the budget, and few enough that the unbudgeted code finishes.
+        let message = refused(r#"local t = { "x" } for _ = 1, 21 do t = { t, t } end return t"#);
+        assert!(
+            message.starts_with("t[1]") && message.contains("more than 1000000 values"),
+            "{message}"
+        );
+        // A table of that many entries is refused before it is copied, too.
+        let flat = refused("local t = {} for i = 1, 1100000 do t[i] = i end return t");
+        assert!(flat.contains("more than 1000000 values"), "{flat}");
+        // Under the budget, a table used twice is simply converted twice.
+        let shared = read("local a = { 1, 2 } return { a, a }").unwrap();
+        assert_eq!(shared, json!([[1, 2], [1, 2]]));
     }
 
     #[test]

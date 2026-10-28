@@ -65,11 +65,15 @@ The config, its modules and every pack SHALL be evaluated with only the `table`,
 - **THEN** reading the pack fails with a message naming the pack
 
 ### Requirement: Limits
-Evaluation SHALL stop with an error naming the limit when it allocates more than 64 MiB or runs more than 100 million instructions.
+Evaluation SHALL stop with an error naming the limit when it allocates more than 64 MiB or runs more than 100 million instructions. A table handed to the gsttt module SHALL be refused, with an error that names where in it the limit was reached, when it holds more than a million values, a table that appears twice counting twice.
 
 #### Scenario: Runaway configs stop
 - **WHEN** the config runs `while true do end`, or builds a string of a billion bytes
 - **THEN** evaluation fails with a message naming the instruction limit or the memory limit
+
+#### Scenario: A table that expands is refused
+- **WHEN** the config builds a table that holds the table below it twice, forty levels deep, and passes it to `g.setup`
+- **THEN** evaluation fails with a message that names `g.setup.exclude` and the limit of a million values
 
 ### Requirement: Iteration order
 `pairs` SHALL visit list keys in order and then the other keys sorted, so that evaluation is deterministic.

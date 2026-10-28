@@ -153,6 +153,20 @@ fn runaway_configs_stop_at_their_limits() {
     assert!(huge.contains("memory limit"), "{huge}");
 }
 
+#[gsttt_scenario::scenario("config", "A table that expands is refused")]
+#[test]
+fn a_table_that_expands_is_refused_before_it_is_built() {
+    // Each level holds the level below twice: forty levels are 2^40 values in JSON, from a table of a few dozen.
+    let message = failure(
+        "local t = { \"x\" }\nfor _ = 1, 40 do t = { t, t } end\nrequire(\"gsttt\").setup { exclude = t }\n",
+    );
+    assert!(message.starts_with(".gsttt/init.lua:3:"), "{message}");
+    assert!(
+        message.contains("g.setup.exclude[1]") && message.contains("more than 1000000 values"),
+        "{message}"
+    );
+}
+
 #[gsttt_scenario::scenario("config", "Iteration order is fixed")]
 #[test]
 fn pairs_visits_keys_in_a_fixed_order() {
