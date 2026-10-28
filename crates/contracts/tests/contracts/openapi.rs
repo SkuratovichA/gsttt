@@ -7,7 +7,7 @@ use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use serde_json::{Value, json};
 
-use crate::support::{Run, fixture, logged, module, with_options};
+use crate::support::{Run, all_modules, fixture, logged, module, with_options};
 
 #[gsttt_scenario::scenario("contract-formats", "Operations are declared under the server path")]
 #[test]
@@ -152,4 +152,22 @@ fn a_document_over_the_size_the_connector_reads_is_logged() {
     });
     assert!(log.contains("openapi.yaml"), "{log}");
     assert!(log.contains("8388609"), "{log}");
+}
+
+/// The key of a custom method keeps no `{id}` of its own, so the OpenAPI path and the protobuf binding of one method meet.
+#[gsttt_scenario::scenario("contract-formats", "A custom method meets its protobuf binding")]
+#[test]
+fn a_custom_method_meets_its_protobuf_binding() {
+    let run = Run::new("openapi_custom_method", &all_modules());
+    assert_eq!(
+        run.sites("openapi.yaml"),
+        vec!["declares http POST /v1/things/{} @7"]
+    );
+    assert_eq!(
+        run.sites("things.proto"),
+        vec![
+            "declares grpc things.v1.ThingService/CancelThing @6",
+            "declares http POST /v1/things/{} @7",
+        ]
+    );
 }

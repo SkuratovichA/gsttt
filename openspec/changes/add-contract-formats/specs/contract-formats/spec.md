@@ -40,7 +40,7 @@ A file a format's parser cannot read SHALL be a syntax failure with its line, an
 - **THEN** its status is a syntax failure at line 12 and the other contract files are read
 
 ### Requirement: OpenAPI
-Each operation under `paths` SHALL declare `http <METHOD> <base><path>` at the line of the operation, once for each distinct base in the order of the servers. A base SHALL be the path of an entry of `servers` in OpenAPI 3 or the `basePath` in Swagger 2, without its origin, whether the origin is written `https://host`, `//host` or `{variable}`; a document with neither has the empty base.
+Each operation under `paths` SHALL declare `http <METHOD> <base><path>` at the line of the operation, once for each distinct base in the order of the servers. A base SHALL be the path of an entry of `servers` in OpenAPI 3 or the `basePath` in Swagger 2, without its origin, whether the origin is written `https://host`, `//host` or `{variable}`; a document with neither has the empty base. A segment that holds a `{…}` SHALL be keyed `{}`, so `{id}:cancel` meets its protobuf binding.
 
 #### Scenario: Operations are declared under the server path
 - **WHEN** `openapi.yaml` has `servers: [{url: "https://api.example.com/v1"}]` and the path `/bookings/{id}` with `get` and `delete`
@@ -49,6 +49,10 @@ Each operation under `paths` SHALL declare `http <METHOD> <base><path>` at the l
 #### Scenario: Operations are declared under every server path
 - **WHEN** `api/openapi.yaml` has the servers `https://api.example.com/v1`, `https://staging.example.com/v1`, `//api.example.com/v2/` and `{baseUrl}/v3`, the path `/bookings` with `get`, and the path `/carts` that is a `$ref` to a fragment with `get`
 - **THEN** it declares `http GET /v1/bookings`, `http GET /v2/bookings` and `http GET /v3/bookings` at the line of `get`, and the fragment declares `http GET /v1/carts`, `http GET /v2/carts` and `http GET /v3/carts`
+
+#### Scenario: A custom method meets its protobuf binding
+- **WHEN** an OpenAPI path `/v1/things/{id}:cancel` with a `post` and a protobuf HTTP binding `post: "/v1/things/{id}:cancel"` are both declared
+- **THEN** both are keyed `http POST /v1/things/{}`
 
 ### Requirement: OpenAPI references
 A `$ref` to another file SHALL be an import resolving relative to the referring file with its fragment dropped, and a path item that is a `$ref` to a fragment SHALL declare the fragment's operations under the referring path, once for each base, at their lines in the fragment.

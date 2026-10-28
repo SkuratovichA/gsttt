@@ -383,9 +383,7 @@ fn fields_of(rule: &str) -> Vec<(String, Field)> {
     read_fields(&tokens, &mut at, 0)
 }
 
-/// A path template with each variable, `{id}` or `{name=projects/*}`, written as the `{}` of a parameter in a key. The
-/// shared normaliser reads a segment as a parameter only when it is one whole variable, and neither `{id}:cancel`
-/// nor a variable that spans several segments is.
+/// A path template with each variable, `{id}` or `{name=projects/*}`, written as the `{}` of a parameter in a key. The shared normaliser reads a segment that holds a `{…}` as a parameter, but it splits the path at every `/`, so it cannot see a variable that spans several segments.
 fn variables_as_parameters(template: &str) -> String {
     let mut path = String::with_capacity(template.len());
     let mut depth = 0_usize;

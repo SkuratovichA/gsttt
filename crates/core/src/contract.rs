@@ -257,8 +257,7 @@ impl fmt::Display for ContractKey {
 ///
 /// - A scheme and host go: `https://api.example.com/v1/x` becomes `/v1/x`.
 /// - The query string and fragment go.
-/// - Parameter segments become `{}`: `:id`, `{id}`, `{id:int}`, `<id>`, `<int:id>`, and any segment holding a
-///   `${…}` or `{}` placeholder from a template string or a concatenation.
+/// - Parameter segments become `{}`: `:id`, `{id}`, `{id:int}`, `<id>`, `<int:id>`, any segment that holds a `{` followed later by a `}`, such as the custom method `{id}:cancel`, and any segment holding a `${…}` or `{}` placeholder from a template string or a concatenation.
 /// - A placeholder before the first `/` is a base URL and goes: `${API}/bookings` becomes `/bookings`.
 /// - Repeated and trailing slashes go; the result starts with `/`.
 pub fn normalize_http_path(raw: &str) -> String {
@@ -290,9 +289,12 @@ fn is_placeholder(segment: &str) -> bool {
 }
 
 fn is_param(segment: &str) -> bool {
+    // A `{…}` anywhere in a segment makes it a parameter here and not in `is_placeholder`, which also decides that a placeholder before the first `/` is a base URL that goes, while `{tenant}/x` keeps its first segment as a parameter.
     is_placeholder(segment)
         || segment.starts_with(':')
-        || (segment.starts_with('{') && segment.ends_with('}'))
+        || segment
+            .split_once('{')
+            .is_some_and(|(_, after)| after.contains('}'))
         || (segment.starts_with('<') && segment.ends_with('>'))
 }
 
@@ -318,6 +320,11 @@ mod tests {
         }
         assert_eq!(normalize_http_path(""), "/");
         assert_eq!(normalize_http_path("/${tenant}/x"), "/{}/x");
+        assert_eq!(normalize_http_path("{tenant}/x"), "/{}/x");
+        assert_eq!(
+            normalize_http_path("/v1/things/{id}:cancel"),
+            "/v1/things/{}"
+        );
     }
 
     #[test]

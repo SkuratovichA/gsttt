@@ -37,3 +37,7 @@
 - [x] 4.14 Env files: a `.env.*` file in a programming language is not claimed, and the lines inside a quoted value that runs over several lines declare nothing
 - [x] 4.15 `detect` is tested: `openapi`, `proto`, `prisma` and `env` are detected only for a file they claim, `graphql` and `sql` for any file list
 - [x] 4.16 The YAML tree resolves `<<` merge keys, which the loader leaves as entries, so an operation merged into a path item is declared; aliases were already resolved by the loader
+
+## 5. Integration fixes
+
+- [x] 5.1 A path segment that holds a `{…}` is a parameter of the key, so the custom method `{id}:cancel` of OpenAPI meets the protobuf binding of the same method
