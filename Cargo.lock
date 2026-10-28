@@ -1734,6 +1734,7 @@ dependencies = [
  "camino",
  "clap",
  "clap_complete",
+ "faster-hex",
  "gsttt-config",
  "gsttt-contracts",
  "gsttt-core",
@@ -1808,6 +1809,7 @@ name = "gsttt-core"
 version = "0.1.0"
 dependencies = [
  "camino",
+ "faster-hex",
  "fixedbitset",
  "foldhash",
  "gix",
@@ -4542,6 +4544,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "faster-hex",
  "flate2",
  "gsttt-scenario",
  "gsttt-spec",

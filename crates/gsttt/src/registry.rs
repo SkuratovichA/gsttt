@@ -10,15 +10,48 @@ struct Builtin {
     packs: &'static [(&'static str, &'static str)],
 }
 
-/// The built-in connectors in registry order: `ts`, `python`, `rust`, `openapi`, `graphql`, `proto`, `prisma`,
-/// `sql`, `env`. The order is behaviour, because the engine gives a file to the first connector that claims it.
+/// The built-in connectors in registry order: `ts`, `python`, `rust`, `openapi`, `graphql`, `proto`, `prisma`, `sql`, `env`. The order is behaviour, because the engine gives a file to the first connector that claims it.
 ///
-/// A connector joins the list at its place in that order when its crate has one. Only `ts` has at this base.
+/// All nine are here, in the order of the design: a connector left out, or put in another place, changes which connector reads a file and which modules `config show` lists.
 fn builtins() -> Vec<Builtin> {
-    vec![Builtin {
-        connector: Box::new(gsttt_lang_ts::TYPESCRIPT),
-        packs: gsttt_lang_ts::PACKS,
-    }]
+    vec![
+        Builtin {
+            connector: Box::new(gsttt_lang_ts::TYPESCRIPT),
+            packs: gsttt_lang_ts::PACKS,
+        },
+        Builtin {
+            connector: Box::new(gsttt_lang_python::PYTHON),
+            packs: gsttt_lang_python::PACKS,
+        },
+        Builtin {
+            connector: Box::new(gsttt_lang_rust::RUST),
+            packs: gsttt_lang_rust::PACKS,
+        },
+        Builtin {
+            connector: Box::new(gsttt_contracts::OPENAPI),
+            packs: &[],
+        },
+        Builtin {
+            connector: Box::new(gsttt_contracts::GRAPHQL),
+            packs: &[],
+        },
+        Builtin {
+            connector: Box::new(gsttt_contracts::PROTO),
+            packs: &[],
+        },
+        Builtin {
+            connector: Box::new(gsttt_contracts::PRISMA),
+            packs: &[],
+        },
+        Builtin {
+            connector: Box::new(gsttt_contracts::SQL),
+            packs: &[],
+        },
+        Builtin {
+            connector: Box::new(gsttt_contracts::ENV),
+            packs: &[],
+        },
+    ]
 }
 
 /// The connectors of a run, in the order the engine offers a file to them, and the built-in rule packs they read.
@@ -75,7 +108,7 @@ mod tests {
 
     use super::*;
 
-    /// The order of the design, which a connector's place in the registry has to follow.
+    /// The order of the design, which a connector's place in the registry has to follow. The binary's own test keeps the same list (`REGISTRY_ORDER` in `tests/cli/config.rs`) and checks it against `config show`, so a list that drifts from the registry fails one of the two.
     const ORDER: [&str; 9] = [
         "ts", "python", "rust", "openapi", "graphql", "proto", "prisma", "sql", "env",
     ];
@@ -88,16 +121,11 @@ mod tests {
             .collect()
     }
 
-    /// A connector joins the registry at its place in the design's order, whichever of them are there.
+    /// The registry holds the nine connectors of the design, each at its place: a connector left out, or one in another place, fails here.
     #[test]
     fn the_connectors_come_in_the_order_of_the_design() {
         let registry = Registry::builtin().unwrap();
-        let registered = names(&registry);
-        let in_design_order: Vec<&str> = ORDER
-            .into_iter()
-            .filter(|name| registered.contains(name))
-            .collect();
-        assert_eq!(registered, in_design_order);
+        assert_eq!(names(&registry), ORDER);
     }
 
     /// An external enters the registry after the built-ins, and the externals keep the order they came in.

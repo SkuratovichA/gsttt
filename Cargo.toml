@@ -71,6 +71,8 @@ papaya = "0.2.5"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 # The key a person's trust is recorded under. Unlike the xxh3 of the fact keys it is a hash that nobody can steer to a chosen value.
 sha2 = "0.11.1"
+# The hex form of content ids, the trust key and the checksums of the release packages. `gix` already brings it.
+faster-hex = { version = "0.10.1", default-features = false, features = ["std"] }
 tempfile = "3.27.0"
 # Process groups and opening files without waiting. Only for unix, which gsttt is.
 rustix = "1.1.6"

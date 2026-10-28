@@ -102,18 +102,12 @@ fn pack(root: &Path, target_dir: &Path, target: &str) -> anyhow::Result<Package>
     // The `sha256sum` format, so `sha256sum --check` and `shasum --algorithm 256 --check` read it as well.
     let bytes = fs::read(&archive).with_context(|| format!("cannot read {}", archive.display()))?;
     let checksum = directory.join(format!("{name}.sha256"));
-    let line = format!("{}  {name}\n", hex(&Sha256::digest(&bytes)));
+    let line = format!(
+        "{}  {name}\n",
+        faster_hex::hex_string(&Sha256::digest(&bytes))
+    );
     fs::write(&checksum, line).with_context(|| format!("cannot write {}", checksum.display()))?;
     Ok(Package { archive, checksum })
-}
-
-/// The lowercase hexadecimal digits of `bytes`.
-fn hex(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .flat_map(|byte| [byte >> 4, byte & 0x0f])
-        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
-        .collect()
 }
 
 /// Writes `entries` to `archive` as a gzipped tarball. Times, owners and the gzip header carry nothing of the machine, so one commit packs to the same bytes everywhere.
@@ -141,12 +135,7 @@ fn write_archive(archive: &Path, entries: &[Entry]) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TARGETS, hex};
-
-    #[test]
-    fn writes_bytes_as_lowercase_hexadecimal() {
-        assert_eq!(hex(&[0x00, 0x0f, 0xa5, 0xff]), "000fa5ff");
-    }
+    use super::TARGETS;
 
     #[test]
     fn the_targets_are_the_four_of_the_spec() {

@@ -2,6 +2,7 @@
 
 use gsttt_core::connector::Provide;
 use gsttt_core::contract::{ContractKind, Role};
+use gsttt_core::coverage::ConnectorCoverage;
 use gsttt_core::fact::{Import, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index, Timings};
 use gsttt_core::query::{
@@ -324,6 +325,37 @@ fn coverage_of_an_index_no_connector_read_says_so() {
     let text = coverage(&index, Freshness::Fresh).to_string();
 
     assert!(text.starts_with("no connector read any file\n"), "{text}");
+}
+
+#[test]
+fn the_footer_of_status_lists_a_connector_that_owns_files_and_leaves_out_one_that_owns_none() {
+    let mut index = Tree::new().imports("b.ts", "a.ts").build();
+    // `graphql` and `sql` detect a project in every tree, so a tree without a GraphQL or SQL document has them with no file of their own.
+    index
+        .coverage
+        .connectors
+        .push(ConnectorCoverage::new("graphql"));
+
+    let text = status(&index, Freshness::Fresh).to_string();
+
+    assert!(
+        text.contains("coverage: ts read 2 of 2 files, 100% of imports resolved\n"),
+        "{text}"
+    );
+    assert!(!text.contains("graphql"), "{text}");
+}
+
+#[test]
+fn the_footer_says_so_when_no_connector_owns_a_file() {
+    // `unread` registers `ts` as a connector that detected a project and owns nothing.
+    let index = Tree::new().unread("notes.txt").build();
+
+    let text = status(&index, Freshness::Fresh).to_string();
+
+    assert!(
+        text.contains("coverage: no connector read any file\n"),
+        "{text}"
+    );
 }
 
 /// A line that the program that embeds the engine adds to the problems of the index. Core knows nothing of what such a line says, and this one sorts after the other lines of these tests.

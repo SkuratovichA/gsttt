@@ -5,9 +5,12 @@
 //! - [`fact`], [`contract`], [`path`]: what a connector says about one file.
 //! - [`rules`]: framework rule packs, read the same way by every language connector.
 //! - [`setup`]: what a config asks for.
+//! - [`repo`]: the file set of one run, as connectors see it.
 //! - [`tree`]: the ordered tree a JSON or YAML document is read into, with the line of every key.
 //! - [`engine`], [`graph`], [`index`], [`coverage`]: what a run builds.
+//! - [`ids`]: the dense ids that files and contracts get at index time, and the vectors and sets keyed by them.
 //! - [`query`]: what an answer asks.
+//! - [`text`]: text helpers shared by the connectors and by the words of answers: line numbers from byte offsets, counts, names and times.
 //! - [`atomic`]: replacing a file as a whole, so that a reader never sees half of it.
 //! - `testing`, behind the feature of that name: indexes written as lists of facts, for the tests of this crate and of those that put questions to an index.
 
@@ -18,7 +21,6 @@ pub mod coverage;
 pub mod engine;
 pub mod fact;
 pub mod graph;
-pub mod hex;
 pub mod ids;
 pub mod index;
 pub mod path;
