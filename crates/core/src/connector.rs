@@ -19,6 +19,7 @@ use crate::ids::FileId;
 use crate::path::RepoPath;
 use crate::repo::RepoView;
 use crate::rules::Pack;
+use crate::text::with_path;
 
 /// What a connector is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -367,17 +368,9 @@ impl<C: Connector> DynConnector for Erased<C> {
         let options = if options.is_null() {
             C::Options::default()
         } else {
-            serde_path_to_error::deserialize(options).map_err(|error| {
-                // serde's own message names the option only for an unknown one; the path names it for every kind.
-                let message = if error.path().iter().next().is_none() {
-                    error.inner().to_string()
-                } else {
-                    format!("`{}`: {}", error.path(), error.inner())
-                };
-                ConnectorError::Options {
-                    connector: meta.name.to_owned(),
-                    message,
-                }
+            serde_path_to_error::deserialize(options).map_err(|error| ConnectorError::Options {
+                connector: meta.name.to_owned(),
+                message: with_path(error.path(), &error.inner().to_string()),
             })?
         };
         let projects = self.0.open(repo, &options, packs)?;

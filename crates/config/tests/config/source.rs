@@ -8,16 +8,16 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use gsttt_config::{ConfigError, INIT_PATH};
+use gsttt_config::{CONFIG_PATH, ConfigError};
 use gsttt_core::Setup;
 
 use crate::tree::{Tree, evaluate_at, failure};
 
 const MEBIBYTE: usize = 1024 * 1024;
 
-/// A Lua comment of `size` bytes.
+/// A TOML comment of `size` bytes.
 fn comment(size: usize) -> String {
-    format!("--{}", "x".repeat(size - 2))
+    format!("#{}", "x".repeat(size - 1))
 }
 
 /// A named pipe at `path`, which nobody ever writes to.
@@ -42,29 +42,27 @@ fn evaluate_without_waiting(tree: &Tree) -> Result<Setup, ConfigError> {
 #[test]
 fn a_config_that_links_outside_the_repository_is_refused() {
     let outside = Tree::empty();
-    outside.write("elsewhere.lua", "error('the file outside was read')");
+    // Read, it would fail with a syntax error, which is not the message asserted below.
+    outside.write("elsewhere.toml", "the file outside was read");
     let tree = Tree::empty();
     fs::create_dir_all(tree.root().join(".gsttt")).unwrap();
     symlink(
-        outside.root().join("elsewhere.lua"),
-        tree.root().join(INIT_PATH),
+        outside.root().join("elsewhere.toml"),
+        tree.root().join(CONFIG_PATH),
     )
     .unwrap();
     assert_eq!(
         tree.evaluate().unwrap_err().to_string(),
-        "cannot read .gsttt/init.lua: resolves outside the repository"
+        "cannot read .gsttt/config.toml: resolves outside the repository"
     );
 }
 
 #[test]
 fn a_config_that_links_inside_the_repository_is_read() {
     let tree = Tree::empty();
-    tree.write(
-        "shared/gsttt.lua",
-        r#"require("gsttt").setup { exclude = { "linked" } }"#,
-    );
+    tree.write("shared/gsttt.toml", "exclude = [\"linked\"]\n");
     fs::create_dir_all(tree.root().join(".gsttt")).unwrap();
-    symlink("../shared/gsttt.lua", tree.root().join(INIT_PATH)).unwrap();
+    symlink("../shared/gsttt.toml", tree.root().join(CONFIG_PATH)).unwrap();
     assert_eq!(tree.evaluate().unwrap().exclude, ["linked"]);
 }
 
@@ -72,7 +70,7 @@ fn a_config_that_links_inside_the_repository_is_read() {
 fn a_link_to_nothing_is_no_config() {
     let tree = Tree::empty();
     fs::create_dir_all(tree.root().join(".gsttt")).unwrap();
-    symlink("missing.lua", tree.root().join(INIT_PATH)).unwrap();
+    symlink("missing.toml", tree.root().join(CONFIG_PATH)).unwrap();
     assert_eq!(tree.evaluate().unwrap(), Setup::default());
 }
 
@@ -80,22 +78,20 @@ fn a_link_to_nothing_is_no_config() {
 #[test]
 fn a_pipe_is_not_a_config() {
     let tree = Tree::empty();
-    make_pipe(&tree.root().join(INIT_PATH));
+    make_pipe(&tree.root().join(CONFIG_PATH));
     assert_eq!(
         evaluate_without_waiting(&tree).unwrap_err().to_string(),
-        "cannot read .gsttt/init.lua: is not a regular file"
+        "cannot read .gsttt/config.toml: is not a regular file"
     );
 }
 
 #[test]
-fn a_pipe_is_not_a_module() {
-    let tree = Tree::with_init("require(\"pipe\")\n");
-    make_pipe(&tree.root().join(".gsttt/lua/pipe.lua"));
-    let message = evaluate_without_waiting(&tree).unwrap_err().to_string();
-    assert!(
-        message.starts_with(".gsttt/init.lua:1: cannot read module `pipe` at .gsttt/lua/pipe.lua:")
-            && message.ends_with("is not a regular file"),
-        "{message}"
+fn a_pipe_is_not_a_pack() {
+    let tree = Tree::empty();
+    make_pipe(&tree.root().join(".gsttt/packs/pipe.toml"));
+    assert_eq!(
+        evaluate_without_waiting(&tree).unwrap_err().to_string(),
+        "cannot read .gsttt/packs/pipe.toml: is not a regular file"
     );
 }
 
@@ -103,19 +99,21 @@ fn a_pipe_is_not_a_module() {
 #[test]
 fn a_config_over_a_mebibyte_is_refused() {
     // Exactly the limit is still a config.
-    assert!(Tree::with_init(&comment(MEBIBYTE)).evaluate().is_ok());
+    assert!(Tree::with_config(&comment(MEBIBYTE)).evaluate().is_ok());
     let message = failure(&comment(MEBIBYTE + 1));
-    assert_eq!(message, "cannot read .gsttt/init.lua: is larger than 1 MiB");
+    assert_eq!(
+        message,
+        "cannot read .gsttt/config.toml: is larger than 1 MiB"
+    );
 }
 
 #[test]
-fn a_module_over_a_mebibyte_is_refused() {
-    let tree = Tree::with_init("require(\"big\")\n");
-    tree.write(".gsttt/lua/big.lua", &comment(MEBIBYTE + 1));
-    let message = tree.evaluate().unwrap_err().to_string();
-    assert!(
-        message.contains("cannot read module `big` at .gsttt/lua/big.lua: is larger than 1 MiB"),
-        "{message}"
+fn a_pack_over_a_mebibyte_is_refused() {
+    let tree = Tree::empty();
+    tree.write(".gsttt/packs/big.toml", &comment(MEBIBYTE + 1));
+    assert_eq!(
+        tree.evaluate().unwrap_err().to_string(),
+        "cannot read .gsttt/packs/big.toml: is larger than 1 MiB"
     );
 }
 
@@ -123,9 +121,54 @@ fn a_module_over_a_mebibyte_is_refused() {
 fn a_config_that_is_not_text_is_refused() {
     let tree = Tree::empty();
     fs::create_dir_all(tree.root().join(".gsttt")).unwrap();
-    fs::write(tree.root().join(INIT_PATH), [0xff, 0xfe, b'\n']).unwrap();
+    fs::write(tree.root().join(CONFIG_PATH), [0xff, 0xfe, b'\n']).unwrap();
     assert_eq!(
         tree.evaluate().unwrap_err().to_string(),
-        "cannot read .gsttt/init.lua: is not UTF-8 text"
+        "cannot read .gsttt/config.toml: is not UTF-8 text"
     );
+}
+
+#[gsttt_scenario::scenario("config", "A pack that links outside its folder is refused")]
+#[test]
+fn a_pack_that_links_outside_its_folder_is_refused() {
+    // The config is inside the repository, so only the folder of the packs says no.
+    let tree = Tree::with_config("exclude = [\"a\"]\n");
+    fs::create_dir_all(tree.root().join(".gsttt/packs")).unwrap();
+    symlink("../config.toml", tree.root().join(".gsttt/packs/x.toml")).unwrap();
+    assert_eq!(
+        tree.evaluate().unwrap_err().to_string(),
+        "cannot read .gsttt/packs/x.toml: resolves outside .gsttt/packs"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A pack folder that links outside the repository is refused")]
+#[test]
+fn a_pack_folder_that_links_outside_the_repository_is_refused() {
+    let outside = Tree::empty();
+    // Read, it would fail with a syntax error, which is not the message asserted below.
+    outside.write("packs/x.toml", "the file outside was read");
+    let tree = Tree::empty();
+    fs::create_dir_all(tree.root().join(".gsttt")).unwrap();
+    symlink(
+        outside.root().join("packs"),
+        tree.root().join(".gsttt/packs"),
+    )
+    .unwrap();
+    assert_eq!(
+        tree.evaluate().unwrap_err().to_string(),
+        "cannot read .gsttt/packs/x.toml: resolves outside the repository"
+    );
+}
+
+#[test]
+fn a_pack_folder_that_links_inside_the_repository_is_read() {
+    let tree = Tree::empty();
+    tree.write(
+        "shared/packs/ktor.toml",
+        "name = \"ktor\"\nlanguage = \"rust\"\n",
+    );
+    fs::create_dir_all(tree.root().join(".gsttt")).unwrap();
+    symlink("../shared/packs", tree.root().join(".gsttt/packs")).unwrap();
+    let setup = tree.evaluate().unwrap();
+    assert_eq!(setup.packs.len(), 1);
 }

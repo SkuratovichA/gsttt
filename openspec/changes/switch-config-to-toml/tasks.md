@@ -9,26 +9,26 @@
 
 ## 2. The config
 
-- [ ] 2.1 `.gsttt/config.toml` into `Setup`: the fixed keys through `Keys`, a table per module in the registry's order, `[[external]]` in the file's order, `disable` checked against the registry
-- [ ] 2.2 An unknown top-level key named with the modules and the keys, and a value error named with its key
-- [ ] 2.3 Module tables and external options as JSON with sorted keys
+- [x] 2.1 `.gsttt/config.toml` into `Setup`: the fixed keys through `Keys`, a table per module in the registry's order, `[[external]]` in the file's order, `disable` checked against the registry
+- [x] 2.2 An unknown top-level key named with the modules and the keys, and a value error named with its key
+- [x] 2.3 Module tables and external options as JSON with sorted keys
 
 ## 3. Packs
 
 - [x] 3.1 A snapshot of the TypeScript connector's built-in packs, taken while they are Lua
-- [ ] 3.2 `read_pack`, `builtin_packs` and `.gsttt/packs/*.toml`, the name checked against the file
-- [ ] 3.3 The ten TypeScript packs in TOML, with the snapshot unchanged
+- [x] 3.2 `read_pack`, `builtin_packs` and `.gsttt/packs/*.toml`, the name checked against the file
+- [x] 3.3 The ten TypeScript packs in TOML, with the snapshot unchanged
 - [ ] 3.4 The packs of the Python and Rust connectors converted the same way, once this change merges above them
 
 ## 4. Editor support
 
 - [ ] 4.1 `DynConnector::options_schema` takes a shared `SchemaGenerator`, and `Provide` derives `JsonSchema`
 - [ ] 4.2 `config_schema` and `pack_schema`, draft-07, each type once under `definitions`
-- [ ] 4.3 The starter with its `#:schema` line, read back as the defaults
+- [x] 4.3 The starter with its `#:schema` line, read back as the defaults
 
 ## 5. Removal
 
-- [ ] 5.1 `mlua`, `memchr`, the sandbox, the Lua value conversion, the annotations and `.luarc.json` removed
+- [x] 5.1 `mlua`, `memchr`, the sandbox, the Lua value conversion, the annotations and `.luarc.json` removed
 - [ ] 5.2 The docs, `AGENTS.md`, `README.md`, `.editorconfig` and the comments that name Lua updated
 
 ## 6. Proof

@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gsttt_config::{ConfigError, evaluate};
+use gsttt_config::{CONFIG_PATH, ConfigError, evaluate};
 use gsttt_core::Setup;
 use tempfile::TempDir;
 
@@ -21,10 +21,10 @@ impl Tree {
         }
     }
 
-    /// A repository whose `.gsttt/init.lua` is `init`.
-    pub(crate) fn with_init(init: &str) -> Self {
+    /// A repository whose `.gsttt/config.toml` is `config`.
+    pub(crate) fn with_config(config: &str) -> Self {
         let tree = Self::empty();
-        tree.write(".gsttt/init.lua", init);
+        tree.write(CONFIG_PATH, config);
         tree
     }
 
@@ -56,7 +56,10 @@ pub(crate) fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// The message of an `init.lua` that must not evaluate.
-pub(crate) fn failure(init: &str) -> String {
-    Tree::with_init(init).evaluate().unwrap_err().to_string()
+/// The message of a `config.toml` that must not evaluate.
+pub(crate) fn failure(config: &str) -> String {
+    Tree::with_config(config)
+        .evaluate()
+        .unwrap_err()
+        .to_string()
 }

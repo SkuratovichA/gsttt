@@ -9,7 +9,7 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use gsttt_config::{External, protocol_schema};
+use gsttt_config::{CONFIG_PATH, External, protocol_schema};
 use gsttt_core::connector::{
     Connector, ConnectorError, DynConnector, Erased, Meta, Parsed, Project, Provide, SourceFile,
 };
@@ -473,21 +473,24 @@ fn a_repository_without_the_files_of_an_external_opens_no_project() {
     assert!(connector.open(&repo, &Value::Null, &[]).unwrap().is_empty());
 }
 
-/// A `g.external` that declares what the connector provides and the options the process reads.
+/// An `[[external]]` that declares what the connector provides and the options the process reads.
 const DECLARED: &str = r#"
-local g = require("gsttt")
-g.external {
-  name = "kotlin",
-  cmd = { "sh", "kotlin.sh" },
-  files = { "**/*.kt" },
-  provides = { { kind = "http", role = "serves", via = { "ktor" }, blind_spots = { "routes built at run time" } } },
-  options = { strict = true, depth = 3 },
-}
+[[external]]
+name = "kotlin"
+cmd = ["sh", "kotlin.sh"]
+files = ["**/*.kt"]
+options = { strict = true, depth = 3 }
+
+[[external.provides]]
+kind = "http"
+role = "serves"
+via = ["ktor"]
+blind_spots = ["routes built at run time"]
 "#;
 
 /// The external the config of `tree` declares.
 fn declared(tree: &Tree) -> External {
-    tree.write(".gsttt/init.lua", DECLARED);
+    tree.write(CONFIG_PATH, DECLARED);
     let setup = tree.evaluate().unwrap();
     External::new(setup.externals.first().unwrap()).unwrap()
 }
@@ -1010,7 +1013,7 @@ fn a_name_is_kept_once_however_often_the_connector_is_built() {
 
 #[test]
 fn options_must_be_a_table_of_named_values() {
-    for options in [json!([1, 2]), json!("x"), json!(3), json!(true)] {
+    for options in [json!([]), json!([1, 2]), json!("x"), json!(3), json!(true)] {
         let mut broken = setup(&["x"]);
         broken.options = options.clone();
         let error = External::new(&broken).unwrap_err().to_string();
@@ -1019,8 +1022,8 @@ fn options_must_be_a_table_of_named_values() {
             "{options}: {error}"
         );
     }
-    // An empty table reaches the setup as an empty list, and a setup written by hand may leave the options null.
-    for options in [json!({}), json!([]), json!(null), json!({ "a": [1, 2] })] {
+    // A setup written by hand may leave the options null, which is no options.
+    for options in [json!({}), json!(null), json!({ "a": [1, 2] })] {
         let mut fine = setup(&["x"]);
         fine.options = options.clone();
         External::new(&fine).unwrap_or_else(|error| panic!("{options}: {error}"));

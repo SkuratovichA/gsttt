@@ -1,6 +1,6 @@
 //! External connectors: a command that speaks JSON lines stands in for a language connector.
 //!
-//! [`External::new`] reads a `g.external { … }` of the config; wrapped in [`Erased`](gsttt_core::connector::Erased) it takes its place in a run beside the connectors of the registry. It claims the files its globs match, and the first request for one of them starts the process, so a run that is answered from the snapshot starts none. The messages are in [`protocol`].
+//! [`External::new`] reads an `[[external]]` entry of the config; wrapped in [`Erased`](gsttt_core::connector::Erased) it takes its place in a run beside the connectors of the registry. It claims the files its globs match, and the first request for one of them starts the process, so a run that is answered from the snapshot starts none. The messages are in [`protocol`].
 //!
 //! A process that exits, answers out of turn, sends a line that is not a message or takes longer than its timeout for one request fails every file it has not answered, as a panic that names the connector, and the run goes on. The process is not started again.
 
@@ -28,7 +28,7 @@ use process::{Failure, Launch, Process};
 pub use protocol::PROTOCOL;
 use protocol::WireResolution;
 
-/// A connector that is a command, from `g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" } }`.
+/// A connector that is a command, from an `[[external]]` entry like `name = "kotlin"`, `cmd = ["gsttt-kotlin"]`, `files = ["**/*.kt"]`.
 #[derive(Clone, Debug)]
 pub struct External {
     name: &'static str,
@@ -327,12 +327,11 @@ pub(crate) struct OptionsError {
     found: &'static str,
 }
 
-/// The options of an external as the object that `open` carries. A Lua table without keys reaches here as an empty list, and `null` is what a setup written by hand leaves out: both mean no options.
+/// The options of an external as the object that `open` carries. `null` is what a setup written by hand leaves out and means no options; a list, a number, a string or a boolean is not a table of named options.
 pub(crate) fn options_object(options: &Value) -> Result<Map<String, Value>, OptionsError> {
     let found = match options {
         Value::Object(named) => return Ok(named.clone()),
         Value::Null => return Ok(Map::new()),
-        Value::Array(items) if items.is_empty() => return Ok(Map::new()),
         Value::Array(_) => "a list",
         Value::Bool(_) => "a boolean",
         Value::Number(_) => "a number",

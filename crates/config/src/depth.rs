@@ -188,6 +188,8 @@ impl EventReceiver for DepthCheck<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use super::*;
 
     fn passes_at(text: &str) -> Option<&str> {
@@ -222,22 +224,22 @@ mod tests {
 
     /// The headers `[[ts.a]]`, `[[ts.a.a]]` and so on up to `parts` parts after `ts`, each spelled quoted when `alternate` is set and its index is even.
     fn headers(parts: usize, alternate: bool) -> String {
-        (1..=parts)
-            .map(|count| {
-                let quoted = alternate && count % 2 == 0;
-                let names = std::iter::once("ts").chain(std::iter::repeat_n("a", count));
-                let names: Vec<String> = names
-                    .map(|name| {
-                        if quoted {
-                            format!("\"{name}\"")
-                        } else {
-                            name.to_owned()
-                        }
-                    })
-                    .collect();
-                format!("[[{}]]\n", names.join("."))
-            })
-            .collect()
+        let mut text = String::new();
+        for count in 1..=parts {
+            let quoted = alternate && count % 2 == 0;
+            let names = std::iter::once("ts").chain(std::iter::repeat_n("a", count));
+            let names: Vec<String> = names
+                .map(|name| {
+                    if quoted {
+                        format!("\"{name}\"")
+                    } else {
+                        name.to_owned()
+                    }
+                })
+                .collect();
+            writeln!(text, "[[{}]]", names.join(".")).unwrap();
+        }
+        text
     }
 
     #[test]

@@ -5,9 +5,10 @@
 use std::fmt::Write as _;
 use std::ops::Range;
 
-use gsttt_core::text::LineIndex;
+use gsttt_core::text::{LineIndex, with_path};
+use serde::Deserialize;
 use toml::Spanned;
-use toml::de::{DeTable, DeValue};
+use toml::de::{DeTable, DeValue, Deserializer};
 
 use crate::depth::{MAX_DEPTH, first_past_the_limit};
 use crate::text::{cut, log_line};
@@ -59,6 +60,18 @@ impl From<toml::de::Error> for Located {
     }
 }
 
+/// A value that does not read into the type asked for, with the path to it in the message: `` `external[0].cmd`: invalid type: string "x", expected a sequence ``.
+impl From<serde_path_to_error::Error<toml::de::Error>> for Located {
+    fn from(error: serde_path_to_error::Error<toml::de::Error>) -> Self {
+        let path = error.path().clone();
+        let located = Self::from(error.into_inner());
+        Self {
+            message: with_path(&path, &located.message),
+            span: located.span,
+        }
+    }
+}
+
 /// Parses `text` into a table that keeps the span of every key and value, after the nesting is within [`MAX_DEPTH`] and with no value that has no JSON form in it.
 pub(crate) fn parse(text: &str) -> Result<Spanned<DeTable<'_>>, Located> {
     if let Some(span) = first_past_the_limit(text) {
@@ -75,6 +88,13 @@ pub(crate) fn parse(text: &str) -> Result<Spanned<DeTable<'_>>, Located> {
         steps.pop();
     }
     Ok(table)
+}
+
+/// `table`, as parsed by [`parse`], read into `T`. An error names the path to the value that did not fit, and where it is in the file.
+pub(crate) fn read_typed<'de, T: Deserialize<'de>>(
+    table: Spanned<DeTable<'de>>,
+) -> Result<T, Located> {
+    serde_path_to_error::deserialize(Deserializer::from(table)).map_err(Located::from)
 }
 
 /// Where a value sits, one step down from its container.

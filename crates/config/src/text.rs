@@ -1,11 +1,11 @@
-//! Text that came from outside gsttt (what a script prints, what a connector writes to its standard error, the message of an error a script raises) made fit for a log line or a message.
+//! Text that came from outside gsttt (what a connector writes to its standard error, a key or a value of a file of the config that an error quotes) made fit for a log line or a message.
 //!
 //! A reader of the log, or a terminal, takes a line for one line of plain text. A control character breaks that: an escape sequence recolours or rewrites what is on the screen, and a newline starts a line the writer forged. A line that runs to megabytes buries the rest of the log.
 
 /// What a cut puts in place of the text it removes.
 const CUT_MARK: &str = "…";
 
-/// The longest line of the log, in bytes: what a script prints, and what a process writes to its standard error.
+/// The longest line of the log, in bytes: what a process writes to its standard error, and a message that quotes a file of the config.
 pub(crate) const LOG_LINE_LIMIT: usize = 4 * 1024;
 
 /// `text` as one line of the log: control characters other than tab are dropped, and what is left is cut to [`LOG_LINE_LIMIT`] bytes.
