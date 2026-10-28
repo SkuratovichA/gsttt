@@ -1,5 +1,6 @@
 //! The module tree, on the `modules` fixture.
 
+use std::fmt::Write as _;
 use std::fs;
 
 use gsttt_scenario::scenario;
@@ -102,9 +103,11 @@ fn a_tree_that_the_module_cap_cuts_keeps_the_modules_before_it() {
     // Each of three files declares the next one under 22 names through `#[path]`, so that a few lines of declarations
     // grow into 22 * 22 * 22 modules at the bottom, more than the 10000 the cap lets in.
     let fan = |name: &str| -> String {
-        (0..22)
-            .map(|number| format!("#[path = \"{name}.rs\"] mod {name}{number};\n"))
-            .collect()
+        let mut text = String::new();
+        for number in 0..22 {
+            writeln!(text, "#[path = \"{name}.rs\"] mod {name}{number};").unwrap();
+        }
+        text
     };
     let dir = tempfile::tempdir().unwrap();
     let files = [
