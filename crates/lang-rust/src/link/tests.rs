@@ -76,7 +76,12 @@ fn imported(name: &str, spec: &str, file: u32) -> ResolvedImport {
 
 /// What linking finds in `files`, as `<file> <line> <key>`. A module path `fileN` reaches the file numbered `N`, and
 /// any other leads out of the project.
-fn linked(files: &[Source]) -> Vec<String> {
+/// Runs `run` over `files` the way the engine hands them to `link`: the `n`th of them is file `n`, and the module path
+/// `file<n>` resolves to it.
+fn over<T>(
+    files: &[Source],
+    run: impl FnOnce(&LinkInput<'_, Extra>, &dyn Fn(&RepoPath, &str) -> Resolution) -> T,
+) -> T {
     let location = RepoPath::normalize("src/main.rs").unwrap();
     let facts = FileFacts::default();
     let input = LinkInput::new(
@@ -100,7 +105,11 @@ fn linked(files: &[Source]) -> Vec<String> {
                 file: FileId::from_raw(file),
             })
     };
-    link(&input, &resolve)
+    run(&input, &resolve)
+}
+
+fn linked(files: &[Source]) -> Vec<String> {
+    over(files, link)
         .into_iter()
         .map(|found| {
             format!(
@@ -111,6 +120,11 @@ fn linked(files: &[Source]) -> Vec<String> {
             )
         })
         .collect()
+}
+
+/// The walks that a cap cut short.
+fn cuts(files: &[Source]) -> Vec<super::Cut> {
+    over(files, |input, resolve| super::follow(input, resolve).1)
 }
 
 #[test]
@@ -329,4 +343,73 @@ fn routers_mounted_twice_at_every_level_do_not_run_away() {
         .collect();
     // A path for each way down would be 2^40 of them; the walk stops long before.
     assert!(linked(&[source(groups, Vec::new())]).len() <= MAX_VISITS * 2);
+}
+
+/// Routers `0..levels`, each mounting the next one twice behind different prefixes.
+fn fanning(levels: u32) -> Vec<Group> {
+    (0..levels)
+        .map(|level| {
+            group(
+                level,
+                vec![serves(level + 1, "/r")],
+                vec![
+                    mount(literal("/a"), level + 1),
+                    mount(literal("/b"), level + 1),
+                ],
+            )
+        })
+        .collect()
+}
+
+#[gsttt_scenario::scenario("rust", "Each router that starts a walk has a budget of its own")]
+#[test]
+fn each_router_that_starts_a_walk_has_a_budget_of_its_own() {
+    // The first router fans out until the walk from it has no visits left.
+    let mut groups = fanning(40);
+    // The second is a router of its own that nothing mounts.
+    let mut second = group(100, vec![serves(500, "/ok")], Vec::new());
+    second.base = literal("/v2");
+    groups.push(second);
+    let found = linked(&[source(groups, Vec::new())]);
+    assert!(
+        found.contains(&"0 500 http GET /v2/ok".to_owned()),
+        "{} facts, none of them /v2/ok",
+        found.len()
+    );
+}
+
+#[gsttt_scenario::scenario("rust", "A walk that a cap cuts is reported")]
+#[test]
+fn a_walk_that_a_cap_cuts_is_reported() {
+    let root = FileId::from_raw(0);
+    let deep = (0..u32::try_from(MAX_DEPTH * 2).unwrap())
+        .map(|level| {
+            group(
+                level,
+                vec![serves(level + 1, "/r")],
+                vec![mount(literal("/p"), level + 1)],
+            )
+        })
+        .collect();
+    assert_eq!(
+        cuts(&[source(deep, Vec::new())]),
+        [super::Cut {
+            file: root,
+            anchor: 0,
+            cap: super::Cap::Depth
+        }]
+    );
+    assert_eq!(
+        cuts(&[source(fanning(40), Vec::new())]),
+        [super::Cut {
+            file: root,
+            anchor: 0,
+            cap: super::Cap::Visits
+        }]
+    );
+    let small = vec![
+        group(0, vec![serves(1, "/a")], vec![mount(literal("/p"), 10)]),
+        group(10, vec![serves(2, "/b")], Vec::new()),
+    ];
+    assert_eq!(cuts(&[source(small, Vec::new())]), Vec::<super::Cut>::new());
 }

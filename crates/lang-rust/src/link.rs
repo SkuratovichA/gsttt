@@ -22,11 +22,44 @@ use serde::{Deserialize, Serialize};
 
 /// How deep routers may be mounted in one another before the walk stops, so a generated chain of thousands cannot
 /// exhaust the stack. No program nests routers anywhere near this.
-const MAX_DEPTH: usize = 64;
+pub(crate) const MAX_DEPTH: usize = 64;
 
 /// How many times one walk may enter a router, so that routers mounted twice at every level, which give a path for
 /// each way down, cannot take the index with them.
-const MAX_VISITS: usize = 50_000;
+pub(crate) const MAX_VISITS: usize = 50_000;
+
+/// The cap that cut a walk short.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Cap {
+    /// Routers nested deeper than [`MAX_DEPTH`].
+    Depth,
+    /// More entries into routers than [`MAX_VISITS`].
+    Visits,
+}
+
+impl Cap {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Depth => "depth",
+            Self::Visits => "visits",
+        }
+    }
+
+    fn limit(self) -> usize {
+        match self {
+            Self::Depth => MAX_DEPTH,
+            Self::Visits => MAX_VISITS,
+        }
+    }
+}
+
+/// The walk from one router that a cap cut short, so the routes below the cut keep the paths they are written with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Cut {
+    file: FileId,
+    anchor: u32,
+    cap: Cap,
+}
 
 /// What linking needs from one file. The engine caches it with the file's facts.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,11 +126,31 @@ impl Prefix {
 }
 
 /// The routes of the files of one project, once for every prefix they are mounted behind. `resolve` says which file
-/// the module path written in a file reaches.
+/// the module path written in a file reaches. A walk that a cap cuts short is logged here, and every project names the
+/// caps among its blind spots, because the link step returns facts or an error and never both.
 pub(crate) fn link(
     input: &LinkInput<'_, Extra>,
     resolve: &dyn Fn(&RepoPath, &str) -> Resolution,
 ) -> Vec<LinkedFact> {
+    let (facts, cuts) = follow(input, resolve);
+    for cut in cuts {
+        let file = input.get(cut.file).map(|file| file.path.as_str());
+        tracing::warn!(
+            file,
+            anchor = cut.anchor,
+            cap = cut.cap.name(),
+            limit = cut.cap.limit(),
+            "router mounts cut at a cap, so the routes below the cut keep the paths they are written with"
+        );
+    }
+    facts
+}
+
+/// [`link`], with the walks that a cap cut short.
+fn follow(
+    input: &LinkInput<'_, Extra>,
+    resolve: &dyn Fn(&RepoPath, &str) -> Resolution,
+) -> (Vec<LinkedFact>, Vec<Cut>) {
     let graph = Graph::new(input, resolve);
     let edges: Vec<Vec<Edge<'_>>> = graph.nodes.iter().map(|node| graph.edges(node)).collect();
     let mut mounted = vec![false; graph.nodes.len()];
@@ -111,12 +164,23 @@ pub(crate) fn link(
         edges: &edges,
         seen: BTreeSet::new(),
         visits: 0,
+        cut: None,
         out: Vec::new(),
     };
+    let mut cuts = Vec::new();
     // A group nothing mounts is where a program starts serving, so the prefixes start there. Groups that only
     // mount each other in a ring are never reached.
     for (root, _) in mounted.iter().enumerate().filter(|(_, mounted)| !**mounted) {
+        // Each of them has a budget of its own, so one that fans out cannot leave the next with none.
+        walk.visits = 0;
         walk.visit(root, &[], &mut Vec::new());
+        if let (Some(cap), Some(node)) = (walk.cut.take(), graph.nodes.get(root)) {
+            cuts.push(Cut {
+                file: node.file,
+                anchor: node.group.anchor,
+                cap,
+            });
+        }
     }
     let mut facts = walk.out;
     facts.sort_by(|a, b| {
@@ -128,7 +192,7 @@ pub(crate) fn link(
         ))
     });
     facts.dedup();
-    facts
+    (facts, cuts)
 }
 
 /// A group, with the file it is in.
@@ -264,7 +328,10 @@ struct Walk<'a> {
     edges: &'a [Vec<Edge<'a>>],
     /// The groups reached and the prefix they were reached with, so a router mounted twice the same way is read once.
     seen: BTreeSet<(usize, String)>,
+    /// Entries into routers since the walk from the current root began.
     visits: usize,
+    /// The cap that cut the walk from the current root, if one did.
+    cut: Option<Cap>,
     out: Vec<LinkedFact>,
 }
 
@@ -281,11 +348,15 @@ impl<'a> Walk<'a> {
             return;
         };
         let here = with(entering, base);
-        if stack.len() >= MAX_DEPTH
-            || self.visits >= MAX_VISITS
-            || stack.contains(&node)
-            || !self.seen.insert((node, here.join("/")))
-        {
+        if stack.len() >= MAX_DEPTH {
+            self.cut.get_or_insert(Cap::Depth);
+            return;
+        }
+        if self.visits >= MAX_VISITS {
+            self.cut.get_or_insert(Cap::Visits);
+            return;
+        }
+        if stack.contains(&node) || !self.seen.insert((node, here.join("/"))) {
             return;
         }
         self.visits += 1;
