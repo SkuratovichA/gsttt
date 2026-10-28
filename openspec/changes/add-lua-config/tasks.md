@@ -3,8 +3,8 @@
 ## 1. Evaluation
 
 - [x] 1.1 The sandbox: libraries, removed globals, `print` to the log, memory and instruction limits, ordered `pairs`; built-in packs moved onto it
-- [ ] 1.2 `require("gsttt")` with `setup`, module functions from a registry list, `disable`, `pack`, `disable_pack`, `external`, and strict keys
-- [ ] 1.3 Local `require` from `.gsttt/lua/`, tables to JSON, errors with file and line, the setup fingerprint
+- [x] 1.2 `require("gsttt")` with `setup`, module functions from a registry list, `disable`, `pack`, `disable_pack`, `external`, and strict keys
+- [x] 1.3 Local `require` from `.gsttt/lua/`, tables to JSON, errors with file and line, the setup fingerprint
 
 ## 2. Editor support
 

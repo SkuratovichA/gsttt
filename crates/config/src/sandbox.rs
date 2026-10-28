@@ -147,12 +147,8 @@ impl Sandbox {
         self.budget.exhausted.set(false);
     }
 
-    /// A text chunk named `name` in errors (`name:3: message`). Never a binary chunk: bytecode is not checked by Lua and can crash it.
     pub(crate) fn load<'a>(&self, name: &str, source: &'a str) -> Chunk<'a> {
-        self.lua
-            .load(source)
-            .set_name(format!("@{name}"))
-            .set_mode(ChunkMode::Text)
+        text_chunk(&self.lua, name, source)
     }
 
     /// The message of a failed run: Lua's own (`name:3: message`), or the limit that stopped it.
@@ -162,6 +158,13 @@ impl Sandbox {
         }
         describe(error, self.limits.memory)
     }
+}
+
+/// A text chunk named `name` in errors (`name:3: message`). Never a binary chunk: bytecode is not checked by Lua and can crash it.
+pub(crate) fn text_chunk<'a>(lua: &Lua, name: &str, source: &'a str) -> Chunk<'a> {
+    lua.load(source)
+        .set_name(format!("@{name}"))
+        .set_mode(ChunkMode::Text)
 }
 
 /// An error raised from a Rust callback, prefixed with the position of the Lua call that reached it the way Lua prefixes its own errors.

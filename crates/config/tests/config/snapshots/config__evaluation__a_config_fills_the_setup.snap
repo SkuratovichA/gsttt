@@ -1,0 +1,41 @@
+---
+source: crates/config/tests/config/evaluation.rs
+expression: setup
+---
+{
+  "detect": true,
+  "modules": [
+    {
+      "module": "ts",
+      "options": {
+        "tsconfig": "tsconfig.base.json"
+      }
+    }
+  ],
+  "disable": [
+    "openapi"
+  ],
+  "packs": [],
+  "disable_packs": [
+    "axios"
+  ],
+  "exclude": [
+    "fixtures/**"
+  ],
+  "max_file_bytes": 2097152,
+  "externals": [
+    {
+      "name": "kotlin",
+      "cmd": [
+        "gsttt-kotlin"
+      ],
+      "files": [
+        "**/*.kt"
+      ],
+      "version": "1"
+    }
+  ],
+  "http_prefixes": [
+    "/api"
+  ]
+}

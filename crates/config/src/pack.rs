@@ -3,9 +3,10 @@
 //! Built-in packs live next to their connector (`crates/lang-ts/packs/express.lua`) and reach this module as `(file name, source)` pairs; a user's packs arrive through `g.pack` in the config. Both go through the same sandbox as the config, so a built-in pack is also an example of a pack a user can write.
 
 use gsttt_core::rules::Pack;
-use mlua::{LuaSerdeExt, Value};
+use mlua::Value;
 
 use crate::sandbox::Sandbox;
+use crate::value::to_json;
 
 /// Why a pack does not load. The message names the pack and what Lua or the schema said.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -45,10 +46,9 @@ fn eval_in(sandbox: &Sandbox, name: &str, source: &str) -> Result<Pack, PackErro
         .load(name, source)
         .eval()
         .map_err(|error| PackError::new(name, &sandbox.explain(&error)))?;
-    sandbox
-        .lua()
-        .from_value(value)
-        .map_err(|error| PackError::new(name, &error))
+    // The converter of the gsttt module, so a pack in a file reads exactly as one passed to `g.pack`: an empty table is an empty list.
+    let json = to_json(&value, "the pack").map_err(|error| PackError::new(name, &error))?;
+    serde_json::from_value(json).map_err(|error| PackError::new(name, &error))
 }
 
 #[cfg(test)]
