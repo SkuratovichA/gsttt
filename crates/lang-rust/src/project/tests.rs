@@ -1,6 +1,6 @@
 //! The salt of a project over the inputs it is made of.
 
-use gsttt_config::eval_pack;
+use gsttt_config::read_pack;
 use gsttt_core::rules::Pack;
 use ra_ap_edition::Edition;
 
@@ -8,11 +8,17 @@ use super::salt_for;
 
 fn pack(name: &str) -> Pack {
     let source = format!(
-        r#"return {{ name = "{name}", language = "rust", calls = {{
-            {{ callee = "env.var", kind = "env", role = "calls", key = "$arg1" }},
-        }} }}"#
+        r#"name = "{name}"
+language = "rust"
+
+[[calls]]
+callee = "env.var"
+kind = "env"
+role = "calls"
+key = "$arg1"
+"#
     );
-    eval_pack("test.lua", &source).unwrap()
+    read_pack(&format!("{name}.toml"), &source).unwrap()
 }
 
 #[test]

@@ -34,7 +34,7 @@ pub use project::RustProject;
 use crate::manifest::Manifests;
 use crate::tree::Registry;
 
-/// What `g.rust { … }` accepts.
+/// What the `[rust]` table of the configuration accepts.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct RustOptions {
@@ -64,14 +64,14 @@ pub struct Rust;
 /// The built-in connector, as the binary registers it.
 pub static RUST: Erased<Rust> = Erased(Rust);
 
-/// The built-in rule packs as `(file name, Lua source)` pairs, for the binary to evaluate with the config crate.
+/// The rule packs shipped with the connector, as `(name, TOML source)` pairs. The name is the file name without `.toml`, which is also the `name` the pack declares.
 pub const PACKS: &[(&str, &str)] = &[
-    ("axum.lua", include_str!("../packs/axum.lua")),
-    ("actix.lua", include_str!("../packs/actix.lua")),
-    ("reqwest.lua", include_str!("../packs/reqwest.lua")),
-    ("sqlx.lua", include_str!("../packs/sqlx.lua")),
-    ("sea_orm.lua", include_str!("../packs/sea_orm.lua")),
-    ("env.lua", include_str!("../packs/env.lua")),
+    ("axum", include_str!("../packs/axum.toml")),
+    ("actix", include_str!("../packs/actix.toml")),
+    ("reqwest", include_str!("../packs/reqwest.toml")),
+    ("sqlx", include_str!("../packs/sqlx.toml")),
+    ("sea_orm", include_str!("../packs/sea_orm.toml")),
+    ("env", include_str!("../packs/env.toml")),
 ];
 
 impl Connector for Rust {
