@@ -294,6 +294,23 @@ enum Hit {
     Missing(UnresolvedReason),
 }
 
+impl Hit {
+    /// Whether the hit is stub files and nothing else. A stub holds no code that runs, so the import loads
+    /// something else.
+    fn is_stubs_only(&self, repo: &RepoView) -> bool {
+        match self {
+            Hit::Files { files, .. } => {
+                !files.is_empty()
+                    && files.iter().all(|file| {
+                        repo.path(*file)
+                            .is_some_and(|path| path.extension() == Some("pyi"))
+                    })
+            }
+            Hit::Builtin | Hit::External(_) | Hit::Missing(_) => false,
+        }
+    }
+}
+
 /// What the search of the source roots passed on its way, for when nothing better turns up.
 #[derive(Default)]
 struct Seen {
@@ -340,6 +357,13 @@ impl Seen {
     }
 }
 
+/// The distribution that ships `module` among those the project declares, normalised.
+fn declared(project: &PythonProject, module: &str) -> Option<String> {
+    distributions_for_import(module)
+        .into_iter()
+        .find(|name| project.dependencies.contains(name))
+}
+
 /// Where the import of `spec` with `names` in the file `from` points.
 fn locate(project: &PythonProject, from: &RepoPath, spec: &str, names: &[String]) -> Hit {
     let dots = spec.bytes().take_while(|byte| *byte == b'.').count();
@@ -364,6 +388,11 @@ fn locate(project: &PythonProject, from: &RepoPath, spec: &str, names: &[String]
 
     let mut seen = Seen::default();
     if let Some(hit) = seen.search(&mut probe, &project.source_roots, query) {
+        if hit.is_stubs_only(&project.repo)
+            && let Some(package) = declared(project, module)
+        {
+            return Hit::External(package);
+        }
         return hit;
     }
     if is_standard_library(module.split('.').next().unwrap_or_default()) {
@@ -374,10 +403,7 @@ fn locate(project: &PythonProject, from: &RepoPath, spec: &str, names: &[String]
     {
         return hit;
     }
-    if let Some(package) = distributions_for_import(module)
-        .into_iter()
-        .find(|name| project.dependencies.contains(name))
-    {
+    if let Some(package) = declared(project, module) {
         return Hit::External(package);
     }
     seen.namespace.unwrap_or(Hit::Missing(if seen.first_party {

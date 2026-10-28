@@ -63,3 +63,4 @@
 - [x] 6.10 A pattern that starts with `*` meets a name as written only, so a function imported by name from a library is no `*.execute` or `*.get`, and the env pack names the two libraries that define `BaseSettings` for a class that imports it under another name
 - [x] 6.11 A name that two imports bind stands for the second from its statement on, each call going with the import above it, and the provides of the client packs name a client library imported under one name in `try` and in `except`
 - [x] 6.12 A `setup.py` keyword is read only when its bracket follows the `=` directly, so a name or a call as the value and the bracket of a later keyword give nothing, and a backslash keeps the next character in its string
+- [x] 6.13 A hit made of stub files alone loses to a distribution the project declares for the module, and a stub beside its source, or a source package with a stub in it, stays the project's own

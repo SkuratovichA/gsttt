@@ -106,7 +106,7 @@ Files named `test_*.py` or `*_test.py`, `conftest.py`, and files under a directo
 - **THEN** the first three are tagged as tests and `app/api.py` is not
 
 ### Requirement: Resolution
-A module path SHALL resolve segment by segment under a source root: a package (`a/b/__init__.py`) before a module (`a/b.py`), a stub reached together with the source beside it, and a directory of Python files with no `__init__.py` as a namespace package. `from a import b` SHALL resolve to the module `a.b` when it exists and to `a` otherwise.
+A module path SHALL resolve segment by segment under a source root: a package (`a/b/__init__.py`) before a module (`a/b.py`), a stub reached together with the source beside it, and a directory of Python files with no `__init__.py` as a namespace package. Files that are all stubs SHALL lose to a distribution the project declares for the module. `from a import b` SHALL resolve to the module `a.b` when it exists and to `a` otherwise.
 
 #### Scenario: Submodules and names are told apart
 - **WHEN** `app/x.py` has `from app import models` and `from app.models import Booking`, and `app/models.py` exists
@@ -120,6 +120,11 @@ A module path SHALL resolve segment by segment under a source root: a package (`
 #### Scenario: A stub is reached with its source
 - **WHEN** a project holds `stubbed.py` and `stubbed.pyi`, and a file imports `stubbed`
 - **THEN** the import resolves to both files
+
+#### Scenario: A stub without its source loses to a declared distribution
+- **WHEN** a project declares `foo`, `bar`, `real` and `mixed`, and holds `foo.pyi`, `bar/__init__.pyi`, `bar/sub.pyi`, `baz.pyi`, `real.py`, `real.pyi`, `mixed/__init__.py` and `mixed/only.pyi`
+- **THEN** `import foo` and `import bar.sub` resolve to the packages `foo` and `bar`, and `import baz` resolves to `baz.pyi`
+- **AND** `import real` resolves to `real.py` and `real.pyi`, and `import mixed.only` to `mixed/__init__.py` and `mixed/only.pyi`
 
 ### Requirement: Resolution order
 An absolute import SHALL look in this order, the first place that has the module winning: the project's own source roots, the standard library, the source roots of the projects of the repository that the project declares, the distributions the project declares, and last the namespace directories, the project's own before the others'. A module found nowhere SHALL be an unknown package, or not found when its first segment names a directory or package of the repository.

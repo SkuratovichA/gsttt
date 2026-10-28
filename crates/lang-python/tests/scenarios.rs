@@ -1854,3 +1854,37 @@ fn a_setup_py_keyword_is_read_only_when_a_literal_follows_it() {
     ]);
     assert_eq!(escaped.linked("app.py"), ["serves http GET /ping@6"]);
 }
+
+#[gsttt_scenario::scenario("python", "A stub without its source loses to a declared distribution")]
+#[test]
+fn a_stub_without_its_source_loses_to_a_declared_distribution() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"app\"\ndependencies = [\"foo\", \"bar\", \"real\", \"mixed\"]\n",
+        ),
+        ("foo.pyi", "def f() -> int: ...\n"),
+        ("bar/__init__.pyi", ""),
+        ("bar/sub.pyi", ""),
+        ("baz.pyi", "def g() -> int: ...\n"),
+        ("real.py", ""),
+        ("real.pyi", ""),
+        ("mixed/__init__.py", ""),
+        ("mixed/only.pyi", ""),
+        (
+            "app.py",
+            "import foo\nimport bar.sub\nimport baz\nimport real\nimport mixed.only\n",
+        ),
+    ]);
+    // Nothing runs from a stub, so the library the project declares is what these two imports load.
+    assert_eq!(tree.target("app.py", "foo", &[]), "package foo");
+    assert_eq!(tree.target("app.py", "bar.sub", &[]), "package bar");
+    // A stub nobody declares a library for is all there is to follow.
+    assert_eq!(tree.target("app.py", "baz", &[]), "baz.pyi");
+    // A stub beside its source, and a package of source files with a stub in it, are the project's own.
+    assert_eq!(tree.target("app.py", "real", &[]), "real.py + real.pyi");
+    assert_eq!(
+        tree.target("app.py", "mixed.only", &[]),
+        "mixed/__init__.py + mixed/only.pyi"
+    );
+}
