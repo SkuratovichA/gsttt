@@ -10,12 +10,8 @@ use super::support::{
     Sandbox, commit_all, init_repo, is_empty, listing, typescript_project, write,
 };
 
-/// The coverage line of the project of `typescript_project`: `ts` reads its three files, and `graphql` and `sql` are in the line with no file of their own, because their connectors detect a project in every tree.
-const COVERAGE: &str = concat!(
-    "coverage: ts read 3 of 3 files, 100% of imports resolved; ",
-    "graphql read 0 of 0 files, no imports; ",
-    "sql read 0 of 0 files, no imports",
-);
+/// The coverage line of the project of `typescript_project`.
+const COVERAGE: &str = "coverage: ts read 3 of 3 files, 100% of imports resolved";
 
 /// The one snapshot a run left under `dir`.
 fn the_snapshot(dir: &std::path::Path) -> PathBuf {

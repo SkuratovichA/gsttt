@@ -121,8 +121,7 @@ const COVERAGE_LABEL: &str = "coverage: ";
 
 /// The coverage line of the whole index, as the footer of every answer writes it.
 ///
-/// `gsttt-core` renders the line and offers no accessor for it, so it is taken from the text of `status`, the one
-/// answer that involves no file and so lists every connector. A test pins it against the footer of `coverage`.
+/// `gsttt-core` renders the line and offers no accessor for it, so it is taken from the text of `status`, the one answer that involves no file and so lists the connectors that own a file. A test pins it against the footer of `coverage`.
 fn coverage_line(index: &Index) -> String {
     query::status(index, Freshness::Fresh)
         .text(Entries::Capped)
