@@ -124,8 +124,8 @@ impl Server {
         response
     }
 
-    /// Opens the session: `initialize`, then `notifications/initialized`. Returns the response to `initialize`.
-    fn hello(&mut self) -> Value {
+    /// Opens the session: `initialize`, which must be answered with a result, then `notifications/initialized`.
+    fn hello(&mut self) {
         let response = self.request(
             "initialize",
             &json!({
@@ -134,8 +134,17 @@ impl Server {
                 "clientInfo": {"name": "a test", "version": "0"},
             }),
         );
+        assert!(
+            response.get("result").is_some(),
+            "initialize succeeded: {response}"
+        );
         self.send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
-        response
+    }
+
+    /// Checks that the server answers `tools/list`, which shows that a call that failed did not end the session.
+    fn still_lists_tools(&mut self) {
+        let listed = self.request("tools/list", &json!({}));
+        assert!(listed["result"]["tools"].is_array(), "{listed}");
     }
 
     /// Calls `tool` with `arguments` and returns its result, which fails the test when the server answered with a
@@ -219,11 +228,7 @@ fn gsttt_mcp_answers_about_its_repository() {
 fn a_refused_root_fails_the_call_not_the_server() {
     let sandbox = Sandbox::new();
     let mut server = Server::start(mcp_in(&sandbox, sandbox.home.path()));
-    let hello = server.hello();
-    assert!(
-        hello.get("result").is_some(),
-        "initialize succeeded: {hello}"
-    );
+    server.hello();
 
     let reply = server.call("coverage", &json!({}));
 
@@ -234,8 +239,7 @@ fn a_refused_root_fails_the_call_not_the_server() {
         reply.text
     );
     // The server is still there: it answers one more request.
-    let listed = server.request("tools/list", &json!({}));
-    assert!(listed["result"]["tools"].is_array(), "{listed}");
+    server.still_lists_tools();
     let ended = server.finish();
     assert_eq!(ended.code, Some(0), "{ended:?}");
     for written in [&sandbox.home, &sandbox.cache, &sandbox.state] {
@@ -249,11 +253,7 @@ fn fails_until_fixed(broken: &str, fixed: &str) -> Reply {
     let repo = sandbox.repository();
     write(&repo, CONFIG_PATH, broken);
     let mut server = Server::start(mcp_in(&sandbox, &repo));
-    let hello = server.hello();
-    assert!(
-        hello.get("result").is_some(),
-        "initialize succeeded: {hello}"
-    );
+    server.hello();
 
     let failed = server.call("coverage", &json!({}));
 
@@ -263,8 +263,7 @@ fn fails_until_fixed(broken: &str, fixed: &str) -> Reply {
         "{}",
         failed.text
     );
-    let listed = server.request("tools/list", &json!({}));
-    assert!(listed["result"]["tools"].is_array(), "{listed}");
+    server.still_lists_tools();
     write(&repo, CONFIG_PATH, fixed);
     let answered = server.call("coverage", &json!({}));
     assert!(!answered.is_error, "{answered:?}");
