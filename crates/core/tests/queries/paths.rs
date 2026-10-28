@@ -167,7 +167,41 @@ fn a_mod_declaration_is_named_as_one() {
     assert_eq!(
         answer.steps.get(1).and_then(|step| step.by.clone()),
         Some(Link::Import {
-            kinds: vec![ImportKind::Module]
+            kinds: vec![ImportKind::Module],
+            structural: true
+        })
+    );
+}
+
+#[test]
+fn a_use_beside_the_mod_declaration_is_named_an_import() {
+    let index = Tree::new()
+        .import(
+            "src/lib.rs",
+            Import::new("store", ImportKind::Module, 1),
+            file("src/store.rs"),
+        )
+        .import(
+            "src/lib.rs",
+            Import::new("crate::store::Store", ImportKind::Static, 2),
+            file("src/store.rs"),
+        )
+        .build();
+
+    let answer = route(&index, "src/lib.rs", "src/store.rs");
+
+    assert_eq!(
+        steps(&answer),
+        [
+            ("src/lib.rs", None),
+            ("src/store.rs", Some("by import".to_owned()))
+        ]
+    );
+    assert_eq!(
+        answer.steps.get(1).and_then(|step| step.by.clone()),
+        Some(Link::Import {
+            kinds: vec![ImportKind::Static, ImportKind::Module],
+            structural: false
         })
     );
 }

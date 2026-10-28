@@ -4,7 +4,7 @@ use crate::contract::Role;
 use crate::graph::Graph;
 use crate::ids::{ContractId, FileId, IdSet};
 
-use super::cross::{Crossing, roles_of};
+use super::cross::{Crossed, Crossing, Direction};
 
 /// How the walk got to a file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,7 +21,8 @@ pub(super) struct Reached {
     pub(super) file: FileId,
     /// Hops from the nearest changed file.
     pub(super) distance: u32,
-    /// The first way the walk found: of the nearest ways, the one from the file with the smallest path.
+    /// The first way the walk found: of the nearest ways, the one from the file with the smallest path, and from one
+    /// file an import before a contract, and a contract before a later one in key order.
     pub(super) cause: Cause,
 }
 
@@ -40,9 +41,8 @@ pub(super) fn reach(
     let mut walk = Walk {
         graph,
         crossing,
+        crossed: Crossed::new(Direction::ToCallers, graph),
         seen: IdSet::with_universe(graph.file_count()),
-        declared: IdSet::with_universe(graph.contract_count()),
-        served: IdSet::with_universe(graph.contract_count()),
         distance: 0,
         reached: Vec::new(),
         next: Vec::new(),
@@ -68,11 +68,9 @@ pub(super) fn reach(
 struct Walk<'a> {
     graph: &'a Graph,
     crossing: &'a Crossing<'a>,
+    /// The contracts crossed so far, from declarers and servers towards callers.
+    crossed: Crossed,
     seen: IdSet<FileId>,
-    /// Contracts already crossed from a file that declares them.
-    declared: IdSet<ContractId>,
-    /// Contracts already crossed from a file that serves them, or declares them: the second reaches the first's files.
-    served: IdSet<ContractId>,
     /// The distance of the files being reached now.
     distance: u32,
     reached: Vec<Reached>,
@@ -88,42 +86,12 @@ impl Walk<'_> {
             }
         }
         for &contract in graph.contracts_of(file) {
-            self.cross(file, contract);
-        }
-    }
-
-    /// Follows `contract` out of `file`. A contract is crossed once for each of the two sources, because the walk
-    /// meets files by growing distance, so a later file can only be as far away or farther.
-    fn cross(&mut self, file: FileId, contract: ContractId) {
-        let graph = self.graph;
-        let roles = roles_of(graph.sites(contract), file);
-        let declares = roles.contains(&Role::Declares);
-        if declares {
-            if !self.declared.insert(contract) {
-                return;
-            }
-            self.served.insert(contract);
-        } else if roles.contains(&Role::Serves) {
-            if !self.served.insert(contract) {
-                return;
-            }
-        } else {
-            return;
-        }
-        let Some(key) = graph.contract(contract) else {
-            return;
-        };
-        for meeting in self.crossing.meeting(key) {
-            for site in graph.sites(meeting) {
-                if site.role == Role::Calls || (declares && site.role == Role::Serves) {
-                    self.visit(
-                        site.file,
-                        Cause::Contract {
-                            role: site.role,
-                            contract: meeting,
-                        },
-                    );
-                }
+            for (meeting, site) in self.crossing.cross(&mut self.crossed, file, contract) {
+                let cause = Cause::Contract {
+                    role: site.role,
+                    contract: meeting,
+                };
+                self.visit(site.file, cause);
             }
         }
     }

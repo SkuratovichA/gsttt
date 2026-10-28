@@ -11,8 +11,9 @@ use crate::ids::{ContractId, FileId, IdSet, IdVec};
 use crate::index::{Freshness, Index};
 use crate::text::noun;
 
-use super::cross::{Crossing, roles_of};
+use super::cross::{Crossed, Crossing, Direction};
 use super::lookup::find;
+use super::neighbours::kind_label;
 use super::render::{Answer, Entries, Footer, display_as_text, rows};
 
 /// How a chain gets from one file to the next.
@@ -20,7 +21,11 @@ use super::render::{Answer, Entries, Footer, display_as_text, rows};
 #[serde(tag = "via", rename_all = "kebab-case")]
 pub enum Link {
     /// The file imports the next one, with these kinds of import.
-    Import { kinds: Vec<ImportKind> },
+    Import {
+        kinds: Vec<ImportKind>,
+        /// Whether the only import is a `mod` declaration, which owns the next file instead of using it.
+        structural: bool,
+    },
     /// The next file has a site with `role` in a contract that the file has a site in, and `key` is the key of that
     /// site.
     Contract { role: Role, key: String },
@@ -31,9 +36,9 @@ impl fmt::Display for Link {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             // A `mod` declaration owns its child instead of using it, so a reader should not take it for a use.
-            Self::Import { kinds } if kinds.as_slice() == [ImportKind::Module] => {
-                f.write_str("by mod declaration")
-            }
+            Self::Import {
+                structural: true, ..
+            } => write!(f, "by {}", kind_label(ImportKind::Module)),
             Self::Import { .. } => f.write_str("by import"),
             Self::Contract { key, .. } => write!(f, "by {key}"),
         }
@@ -145,6 +150,7 @@ impl Hop {
         match self.how {
             How::Import(edge) => Some(Link::Import {
                 kinds: edge.kinds().collect(),
+                structural: edge.is_structural(),
             }),
             How::Contract { role, contract } => Some(Link::Contract {
                 role,
@@ -162,10 +168,8 @@ struct Chase<'a> {
     seen: IdSet<FileId>,
     /// The hop that first reached each file.
     parent: IdVec<FileId, Option<Hop>>,
-    /// Contracts already crossed from a file that calls them.
-    called: IdSet<ContractId>,
-    /// Contracts already crossed from a file that serves them, or calls them: the second reaches the first's files.
-    served: IdSet<ContractId>,
+    /// The contracts crossed so far, from callers and servers towards declarers.
+    crossed: Crossed,
     next: Vec<FileId>,
 }
 
@@ -178,8 +182,7 @@ impl<'a> Chase<'a> {
             crossing: Crossing::new(index),
             seen: IdSet::with_universe(graph.file_count()),
             parent: (0..graph.file_count()).map(|_| None).collect(),
-            called: IdSet::with_universe(graph.contract_count()),
-            served: IdSet::with_universe(graph.contract_count()),
+            crossed: Crossed::new(Direction::ToDeclarers, graph),
             next: Vec::new(),
         };
         chase.seen.insert(start);
@@ -200,39 +203,12 @@ impl<'a> Chase<'a> {
             self.visit(imported, file, How::Import(edge));
         }
         for &contract in graph.contracts_of(file) {
-            self.cross(file, contract);
-        }
-    }
-
-    /// Follows `contract` out of `file`, once for each of the two roles that can leave a contract.
-    fn cross(&mut self, file: FileId, contract: ContractId) {
-        let graph = self.graph;
-        let roles = roles_of(graph.sites(contract), file);
-        let calls = roles.contains(&Role::Calls);
-        if calls {
-            if !self.called.insert(contract) {
-                return;
-            }
-            self.served.insert(contract);
-        } else if roles.contains(&Role::Serves) {
-            if !self.served.insert(contract) {
-                return;
-            }
-        } else {
-            return;
-        }
-        let Some(key) = graph.contract(contract) else {
-            return;
-        };
-        for meeting in self.crossing.meeting(key) {
-            for site in graph.sites(meeting) {
-                if site.role == Role::Declares || (calls && site.role == Role::Serves) {
-                    let how = How::Contract {
-                        role: site.role,
-                        contract: meeting,
-                    };
-                    self.visit(site.file, file, how);
-                }
+            for (meeting, site) in self.crossing.cross(&mut self.crossed, file, contract) {
+                let how = How::Contract {
+                    role: site.role,
+                    contract: meeting,
+                };
+                self.visit(site.file, file, how);
             }
         }
     }

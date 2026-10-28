@@ -153,7 +153,7 @@ fn json_of_a_path_keeps_each_hop() {
         value["steps"],
         json!([
             {"path": "page.tsx", "by": null},
-            {"path": "api.ts", "by": {"via": "import", "kinds": ["static"]}},
+            {"path": "api.ts", "by": {"via": "import", "kinds": ["static"], "structural": false}},
             {"path": "server.ts", "by": {"via": "contract", "role": "serves", "key": "http GET /x"}},
         ])
     );
