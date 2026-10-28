@@ -8,6 +8,7 @@
 //! - [`engine`], [`graph`], [`index`], [`coverage`]: what a run builds.
 //! - [`query`]: what an answer asks.
 
+pub mod atomic;
 pub mod connector;
 pub mod contract;
 pub mod coverage;

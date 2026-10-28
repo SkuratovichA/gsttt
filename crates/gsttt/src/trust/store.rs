@@ -2,9 +2,10 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 
 use camino::{Utf8Path, Utf8PathBuf};
+use gsttt_core::atomic;
 use gsttt_core::engine::workspace::UserDir;
 
 /// Why the store cannot be found, read or written.
@@ -137,27 +138,19 @@ impl Store {
         }
     }
 
-    /// Makes `lines` the file, through a temporary file in the same folder and a rename.
+    /// Makes `lines` the file, one to a line, with [`atomic::write`].
     fn replace(&self, lines: &BTreeSet<String>) -> Result<(), StoreError> {
-        let failed = |source| StoreError::Write {
-            path: self.file.clone(),
-            source,
-        };
-        let folder = self.file.parent().unwrap_or(&self.file);
-        fs::create_dir_all(folder).map_err(failed)?;
-        let mut temporary = tempfile::Builder::new()
-            .prefix("trust.")
-            .suffix(".tmp")
-            .tempfile_in(folder)
-            .map_err(failed)?;
-        for line in lines {
-            writeln!(temporary, "{line}").map_err(failed)?;
-        }
-        temporary.as_file().sync_all().map_err(failed)?;
-        temporary
-            .persist(&self.file)
-            .map_err(|error| failed(error.error))?;
-        Ok(())
+        let text = lines.iter().fold(String::new(), |mut text, line| {
+            text.push_str(line);
+            text.push('\n');
+            text
+        });
+        atomic::write(self.file.as_std_path(), "trust.", text.as_bytes()).map_err(|source| {
+            StoreError::Write {
+                path: self.file.clone(),
+                source,
+            }
+        })
     }
 }
 

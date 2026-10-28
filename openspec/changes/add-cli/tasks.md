@@ -20,6 +20,7 @@
 
 - [x] 4.1 Build the registry in its fixed order, evaluating the built-in packs once
 - [x] 4.2 Key, store and check trust for externals; leave untrusted externals out with a coverage problem; add `config trust` behind the terminal check and `config untrust`
+- [x] 4.3 Write the trust store and the snapshot through one function of core, `atomic::write`, which syncs the temporary file before the rename
 
 ## 5. Config, init, hook and schema
 
