@@ -161,7 +161,7 @@ Converting a pack must not change it. Before a `.lua` pack is touched, a snapsho
 
 ### Schemas
 
-`DynConnector::options_schema` at `crates/core/src/connector.rs:287` takes the generator, so that every type is described once and referenced wherever it is used:
+`DynConnector::options_schema` in `crates/core/src/connector.rs` takes the generator, so that every type is described once and referenced wherever it is used:
 
 ```rust
 fn options_schema(&self, generator: &mut SchemaGenerator) -> Schema;

@@ -173,6 +173,7 @@ fn null_at(schema: &Value, pointer: &str) -> Option<String> {
     }
 }
 
+#[gsttt_scenario::scenario("config", "No schema offers null")]
 #[test]
 fn no_schema_offers_null() {
     // TOML has no null, so an editor must not complete one. The registry holds a module without options and one with optional options, which are `null` in the schema of their types.
@@ -185,9 +186,26 @@ fn no_schema_offers_null() {
         "the pack schema offers null"
     );
 
-    // A module without options is turned on with an empty table, which the reader gives as `null`, the value of `()`.
+    // The field that may be left out is `tsconfig` of `ts`. schemars would give it `["string", "null"]` as its type and `null` as its default, and it has neither.
+    let tsconfig = &followed(&config, &config["properties"]["ts"])["properties"]["tsconfig"];
+    assert_eq!(tsconfig["type"], "string");
+    assert_eq!(tsconfig.get("default"), None);
+}
+
+#[gsttt_scenario::scenario("config", "A module without options takes an empty table")]
+#[test]
+fn a_module_without_options_takes_an_empty_table() {
+    // `python` has an options type with no fields. `unit` has `()`, which the reader gives to a module turned on with an empty table, and which is `null` in the schema of its type.
+    let registry = Registry::with_null_options();
+    let schema = config_schema(&registry.connectors()).to_value();
+
+    let python = followed(&schema, &schema["properties"]["python"]);
+    assert_eq!(python["type"], "object");
+    assert_eq!(python["additionalProperties"], false);
+    assert_eq!(python.get("properties"), None);
+
     assert_eq!(
-        config["properties"]["unit"],
+        schema["properties"]["unit"],
         json!({ "type": "object", "additionalProperties": false })
     );
 }

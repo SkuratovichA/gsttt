@@ -60,7 +60,7 @@ A config or pack file whose tables and arrays nest deeper than 64 SHALL be refus
 - **THEN** evaluation fails with a message that names the limit of 64, although no header has more than 40 parts
 
 ### Requirement: Config schema
-The crate SHALL generate draft-07 JSON Schemas of the config and of a pack file. In the config's, each module's table SHALL be the schema of that module's options, and every table the reader checks for unknown keys SHALL have `additionalProperties` false. Each type SHALL be described once, under `definitions`.
+The crate SHALL generate draft-07 JSON Schemas of the config and of a pack file. In the config's, each module's table SHALL be the schema of that module's options, and every table the reader checks for unknown keys SHALL have `additionalProperties` false. Each type SHALL be described once, under `definitions`. No schema SHALL offer `null`, which a TOML file cannot hold, and the table of a module without options SHALL take no keys.
 
 #### Scenario: Options become a schema of the module's table
 - **WHEN** the config schema is generated for a registry with a module `ts` whose options have a string `tsconfig` and a list of strings `conditions`, each with a description
@@ -73,6 +73,14 @@ The crate SHALL generate draft-07 JSON Schemas of the config and of a pack file.
 #### Scenario: A pack file has a schema
 - **WHEN** the pack schema is generated
 - **THEN** it describes `name`, `language`, `detect` and the five kinds of rules, and refuses unknown keys
+
+#### Scenario: No schema offers null
+- **WHEN** a module's options have a field that may be left out
+- **THEN** the config schema neither allows `null` for that field nor gives it a `null` default
+
+#### Scenario: A module without options takes an empty table
+- **WHEN** a module has no options
+- **THEN** its table in the config schema is an object that takes no keys
 
 ## MODIFIED Requirements
 
