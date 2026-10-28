@@ -27,8 +27,8 @@ use crate::imports::{Imports, Name, absolute_name, specifier};
 use crate::manifest::{ManifestError, read_pyproject};
 use crate::project::PythonProject;
 use crate::site::{
-    AssignSite, COMPUTED, CallSite, EmbedSite, dict_value, dotted, is_string_shaped, join_prefixes,
-    literal_of, text_of,
+    AssignSite, COMPUTED, CallSite, EmbedSite, Source, dict_value, dotted, is_string_shaped,
+    join_prefixes, literal_of, text_of,
 };
 
 /// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags, and with the status
@@ -50,7 +50,7 @@ pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<Py
     // The parser recovers from syntax errors and keeps the statements it could read; the imports among them stay.
     let parsed = parse_unchecked_source(file.text, source_type);
     let lines = LineIndex::new(file.text);
-    let mut collector = Collector::new(&project.packs, &lines);
+    let mut collector = Collector::new(&project.packs, file.text, &lines);
     collector.visit_body(parsed.suite());
     let mut read = collector.finish(is_package_init(file.path));
     read.facts.tags = tags;
@@ -122,6 +122,8 @@ struct ClassFrame<'a> {
 /// Walks the syntax tree once, in source order, and collects everything the file holds.
 struct Collector<'a> {
     packs: &'a [Pack],
+    /// The text of the file, which a document reads the escapes of its literals from.
+    source: &'a str,
     lines: &'a LineIndex,
     facts: FileFacts,
     extra: PyExtra,
@@ -136,9 +138,10 @@ struct Collector<'a> {
 }
 
 impl<'a> Collector<'a> {
-    fn new(packs: &'a [Pack], lines: &'a LineIndex) -> Self {
+    fn new(packs: &'a [Pack], source: &'a str, lines: &'a LineIndex) -> Self {
         Self {
             packs,
+            source,
             lines,
             facts: FileFacts::default(),
             extra: PyExtra::default(),
@@ -484,7 +487,8 @@ impl<'a> Collector<'a> {
                 };
                 // The document starts where the text the rule read does, which is not the line of the call when
                 // the argument is on a line of its own.
-                let embed = EmbedSite::new(site, self.lines, line);
+                let embed =
+                    EmbedSite::new(site, Source::new(self.source, self.lines, &rule.lang), line);
                 match rule.apply(&pack.name, &embed, line, callee.written()) {
                     Ok(mut document) => {
                         document.line = embed.line();

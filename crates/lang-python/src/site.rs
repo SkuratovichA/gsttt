@@ -5,12 +5,14 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
+use std::iter;
 use std::num::NonZeroU32;
 
 use gsttt_core::contract::ContractKind;
 use gsttt_core::fact::Line;
 use gsttt_core::rules::Site;
 use gsttt_core::text::LineIndex;
+use ruff_python_ast::str_prefix::StringLiteralPrefix;
 use ruff_python_ast::{
     Arguments, Expr, ExprStringLiteral, FStringPartRef, InterpolatedStringElement, Operator,
 };
@@ -18,6 +20,40 @@ use ruff_text_size::{TextRange, TextSize};
 
 /// The text a computed part of a template is written as, the way every connector hands it to the rules.
 pub(crate) const COMPUTED: &str = "${}";
+
+/// Stands in a document for a line break an escape made until the whole document is known, which is when [`settled`]
+/// writes it as a space. A noncharacter, so that no text holds it.
+const ESCAPED_BREAK: char = '\u{FFFE}';
+
+/// A file's text and where its lines start, with what a comment that runs to the end of the line starts with in the
+/// language of the document: what reading a document out of the file needs beside the expression.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Source<'a> {
+    text: &'a str,
+    lines: &'a LineIndex,
+    comment: Option<&'static str>,
+}
+
+impl<'a> Source<'a> {
+    /// The file `text`, whose lines `lines` index, for a document in the language `lang` of an embed rule. A language
+    /// whose comments are not known has none, and a break an escape made is never in the way of one.
+    pub(crate) fn new(text: &'a str, lines: &'a LineIndex, lang: &str) -> Self {
+        let comment = match lang {
+            "sql" => Some("--"),
+            "graphql" => Some("#"),
+            _ => None,
+        };
+        Self {
+            text,
+            lines,
+            comment,
+        }
+    }
+
+    fn line_of(self, offset: TextSize) -> Line {
+        self.lines.line(u32::from(offset))
+    }
+}
 
 /// A text and the part of the source its literals fill, from the start of the first to the end of the last.
 struct Text<'a> {
@@ -37,10 +73,28 @@ pub(crate) fn text_of(expr: &Expr) -> Option<Cow<'_, str>> {
 ///
 /// A literal joined from several parts, by implicit concatenation or by `+`, has each part on the line it is on in
 /// the source, which the plain text does not. A line break an escape such as `\n` makes is a line the source does
-/// not have, so it is written as a space and the part stays on one line.
-pub(crate) fn document_of<'a>(expr: &'a Expr, lines: &LineIndex) -> Option<(Cow<'a, str>, Line)> {
-    let found = text_in(expr, Some(lines))?;
-    Some((found.text, line_at(lines, found.range.start())))
+/// not have, so it is written as a space and the part stays on its line. That runs a comment of the language of the
+/// document on into what follows it, so a document with a comment before such a break is not read.
+pub(crate) fn document_of<'a>(expr: &'a Expr, source: Source<'_>) -> Option<(Cow<'a, str>, Line)> {
+    let found = text_in(expr, Some(source))?;
+    let text = settled(found.text, source.comment)?;
+    Some((text, source.line_of(found.range.start())))
+}
+
+/// `text` with each break an escape made written as a space, which keeps the document on the lines of the source.
+/// `None` when a comment, which ends where its line does, comes before such a break on its line: the space would run
+/// it on into the text after it. A call whose document lost a statement that way is better an unread site.
+fn settled<'a>(text: Cow<'a, str>, comment: Option<&str>) -> Option<Cow<'a, str>> {
+    if !text.contains(ESCAPED_BREAK) {
+        return Some(text);
+    }
+    let swallowed = comment.is_some_and(|marker| {
+        text.split('\n').any(|line| {
+            line.rsplit_once(ESCAPED_BREAK)
+                .is_some_and(|(before, _)| before.contains(marker))
+        })
+    });
+    (!swallowed).then(|| Cow::Owned(text.replace(ESCAPED_BREAK, " ")))
 }
 
 /// Like [`text_of`], but only when no part of the text is computed.
@@ -48,34 +102,34 @@ pub(crate) fn literal_of(expr: &Expr) -> Option<Cow<'_, str>> {
     text_of(expr).filter(|text| !text.contains(COMPUTED))
 }
 
-/// The one reader of a value's text: plain with no `lines`, with the lines of the source kept with them.
-fn text_in<'a>(expr: &'a Expr, lines: Option<&LineIndex>) -> Option<Text<'a>> {
+/// The one reader of a value's text: plain with no `source`, with the lines of the source kept with them.
+fn text_in<'a>(expr: &'a Expr, source: Option<Source<'_>>) -> Option<Text<'a>> {
     match expr {
-        Expr::StringLiteral(string) => Some(match lines {
-            Some(lines) => literal_in(string, lines),
-            None => Text {
+        Expr::StringLiteral(string) => match source {
+            Some(source) => literal_in(string, source),
+            None => Some(Text {
                 text: Cow::Borrowed(string.value.to_str()),
                 range: string.range,
-            },
-        }),
+            }),
+        },
         Expr::FString(fstring) => Some(Text {
             text: Cow::Owned(fstring_text(fstring)),
             range: fstring.range,
         }),
         Expr::BinOp(binop) if binop.op == Operator::Add => {
-            let left = text_in(&binop.left, lines);
-            let right = text_in(&binop.right, lines);
-            concat(left.as_ref(), right.as_ref(), lines)
+            let left = text_in(&binop.left, source);
+            let right = text_in(&binop.right, source);
+            concat(left.as_ref(), right.as_ref(), source)
         }
         Expr::Call(call) => match &*call.func {
             Expr::Attribute(attribute) if attribute.attr.as_str() == "format" => {
-                text_in(&attribute.value, lines)
+                text_in(&attribute.value, source)
             }
             _ => None,
         },
-        Expr::List(list) => first_text(&list.elts, lines),
-        Expr::Tuple(tuple) => first_text(&tuple.elts, lines),
-        Expr::Set(set) => first_text(&set.elts, lines),
+        Expr::List(list) => first_text(&list.elts, source),
+        Expr::Tuple(tuple) => first_text(&tuple.elts, source),
+        Expr::Set(set) => first_text(&set.elts, source),
         _ => None,
     }
 }
@@ -99,16 +153,16 @@ pub(crate) fn is_string_shaped(expr: &Expr) -> bool {
     }
 }
 
-fn first_text<'a>(elements: &'a [Expr], lines: Option<&LineIndex>) -> Option<Text<'a>> {
-    elements.iter().find_map(|element| text_in(element, lines))
+fn first_text<'a>(elements: &'a [Expr], source: Option<Source<'_>>) -> Option<Text<'a>> {
+    elements.iter().find_map(|element| text_in(element, source))
 }
 
-/// `left` followed by `right`, a side with no text being a computed part. With `lines`, `right` starts on the line
-/// it is on in the source.
+/// `left` followed by `right`, a side with no text being a computed part. With a `source`, `right` starts on the
+/// line it is on in the source.
 fn concat(
     left: Option<&Text<'_>>,
     right: Option<&Text<'_>>,
-    lines: Option<&LineIndex>,
+    source: Option<Source<'_>>,
 ) -> Option<Text<'static>> {
     let range = match (left, right) {
         (None, None) => return None,
@@ -119,11 +173,11 @@ fn concat(
     let tail = right.map_or(COMPUTED, |right| &*right.text);
     let mut text = String::with_capacity(head.len() + tail.len());
     text.push_str(head);
-    if let (Some(left), Some(right), Some(lines)) = (left, right, lines) {
+    if let (Some(left), Some(right), Some(source)) = (left, right, source) {
         pad_to_line(
             &mut text,
-            line_at(lines, left.range.start()),
-            line_at(lines, right.range.start()),
+            source.line_of(left.range.start()),
+            source.line_of(right.range.start()),
         );
     }
     text.push_str(tail);
@@ -134,25 +188,81 @@ fn concat(
 }
 
 /// The parts of a string literal, each on the line it starts on in the source.
-fn literal_in<'a>(string: &'a ExprStringLiteral, lines: &LineIndex) -> Text<'a> {
-    let first = line_at(lines, string.range.start());
+///
+/// A part keeps the line breaks the source has. One an escape makes is [`ESCAPED_BREAK`], and a backslash that ends a
+/// line leaves its break out of the value, which the next break of the source puts back so that what follows stays on
+/// its line. `None` when the value has a break the source does not account for, as `\x0a` writes one.
+fn literal_in<'a>(string: &'a ExprStringLiteral, source: Source<'_>) -> Option<Text<'a>> {
+    let first = source.line_of(string.range.start());
     let mut text = String::new();
     for part in &string.value {
-        let start = line_at(lines, part.range.start());
-        pad_to_line(&mut text, first, start);
-        let span = line_at(lines, part.range.end()).saturating_sub(start);
-        if newlines(&part.value) == span {
-            text.push_str(&part.value);
-        } else {
-            // An escape added line breaks the source does not have, or a line continuation took some away; the
-            // part's own lines cannot be told from the source's, so none of them is kept.
-            text.extend(part.value.chars().map(|c| if c == '\n' { ' ' } else { c }));
+        pad_to_line(&mut text, first, source.line_of(part.range.start()));
+        let range = part.content_range();
+        let content = source
+            .text
+            .get(range.start().to_usize()..range.end().to_usize())?;
+        let raw = matches!(part.flags.prefix(), StringLiteralPrefix::Raw { .. });
+        let mut pieces = part.value.split('\n');
+        text.push_str(pieces.next()?);
+        let mut owed = 0;
+        for kind in breaks_in(content, raw) {
+            match kind {
+                Break::Continuation => {
+                    owed += 1;
+                    continue;
+                }
+                Break::Escape => text.push(ESCAPED_BREAK),
+                Break::Source => {
+                    text.extend(iter::repeat_n('\n', owed + 1));
+                    owed = 0;
+                }
+            }
+            text.push_str(pieces.next()?);
+        }
+        if pieces.next().is_some() {
+            return None;
         }
     }
-    Text {
+    Some(Text {
         text: Cow::Owned(text),
         range: string.range,
-    }
+    })
+}
+
+/// How a line break of the source between the quotes of a literal meets the value of the literal.
+#[derive(Clone, Copy, Debug)]
+enum Break {
+    /// A line break the source has and the value has.
+    Source,
+    /// A backslash and `n`: a line break the value has and the source does not.
+    Escape,
+    /// A backslash that ends a line: a line break the source has and the value does not.
+    Continuation,
+}
+
+/// The line breaks of `content`, the source between the quotes of a literal, in the order they come. A raw string has
+/// no escapes, so its backslashes are text.
+fn breaks_in(content: &str, raw: bool) -> impl Iterator<Item = Break> + '_ {
+    let mut bytes = content.bytes().peekable();
+    iter::from_fn(move || {
+        loop {
+            match bytes.next()? {
+                b'\n' => return Some(Break::Source),
+                b'\\' if !raw => match bytes.next()? {
+                    b'n' => return Some(Break::Escape),
+                    b'\n' => return Some(Break::Continuation),
+                    // `\<CR><LF>` ends a line; a lone `\<CR>` is no line break of the source.
+                    b'\r' if bytes.next_if_eq(&b'\n').is_some() => {
+                        return Some(Break::Continuation);
+                    }
+                    // Any other escape is one character that is no line break, or none; taking the byte after the
+                    // backslash is what keeps `\\` from beginning one.
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    })
 }
 
 /// Adds the line breaks that put what comes next on the line `next`, when `text`, which starts on the line
@@ -166,10 +276,6 @@ fn pad_to_line(text: &mut String, first: Line, next: Line) {
 
 fn newlines(text: &str) -> Line {
     Line::try_from(text.bytes().filter(|byte| *byte == b'\n').count()).unwrap_or(Line::MAX)
-}
-
-fn line_at(lines: &LineIndex, offset: TextSize) -> Line {
-    lines.line(u32::from(offset))
 }
 
 fn fstring_text(fstring: &ruff_python_ast::ExprFString) -> String {
@@ -299,16 +405,16 @@ impl Site for CallSite<'_> {
 #[derive(Debug)]
 pub(crate) struct EmbedSite<'a> {
     call: CallSite<'a>,
-    lines: &'a LineIndex,
+    source: Source<'a>,
     line: Cell<Line>,
 }
 
 impl<'a> EmbedSite<'a> {
     /// `line` is the line of the call, the one a document has when none of the call's text says otherwise.
-    pub(crate) fn new(call: CallSite<'a>, lines: &'a LineIndex, line: Line) -> Self {
+    pub(crate) fn new(call: CallSite<'a>, source: Source<'a>, line: Line) -> Self {
         Self {
             call,
-            lines,
+            source,
             line: Cell::new(line),
         }
     }
@@ -319,7 +425,7 @@ impl<'a> EmbedSite<'a> {
     }
 
     fn document(&self, expr: Option<&'a Expr>) -> Option<Cow<'a, str>> {
-        let (text, line) = document_of(expr?, self.lines)?;
+        let (text, line) = document_of(expr?, self.source)?;
         self.line.set(line);
         Some(text)
     }
@@ -394,7 +500,8 @@ impl Site for AssignSite<'_> {
 mod tests {
     use gsttt_core::rules::{CallRule, Outcome};
     use proptest::prelude::*;
-    use ruff_python_parser::parse_module;
+    use ruff_python_ast::PySourceType;
+    use ruff_python_parser::{parse_module, parse_unchecked_source};
 
     use super::*;
 
@@ -511,14 +618,20 @@ mod tests {
         }
     }
 
-    /// The document an expression statement holds, and the line it starts on.
-    fn document(source: &str) -> Option<(String, Line)> {
+    /// The document an expression statement holds, read as one in the language `lang`, and the line it starts on.
+    fn document_in(source: &str, lang: &str) -> Option<(String, Line)> {
         let parsed = parse_module(source).unwrap();
         let Some(ruff_python_ast::Stmt::Expr(statement)) = parsed.suite().first() else {
             panic!("not an expression statement");
         };
-        let (text, line) = document_of(&statement.value, &LineIndex::new(source))?;
+        let lines = LineIndex::new(source);
+        let (text, line) = document_of(&statement.value, Source::new(source, &lines, lang))?;
         Some((text.into_owned(), line))
+    }
+
+    /// The document an expression statement holds, as SQL, and the line it starts on.
+    fn document(source: &str) -> Option<(String, Line)> {
+        document_in(source, "sql")
     }
 
     #[test]
@@ -541,9 +654,16 @@ mod tests {
             // A line break an escape makes is not a line of the source; the part after it is still on its own.
             (r#""a\nb""#, "a b", 1),
             ("(\n    \"a\\nb\"\n    \"c\"\n)", "a b\nc", 2),
-            ("\"\"\"a\\nb\nc\"\"\"", "a b c", 1),
-            // A line continuation takes one away.
+            // A break of the source stays where an escape is in the same literal, before it or after it.
+            ("\"\"\"a\\nb\nc\"\"\"", "a b\nc", 1),
+            ("\"\"\"a\nb\\nc\"\"\"", "a\nb c", 1),
+            // A line continuation takes one away, which the next break of the source gives back, or the next part.
             ("(\n    \"\"\"a \\\nb\"\"\"\n    \"c\"\n)", "a b\n\nc", 2),
+            ("\"\"\"a \\\nb\nc\"\"\"", "a b\n\nc", 1),
+            ("\"\"\"a \\\r\nb\nc\"\"\"", "a b\n\nc", 1),
+            // An escaped backslash is no continuation, and a raw string has no escapes.
+            ("\"\"\"a\\\\\nb\"\"\"", "a\\\nb", 1),
+            (r#"r"a\nb""#, r"a\nb", 1),
             // A document starts on the line of its first literal, not of what is computed before it.
             (r#"BASE + "x""#, "${}x", 1),
             ("(\n    BASE\n    + \"x\"\n)", "${}x", 3),
@@ -555,20 +675,112 @@ mod tests {
         assert_eq!(document("name"), None);
     }
 
-    /// One part of a joined literal, whose content starts with `marker`.
+    #[test]
+    fn a_comment_before_a_break_an_escape_made_is_not_read() {
+        // The space the break becomes would run the comment on into `FROM t`, in a part, across parts and across `+`.
+        let swallowed = [
+            r#""SELECT a -- note\nFROM t""#,
+            r#""SELECT a -- x " "\nFROM t""#,
+            r#""SELECT a -- x" + "\nFROM t""#,
+            "\"\"\"SELECT a\n-- x\nb -- y\\nFROM t\"\"\"",
+        ];
+        for source in swallowed {
+            assert_eq!(document(source), None, "{source}");
+        }
+        // A comment after the break, or on a line of its own, ends where its line does in the document too.
+        let kept = [
+            (r#""SELECT a\nFROM t -- note""#, "SELECT a FROM t -- note"),
+            (
+                "\"\"\"-- x\nSELECT a\\nFROM t\"\"\"",
+                "-- x\nSELECT a FROM t",
+            ),
+        ];
+        for (source, text) in kept {
+            assert_eq!(
+                document(source).map(|found| found.0),
+                Some(text.to_owned()),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_comment_is_the_one_of_the_language_of_the_document() {
+        let source = r#""a # x\nb -- y\nc""#;
+        // `#` starts a comment in GraphQL and `--` in SQL; a language whose comments are not known has none.
+        assert_eq!(document_in(source, "graphql"), None);
+        assert_eq!(document_in(source, "sql"), None);
+        let hash = r#""a # x\nb""#;
+        assert_eq!(document_in(hash, "graphql"), None);
+        assert_eq!(
+            document_in(hash, "sql").map(|found| found.0),
+            Some("a # x b".to_owned())
+        );
+        assert_eq!(
+            document_in(hash, "cypher").map(|found| found.0),
+            Some("a # x b".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_literal_the_parser_could_not_close_is_read_without_a_panic() {
+        // The parser keeps the statements it could read out of a broken file, and a string it recovered from may be
+        // shorter than its own quotes.
+        let sources = [
+            "'",
+            "\"",
+            "'''",
+            "\"\"\"abc",
+            "'abc",
+            "\"abc\\",
+            "'a\nb'",
+            "u'",
+            "r\"",
+            "'a' 'b",
+            "f'",
+            "x = '",
+        ];
+        for source in sources {
+            let parsed = parse_unchecked_source(source, PySourceType::Python);
+            let lines = LineIndex::new(source);
+            for statement in parsed.suite() {
+                if let ruff_python_ast::Stmt::Expr(statement) = statement {
+                    drop(document_of(
+                        &statement.value,
+                        Source::new(source, &lines, "sql"),
+                    ));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_literal_whose_value_has_a_break_the_source_does_not_show_is_not_read() {
+        // `\x0a` and `\N{LINE FEED}` write the break another way than `\n`, which the walk of the source cannot see.
+        for source in [r#""a\x0ab""#, r#""a\N{LINE FEED}b""#, r#""a\12b""#] {
+            assert_eq!(document(source), None, "{source}");
+        }
+    }
+
+    /// One part of a joined literal, whose content starts with `marker`; the last kind has a second marker, `marker`
+    /// with `b` before its closing `@`, after the line continuation and the line break that follows it.
     fn part_of_kind(kind: u8, marker: &str) -> String {
         match kind {
             0 => format!("\"{marker} x\""),
             1 => format!("\"{marker}\\nx\\ny\""),
             2 => format!("\"\"\"{marker}\nx\ny\"\"\""),
-            _ => format!("\"\"\"{marker}\\nx\ny\"\"\""),
+            3 => format!("\"\"\"{marker}\\nx\ny\"\"\""),
+            _ => {
+                let second = format!("{}b@", marker.trim_end_matches('@'));
+                format!("\"\"\"{marker} x \\\ny\n{second}\"\"\"")
+            }
         }
     }
 
     proptest! {
         #[test]
         fn every_part_of_a_document_stays_on_its_line(
-            parts in proptest::collection::vec((0u8..4, 0usize..3, 0usize..4), 1..6),
+            parts in proptest::collection::vec((0u8..5, 0usize..3, 0usize..4), 1..6),
             added in any::<bool>(),
             lead in 0usize..3,
         ) {
@@ -583,8 +795,11 @@ mod tests {
             }
             source.push(')');
             let (text, line) = document(&source).unwrap();
-            for index in 0..parts.len() {
-                let marker = format!("@{index}@");
+            let markers = parts.iter().enumerate().flat_map(|(index, (kind, _, _))| {
+                let second = (*kind == 4).then(|| format!("@{index}b@"));
+                iter::once(format!("@{index}@")).chain(second)
+            });
+            for marker in markers {
                 let in_source = source.split(&marker).next().unwrap().matches('\n').count();
                 let in_document = text.split(&marker).next().unwrap().matches('\n').count();
                 prop_assert_eq!(

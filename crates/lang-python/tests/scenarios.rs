@@ -1042,6 +1042,82 @@ fn a_line_break_written_as_an_escape_adds_no_line() {
     assert_eq!(line_in(document, "WHERE id = %s"), 48);
 }
 
+#[gsttt_scenario::scenario("python", "A line break in the source stays beside an escape")]
+#[test]
+fn a_line_break_in_the_source_stays_beside_an_escape() {
+    // One escape in a literal over several lines must not take the lines of the source away: each `--` comment ends
+    // where its line does.
+    let tree = index_files(&[(
+        "db.py",
+        r#"def read(cursor):
+    cursor.execute("""
+        SELECT a -- note
+        FROM t
+        WHERE b = 'x\ny'
+    """)
+"#,
+    )]);
+    let embedded = &tree.file("db.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    let document = &embedded[0];
+    assert_eq!(document.line, 2, "{document:?}");
+    assert_eq!(line_in(document, "-- note"), 3, "{document:?}");
+    assert_eq!(line_in(document, "FROM t"), 4, "{document:?}");
+    assert_eq!(line_in(document, "WHERE b = 'x y'"), 5, "{document:?}");
+}
+
+#[gsttt_scenario::scenario("python", "A line continuation keeps the lines after it")]
+#[test]
+fn a_line_continuation_keeps_the_lines_after_it() {
+    // The backslash joins two lines of the source into one of the string, and the line after them is still on line 5.
+    let tree = index_files(&[(
+        "db.py",
+        r#"def read(cursor):
+    cursor.execute("""
+        SELECT a, \
+               b
+        FROM t
+    """)
+"#,
+    )]);
+    let embedded = &tree.file("db.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    let document = &embedded[0];
+    assert_eq!(document.line, 2, "{document:?}");
+    assert_eq!(line_in(document, "FROM t"), 5, "{document:?}");
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A comment before an escape-made line break is an unread site"
+)]
+#[test]
+fn a_comment_before_an_escape_made_line_break_is_an_unread_site() {
+    // The document cannot keep the break an escape makes, and without it the comment would run on into `FROM t`.
+    let tree = index_files(&[(
+        "db.py",
+        r#"def read(cursor):
+    cursor.execute("SELECT a -- note\nFROM t")
+    cursor.execute("SELECT a\nFROM t -- note")
+    cursor.execute("SELECT a -- x " "\nFROM t")
+    cursor.execute("SELECT a -- x" + "\nFROM t")
+"#,
+    )]);
+    assert_eq!(
+        tree.unread("db.py"),
+        [
+            "L2 cursor.execute",
+            "L4 cursor.execute",
+            "L5 cursor.execute"
+        ]
+    );
+    // A comment after the break is a comment of the last line, which the document keeps.
+    let embedded = &tree.file("db.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded[0].line, 3);
+    assert_eq!(embedded[0].text, "SELECT a FROM t -- note");
+}
+
 #[gsttt_scenario::scenario("python", "A SQL string built at run time is an unread site")]
 #[test]
 fn a_sql_string_built_at_run_time_is_an_unread_site() {

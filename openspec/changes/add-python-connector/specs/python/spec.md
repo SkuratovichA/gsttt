@@ -323,7 +323,7 @@ With the `alembic` pack, `op.create_table`, `op.drop_table`, `op.rename_table`, 
 - **THEN** it declares `table bookings` and `table booking_items`
 
 ### Requirement: DB-API SQL
-With the `dbapi` pack, the first argument of `execute` and `executemany` on a receiver of up to three segments, such as `cursor`, `self.cursor` or `self.db.cursor`, SHALL be an embedded `sql` document when it is a string literal. The document SHALL start on the line its first literal starts on and keep the lines of the source: each part of a literal joined by implicit concatenation or `+` stays on its own line, and a line break written as an escape sequence adds none.
+With the `dbapi` pack, the first argument of `execute` and `executemany` on a receiver of up to three segments SHALL be an embedded `sql` document when it is a string literal. The document SHALL start on the line its first literal starts on and keep the lines of the source: each part of a literal joined by `+` or implicit concatenation stays on its own line, a line break in the source stays, and one an escape writes adds none; a `--` comment before it SHALL make the call an unread site.
 
 #### Scenario: Raw SQL is embedded
 - **WHEN** a file has `cursor.execute("SELECT id FROM bookings WHERE id = %s", (id,))` on line 7
@@ -341,6 +341,21 @@ With the `dbapi` pack, the first argument of `execute` and `executemany` on a re
 #### Scenario: A line break written as an escape adds no line
 - **WHEN** a file has `cursor.execute("SELECT id\nFROM bookings\nWHERE id = %s", (id,))` on one line
 - **THEN** it embeds an `sql` document on that line, with the text `SELECT id FROM bookings WHERE id = %s`
+
+#### Scenario: A line break in the source stays beside an escape
+- **WHEN** a file has `cursor.execute(` on line 2 and a triple-quoted literal that opens on line 2, with `SELECT a -- note` on line 3, `FROM t` on line 4 and `WHERE b = 'x\ny'` on line 5, the `\n` written as an escape
+- **THEN** it embeds an `sql` document at line 2
+- **AND** counting its lines from line 2, `-- note` is on line 3, `FROM t` on line 4 and `WHERE b = 'x y'` on line 5
+
+#### Scenario: A line continuation keeps the lines after it
+- **WHEN** a file has `cursor.execute(` on line 2 and a triple-quoted literal that opens on line 2, with `SELECT a, \` ending line 3, `b` on line 4 and `FROM t` on line 5
+- **THEN** it embeds an `sql` document at line 2
+- **AND** counting its lines from line 2, `FROM t` is on line 5
+
+#### Scenario: A comment before an escape-made line break is an unread site
+- **WHEN** a file has `cursor.execute("SELECT a -- note\nFROM t")` and `cursor.execute("SELECT a\nFROM t -- note")`
+- **THEN** the first call is an unread site and embeds no document
+- **AND** the second call embeds an `sql` document with the text `SELECT a FROM t -- note`
 
 ### Requirement: DB-API arguments that are not literals
 With the `dbapi` pack, an `execute` or `executemany` call whose first argument is a string built at run time, an f-string, `+` or `%` on a string, or `.format` on a string, SHALL be an unread site. A call whose first argument is a variable, an attribute, a subscript or a call SHALL record nothing, because a method with that name need not take SQL.
