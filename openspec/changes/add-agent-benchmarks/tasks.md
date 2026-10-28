@@ -25,8 +25,8 @@
 ## 5. Proof
 
 - [x] 5.1 A test annotated `#[scenario("agent-benchmarks", …)]` for every scenario of the `agent-benchmarks` spec
-- [ ] 5.2 The smoke run: one question of each kind in the four setups, once, exits 0 and leaves nothing to commit
-- [ ] 5.3 `cargo fmt --all --check`, `taplo fmt --check`, `cargo clippy`, `cargo nextest run -p xtask`, `cargo xtask spec`, `openspec validate add-agent-benchmarks --strict` and `typos` pass
+- [x] 5.2 The smoke run: one question of each kind in the four setups, once, exits 0 and leaves nothing to commit
+- [x] 5.3 `cargo fmt --all --check`, `taplo fmt --check`, `cargo clippy`, `cargo nextest run -p xtask`, `cargo xtask spec`, `openspec validate add-agent-benchmarks --strict` and `typos` pass
 
 ## 6. The numbers
 
