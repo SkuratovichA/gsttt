@@ -87,7 +87,6 @@ fn a_path_is_read_from_the_directory_c_names() {
 /// it all the same: `/tmp` is a link on macOS, and so is the directory the tests are built in.
 #[scenario("cli", "A path spelled through a linked directory is accepted")]
 #[test]
-#[cfg(unix)]
 fn a_path_spelled_through_a_linked_directory_is_accepted() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();
