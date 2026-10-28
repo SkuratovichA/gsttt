@@ -10,11 +10,16 @@ extend-exclude = [
 [default]
 # Test data that is misspelled or encoded on purpose, and names that a dependency chose, allowed where they stand and nowhere else, so that "exlude", "caf" or "ba" anywhere else is still reported.
 extend-ignore-re = [
-  # The Lua config spec sets up a misspelled option to check that it is rejected.
-  'exlude = \{',
+  # The config spec and its tests set up misspelled keys to check that they are rejected: `exlude` for `exclude` in the config, `comand` for `command` in an external and `languge` for `language` in a pack.
+  'exlude = \[',
   'naming `exlude`',
-  # The config test asserts that the message names that option.
-  'contains\("`exlude`"\)',
+  'sets `comand`',
+  'names `comand`',
+  '"languge ="',
+  # The spec of the `add-lua-config` change sets up the same misspelled key as a table. It is excluded from this check once that change is archived, and the pattern goes with it.
+  'exlude = \{',
+  # The config tests assert that the message names that key.
+  'contains\("`(exlude|comand|languge)`"\)',
   # "café" as the bytes of Latin-1, in the engine test of a file that is not UTF-8.
   'b"caf\\xe9',
   # The Python linker test has router "a" include router "b" under the prefix "/ba", and "b" include "a" under "/ab"; the prefixes are made of the two names and are not words.
