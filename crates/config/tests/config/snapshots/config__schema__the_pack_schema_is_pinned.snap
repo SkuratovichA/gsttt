@@ -58,6 +58,13 @@ expression: pack_schema()
         "$ref": "#/definitions/AssignRule"
       },
       "default": []
+    },
+    "imports": {
+      "description": "Packages whose imported names each name a contract: the model types of `@prisma/client`.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ImportRule"
+      }
     }
   },
   "additionalProperties": false,
@@ -230,6 +237,13 @@ expression: pack_schema()
             }
           ]
         },
+        "root_types": {
+          "description": "Types that make a name a root too, wherever the file uses it: a variable, a parameter or a class property declared with one of them starts a chain of this rule, and so does `this.<name>` for a constructor parameter property. A type counts when it is written as one of these, as a member of a union, as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, or through a `type` alias of the same file: `PrismaClient`, `Prisma.TransactionClient`. Only a connector for a language with declared types reads them.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "kind": {
           "type": "string"
         },
@@ -340,6 +354,48 @@ expression: pack_schema()
         "kind",
         "role",
         "key"
+      ]
+    },
+    "ImportRule": {
+      "description": "Names imported from a package that each name a contract: `import type { Tenant } from '@prisma/client'` names the table of the model `Tenant`, because the package exports one type per model.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Package specifiers, as written in the import: `@prisma/client`. A name imported from one of them is the key, at the line of the import, and so is a name re-exported from it by name. A namespace import, a default import and a side-effect import name nothing.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OneOrMany"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/Role"
+        },
+        "except": {
+          "description": "Exported names that name nothing, because the package exports more than contracts: `Prisma`, `PrismaClient`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "case": {
+          "description": "A case change applied to the exported name before it becomes a key.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Case"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "kind",
+        "role"
       ]
     }
   }
