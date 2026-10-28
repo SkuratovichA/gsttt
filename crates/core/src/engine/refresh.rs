@@ -50,6 +50,8 @@ pub struct Refresh {
     pub parsed: u32,
     /// Files whose facts came from a snapshot.
     pub reused: u32,
+    /// Snapshots of other work trees that were read for facts.
+    pub siblings: u32,
 }
 
 /// A work tree, the connectors that may read it and the setup that configures them.
@@ -201,6 +203,7 @@ impl<'a> Engine<'a> {
                     index: stored.index,
                     unchanged: true,
                     parsed: 0,
+                    siblings: 0,
                 })
             }
             own => Ok(self.rebuild(Rebuild {
@@ -239,7 +242,7 @@ impl<'a> Engine<'a> {
             listed,
         } = run;
         let max = self.setup.max_file_bytes;
-        let seeds = self.seeds(&claims, &states, &file_keys, own.as_ref());
+        let (seeds, siblings) = self.seeds(&claims, &states, &file_keys, own.as_ref());
 
         let (output, phases) = pipeline::execute(assigned, repo, max, &states, seeds);
         // A file saved between the listing and the read is filed under the bytes that were read, not under the
@@ -304,19 +307,20 @@ impl<'a> Engine<'a> {
             unchanged: false,
             parsed: to_u32(parsed),
             reused: to_u32(reused),
+            siblings,
         }
     }
 
-    /// The facts a snapshot already holds for each claimed file, from this work tree's snapshot first and then from
-    /// the snapshots of sibling work trees. A file over the size limit never gets a seed: it is rejected before any
-    /// cache is asked.
+    /// The facts a snapshot already holds for each claimed file, from this work tree's snapshot first and then, when
+    /// that one cannot answer for most files, from the snapshots of sibling work trees; with the number of those
+    /// that were read. A file over the size limit never gets a seed: it is rejected before any cache is asked.
     fn seeds(
         &self,
         claims: &[Claim<'_>],
         states: &[FileState],
         file_keys: &[Option<FactKey>],
         own: Option<&Stored>,
-    ) -> Vec<Option<Seed>> {
+    ) -> (Vec<Option<Seed>>, u32) {
         let max = self.setup.max_file_bytes;
         let wanted_key = |claim: &Claim<'_>| -> Option<FactKey> {
             let state = states.get(claim.id.index())?;
@@ -325,6 +329,7 @@ impl<'a> Engine<'a> {
             }
             file_keys.get(claim.id.index()).copied().flatten()
         };
+        let own_is_absent = own.is_none();
         let own: HashMap<FactKey, &StoredFile> = own
             .into_iter()
             .flat_map(|stored| stored.files.iter())
@@ -337,16 +342,24 @@ impl<'a> Engine<'a> {
             .filter(|key| !own.contains_key(key))
             .collect();
         let mut siblings: HashMap<FactKey, StoredFile> = HashMap::new();
-        for path in self.workspace.sibling_snapshots() {
-            if missing.is_empty() {
-                break;
-            }
-            for (key, file) in snapshot::reusable_facts(path.as_std_path(), &missing) {
-                missing.remove(&key);
-                siblings.insert(key, file);
+        let mut read = 0_u32;
+        if own_is_absent || siblings_pay(missing.len(), claims.len()) {
+            for path in self.workspace.sibling_snapshots() {
+                if missing.is_empty() {
+                    break;
+                }
+                // The header is enough to tell a snapshot of another version, whose body is not worth reading.
+                if snapshot::peek(path.as_std_path()).is_none() {
+                    continue;
+                }
+                read += 1;
+                for (key, file) in snapshot::reusable_facts(path.as_std_path(), &missing) {
+                    missing.remove(&key);
+                    siblings.insert(key, file);
+                }
             }
         }
-        claims
+        let seeds = claims
             .iter()
             .map(|claim| {
                 let key = wanted_key(claim)?;
@@ -356,7 +369,8 @@ impl<'a> Engine<'a> {
                     extra: stored.extra.clone(),
                 })
             })
-            .collect()
+            .collect();
+        (seeds, read)
     }
 
     /// The commit HEAD points at, and a line saying why it is unknown when git cannot tell. Outside git there is
@@ -417,6 +431,16 @@ impl<'a> Engine<'a> {
             .collect();
         Ok(changes::diff(&from, &to))
     }
+}
+
+/// How many files the own snapshot may lack facts for before the snapshots of sibling work trees are read.
+const OWN_MISSES_FLOOR: usize = 64;
+
+/// Whether the snapshots of sibling work trees are worth reading: the own snapshot lacks the facts of more than
+/// 64 files and more than a twentieth of the claimed ones. A sibling is validated whole, which costs more than
+/// parsing the handful of files a normal edit touches.
+fn siblings_pay(misses: usize, claimed: usize) -> bool {
+    misses > OWN_MISSES_FLOOR.max(claimed / 20)
 }
 
 /// What a rebuild needs from the steps before it.
@@ -537,6 +561,7 @@ fn micros(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
 
     use camino::Utf8PathBuf;
     use serde_json::json;
@@ -601,6 +626,25 @@ mod tests {
         index.record(file).unwrap().imports.len()
     }
 
+    /// A linked work tree of the repository in `dir`, on a new branch `name`. The directory it is in goes when the
+    /// first value does.
+    fn add_worktree(dir: &Path, name: &str) -> (tempfile::TempDir, Utf8PathBuf) {
+        let holder = tempfile::tempdir().unwrap();
+        let linked = holder.path().join(name);
+        git(
+            dir,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                name,
+                linked.to_str().unwrap(),
+            ],
+        );
+        (holder, Utf8PathBuf::from_path_buf(linked).unwrap())
+    }
+
     fn pack(name: &str, language: &str, detect: &str) -> Pack {
         serde_json::from_value(json!({"name": name, "language": language, "detect": [detect]}))
             .unwrap()
@@ -663,20 +707,7 @@ mod tests {
         let setup = Setup::default();
         index(&rig, &dir, &setup).unwrap();
         rig.counters.take();
-        let holder = tempfile::tempdir().unwrap();
-        let linked = holder.path().join("feature");
-        git(
-            dir.path(),
-            &[
-                "worktree",
-                "add",
-                "-q",
-                "-b",
-                "feature",
-                linked.to_str().unwrap(),
-            ],
-        );
-        let root = Utf8PathBuf::from_path_buf(linked).unwrap();
+        let (_holder, root) = add_worktree(dir.path(), "feature");
         let connectors = rig.connectors();
         let engine = Engine::new(
             Workspace::locate_with(&root, None).unwrap(),
@@ -685,8 +716,90 @@ mod tests {
             &setup,
         );
         let run = engine.refresh().unwrap();
-        assert_eq!((run.parsed, run.reused), (0, 2));
+        assert_eq!((run.parsed, run.reused, run.siblings), (0, 2, 1));
         assert_eq!(rig.counters.take()[0], 0);
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "Siblings are read only when the own snapshot cannot answer"
+    )]
+    #[test]
+    fn siblings_are_read_only_when_the_own_snapshot_cannot_answer() {
+        let rig = Rig::new();
+        let names: Vec<String> = (0..80).map(|n| format!("f{n:02}.txt")).collect();
+        let files: Vec<(&str, &str)> = names.iter().map(|name| (name.as_str(), "")).collect();
+        let dir = init_repo(&files);
+        let setup = Setup::default();
+        let connectors = rig.connectors();
+        let main = Engine::new(workspace(&dir), &connectors, &[], &setup);
+        assert_eq!(main.refresh().unwrap().siblings, 0);
+
+        // A linked work tree with seventy files edited. It has no snapshot of its own, so it reads the main one.
+        let (_holder, linked) = add_worktree(dir.path(), "feature");
+        for name in names.iter().take(70) {
+            write(linked.as_std_path(), name, "use f79.txt\n");
+        }
+        let feature = Engine::new(
+            Workspace::locate_with(&linked, None).unwrap(),
+            &connectors,
+            &[],
+            &setup,
+        );
+        assert_eq!(feature.refresh().unwrap().siblings, 1);
+
+        // One edit: the own snapshot answers for 79 files of 80, so the sibling is left alone.
+        write(dir.path(), &names[0], "use f78.txt\n");
+        let few = main.refresh().unwrap();
+        assert_eq!((few.parsed, few.siblings), (1, 0));
+
+        // Seventy edits that the sibling holds: the own snapshot lacks too many files, so the sibling is read once.
+        for name in names.iter().take(70) {
+            write(dir.path(), name, "use f79.txt\n");
+        }
+        let many = main.refresh().unwrap();
+        assert_eq!((many.parsed, many.reused, many.siblings), (0, 80, 1));
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A sibling of another version is not read")]
+    #[test]
+    fn a_sibling_of_another_version_is_not_read() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "use b.txt\n"), ("b.txt", "")]);
+        let setup = Setup::default();
+        let connectors = rig.connectors();
+        let main = Engine::new(workspace(&dir), &connectors, &[], &setup);
+        main.refresh().unwrap();
+        // Make the snapshot look as if another version wrote it: one digit of the version in its header.
+        let path = main.workspace().snapshot_path();
+        let mut bytes = fs::read(&path).unwrap();
+        let version = snapshot::VERSION.as_bytes();
+        let at = bytes
+            .windows(version.len())
+            .position(|window| window == version)
+            .unwrap();
+        bytes[at] = if bytes[at] == b'9' { b'8' } else { b'9' };
+        fs::write(&path, bytes).unwrap();
+        assert!(main.peek().is_none());
+
+        let (_holder, linked) = add_worktree(dir.path(), "feature");
+        let feature = Engine::new(
+            Workspace::locate_with(&linked, None).unwrap(),
+            &connectors,
+            &[],
+            &setup,
+        );
+        let run = feature.refresh().unwrap();
+        assert_eq!((run.parsed, run.siblings), (2, 0));
+    }
+
+    #[test]
+    fn siblings_pay_past_64_misses_and_a_twentieth_of_the_files() {
+        assert!(!siblings_pay(0, 100));
+        assert!(!siblings_pay(64, 100));
+        assert!(siblings_pay(65, 100));
+        assert!(!siblings_pay(500, 10_000));
+        assert!(siblings_pay(501, 10_000));
     }
 
     #[gsttt_scenario::scenario("indexing", "An oversized bundle is not parsed")]

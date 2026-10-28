@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -124,11 +124,18 @@ pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), Snapsh
 /// version.
 pub fn peek(path: &Path) -> Option<Header> {
     let mut file = fs::File::open(path).ok()?;
+    read_header(&mut file).map(|(header, _)| header)
+}
+
+/// The header of the snapshot `file` holds, and the offset where the header ends. `None` unless the file starts
+/// like a snapshot of this format and version.
+fn read_header(file: &mut fs::File) -> Option<(Header, usize)> {
     let mut prefix = [0_u8; PREFIX];
     file.read_exact(&mut prefix).ok()?;
-    let mut json = vec![0_u8; parse_prefix(&prefix)?];
+    let length = parse_prefix(&prefix)?;
+    let mut json = vec![0_u8; length];
     file.read_exact(&mut json).ok()?;
-    parse_header(&json)
+    Some((parse_header(&json)?, PREFIX + length))
 }
 
 /// The snapshot at `path` whole. `None` when the file is missing, from another version, truncated or fails
@@ -178,15 +185,16 @@ pub fn is_reusable(facts: &FileFacts) -> bool {
     )
 }
 
-/// The header and the body of the snapshot at `path`, the body copied to where rkyv can read it.
+/// The header and the body of the snapshot at `path`. The body is read straight to where rkyv can use it, and
+/// nothing is read of a file whose header is not this version's.
 fn load(path: &Path) -> Option<(Header, AlignedVec<ALIGN>)> {
-    let bytes = fs::read(path).ok()?;
-    let header_end = PREFIX.checked_add(parse_prefix(&bytes)?)?;
-    let header = parse_header(bytes.get(PREFIX..header_end)?)?;
-    let body = bytes.get(header_end.next_multiple_of(ALIGN)..)?;
-    let mut aligned = AlignedVec::<ALIGN>::with_capacity(body.len());
-    aligned.extend_from_slice(body);
-    Some((header, aligned))
+    let mut file = fs::File::open(path).ok()?;
+    let (header, header_end) = read_header(&mut file)?;
+    let padding = header_end.next_multiple_of(ALIGN) - header_end;
+    file.seek_relative(i64::try_from(padding).ok()?).ok()?;
+    let mut body = AlignedVec::<ALIGN>::new();
+    body.extend_from_reader(&mut file).ok()?;
+    Some((header, body))
 }
 
 /// The length of the header when `bytes` start like a snapshot of this format.

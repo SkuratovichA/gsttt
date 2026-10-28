@@ -68,7 +68,7 @@ Each file SHALL belong to at most one project: the first connector in registry o
 - **THEN** coverage counts one unclaimed `kotlin` file
 
 ### Requirement: Fact reuse
-The engine SHALL key a file's facts by the fact format, the connector's name and version, the module options, the fingerprint of the packs the connector received, the project salt, the path and the content id. It SHALL take facts with an equal key from this worktree's snapshot, then from the snapshots of sibling worktrees, and parse only when neither has them.
+The engine SHALL key a file's facts by the fact format, the connector's name and version, the module options, the fingerprint of the packs the connector received, the project salt, the path and the content id. It SHALL take facts with an equal key from this worktree's snapshot, then, as the next requirement says, from the snapshots of sibling worktrees, and parse only when neither has them.
 
 #### Scenario: Only edited files are parsed
 - **WHEN** one of three indexed files is edited and the engine refreshes
@@ -80,7 +80,18 @@ The engine SHALL key a file's facts by the fact format, the connector's name and
 
 #### Scenario: A new worktree reuses its sibling's facts
 - **WHEN** a linked worktree is indexed for the first time after the main worktree was indexed at the same commit
-- **THEN** the run reuses every file's facts and parses none
+- **THEN** the run reuses every file's facts, parses none and reads one sibling snapshot
+
+### Requirement: Sibling snapshots
+The engine SHALL read the snapshots of sibling worktrees only when this worktree's snapshot is absent or lacks the facts of more than 64 files and more than a twentieth of the files a connector took. It SHALL leave a sibling snapshot written by another version unread beyond its header.
+
+#### Scenario: Siblings are read only when the own snapshot cannot answer
+- **WHEN** a worktree with a snapshot has one file edited, and then seventy files edited the way a sibling holds them
+- **THEN** the first run reads no sibling snapshot, and the second reads one and parses nothing
+
+#### Scenario: A sibling of another version is not read
+- **WHEN** the only sibling snapshot was written by another version and a new worktree is indexed
+- **THEN** the run reads no sibling snapshot and parses every file
 
 ### Requirement: Size and encoding limits
 A file larger than `Setup.max_file_bytes` SHALL be recorded as `TooLarge` and a file that is not UTF-8 as `NotUtf8`, and neither SHALL be handed to its connector.
