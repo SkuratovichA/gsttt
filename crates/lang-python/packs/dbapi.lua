@@ -1,5 +1,6 @@
--- DB-API SQL: the first argument of `execute` and `executemany` on any receiver, up to three segments deep
--- (`cursor.execute`, `self.cursor.execute`, `self.db.cursor.execute`). Always on: no manifest tells that a project uses a
+-- DB-API SQL: the first argument of `execute` and `executemany` on a receiver of up to three segments
+-- (`cursor.execute`, `self.cursor.execute`, `self.db.cursor.execute`). A pattern has a fixed number of segments, so a
+-- deeper receiver is not read, which the provides of the project say. Always on: no manifest tells that a project uses a
 -- DB-API driver.
 return {
   name = "dbapi",

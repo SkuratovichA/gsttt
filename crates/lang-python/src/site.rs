@@ -80,6 +80,25 @@ fn text_in<'a>(expr: &'a Expr, lines: Option<&LineIndex>) -> Option<Text<'a>> {
     }
 }
 
+/// Whether a value is written as a string: a literal, an f-string, `+` with a string on either side, `%` on a string or
+/// `.format` on a string. A name, a subscript or a call is not, whatever it holds when the program runs.
+pub(crate) fn is_string_shaped(expr: &Expr) -> bool {
+    match expr {
+        Expr::StringLiteral(_) | Expr::FString(_) => true,
+        Expr::BinOp(binop) => match binop.op {
+            Operator::Add => is_string_shaped(&binop.left) || is_string_shaped(&binop.right),
+            Operator::Mod => is_string_shaped(&binop.left),
+            _ => false,
+        },
+        Expr::Call(call) => matches!(
+            &*call.func,
+            Expr::Attribute(attribute)
+                if attribute.attr.as_str() == "format" && is_string_shaped(&attribute.value)
+        ),
+        _ => false,
+    }
+}
+
 fn first_text<'a>(elements: &'a [Expr], lines: Option<&LineIndex>) -> Option<Text<'a>> {
     elements.iter().find_map(|element| text_in(element, lines))
 }
@@ -406,6 +425,49 @@ mod tests {
         ];
         for (source, want) in cases {
             assert_eq!(call_text(source, 1).as_deref(), want, "{source}");
+        }
+    }
+
+    /// Whether the expression statement `source` is written as a string.
+    fn string_shaped(source: &str) -> bool {
+        let parsed = parse_module(source).unwrap();
+        let Some(ruff_python_ast::Stmt::Expr(statement)) = parsed.suite().first() else {
+            panic!("not an expression statement");
+        };
+        is_string_shaped(&statement.value)
+    }
+
+    #[test]
+    fn values_are_told_to_be_strings_by_how_they_are_written() {
+        let strings = [
+            r#""SELECT 1""#,
+            r#""SELECT " "1""#,
+            r#"f"SELECT {id}""#,
+            r#""SELECT " + table"#,
+            r#"table + " WHERE""#,
+            r#"a + b + " WHERE""#,
+            r#""SELECT %s" % id"#,
+            r#""SELECT {}".format(id)"#,
+            r#"("SELECT " + table).format(id)"#,
+        ];
+        for source in strings {
+            assert!(string_shaped(source), "{source}");
+        }
+        let others = [
+            "query",
+            "queries[0]",
+            "queries.insert",
+            "compose(query)",
+            "text(query)",
+            "query.format(id)",
+            "a + b",
+            "a % b",
+            r#"a % "b""#,
+            "1 + 2",
+            "-1",
+        ];
+        for source in others {
+            assert!(!string_shaped(source), "{source}");
         }
     }
 

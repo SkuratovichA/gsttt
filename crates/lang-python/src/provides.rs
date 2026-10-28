@@ -16,6 +16,12 @@ const ROUTERS_ELSEWHERE: &str =
 /// read leaves the router served behind its own prefix alone.
 const MOUNTS_UNFOLLOWED: &str = "mounts of a router by a file of another Python project, in a cycle, or in more ways than are followed";
 
+/// What the `dbapi` pack leaves out. SQL is declared (`CREATE TABLE`) or called (`SELECT`), so each is told under both.
+const DBAPI_GAPS: [&str; 2] = [
+    "execute and executemany calls on a receiver of more than three segments",
+    "SQL held in a variable",
+];
+
 /// Gaps of every Python project, whatever its packs: contracts no pack of this connector reads.
 fn always() -> Vec<(ContractKind, Role, &'static str)> {
     vec![
@@ -37,6 +43,7 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
     let serves = |words| (ContractKind::Http, Role::Serves, words);
     let calls = |words| (ContractKind::Http, Role::Calls, words);
     let tables = |words| (ContractKind::Table, Role::Declares, words);
+    let table_calls = |words| (ContractKind::Table, Role::Calls, words);
     match pack {
         "fastapi" => vec![
             serves("prefixes held in variables"),
@@ -70,6 +77,10 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
             calls("clients created in another module than the one that uses them"),
         ],
         "sqlalchemy" | "alembic" => vec![tables("table names held in variables")],
+        "dbapi" => DBAPI_GAPS
+            .iter()
+            .flat_map(|&words| [tables(words), table_calls(words)])
+            .collect(),
         "env" => vec![
             (
                 ContractKind::Env,

@@ -42,7 +42,18 @@ expression: "tree.json[\"projects\"]"
         ],
         "blind_spots": [
           "Django default table names",
+          "SQL held in a variable",
+          "execute and executemany calls on a receiver of more than three segments",
           "table names held in variables"
+        ]
+      },
+      {
+        "kind": "table",
+        "role": "calls",
+        "via": [],
+        "blind_spots": [
+          "SQL held in a variable",
+          "execute and executemany calls on a receiver of more than three segments"
         ]
       },
       {

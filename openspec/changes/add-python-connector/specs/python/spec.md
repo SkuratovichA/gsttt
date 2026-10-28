@@ -218,7 +218,7 @@ With the `alembic` pack, `op.create_table`, `op.drop_table`, `op.rename_table`, 
 - **THEN** it declares `table bookings` and `table booking_items`
 
 ### Requirement: DB-API SQL
-With the `dbapi` pack, the first argument of `execute` and `executemany` on any receiver SHALL be an embedded `sql` document when it is a string literal. The document SHALL start on the line its first literal starts on and keep the lines of the source: each part of a literal joined by implicit concatenation or `+` stays on its own line, and a line break written as an escape sequence adds none.
+With the `dbapi` pack, the first argument of `execute` and `executemany` on a receiver of up to three segments, such as `cursor`, `self.cursor` or `self.db.cursor`, SHALL be an embedded `sql` document when it is a string literal. The document SHALL start on the line its first literal starts on and keep the lines of the source: each part of a literal joined by implicit concatenation or `+` stays on its own line, and a line break written as an escape sequence adds none.
 
 #### Scenario: Raw SQL is embedded
 - **WHEN** a file has `cursor.execute("SELECT id FROM bookings WHERE id = %s", (id,))` on line 7
@@ -236,6 +236,26 @@ With the `dbapi` pack, the first argument of `execute` and `executemany` on any 
 #### Scenario: A line break written as an escape adds no line
 - **WHEN** a file has `cursor.execute("SELECT id\nFROM bookings\nWHERE id = %s", (id,))` on one line
 - **THEN** it embeds an `sql` document on that line, with the text `SELECT id FROM bookings WHERE id = %s`
+
+### Requirement: DB-API arguments that are not literals
+With the `dbapi` pack, an `execute` or `executemany` call whose first argument is a string built at run time, an f-string, `+` or `%` on a string, or `.format` on a string, SHALL be an unread site. A call whose first argument is a variable, an attribute, a subscript or a call SHALL record nothing, because a method with that name need not take SQL.
+
+#### Scenario: A SQL string built at run time is an unread site
+- **WHEN** a file has `cursor.execute(f"SELECT id FROM {table}")`, `cursor.execute("SELECT id FROM " + table)`, `cursor.execute("SELECT id FROM bookings WHERE id = %s" % task)` and `.format` on a text joined with `+`, and one call with the plain literal `"SELECT id FROM bookings"`
+- **THEN** each call built at run time is an unread site and embeds no document
+- **AND** the call with the plain literal embeds an `sql` document
+
+#### Scenario: An argument that is not a string records nothing
+- **WHEN** a file has `pool.execute(task)`, `cursor.execute(queries[0])`, `cursor.executemany(queries.insert, rows)`, `cursor.execute(compose(task))` and `cursor.execute()`
+- **THEN** none of them is an unread site and none embeds a document
+
+### Requirement: DB-API receivers
+With the `dbapi` pack, `execute` and `executemany` called on a receiver of more than three segments SHALL not be read, and the provides of every project SHALL name those calls and SQL held in a variable as blind spots of its tables.
+
+#### Scenario: A receiver of more than three segments is not read
+- **WHEN** a file calls `execute("SELECT id FROM bookings")` on `cursor`, `self.cursor`, `self.db.cursor` and `self.app.db.cursor`
+- **THEN** the first three calls embed an `sql` document and the fourth does not
+- **AND** the provides of the project name `execute` and `executemany` calls on a receiver of more than three segments as a blind spot
 
 ### Requirement: Environment variables
 With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.getenv("<NAME>")` and each field of a class deriving from `BaseSettings` SHALL call `env <NAME>`, a field's name prefixed with the literal `env_prefix` of the class's `model_config` or inner `Config` when it has one.
@@ -261,4 +281,4 @@ A pack SHALL be active in a project when its manifests declare one of the pack's
 
 #### Scenario: Blind spots are reported
 - **WHEN** the coverage of a Python project is read
-- **THEN** its provides name, among the blind spots, Flask routes with several methods beyond the first, Flask routes whose methods are held in a variable, prefixes held in variables and Django default table names
+- **THEN** its provides name, among the blind spots, Flask routes with several methods beyond the first, Flask routes whose methods are held in a variable, prefixes held in variables, Django default table names, `execute` and `executemany` calls on a receiver of more than three segments, and SQL held in a variable

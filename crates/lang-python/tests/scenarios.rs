@@ -789,6 +789,77 @@ fn a_line_break_written_as_an_escape_adds_no_line() {
     assert_eq!(line_in(document, "WHERE id = %s"), 48);
 }
 
+#[gsttt_scenario::scenario("python", "A SQL string built at run time is an unread site")]
+#[test]
+fn a_sql_string_built_at_run_time_is_an_unread_site() {
+    let tree = index("sql_arguments");
+    // An f-string, `+` and `%` on a literal, and `.format` on a text joined with `+`; the plain literal on line 6 is read.
+    assert_eq!(
+        tree.unread("built.py"),
+        [
+            "L2 cursor.execute",
+            "L3 cursor.execute",
+            "L4 cursor.execute",
+            "L5 cursor.execute"
+        ]
+    );
+    let embedded = &tree.file("built.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded[0].line, 6);
+    assert_eq!(embedded[0].text, "SELECT id FROM bookings");
+    insta::assert_json_snapshot!(
+        "a_sql_string_built_at_run_time_is_an_unread_site",
+        tree.file_json("built.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "An argument that is not a string records nothing")]
+#[test]
+fn an_argument_that_is_not_a_string_records_nothing() {
+    let tree = index("sql_arguments");
+    // `pool.execute(task)` and `cursor.execute(queries[0])` are calls of methods that happen to be named `execute`.
+    let facts = &tree.file("held.py").facts;
+    assert!(facts.unresolved.is_empty(), "{:?}", facts.unresolved);
+    assert!(facts.embedded.is_empty(), "{:?}", facts.embedded);
+}
+
+#[test]
+fn a_text_call_with_a_variable_is_still_an_unread_site() {
+    let tree = index("sql_arguments");
+    // `text(query)` can only hold a statement, so what it holds is unread; `execute(text(…))` holds a call and adds none.
+    assert_eq!(tree.unread("named.py"), ["L5 text"]);
+    let embedded = &tree.file("named.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded[0].line, 6);
+}
+
+#[gsttt_scenario::scenario("python", "A receiver of more than three segments is not read")]
+#[test]
+fn a_receiver_of_more_than_three_segments_is_not_read() {
+    let tree = index("sql_arguments");
+    let facts = &tree.file("receivers.py").facts;
+    let texts: Vec<_> = facts
+        .embedded
+        .iter()
+        .map(|document| document.text.as_str())
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            "SELECT id FROM one",
+            "SELECT id FROM two",
+            "SELECT id FROM three"
+        ]
+    );
+    assert!(facts.unresolved.is_empty(), "{:?}", facts.unresolved);
+    let blind_spots = tree.blind_spots();
+    assert!(
+        blind_spots
+            .contains(&"execute and executemany calls on a receiver of more than three segments"),
+        "{blind_spots:?}"
+    );
+}
+
 #[gsttt_scenario::scenario("python", "Every way of reading the environment is seen")]
 #[test]
 fn every_way_of_reading_the_environment_is_seen() {
@@ -1043,6 +1114,8 @@ fn blind_spots_are_reported() {
         "Flask routes whose methods are held in a variable, which are read as GET",
         "prefixes held in variables",
         "Django default table names",
+        "execute and executemany calls on a receiver of more than three segments",
+        "SQL held in a variable",
     ] {
         assert!(blind_spots.contains(&words), "{words}: {blind_spots:?}");
     }

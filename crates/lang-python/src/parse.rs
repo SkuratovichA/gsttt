@@ -9,7 +9,7 @@ use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
     FileFacts, Import, ImportFlags, ImportKind, Line, ParseStatus, UnresolvedReason, UnresolvedSite,
 };
-use gsttt_core::rules::{Outcome, Pack, Prefix, Site};
+use gsttt_core::rules::{EmbedRule, Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
@@ -25,7 +25,8 @@ use crate::files::{is_python_source, tags_of};
 use crate::imports::{Imports, Name, specifier};
 use crate::project::PythonProject;
 use crate::site::{
-    AssignSite, CallSite, EmbedSite, dict_prop, dotted, join_prefixes, literal_of, text_of,
+    AssignSite, CallSite, EmbedSite, dict_prop, dotted, is_string_shaped, join_prefixes,
+    literal_of, text_of,
 };
 
 /// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags only.
@@ -459,14 +460,11 @@ impl<'a> Collector<'a> {
                         document.line = embed.line();
                         self.facts.embedded.push(document);
                     }
-                    // `conn.execute(text("…"))` and `session.execute(select(…))` hold a document or a query
-                    // object, not a string built at run time; a call with no argument holds nothing at all.
-                    Err(_)
-                        if matches!(
-                            call.arguments.find_positional(0),
-                            None | Some(Expr::Call(_))
-                        ) => {}
-                    Err(site) => self.facts.unresolved.push(site),
+                    Err(site) => {
+                        if leaves_unread(rule, matched, call.arguments.find_positional(0)) {
+                            self.facts.unresolved.push(site);
+                        }
+                    }
                 }
             }
         }
@@ -750,6 +748,23 @@ impl<'a> Collector<'a> {
         self.visit_body(&attempt.orelse);
         self.visit_body(&attempt.finalbody);
     }
+}
+
+/// Whether a call whose document `rule` could not read leaves something unread, given the call's first argument.
+///
+/// A string built at run time is a document that cannot be read, whoever calls. For the rest the callee tells:
+/// `text(query)` can only hold a statement, but `pool.execute(task)` matched `*.execute` by its name alone and may be
+/// no SQL at all, so a rule matched through a wildcard stays silent about a name, an attribute or a subscript. A call
+/// holds a document or a query object of its own, read where it is (`conn.execute(text("…"))`,
+/// `session.execute(select(…))`), and a call with no argument holds nothing.
+fn leaves_unread(rule: &EmbedRule, matched: &str, argument: Option<&Expr>) -> bool {
+    let Some(argument) = argument else {
+        return false;
+    };
+    if is_string_shaped(argument) {
+        return true;
+    }
+    !matches!(argument, Expr::Call(_)) && rule.callee.iter().any(|pattern| pattern == matched)
 }
 
 /// The prefix a rule's `receiver` reads from the call of `callee` that made the receiver, when the rule names that
