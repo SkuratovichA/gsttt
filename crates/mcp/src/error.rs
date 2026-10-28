@@ -44,6 +44,9 @@ pub(crate) enum ToolError {
         "impact: `base` goes with `changed`; set `changed` to true to compare against `base`, or leave `base` out"
     )]
     BaseWithoutChanged,
+    /// The question names a file the index does not hold. The text is the answer's own, the one the command line prints on stderr when it fails for the same reason.
+    #[error("{0}")]
+    NotInIndex(String),
     /// The source could not answer. Its message is already a sentence that names what failed and what to do, so it
     /// goes to the model as it is.
     #[error(transparent)]

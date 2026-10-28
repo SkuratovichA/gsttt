@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind};
 use gsttt_core::index::{Freshness, Index};
-use gsttt_core::query::{Link, Route, path};
+use gsttt_core::query::{Answer, Link, Route, path};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
 
@@ -365,6 +365,20 @@ fn a_hop_across_http_follows_keys_that_meet() {
             ("controller.ts", Some("by http GET /bookings/{}".to_owned()))
         ]
     );
+}
+
+#[test]
+fn a_route_holds_its_files_when_the_index_holds_both() {
+    let index = Tree::new()
+        .imports("a.ts", "b.ts")
+        .unread("notes.txt")
+        .build();
+
+    assert!(route(&index, "a.ts", "b.ts").held());
+    // Both files are held and nothing leads from the one to the other: that is an answer, not a missing file.
+    assert!(route(&index, "b.ts", "a.ts").held());
+    assert!(!route(&index, "a.ts", "notes.txt").held());
+    assert!(!route(&index, "nowhere.ts", "b.ts").held());
 }
 
 #[test]

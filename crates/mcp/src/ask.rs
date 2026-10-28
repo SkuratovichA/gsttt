@@ -24,7 +24,7 @@ const NO_INDEX: &str = "There is no index yet: the first question builds one. As
 ///
 /// # Errors
 ///
-/// Whatever stops the call: a path the source refuses, a failed refresh, a contract query with nothing in it.
+/// Whatever stops the call: a path the source refuses, a failed refresh, a contract query with nothing in it, a file the index does not hold.
 pub(crate) fn run<S: IndexSource>(source: &S, call: Call) -> Result<String, ToolError> {
     match call {
         Call::Impact(call) => impact(source, call),
@@ -35,7 +35,7 @@ pub(crate) fn run<S: IndexSource>(source: &S, call: Call) -> Result<String, Tool
             let to = source.path(&to)?;
             let Loaded { index, freshness } = source.refreshed()?;
             let route = query::path(&index, freshness, from.path.as_str(), to.path.as_str());
-            Ok(route.text(shown(all)))
+            text_if_held(&route, shown(all))
         }
         Call::Contract(ContractArguments { query: wanted, all }) => {
             let Loaded { index, freshness } = source.refreshed()?;
@@ -57,7 +57,19 @@ fn about_a_file<S: IndexSource, A: Answer>(
 ) -> Result<String, ToolError> {
     let target = source.path(&arguments.path)?;
     let Loaded { index, freshness } = source.refreshed()?;
-    Ok(ask(&index, freshness, target.path.as_str()).text(shown(arguments.all)))
+    text_if_held(
+        &ask(&index, freshness, target.path.as_str()),
+        shown(arguments.all),
+    )
+}
+
+/// The text of `answer` showing `entries`, or, when the index does not hold a file it was asked about, the error that carries the text the command line prints for it.
+fn text_if_held<A: Answer>(answer: &A, entries: Entries) -> Result<String, ToolError> {
+    if answer.held() {
+        Ok(answer.text(entries))
+    } else {
+        Err(ToolError::NotInIndex(answer.text(Entries::Capped)))
+    }
 }
 
 /// The lists of an answer the caller asked for: every entry with `all`, else the first of each.

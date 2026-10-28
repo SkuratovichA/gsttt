@@ -16,7 +16,7 @@ pub(super) fn dependents(
     let file = session.argument(&args.path)?;
     let Loaded { index, freshness } = session.loaded()?;
     let answer = query::dependents(&index, freshness, file.path.as_str());
-    print::answer_if(answer.in_index, &answer, session.flags, io)
+    print::answer_if(&answer, session.flags, io)
 }
 
 /// `gsttt dependencies <path>`: what one file imports.
@@ -28,7 +28,7 @@ pub(super) fn dependencies(
     let file = session.argument(&args.path)?;
     let Loaded { index, freshness } = session.loaded()?;
     let answer = query::dependencies(&index, freshness, file.path.as_str());
-    print::answer_if(answer.in_index, &answer, session.flags, io)
+    print::answer_if(&answer, session.flags, io)
 }
 
 /// `gsttt path <from> <to>`: a shortest chain from one file to another.
@@ -41,7 +41,7 @@ pub(super) fn path(
     let to = session.argument(&args.to)?;
     let Loaded { index, freshness } = session.loaded()?;
     let route = query::path(&index, freshness, from.path.as_str(), to.path.as_str());
-    print::answer_if(route.unknown.is_empty(), &route, session.flags, io)
+    print::answer_if(&route, session.flags, io)
 }
 
 /// `gsttt contract <query>...`: the sites of a contract, or the contracts whose keys contain the query.

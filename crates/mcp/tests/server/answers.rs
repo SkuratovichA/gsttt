@@ -329,18 +329,56 @@ async fn depth_limits_the_walk() {
     assert_ne!(near.text, far.text);
 }
 
+#[scenario("mcp", "A file the index does not hold is a tool error")]
 #[tokio::test]
-async fn a_file_the_index_does_not_hold_is_an_answer_and_not_an_error() {
-    let session = Session::start(Fake::small()).await;
+async fn a_file_the_index_does_not_hold_is_a_tool_error() {
+    let source = Fake::small();
+    let index = source.index();
+    let session = Session::start(source).await;
+    let fresh = Freshness::Fresh;
+    let cases = [
+        (
+            "dependents",
+            json!({ "path": "src/unknown.ts" }),
+            query::dependents(&index, fresh, "src/unknown.ts").text(Entries::Capped),
+        ),
+        (
+            "dependencies",
+            json!({ "path": "src/unknown.ts" }),
+            query::dependencies(&index, fresh, "src/unknown.ts").text(Entries::Capped),
+        ),
+        (
+            "path",
+            json!({ "from": "src/a.ts", "to": "src/unknown.ts" }),
+            query::path(&index, fresh, "src/a.ts", "src/unknown.ts").text(Entries::Capped),
+        ),
+    ];
 
+    for (tool, arguments, printed) in cases {
+        let reply = session.call(tool, arguments).await;
+
+        assert!(reply.is_error, "{tool}: {}", reply.text);
+        assert_eq!(reply.text, printed, "{tool}");
+        assert!(
+            reply.text.starts_with("src/unknown.ts is not in the index"),
+            "{tool}: {}",
+            reply.text
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_chain_that_does_not_exist_between_files_the_index_holds_is_an_answer() {
+    let source = Fake::small();
+    let session = Session::start(source.clone()).await;
+
+    // The files are held and nothing leads from the one to the other, which is what the answer says.
     let reply = session
-        .call("dependents", json!({ "path": "src/unknown.ts" }))
+        .call("path", json!({ "from": "lib/util.ts", "to": "src/a.ts" }))
         .await;
 
-    assert!(!reply.is_error);
-    assert!(
-        reply.text.starts_with("src/unknown.ts is not in the index"),
-        "{}",
-        reply.text
-    );
+    let printed = query::path(&source.index(), Freshness::Fresh, "lib/util.ts", "src/a.ts");
+    assert!(!reply.is_error, "{}", reply.text);
+    assert_eq!(reply.text, printed.text(Entries::Capped));
+    assert!(reply.text.starts_with("no chain from"), "{}", reply.text);
 }

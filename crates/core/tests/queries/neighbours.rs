@@ -2,7 +2,7 @@
 
 use gsttt_core::fact::{Import, ImportFlags, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::Freshness;
-use gsttt_core::query::{External, Neighbour, dependencies, dependents};
+use gsttt_core::query::{Answer, External, Neighbour, dependencies, dependents};
 use gsttt_scenario::scenario;
 
 use crate::fixture::{To, Tree, file, package};
@@ -393,6 +393,19 @@ fn a_path_no_connector_read_is_not_in_the_index() {
     let answer = dependents(&index, Freshness::Fresh, "notes.txt");
     assert!(!answer.in_index);
     assert_eq!(answer.path, "notes.txt");
+}
+
+#[test]
+fn an_answer_holds_its_file_when_the_index_does() {
+    let index = Tree::new()
+        .imports("b.ts", "a.ts")
+        .unread("notes.txt")
+        .build();
+
+    assert!(dependents(&index, Freshness::Fresh, "a.ts").held());
+    assert!(dependencies(&index, Freshness::Fresh, "b.ts").held());
+    assert!(!dependents(&index, Freshness::Fresh, "notes.txt").held());
+    assert!(!dependencies(&index, Freshness::Fresh, "nowhere.ts").held());
 }
 
 #[test]

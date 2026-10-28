@@ -124,6 +124,10 @@ pub fn dependents(index: &Index, freshness: Freshness, path: &str) -> Dependents
 }
 
 impl Answer for Dependents {
+    fn held(&self) -> bool {
+        self.in_index
+    }
+
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         if !self.in_index {
             writeln!(f, "{} is not in the index", self.path)?;
@@ -278,6 +282,10 @@ impl Dependencies {
 }
 
 impl Answer for Dependencies {
+    fn held(&self) -> bool {
+        self.in_index
+    }
+
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         let caveat = self.caveat();
         if !self.in_index {

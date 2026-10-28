@@ -64,6 +64,14 @@ A call to a known tool SHALL never fail with a protocol error. Arguments that do
 - **WHEN** `coverage` is called and the source fails with a message
 - **THEN** the result has `isError` set and holds that message
 
+### Requirement: Files the index does not hold
+
+`dependents`, `dependencies` and `path`, asked about a file the index does not hold, SHALL each be a result with `isError` set and the text the CLI prints for it.
+
+#### Scenario: A file the index does not hold is a tool error
+- **WHEN** `dependents`, `dependencies` or `path` is called with a file that no connector read
+- **THEN** the result has `isError` set and its text is the one the CLI prints on stderr for the same question, which starts with the file's path and "is not in the index"
+
 ### Requirement: One refresh at a time
 
 Calls into the source SHALL run one at a time, on a blocking thread, so that a long refresh neither runs twice at once nor stalls the transport.
