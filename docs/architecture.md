@@ -89,7 +89,7 @@ Answers are short and honest:
 
 - Paths are relative to the root; sites are `path:line`.
 - A list stops at 30 entries with `… N more`; `--all` lifts the cap.
-- An empty result says what was searched: `nothing imports src/x.ts (searched 4,213 files read by ts, python)`. When unresolved imports elsewhere end with the file's stem, they are listed as possible misses.
+- An empty result says what was searched: `nothing imports src/x.ts among 4,213 files read by ts and python`. When unresolved imports elsewhere end with the file's stem, they are listed as possible misses.
 - Every answer ends with one line of coverage for the connectors it touched and one of freshness: `fresh at a1b2c3d, 3 files dirty` or, under `--no-refresh`, `stale: 2 files changed since the index`.
 
 ## Surfaces
