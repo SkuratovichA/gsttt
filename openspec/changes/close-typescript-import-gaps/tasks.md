@@ -26,3 +26,4 @@
 - [x] 3.4 The parameters of a signature without a body bind nothing
 - [x] 3.5 An import type reaches the import rules by the first name of its qualifier, at the line of its specifier
 - [x] 3.6 The doc comments of the `imports` and `root_types` rule fields say that only the TypeScript connector reads them, and the pinned pack schema follows
+- [x] 3.7 The provides text, the README and the architecture document describe the roots of the pack, an alias of `this` and the root types of the pack instead of listing them, say that the pack has `[[imports]]`, and name what is not read: a root type renamed on import, reached through a renamed namespace or combined with other types, the model types of a client generated to a custom `output` path or re-exported by a package, and an enum imported by name

@@ -76,7 +76,10 @@ fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
         }
         (ContractKind::Table, Role::Calls) => &[
             "raw SQL and query builders are not read",
-            "clients under a root other than prisma, db, tx, this.prisma, this.prismaService, this.db, ctx.prisma or ctx.db are recognised only through an alias of this, or a name the same file declares with the type PrismaClient, PrismaService or Prisma.TransactionClient, directly or through a type alias of that file",
+            "clients under a root other than the chain roots of the pack are recognised only through an alias of this, or a name the same file declares with one of the root types of the pack, directly or through a type alias of that file",
+            "a root type is not read when the file imports it under another name (PrismaClient as Base), reaches it through a renamed namespace (P.TransactionClient) or combines it with other types (PrismaClient & {…})",
+            "model types are read only from the packages the pack names: those of a client generated to a custom output path, or of a package that re-exports the client with export * from '@prisma/client', name no table",
+            "an enum imported by name from @prisma/client reads as a table of that name that no model declares",
         ],
         (ContractKind::Table, Role::Declares) => &["tables named at run time are not read"],
         (ContractKind::Env, Role::Calls) => {
