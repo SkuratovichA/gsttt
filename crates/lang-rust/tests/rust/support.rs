@@ -7,9 +7,9 @@ use gsttt_lang_rust::{PACKS, RUST};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-/// `value` with the keys of every object in order. A snapshot is printed in the order of the keys, which with serde_json's
-/// `preserve_order` is the order they were inserted in, so sorting them keeps the snapshots from depending on a feature
-/// that any crate of the workspace may switch on or off.
+/// `value` with the keys of every object in order. A snapshot is printed in the order of the keys, which with the
+/// `preserve_order` feature of `serde_json` is the order they were inserted in, so sorting them keeps the snapshots from
+/// depending on a feature that any crate of the workspace may switch on or off.
 fn sorted(value: Value) -> Value {
     match value {
         Value::Object(map) => {
