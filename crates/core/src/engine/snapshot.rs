@@ -27,9 +27,10 @@ use crate::path::RepoPath;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const MAGIC: &[u8; 8] = b"GSTTSNAP";
-/// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape.
-/// The package version cannot do that, because it stays the same across the commits of a branch in development.
-const LAYOUT: u32 = 2;
+/// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape, or
+/// the index in the body comes out of another rule, because a stored index answers as it is. The package version
+/// cannot do that, because it stays the same across the commits of a branch in development.
+const LAYOUT: u32 = 3;
 /// Magic, layout, header length and the hash of the body.
 const PREFIX: usize = 24;
 /// The body starts at a multiple of this, so the archived values in it sit where rkyv needs them.
@@ -504,6 +505,8 @@ mod tests {
         assert_eq!(parse_prefix(&prefix(MAGIC, LAYOUT, u32::MAX, 7)), None);
         // The prefix of the layout before the checksum was added.
         assert_eq!(parse_prefix(&prefix(MAGIC, 1, 40, 7)), None);
+        // The layout whose index holds the parsed and the linked site of a declaration a link re-keys.
+        assert_eq!(parse_prefix(&prefix(MAGIC, 2, 40, 7)), None);
         assert_eq!(parse_prefix(&prefix(MAGIC, LAYOUT, 40, 7)[..20]), None);
         assert_eq!(parse_prefix(b"GSTT"), None);
     }

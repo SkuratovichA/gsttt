@@ -61,3 +61,4 @@
 ## 6. Integration fixes
 
 - [x] 6.1 A site from the link phase replaces the site of each own fact of the same file with the same line, role and contract kind, so a declaration a mount re-keys is a site once under its linked key: embedded facts are never replaced, a file whose link returned nothing or panicked keeps its own facts, each case has a scenario and a test, and step 11 of the architecture document states the rule
+- [x] 6.2 The snapshot layout is 3, because a stored index answers as it is and a snapshot of layout 2 holds both the parsed and the linked site of a re-keyed declaration; the prefix test pins that layout 2 counts as absent
