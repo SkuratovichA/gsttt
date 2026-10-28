@@ -141,9 +141,12 @@ impl<'a> Engine<'a> {
         );
 
         let mut modules = Vec::new();
+        let mut detect_problems = Vec::new();
         for &connector in self.connectors {
             let name = connector.meta().name;
-            if self.setup.runs(name, || connector.detect(&repo)) {
+            if self.setup.runs(name, || {
+                pipeline::detect(connector, &repo, &mut detect_problems)
+            }) {
                 modules.push(Module {
                     connector,
                     options: self.setup.options(name).clone(),
@@ -156,7 +159,7 @@ impl<'a> Engine<'a> {
             .map(|module| module.connector.meta().name)
             .collect();
 
-        let assigned = pipeline::assign_files(&repo, &modules)?;
+        let assigned = pipeline::assign_files(&repo, &modules, detect_problems)?;
         let claims = assigned.claims();
         let module_states: Vec<_> = modules
             .iter()
@@ -816,6 +819,27 @@ mod tests {
             "{:?}",
             run.index.coverage.problems
         );
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A panicking detect disables its connector")]
+    #[test]
+    fn a_panicking_detect_disables_its_connector() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", ""), ("q.graphql", ""), ("DETECT_BOOM", "")]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        let ran: Vec<_> = run
+            .index
+            .coverage
+            .connectors
+            .iter()
+            .map(|connector| connector.connector.as_str())
+            .collect();
+        assert_eq!(ran, ["graphs"]);
+        assert_eq!(
+            run.index.coverage.problems,
+            ["`notes`, detect: boom in detect"]
+        );
+        assert_eq!(rig.counters.take()[0], 0);
     }
 
     #[gsttt_scenario::scenario("indexing", "Bad options fail the run")]

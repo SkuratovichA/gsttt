@@ -6,11 +6,13 @@
 //! around it; a connector's tests call [`run`] on a fixture tree and snapshot [`Output::to_json`].
 
 use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::fmt;
 use std::io;
 use std::panic::{self, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
+use foldhash::fast::RandomState;
 use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -102,7 +104,9 @@ pub struct Problem {
 /// The connector call a [`Problem`] comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Call {
+    Detect,
     Open,
+    Matches,
     Prepare,
     Resolve,
     ParseEmbedded,
@@ -112,7 +116,9 @@ pub enum Call {
 impl fmt::Display for Problem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let call = match self.call {
+            Call::Detect => "detect",
             Call::Open => "open",
+            Call::Matches => "matches",
             Call::Prepare => "prepare",
             Call::Resolve => "resolve",
             Call::ParseEmbedded => "parse_embedded",
@@ -222,21 +228,44 @@ struct Made {
     reused: bool,
 }
 
+/// Asks a connector whether the repository has anything for it. A `detect` that panics finds nothing, and the
+/// panic becomes a problem in `problems`.
+pub fn detect(connector: &dyn DynConnector, repo: &RepoView, problems: &mut Vec<Problem>) -> bool {
+    contain(|| connector.detect(repo)).unwrap_or_else(|message| {
+        problems.push(Problem {
+            connector: connector.meta().name,
+            root: None,
+            call: Call::Detect,
+            message,
+        });
+        false
+    })
+}
+
 /// Opens every module and gives every file of `repo` to a project. Only a bad option fails; a connector that
-/// cannot open becomes a problem in the output of [`execute`].
+/// cannot open becomes a problem in the output of [`execute`], and so do the `problems` the caller already has.
 pub fn assign_files<'a>(
     repo: &'a RepoView,
     modules: &[Module<'_>],
+    mut problems: Vec<Problem>,
 ) -> Result<Assigned<'a>, ConnectorError> {
-    let mut problems = Vec::new();
     let Opened {
         projects,
         module_of,
     } = open(repo, modules, &mut problems)?;
+    let roots = Roots::new(&projects);
+    let mut reported = vec![false; projects.len()];
     let mut unclaimed = Vec::new();
     let mut owned = Vec::new();
     for (id, path) in repo.files() {
-        match assign(&projects, &module_of, path) {
+        match assign(
+            &projects,
+            &module_of,
+            &roots,
+            path,
+            &mut reported,
+            &mut problems,
+        ) {
             Some(project) => owned.push(Owned { id, path, project }),
             None => unclaimed.push(id),
         }
@@ -257,7 +286,7 @@ pub fn run(
     modules: &[Module<'_>],
     max_file_bytes: u64,
 ) -> Result<Output, ConnectorError> {
-    let assigned = assign_files(repo, modules)?;
+    let assigned = assign_files(repo, modules, Vec::new())?;
     Ok(execute(assigned, repo, max_file_bytes, Vec::new()).0)
 }
 
@@ -475,16 +504,61 @@ fn open(
     })
 }
 
+/// The projects by root, so a file is offered to the projects above it and not to every project of the run.
+struct Roots<'p>(HashMap<&'p str, Vec<usize>, RandomState>);
+
+impl<'p> Roots<'p> {
+    /// Reads the root of every project once. The projects of a root stay in the order they were opened.
+    fn new(projects: &'p [Box<dyn DynProject>]) -> Self {
+        let mut by_root: HashMap<&str, Vec<usize>, RandomState> = HashMap::default();
+        for (index, project) in projects.iter().enumerate() {
+            by_root.entry(project.root()).or_default().push(index);
+        }
+        Self(by_root)
+    }
+
+    /// The projects rooted at `dir`.
+    fn at(&self, dir: &str) -> &[usize] {
+        self.0.get(dir).map_or(&[], Vec::as_slice)
+    }
+}
+
 /// The project that owns `path`: of the first module with a project that takes it, the project with the deepest
-/// root.
-fn assign(projects: &[Box<dyn DynProject>], module_of: &[usize], path: &RepoPath) -> Option<usize> {
-    projects
-        .iter()
-        .zip(module_of)
-        .enumerate()
-        .filter(|(_, (project, _))| path.is_under(project.root()) && project.matches(path))
-        .min_by_key(|(index, (project, module))| (**module, Reverse(depth(project.root())), *index))
-        .map(|(index, _)| index)
+/// root. A `matches` that panics takes nothing; `reported` keeps the first panic of each project the only problem
+/// it adds, so a project that panics on every file does not fill the coverage.
+fn assign(
+    projects: &[Box<dyn DynProject>],
+    module_of: &[usize],
+    roots: &Roots<'_>,
+    path: &RepoPath,
+    reported: &mut [bool],
+    problems: &mut Vec<Problem>,
+) -> Option<usize> {
+    let mut best = None;
+    for dir in path.directories() {
+        for &index in roots.at(dir) {
+            let (Some(project), Some(&module)) = (projects.get(index), module_of.get(index)) else {
+                continue;
+            };
+            let takes = contain(|| project.matches(path)).unwrap_or_else(|message| {
+                if let Some(flag) = reported.get_mut(index)
+                    && !std::mem::replace(flag, true)
+                {
+                    problems.push(problem(
+                        project.as_ref(),
+                        Call::Matches,
+                        format!("`{path}`: {message}"),
+                    ));
+                }
+                false
+            });
+            let key = (module, Reverse(depth(dir)), index);
+            if takes && best.is_none_or(|current| key < current) {
+                best = Some(key);
+            }
+        }
+    }
+    best.map(|(_, _, index)| index)
 }
 
 fn depth(root: &str) -> usize {
@@ -766,7 +840,9 @@ mod tests {
 
     use super::*;
     use crate::connector::Erased;
-    use crate::engine::testing::{Counters, Graphs, LIMIT, NOTES, fact, fixture, modules};
+    use crate::engine::testing::{
+        Counters, Graphs, LIMIT, NOTES, Notes, fact, fixture, modules, tree,
+    };
     use crate::fact::ParseStatus;
 
     fn file<'a>(output: &'a Output, repo: &RepoView, path: &str) -> &'a FileRun {
@@ -806,6 +882,90 @@ mod tests {
         assert_eq!(owner("pkg/c.txt"), "notes pkg");
         assert_eq!(owner("q.graphql"), "graphs .");
         assert_eq!(json["unclaimed"], json!(["README.md", "pkg/ROOT"]));
+    }
+
+    #[test]
+    fn a_nested_root_takes_its_own_files_and_a_longer_name_is_not_inside_it() {
+        let (_dir, repo) = tree(&[
+            ("a/ROOT", b""),
+            ("a/b/ROOT", b""),
+            ("ab/ROOT", b""),
+            ("a/b/c.txt", b""),
+            ("a/x.txt", b""),
+            ("ab/y.txt", b""),
+            ("z.txt", b""),
+        ]);
+        let output = run(&repo, &modules(), LIMIT).unwrap();
+        let json = output.to_json(&repo);
+        let owners: Vec<_> = json["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| format!("{} {}", file["path"], file["project"]))
+            .collect();
+        assert_eq!(
+            owners,
+            [
+                r#""a/b/c.txt" "notes a/b""#,
+                r#""a/x.txt" "notes a""#,
+                r#""ab/y.txt" "notes ab""#,
+                r#""z.txt" "notes .""#,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_is_tested_against_the_projects_above_it_only() {
+        let names: Vec<String> = (0..12)
+            .flat_map(|n| {
+                [
+                    format!("pkg{n}/ROOT"),
+                    format!("pkg{n}/a.txt"),
+                    format!("pkg{n}/b.txt"),
+                ]
+            })
+            .collect();
+        let files: Vec<(&str, &[u8])> =
+            names.iter().map(|name| (name.as_str(), &b""[..])).collect();
+        let (_dir, repo) = tree(&files);
+        let counters = Counters::leak();
+        let notes = Erased(Notes { counters });
+        let modules = [Module {
+            connector: &notes,
+            options: Value::Null,
+            packs: Vec::new(),
+        }];
+        let assigned = assign_files(&repo, &modules, Vec::new()).unwrap();
+        // The root of every project is read once, to find its files, and not once per file and project.
+        let projects = 12 + 1;
+        assert!(counters.take_roots() <= projects);
+        assert_eq!(assigned.claims().len(), 24);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A panicking matches leaves one file unclaimed")]
+    #[test]
+    fn a_panicking_matches_leaves_its_files_unclaimed_and_is_one_problem() {
+        let (_dir, repo) = tree(&[
+            ("a.txt", b""),
+            ("explode.txt", b""),
+            ("sub/explode.txt", b""),
+        ]);
+        let output = run(&repo, &modules(), LIMIT).unwrap();
+        let json = output.to_json(&repo);
+        assert_eq!(json["unclaimed"], json!(["explode.txt", "sub/explode.txt"]));
+        let claimed: Vec<_> = output
+            .files
+            .iter()
+            .map(|file| repo.path(file.id).unwrap().as_str())
+            .collect();
+        assert_eq!(claimed, ["a.txt"]);
+        assert_eq!(
+            json["problems"],
+            json!([
+                "`broken` project at `x`, open: unreadable manifest",
+                "`notes` project at `.`, matches: `explode.txt`: boom in matches",
+            ])
+        );
     }
 
     #[gsttt_scenario::scenario("indexing", "Registry order decides between connectors")]

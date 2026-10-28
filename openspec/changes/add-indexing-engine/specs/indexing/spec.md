@@ -124,6 +124,19 @@ The engine SHALL catch a panic in every connector call. A panic in `parse` SHALL
 - **WHEN** the setup gives a module an option its schema does not allow
 - **THEN** the run fails with an error naming the module and the option
 
+### Requirement: Failure containment of detection and matching
+A panic in `detect` SHALL mean the connector finds nothing to read, and a panic in `matches` SHALL mean the project does not take that file. Each SHALL become a coverage line naming the connector and the call, and a project whose `matches` panics SHALL add one line, not one per file.
+
+#### Scenario: A panicking detect disables its connector
+- **WHEN** a connector's `detect` panics
+- **THEN** the run finishes without that connector
+- **AND** coverage names the connector and `detect`
+
+#### Scenario: A panicking matches leaves one file unclaimed
+- **WHEN** a project's `matches` panics for two of three files
+- **THEN** those two files are unclaimed and the third keeps its project
+- **AND** coverage names the connector, the project and `matches` once
+
 ### Requirement: Determinism
 Indexing the same tree with the same setup SHALL give equal indexes apart from `IndexInfo`, whatever the number of threads.
 

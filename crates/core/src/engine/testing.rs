@@ -82,6 +82,8 @@ pub(crate) struct Counters {
     prepare: AtomicUsize,
     resolve: AtomicUsize,
     link: AtomicUsize,
+    /// How often a project was asked for its root.
+    roots: AtomicUsize,
     /// The most imports any `prepare` found already resolved.
     resolved_before_prepare: AtomicUsize,
     /// The project root and the file paths of every `prepare` call.
@@ -95,6 +97,7 @@ impl Counters {
             prepare: AtomicUsize::new(0),
             resolve: AtomicUsize::new(0),
             link: AtomicUsize::new(0),
+            roots: AtomicUsize::new(0),
             resolved_before_prepare: AtomicUsize::new(0),
             prepared: Mutex::new(Vec::new()),
         }
@@ -109,6 +112,11 @@ impl Counters {
     pub(crate) fn take(&self) -> [usize; 4] {
         [&self.parse, &self.prepare, &self.resolve, &self.link]
             .map(|count| count.swap(0, Ordering::Relaxed))
+    }
+
+    /// How often projects were asked for their root, which starts again from zero.
+    pub(crate) fn take_roots(&self) -> usize {
+        self.roots.swap(0, Ordering::Relaxed)
     }
 
     /// The `prepare` calls as `(project root, file paths)`, sorted.
@@ -137,7 +145,8 @@ pub(crate) struct Options {
 }
 
 /// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link`
-/// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. A project sits at the root and in
+/// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. A file called `explode.txt` makes
+/// `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in
 /// every directory with a `ROOT` file; `link` reports a site for every file with a resolved import.
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
@@ -162,7 +171,8 @@ impl Connector for Notes {
         }
     }
 
-    fn detect(&self, _: &RepoView) -> bool {
+    fn detect(&self, repo: &RepoView) -> bool {
+        assert!(repo.lookup("DETECT_BOOM").is_none(), "boom in detect");
         true
     }
 
@@ -191,10 +201,12 @@ impl Project for NotesProject {
     type Extra = ();
 
     fn root(&self) -> &str {
+        self.counters.roots.fetch_add(1, Ordering::Relaxed);
         &self.root
     }
 
     fn matches(&self, path: &RepoPath) -> bool {
+        assert!(path.file_name() != "explode.txt", "boom in matches");
         path.extension() == Some("txt")
     }
 
@@ -437,10 +449,22 @@ pub(crate) fn modules() -> Vec<Module<'static>> {
         .collect()
 }
 
-pub(crate) fn fixture() -> (tempfile::TempDir, RepoView) {
+/// A directory holding `files`, and the view of it that a run over a fixture tree uses.
+pub(crate) fn tree(files: &[(&str, &[u8])]) -> (tempfile::TempDir, RepoView) {
     let dir = tempfile::tempdir().unwrap();
+    for (path, bytes) in files {
+        let path = dir.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    }
+    let root = Utf8PathBuf::from_path_buf(dir.path().to_path_buf()).unwrap();
+    let repo = RepoView::scan(root).unwrap();
+    (dir, repo)
+}
+
+pub(crate) fn fixture() -> (tempfile::TempDir, RepoView) {
     let big = "x".repeat(2000);
-    let files: [(&str, &[u8]); 9] = [
+    tree(&[
         (
             "a.txt",
             b"use b.txt\nuse missing.txt\nuse boom\nembed graphql query Q\nembed sql select 1\n",
@@ -453,13 +477,5 @@ pub(crate) fn fixture() -> (tempfile::TempDir, RepoView) {
         ("README.md", b"# fixture\n"),
         ("pkg/ROOT", b""),
         ("pkg/c.txt", b"use a.txt\n"),
-    ];
-    for (path, bytes) in files {
-        let path = dir.path().join(path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, bytes).unwrap();
-    }
-    let root = Utf8PathBuf::from_path_buf(dir.path().to_path_buf()).unwrap();
-    let repo = RepoView::scan(root).unwrap();
-    (dir, repo)
+    ])
 }

@@ -60,8 +60,9 @@ pub trait Project: Send + Sync + 'static {
     /// Per-file data the link phase needs, cached with the facts. `()` for a project without a link phase.
     type Extra: Serialize + DeserializeOwned + Default + Send + Sync;
 
-    /// The directory the project owns, `""` for the repository root. A file goes to the deepest project of the
-    /// first connector that matches it.
+    /// The directory the project owns, `""` for the repository root, written the way a [`RepoPath`] is: `/`
+    /// between segments, no leading or trailing `/`. A file goes to the deepest project of the first connector
+    /// that matches it, and a project is only asked about the files under its root.
     fn root(&self) -> &str;
 
     /// Whether the project reads `path`. Asked only for files under [`Project::root`].

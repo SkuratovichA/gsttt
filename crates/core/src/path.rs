@@ -96,6 +96,14 @@ impl RepoPath {
         }
     }
 
+    /// The directories the file lies under, the deepest first and the root `""` last: `a/b`, `a` and `""` for
+    /// `a/b/c.ts`.
+    pub fn directories(&self) -> impl Iterator<Item = &str> {
+        std::iter::successors(Some(self.parent()), |dir| {
+            (!dir.is_empty()).then(|| dir.rsplit_once('/').map_or("", |(parent, _)| parent))
+        })
+    }
+
     /// Whether the file lies under `dir`, at any depth. Every file lies under `""`.
     pub fn is_under(&self, dir: &str) -> bool {
         dir.is_empty()
@@ -191,5 +199,19 @@ mod tests {
         );
         assert_eq!(RepoPath::normalize(".env").unwrap().extension(), None);
         assert!(path.is_under("src") && path.is_under("") && !path.is_under("sr"));
+    }
+
+    #[test]
+    fn directories_run_from_the_deepest_to_the_root() {
+        let directories = |path: &str| -> Vec<String> {
+            RepoPath::normalize(path)
+                .unwrap()
+                .directories()
+                .map(str::to_owned)
+                .collect()
+        };
+        assert_eq!(directories("a/b/c.ts"), ["a/b", "a", ""]);
+        assert_eq!(directories("a/c.ts"), ["a", ""]);
+        assert_eq!(directories("c.ts"), [""]);
     }
 }
