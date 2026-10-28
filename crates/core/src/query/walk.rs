@@ -18,7 +18,7 @@ use super::cross::{Crossed, Crossing, Direction};
 pub(super) enum Cause {
     /// The file imports the file the walk came from. `names` are the names it imports that the change can reach, sorted, and none when it takes every name.
     Imports { file: FileId, names: Vec<NameId> },
-    /// The file re-exports `names` of the file the walk came from, sorted. None when the walk could not tell which, because the file it came from does not list what it exports.
+    /// The file re-exports `names` of the file the walk came from, sorted. There are no names when the walk could not tell which, because the file it came from does not list what it exports.
     ReExports { file: FileId, names: Vec<NameId> },
     /// The file has a site with `role` in `contract`, which joins a contract of the file the walk came from.
     Contract { role: Role, contract: ContractId },
