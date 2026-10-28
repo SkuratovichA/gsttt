@@ -1277,6 +1277,176 @@ fn a_requirement_that_an_earlier_change_adds_is_the_one_replaced() {
     assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "b-adds\n");
 }
 
+#[test]
+fn a_modified_requirement_is_compared_with_the_first_block_of_a_name_that_two_changes_add() {
+    let tree = Tree::new();
+    // `a-adds` and `b-adds` add `R` with blocks of their own, and `c-modifies` replaces `R`. The archive takes `a-adds` first and refuses the second add, so the `R` that `c-modifies` replaces is the block of `a-adds`: keeping its title passes, keeping only the title of `b-adds` is refused.
+    let a_adds = delta("ADDED", &[requirement("R", &["A holds"])]);
+    let b_adds = delta("ADDED", &[requirement("R", &["B holds"])]);
+    tree.change("a-adds", TICKED, &[("queries", &a_adds)])
+        .change("b-adds", TICKED, &[("queries", &b_adds)])
+        .change(
+            "c-modifies",
+            TICKED,
+            &[(
+                "queries",
+                &delta("MODIFIED", &[requirement("R", &["A holds"])]),
+            )],
+        )
+        .source("tests/a.rs", &proof("queries", "A holds"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert!(
+        outcome
+            .output
+            .contains("queries: 1 proven, 0 pending, 0 failing"),
+        "the block of `b-adds` is replaced with the other: {}",
+        outcome.output
+    );
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "a-adds\nb-adds\nc-modifies\n"
+    );
+
+    let modifies = delta("MODIFIED", &[requirement("R", &["B holds"])]);
+    tree.change("c-modifies", TICKED, &[("queries", &modifies)])
+        .source("tests/b.rs", &proof("queries", "B holds"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/c-modifies/specs/queries/spec.md:{}: change `c-modifies` modifies requirement `R` of capability `queries` and leaves out scenario `A holds` of the requirement it replaces, and `openspec archive` refuses such a block",
+        line_of(&modifies, "Requirement: R")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "a-adds\nb-adds\n"
+    );
+}
+
+#[test]
+fn a_modified_requirement_is_compared_with_the_block_of_the_finished_change_that_adds_the_name() {
+    let tree = Tree::new();
+    // `a-adds` has a task unticked, so the archive takes `b-adds` and `c-modifies` before it, and the `R` that `c-modifies` replaces is the block of `b-adds`. Read in the order of the names, `c-modifies` would be compared with the block of `a-adds` and refused for leaving out `A holds`.
+    tree.change(
+        "a-adds",
+        OPEN,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["A holds"])]),
+        )],
+    )
+    .change(
+        "b-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["B holds"])]),
+        )],
+    )
+    .change(
+        "c-modifies",
+        TICKED,
+        &[(
+            "queries",
+            &delta("MODIFIED", &[requirement("R", &["B holds"])]),
+        )],
+    )
+    .source("tests/b.rs", &proof("queries", "B holds"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert!(
+        outcome
+            .output
+            .contains("queries: 1 proven, 1 pending, 0 failing"),
+        "{}",
+        outcome.output
+    );
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "b-adds\nc-modifies\n"
+    );
+}
+
+#[test]
+fn a_renamed_and_modified_requirement_that_leaves_out_a_scenario_is_named_by_its_new_name() {
+    let tree = Tree::new();
+    // The archive renames `Matching` to `Lookup` first and then finds `Lookup` with both scenarios, so it refuses the block that writes `Lookup` without `Prefix match`. The failure names the requirement by the name the delta writes.
+    let renames_and_trims = format!(
+        "{}\n## MODIFIED Requirements\n\n{}",
+        delta("RENAMED", &[renaming("Matching", "Lookup")]),
+        requirement("Lookup", &["Exact match"])
+    );
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["Exact match", "Prefix match"])]),
+    )
+    .change("rename", TICKED, &[("queries", &renames_and_trims)])
+    .source("tests/exact.rs", &proof("queries", "Exact match"))
+    .source("tests/prefix.rs", &proof("queries", "Prefix match"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let heading = lines_of(&renames_and_trims, "### Requirement: Lookup")
+        .pop()
+        .unwrap();
+    let failure = format!(
+        "openspec/changes/rename/specs/queries/spec.md:{heading}: change `rename` modifies requirement `Lookup` of capability `queries` and leaves out scenario `Prefix match` of the requirement it replaces, and `openspec archive` refuses such a block"
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    assert!(
+        !outcome.output.contains("modifies requirement `Matching`"),
+        "{}",
+        outcome.output
+    );
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+}
+
+#[test]
+fn a_refusal_on_an_unfinished_change_fails_the_gate() {
+    let tree = Tree::new();
+    // A change with a task unticked is pending, but the archive refuses its block as soon as it is finished, so the gate says so now and names the change.
+    let modified = delta("MODIFIED", &[requirement("Matching", &["Exact match"])]);
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["Exact match", "Prefix match"])]),
+    )
+    .change("wip", OPEN, &[("queries", &modified)])
+    .source("tests/exact.rs", &proof("queries", "Exact match"))
+    .source("tests/prefix.rs", &proof("queries", "Prefix match"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/wip/specs/queries/spec.md:{}: change `wip` modifies requirement `Matching` of capability `queries` and leaves out scenario `Prefix match` of the requirement it replaces, and `openspec archive` refuses such a block",
+        line_of(&modified, "Requirement: Matching")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+}
+
+#[test]
+fn a_block_that_leaves_out_two_scenarios_names_both() {
+    let tree = Tree::new();
+    let modified = delta("MODIFIED", &[requirement("Matching", &["Exact match"])]);
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement(
+            "Matching",
+            &["Exact match", "Prefix match", "Suffix match"],
+        )]),
+    )
+    .change("trim", TICKED, &[("queries", &modified)])
+    .source("tests/exact.rs", &proof("queries", "Exact match"))
+    .source("tests/prefix.rs", &proof("queries", "Prefix match"))
+    .source("tests/suffix.rs", &proof("queries", "Suffix match"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/trim/specs/queries/spec.md:{}: change `trim` modifies requirement `Matching` of capability `queries` and leaves out scenarios `Prefix match`, `Suffix match` of the requirement it replaces, and `openspec archive` refuses such a block",
+        line_of(&modified, "Requirement: Matching")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+}
+
 /// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine` with the `## Purpose` taken out of its delta.
 const PLACEHOLDER: &str =
     "TBD - created by archiving change add-indexing-engine. Update Purpose after archive.";
