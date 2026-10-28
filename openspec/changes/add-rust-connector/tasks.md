@@ -4,7 +4,7 @@
 
 - [x] 1.1 `Connector` for `rust`: detection, projects per `Cargo.toml`, crate targets, workspace inheritance, options with a JSON schema
 - [x] 1.2 Parsing with `ra_ap_syntax`: module declarations, use trees, `extern crate`, qualified paths in code and macro tokens, includes, cfg flags, test tags, recovered status
-- [ ] 1.3 A `Site` over calls, method calls, macro calls and attributes, and matching of every rule kind
+- [x] 1.3 A `Site` over calls, method calls, macro calls and attributes, and matching of every rule kind
 
 ## 2. Resolution
 

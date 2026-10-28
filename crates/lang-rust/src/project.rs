@@ -17,6 +17,7 @@ use xxhash_rust::xxh3::xxh3_64;
 use crate::imports;
 use crate::manifest::Package;
 use crate::resolve::{Aliases, Resolver};
+use crate::sites;
 use crate::syntax::line_at;
 use crate::tree::{Registry, Trees};
 
@@ -147,6 +148,7 @@ impl Project for RustProject {
             None => ParseStatus::Ok,
         };
         let root = parse.syntax_node();
+        let sites = sites::read(&root, &lines, &self.packs);
         Parsed::new(FileFacts {
             status,
             tags: if self.is_test(file.path) {
@@ -155,7 +157,9 @@ impl Project for RustProject {
                 FileTags::NONE
             },
             imports: imports::read(&root, &lines, self.reads_query_files()),
-            ..FileFacts::default()
+            contracts: sites.found.into_iter().map(|found| found.fact).collect(),
+            embedded: sites.embedded,
+            unresolved: sites.unresolved,
         })
     }
 
