@@ -711,6 +711,57 @@ fn model_tables_are_declared() {
     );
 }
 
+#[gsttt_scenario::scenario("python", "A table name outside a model declares nothing")]
+#[test]
+fn a_table_name_outside_a_model_declares_nothing() {
+    let tree = index("model_scopes");
+    // Line 4 and 5 assign the names at module level, 16 and 17 in a method, 35 in a class `Meta` that sits in no class
+    // and 40 in a class that is not called `Meta`.
+    assert_eq!(
+        tree.contracts("models.py"),
+        [
+            "declares table bookings@13",
+            "declares table inner@22",
+            "declares table deep@26",
+            "declares table booking_items@31",
+            "declares table audit_log@43",
+            "declares table in_a_function@49",
+        ]
+    );
+    insta::assert_json_snapshot!(
+        "a_table_name_outside_a_model_declares_nothing",
+        tree.file_json("models.py")
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A target of one segment matches wherever the name is assigned"
+)]
+#[test]
+fn a_target_of_one_segment_matches_wherever_the_name_is_assigned() {
+    let pack = r#"return {
+        name = "anywhere",
+        language = "python",
+        assigns = { { target = "db_table", kind = "table", role = "declares", key = "$arg1" } },
+    }"#;
+    let packs = builtin_packs(&[("anywhere.lua", pack)]).unwrap();
+    let tree = index_with("model_scopes", packs);
+    assert_eq!(
+        tree.contracts("models.py"),
+        [
+            "declares table module_variable@5",
+            "declares table in_a_method_too@17",
+            "declares table deep@26",
+            "declares table booking_items@31",
+            "declares table meta_alone@35",
+            "declares table options_not_meta@40",
+            "declares table audit_log@43",
+            "declares table in_a_function@49",
+        ]
+    );
+}
+
 #[gsttt_scenario::scenario("python", "A migration declares its tables")]
 #[test]
 fn a_migration_declares_its_tables() {

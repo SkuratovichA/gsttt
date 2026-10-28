@@ -9,7 +9,7 @@ use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
     FileFacts, Import, ImportFlags, ImportKind, Line, ParseStatus, UnresolvedReason, UnresolvedSite,
 };
-use gsttt_core::rules::{EmbedRule, Outcome, Pack, Prefix, Site};
+use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Site, callee_matches};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
@@ -85,6 +85,7 @@ enum Frame<'a> {
 }
 
 struct ClassFrame<'a> {
+    name: &'a str,
     /// The decorators of the class by dotted name, with their arguments when they are called.
     decorators: Vec<(Name, Option<&'a Arguments>)>,
     bases: Vec<Name>,
@@ -234,6 +235,7 @@ impl<'a> Collector<'a> {
             self.visit_arguments(arguments);
         }
         let frame = ClassFrame {
+            name: class.name.as_str(),
             decorators: class
                 .decorator_list
                 .iter()
@@ -643,6 +645,32 @@ impl<'a> Collector<'a> {
         self.assign_rules(&assign.target, assign.value.as_deref(), true);
     }
 
+    /// Whether the name assigned here matches one of the `patterns` of a rule.
+    ///
+    /// A bare name in a class body is also matched as qualified by the classes around it, as many as the pattern has
+    /// segments before its last, so `*.Meta.db_table` reads a `db_table` in a class `Meta` that sits in another class
+    /// and `*.__tablename__` a `__tablename__` in the body of a class. A pattern of one segment matches the name
+    /// wherever it is assigned.
+    fn target_matches(&self, patterns: &OneOrMany, name: &str) -> bool {
+        patterns.iter().any(|pattern| {
+            if name.contains('.') {
+                return callee_matches(pattern, name);
+            }
+            let mut segments = pattern.rsplit('.');
+            if !segments
+                .next()
+                .is_some_and(|last| last == "*" || last == name)
+            {
+                return false;
+            }
+            let mut classes = self.frames.iter().rev();
+            segments.all(|segment| match classes.next() {
+                Some(Frame::Class(class)) => segment == "*" || segment == class.name,
+                _ => false,
+            })
+        })
+    }
+
     /// Applies the assignment rules to `target = value`; `annotated` tells a typed field from a plain assignment.
     fn assign_rules(&mut self, target: &Expr, value: Option<&Expr>, annotated: bool) {
         let Some(name) = dotted(target) else {
@@ -652,7 +680,7 @@ impl<'a> Collector<'a> {
         let packs = self.packs;
         for pack in packs {
             for rule in &pack.assigns {
-                if !rule.target.matches(&name) {
+                if !self.target_matches(&rule.target, &name) {
                     continue;
                 }
                 let class = self.top_class();

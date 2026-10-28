@@ -1,5 +1,5 @@
--- SQLAlchemy tables and SQL. A declarative class names its table in `__tablename__`, a Core table in
--- `Table("name", metadata, ...)`; a string given to `text()` is a SQL document.
+-- SQLAlchemy tables and SQL. A declarative class names its table in `__tablename__` in its body, which the target
+-- `*.__tablename__` says, a Core table in `Table("name", metadata, ...)`; a string given to `text()` is a SQL document.
 return {
   name = "sqlalchemy",
   language = "python",
@@ -14,7 +14,7 @@ return {
   },
   assigns = {
     {
-      target = "__tablename__",
+      target = "*.__tablename__",
       kind = "table",
       role = "declares",
       key = "$arg1",

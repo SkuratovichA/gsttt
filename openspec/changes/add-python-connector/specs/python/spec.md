@@ -204,11 +204,23 @@ With the `requests` and `httpx` packs, `requests.get` and the other verbs, `requ
 - **AND** it calls `http GET /v1/bookings`
 
 ### Requirement: Tables and SQL
-With the `sqlalchemy` pack, `__tablename__ = "<name>"` in a class and `Table("<name>", …)` SHALL declare `table <name>`, and a string passed to `text()` SHALL be an embedded `sql` document. With the `django` pack, `db_table = "<name>"` in a model's `Meta` SHALL declare `table <name>`.
+With the `sqlalchemy` pack, `__tablename__ = "<name>"` in the body of a class and `Table("<name>", …)` SHALL declare `table <name>`, and a string passed to `text()` SHALL be an embedded `sql` document. With the `django` pack, `db_table = "<name>"` in a class `Meta` nested in another class SHALL declare `table <name>`. The same names assigned anywhere else SHALL declare nothing.
 
 #### Scenario: Model tables are declared
 - **WHEN** one class has `__tablename__ = "bookings"` and a Django model's `Meta` has `db_table = "booking_items"`
 - **THEN** the files declare `table bookings` and `table booking_items`
+
+#### Scenario: A table name outside a model declares nothing
+- **WHEN** a file assigns `__tablename__` and `db_table` at module level and in a method, `db_table` in a class `Meta` that is in no class, and `db_table` in a class `Options` of a model
+- **AND** it has a class with `__tablename__` in its body, a class with `__tablename__` inside another class, and models whose `Meta` has `db_table`, one nested in another class and one defined in a function
+- **THEN** it declares only the tables of those class bodies and `Meta` classes
+
+### Requirement: Assignment targets
+A pack's assignment rule SHALL match a name assigned in a class body as written and as qualified by the classes around it, as many as its target has segments before the last, so `*.Meta.db_table` is a `db_table` in a class `Meta` inside another class. A target of one segment SHALL match the name wherever it is assigned.
+
+#### Scenario: A target of one segment matches wherever the name is assigned
+- **WHEN** a pack's rule has the target `db_table` and a file assigns `db_table` at module level, in a method, in a class `Meta` that is in no class and in the `Meta` of a model
+- **THEN** each of them declares a table
 
 ### Requirement: Alembic migrations
 With the `alembic` pack, `op.create_table`, `op.drop_table`, `op.rename_table`, `op.add_column`, `op.drop_column`, `op.alter_column` and `op.create_index` SHALL declare `table <name>` for the table they name.
