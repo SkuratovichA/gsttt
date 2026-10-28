@@ -9,6 +9,7 @@
 use std::fs;
 use std::io::{Read, Seek, Write};
 use std::path::Path;
+use std::time::Duration;
 
 use jiff::Timestamp;
 use rkyv::rancor::Error as RkyvError;
@@ -92,8 +93,18 @@ pub enum SnapshotError {
     Write { path: String, message: String },
 }
 
+/// The name of the temporary file of a write is this prefix, random letters and this suffix, so that nothing else
+/// in the directory is taken for one.
+const TEMP_PREFIX: &str = "snapshot-";
+const TEMP_SUFFIX: &str = ".tmp";
+
+/// How long a temporary file has to lie untouched before the next write takes it for the leftover of a process that
+/// died between creating it and renaming it. A write takes a moment, and nothing locks the directory against two
+/// processes that write at once, so a younger file may well belong to one that is still running.
+const STALE: Duration = Duration::from_hours(1);
+
 /// Writes the snapshot through a temporary file in the same directory, so a reader sees the old file or the new
-/// one and never half of either.
+/// one and never half of either. Temporary files that earlier writes left behind are removed first.
 pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), SnapshotError> {
     let failed_to_write = |message: String| SnapshotError::Write {
         path: path.display().to_string(),
@@ -118,8 +129,12 @@ pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), Snapsh
 
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(dir).map_err(|error| failed_to_write(error.to_string()))?;
-    let mut file =
-        tempfile::NamedTempFile::new_in(dir).map_err(|error| failed_to_write(error.to_string()))?;
+    remove_stale(dir);
+    let mut file = tempfile::Builder::new()
+        .prefix(TEMP_PREFIX)
+        .suffix(TEMP_SUFFIX)
+        .tempfile_in(dir)
+        .map_err(|error| failed_to_write(error.to_string()))?;
     file.write_all(&bytes)
         .map_err(|error| failed_to_write(error.to_string()))?;
     // The rename below makes the new file the snapshot at once; without this, a crash after it can leave a file
@@ -130,6 +145,28 @@ pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), Snapsh
     file.persist(path)
         .map_err(|error| failed_to_write(error.to_string()))?;
     Ok(())
+}
+
+/// Removes the temporary files of [`write`] in `dir` that nobody has touched for [`STALE`].
+fn remove_stale(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let is_temporary = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(TEMP_PREFIX) && name.ends_with(TEMP_SUFFIX));
+        let age = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|time| time.elapsed().ok());
+        if is_temporary && age.is_some_and(|age| age > STALE) {
+            // A file that stays is only disk space.
+            drop(fs::remove_file(entry.path()));
+        }
+    }
 }
 
 /// The header of the snapshot at `path`, read without its body. `None` when there is no readable snapshot of this
@@ -263,8 +300,11 @@ pub fn now() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
     use super::*;
     use crate::engine::files::blob_id;
+    use crate::engine::testing::touch;
     use crate::fact::{Import, ImportKind};
 
     fn entry(path: &str, key: Option<FactKey>, facts: FileFacts) -> StoredFile {
@@ -287,6 +327,12 @@ mod tests {
     fn stored_in(files: Vec<StoredFile>) -> (tempfile::TempDir, Snapshot) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("snapshot.gsttt");
+        write_files(&path, files);
+        (dir, Snapshot::open(&path).unwrap())
+    }
+
+    /// Writes a snapshot of `files` to `path`.
+    fn write_files(path: &Path, files: Vec<StoredFile>) {
         let header = Header {
             built_by: VERSION.to_owned(),
             built_at: now(),
@@ -302,12 +348,33 @@ mod tests {
             listed_at: 11,
             files,
         };
-        write(&path, &header, &stored).unwrap();
-        (dir, Snapshot::open(&path).unwrap())
+        write(path, &header, &stored).unwrap();
     }
 
     fn path(text: &str) -> RepoPath {
         RepoPath::normalize(text).unwrap()
+    }
+
+    #[test]
+    fn a_write_removes_the_temporary_files_an_earlier_one_left_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let long_ago = SystemTime::now() - 2 * STALE;
+        let dead = dir.path().join("snapshot-dead.tmp");
+        let foreign = dir.path().join("notes.tmp");
+        let live = dir.path().join("snapshot-live.tmp");
+        for file in [&dead, &foreign, &live] {
+            fs::write(file, b"x").unwrap();
+        }
+        touch(&dead, long_ago);
+        touch(&foreign, long_ago);
+
+        write_files(&dir.path().join("snapshot.gsttt"), Vec::new());
+
+        // Only the old temporary file goes: a young one may belong to a write still running, and a file of another
+        // name is none of the snapshot's.
+        assert!(!dead.exists());
+        assert!(live.exists() && foreign.exists());
+        assert!(Snapshot::open(&dir.path().join("snapshot.gsttt")).is_some());
     }
 
     fn prefix(magic: &[u8], layout: u32, length: u32, checksum: u64) -> Vec<u8> {

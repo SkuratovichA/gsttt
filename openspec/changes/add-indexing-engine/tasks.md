@@ -52,3 +52,4 @@
 - [x] 5.23 The architecture document lists among its known gaps that a file git filters on checkout is keyed by the blob in the git index while its connector parses the bytes in the work tree
 - [x] 5.24 A directory the process cannot open no longer fails the listing, tracked or not: the walk runs again with every directory tried, skips each one it cannot read and names it in the coverage problems, unless `Setup.exclude` leaves it out
 - [x] 5.25 The architecture document says what the code does: the racy rule of a stored stamp and the id of a file above `max_file_bytes` in the content ids, the project root in the fact key, and the layout, prefix, checksum and `fsync` of the snapshot
+- [x] 5.26 A snapshot write removes the temporary files an earlier write left behind: those named like its own that nobody has touched for an hour, as nothing locks the state directory against two processes that write at once
