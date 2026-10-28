@@ -5,6 +5,14 @@ use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
+/// The targets a release is built for.
+pub(crate) const RELEASE_TARGETS: [&str; 4] = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+];
+
 /// The root of the workspace this crate belongs to.
 pub(crate) fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -36,6 +44,15 @@ pub(crate) fn xtask_command(directory: &Path) -> Command {
 /// Runs `xtask <args>` in `directory`.
 pub(crate) fn xtask(directory: &Path, args: &[&str]) -> Output {
     xtask_command(directory).args(args).output().unwrap()
+}
+
+/// Runs `xtask package --target <target>` in `repo`, with the release build of `target` in `target_dir`.
+pub(crate) fn package(repo: &Path, target_dir: &Path, target: &str) -> Output {
+    xtask_command(repo)
+        .env("CARGO_TARGET_DIR", target_dir)
+        .args(["package", "--target", target])
+        .output()
+        .unwrap()
 }
 
 /// Runs `git <args>` in `directory` and returns what it printed, without the trailing newline.

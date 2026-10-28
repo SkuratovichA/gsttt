@@ -4,14 +4,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
-use crate::support::workspace_root;
-
-const RELEASE_TARGETS: [&str; 4] = [
-    "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
-    "x86_64-apple-darwin",
-    "aarch64-apple-darwin",
-];
+use crate::support::{RELEASE_TARGETS, workspace_root};
 
 fn workflow() -> Value {
     let text = std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();

@@ -10,7 +10,7 @@
 - [x] 2.1 `cargo xtask version`, and the version written into the release build
 - [x] 2.2 `cargo xtask package` and `cargo xtask notes`
 - [x] 2.3 Release jobs: four targets, packages, checksums, the GitHub release; no release from the archive workflow's pushes
-- [ ] 2.4 `install.sh` with `gh` and `curl`, checksum verification and the overrides
+- [x] 2.4 `install.sh` with `gh` and `curl`, checksum verification and the overrides
 
 ## 3. Plugin
 

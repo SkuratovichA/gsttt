@@ -8,7 +8,7 @@ use std::path::Path;
 use sha2::{Digest as _, Sha256};
 use tempfile::TempDir;
 
-use crate::support::{printed, repository, xtask_command};
+use crate::support::{package, printed, repository};
 
 const TARGET: &str = "x86_64-unknown-linux-musl";
 
@@ -22,14 +22,6 @@ fn built(binary: &[u8]) -> TempDir {
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(directory.join("gsttt"), binary).unwrap();
     target_dir
-}
-
-fn package(repo: &Path, target_dir: &Path, target: &str) -> std::process::Output {
-    xtask_command(repo)
-        .env("CARGO_TARGET_DIR", target_dir)
-        .args(["package", "--target", target])
-        .output()
-        .unwrap()
 }
 
 fn entries(archive: &Path) -> Vec<Entry> {
