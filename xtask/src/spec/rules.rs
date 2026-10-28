@@ -104,7 +104,7 @@ impl Progress {
     }
 }
 
-/// A requirement of a capability, by capability and name.
+/// A requirement or a scenario of a capability, by capability and name or title.
 type Key = (String, String);
 
 /// An open change, as far as archiving cares.
@@ -195,7 +195,7 @@ enum Replacement {
 
 /// The main requirements that open changes remove or modify, by capability and name, with the
 /// first change (in name order) that does.
-type Replaced = BTreeMap<(String, String), (String, Replacement)>;
+type Replaced = BTreeMap<Key, (String, Replacement)>;
 
 /// A main scenario that an open change takes away.
 #[derive(Debug)]
@@ -207,7 +207,11 @@ struct Dropped {
 
 /// Judges the scenarios of the specs against the claims found in the sources.
 pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
-    let (mut entries, dropped) = effective(openspec);
+    let Effective {
+        mut entries,
+        dropped,
+        main,
+    } = effective(openspec);
     let changes: Vec<Open> = openspec
         .changes
         .iter()
@@ -219,17 +223,8 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
             takes: change.deltas.iter().flat_map(takes).collect(),
         })
         .collect();
-    let main: BTreeSet<Key> = openspec
-        .specs
-        .iter()
-        .flat_map(|spec| {
-            spec.requirements
-                .iter()
-                .map(|requirement| (spec.capability.clone(), requirement.name.clone()))
-        })
-        .collect();
 
-    let mut homes: BTreeMap<(String, String), Vec<(Site, Source)>> = BTreeMap::new();
+    let mut homes: BTreeMap<Key, Vec<(Site, Source)>> = BTreeMap::new();
     for entry in &entries {
         homes
             .entry((entry.capability.clone(), entry.title.clone()))
@@ -292,14 +287,27 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
     }
 }
 
-/// The scenarios that need a proof, and the main scenarios that open changes take away.
-fn effective(openspec: &OpenSpec) -> (Vec<Entry>, BTreeMap<(String, String), Dropped>) {
+/// What the main specs and the open changes make of the scenarios and the requirements.
+struct Effective {
+    /// The scenarios that need a proof.
+    entries: Vec<Entry>,
+    /// The main scenarios that open changes take away.
+    dropped: BTreeMap<Key, Dropped>,
+    /// The requirements of the main specs.
+    main: BTreeSet<Key>,
+}
+
+/// Walks the main specs once for their requirements and for the scenarios that open changes leave them, then adds the scenarios that open changes bring.
+fn effective(openspec: &OpenSpec) -> Effective {
     let replaced = replaced(&openspec.changes);
     let mut entries = Vec::new();
     let mut dropped = BTreeMap::new();
+    let mut main = BTreeSet::new();
     for spec in &openspec.specs {
         for requirement in &spec.requirements {
-            let taken = replaced.get(&(spec.capability.clone(), requirement.name.clone()));
+            let key = (spec.capability.clone(), requirement.name.clone());
+            let taken = replaced.get(&key);
+            main.insert(key);
             for scenario in &requirement.scenarios {
                 if let Some((change, how)) = taken {
                     dropped.insert(
@@ -335,7 +343,11 @@ fn effective(openspec: &OpenSpec) -> (Vec<Entry>, BTreeMap<(String, String), Dro
             }
         }
     }
-    (entries, dropped)
+    Effective {
+        entries,
+        dropped,
+        main,
+    }
 }
 
 fn replaced(changes: &[Change]) -> Replaced {
@@ -500,7 +512,7 @@ fn rivals(changes: &[Open]) -> Vec<Failure> {
 }
 
 /// A claim on a scenario the specs do not have.
-fn orphan(claim: &Claim, dropped: &BTreeMap<(String, String), Dropped>) -> Failure {
+fn orphan(claim: &Claim, dropped: &BTreeMap<Key, Dropped>) -> Failure {
     let Claim {
         capability,
         scenario,
