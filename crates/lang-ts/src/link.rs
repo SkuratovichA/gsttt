@@ -18,47 +18,12 @@ const MAX_DEPTH: usize = 16;
 type Node = (FileId, String);
 
 /// The facts that need other files: routes under the prefixes their routers are mounted at, and tRPC procedures under
-/// the routers that compose them, with the parsed facts that share a place with either.
+/// the routers that compose them. Neither keys a parsed fact again, because an Express route is found only here and a
+/// procedure is built from nothing, so the engine keeps every fact the parse returned.
 pub(crate) fn link(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
     let mut linked = express(input);
     linked.extend(trpc(input));
-    let beside = parsed_beside(input, &linked);
-    linked.extend(beside);
     linked
-}
-
-/// Where a fact sits in a file, without its key: the file, the line, the role and the kind of contract. The engine
-/// decides what a link replaces by the same tuple, in a `place_of` of its own that is private to `engine::build`;
-/// `a_fact_of_another_rule_on_the_line_of_a_route_is_kept` reads the graph the engine builds from a line that holds a
-/// fact of the same place and a fact of another role.
-type Place<'a> = (FileId, Line, Role, &'a ContractKind);
-
-fn place_of(file: FileId, fact: &ContractFact) -> Place<'_> {
-    (file, fact.line, fact.role, fact.key.kind())
-}
-
-/// The parsed facts that sit where a linked fact does. The engine replaces every parsed fact of a place the link returns
-/// a fact for and cannot tell which of them the linked fact stands for, so a fact of another rule on the line of a
-/// route is returned as it is, or it would drop out of the index.
-fn parsed_beside(input: &LinkInput<'_, TsExtra>, linked: &[LinkedFact]) -> Vec<LinkedFact> {
-    let places: BTreeSet<Place<'_>> = linked
-        .iter()
-        .map(|linked| place_of(linked.file, &linked.fact))
-        .collect();
-    input
-        .files()
-        .iter()
-        .flat_map(|file| {
-            file.facts
-                .contracts
-                .iter()
-                .filter(|fact| places.contains(&place_of(file.id, fact)))
-                .map(|fact| LinkedFact {
-                    file: file.id,
-                    fact: fact.clone(),
-                })
-        })
-        .collect()
 }
 
 /// The file a specifier written in `file` leads to.
@@ -152,10 +117,7 @@ fn express(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
                 prefixes.insert(String::new());
             }
             for prefix in prefixes {
-                linked.push(LinkedFact {
-                    file: file.id,
-                    fact: rekey(&route.fact, &prefix),
-                });
+                linked.push(LinkedFact::found(file.id, rekey(&route.fact, &prefix)));
             }
         }
     }
@@ -346,15 +308,15 @@ fn emit(
 
 /// A procedure served at `name` under `prefix`, reported at the line of the entry that lists it.
 fn procedure_fact(file: FileId, prefix: &str, name: &str, line: Line) -> LinkedFact {
-    LinkedFact {
+    LinkedFact::found(
         file,
-        fact: ContractFact {
+        ContractFact {
             key: ContractKey::new(ContractKind::Trpc, &join_dot(prefix, name)),
             role: Role::Serves,
             line,
             via: "trpc".to_owned(),
         },
-    }
+    )
 }
 
 /// Whether `node` is a variable that its file initialises with a procedure call.
