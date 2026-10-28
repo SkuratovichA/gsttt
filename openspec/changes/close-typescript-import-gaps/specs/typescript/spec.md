@@ -76,6 +76,19 @@ A `type` alias of the same file SHALL be read as the type it defines, through an
 - **WHEN** `src/readers.ts` has `type Client = Prisma.TransactionClient` on line 3, `type Reader = Pick<Client, 'tenant'>` on line 4, `type Options = { tenant: { findFirst(): void } }` on line 5, and `type Loop = Again` and `type Again = Loop` on lines 6 and 7, and functions that take `reader: Reader`, `options: Options` and `loop: Loop` and call `reader.tenant.findUnique()` on line 10, `options.tenant.findFirst()` on line 14 and `loop.tenant.findMany()` on line 18
 - **THEN** the file calls `table tenant` at line 10 and no other table
 
+### Requirement: Local types shadow root types
+A name that the file declares itself, as a `type` alias, an `interface`, a `class` or an `enum`, SHALL be that local type and never the root type of a pack with the same name. A local `type` alias SHALL be read as the type it defines, which may be a root type, and an `interface`, a `class` or an `enum` SHALL be no root type. Only a name that the file does not declare SHALL be checked against the root types. A root type imported under another name, a root type reached through a namespace import under another name, and an intersection with a root type SHALL NOT be read as a root type.
+
+#### Scenario: A local type shadows a root type
+- **WHEN** `src/alias.ts` has `type PrismaClient = { tenant: { findFirst(): void } }`, `src/interface.ts` has an `interface PrismaClient`, `src/class.ts` has a `class PrismaService`, `src/enum.ts` has an `enum PrismaClient`, and each of the four has a function with a parameter of that type that calls `.tenant.findFirst()` on it
+- **AND** `src/alias-of-root.ts` has `import type { Prisma } from '@prisma/client'` and `type PrismaClient = Pick<Prisma.TransactionClient, 'tenant'>`, and a function with the parameter `client: PrismaClient` that calls `client.tenant.findFirst()` on line 6
+- **THEN** `src/alias-of-root.ts` calls `table tenant` at line 6
+- **AND** the other four files call no table
+
+#### Scenario: A renamed or combined client type is no root
+- **WHEN** `src/renamed.ts` has `import type { PrismaClient as Base } from '@prisma/client'` and a parameter `client: Base`, `src/namespaced.ts` has `import type { Prisma as P } from '@prisma/client'` and a parameter `reader: P.TransactionClient`, and `src/intersected.ts` has `import type { PrismaClient } from '@prisma/client'` and a parameter `client: PrismaClient & { extra: true }`, each of them calling `.tenant.findFirst()` on its parameter
+- **THEN** the three files call no table
+
 ### Requirement: Imported model types
 A pack MAY name a contract for each name a file takes from a package. With the `prisma` pack, a name imported or re-exported by name from `@prisma/client` SHALL call the table of that name at the line of the import, as the package exports it and not as the file renames it, except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`. A namespace import, a default import, a side-effect import and `export *` SHALL name nothing.
 

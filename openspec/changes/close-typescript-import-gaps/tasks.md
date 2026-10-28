@@ -17,3 +17,7 @@
 - [x] 2.5 `visit_ts_import_type` records `*` for `typeof import('x')` without a qualifier
 - [x] 2.6 A test annotated `#[scenario("typescript", …)]` for every scenario of the requirements Aliases of this, Roots by type, Type aliases of root types and Imported model types
 - [x] 2.7 The scenario A pack file has a schema counts six kinds of rules, and the pinned pack schema holds `imports` and `root_types`
+
+## 3. Review fixes
+
+- [x] 3.1 A name the file declares as a `type` alias, an `interface`, a `class` or an `enum` is that local type and never a root type of the pack, and a root type imported under another name, reached through a renamed namespace import or intersected with another type stays unread

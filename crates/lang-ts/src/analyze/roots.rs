@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::rules::{ChainRule, Pack};
 use oxc_ast::ast::{
-    BindingPattern, Expression, FormalParameter, Program, PropertyDefinition, TSType,
-    TSTypeAliasDeclaration, TSTypeName, VariableDeclarator,
+    BindingPattern, Class, Expression, FormalParameter, Program, PropertyDefinition,
+    TSEnumDeclaration, TSInterfaceDeclaration, TSType, TSTypeAliasDeclaration, TSTypeName,
+    VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 
@@ -79,6 +80,7 @@ pub(super) fn collect<'p>(program: &Program<'_>, packs: &'p [Pack]) -> Roots<'p>
         wanted,
         declared: Vec::new(),
         aliases: Vec::new(),
+        locals: Vec::new(),
         this_aliases: BTreeSet::new(),
     };
     collector.visit_program(program);
@@ -93,6 +95,8 @@ struct Collector<'p, 'a> {
     declared: Vec<(Cow<'a, str>, Cow<'a, str>)>,
     /// A local `type` alias and a name its definition stands for at its head, one row for each.
     aliases: Vec<(&'a str, Cow<'a, str>)>,
+    /// Every name the file declares as a `type` alias, an `interface`, a `class` or an `enum`: such a name is the type the file says it is, never the root type of a pack that has the same name.
+    locals: Vec<&'a str>,
     this_aliases: BTreeSet<String>,
 }
 
@@ -103,6 +107,13 @@ impl<'a> Collector<'_, 'a> {
             return;
         }
         heads(ty, &mut |head| self.declared.push((name(), head)));
+    }
+
+    /// The file declares a type called `name`.
+    fn declare_type(&mut self, name: &'a str) {
+        if !self.wanted.is_empty() {
+            self.locals.push(name);
+        }
     }
 }
 
@@ -125,10 +136,10 @@ impl<'p> Collector<'p, '_> {
         }
     }
 
-    /// Adds to `found` the root types that `head` is, or stands for through the aliases of the file.
+    /// Adds to `found` the root types that `head` is, or stands for through the aliases of the file. A name the file declares is the type it says it is, which only a `type` alias can make a root type; a name the file does not declare is a root type when a pack lists it.
     fn root_types(&self, head: &str, depth: usize, found: &mut Vec<&'p str>) {
-        if let Some(root_type) = self.wanted.iter().copied().find(|wanted| *wanted == head) {
-            found.push(root_type);
+        if !self.locals.contains(&head) {
+            found.extend(self.wanted.iter().copied().find(|wanted| *wanted == head));
         } else if let Some(depth) = depth.checked_sub(1) {
             for (_, next) in self.aliases.iter().filter(|(alias, _)| *alias == head) {
                 self.root_types(next, depth, found);
@@ -186,11 +197,29 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
     fn visit_ts_type_alias_declaration(&mut self, it: &TSTypeAliasDeclaration<'a>) {
         if !self.wanted.is_empty() {
             let alias = it.id.name.as_str();
+            self.declare_type(alias);
             heads(&it.type_annotation, &mut |head| {
                 self.aliases.push((alias, head));
             });
         }
         walk::walk_ts_type_alias_declaration(self, it);
+    }
+
+    fn visit_ts_interface_declaration(&mut self, it: &TSInterfaceDeclaration<'a>) {
+        self.declare_type(it.id.name.as_str());
+        walk::walk_ts_interface_declaration(self, it);
+    }
+
+    fn visit_ts_enum_declaration(&mut self, it: &TSEnumDeclaration<'a>) {
+        self.declare_type(it.id.name.as_str());
+        walk::walk_ts_enum_declaration(self, it);
+    }
+
+    fn visit_class(&mut self, it: &Class<'a>) {
+        if let Some(id) = &it.id {
+            self.declare_type(id.name.as_str());
+        }
+        walk::walk_class(self, it);
     }
 }
 

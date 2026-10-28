@@ -56,6 +56,37 @@ fn a_local_type_alias_of_a_client_type_is_a_root() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
+#[scenario("typescript", "A local type shadows a root type")]
+fn a_local_type_shadows_a_root_type() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-local-types")?;
+    for path in [
+        "src/alias.ts",
+        "src/interface.ts",
+        "src/class.ts",
+        "src/enum.ts",
+    ] {
+        assert_eq!(contracts(&json, path), NOTHING, "{path}");
+    }
+    assert_eq!(
+        contracts(&json, "src/alias-of-root.ts"),
+        ["calls table tenant @6"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A renamed or combined client type is no root")]
+fn a_renamed_or_combined_client_type_is_no_root() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-unread-types")?;
+    for path in ["src/renamed.ts", "src/namespaced.ts", "src/intersected.ts"] {
+        assert_eq!(contracts(&json, path), NOTHING, "{path}");
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario(
     "typescript",
     "A client typed as PrismaClient or PrismaService is a root"
