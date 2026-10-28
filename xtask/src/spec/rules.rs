@@ -146,9 +146,9 @@ impl Judgement {
             .map(|open| open.progress)
     }
 
-    /// The open changes that can be archived, in an order that `openspec archive` can take them in: every task ticked, every scenario proven, no failure that mentions them, and every requirement they modify, remove or rename in the main specs or added by a change listed before them and not taken away by one. A change that removes or renames a requirement goes after the waiting changes that need it. Of the changes that can go next, the one with the first name goes first.
+    /// The open changes that can be archived, in the order of [`archive_order`]: every task ticked, every scenario proven, and no failure that mentions them.
     pub(super) fn ready(&self) -> Vec<&str> {
-        let mut waiting: Vec<&Open> = self
+        let waiting = self
             .changes
             .iter()
             .filter(|change| change.progress == Progress::Finished)
@@ -165,24 +165,10 @@ impl Judgement {
                     .any(|failure| failure.changes.contains(&change.name))
             })
             .collect();
-        let mut have: BTreeSet<&Key> = self.main.iter().collect();
-        let mut listed = Vec::new();
-        while let Some(next) = waiting.iter().position(|change| {
-            change.needs.iter().all(|need| have.contains(need))
-                && change.takes.iter().all(|(key, _)| {
-                    waiting
-                        .iter()
-                        .all(|other| other.name == change.name || !other.needs.contains(key))
-                })
-        }) {
-            let change = waiting.remove(next);
-            for (key, _) in &change.takes {
-                have.remove(key);
-            }
-            have.extend(&change.gives);
-            listed.push(change.name.as_str());
-        }
-        listed
+        archive_order(&self.main, waiting)
+            .into_iter()
+            .map(|change| change.name.as_str())
+            .collect()
     }
 }
 
@@ -381,6 +367,28 @@ fn main_name<'a>(delta: &'a Delta, modified: &'a Requirement) -> &'a String {
         .iter()
         .find(|renamed| renamed.to == modified.name)
         .map_or(&modified.name, |renamed| &renamed.from)
+}
+
+/// The order in which `openspec archive` can take the changes in `waiting` one after the other, starting from the requirements `main` holds: a change goes next when every requirement it needs is in what `main` and the changes before it leave, and no other waiting change needs a requirement it takes away; the requirements it takes leave before the ones it gives enter. Of the changes that can go next, the first of `waiting` goes first, so changes given in the order of their names come out in it where nothing else decides. A change that cannot go, because what it needs is nowhere or because it and another wait for each other, is left out.
+fn archive_order<'a>(main: &BTreeSet<Key>, mut waiting: Vec<&'a Open>) -> Vec<&'a Open> {
+    let mut have: BTreeSet<&Key> = main.iter().collect();
+    let mut listed = Vec::new();
+    while let Some(next) = waiting.iter().position(|change| {
+        change.needs.iter().all(|need| have.contains(need))
+            && change.takes.iter().all(|(key, _)| {
+                waiting
+                    .iter()
+                    .all(|other| other.name == change.name || !other.needs.contains(key))
+            })
+    }) {
+        let change = waiting.remove(next);
+        for (key, _) in &change.takes {
+            have.remove(key);
+        }
+        have.extend(&change.gives);
+        listed.push(change);
+    }
+    listed
 }
 
 /// The requirements that `delta` modifies, removes or renames, under the names they have before the change is archived.
