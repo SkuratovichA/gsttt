@@ -67,6 +67,14 @@ fn every_entry_says_what_it_does_not_see() {
             "{} does not name generated code",
             headline(&entry)
         );
+        assert!(
+            entry
+                .blind_spots
+                .iter()
+                .any(|spot| spot.contains("glob import")),
+            "{} does not name glob imports",
+            headline(&entry)
+        );
     }
 }
 

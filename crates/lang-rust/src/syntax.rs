@@ -3,7 +3,7 @@
 use gsttt_core::fact::{ImportFlags, Line};
 use gsttt_core::text::LineIndex;
 use ra_ap_syntax::ast::HasName;
-use ra_ap_syntax::{AstNode, SyntaxNode, TextSize, ast};
+use ra_ap_syntax::{AstNode, SyntaxKind, SyntaxNode, TextSize, ast};
 
 /// The 1-based line that holds `offset`.
 pub(crate) fn line_at(lines: &LineIndex, offset: TextSize) -> Line {
@@ -105,9 +105,47 @@ pub(crate) fn inline_path(node: &SyntaxNode) -> Vec<String> {
     names
 }
 
+/// A path written at `node`, made relative to the module of the file (see [`file_relative`]). A path that starts with
+/// an inline module declared beside it is made explicit first: `shapes::X` next to `mod shapes { … }` is
+/// `self::shapes::X`, which the module tree follows as far as it goes and so ends at the file that holds the module.
+pub(crate) fn file_path(node: &SyntaxNode, segments: &[String]) -> Vec<String> {
+    let inline = inline_path(node);
+    match segments.first() {
+        Some(first) if declares_inline(node, first) => {
+            let explicit: Vec<String> = std::iter::once("self".to_owned())
+                .chain(segments.iter().cloned())
+                .collect();
+            file_relative(&explicit, &inline)
+        }
+        _ => file_relative(segments, &inline),
+    }
+}
+
+/// Whether the module that `node` is written in declares an inline module called `name`.
+fn declares_inline(node: &SyntaxNode, name: &str) -> bool {
+    node.ancestors()
+        .find(|ancestor| {
+            matches!(
+                ancestor.kind(),
+                SyntaxKind::ITEM_LIST | SyntaxKind::SOURCE_FILE
+            )
+        })
+        .is_some_and(|scope| {
+            scope
+                .children()
+                .filter_map(ast::Module::cast)
+                .filter(|module| module.item_list().is_some())
+                .any(|module| {
+                    module
+                        .name()
+                        .is_some_and(|declared| text(&declared) == name)
+                })
+        })
+}
+
 /// A path written inside inline modules, made relative to the module of the file: `super::X` in `mod a` is `self::X`
 /// of the file, and `self::X` in `mod a` is `self::a::X`.
-pub(crate) fn file_relative(segments: &[String], inline: &[String]) -> Vec<String> {
+fn file_relative(segments: &[String], inline: &[String]) -> Vec<String> {
     let rest = |skip: usize| segments.iter().skip(skip).cloned();
     match segments.first().map(String::as_str) {
         _ if inline.is_empty() => segments.to_vec(),

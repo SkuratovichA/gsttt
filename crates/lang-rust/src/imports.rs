@@ -1,12 +1,15 @@
 //! Imports from a syntax tree: `use`, `mod`, `extern crate`, qualified paths in code and in macros, and includes.
 
+#[cfg(test)]
+mod tests;
+
 use gsttt_core::fact::{Import, ImportFlags, ImportKind, Line};
 use gsttt_core::text::LineIndex;
 use ra_ap_syntax::ast::{HasAttrs, HasName, HasVisibility};
 use ra_ap_syntax::{AstNode, NodeOrToken, SyntaxKind, SyntaxNode, SyntaxToken, ast};
 
 use crate::eval::{macro_args, text_of};
-use crate::syntax::{cfg_flags, file_relative, inline_path, line_at, segments, text};
+use crate::syntax::{cfg_flags, file_path, inline_path, line_at, segments, text};
 
 /// Names that start a path without naming a crate or a module.
 const PRIMITIVES: &[&str] = &[
@@ -73,10 +76,9 @@ struct Reader<'a> {
 }
 
 /// What a `use` item tells about every leaf below it.
-struct UseContext<'a> {
+struct UseContext {
     reexport: bool,
     flags: ImportFlags,
-    inline: &'a [String],
 }
 
 impl Reader<'_> {
@@ -101,11 +103,9 @@ impl Reader<'_> {
         let Some(tree) = item.use_tree() else {
             return;
         };
-        let inline = inline_path(item.syntax());
         let context = UseContext {
             reexport: item.visibility().is_some(),
             flags: cfg_flags(item.syntax()),
-            inline: &inline,
         };
         self.use_tree(&tree, &[], &context, out);
     }
@@ -114,7 +114,7 @@ impl Reader<'_> {
         &self,
         tree: &ast::UseTree,
         prefix: &[String],
-        cx: &UseContext<'_>,
+        cx: &UseContext,
         out: &mut Vec<Import>,
     ) {
         let mut path = prefix.to_vec();
@@ -143,7 +143,7 @@ impl Reader<'_> {
             Some(rename) => rename.name().map(|name| text(&name)),
             None => path.last().cloned(),
         };
-        let spec = file_relative(&path, cx.inline).join("::");
+        let spec = file_path(tree.syntax(), &path).join("::");
         let kind = match (glob, cx.reexport) {
             (true, true) => ImportKind::ReExportAll,
             (false, true) => ImportKind::ReExport,
@@ -233,7 +233,7 @@ impl Reader<'_> {
         {
             return;
         }
-        let spec = file_relative(&names, &inline_path(node)).join("::");
+        let spec = file_path(node, &names).join("::");
         out.push(self.import(spec, ImportKind::Static, node, cfg_flags(node)));
     }
 
@@ -308,7 +308,7 @@ impl Reader<'_> {
             if qualifies(&names) {
                 let line = line_at(self.lines, token.text_range().start());
                 out.push(Self::import_at(
-                    names.join("::"),
+                    file_path(tree, &names).join("::"),
                     ImportKind::Static,
                     line,
                     flags,

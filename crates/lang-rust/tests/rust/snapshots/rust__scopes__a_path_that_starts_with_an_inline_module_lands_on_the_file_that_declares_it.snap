@@ -1,0 +1,72 @@
+---
+source: crates/lang-rust/tests/rust/scopes.rs
+expression: "out.file(\"src/lib.rs\")[\"imports\"]"
+---
+[
+  {
+    "spec": "strategies",
+    "kind": "module",
+    "line": 1,
+    "flags": 0,
+    "names": [],
+    "to": {
+      "file": "src/strategies.rs"
+    }
+  },
+  {
+    "spec": "self::shapes::round::Ball",
+    "kind": "static",
+    "line": 8,
+    "flags": 0,
+    "names": [
+      "Ball"
+    ],
+    "to": {
+      "file": "src/lib.rs"
+    }
+  },
+  {
+    "spec": "self::shapes::Circle",
+    "kind": "re-export",
+    "line": 17,
+    "flags": 0,
+    "names": [
+      "Circle"
+    ],
+    "to": {
+      "file": "src/lib.rs"
+    }
+  },
+  {
+    "spec": "self::shapes::round::Ball",
+    "kind": "re-export",
+    "line": 18,
+    "flags": 0,
+    "names": [
+      "Ball"
+    ],
+    "to": {
+      "file": "src/lib.rs"
+    }
+  },
+  {
+    "spec": "self::shapes::Circle",
+    "kind": "static",
+    "line": 20,
+    "flags": 0,
+    "names": [],
+    "to": {
+      "file": "src/lib.rs"
+    }
+  },
+  {
+    "spec": "self::shapes::Circle",
+    "kind": "static",
+    "line": 21,
+    "flags": 0,
+    "names": [],
+    "to": {
+      "file": "src/lib.rs"
+    }
+  }
+]
