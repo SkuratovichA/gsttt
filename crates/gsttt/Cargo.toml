@@ -1,6 +1,6 @@
 [package]
 name = "gsttt"
-description = "Glass sphere telling the truth: what a code change affects, across files, packages and languages"
+description = "What a code change affects, across files, packages and languages"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
