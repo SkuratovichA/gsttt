@@ -118,6 +118,17 @@ mod tests {
         assert_eq!(canonical_json(&a), r#"{"a":{"x":null,"y":[1,2]},"b":1}"#);
     }
 
+    /// A pack with one call rule on `callee`, so that two packs may share a name and a place in the list and differ in
+    /// their body only.
+    fn pack(name: &str, callee: &str) -> Pack {
+        serde_json::from_value(json!({
+            "name": name,
+            "language": "ts",
+            "calls": [{ "callee": callee, "kind": "http", "role": "calls", "key": "$arg1" }],
+        }))
+        .unwrap()
+    }
+
     #[test]
     fn every_input_of_a_key_changes_it() {
         let meta = Meta {
@@ -128,16 +139,31 @@ mod tests {
         };
         let id = ContentId::UNKNOWN;
         let path = RepoPath::normalize("a.ts").unwrap();
-        let base = module_state(&meta, &Value::Null, &[]);
+        let packs = [pack("a", "fetch"), pack("b", "axios.get")];
+        let base = module_state(&meta, &Value::Null, &packs);
         let key = file_key(&base, "", 0, &path, id);
 
-        let other_options = module_state(&meta, &json!({ "tsconfig": "x" }), &[]);
-        let other_version = module_state(&Meta { version: 2, ..meta }, &Value::Null, &[]);
+        let other_options = module_state(&meta, &json!({ "tsconfig": "x" }), &packs);
+        let other_version = module_state(&Meta { version: 2, ..meta }, &Value::Null, &packs);
+        // A connector may name the packs in force by their positions alone in its salt, because the key holds every
+        // pack: the body of one pack changes it with the names and the order kept, and so does the order.
+        let other_body = module_state(
+            &meta,
+            &Value::Null,
+            &[pack("a", "fetch"), pack("b", "axios.post")],
+        );
+        let other_order = module_state(
+            &meta,
+            &Value::Null,
+            &[pack("b", "axios.get"), pack("a", "fetch")],
+        );
         let other_path = RepoPath::normalize("b.ts").unwrap();
         let other_id = crate::engine::files::blob_id(b"x");
         let keys = [
             file_key(&other_options, "", 0, &path, id),
             file_key(&other_version, "", 0, &path, id),
+            file_key(&other_body, "", 0, &path, id),
+            file_key(&other_order, "", 0, &path, id),
             file_key(&base, "web", 0, &path, id),
             file_key(&base, "", 1, &path, id),
             file_key(&base, "", 0, &other_path, id),

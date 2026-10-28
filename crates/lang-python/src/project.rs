@@ -237,7 +237,9 @@ fn open_project(
 ///
 /// Parsing depends on those packs and on nothing else the project holds. The engine's key for a file already holds the
 /// options and every pack the connector was given, in order, so what it cannot tell is which of them are in force
-/// here, and the manifests decide that. A pack is named by its position because two packs may share a name.
+/// here, and the manifests decide that. A pack is named by its position because two packs may share a name, which is
+/// sound only because that key also holds the body and the order of every pack: the core test
+/// `every_input_of_a_key_changes_it` pins that a changed body or order changes the key.
 fn packs_salt(positions: impl Iterator<Item = usize>) -> u64 {
     let positions: Vec<String> = positions.map(|position| position.to_string()).collect();
     let parts: Vec<&str> = positions.iter().map(String::as_str).collect();
