@@ -1143,6 +1143,36 @@ fn a_sql_string_built_at_run_time_is_an_unread_site() {
     );
 }
 
+#[gsttt_scenario::scenario(
+    "python",
+    "A format template with a replacement field is an unread site"
+)]
+#[test]
+fn a_format_template_with_a_replacement_field_is_an_unread_site() {
+    let tree = index_files(&[(
+        "db.py",
+        r#"def read(cursor, table, task):
+    cursor.execute("SELECT id FROM {}".format(table))
+    cursor.execute("SELECT id FROM {name} WHERE id = {0}".format(task, name=table))
+    cursor.execute("SELECT id FROM {:{width}}".format(table, width=3))
+    cursor.execute("SELECT '{{}}'".format())
+"#,
+    )]);
+    assert_eq!(
+        tree.unread("db.py"),
+        [
+            "L2 cursor.execute",
+            "L3 cursor.execute",
+            "L4 cursor.execute"
+        ]
+    );
+    // Doubled braces are the braces they stand for, so the last call has nothing computed.
+    let embedded = &tree.file("db.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded[0].line, 5);
+    assert_eq!(embedded[0].text, "SELECT '{}'");
+}
+
 #[gsttt_scenario::scenario("python", "An argument that is not a string records nothing")]
 #[test]
 fn an_argument_that_is_not_a_string_records_nothing() {

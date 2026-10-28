@@ -365,6 +365,11 @@ With the `dbapi` pack, an `execute` or `executemany` call whose first argument i
 - **THEN** each call built at run time is an unread site and embeds no document
 - **AND** the call with the plain literal embeds an `sql` document
 
+#### Scenario: A format template with a replacement field is an unread site
+- **WHEN** a file has `cursor.execute("SELECT id FROM {}".format(table))`, `cursor.execute("SELECT id FROM {name} WHERE id = {0}".format(task, name=table))`, `cursor.execute("SELECT id FROM {:{width}}".format(table, width=3))` and `cursor.execute("SELECT '{{}}'".format())`
+- **THEN** the first three calls are unread sites and embed no document
+- **AND** the last call embeds an `sql` document with the text `SELECT '{}'`
+
 #### Scenario: An argument that is not a string records nothing
 - **WHEN** a file has `pool.execute(task)`, `cursor.execute(queries[0])`, `cursor.executemany(queries.insert, rows)`, `cursor.execute(compose(task))` and `cursor.execute()`
 - **THEN** none of them is an unread site and none embeds a document

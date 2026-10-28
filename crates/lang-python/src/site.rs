@@ -62,8 +62,8 @@ struct Text<'a> {
 }
 
 /// The text of a Python value, when it has any: a string literal, an f-string or a `+` concatenation with each
-/// computed part written as `${}`, a `"…".format(…)` call as its template, and a list, tuple or set as its first
-/// element that has text.
+/// computed part written as `${}`, a `"…".format(…)` call as its template with each replacement field written the
+/// same way, and a list, tuple or set as its first element that has text.
 pub(crate) fn text_of(expr: &Expr) -> Option<Cow<'_, str>> {
     text_in(expr, None).map(|found| found.text)
 }
@@ -123,7 +123,11 @@ fn text_in<'a>(expr: &'a Expr, source: Option<Source<'_>>) -> Option<Text<'a>> {
         }
         Expr::Call(call) => match &*call.func {
             Expr::Attribute(attribute) if attribute.attr.as_str() == "format" => {
-                text_in(&attribute.value, source)
+                let template = text_in(&attribute.value, source)?;
+                Some(Text {
+                    text: format_template(template.text)?,
+                    range: template.range,
+                })
             }
             _ => None,
         },
@@ -276,6 +280,50 @@ fn pad_to_line(text: &mut String, first: Line, next: Line) {
 
 fn newlines(text: &str) -> Line {
     Line::try_from(text.bytes().filter(|byte| *byte == b'\n').count()).unwrap_or(Line::MAX)
+}
+
+/// A `str.format` template with each replacement field written as [`COMPUTED`] and each doubled brace as the brace it
+/// stands for, which is how Python reads it. `None` for a template Python refuses: a brace that closes nothing or is
+/// never closed.
+fn format_template(template: Cow<'_, str>) -> Option<Cow<'_, str>> {
+    if !template.contains(['{', '}']) {
+        return Some(template);
+    }
+    let mut text = String::with_capacity(template.len());
+    // What the receiver already holds as computed is not a replacement field of the template.
+    for (index, part) in template.split(COMPUTED).enumerate() {
+        if index > 0 {
+            text.push_str(COMPUTED);
+        }
+        let mut chars = part.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '{' | '}' if chars.next_if_eq(&c).is_some() => text.push(c),
+                '{' => {
+                    skip_field(chars.by_ref())?;
+                    text.push_str(COMPUTED);
+                }
+                '}' => return None,
+                _ => text.push(c),
+            }
+        }
+    }
+    Some(Cow::Owned(text))
+}
+
+/// Consumes the rest of a replacement field, up to the brace that closes it, past the fields its format spec nests.
+/// `None` when it is never closed.
+fn skip_field(chars: impl Iterator<Item = char>) -> Option<()> {
+    let mut open = 1_usize;
+    for c in chars {
+        match c {
+            '{' => open += 1,
+            '}' if open == 1 => return Some(()),
+            '}' => open -= 1,
+            _ => {}
+        }
+    }
+    None
 }
 
 fn fstring_text(fstring: &ruff_python_ast::ExprFString) -> String {
@@ -563,7 +611,23 @@ mod tests {
                 r#"f("/bookings/" + id + "/cancel")"#,
                 Some("/bookings/${}/cancel"),
             ),
-            (r#"f("/bookings/{}".format(id))"#, Some("/bookings/{}")),
+            (r#"f("/bookings/{}".format(id))"#, Some("/bookings/${}")),
+            (
+                r#"f("{0}/{name}/{:>4}/{!r}".format(a, b, c, d, name=e))"#,
+                Some("${}/${}/${}/${}"),
+            ),
+            (r#"f("{:{width}}".format(x, width=1))"#, Some("${}")),
+            (r#"f("{{}}".format())"#, Some("{}")),
+            (r#"f("{{{}}}".format(x))"#, Some("{${}}")),
+            (r#"f("a}}b".format())"#, Some("a}b")),
+            (r#"f(("a" + b + "{}").format(x))"#, Some("a${}${}")),
+            (r#"f(f"{a}/{{}}".format(x))"#, Some("${}/${}")),
+            // Python refuses a brace that closes nothing or is never closed.
+            (r#"f("{".format(x))"#, None),
+            (r#"f("}".format(x))"#, None),
+            (r#"f("a {b".format(x))"#, None),
+            (r#"f("{{{".format(x))"#, None),
+            (r#"f("}}}".format(x))"#, None),
             (r#"f("a" "b")"#, Some("ab")),
             (r#"f(["GET", "POST"])"#, Some("GET")),
             (r"f(url)", None),
@@ -667,7 +731,7 @@ mod tests {
             // A document starts on the line of its first literal, not of what is computed before it.
             (r#"BASE + "x""#, "${}x", 1),
             ("(\n    BASE\n    + \"x\"\n)", "${}x", 3),
-            (r#"("SELECT {}".format(1))"#, "SELECT {}", 1),
+            (r#"("SELECT {}".format(1))"#, "SELECT ${}", 1),
         ];
         for (source, text, line) in cases {
             assert_eq!(document(source), Some((text.to_owned(), line)), "{source}");
