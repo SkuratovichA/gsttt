@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info:
+  title: Bookings
+  version: "1"
+servers:
+  - url: https://api.example.com/v1
+paths:
+  /bookings:
+    $ref: ./paths/bookings.yaml
+  /health:
+    get:
+      responses:
+        "200":
+          description: ok

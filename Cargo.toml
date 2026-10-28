@@ -43,7 +43,7 @@ ra_ap_edition = "=0.0.360"
 ra_ap_syntax = "=0.0.360"
 apollo-parser = "0.8.7"
 protox-parse = "0.10.0"
-sqlparser = "0.63.0"
+sqlparser = { version = "0.63.0", features = ["visitor"] }
 saphyr = "0.3.3"
 serde_norway = "0.9.42"
 jsonc-parser = { version = "0.34.0", features = ["serde"] }

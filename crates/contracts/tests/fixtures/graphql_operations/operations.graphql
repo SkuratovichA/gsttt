@@ -1,0 +1,20 @@
+query Bookings {
+  bookings {
+    id
+  }
+  me {
+    id
+  }
+}
+
+mutation {
+  cancel(id: 1) {
+    id
+  }
+}
+
+{ me }
+
+query WithFragment { ...F }
+
+fragment F on Query { me }

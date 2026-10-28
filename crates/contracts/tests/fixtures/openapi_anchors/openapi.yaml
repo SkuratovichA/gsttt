@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info: { title: Bookings, version: "1" }
+x-shared:
+  list: &list
+    get:
+      responses:
+        "200": { description: ok }
+paths:
+  /bookings: *list
+  /carts:
+    <<: *list
+    post:
+      responses:
+        "201": { description: created }
