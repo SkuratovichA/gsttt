@@ -10,4 +10,10 @@
 
 ## 2. Prisma tables
 
-- [ ] 2.1 Tables through aliases of this, typed roots and imports of model types
+- [ ] 2.1 `ChainRule` has `root_types` and `Pack` has `imports`, a list of `ImportRule` with `from`, `kind`, `role`, `except` and `case`, and the pack schema describes both
+- [ ] 2.2 `analyze/roots.rs` finds the aliases of `this` and the names declared with a root type before the walk, and `chain_rules` reads an alias as `this` and a typed name as a root
+- [ ] 2.3 `import_rules` applies the import rules to each name of an import and of a re-export by name, at the line of the declaration
+- [ ] 2.4 The `prisma` pack lists `PrismaClient`, `PrismaService` and `Prisma.TransactionClient` as root types, and names a table for each name imported from `@prisma/client` except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`
+- [ ] 2.5 `visit_ts_import_type` records `*` for `typeof import('x')` without a qualifier
+- [ ] 2.6 A test annotated `#[scenario("typescript", …)]` for every scenario of the requirements Aliases of this, Roots by type, Type aliases of root types and Imported model types
+- [ ] 2.7 The scenario A pack file has a schema counts six kinds of rules, and the pinned pack schema holds `imports` and `root_types`
