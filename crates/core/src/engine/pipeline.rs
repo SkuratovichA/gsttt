@@ -17,6 +17,7 @@ use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use super::files::{FileState, Stamp};
 use crate::connector::{
     ConnectorError, DynConnector, DynProject, LinkFile, LinkInput, LinkedFact, Meta, PrepareFile,
     Provide, SourceFile,
@@ -78,6 +79,9 @@ pub struct FileRun {
     pub embedded: Vec<EmbeddedRun>,
     /// Whether `facts` came from a cache instead of a parse.
     pub reused: bool,
+    /// The stamp of the bytes that were parsed, when the file had changed since the listing and so is no longer
+    /// the one the listing stamped. A stamp without an id is a file that changed while it was being read.
+    pub stamp: Option<Stamp>,
 }
 
 /// An embedded document after the embedded phase.
@@ -226,6 +230,7 @@ struct Made {
     facts: FileFacts,
     extra: Vec<u8>,
     reused: bool,
+    stamp: Option<Stamp>,
 }
 
 /// Asks a connector whether the repository has anything for it. A `detect` that panics finds nothing, and the
@@ -287,15 +292,18 @@ pub fn run(
     max_file_bytes: u64,
 ) -> Result<Output, ConnectorError> {
     let assigned = assign_files(repo, modules, Vec::new())?;
-    Ok(execute(assigned, repo, max_file_bytes, Vec::new()).0)
+    Ok(execute(assigned, repo, max_file_bytes, &[], Vec::new()).0)
 }
 
 /// Parses, prepares, resolves, reads the embedded documents and links the files `assigned` holds. `seeds` has one
-/// entry per claimed file, in [`Assigned::claims`] order; a file with a seed is not read or parsed.
+/// entry per claimed file, in [`Assigned::claims`] order; a file with a seed is not read or parsed. `listing` is
+/// the file set `repo` was made from, in file id order: a file that no longer matches its stamp when it is read
+/// comes back with the stamp of what was read, in [`FileRun::stamp`]. An empty listing checks nothing.
 pub fn execute(
     assigned: Assigned<'_>,
     repo: &RepoView,
     max_file_bytes: u64,
+    listing: &[FileState],
     mut seeds: Vec<Option<Seed>>,
 ) -> (Output, Phases) {
     let Assigned {
@@ -323,16 +331,18 @@ pub fn execute(
                     facts,
                     extra,
                     reused: true,
+                    stamp: None,
                 };
             }
-            let (facts, extra) = match projects.get(file.project) {
-                Some(project) => parse(repo, project.as_ref(), file, max_file_bytes),
-                None => (FileFacts::default(), Vec::new()),
-            };
-            Made {
-                facts,
-                extra,
-                reused: false,
+            let listed = listing.get(file.id.index()).map(|state| &state.stamp);
+            match projects.get(file.project) {
+                Some(project) => parse(repo, project.as_ref(), file, max_file_bytes, listed),
+                None => Made {
+                    facts: FileFacts::default(),
+                    extra: Vec::new(),
+                    reused: false,
+                    stamp: None,
+                },
             }
         })
         .collect();
@@ -427,6 +437,7 @@ pub fn execute(
             imports,
             embedded,
             reused: made.reused,
+            stamp: made.stamp,
         });
     }
     let mut linked_facts = Vec::new();
@@ -570,52 +581,75 @@ fn depth(root: &str) -> usize {
 }
 
 /// Reads a file and hands it to its project. A file that cannot be read, is past the size limit or is not UTF-8,
-/// and a parse that panics, come back as failed facts.
+/// and a parse that panics, come back as failed facts. `listed` is the stamp the listing made of the file.
 fn parse(
     repo: &RepoView,
     project: &dyn DynProject,
     file: &Owned<'_>,
     max_file_bytes: u64,
-) -> (FileFacts, Vec<u8>) {
-    let text = match read(repo, file.path, max_file_bytes) {
-        Ok(text) => text,
-        Err(failure) => return (FileFacts::failed(failure), Vec::new()),
+    listed: Option<&Stamp>,
+) -> Made {
+    let Read { text, stamp } = read(repo, file.path, max_file_bytes, listed);
+    let (facts, extra) = match text {
+        Ok(text) => {
+            let source = SourceFile {
+                id: file.id,
+                path: file.path,
+                text: &text,
+            };
+            contain(|| project.parse(&source)).unwrap_or_else(|message| {
+                (
+                    FileFacts::failed(ParseFailure::Panicked { message }),
+                    Vec::new(),
+                )
+            })
+        }
+        Err(failure) => (FileFacts::failed(failure), Vec::new()),
     };
-    let source = SourceFile {
-        id: file.id,
-        path: file.path,
-        text: &text,
-    };
-    contain(|| project.parse(&source)).unwrap_or_else(|message| {
-        (
-            FileFacts::failed(ParseFailure::Panicked { message }),
-            Vec::new(),
-        )
-    })
+    Made {
+        facts,
+        extra,
+        reused: false,
+        stamp,
+    }
 }
 
-fn read(repo: &RepoView, path: &RepoPath, max_file_bytes: u64) -> Result<String, ParseFailure> {
+/// A file as a run read it.
+struct Read {
+    /// Its text, or why it has none.
+    text: Result<String, ParseFailure>,
+    /// See [`FileRun::stamp`].
+    stamp: Option<Stamp>,
+}
+
+fn read(repo: &RepoView, path: &RepoPath, max_file_bytes: u64, listed: Option<&Stamp>) -> Read {
     let unreadable = |error: io::Error| ParseFailure::Unreadable {
         message: error.to_string(),
     };
-    let bytes = repo
-        .absolute(path.as_str())
-        .metadata()
-        .map_err(unreadable)?
-        .len();
-    if bytes > max_file_bytes {
-        return Err(ParseFailure::TooLarge {
-            bytes,
+    let failed = |failure| Read {
+        text: Err(failure),
+        stamp: None,
+    };
+    let absolute = repo.absolute(path.as_str());
+    let before = match absolute.metadata() {
+        Ok(meta) => meta,
+        Err(error) => return failed(unreadable(error)),
+    };
+    if before.len() > max_file_bytes {
+        return failed(ParseFailure::TooLarge {
+            bytes: before.len(),
             limit: max_file_bytes,
         });
     }
-    repo.read_to_string(path.as_str()).map_err(|error| {
-        if error.kind() == io::ErrorKind::InvalidData {
-            ParseFailure::NotUtf8
-        } else {
-            unreadable(error)
-        }
-    })
+    let bytes = match std::fs::read(&absolute) {
+        Ok(bytes) => bytes,
+        Err(error) => return failed(unreadable(error)),
+    };
+    let stamp = listed.and_then(|listed| listed.restamp(&absolute, &before, &bytes));
+    Read {
+        text: String::from_utf8(bytes).map_err(|_| ParseFailure::NotUtf8),
+        stamp,
+    }
 }
 
 /// Resolves every import of a file. A resolve that panics leaves its import unresolved and is a problem.

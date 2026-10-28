@@ -45,6 +45,13 @@ The engine SHALL identify each file's content by its git blob id, SHALL take the
 - **WHEN** a committed, clean repository is indexed twice
 - **THEN** the second run parses no file and reuses the facts of every file
 
+### Requirement: Facts follow the bytes that were read
+A file saved between the listing and the read of a run SHALL have its facts filed under the content id of the bytes that were read, so that saving the earlier text back, or a sibling worktree holding it, never finds them under the earlier id. A file that changed while it was being read SHALL have no id, so nothing is filed under it. A file unchanged since the listing SHALL keep the id the listing gave it.
+
+#### Scenario: A file saved during a run is filed under what was read
+- **WHEN** a file is saved between the listing and the read of a run
+- **THEN** the next refresh is a no-op, and saving the earlier text back parses the file again
+
 ### Requirement: File assignment
 Each file SHALL belong to at most one project: the first connector in registry order that has a project whose `matches` accepts the file, and among that connector's projects the one with the deepest root. A file no project takes SHALL be counted as unclaimed under its language.
 

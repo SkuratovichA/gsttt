@@ -88,6 +88,8 @@ pub(crate) struct Counters {
     resolved_before_prepare: AtomicUsize,
     /// The project root and the file paths of every `prepare` call.
     prepared: Mutex<Vec<(String, Vec<String>)>>,
+    /// A file, as `(path, text)`, that the next `open` saves again.
+    rewrite_on_open: Mutex<Option<(String, String)>>,
 }
 
 impl Counters {
@@ -100,6 +102,7 @@ impl Counters {
             roots: AtomicUsize::new(0),
             resolved_before_prepare: AtomicUsize::new(0),
             prepared: Mutex::new(Vec::new()),
+            rewrite_on_open: Mutex::new(None),
         }
     }
 
@@ -117,6 +120,12 @@ impl Counters {
     /// How often projects were asked for their root, which starts again from zero.
     pub(crate) fn take_roots(&self) -> usize {
         self.roots.swap(0, Ordering::Relaxed)
+    }
+
+    /// Makes the next `open` of a [`Notes`] connector save `text` to `path`: an editor saving after a run listed
+    /// the files and before it reads them.
+    pub(crate) fn rewrite_on_next_open(&self, path: &str, text: &str) {
+        *self.rewrite_on_open.lock().unwrap() = Some((path.to_owned(), text.to_owned()));
     }
 
     /// The `prepare` calls as `(project root, file paths)`, sorted.
@@ -147,7 +156,8 @@ pub(crate) struct Options {
 /// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link`
 /// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. A file called `explode.txt` makes
 /// `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in
-/// every directory with a `ROOT` file; `link` reports a site for every file with a resolved import.
+/// every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves
+/// the file [`Counters::rewrite_on_next_open`] names.
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -182,6 +192,10 @@ impl Connector for Notes {
         _: &Options,
         _: &[Pack],
     ) -> Result<Vec<NotesProject>, ConnectorError> {
+        let rewrite = self.counters.rewrite_on_open.lock().unwrap().take();
+        if let Some((path, text)) = rewrite {
+            std::fs::write(repo.absolute(&path), text).unwrap();
+        }
         let roots = repo
             .files()
             .filter(|(_, path)| path.file_name() == "ROOT")

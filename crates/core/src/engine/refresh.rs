@@ -7,6 +7,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use xxhash_rust::xxh3::Xxh3;
+
 use super::build::build_index;
 use super::changes::{self, Change, ChangesError, Listing};
 use super::files::{self, ContentId, Excluder, FileState, FilesError, Stamp};
@@ -170,13 +172,9 @@ impl<'a> Engine<'a> {
         let mut file_keys: Vec<Option<FactKey>> = vec![None; states.len()];
         let mut unverifiable = false;
         for claim in &claims {
-            let state = states.get(claim.id.index());
-            let key = module_states
-                .get(claim.module)
-                .zip(state.filter(|state| state.stamp.id != ContentId::UNKNOWN))
-                .map(|(module, state)| {
-                    keys::file_key(module, claim.salt, claim.path, state.stamp.id)
-                });
+            let key = states
+                .get(claim.id.index())
+                .and_then(|state| claim_key(&module_states, claim, state.stamp.id));
             unverifiable |= key.is_none();
             if let Some(slot) = file_keys.get_mut(claim.id.index()) {
                 *slot = key;
@@ -210,6 +208,7 @@ impl<'a> Engine<'a> {
                 modules: &ran,
                 assigned,
                 claims,
+                module_states,
                 states,
                 file_keys,
                 config,
@@ -229,8 +228,9 @@ impl<'a> Engine<'a> {
             modules,
             assigned,
             claims,
-            states,
-            file_keys,
+            module_states,
+            mut states,
+            mut file_keys,
             config,
             head,
             mut problems,
@@ -241,7 +241,20 @@ impl<'a> Engine<'a> {
         let max = self.setup.max_file_bytes;
         let seeds = self.seeds(&claims, &states, &file_keys, own.as_ref());
 
-        let (output, phases) = pipeline::execute(assigned, repo, max, seeds);
+        let (output, phases) = pipeline::execute(assigned, repo, max, &states, seeds);
+        // A file saved between the listing and the read is filed under the bytes that were read, not under the
+        // id of the listing: a revert or a sibling must not find its facts under the old id.
+        for (claim, run) in claims.iter().zip(&output.files) {
+            let Some(stamp) = run.stamp else {
+                continue;
+            };
+            if let Some(state) = states.get_mut(claim.id.index()) {
+                state.stamp = stamp;
+            }
+            if let Some(slot) = file_keys.get_mut(claim.id.index()) {
+                *slot = claim_key(&module_states, claim, stamp.id);
+            }
+        }
         let reused = output.files.iter().filter(|file| file.reused).count();
         let parsed = output.files.len().saturating_sub(reused);
         let dirty = self.dirty(&states, &mut problems);
@@ -412,6 +425,8 @@ struct Rebuild<'r, 'a> {
     modules: &'r [&'r str],
     assigned: pipeline::Assigned<'a>,
     claims: Vec<Claim<'a>>,
+    /// The part of a fact key that every file of a module shares, by module.
+    module_states: Vec<Xxh3>,
     states: Vec<FileState>,
     file_keys: Vec<Option<FactKey>>,
     config: u128,
@@ -421,6 +436,13 @@ struct Rebuild<'r, 'a> {
     own: Option<Stored>,
     started: Instant,
     listed: Duration,
+}
+
+/// The key a claimed file's facts are filed under when its content has the id `id`. A file of unknown content has
+/// none, so its facts are never reused.
+fn claim_key(module_states: &[Xxh3], claim: &Claim<'_>, id: ContentId) -> Option<FactKey> {
+    let module = module_states.get(claim.module)?;
+    (id != ContentId::UNKNOWN).then(|| keys::file_key(module, claim.salt, claim.path, id))
 }
 
 /// Whether a stored index is what a run over this tree would build again: same configuration, same commit, same
@@ -571,6 +593,12 @@ mod tests {
             .into_iter()
             .map(|change| (change.path.as_str().to_owned(), change.kind))
             .collect()
+    }
+
+    /// How many imports the facts of `path` hold.
+    fn imports_of(index: &Index, path: &str) -> usize {
+        let file = index.graph.file_id(path).unwrap();
+        index.record(file).unwrap().imports.len()
     }
 
     fn pack(name: &str, language: &str, detect: &str) -> Pack {
@@ -989,6 +1017,38 @@ mod tests {
         assert_eq!(second.index.info.dirty, 1);
         assert_eq!(engine.freshness().unwrap(), Some(Freshness::Fresh));
         assert!(engine.refresh().unwrap().unchanged);
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A file saved during a run is filed under what was read"
+    )]
+    #[test]
+    fn a_file_saved_during_a_run_is_filed_under_what_was_read() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "use b.txt\n"), ("b.txt", "")]);
+        let setup = Setup::default();
+        let connectors = rig.connectors();
+        let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
+        // The run lists the committed file, then an editor saves it, then the run reads it.
+        rig.counters
+            .rewrite_on_next_open("a.txt", "use b.txt\nuse c.txt\n");
+        let first = engine.refresh().unwrap();
+        assert_eq!(first.parsed, 2);
+        assert_eq!(imports_of(&first.index, "a.txt"), 2);
+        rig.counters.take();
+
+        // What was read is what the snapshot filed, so the tree is indexed as it is.
+        let second = engine.refresh().unwrap();
+        assert!(second.unchanged);
+        assert_eq!(rig.counters.take(), [0, 0, 0, 0]);
+
+        // Saving the committed text again is an edit: nothing is filed under that id yet.
+        write(dir.path(), "a.txt", "use b.txt\n");
+        let third = engine.refresh().unwrap();
+        assert!(!third.unchanged);
+        assert_eq!((third.parsed, third.reused), (1, 1));
+        assert_eq!(imports_of(&third.index, "a.txt"), 1);
     }
 
     #[gsttt_scenario::scenario("indexing", "A new commit is not a no-op")]

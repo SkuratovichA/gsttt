@@ -62,6 +62,50 @@ pub struct Stamp {
     pub mtime_nanos: u32,
 }
 
+impl Stamp {
+    /// The stamp of a file with the content id `id` and the metadata `meta`.
+    pub fn of(id: ContentId, meta: &Metadata) -> Self {
+        let (size, mtime_secs, mtime_nanos) = stat_of(meta);
+        Self {
+            id,
+            size,
+            mtime_secs,
+            mtime_nanos,
+        }
+    }
+
+    /// The id of the file `meta` belongs to, when the file still has the size and the modification time it was
+    /// stamped with and the stamp knows its id. It is what lets a run skip hashing.
+    pub fn id_of_unchanged(&self, meta: &Metadata) -> Option<ContentId> {
+        (self.id != ContentId::UNKNOWN && self.describes(meta)).then_some(self.id)
+    }
+
+    /// The stamp of `bytes`, which were read from `path` after the file was stamped as `self`; `None` while the file
+    /// is still as stamped. `before` is the file's metadata from just before the read. A file that changed since
+    /// the stamp gets the id of the bytes read. One that changed while it was being read has no id, because the
+    /// bytes may be a mix of two saves: nothing is filed under it and the next listing hashes the file again.
+    pub fn restamp(&self, path: &Utf8Path, before: &Metadata, bytes: &[u8]) -> Option<Self> {
+        let Ok(after) = fs::metadata(path) else {
+            return Some(Self::of(ContentId::UNKNOWN, before));
+        };
+        let steady = stat_of(before) == stat_of(&after);
+        if steady && self.describes(&after) {
+            return None;
+        }
+        let id = if steady {
+            blob_id(bytes)
+        } else {
+            ContentId::UNKNOWN
+        };
+        Some(Self::of(id, &after))
+    }
+
+    /// Whether `meta` is the file as this stamp saw it: the same size and the same modification time.
+    fn describes(&self, meta: &Metadata) -> bool {
+        (self.size, self.mtime_secs, self.mtime_nanos) == stat_of(meta)
+    }
+}
+
 /// A file of the set with its stamp.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileState {
@@ -282,16 +326,7 @@ fn scan_plain(
         .collect();
     Ok(paths
         .into_par_iter()
-        .filter_map(|path| {
-            let before = previous(path);
-            stamp_file(root, path, |meta| {
-                let before = before?;
-                let (secs, nanos) = mtime(meta);
-                (before.size == meta.len()
-                    && (before.mtime_secs, before.mtime_nanos) == (secs, nanos))
-                    .then_some(before.id)
-            })
-        })
+        .filter_map(|path| stamp_file(root, path, |meta| previous(path)?.id_of_unchanged(meta)))
         .collect())
 }
 
@@ -307,17 +342,10 @@ fn stamp_file(
     if !meta.is_file() {
         return None;
     }
-    let size = meta.len();
-    let (mtime_secs, mtime_nanos) = mtime(&meta);
-    let id = known(&meta).unwrap_or_else(|| hash_file(&absolute, size));
+    let id = known(&meta).unwrap_or_else(|| hash_file(&absolute, meta.len()));
     Some(FileState {
         path: path.clone(),
-        stamp: Stamp {
-            id,
-            size,
-            mtime_secs,
-            mtime_nanos,
-        },
+        stamp: Stamp::of(id, &meta),
     })
 }
 
@@ -326,6 +354,12 @@ fn hash_file(path: &Utf8Path, size: u64) -> ContentId {
         return ContentId::UNKNOWN;
     }
     fs::read(path).map_or(ContentId::UNKNOWN, |bytes| blob_id(&bytes))
+}
+
+/// The size and the modification time of a file, which tell an edited file from an untouched one.
+fn stat_of(meta: &Metadata) -> (u64, i64, u32) {
+    let (secs, nanos) = mtime(meta);
+    (meta.len(), secs, nanos)
 }
 
 fn mtime(meta: &Metadata) -> (i64, u32) {
@@ -440,5 +474,79 @@ mod tests {
         let second = scan(&workspace, &[], &|_| Some(stored)).unwrap();
 
         assert_eq!(second[0].stamp.id, stored.id);
+    }
+
+    #[test]
+    fn a_stamp_without_an_id_does_not_stand_for_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        write(dir.path(), "a.txt", "content");
+        let workspace = Workspace::locate_with(
+            Utf8Path::from_path(dir.path()).unwrap(),
+            Some(Utf8PathBuf::from_path_buf(cache.path().to_path_buf()).unwrap()),
+        )
+        .unwrap();
+        let first = scan(&workspace, &[], &|_| None).unwrap();
+        let unknown = Stamp {
+            id: ContentId::UNKNOWN,
+            ..first[0].stamp
+        };
+
+        let second = scan(&workspace, &[], &|_| Some(unknown)).unwrap();
+
+        assert_eq!(second[0].stamp.id, blob_id(b"content"));
+    }
+
+    /// A file with `text`, and its metadata.
+    fn stamped(dir: &Path, text: &str) -> (Utf8PathBuf, Metadata, Stamp) {
+        write(dir, "a.txt", text);
+        let path = Utf8PathBuf::from_path_buf(dir.join("a.txt")).unwrap();
+        let meta = fs::metadata(&path).unwrap();
+        let stamp = Stamp::of(blob_id(text.as_bytes()), &meta);
+        (path, meta, stamp)
+    }
+
+    #[test]
+    fn a_file_still_as_stamped_keeps_its_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, meta, stamp) = stamped(dir.path(), "one");
+
+        assert_eq!(stamp.restamp(&path, &meta, b"one"), None);
+    }
+
+    #[test]
+    fn a_file_saved_since_it_was_stamped_gets_the_id_of_the_bytes_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, _, stamp) = stamped(dir.path(), "one");
+        write(dir.path(), "a.txt", "one, saved");
+        let before = fs::metadata(&path).unwrap();
+
+        let restamped = stamp.restamp(&path, &before, b"one, saved").unwrap();
+
+        assert_eq!(restamped.id, blob_id(b"one, saved"));
+        assert_eq!(restamped.size, 10);
+    }
+
+    #[test]
+    fn a_file_saved_while_it_was_read_has_no_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, before, stamp) = stamped(dir.path(), "one");
+        write(dir.path(), "a.txt", "one, saved meanwhile");
+
+        let restamped = stamp.restamp(&path, &before, b"one").unwrap();
+
+        assert_eq!(restamped.id, ContentId::UNKNOWN);
+        assert_eq!(restamped.size, 20);
+    }
+
+    #[test]
+    fn a_file_removed_while_it_was_read_has_no_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let (path, before, stamp) = stamped(dir.path(), "one");
+        fs::remove_file(&path).unwrap();
+
+        let restamped = stamp.restamp(&path, &before, b"one").unwrap();
+
+        assert_eq!(restamped.id, ContentId::UNKNOWN);
     }
 }
