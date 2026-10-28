@@ -1,0 +1,49 @@
+---
+source: crates/contracts/tests/contracts/graphql.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "host",
+      "root": "."
+    },
+    {
+      "connector": "graphql",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [
+        {
+          "lang": "graphql",
+          "line": 5,
+          "text": "query { bookings { id } }",
+          "via": "host",
+          "read_by": "graphql",
+          "contracts": [
+            {
+              "key": "graphql Query.bookings",
+              "role": "calls",
+              "line": 5,
+              "via": "graphql"
+            }
+          ]
+        }
+      ],
+      "unresolved": [],
+      "path": "src/client.ts",
+      "project": "host ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

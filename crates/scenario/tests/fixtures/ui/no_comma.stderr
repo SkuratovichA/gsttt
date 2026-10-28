@@ -1,0 +1,5 @@
+error: expected two string literals: #[scenario("<capability>", "<scenario>")]
+ --> tests/fixtures/ui/no_comma.rs:1:32
+  |
+1 | #[gsttt_scenario::scenario("a" "b")]
+  |                                ^^^

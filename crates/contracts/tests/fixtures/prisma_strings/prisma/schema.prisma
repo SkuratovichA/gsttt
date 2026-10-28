@@ -1,0 +1,13 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Booking {
+  id   Int  @id
+  meta Json @default("{}")
+  note String @default("a } b") // closes nothing: "}"
+  @@map("bookings")
+}
+
+model Cart { id Int @id @default(0) } // one-line block

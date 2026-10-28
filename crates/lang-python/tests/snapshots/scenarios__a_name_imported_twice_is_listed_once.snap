@@ -1,0 +1,29 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"reexport.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "bookings",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "views"
+      ],
+      "to": {
+        "file": "bookings/views.py"
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "reexport.py",
+  "project": "python ."
+}

@@ -1,0 +1,77 @@
+---
+source: crates/contracts/tests/contracts/env.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "env",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "env PORT",
+          "role": "declares",
+          "line": 1,
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": ".env.local",
+      "project": "env ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "env PORT",
+          "role": "declares",
+          "line": 1,
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": ".env.production.local",
+      "project": "env ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "env PORT",
+          "role": "declares",
+          "line": 1,
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "staging.env",
+      "project": "env ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [
+    ".env.d.ts",
+    "types/.env.schema.ts"
+  ],
+  "problems": []
+}

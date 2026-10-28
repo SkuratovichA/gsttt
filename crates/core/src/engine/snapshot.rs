@@ -1,13 +1,9 @@
 //! The snapshot file: an index and the facts it was built from, on disk.
 //!
-//! `snapshot.gsttt` starts with the magic `GSTTSNAP`, the layout number and the length of the header as two
-//! little-endian `u32`, and the xxh3 hash of the body as a little-endian `u64`; then comes the header as JSON, then
-//! zero padding up to a multiple of 16 bytes, then the body. The header says what the index is without touching the
-//! body. The body is rkyv. It is checked against its hash and then validated before anything reads it, so a
-//! truncated or damaged file counts as no snapshot instead of taking the process down or answering wrongly.
+//! `snapshot.gsttt` starts with the magic `GSTTSNAP`, the layout number and the length of the header as two little-endian `u32`, and the xxh3 hash of the body as a little-endian `u64`; then comes the header as JSON, then zero padding up to a multiple of 16 bytes, then the body. The header says what the index is without touching the body. The body is rkyv. It is checked against its hash and then validated before anything reads it, so a truncated or damaged file counts as no snapshot instead of taking the process down or answering wrongly.
 
 use std::fs;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek};
 use std::path::Path;
 use std::time::Duration;
 
@@ -22,14 +18,10 @@ use super::keys::FactKey;
 use crate::fact::{FileFacts, ParseFailure, ParseStatus};
 use crate::index::Index;
 use crate::path::RepoPath;
-
-/// The version of gsttt that writes snapshots. A snapshot another version wrote is not read.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+use crate::{VERSION, atomic};
 
 const MAGIC: &[u8; 8] = b"GSTTSNAP";
-/// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape, or
-/// the index in the body comes out of another rule, because a stored index answers as it is. The package version
-/// cannot do that, because it stays the same across the commits of a branch in development.
+/// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape, or the index in the body comes out of another rule, because a stored index answers as it is. [`VERSION`] cannot do that, because every development build has the same one, whatever commit of a branch it was built from.
 const LAYOUT: u32 = 4;
 /// Magic, layout, header length and the hash of the body.
 const PREFIX: usize = 24;
@@ -64,10 +56,7 @@ pub struct Stored {
     pub index: Index,
     /// A hash of everything besides file content that shapes facts and graph: the setup, the connectors, the packs.
     pub config: u128,
-    /// The unix second at which the listing of the files began. A stamp of a file written within two seconds of it
-    /// proves nothing to a later run ([`Stamp::is_settled`]). It is the start of the listing and not the time of the
-    /// write because a file is stamped while the listing runs, and a parse in between can take far longer than the
-    /// margin.
+    /// The unix second at which the listing of the files began. A stamp of a file written within two seconds of it proves nothing to a later run ([`Stamp::is_settled`]). It is the start of the listing and not the time of the write because a file is stamped while the listing runs, and a parse in between can take far longer than the margin.
     pub listed_at: i64,
     /// One entry per file of the index, in file id order.
     pub files: Vec<StoredFile>,
@@ -94,23 +83,14 @@ pub enum SnapshotError {
     Write { path: String, message: String },
 }
 
-/// The name of the temporary file of a write is this prefix, random letters and this suffix, so that nothing else
-/// in the directory is taken for one.
+/// The name of the temporary file of a write starts with this prefix, so that [`atomic::is_temporary`] takes nothing else in the directory for one.
 const TEMP_PREFIX: &str = "snapshot-";
-const TEMP_SUFFIX: &str = ".tmp";
 
-/// How long a temporary file has to lie untouched before the next write takes it for the leftover of a process that
-/// died between creating it and renaming it. A write takes a moment, and nothing locks the directory against two
-/// processes that write at once, so a younger file may well belong to one that is still running.
+/// How long a temporary file has to lie untouched before the next write takes it for the leftover of a process that died between creating it and renaming it. A write takes a moment, and nothing locks the directory against two processes that write at once, so a younger file may well belong to one that is still running.
 const STALE: Duration = Duration::from_hours(1);
 
-/// Writes the snapshot through a temporary file in the same directory, so a reader sees the old file or the new
-/// one and never half of either. Temporary files that earlier writes left behind are removed first.
+/// Writes the snapshot with [`atomic::write`], so a reader sees the old file or the new one and never half of either. Temporary files that earlier writes left behind are removed first.
 pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), SnapshotError> {
-    let failed_to_write = |message: String| SnapshotError::Write {
-        path: path.display().to_string(),
-        message,
-    };
     let encode = |message: String| SnapshotError::Encode {
         path: path.display().to_string(),
         message,
@@ -128,27 +108,14 @@ pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), Snapsh
     bytes.resize(bytes.len().next_multiple_of(ALIGN), 0);
     bytes.extend_from_slice(&body);
 
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(dir).map_err(|error| failed_to_write(error.to_string()))?;
-    remove_stale(dir);
-    let mut file = tempfile::Builder::new()
-        .prefix(TEMP_PREFIX)
-        .suffix(TEMP_SUFFIX)
-        .tempfile_in(dir)
-        .map_err(|error| failed_to_write(error.to_string()))?;
-    file.write_all(&bytes)
-        .map_err(|error| failed_to_write(error.to_string()))?;
-    // The rename below makes the new file the snapshot at once; without this, a crash after it can leave a file
-    // whose blocks never reached the disk.
-    file.as_file()
-        .sync_all()
-        .map_err(|error| failed_to_write(error.to_string()))?;
-    file.persist(path)
-        .map_err(|error| failed_to_write(error.to_string()))?;
-    Ok(())
+    remove_stale(path.parent().unwrap_or_else(|| Path::new(".")));
+    atomic::write(path, TEMP_PREFIX, &bytes).map_err(|error| SnapshotError::Write {
+        path: path.display().to_string(),
+        message: error.to_string(),
+    })
 }
 
-/// Removes the temporary files of [`write`] in `dir` that nobody has touched for [`STALE`].
+/// Removes the temporary files of [`write()`] in `dir` that nobody has touched for [`STALE`].
 fn remove_stale(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -157,7 +124,7 @@ fn remove_stale(dir: &Path) {
         let is_temporary = entry
             .file_name()
             .to_str()
-            .is_some_and(|name| name.starts_with(TEMP_PREFIX) && name.ends_with(TEMP_SUFFIX));
+            .is_some_and(|name| atomic::is_temporary(name, TEMP_PREFIX));
         let age = entry
             .metadata()
             .and_then(|meta| meta.modified())
@@ -170,15 +137,13 @@ fn remove_stale(dir: &Path) {
     }
 }
 
-/// The header of the snapshot at `path`, read without its body. `None` when there is no readable snapshot of this
-/// version.
+/// The header of the snapshot at `path`, read without its body. `None` when there is no readable snapshot of this version.
 pub fn peek(path: &Path) -> Option<Header> {
     let mut file = fs::File::open(path).ok()?;
     read_header(&mut file).map(|(header, _)| header)
 }
 
-/// The header of the snapshot `file` holds, and what its prefix says about the rest. `None` unless the file starts
-/// like a snapshot of this layout and version.
+/// The header of the snapshot `file` holds, and what its prefix says about the rest. `None` unless the file starts like a snapshot of this layout and version.
 fn read_header(file: &mut fs::File) -> Option<(Header, Prefix)> {
     let mut bytes = [0_u8; PREFIX];
     file.read_exact(&mut bytes).ok()?;
@@ -188,16 +153,14 @@ fn read_header(file: &mut fs::File) -> Option<(Header, Prefix)> {
     Some((parse_header(&json)?, prefix))
 }
 
-/// A snapshot read into memory, aligned for rkyv, so that its body is looked into where it lies instead of being
-/// copied out whole.
+/// A snapshot read into memory, aligned for rkyv, so that its body is looked into where it lies instead of being copied out whole.
 #[derive(Debug)]
 pub struct Snapshot {
     body: AlignedVec<ALIGN>,
 }
 
 impl Snapshot {
-    /// The snapshot at `path`. `None` when the file is missing, is not a snapshot of this layout and version (the
-    /// body of such a file is not read), or has a body that does not match the hash in its prefix.
+    /// The snapshot at `path`. `None` when the file is missing, is not a snapshot of this layout and version (the body of such a file is not read), or has a body that does not match the hash in its prefix.
     pub fn open(path: &Path) -> Option<Self> {
         let mut file = fs::File::open(path).ok()?;
         let (_, prefix) = read_header(&mut file)?;
@@ -209,9 +172,7 @@ impl Snapshot {
         (xxh3_64(&body) == prefix.checksum).then_some(Self { body })
     }
 
-    /// The body as rkyv archived it. Validating it walks all of it, so a caller asks once and keeps the answer.
-    /// `None` when the body does not validate, for instance because another build wrote it: the caller builds the
-    /// index again.
+    /// The body as rkyv archived it. Validating it walks all of it, so a caller asks once and keeps the answer. `None` when the body does not validate, for instance because another build wrote it: the caller builds the index again.
     pub fn stored(&self) -> Option<&ArchivedStored> {
         rkyv::access::<ArchivedStored, RkyvError>(&self.body).ok()
     }
@@ -237,8 +198,7 @@ impl ArchivedStored {
         rkyv::deserialize::<Stamp, RkyvError>(&self.file(path)?.stamp).ok()
     }
 
-    /// The facts and the link data filed for `path` under `key`, when another run may take them in place of a
-    /// parse. The key holds the path, so an entry under the same key is the same file with the same content.
+    /// The facts and the link data filed for `path` under `key`, when another run may take them in place of a parse. The key holds the path, so an entry under the same key is the same file with the same content.
     pub fn reusable(&self, path: &RepoPath, key: FactKey) -> Option<(FileFacts, Vec<u8>)> {
         let file = self.file(path)?;
         if file.key != Some(key) {
@@ -249,8 +209,7 @@ impl ArchivedStored {
     }
 }
 
-/// Whether facts may be copied from one run to another. A parse that panicked or could not read the file says
-/// something about that run, not about the content, so it is tried again.
+/// Whether facts may be copied from one run to another. A parse that panicked or could not read the file says something about that run, not about the content, so it is tried again.
 pub fn is_reusable(facts: &FileFacts) -> bool {
     !matches!(
         facts.status,
@@ -323,8 +282,7 @@ mod tests {
         }
     }
 
-    /// `files`, which have to be in path order, written to a snapshot of their own and opened again. The directory
-    /// is returned so that it lasts as long as the test does.
+    /// `files`, which have to be in path order, written to a snapshot of their own and opened again. The directory is returned so that it lasts as long as the test does.
     fn stored_in(files: Vec<StoredFile>) -> (tempfile::TempDir, Snapshot) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("snapshot.gsttt");
@@ -371,8 +329,7 @@ mod tests {
 
         write_files(&dir.path().join("snapshot.gsttt"), Vec::new());
 
-        // Only the old temporary file goes: a young one may belong to a write still running, and a file of another
-        // name is none of the snapshot's.
+        // Only the old temporary file goes: a young one may belong to a write still running, and a file of another name is none of the snapshot's.
         assert!(!dead.exists());
         assert!(live.exists() && foreign.exists());
         assert!(Snapshot::open(&dir.path().join("snapshot.gsttt")).is_some());
@@ -507,8 +464,7 @@ mod tests {
         assert_eq!(parse_prefix(&prefix(MAGIC, 1, 40, 7)), None);
         // The layout whose index holds the parsed and the linked site of a declaration a link re-keys.
         assert_eq!(parse_prefix(&prefix(MAGIC, 2, 40, 7)), None);
-        // The layout whose index lacks the site of every own fact that shares a line, a role and a kind with a linked
-        // fact, though the link keyed none of them again.
+        // The layout whose index lacks the site of every own fact that shares a line, a role and a kind with a linked fact, though the link keyed none of them again.
         assert_eq!(parse_prefix(&prefix(MAGIC, 3, 40, 7)), None);
         assert_eq!(parse_prefix(&prefix(MAGIC, LAYOUT, 40, 7)[..20]), None);
         assert_eq!(parse_prefix(b"GSTT"), None);

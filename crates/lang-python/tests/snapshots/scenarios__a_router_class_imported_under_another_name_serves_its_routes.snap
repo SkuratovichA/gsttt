@@ -1,0 +1,51 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "json!({\n    \"file\": tree.file_json(\"fastapi_router.py\"), \"linked\":\n    tree.linked(\"fastapi_router.py\"),\n})"
+---
+{
+  "file": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "fastapi",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [],
+        "to": {
+          "external": "fastapi"
+        }
+      },
+      {
+        "spec": "fastapi",
+        "kind": "static",
+        "line": 2,
+        "flags": 0,
+        "names": [
+          "APIRouter"
+        ],
+        "to": {
+          "external": "fastapi"
+        }
+      }
+    ],
+    "contracts": [
+      {
+        "key": "http GET /ping",
+        "role": "serves",
+        "line": 8,
+        "via": "fastapi"
+      }
+    ],
+    "embedded": [],
+    "unresolved": [],
+    "path": "fastapi_router.py",
+    "project": "python ."
+  },
+  "linked": [
+    "serves http GET /bookings/{}@13"
+  ]
+}

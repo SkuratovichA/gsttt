@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@a/*": ["one/*"],
+      "@a/*.js": ["two/*"],
+      "@exact": ["exact/index"],
+      "@lib/*": ["lib/*.js"],
+      "@long/*": ["shallow/*"],
+      "@long/deep/*": ["deep/*"]
+    }
+  }
+}

@@ -1,0 +1,346 @@
+---
+source: crates/config/tests/config/schema.rs
+expression: pack_schema()
+---
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "gsttt rule pack",
+  "description": "The rules for one framework or library.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "description": "The framework: `nestjs`, `fastapi`, `axios`. Answers name it as the way a contract was found. In a file of `.gsttt/packs/` it is the name of the file without `.toml`.",
+      "type": "string"
+    },
+    "language": {
+      "description": "The language connector the rules are for: `ts`, `python` or `rust`.",
+      "type": "string"
+    },
+    "detect": {
+      "description": "Packages that switch the pack on for a project whose manifest depends on one of them. Empty: always on.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "calls": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CallRule"
+      },
+      "default": []
+    },
+    "decorators": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/DecoratorRule"
+      },
+      "default": []
+    },
+    "chains": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ChainRule"
+      },
+      "default": []
+    },
+    "embeds": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/EmbedRule"
+      },
+      "default": []
+    },
+    "assigns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/AssignRule"
+      },
+      "default": []
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "language"
+  ],
+  "definitions": {
+    "CallRule": {
+      "description": "A call that names a contract: `fetch(\"/x\")`, `axios.get(\"/x\")`, `requests.post(url=…)`, `app.get(\"/x\", h)`.",
+      "type": "object",
+      "properties": {
+        "callee": {
+          "description": "Callee patterns: `fetch`, `axios.*`, `this.http.*`. `*` matches one segment.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OneOrMany"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/Role"
+        },
+        "key": {
+          "description": "Where the key is: `$arg1`, `$arg1.url`, `$url|$arg1`.",
+          "type": "string"
+        },
+        "method": {
+          "description": "For HTTP, where the method is: `GET`, `$callee`, `$arg2.method|GET`. Unset: any method (`*`).",
+          "type": "string"
+        },
+        "receiver": {
+          "description": "A prefix taken from the call that made the receiver: `router = APIRouter(prefix=\"/x\")` before `router.get(\"/y\")`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Prefix"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "callee",
+        "kind",
+        "role",
+        "key"
+      ]
+    },
+    "OneOrMany": {
+      "description": "One pattern or several: `callee = \"fetch\"` or `callee = [\"axios.*\", \"api.*\"]`.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "Role": {
+      "description": "What a site does with a contract.",
+      "oneOf": [
+        {
+          "description": "A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration, `.env.example`.",
+          "type": "string",
+          "const": "declares"
+        },
+        {
+          "description": "Code implements it: a controller, a resolver, a gRPC server.",
+          "type": "string",
+          "const": "serves"
+        },
+        {
+          "description": "Code uses it: a fetch, a generated client, a query, an env read.",
+          "type": "string",
+          "const": "calls"
+        }
+      ]
+    },
+    "Prefix": {
+      "description": "Where a key prefix comes from: the decorator or call named by `from`, and the value `key` reads there.\n\nEvery connector reads it the same way. For `class`, the innermost enclosing class must carry a decorator matching `from`, or the rule does not apply. For `receiver`, the site's receiver must be a name bound in the same file to a call matching `from` (`router = APIRouter(prefix=\"/x\")`, `const app = express()`), or the rule does not apply; a receiver imported from another file is left to the connector's `link` step, which sees both files. So `receiver` is also how a rule stays off `cache.get(\"/x\")`.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Decorator or callee patterns: `Controller`, `APIRouter`, `Blueprint`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OneOrMany"
+            }
+          ]
+        },
+        "key": {
+          "description": "Unset when the maker carries no prefix and only gates the rule: `express.Router()`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from"
+      ]
+    },
+    "DecoratorRule": {
+      "description": "A decorator that names a contract: NestJS `@Get(\":id\")`, FastAPI `@router.get(\"/x\")`, Flask `@bp.route(\"/x\")`.",
+      "type": "object",
+      "properties": {
+        "decorator": {
+          "description": "Decorator patterns, matched like callees: `Get`, `*.get`, `app.route`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OneOrMany"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/Role"
+        },
+        "key": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "class": {
+          "description": "A prefix taken from a decorator of the enclosing class: NestJS `@Controller(\"bookings\")`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Prefix"
+            }
+          ]
+        },
+        "receiver": {
+          "description": "A prefix taken from the call that made the decorator's receiver: FastAPI `APIRouter(prefix=…)`, Flask `Blueprint(url_prefix=…)`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Prefix"
+            }
+          ]
+        },
+        "prefix": {
+          "description": "A prefix read at the decorator itself, joined after the class and receiver prefixes: with `$callee`, NestJS `@Query() bookings()` serves `graphql Query.bookings`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "decorator",
+        "kind",
+        "role",
+        "key"
+      ]
+    },
+    "ChainRule": {
+      "description": "A member chain that names a contract: `process.env.API_URL`, `prisma.booking.findMany()`, `trpc.booking.get.useQuery()`.",
+      "type": "object",
+      "properties": {
+        "root": {
+          "description": "Dotted roots a chain starts from: `process.env`, `import.meta.env`, `prisma`, `trpc`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OneOrMany"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/Role"
+        },
+        "segments": {
+          "description": "How many segments after the root make the key. Unset: every segment up to a terminal or the end of the chain.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "terminals": {
+          "description": "Segments that end the key and are not part of it: `useQuery`, `query`, `mutate`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "case": {
+          "description": "A case change applied to the whole key: `upper-first` turns `prisma.booking` into `table Booking`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Case"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "kind",
+        "role"
+      ]
+    },
+    "Case": {
+      "description": "A case change for chain keys.",
+      "type": "string",
+      "enum": [
+        "upper-first",
+        "lower-first",
+        "upper",
+        "lower"
+      ]
+    },
+    "EmbedRule": {
+      "description": "A document in another language inside code: a GraphQL query in a `gql` tagged template, SQL in `cursor.execute(\"…\")`.",
+      "type": "object",
+      "properties": {
+        "callee": {
+          "description": "Template tags and callees: `gql`, `graphql`, `sql`, `*.execute`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OneOrMany"
+            }
+          ]
+        },
+        "lang": {
+          "description": "The document's language, as the connector that parses it names it in `embeds`: `graphql`, `sql`.",
+          "type": "string"
+        },
+        "text": {
+          "description": "For a call, where the document is; `$arg1` when unset. A tagged template is the document itself.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "callee",
+        "lang"
+      ]
+    },
+    "AssignRule": {
+      "description": "An assignment that names a contract: SQLAlchemy `__tablename__ = \"bookings\"`, Django `db_table = \"bookings\"`.",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "Names assigned to, matched like callees: `__tablename__`, `db_table`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OneOrMany"
+            }
+          ]
+        },
+        "class": {
+          "description": "Base-class patterns, matched like callees, one of which the innermost enclosing class must list: `Base`, `*.Model`. Unset: the assignment counts wherever it is.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OneOrMany"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/Role"
+        },
+        "key": {
+          "description": "Where the key is. An assignment site gives the assigned value as `$arg1`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "kind",
+        "role",
+        "key"
+      ]
+    }
+  }
+}

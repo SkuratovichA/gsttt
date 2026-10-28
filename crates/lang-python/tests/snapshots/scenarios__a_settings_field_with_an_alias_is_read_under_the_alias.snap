@@ -1,0 +1,93 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"settings.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "pydantic",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "AliasChoices",
+        "Field"
+      ],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    },
+    {
+      "spec": "pydantic_settings",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "BaseSettings",
+        "SettingsConfigDict"
+      ],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "env DB_URL",
+      "role": "calls",
+      "line": 10,
+      "via": "env"
+    },
+    {
+      "key": "env SERVICE_TOKEN",
+      "role": "calls",
+      "line": 11,
+      "via": "env"
+    },
+    {
+      "key": "env REGION",
+      "role": "calls",
+      "line": 12,
+      "via": "env"
+    },
+    {
+      "key": "env APP_DEBUG",
+      "role": "calls",
+      "line": 15,
+      "via": "env"
+    },
+    {
+      "key": "env APP_TIMEOUT",
+      "role": "calls",
+      "line": 16,
+      "via": "env"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [
+    {
+      "line": 13,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "mode"
+    },
+    {
+      "line": 14,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "secret"
+    }
+  ],
+  "path": "settings.py",
+  "project": "python ."
+}

@@ -1,0 +1,5 @@
+error: expected two string literals: #[scenario("<capability>", "<scenario>")]
+ --> tests/fixtures/ui/not_a_literal.rs:1:28
+  |
+1 | #[gsttt_scenario::scenario(capability, "x")]
+  |                            ^^^^^^^^^^

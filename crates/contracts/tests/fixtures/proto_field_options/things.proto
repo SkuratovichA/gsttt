@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package things.v1;
+
+service ThingService {
+  rpc GetThing(Thing) returns (Thing) {
+    option (google.api.http).get = "/v1/things/{id}";
+  }
+  rpc DropThing(Thing) returns (Thing) {
+    option (google.api.http).delete = "/v1/things/{id}";
+    option (google.api.http).body = "*";
+  }
+}
+
+message Thing {
+  string id = 1;
+}

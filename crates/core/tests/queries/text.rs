@@ -6,9 +6,8 @@ use gsttt_core::query::{
     Answer, Entries, ImpactRequest, contract, coverage, dependencies, dependents, impact, path,
     status,
 };
+use gsttt_core::testing::{To, Tree, package, resolving};
 use gsttt_scenario::scenario;
-
-use crate::fixture::{To, Tree, package, resolving};
 
 /// A tree where `count` files import `src/hub.ts`.
 fn hub(count: usize) -> Index {
@@ -246,7 +245,7 @@ fn the_footer_names_only_the_connectors_whose_files_the_answer_involves() {
 }
 
 #[test]
-fn the_footer_of_an_answer_that_involves_no_file_lists_every_connector() {
+fn the_footer_of_an_answer_that_involves_no_file_lists_every_connector_that_owns_a_file() {
     let index = Tree::new()
         .read_by("ts", "web/a.ts")
         .read_by("python", "api/p.py")

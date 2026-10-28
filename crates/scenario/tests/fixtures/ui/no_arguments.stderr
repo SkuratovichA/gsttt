@@ -1,0 +1,7 @@
+error: expected two string literals: #[scenario("<capability>", "<scenario>")]
+ --> tests/fixtures/ui/no_arguments.rs:1:1
+  |
+1 | #[gsttt_scenario::scenario]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `gsttt_scenario::scenario` (in Nightly builds, run with -Z macro-backtrace for more info)

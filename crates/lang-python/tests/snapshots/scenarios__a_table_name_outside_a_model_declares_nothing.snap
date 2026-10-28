@@ -1,0 +1,78 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"models.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "django.db",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "models"
+      ],
+      "to": {
+        "external": "django"
+      }
+    },
+    {
+      "spec": "sqlalchemy.orm",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "DeclarativeBase"
+      ],
+      "to": {
+        "external": "sqlalchemy"
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "table bookings",
+      "role": "declares",
+      "line": 13,
+      "via": "sqlalchemy"
+    },
+    {
+      "key": "table inner",
+      "role": "declares",
+      "line": 22,
+      "via": "sqlalchemy"
+    },
+    {
+      "key": "table deep",
+      "role": "declares",
+      "line": 26,
+      "via": "django"
+    },
+    {
+      "key": "table booking_items",
+      "role": "declares",
+      "line": 31,
+      "via": "django"
+    },
+    {
+      "key": "table audit_log",
+      "role": "declares",
+      "line": 43,
+      "via": "django"
+    },
+    {
+      "key": "table in_a_function",
+      "role": "declares",
+      "line": 49,
+      "via": "django"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [],
+  "path": "models.py",
+  "project": "python ."
+}

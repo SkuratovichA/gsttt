@@ -1,0 +1,1 @@
+{ "name": "api", "dependencies": { "@nestjs/graphql": "^13.0.0" } }

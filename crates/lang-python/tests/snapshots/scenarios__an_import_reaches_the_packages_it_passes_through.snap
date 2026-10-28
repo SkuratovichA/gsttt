@@ -1,0 +1,62 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"outside.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "pkg.sub.leaf",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "files": [
+          "pkg/__init__.py",
+          "pkg/sub/__init__.py",
+          "pkg/sub/leaf.py"
+        ]
+      }
+    },
+    {
+      "spec": "pkg.sub",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "leaf"
+      ],
+      "to": {
+        "files": [
+          "pkg/__init__.py",
+          "pkg/sub/__init__.py",
+          "pkg/sub/leaf.py"
+        ]
+      }
+    },
+    {
+      "spec": "pkg",
+      "kind": "static",
+      "line": 3,
+      "flags": 0,
+      "names": [
+        "sub"
+      ],
+      "to": {
+        "files": [
+          "pkg/__init__.py",
+          "pkg/sub/__init__.py"
+        ]
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "outside.py",
+  "project": "python ."
+}
