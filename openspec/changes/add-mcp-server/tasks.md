@@ -17,6 +17,9 @@
 - [x] 2.2 Refuse `--json`, `--all` and `--no-refresh` in `gsttt mcp` with exit code 2, naming the flag
 - [x] 2.3 Test that `gsttt mcp` ends when its input closes while a refresh is running
 - [x] 2.4 Test `gsttt mcp` as a process over its standard streams, one test for each scenario of the binary and of the lifecycle
+- [x] 2.5 Merge the CLI change at `3fddb7d` into this change, so that the source of the server opens the `Repository` as that merge leaves it
+- [x] 2.6 Tell the model to fix a config that does not read and ask again, and keep an `[[external]]` connector that no one trusted from starting when the server refreshes
+- [x] 2.7 List `mcp` among the commands of the `cli` capability, in a delta of the requirement `Commands`
 
 ## 3. Gates
 

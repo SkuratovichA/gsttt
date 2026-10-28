@@ -29,7 +29,8 @@ pub async fn serve(source: impl IndexSource) -> Result<(), ServeError>;
 ```
 
 - `Loaded { index: Arc<Index>, freshness: Freshness }` and `Target { path: RepoPath, on_disk: bool }` are `gsttt_core::Loaded` and `gsttt_core::Target`, the types the CLI's `Repository` returns, so the binary's source passes them on as they are.
-- The binary's implementation opens a `Repository` on every call. A server lives as long as a session, while `init.lua`, the trust store and the branch change under it, and opening is cheap next to a refresh. A root that the CLI refuses, `$HOME` for example, fails the call, not the server.
+- The binary's implementation opens a `Repository` on every call. A server lives as long as a session, while `.gsttt/config.toml`, the trust store and the branch change under it, and opening is cheap next to a refresh. A root that the CLI refuses, `$HOME` for example, fails the call, not the server.
+- `Loaded` and `Target` live in `gsttt-core` (`crates/core/src/index.rs` and `crates/core/src/path.rs`), the one crate that the binary and the server both depend on, `Loaded` beside the `Index` and the `Freshness` it holds and `Target` beside the `RepoPath` it holds. So the command line and the server read an index and a path argument with one code: `Repository` returns the index as a `Loaded` (`refreshed` and `stored`) and a path argument as a `Target` (`argument`), the commands of the command line take them as they are, and so does the source of the server. The only difference is the directory `argument` reads a path against, which its caller passes in: the directory the command ran in, or the root.
 
 ### Handler
 
@@ -39,6 +40,7 @@ pub async fn serve(source: impl IndexSource) -> Result<(), ServeError>;
 - Each tool's arguments are a struct with `Deserialize` and `JsonSchema`. Its input schema is `schemars::schema_for!` of that struct.
 - `call_tool` deserializes the arguments itself. A failure becomes a result with `isError: true` and text such as `impact: \`paths\` must be a list of paths, for example ["src/a.ts"]`.
 - An unknown tool name stays a protocol error (`-32602`), as the specification has it.
+- `on_custom_request` answers a `tools/call` whose `arguments` is not an object with the JSON-RPC error for invalid parameters, and the server keeps serving. rmcp reads the parameters of a call before it asks the handler, so such a call never reaches `call_tool`, where every other bad argument becomes a tool error; rmcp hands it to `on_custom_request` as a request the server does not know, and its own answer to that is `method not found` with the method's name, which would tell the client that the server has no tools at all. The error for invalid parameters says what a `tools/call` takes instead, and any other method that arrives there still gets `method not found`. That is the one protocol error left for a call to a known tool, which is why the requirement `Errors` promises none only when `arguments` is an object or is left out.
 
 ### Answers
 
