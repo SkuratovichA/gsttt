@@ -264,6 +264,11 @@ struct Run {
 
 impl Run {
     fn index(tree: Tree, external: External) -> Self {
+        Self::index_on(1, tree, external)
+    }
+
+    /// The run on a pool of `threads`: with more than one, the files of the external are asked from several threads at once.
+    fn index_on(threads: usize, tree: Tree, external: External) -> Self {
         let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
         let plain = Erased(Plain);
         let kotlin = Erased(external);
@@ -280,7 +285,7 @@ impl Run {
             },
         ];
         let output = rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
+            .num_threads(threads)
             .build()
             .unwrap()
             .install(|| run(&repo, &modules, LIMIT))
@@ -793,6 +798,66 @@ fn a_process_that_sends_a_line_that_is_not_a_message_fails_the_files_it_did_not_
     );
     assert_eq!(b, c);
     assert_eq!(run.facts("notes/a.txt").status, ParseStatus::Ok);
+}
+
+#[test]
+fn a_process_that_leaves_in_the_middle_of_a_line_fails_the_files_it_did_not_answer() {
+    let (run, b, c) = fails_on_b(r#"printf '{"type":"facts","pa'; exit 0"#);
+    assert!(
+        b.contains("`kotlin`") && b.contains("the process exited"),
+        "{b:?}"
+    );
+    assert_eq!(b, c);
+    assert_eq!(run.facts("src/A.kt").status, ParseStatus::Ok);
+}
+
+#[test]
+fn a_line_that_does_not_end_within_the_limit_fails_the_files_it_did_not_answer() {
+    // 65 MiB without a newline: one more than the 64 MiB a line may be.
+    let (run, b, c) = fails_on_b(r"head -c 68157440 /dev/zero | tr '\0' x");
+    assert!(
+        b.contains("`kotlin`") && b.contains("a line longer than 67108864 bytes"),
+        "{b:.300}"
+    );
+    assert_eq!(b, c);
+    assert_eq!(run.facts("src/A.kt").status, ParseStatus::Ok);
+}
+
+/// How many files the threads of [`threads_that_contend_for_one_process_each_get_their_own_answers`] ask the process about.
+const CROWD: u32 = 40;
+
+#[test]
+fn threads_that_contend_for_one_process_each_get_their_own_answers() {
+    // Each file's answer carries its own number, so an answer that reaches another thread's file shows.
+    let marked = |number: u32| FileFacts {
+        status: ParseStatus::Recovered {
+            errors: number,
+            first_error_line: 1,
+        },
+        ..FileFacts::default()
+    };
+    let tree = Tree::empty();
+    let mut arms = vec![when(
+        &request("open"),
+        format!("{}; echo open >> opens.log", say(&ready())),
+    )];
+    for number in 1..=CROWD {
+        let path = format!("src/f{number:02}.kt");
+        tree.write(&path, "class F\n");
+        arms.push(parses(&path, &marked(number)));
+    }
+    arms.push(when(&request("done"), "exit 0"));
+    tree.write("kotlin.sh", &script(&arms));
+
+    let run = Run::index_on(8, tree, kotlin(External::TIMEOUT));
+    for number in 1..=CROWD {
+        let facts = run.facts(&format!("src/f{number:02}.kt"));
+        assert_eq!(facts.status, marked(number).status, "file {number}");
+    }
+    let opens = fs::read_to_string(run.tree.root().join("opens.log")).unwrap();
+    assert_eq!(opens.lines().count(), 1, "one process serves every thread");
+    // `open`, one `parse` for each file and `done`, each once.
+    assert_eq!(run.requests().len(), usize::try_from(CROWD).unwrap() + 2);
 }
 
 #[test]

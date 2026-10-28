@@ -287,6 +287,18 @@ fn comments_do_not_change_the_fingerprint() {
     let print = |init: &str| fingerprint(&Tree::with_init(init).evaluate().unwrap()).unwrap();
     assert_eq!(print(plain), print(&commented));
     assert_ne!(print(plain), print(&plain.replace("/api", "/v2")));
+
+    // A value in the options of a module is part of the setup, and so is one in the options of an external.
+    let module = |tsconfig: &str| {
+        format!("local g = require(\"gsttt\")\ng.ts {{ tsconfig = \"{tsconfig}\" }}\n")
+    };
+    assert_ne!(print(&module("a.json")), print(&module("b.json")));
+    let external = |strict: bool| {
+        format!(
+            "local g = require(\"gsttt\")\ng.external {{ name = \"k\", cmd = {{ \"x\" }}, files = {{ \"*.x\" }}, options = {{ strict = {strict} }} }}\n"
+        )
+    };
+    assert_ne!(print(&external(true)), print(&external(false)));
 }
 
 #[test]

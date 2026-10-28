@@ -269,7 +269,7 @@ fn drive(mut stdin: ChildStdin, mut stdout: BufReader<ChildStdout>, exchanges: R
             continue;
         };
         if reply
-            .send(written.and_then(|()| read_line(&mut stdout)))
+            .send(written.and_then(|()| read_line(&mut stdout, MAX_LINE)))
             .is_err()
         {
             return;
@@ -300,20 +300,17 @@ fn forward(name: &str, mut stderr: impl BufRead) {
     }
 }
 
-/// The next line of the process, without its newline.
-fn read_line(reader: &mut BufReader<ChildStdout>) -> io::Result<String> {
+/// The next line of the process, without its newline, read as far as `limit` bytes: a line that has not ended by then is an error, and nothing more of it is read.
+fn read_line(reader: &mut impl BufRead, limit: u64) -> io::Result<String> {
     let mut line = Vec::new();
-    let read = reader
-        .by_ref()
-        .take(MAX_LINE)
-        .read_until(b'\n', &mut line)?;
+    let read = reader.by_ref().take(limit).read_until(b'\n', &mut line)?;
     if line.last() == Some(&b'\n') {
         line.pop();
         Ok(String::from_utf8_lossy(&line).into_owned())
-    } else if read as u64 >= MAX_LINE {
+    } else if read as u64 >= limit {
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("a line longer than {MAX_LINE} bytes"),
+            format!("a line longer than {limit} bytes"),
         ))
     } else {
         // The pipe closed before the line ended.
@@ -395,6 +392,42 @@ mod tests {
         assert!(lines[0].starts_with("xxx") && lines[0].ends_with("x…"));
         assert_eq!(lines[1], "fake[31m red");
         assert_eq!(lines[2], "plain\ttabbed");
+    }
+
+    #[test]
+    fn a_line_is_read_up_to_the_limit_and_no_further() {
+        let read = |bytes: &[u8], limit| read_line(&mut BufReader::new(bytes), limit);
+        // The newline counts against the limit: a line of 15 bytes fits 16, a line of 16 does not.
+        assert_eq!(
+            read(b"123456789012345\nrest", 16).unwrap(),
+            "123456789012345"
+        );
+        let long = read(b"1234567890123456\nrest", 16).unwrap_err();
+        assert_eq!(long.kind(), io::ErrorKind::InvalidData);
+        assert!(long.to_string().contains("longer than 16 bytes"), "{long}");
+
+        // A line that never ends is not read past the limit. A thousand bytes stand for endless, so that a reader which ignores the limit ends in the wrong error and not in memory.
+        let mut endless = BufReader::new(io::repeat(b'x').take(1_000));
+        let error = read_line(&mut endless, 16).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+
+        // The line after a good one is still there.
+        let mut two = BufReader::new(&b"one\ntwo\n"[..]);
+        assert_eq!(read_line(&mut two, 16).unwrap(), "one");
+        assert_eq!(read_line(&mut two, 16).unwrap(), "two");
+    }
+
+    #[test]
+    fn a_pipe_that_closes_mid_line_is_a_process_that_left() {
+        let mut half = BufReader::new(&b"{\"type\":\"rea"[..]);
+        let error = read_line(&mut half, 1024).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        assert!(matches!(from_io(error), Failure::Exited));
+        let mut nothing = BufReader::new(&b""[..]);
+        assert_eq!(
+            read_line(&mut nothing, 1024).unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
     }
 
     #[test]

@@ -139,7 +139,7 @@ The setup SHALL have a fingerprint computed from its canonical JSON form, so tha
 
 #### Scenario: Comments do not change the fingerprint
 - **WHEN** a comment is added to `.gsttt/init.lua`
-- **THEN** the fingerprint of the setup is unchanged, and changing `http_prefixes` changes it
+- **THEN** the fingerprint of the setup is unchanged, and changing `http_prefixes`, an option of a module or an option of an external changes it
 
 ### Requirement: Editor support
 The crate SHALL generate LuaLS annotations from the registry's module names and option schemas: a `---@meta` file declaring the `gsttt` module, one `---@class` per module's options with a `---@field` per property (optional, typed, with its description), string enums as literal unions, lists as `T[]`, and the pack and rule types; a `.luarc.json` pointing LuaLS at those annotations and at `.gsttt/lua/`; and a starter `init.lua` that lists the detected modules as comments.
