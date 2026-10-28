@@ -1957,9 +1957,7 @@ dependencies = [
 name = "gsttt-scenario"
 version = "0.1.0"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.9",
+ "gsttt-spec",
 ]
 
 [[package]]
@@ -1967,7 +1965,9 @@ name = "gsttt-spec"
 version = "0.1.0"
 dependencies = [
  "gsttt-scenario",
+ "proc-macro2",
  "proptest",
+ "syn 3.0.9",
  "tempfile",
  "thiserror",
 ]
