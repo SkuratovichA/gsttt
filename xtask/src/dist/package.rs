@@ -117,6 +117,8 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// Writes `entries` to `archive` as a gzipped tarball. Times, owners and the gzip header carry nothing of the machine, so one commit packs to the same bytes everywhere.
+///
+/// The compressed bytes also depend on the deflate backend of `flate2`, today the pure-Rust `miniz_oxide`, and on the compression level. A crate that turns on another backend (the `zlib-ng` or `zlib-rs` feature of `flate2`) anywhere in the same build changes them, because features add up across a build. The checksum is made from the archive that was written, so a release stays consistent either way.
 fn write_archive(archive: &Path, entries: &[Entry]) -> anyhow::Result<()> {
     let file =
         File::create(archive).with_context(|| format!("cannot create {}", archive.display()))?;
