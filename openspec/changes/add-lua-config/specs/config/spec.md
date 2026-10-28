@@ -151,11 +151,35 @@ A library call whose native loop is as long as the config says SHALL be refused,
 - **THEN** each call gives the result Lua gives, and a call with a wrong argument gives the error Lua gives, with the position of the call
 
 ### Requirement: A metatable cannot hand work to the collector
-`setmetatable` SHALL refuse a metatable with `__gc` or `__mode`, with an error that names the field, because Lua runs finalizers and clears weak tables with the instruction hook off, so a config could keep the collector busy for as long as it likes. The check is made when `setmetatable` runs: a `__mode` written into the metatable afterwards is not seen.
+`setmetatable` SHALL refuse a metatable with `__gc` or `__mode`, with an error that names the field, because Lua runs finalizers and clears weak tables with the instruction hook off. It SHALL give the table a copy of the metatable that the config cannot reach, so a field written into the metatable afterwards changes nothing. `getmetatable` and `__metatable` SHALL answer as in Lua, and the metatable of the `gsttt` module SHALL be hidden the same way.
 
 #### Scenario: A finalizer or a weak mode is refused
 - **WHEN** the config attaches a metatable with `__gc`, or with `__mode`, to a table
 - **THEN** evaluation fails with a message that names the field and the position of the call
+
+#### Scenario: A weak mode written after setmetatable is not seen
+- **WHEN** the config gives a table a metatable, writes `__mode` into the metatable afterwards, adds an entry that nothing else holds and allocates until the collector has run many times, and builds a chain of twenty thousand keys the same way
+- **THEN** the entry is still in the table, and the evaluation ends in under a second
+
+#### Scenario: A method added to a class after its objects exist is found
+- **WHEN** the config makes an object with `setmetatable(object, Class)` where `Class.__index` is `Class`, and then adds a function to `Class` or to a class that `Class` inherits from
+- **THEN** the function is found through the object
+
+#### Scenario: getmetatable gives back the table that was set
+- **WHEN** the config calls `getmetatable` on an object made with `setmetatable(object, Class)`, on one whose metatable has a `__metatable` field, and on a table without a metatable
+- **THEN** it gets `Class`, the value of `__metatable` and `nil`
+
+#### Scenario: A protected metatable cannot be replaced or removed
+- **WHEN** the config calls `setmetatable` on a table whose metatable has a `__metatable` field, to replace the metatable or to remove it
+- **THEN** evaluation fails with `cannot change a protected metatable` and the position of the call, while a metatable without the field is replaced and removed as in Lua
+
+#### Scenario: A metamethod added after setmetatable has no effect
+- **WHEN** the config writes `__index`, `__len` or `__call` into a metatable after a table got it
+- **THEN** that table does not use them, and a table that gets the metatable afterwards does
+
+#### Scenario: The metatable of the gsttt module is out of reach
+- **WHEN** the config asks `getmetatable` for the metatable of the gsttt module, or calls `setmetatable` on the module
+- **THEN** `getmetatable` gives `false`, `setmetatable` fails with `cannot change a protected metatable`, and the module stays read-only
 
 ### Requirement: Iteration order
 `pairs` SHALL visit list keys in order and then the other keys sorted, so that evaluation is deterministic. `next` SHALL not be available, because it would show the order of the table itself.

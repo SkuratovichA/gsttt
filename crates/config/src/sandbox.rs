@@ -3,7 +3,10 @@
 //! The state has the pure libraries and the base functions that cannot reach outside it, a memory limit, an instruction limit, a time limit and a `pairs` with a fixed order, so the same files always evaluate to the same setup.
 //!
 //! The instruction limit counts Lua instructions, and a native call is one instruction however long it runs. Two things make that safe. The time limit is checked with the instruction count, so a loop of native calls that each cost a little still stops. And the native calls that could run for ever have no way to: the pattern matcher of `string` is not in the state (see `strings.rs`), and the functions that loop as long as an argument says refuse a long loop before they start (`rep` in `strings.rs`, the `table` functions in `tables.rs`).
+//!
+//! The collector is the other work that no limit interrupts: Lua runs finalizers and clears weak tables with the hook off. A config cannot ask for either, because the metatable a table gets from `setmetatable` is a copy without `__gc` and `__mode` that the config cannot write into (see `metatables.rs`).
 
+mod metatables;
 mod output;
 mod strings;
 mod tables;
@@ -62,27 +65,13 @@ const KEPT_GLOBALS: &[&str] = &[
     "xpcall",
 ];
 
-/// Wraps the base functions through which a script could outlast its limits. It runs once, before the hook is set.
-///
-/// - `pcall` and `xpcall` re-raise the instruction limit when they catch it, so a loop around `pcall` still ends.
-/// - `setmetatable` refuses `__gc` and `__mode`: Lua runs finalizers with hooks off, so a finalizer could loop for ever, and the collector clears weak tables with hooks off too, which takes for ever when their entries hold on to each other in the wrong order. The collector reads `__mode` at every cycle, so this stops a metatable that has one when it is attached and not one that is given it afterwards.
-const GUARDS: &str = r#"
+/// Wraps `pcall` and `xpcall`, through which a script could outlast its limits: they re-raise the instruction limit when they catch it, so a loop around `pcall` still ends. It runs once, before the hook is set.
+const GUARDS: &str = r"
 local check = ...
-local rawget, real_pcall, real_xpcall, real_setmetatable, type, error = rawget, pcall, xpcall, setmetatable, type, error
+local real_pcall, real_xpcall = pcall, xpcall
 function pcall(f, ...) return check(real_pcall(f, ...)) end
 function xpcall(f, handler, ...) return check(real_xpcall(f, handler, ...)) end
-function setmetatable(target, meta)
-  if type(meta) == "table" then
-    if rawget(meta, "__gc") ~= nil then
-      error("a metatable cannot have `__gc`: finalizers run outside the instruction limit", 2)
-    end
-    if rawget(meta, "__mode") ~= nil then
-      error("a metatable cannot have `__mode`: weak tables are cleared outside the instruction limit", 2)
-    end
-  end
-  return real_setmetatable(target, meta)
-end
-"#;
+";
 
 /// The limits of a state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -190,6 +179,8 @@ impl Sandbox {
             LuaOptions::default(),
         )?;
         let budget = Rc::new(Budget::new());
+        // Before the globals are pruned: the copy of a metatable needs the `next` that is dropped with them.
+        metatables::guard(&lua)?;
         keep_safe_globals(&lua)?;
         let tostring = strings::restrict(&lua)?;
         tables::bound(&lua)?;
@@ -1178,6 +1169,185 @@ mod tests {
         );
     }
 
+    /// `show` for results that may hold an error. An error that began in Rust is an object whose text begins with `runtime error: ` and ends in a traceback, and a table is told by its type because its text holds an address.
+    const SHOW_OUTCOME: &str = r##"
+        local function show(...)
+          local shown = {}
+          for index = 1, select("#", ...) do
+            local value = (select(index, ...))
+            local text = type(value) == "table" and "table" or tostring(value)
+            if text:sub(1, 15) == "runtime error: " then text = text:sub(16) end
+            local traceback = text:find("\nstack traceback:", 1, true)
+            if traceback then text = text:sub(1, traceback - 1) end
+            shown[#shown + 1] = text
+          end
+          return table.concat(shown, ",")
+        end
+    "##;
+
+    /// Calls of `setmetatable` and `getmetatable` that the state answers as Lua does, one line of output for each. What differs is a metatable that is written into after the call, and one with `__gc` or `__mode`; those have their own tests.
+    const METATABLE_CASES: &str = r##"
+        local out = {}
+        local function run(name, call) out[#out + 1] = name .. ":" .. show(pcall(call)) end
+        run("no arguments", function() return setmetatable() end)
+        run("nil target", function() return setmetatable(nil, {}) end)
+        run("number target", function() return setmetatable(1, {}) end)
+        run("string target", function() return setmetatable("text", {}) end)
+        run("boolean target", function() return setmetatable(true, {}) end)
+        run("function target", function() return setmetatable(print, {}) end)
+        run("no metatable", function() return setmetatable({}) end)
+        run("number metatable", function() return setmetatable({}, 1) end)
+        run("string metatable", function() return setmetatable({}, "text") end)
+        run("true metatable", function() return setmetatable({}, true) end)
+        run("false metatable", function() return setmetatable({}, false) end)
+        run("function metatable", function() return setmetatable({}, print) end)
+        run("extra arguments", function() return type(setmetatable({}, nil, 1, 2)), type(setmetatable({}, {}, "extra")) end)
+        run("protected by a string", function() local t = setmetatable({}, { __metatable = "sealed" }) return setmetatable(t, {}) end)
+        run("protected by false", function() local t = setmetatable({}, { __metatable = false }) return setmetatable(t, {}) end)
+        run("protected by zero", function() local t = setmetatable({}, { __metatable = 0 }) return setmetatable(t, nil) end)
+        run("protected by a table", function() local t = setmetatable({}, { __metatable = {} }) return setmetatable(t, {}) end)
+        run("protected by itself", function() local mt = { __metatable = true } local t = setmetatable({}, mt) return setmetatable(t, mt) end)
+        run("not protected", function() local t = setmetatable({}, {}) return type(setmetatable(t, {})), type(setmetatable(t, nil)), type(setmetatable(t, {})) end)
+        run("what getmetatable gives", function()
+          local mt, hidden = {}, {}
+          return getmetatable(setmetatable({}, mt)) == mt,
+            getmetatable(setmetatable({}, { __metatable = "sealed" })),
+            getmetatable(setmetatable({}, { __metatable = false })),
+            getmetatable(setmetatable({}, { __metatable = hidden })) == hidden,
+            getmetatable({}), type(getmetatable("")), getmetatable(1)
+        end)
+        run("what setmetatable gives", function()
+          local t = {}
+          return setmetatable(t, {}) == t, setmetatable(t, nil) == t, select("#", setmetatable({}, {}))
+        end)
+        run("same class", function()
+          local Class = {}
+          local a, b = setmetatable({}, Class), setmetatable({}, Class)
+          return getmetatable(a) == getmetatable(b), rawequal(getmetatable(a), Class)
+        end)
+        run("replace and remove", function()
+          local t = setmetatable({}, { __index = { v = 1 } })
+          local first = t.v
+          setmetatable(t, { __index = { v = 2 } })
+          local second = t.v
+          setmetatable(t, nil)
+          return first, second, t.v
+        end)
+        run("class", function()
+          local Class = {}
+          Class.__index = Class
+          function Class.get(self) return self.value end
+          local o = setmetatable({ value = 5 }, Class)
+          function Class.late() return "late" end
+          return o:get(), o.late(), o.nothing
+        end)
+        run("inheritance", function()
+          local Base = {}
+          Base.__index = Base
+          function Base.hello() return "base" end
+          local Derived = setmetatable({}, Base)
+          Derived.__index = Derived
+          local o = setmetatable({}, Derived)
+          function Base.later() return "later" end
+          return o.hello(), o.later(), getmetatable(o) == Derived, getmetatable(Derived) == Base
+        end)
+        run("shared tables", function()
+          local mt = { __index = { v = 1 } }
+          local a, b = setmetatable({}, mt), setmetatable({}, mt)
+          mt.__index.v = 2
+          return a.v, b.v
+        end)
+        run("operators", function()
+          local mt = {
+            __add = function() return "add" end,
+            __sub = function() return "sub" end,
+            __concat = function() return "concat" end,
+            __len = function() return 7 end,
+            __unm = function() return "unm" end,
+            __eq = function() return true end,
+            __lt = function() return true end,
+            __le = function() return false end,
+            __call = function(self, x) return "call " .. tostring(x) end,
+            __tostring = function() return "custom" end,
+            __index = function(t, k) return "index " .. k end,
+            __newindex = function(t, k, v) rawset(t, k, v * 2) end,
+          }
+          local a, b = setmetatable({}, mt), setmetatable({}, mt)
+          a.stored = 4
+          return a + b, a - 1, a .. "x", "x" .. a, #a, -a, a == b, a < b, a <= b, a(5), tostring(a), a.missing, a.stored
+        end)
+        run("close", function()
+          local closed = false
+          do local c <close> = setmetatable({}, { __close = function() closed = true end }) end
+          return closed
+        end)
+        return table.concat(out, "\n")
+    "##;
+
+    #[test]
+    fn setmetatable_and_getmetatable_agree_with_the_originals() {
+        let source = [SHOW_OUTCOME, METATABLE_CASES].concat();
+        let original = Lua::new();
+        let expected = original
+            .load(&source)
+            .set_name("@t.lua")
+            .eval::<String>()
+            .unwrap();
+        let sandbox = Sandbox::new().unwrap();
+        assert_eq!(eval(&sandbox, &source).unwrap(), expected);
+    }
+
+    #[test]
+    fn copying_a_metatable_is_counted_by_the_instruction_limit() {
+        // The copy is a loop in Lua, so a metatable of twenty thousand fields costs twenty thousand loops a call. A native copy would cost one instruction, and a thousand calls would run for seconds inside one look of the hook.
+        let sandbox = small(2_000_000, 64);
+        let started = Instant::now();
+        let message = eval(
+            &sandbox,
+            r#"
+            local meta = {}
+            for i = 1, 20000 do meta["field" .. i] = i end
+            for _ = 1, 1000 do setmetatable({}, meta) end
+            "#,
+        )
+        .unwrap_err();
+        assert!(message.contains("instruction limit"), "{message}");
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn no_table_of_the_state_has_a_metatable_the_config_can_reach() {
+        // A walk over everything the config can name. The metatable of strings is out of the walk: no table has it, so Lua never reads `__mode` or `__gc` from it.
+        let sandbox = Sandbox::new().unwrap();
+        let walked = eval(
+            &sandbox,
+            r#"
+            local names, queue, found = { [_G] = "_G" }, { _G }, {}
+            local index = 1
+            while queue[index] do
+              local current = queue[index]
+              index = index + 1
+              if type(getmetatable(current)) == "table" then found[#found + 1] = names[current] end
+              for key, value in pairs(current) do
+                if type(value) == "table" and not names[value] then
+                  names[value] = names[current] .. "." .. tostring(key)
+                  queue[#queue + 1] = value
+                end
+              end
+            end
+            return #queue .. "|" .. table.concat(found, ",")
+            "#,
+        )
+        .unwrap();
+        let (visited, reachable) = walked.split_once('|').unwrap();
+        assert!(visited.parse::<usize>().unwrap() >= 5, "{walked}");
+        assert_eq!(reachable, "", "{walked}");
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(48))]
 
@@ -1193,20 +1363,8 @@ mod tests {
         ) {
             let list = items.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
             let source = format!(
-                r##"
-                local function show(...)
-                  local shown = {{}}
-                  for index = 1, select("#", ...) do
-                    local value = (select(index, ...))
-                    local text = type(value) == "table" and "table" or tostring(value)
-                    -- An error that began in Rust is an object whose text begins with these words and ends in a traceback.
-                    if text:sub(1, 15) == "runtime error: " then text = text:sub(16) end
-                    local traceback = text:find("\nstack traceback:", 1, true)
-                    if traceback then text = text:sub(1, traceback - 1) end
-                    shown[#shown + 1] = text
-                  end
-                  return table.concat(shown, ",")
-                end
+                r#"
+                {SHOW_OUTCOME}
                 local out = {{}}
                 local function run(name, call)
                   local subject = {{ {list} }}
@@ -1224,7 +1382,7 @@ mod tests {
                 run("concat_all", function(list) return (table.concat(list, ",")) end)
                 run("rep", function() return (string.rep("ab", {count}, ",")) end)
                 run("rep_nothing", function() return (string.rep("", {count}, "")) end)
-                return table.concat(out, ";")"##
+                return table.concat(out, ";")"#
             );
             let original = Lua::new();
             let expected = original.load(&source).set_name("@t.lua").eval::<String>().unwrap();

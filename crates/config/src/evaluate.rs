@@ -148,6 +148,8 @@ fn gsttt_module(lua: &Lua, state: &Rc<Evaluation>) -> mlua::Result<Table> {
             },
         )?,
     )?;
+    // Hidden from `getmetatable`: the config must not reach the table that Lua consults, to write a weak mode or a finalizer into it.
+    strict.raw_set("__metatable", false)?;
     module.set_metatable(Some(strict))?;
     Ok(module)
 }

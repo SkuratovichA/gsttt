@@ -357,6 +357,179 @@ fn a_finalizer_or_a_weak_mode_is_refused() {
         .unwrap();
 }
 
+/// Lets the collector run many cycles. The config has no `collectgarbage` to ask for one, so it allocates until one runs.
+const CHURN: &str =
+    "local function churn() for _ = 1, 40 do local _ = string.rep(\"x\", 2 ^ 20) end end\n";
+
+/// Twenty thousand tables chained through the keys of one table, in an order that makes the collector walk the chain again for every link it finds out of turn: minutes of work if the table is weak, none if it is not. The weak mode is written after `setmetatable`.
+const KEY_CHAIN: &str = r#"
+local count = 20000
+local nodes = {}
+for i = 1, count do nodes[i] = {} end
+local seed = 12345
+for i = count, 2, -1 do
+  seed = (seed * 1103515245 + 12345) % 2147483648
+  local j = seed % i + 1
+  nodes[i], nodes[j] = nodes[j], nodes[i]
+end
+local meta = {}
+local chain = setmetatable({}, meta)
+for i = 1, count - 1 do chain[nodes[i]] = nodes[i + 1] end
+local head = nodes[1]
+nodes = nil
+meta.__mode = "k"
+churn()
+"#;
+
+#[gsttt_scenario::scenario("config", "A weak mode written after setmetatable is not seen")]
+#[test]
+fn a_weak_mode_written_after_setmetatable_is_not_seen() {
+    // The table stays strong: the value that nothing else holds is still in it after the collector has run many times.
+    let strong = [
+        CHURN,
+        r#"
+local meta = {}
+local held = setmetatable({}, meta)
+meta.__mode = "v"
+held.entry = {}
+churn()
+assert(held.entry ~= nil, "the entry was collected")
+"#,
+    ]
+    .concat();
+    Tree::with_init(&strong).evaluate().unwrap();
+    // A chain of such keys, which the collector needs minutes to clear if it believes the mode, is left alone.
+    let started = Instant::now();
+    Tree::with_init(&[CHURN, KEY_CHAIN].concat())
+        .evaluate()
+        .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "took {:?}",
+        started.elapsed()
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A method added to a class after its objects exist is found")]
+#[test]
+fn a_method_added_to_a_class_after_its_objects_exist_is_found() {
+    Tree::with_init(
+        r#"
+local Class = {}
+Class.__index = Class
+local object = setmetatable({}, Class)
+function Class.late() return "found" end
+assert(object.late() == "found")
+local Derived = setmetatable({}, Class)
+Derived.__index = Derived
+local child = setmetatable({}, Derived)
+function Class.later() return "inherited" end
+assert(child.later() == "inherited")
+"#,
+    )
+    .evaluate()
+    .unwrap();
+}
+
+#[gsttt_scenario::scenario("config", "getmetatable gives back the table that was set")]
+#[test]
+fn getmetatable_gives_back_the_table_that_was_set() {
+    Tree::with_init(
+        r#"
+local Class = {}
+Class.__index = Class
+local object = setmetatable({}, Class)
+assert(getmetatable(object) == Class)
+assert(getmetatable(setmetatable({}, Class)) == getmetatable(object))
+assert(getmetatable(setmetatable({}, { __metatable = "sealed" })) == "sealed")
+assert(getmetatable(setmetatable({}, { __metatable = false })) == false)
+assert(getmetatable({}) == nil)
+setmetatable(object, nil)
+assert(getmetatable(object) == nil)
+"#,
+    )
+    .evaluate()
+    .unwrap();
+}
+
+#[gsttt_scenario::scenario("config", "A protected metatable cannot be replaced or removed")]
+#[test]
+fn a_protected_metatable_cannot_be_replaced_or_removed() {
+    for (sealed, call) in [
+        ("\"sealed\"", "setmetatable(object, {})"),
+        ("\"sealed\"", "setmetatable(object, nil)"),
+        (
+            "\"sealed\"",
+            "setmetatable(object, { __metatable = \"other\" })",
+        ),
+        ("false", "setmetatable(object, {})"),
+    ] {
+        let message = failure(&format!(
+            "local object = setmetatable({{}}, {{ __metatable = {sealed} }})\n{call}\n"
+        ));
+        assert_eq!(
+            message, ".gsttt/init.lua:2: cannot change a protected metatable",
+            "{sealed}: {call}"
+        );
+    }
+    // A metatable without the field is replaced and removed as in Lua.
+    Tree::with_init(
+        r#"
+local object = setmetatable({}, { __index = { kind = "first" } })
+setmetatable(object, { __index = { kind = "second" } })
+assert(object.kind == "second")
+setmetatable(object, nil)
+assert(object.kind == nil)
+"#,
+    )
+    .evaluate()
+    .unwrap();
+}
+
+#[gsttt_scenario::scenario("config", "A metamethod added after setmetatable has no effect")]
+#[test]
+fn a_metamethod_added_after_setmetatable_has_no_effect() {
+    Tree::with_init(
+        r#"
+local meta = {}
+local object = setmetatable({}, meta)
+meta.__index = function() return "late" end
+meta.__len = function() return 7 end
+meta.__call = function() return "called" end
+assert(object.missing == nil)
+assert(#object == 0)
+assert(not pcall(object))
+-- A table that gets the metatable after the field was added has the field.
+local later = setmetatable({}, meta)
+assert(later.missing == "late" and #later == 7 and later() == "called")
+"#,
+    )
+    .evaluate()
+    .unwrap();
+}
+
+#[gsttt_scenario::scenario("config", "The metatable of the gsttt module is out of reach")]
+#[test]
+fn the_metatable_of_the_gsttt_module_is_out_of_reach() {
+    Tree::with_init(
+        r#"
+local g = require("gsttt")
+assert(getmetatable(g) == false)
+assert(not pcall(setmetatable, g, {}))
+assert(not pcall(setmetatable, g, nil))
+-- The module is still read-only.
+assert(not pcall(function() g.setup_again = true end))
+"#,
+    )
+    .evaluate()
+    .unwrap();
+    let message = failure("local g = require(\"gsttt\")\nsetmetatable(g, nil)\n");
+    assert_eq!(
+        message,
+        ".gsttt/init.lua:2: cannot change a protected metatable"
+    );
+}
+
 #[gsttt_scenario::scenario("config", "A long error message is cut")]
 #[test]
 fn a_long_error_message_is_cut() {
