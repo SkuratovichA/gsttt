@@ -1,0 +1,14 @@
+{
+  "name": "gsttt",
+  "owner": {
+    "name": "SkuratovichA"
+  },
+  "description": "gsttt answers what a change affects across files, packages, languages and the contracts between services.",
+  "plugins": [
+    {
+      "name": "gsttt",
+      "source": "./plugin",
+      "description": "The gsttt MCP server, a skill that says when to use it, and a session-start hook that tells you when the gsttt binary is missing."
+    }
+  ]
+}

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::support::{printed, write, xtask};
+use crate::support::{printed, workspace_root, write, xtask};
 
 const PINNED: &str = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
 
@@ -153,4 +153,11 @@ fn a_repository_without_a_marketplace_fails_the_check() {
         problems.contains(".claude-plugin/marketplace.json: the file is missing"),
         "{problems}"
     );
+}
+
+#[test]
+fn this_repository_passes_its_own_check() {
+    let output = xtask(&workspace_root(), &["check"]);
+
+    assert!(output.status.success(), "{}", printed(&output));
 }

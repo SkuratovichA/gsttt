@@ -14,7 +14,7 @@
 
 ## 3. Plugin
 
-- [ ] 3.1 Marketplace, plugin manifest, MCP server, session-start hook, skill, and the wrapper for a missing binary
+- [x] 3.1 Marketplace, plugin manifest, MCP server, session-start hook, skill, and the wrapper for a missing binary
 
 ## 4. Proof
 

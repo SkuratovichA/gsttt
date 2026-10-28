@@ -10,5 +10,6 @@ mod ci;
 mod install;
 mod notes;
 mod package;
+mod plugin;
 mod support;
 mod version;
