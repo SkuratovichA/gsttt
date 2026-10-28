@@ -28,6 +28,7 @@ pub trait Terminal {
 }
 ```
 
+- `Outcome` covers the exit codes 0 (`Answered`), 1 (`Failed`) and 2 (`Usage`). The exit code 101 is no `Outcome`: `panics::guard` runs the command and returns the exit code itself, 101 when a panic reached it.
 - `completions <shell>` is `clap_complete::generate` over the same `Cli`, for the shells `clap_complete::Shell` lists.
 - Numbers in text are grouped by thousands with `query::render::thousands` (`crates/core/src/query/render.rs:300` on the queries branch), made public for this. The CLI does not get a second formatter.
 
@@ -136,7 +137,7 @@ the external connector `kotlin` (gsttt-kotlin --stdio) is not trusted in this re
 
 ### Panics
 
-- The hook records the message and the location in a thread-local and prints nothing.
+- The hook records the first message and location in a process-wide `OnceLock` and prints nothing. A thread-local would not do: a panic on a rayon worker is handed to the waiting thread with `resume_unwind`, which does not run the hook again, so only the worker's own thread-local would hold the record.
 - The engine's `catch_unwind` around connector calls turns a panic into a coverage line, and the record is dropped.
 - `main` runs the command inside `catch_unwind` too. When a panic reaches it, `main` prints one line on stderr and exits 101:
 
