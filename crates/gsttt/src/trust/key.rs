@@ -1,11 +1,11 @@
 //! The key a person's trust in an external connector is recorded under.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::io;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use gsttt_core::engine::keys::canonical_json;
+use gsttt_core::hex;
 use gsttt_core::setup::ExternalSetup;
 use sha2::{Digest, Sha256};
 
@@ -69,12 +69,7 @@ pub fn key(root: &Utf8Path, external: &ExternalSetup) -> Result<String, KeyError
         feed(&mut hasher, path.as_str().as_bytes());
         feed(&mut hasher, &bytes);
     }
-    let mut hex = String::with_capacity(64);
-    for byte in hasher.finalize() {
-        // Writing to a String cannot fail.
-        let _ = write!(hex, "{byte:02x}");
-    }
-    Ok(hex)
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// The regular file that `argument` names when read against `root`, as its path from `root` and its resolved path.
@@ -124,13 +119,6 @@ mod tests {
             base.extend(changes.clone());
         }
         serde_json::from_value(setup).unwrap()
-    }
-
-    fn hex(bytes: impl IntoIterator<Item = u8>) -> String {
-        bytes.into_iter().fold(String::new(), |mut hex, byte| {
-            write!(hex, "{byte:02x}").unwrap();
-            hex
-        })
     }
 
     #[test]
@@ -198,7 +186,10 @@ mod tests {
             expected.update(part);
         }
 
-        assert_eq!(key(&root, &setup).unwrap(), hex(expected.finalize()));
+        assert_eq!(
+            key(&root, &setup).unwrap(),
+            hex::encode(expected.finalize())
+        );
     }
 
     #[test]

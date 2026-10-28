@@ -15,6 +15,7 @@ pub mod coverage;
 pub mod engine;
 pub mod fact;
 pub mod graph;
+pub mod hex;
 pub mod ids;
 pub mod index;
 pub mod path;
