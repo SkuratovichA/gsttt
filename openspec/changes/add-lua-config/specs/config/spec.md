@@ -203,11 +203,15 @@ The lines an external's process writes to its standard error SHALL go to the log
 - **THEN** the log holds three warnings naming the connector: the first cut to 4 KiB and ending in `…`, the second without its control characters, the third as it was written
 
 ### Requirement: External failures
-A process that exits, answers out of turn, sends a line that does not parse or takes longer than its timeout for one request SHALL fail every file it has not answered, as a panic naming the connector, and the run SHALL go on. The timeout SHALL be 10 seconds.
+A process that exits, answers out of turn, sends a line that does not parse or takes longer than its timeout for one request SHALL fail every file it has not answered, as a panic naming the connector, and the run SHALL go on. An import of a file parsed before the stop SHALL be unresolved with the reason `unsupported` and the failure message as its detail. The timeout SHALL be 10 seconds.
 
 #### Scenario: A hung process fails its files and nothing else
 - **WHEN** an external's process does not answer the `parse` of `src/B.kt` within the timeout
 - **THEN** `src/B.kt` and every later file of that external fail as panics naming it, and the other connectors' files are indexed
+
+#### Scenario: An import resolved after a stop is unresolved
+- **WHEN** an external's process exits while it parses `src/B.kt`, after it parsed `src/A.kt` with an import
+- **THEN** the import of `src/A.kt` is unresolved with the reason `unsupported` and the message that failed `src/B.kt` as its detail, and no `resolve` reaches the process
 
 #### Scenario: A resolution of another import is out of turn
 - **WHEN** an external's process answers the `resolve` of one import with a `resolution` that repeats another file or another import

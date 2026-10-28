@@ -34,3 +34,4 @@
 - [x] 5.10 A `resolution` repeats the `from` and the `import` it answers, and one that answers another import is out of turn
 - [x] 5.11 The name of an external is checked by one function, in the config and where the connector is built, and is at most 64 characters
 - [x] 5.12 Tests for the gaps the review named: the line limit, a pipe that closes mid-line, threads that share one process and a fingerprint that follows module and external options
+- [x] 5.13 An import of a file parsed before the process stopped is unresolved with the reason `unsupported` and the failure message as its detail

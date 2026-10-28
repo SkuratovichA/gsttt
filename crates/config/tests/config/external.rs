@@ -708,6 +708,23 @@ fn a_process_that_exits_fails_the_files_it_did_not_answer() {
     );
 }
 
+#[gsttt_scenario::scenario("config", "An import resolved after a stop is unresolved")]
+#[test]
+fn an_import_resolved_after_the_process_stopped_is_unresolved_with_the_failure() {
+    // The process leaves while it parses `src/B.kt`, after it parsed `src/A.kt`, whose import is resolved once every file is parsed.
+    let (run, b, _) = fails_on_b("exit 3");
+    assert_eq!(
+        run.targets("src/A.kt"),
+        [json!({ "unresolved": { "reason": "unsupported", "detail": b } })]
+    );
+    assert!(
+        !run.requests()
+            .iter()
+            .any(|line| line.contains(r#""type":"resolve""#)),
+        "nothing is sent to a process that stopped"
+    );
+}
+
 #[test]
 fn a_process_that_answers_out_of_turn_fails_the_files_it_did_not_answer() {
     let wrong_path = say(&facts_of("src/Z.kt", &FileFacts::default()));
