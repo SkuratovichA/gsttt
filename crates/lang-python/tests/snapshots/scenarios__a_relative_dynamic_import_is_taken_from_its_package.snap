@@ -1,0 +1,88 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"app/named.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "importlib",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": "builtin"
+    },
+    {
+      "spec": "importlib",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "import_module"
+      ],
+      "to": "builtin"
+    },
+    {
+      "spec": "p.m",
+      "kind": "dynamic",
+      "line": 4,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "files": [
+          "p/__init__.py",
+          "p/m.py"
+        ]
+      }
+    },
+    {
+      "spec": "p.m",
+      "kind": "dynamic",
+      "line": 5,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "files": [
+          "p/__init__.py",
+          "p/m.py"
+        ]
+      }
+    },
+    {
+      "spec": "p.q.n",
+      "kind": "dynamic",
+      "line": 6,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "files": [
+          "p/__init__.py",
+          "p/q/__init__.py",
+          "p/q/n.py"
+        ]
+      }
+    },
+    {
+      "spec": "p.m",
+      "kind": "dynamic",
+      "line": 7,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "files": [
+          "p/__init__.py",
+          "p/m.py"
+        ]
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "app/named.py",
+  "project": "python ."
+}
