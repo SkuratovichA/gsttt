@@ -60,7 +60,7 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 - **THEN** the answer lists `src/old.ts` as deleted with `src/a.ts:4` importing `./old` as a possible miss
 
 #### Scenario: An unknown path is named
-- **WHEN** impact is asked about `notes.txt`, which no connector read
+- **WHEN** impact is asked about `notes.txt`, which no connector owns
 - **THEN** the answer says that `notes.txt` is not in the index
 
 ### Requirement: Neighbours
@@ -74,6 +74,17 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 - **WHEN** `b.ts` imports `a.ts` and `c.ts` re-exports everything from it
 - **THEN** dependents of `a.ts` lists `b.ts` with a static import and `c.ts` with a re-export of everything
 
+### Requirement: Dependencies of a file that was not read cleanly
+`dependencies` of a file whose connector failed to parse it SHALL say that the file could not be parsed and so its imports are unknown, with the failure. For a file the connector read past syntax errors it SHALL say that imports may be missing. It SHALL NOT say of either that the file imports nothing.
+
+#### Scenario: A file that failed to parse is not one that imports nothing
+- **WHEN** `ts` owns `src/broken.ts`, its parse failed with a syntax error at line 3, and its dependencies are asked
+- **THEN** the answer says that `src/broken.ts` could not be parsed, so its imports are unknown, names the syntax error, and does not say that the file imports nothing
+
+#### Scenario: A file read past syntax errors says its imports may be missing
+- **WHEN** `ts` read `src/rough.ts` past 2 syntax errors, the first at line 7, and found no imports in it
+- **THEN** the dependencies of `src/rough.ts` say that it was read past 2 syntax errors, the first at line 7, so imports may be missing, and do not say that it imports nothing
+
 ### Requirement: Paths between files
 `path` SHALL return a shortest chain from one file to another, where a step is an import, a hop from a file that calls a contract to a file that serves or declares it, or a hop from a file that serves a contract to a file that declares it. HTTP hops SHALL follow keys that meet. When there is no chain, the answer SHALL say so and how many files are reachable from the first file.
 
@@ -85,8 +96,27 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 - **WHEN** a path is asked between two files with no chain between them
 - **THEN** the answer says there is none and how many files the first one reaches
 
+### Requirement: Ties between equally near ways
+When several ways reach a file at the same distance, `impact` SHALL give as its reason the way from the file with the smallest path, and `path` SHALL reach each file of its chain from the file with the smallest path one hop nearer. From one file an import SHALL come before a contract, contracts SHALL go in key order, and a file with several sites in one contract SHALL give the first by line of those the walk reaches.
+
+#### Scenario: The reason comes from the file with the smallest path
+- **WHEN** `w.ts` imports `a.ts` and `b.ts`, `z.ts` imports `a.ts`, `y.ts` imports `b.ts`, `x.ts` imports `y.ts` and `z.ts`, and `a.ts` and `b.ts` change, asked in either order
+- **THEN** impact gives `imports a.ts` as the reason for `w.ts` and `imports y.ts` as the reason for `x.ts`
+
+#### Scenario: From one file an import comes before a contract
+- **WHEN** `lib.ts` serves `http GET /x`, `x.ts` imports `lib.ts` and calls `http GET /x`, and `lib.ts` changes
+- **THEN** impact gives `imports lib.ts` as the reason for `x.ts`
+
+#### Scenario: A file's first site by line gives the reason
+- **WHEN** `schema.yaml` declares `http GET /x`, `early-caller.ts` serves it at line 9 and calls it at line 3, and `schema.yaml` changes
+- **THEN** impact gives `calls http GET /x` as the reason for `early-caller.ts`
+
+#### Scenario: A chain comes from the file with the smallest path
+- **WHEN** `start.ts` imports `a.ts` and `b.ts`, which both import `goal.ts`
+- **THEN** the path from `start.ts` to `goal.ts` is `start.ts`, `a.ts`, `goal.ts`
+
 ### Requirement: Contract lookup
-`contract` SHALL take a canonical key and list its sites grouped by role, and for an HTTP key also the sites of every key that meets it, each with its own key. Text that is not a canonical key SHALL be searched case-insensitively in every key, and the answer SHALL list the matching keys with the number of sites of each role.
+`contract` SHALL take a canonical key and list its sites grouped by role, and for an HTTP key also the sites of every key that meets it, each with its own key. Text that is not a canonical key SHALL be searched case-insensitively in every key, and the answer SHALL list the matching keys with the number of sites of each role. A blank query SHALL be an error that says what to ask for, not an answer.
 
 #### Scenario: A route lists its callers
 - **WHEN** `http GET /bookings/{}` is looked up, one file serves that key and another calls `http GET /bookings/me`
@@ -96,12 +126,25 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 - **WHEN** `booking` is looked up and the index has `table bookings`, `graphql Query.bookings` and `env API_URL`
 - **THEN** the answer lists `table bookings` and `graphql Query.bookings` with their site counts and not `env API_URL`
 
+#### Scenario: A blank query is an error
+- **WHEN** `contract` is asked for empty text or only whitespace, and the index holds contracts
+- **THEN** it returns an error that says to give a contract key or part of one
+- **AND** it does not list the contracts of the index
+
 ### Requirement: HTTP matching
-Two HTTP keys SHALL meet when their methods are equal or either is `*`, and their paths, after any prefix from the index's `http_prefixes` is removed from the start of either, have the same number of segments, each pair equal or `{}` on either side.
+Two HTTP keys SHALL meet when their methods are equal or either is `*`, and their paths have the same number of segments, each pair equal or `{}` on either side, with or without one prefix from the index's `http_prefixes` removed from the start of one of the two paths. A prefix SHALL NOT be removed from both paths, and SHALL NOT be removed from a path that it is all of.
 
 #### Scenario: A prefix is stripped before matching
 - **WHEN** `http_prefixes` is `["/api"]` and `http GET /api/bookings/me` is compared with `http GET /bookings/{}`
 - **THEN** they meet
+
+#### Scenario: A prefix is removed from one path only
+- **WHEN** `http_prefixes` is `["/api", "/v1"]` and `http GET /api/users` is compared with `http GET /v1/users`
+- **THEN** they do not meet
+
+#### Scenario: A prefix alone is no path
+- **WHEN** `http_prefixes` is `["/api"]` and `http GET /api` is compared with `http GET /`
+- **THEN** they do not meet
 
 #### Scenario: Methods must agree
 - **WHEN** `http POST /bookings` is compared with `http GET /bookings`, and `http * /bookings` with each of them
@@ -116,11 +159,16 @@ Two HTTP keys SHALL meet when their methods are equal or either is `*`, and thei
 - **THEN** both comparisons give the same result
 
 ### Requirement: Coverage answer
-`coverage` SHALL list, per connector, its projects, its files by parse status, the share of imports resolved, the unresolved imports and unread sites by reason with the first place of each, and what it provides with its blind spots, followed by the unclaimed files by language and the files skipped before any connector read them.
+`coverage` SHALL list, per connector, its projects, its files by parse status (read cleanly, read past syntax errors, failed, skipped), the share of imports resolved, the unresolved imports and unread sites by reason with the first place of each, and what it provides with its blind spots, followed by the unclaimed files by language and the files skipped before any connector read them.
 
 #### Scenario: Coverage names failures and blind spots
 - **WHEN** an index has a TypeScript file that failed to parse, an unresolved import and a `fetch` with a computed URL
 - **THEN** the coverage answer names the failed file with its failure, the import's reason with its first place and the unread site's reason with its first place
+
+#### Scenario: A skipped file is owned and not read
+- **WHEN** `ts` owns four files, of which one is over the size limit and one is not UTF-8, so that the engine lists both as skipped
+- **THEN** the coverage answer gives for `ts` 2 files read cleanly, 0 read past syntax errors, 0 failed and 2 skipped
+- **AND** its coverage line says `ts read 2 of 4 files`
 
 ### Requirement: Status answer
 `status` SHALL say which gsttt version built the index, at which commit, how many files it holds, how many were dirty, how many were parsed and how many reused, how long each phase took, and how fresh it is.
@@ -130,7 +178,7 @@ Two HTTP keys SHALL meet when their methods are equal or either is `*`, and thei
 - **THEN** the answer says that 2 files changed and 1 was added since the index was built
 
 ### Requirement: Answer text
-Every answer SHALL name files by their path from the root and sites as `path:line`, SHALL stop each list at 30 entries with a line `… N more` unless every entry is asked for, SHALL say what was searched when it finds nothing, and SHALL end with one line giving, for each connector whose files the answer involves, the files read out of the files it owns and the share of imports resolved, followed by one line of freshness.
+Every answer SHALL name files by their path from the root and sites as `path:line`, SHALL stop each list at 30 entries with a line `… N more` unless every entry is asked for, SHALL say what was searched when it finds nothing, and SHALL end with one line giving, for each connector whose files the answer involves, the files read out of the files it owns and the share of imports resolved as a whole percentage rounded down, followed by one line of freshness.
 
 #### Scenario: Long lists are cut with a count
 - **WHEN** a file has 45 dependents
@@ -146,6 +194,10 @@ Every answer SHALL name files by their path from the root and sites as `path:lin
 - **WHEN** an answer is rendered from a fresh index built at commit `a1b2c3d4e5` with 3 dirty files
 - **THEN** its last line is `fresh at a1b2c3d, 3 files dirty`
 - **AND** the line before it gives the coverage of the connectors involved
+
+#### Scenario: The resolved share is counted and rounded down
+- **WHEN** an answer is rendered from an index where a connector found 100 imports and 29 of them resolved
+- **THEN** the coverage line says `29% of imports resolved`
 
 #### Scenario: A stale footer says so
 - **WHEN** an answer is rendered from an index with freshness stale by two changed files

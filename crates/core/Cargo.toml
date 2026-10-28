@@ -12,15 +12,17 @@ publish.workspace = true
 camino = { workspace = true, features = ["serde1"] }
 fixedbitset.workspace = true
 foldhash.workspace = true
-gix = { workspace = true, features = ["sha1", "status", "dirwalk", "revision", "blob-diff", "parallel"] }
+gix = { workspace = true, features = ["sha1", "dirwalk", "revision", "parallel"] }
 globset.workspace = true
 ignore.workspace = true
+jiff.workspace = true
 memchr.workspace = true
 rayon.workspace = true
 rkyv.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_path_to_error.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

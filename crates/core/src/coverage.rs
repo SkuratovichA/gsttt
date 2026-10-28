@@ -33,6 +33,10 @@ pub struct Coverage {
     pub unclaimed: Vec<Unclaimed>,
     /// Files left out before any connector saw them: over the size limit, not UTF-8, unreadable.
     pub skipped: Vec<FailedFile>,
+    /// Connector calls that failed outside the parse of one file (opening a project, preparing, linking), one line
+    /// each. The run went on without what they would have added.
+    #[serde(default)]
+    pub problems: Vec<String>,
 }
 
 /// What one connector read.
@@ -50,7 +54,7 @@ pub struct Coverage {
 )]
 pub struct ConnectorCoverage {
     pub connector: String,
-    /// The roots of its projects, `""` for the repository root.
+    /// The roots of its projects, `.` for the repository root, the way the engine writes a project root to people.
     pub projects: Vec<String>,
     pub files: u32,
     /// Files read past syntax errors.
@@ -234,8 +238,10 @@ impl Coverage {
         }
     }
 
-    /// Puts every list in the order answers show it.
+    /// Puts every list in the order answers show it. Run it again after adding a line to `problems`.
     pub fn finish(&mut self) {
+        self.problems.sort();
+        self.problems.dedup();
         self.unclaimed.sort_unstable_by(|a, b| {
             b.files
                 .cmp(&a.files)
