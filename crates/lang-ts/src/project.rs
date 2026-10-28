@@ -3,11 +3,10 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use gsttt_core::connector::{LinkInput, LinkedFact, Parsed, Project, Provide, SourceFile};
+use gsttt_core::connector::{LinkInput, LinkedFact, Parsed, Project, Provide, SourceFile, salt_of};
 use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseFailure, Resolution};
 use gsttt_core::rules::Pack;
 use gsttt_core::{RepoPath, RepoView};
-use xxhash_rust::xxh3::Xxh3;
 
 use crate::config::extends_of;
 use crate::extra::TsExtra;
@@ -56,7 +55,7 @@ impl TsProject {
                 Self {
                     root: root.clone(),
                     shared: Arc::clone(&shared),
-                    salt: salt_of(&active),
+                    salt: salt_for(&active),
                     packs: active,
                 }
             })
@@ -64,15 +63,14 @@ impl TsProject {
     }
 }
 
-/// A hash of the reader version and the active packs, so a pack change reads every file again.
-fn salt_of(packs: &[Pack]) -> u64 {
-    let mut hasher = Xxh3::new();
-    hasher.update(&READER_VERSION.to_le_bytes());
-    for pack in packs {
-        hasher.update(format!("{pack:?}").as_bytes());
-        hasher.update(&[0]);
-    }
-    hasher.digest()
+/// The salt of a project: the reader version and the active packs, so a pack change reads every file again.
+fn salt_for(packs: &[Pack]) -> u64 {
+    let version = READER_VERSION.to_string();
+    let described: Vec<String> = packs.iter().map(|pack| format!("{pack:?}")).collect();
+    let parts: Vec<&str> = std::iter::once(version.as_str())
+        .chain(described.iter().map(String::as_str))
+        .collect();
+    salt_of(&parts)
 }
 
 impl Project for TsProject {
@@ -190,12 +188,12 @@ mod tests {
 
     #[test]
     fn the_salt_follows_the_packs() {
-        assert_eq!(salt_of(&[pack("a")]), salt_of(&[pack("a")]));
-        assert_ne!(salt_of(&[]), salt_of(&[pack("a")]));
-        assert_ne!(salt_of(&[pack("a")]), salt_of(&[pack("b")]));
+        assert_eq!(salt_for(&[pack("a")]), salt_for(&[pack("a")]));
+        assert_ne!(salt_for(&[]), salt_for(&[pack("a")]));
+        assert_ne!(salt_for(&[pack("a")]), salt_for(&[pack("b")]));
         assert_ne!(
-            salt_of(&[pack("a"), pack("b")]),
-            salt_of(&[pack("b"), pack("a")])
+            salt_for(&[pack("a"), pack("b")]),
+            salt_for(&[pack("b"), pack("a")])
         );
     }
 }

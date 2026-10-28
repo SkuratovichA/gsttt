@@ -1879,7 +1879,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tracing",
- "xxhash-rust",
 ]
 
 [[package]]

@@ -23,7 +23,6 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-xxhash-rust.workspace = true
 
 [dev-dependencies]
 gsttt-config.workspace = true
