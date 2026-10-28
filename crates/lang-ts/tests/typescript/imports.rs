@@ -53,7 +53,7 @@ fn a_type_query_of_a_module_is_a_type_only_import() -> Result<(), Box<dyn Error>
     assert_eq!(
         imports(&json, "src/types.ts"),
         [
-            "./lib static @1 type-only -> file src/lib.ts",
+            "./lib static @1 type-only [*] -> file src/lib.ts",
             "./lib static @2 type-only [helper] -> file src/lib.ts",
         ]
     );
@@ -89,10 +89,10 @@ fn a_nested_import_type_is_read_at_the_line_of_its_specifier() -> Result<(), Box
     assert_eq!(
         imports(&json, "src/types.ts"),
         [
-            "./lib static @2 type-only -> file src/lib.ts",
+            "./lib static @2 type-only [*] -> file src/lib.ts",
             "./lib static @4 type-only [Box] -> file src/lib.ts",
-            "./other static @4 type-only -> file src/other.ts",
-            "./lib static @5 type-only -> file src/lib.ts",
+            "./other static @4 type-only [*] -> file src/other.ts",
+            "./lib static @5 type-only [*] -> file src/lib.ts",
         ]
     );
     insta::assert_json_snapshot!(json);
@@ -142,9 +142,9 @@ fn a_mock_that_asks_for_the_actual_module_reaches_it() -> Result<(), Box<dyn Err
         [
             "./lib dynamic @1 -> file src/lib.ts",
             "./lib dynamic @2 -> file src/lib.ts",
-            "./lib static @2 type-only -> file src/lib.ts",
+            "./lib static @2 type-only [*] -> file src/lib.ts",
             "./editor dynamic @5 -> file src/editor.ts",
-            "./editor static @6 type-only -> file src/editor.ts",
+            "./editor static @6 type-only [*] -> file src/editor.ts",
         ]
     );
     insta::assert_json_snapshot!(json);

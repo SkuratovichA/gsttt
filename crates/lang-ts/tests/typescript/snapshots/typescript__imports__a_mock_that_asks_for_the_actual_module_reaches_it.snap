@@ -56,7 +56,9 @@ expression: json
           "flags": 1,
           "kind": "static",
           "line": 2,
-          "names": [],
+          "names": [
+            "*"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"
@@ -76,7 +78,9 @@ expression: json
           "flags": 1,
           "kind": "static",
           "line": 6,
-          "names": [],
+          "names": [
+            "*"
+          ],
           "spec": "./editor",
           "to": {
             "file": "src/editor.ts"

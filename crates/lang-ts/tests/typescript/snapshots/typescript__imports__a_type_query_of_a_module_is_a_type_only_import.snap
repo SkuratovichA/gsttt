@@ -36,7 +36,9 @@ expression: json
           "flags": 1,
           "kind": "static",
           "line": 1,
-          "names": [],
+          "names": [
+            "*"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"

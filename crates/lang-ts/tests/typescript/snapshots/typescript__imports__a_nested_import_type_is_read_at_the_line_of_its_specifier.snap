@@ -48,7 +48,9 @@ expression: json
           "flags": 1,
           "kind": "static",
           "line": 2,
-          "names": [],
+          "names": [
+            "*"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"
@@ -70,7 +72,9 @@ expression: json
           "flags": 1,
           "kind": "static",
           "line": 4,
-          "names": [],
+          "names": [
+            "*"
+          ],
           "spec": "./other",
           "to": {
             "file": "src/other.ts"
@@ -80,7 +84,9 @@ expression: json
           "flags": 1,
           "kind": "static",
           "line": 5,
-          "names": [],
+          "names": [
+            "*"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"

@@ -696,14 +696,13 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         walk::walk_import_expression(self, it);
     }
 
-    /// `typeof import('x')` and `import('x').T` in a type bind nothing and run nothing, but the file depends on `x`.
+    /// `typeof import('x')` and `import('x').T` in a type bind nothing and run nothing, but the file depends on `x`. Without a qualifier the type is the module itself, which is the name `*` of a namespace import.
     fn visit_ts_import_type(&mut self, it: &TSImportType<'a>) {
         if let Some(spec) = it.source.value.as_str() {
             let mut import = Import::new(spec, ImportKind::Static, self.line(it.source.span.start));
             import.flags = import.flags | ImportFlags::TYPE_ONLY;
-            if let Some(qualifier) = &it.qualifier {
-                import.names.push(first_name(qualifier).to_owned());
-            }
+            let name = it.qualifier.as_ref().map_or("*", first_name);
+            import.names.push(name.to_owned());
             self.out.imports.push(import);
         }
         walk::walk_ts_import_type(self, it);
