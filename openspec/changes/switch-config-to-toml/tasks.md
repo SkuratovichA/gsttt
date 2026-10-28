@@ -15,7 +15,7 @@
 
 ## 3. Packs
 
-- [ ] 3.1 A snapshot of the TypeScript connector's built-in packs, taken while they are Lua
+- [x] 3.1 A snapshot of the TypeScript connector's built-in packs, taken while they are Lua
 - [ ] 3.2 `read_pack`, `builtin_packs` and `.gsttt/packs/*.toml`, the name checked against the file
 - [ ] 3.3 The ten TypeScript packs in TOML, with the snapshot unchanged
 - [ ] 3.4 The packs of the Python and Rust connectors converted the same way, once this change merges above them
