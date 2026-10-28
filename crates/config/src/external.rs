@@ -16,6 +16,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use gsttt_core::connector::{
     Connector, ConnectorError, Meta, Parsed, Project, Provide, SourceFile,
 };
+use gsttt_core::engine::keys::canonical_json;
 use gsttt_core::fact::{FileFacts, Import, ParseFailure, Resolution, UnresolvedReason};
 use gsttt_core::rules::Pack;
 use gsttt_core::setup::ExternalSetup;
@@ -23,7 +24,6 @@ use gsttt_core::{FileId, RepoPath, RepoView};
 use serde_json::{Map, Value, json};
 use xxhash_rust::xxh3::Xxh3;
 
-use crate::fingerprint::canonical;
 use crate::text::cut;
 use process::{Failure, Launch, Process};
 pub use protocol::PROTOCOL;
@@ -101,11 +101,8 @@ impl External {
             hash.update(name.as_bytes());
         }
         // What else the declaration says: the process reads the options, and the provides are part of what the index reports. Written the way the fingerprint of the setup writes them, so that the order of the keys does not matter.
-        let mut declared = String::new();
-        canonical(
-            &json!({ "options": self.options, "provides": self.provides }),
-            &mut declared,
-        );
+        let declared =
+            canonical_json(&json!({ "options": self.options, "provides": self.provides }));
         hash.update(&[2]);
         hash.update(declared.as_bytes());
         hash.digest()

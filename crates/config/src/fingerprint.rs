@@ -1,7 +1,7 @@
 //! The fingerprint of a setup.
 
 use gsttt_core::Setup;
-use serde_json::Value;
+use gsttt_core::engine::keys::canonical_json;
 use xxhash_rust::xxh3::xxh3_128;
 
 /// A hash of the setup's canonical JSON: keys sorted, no whitespace, integers without a fraction.
@@ -9,42 +9,7 @@ use xxhash_rust::xxh3::xxh3_128;
 /// The setup holds values and not the text they came from, so a comment or a reformatted line in the config leaves it unchanged, and any value that changes the index changes it. The only way to fail is a setup that cannot be written as JSON, which no setup the evaluator builds is.
 pub fn fingerprint(setup: &Setup) -> Result<u128, serde_json::Error> {
     let value = serde_json::to_value(setup)?;
-    let mut text = String::new();
-    canonical(&value, &mut text);
-    Ok(xxh3_128(text.as_bytes()))
-}
-
-/// Writes `value` as canonical JSON: keys sorted, no whitespace. The key of a cache is written the same way as the fingerprint of a setup.
-pub(crate) fn canonical(value: &Value, out: &mut String) {
-    match value {
-        Value::Object(entries) => {
-            let mut keys: Vec<&String> = entries.keys().collect();
-            keys.sort();
-            out.push('{');
-            for (position, key) in keys.into_iter().enumerate() {
-                if position > 0 {
-                    out.push(',');
-                }
-                out.push_str(&Value::String(key.clone()).to_string());
-                out.push(':');
-                if let Some(entry) = entries.get(key) {
-                    canonical(entry, out);
-                }
-            }
-            out.push('}');
-        }
-        Value::Array(items) => {
-            out.push('[');
-            for (position, item) in items.iter().enumerate() {
-                if position > 0 {
-                    out.push(',');
-                }
-                canonical(item, out);
-            }
-            out.push(']');
-        }
-        scalar => out.push_str(&scalar.to_string()),
-    }
+    Ok(xxh3_128(canonical_json(&value).as_bytes()))
 }
 
 #[cfg(test)]
@@ -56,10 +21,8 @@ mod tests {
 
     #[test]
     fn the_canonical_text_sorts_keys_and_has_no_whitespace() {
-        let mut text = String::new();
-        canonical(
+        let text = canonical_json(
             &json!({ "b": 1, "a": [true, null, "x\"y"], "c": { "z": 0.5, "y": {} } }),
-            &mut text,
         );
         assert_eq!(
             text,
