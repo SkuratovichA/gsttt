@@ -104,14 +104,20 @@ impl Progress {
     }
 }
 
+/// A requirement of a capability, by capability and name.
+type Key = (String, String);
+
 /// An open change, as far as archiving cares.
 #[derive(Debug)]
 struct Open {
     name: String,
     progress: Progress,
-    /// Whether the main specs have every requirement that the change modifies, removes or renames:
-    /// `openspec archive` stops at one that is missing.
-    applies: bool,
+    /// The requirements that the change modifies, removes or renames: `openspec archive` stops at
+    /// one that is missing.
+    needs: Vec<Key>,
+    /// The requirements that the change adds or renames to, which the changes archived after it can
+    /// then modify, remove or rename.
+    gives: Vec<Key>,
 }
 
 /// Everything the gate found out.
@@ -122,6 +128,8 @@ pub(super) struct Judgement {
     /// Sorted by place.
     pub(super) failures: Vec<Failure>,
     changes: Vec<Open>,
+    /// The requirements of the main specs.
+    main: BTreeSet<Key>,
 }
 
 impl Judgement {
@@ -138,13 +146,15 @@ impl Judgement {
             .map(|open| open.progress)
     }
 
-    /// The open changes that can be archived: every task ticked, every scenario proven, every
-    /// requirement they modify, remove or rename in the main specs, and no failure that mentions
-    /// them. In the order of their names.
+    /// The open changes that can be archived, in an order that `openspec archive` can take them in:
+    /// every task ticked, every scenario proven, no failure that mentions them, and every
+    /// requirement they modify, remove or rename in the main specs or added by a change listed
+    /// before them. Of the changes that can go next, the one with the first name goes first.
     pub(super) fn ready(&self) -> Vec<&str> {
-        self.changes
+        let mut waiting: Vec<&Open> = self
+            .changes
             .iter()
-            .filter(|change| change.progress == Progress::Finished && change.applies)
+            .filter(|change| change.progress == Progress::Finished)
             .filter(|change| {
                 self.entries
                     .iter()
@@ -157,8 +167,18 @@ impl Judgement {
                     .iter()
                     .any(|failure| failure.changes.contains(&change.name))
             })
-            .map(|change| change.name.as_str())
-            .collect()
+            .collect();
+        let mut have: BTreeSet<&Key> = self.main.iter().collect();
+        let mut listed = Vec::new();
+        while let Some(next) = waiting
+            .iter()
+            .position(|change| change.needs.iter().all(|need| have.contains(need)))
+        {
+            let change = waiting.remove(next);
+            have.extend(&change.gives);
+            listed.push(change.name.as_str());
+        }
+        listed
     }
 }
 
@@ -190,7 +210,17 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
         .map(|change| Open {
             name: change.name.clone(),
             progress: Progress::of(change),
-            applies: change.deltas.iter().all(|delta| applies(openspec, delta)),
+            needs: change.deltas.iter().flat_map(needs).collect(),
+            gives: change.deltas.iter().flat_map(gives).collect(),
+        })
+        .collect();
+    let main: BTreeSet<Key> = openspec
+        .specs
+        .iter()
+        .flat_map(|spec| {
+            spec.requirements
+                .iter()
+                .map(|requirement| (spec.capability.clone(), requirement.name.clone()))
         })
         .collect();
 
@@ -252,6 +282,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
         entries,
         failures,
         changes,
+        main,
     }
 }
 
@@ -334,16 +365,9 @@ fn main_name<'a>(delta: &'a Delta, modified: &'a Requirement) -> &'a String {
         .map_or(&modified.name, |renamed| &renamed.from)
 }
 
-/// Whether the main spec of the capability of `delta` has every requirement that `delta` modifies,
-/// removes or renames. A capability with no main spec has none.
-fn applies(openspec: &OpenSpec, delta: &Delta) -> bool {
-    let main: BTreeSet<&String> = openspec
-        .specs
-        .iter()
-        .filter(|spec| spec.capability == delta.capability)
-        .flat_map(|spec| &spec.requirements)
-        .map(|requirement| &requirement.name)
-        .collect();
+/// The requirements that `delta` modifies, removes or renames, under the names they have before the
+/// change is archived.
+fn needs(delta: &Delta) -> impl Iterator<Item = Key> {
     let removed = delta.removed.iter().map(|removed| &removed.name);
     let renamed = delta.renamed.iter().map(|renamed| &renamed.from);
     let modified = delta
@@ -353,7 +377,16 @@ fn applies(openspec: &OpenSpec, delta: &Delta) -> bool {
     removed
         .chain(renamed)
         .chain(modified)
-        .all(|name| main.contains(name))
+        .map(|name| (delta.capability.clone(), name.clone()))
+}
+
+/// The requirements that `delta` adds, and the names it renames requirements to.
+fn gives(delta: &Delta) -> impl Iterator<Item = Key> {
+    let added = delta.added.iter().map(|requirement| &requirement.name);
+    let renamed = delta.renamed.iter().map(|renamed| &renamed.to);
+    added
+        .chain(renamed)
+        .map(|name| (delta.capability.clone(), name.clone()))
 }
 
 /// The status of a scenario that is written once, with the failure when it fails.

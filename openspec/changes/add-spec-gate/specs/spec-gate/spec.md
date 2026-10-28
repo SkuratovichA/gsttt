@@ -119,19 +119,27 @@ The report SHALL list, per capability, the scenarios proven, pending and failing
 - **THEN** the gate exits zero and reports every scenario as proven
 
 ### Requirement: Archiving
-`cargo xtask spec --ready` SHALL print, one per line, the open changes OpenSpec can archive: every task ticked, every scenario proven, every requirement they modify, remove or rename in `openspec/specs/`, and no failure of the gate naming them. On each push to `main` the `archive-specs` workflow SHALL archive those with the pinned OpenSpec CLI, go on when one fails, commit and push the result if the gate passes on it, and fail at the end if any failed; its push SHALL start no other workflow.
+`cargo xtask spec --ready` SHALL print, one per line, the open changes OpenSpec can archive: every task ticked, every scenario proven, and no failure of the gate naming them. On each push to `main` the `archive-specs` workflow SHALL archive those with the pinned OpenSpec CLI, go on when one fails, commit and push the result if the gate passes on it, and fail at the end if any failed; its push SHALL start no other workflow.
 
 #### Scenario: Ready changes are listed
 - **WHEN** one open change has every task ticked and every scenario proven, and another has an unticked task
 - **THEN** `--ready` prints the first and not the second
 
-#### Scenario: A change that names a missing requirement is not ready
-- **WHEN** a change with every task ticked and every scenario proven modifies, removes or renames a requirement that `openspec/specs/` does not have
-- **THEN** `--ready` does not print it, and still prints the other ready changes
-
 #### Scenario: A change that a failure names is not ready
 - **WHEN** a change with every task ticked removes a requirement and a test still claims one of its scenarios
 - **THEN** `--ready` does not print the change until the test stops claiming the scenario
+
+### Requirement: Archive order
+`--ready` SHALL NOT print a change that modifies, removes or renames a requirement which `openspec/specs/` lacks and no change printed before it adds, and SHALL print a change after the changes it depends on in that way, the others in the order of their names.
+
+#### Scenario: A change that names a missing requirement is not ready
+- **WHEN** a change with every task ticked and every scenario proven modifies, removes or renames a requirement that `openspec/specs/` lacks and no other change adds
+- **THEN** `--ready` does not print it, and still prints the other ready changes
+
+#### Scenario: A change comes after the change that adds what it modifies
+- **WHEN** a change with every task ticked modifies a requirement that another change adds, and the other change has every task ticked too
+- **THEN** `--ready` prints the other change and then the first
+- **AND** it prints neither while the other change has a task unticked
 
 ### Requirement: Purposes
 A spec whose `## Purpose` is the placeholder that `openspec archive` writes when a delta gives none (`TBD - created by archiving change <name>. Update Purpose after archive.`) SHALL fail the gate at the line of the placeholder, and so SHALL an open change whose delta adds requirements to a capability that `openspec/specs/` lacks and has no `## Purpose`, at the line of its first requirement; `--ready` SHALL NOT print that change.

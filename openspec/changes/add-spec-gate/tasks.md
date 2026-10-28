@@ -41,3 +41,4 @@
 - [x] 6.1 Compile the tests of nine scenarios of earlier changes on every target by taking `#[cfg(unix)]` off them and off the helpers they share, because the gate counts no proof under a `cfg` other than `test` and gsttt builds for unix only
 - [x] 6.2 Write the third-level heading that is not a requirement as `### Rule: R` in the reader's test, so that `typos` no longer flags the misspelt word that stood in it
 - [x] 6.3 Read the `## Purpose` of specs and deltas, and fail a spec whose purpose is the placeholder that `openspec archive` writes and an open change whose delta creates a capability without a `## Purpose`, so that no archived spec lands without the purpose its change gave it
+- [x] 6.4 List the ready changes in an order that `openspec archive` can take them in, so that a change that modifies, removes or renames a requirement comes after the change that adds it, which the archive would otherwise not find

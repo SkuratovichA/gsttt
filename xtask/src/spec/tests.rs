@@ -557,6 +557,36 @@ fn ready_changes_are_listed() {
     assert_eq!(outcome.output, "finished\n");
 }
 
+#[gsttt_scenario::scenario(
+    "spec-gate",
+    "A change comes after the change that adds what it modifies"
+)]
+#[test]
+fn a_change_comes_after_the_change_that_adds_what_it_modifies() {
+    let tree = Tree::new();
+    // `a-modifies` sorts first, but `openspec archive` stops at a requirement it cannot find, so
+    // `b-adds` has to be archived before it.
+    let adds = delta("ADDED", &[requirement("R", &["R works"])]);
+    tree.change("b-adds", TICKED, &[("c", &adds)])
+        .change(
+            "a-modifies",
+            TICKED,
+            &[(
+                "c",
+                &delta("MODIFIED", &[requirement("R", &["R works better"])]),
+            )],
+        )
+        .source("tests/works.rs", &proof("c", "R works"))
+        .source("tests/better.rs", &proof("c", "R works better"));
+    assert_eq!(
+        tree.try_run(Mode::Ready).unwrap().output,
+        "b-adds\na-modifies\n"
+    );
+
+    tree.change("b-adds", OPEN, &[("c", &adds)]);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+}
+
 #[test]
 fn a_finished_change_with_a_scenario_unproven_is_not_ready() {
     let tree = Tree::new();
