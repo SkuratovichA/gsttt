@@ -8,8 +8,12 @@ use gsttt_core::engine::workspace::Workspace;
 
 use crate::cli::{Cli, Command, ContractArgs, Flags, HookCommand, ImpactArgs};
 use crate::error::CliError;
+use crate::repository::{Loaded, Repository};
 use crate::streams::{Io, Outcome};
 use crate::{hook, root};
+
+mod index;
+mod print;
 
 /// Runs the command `cli` names, writing the answer to `io.stdout` and the failure, if any, to `io.stderr`.
 pub fn run(cli: Cli, io: &mut Io<'_>) -> Outcome {
@@ -19,7 +23,7 @@ pub fn run(cli: Cli, io: &mut Io<'_>) -> Outcome {
     };
     tracing::debug!(command = command.name(), ?flags, "running the command");
     match dispatch(&flags, &command, io) {
-        Ok(()) => Outcome::Answered,
+        Ok(outcome) => outcome,
         Err(error) => error.report(io),
     }
 }
@@ -31,16 +35,26 @@ fn no_command(io: &mut Io<'_>) -> Outcome {
     Outcome::Usage
 }
 
-fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<(), CliError> {
+fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome, CliError> {
     match command {
         Command::Completions { shell } => {
             let mut script = Vec::new();
             clap_complete::generate(*shell, &mut Cli::command(), "gsttt", &mut script);
-            io.answer(&script)
+            io.answer(&script)?;
+            Ok(Outcome::Answered)
         }
         Command::Hook(HookCommand::SessionStart) => {
             hook::session_start(flags, io);
-            Ok(())
+            Ok(Outcome::Answered)
+        }
+        Command::Index | Command::Status => {
+            check_arguments(flags, command)?;
+            let (_, repository) = open(flags)?;
+            if matches!(command, Command::Index) {
+                index::index(&repository, flags, io)
+            } else {
+                index::status(&repository, flags, io)
+            }
         }
         command => {
             check_arguments(flags, command)?;
@@ -56,6 +70,21 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<(), Cli
             Err(not_built(command))
         }
     }
+}
+
+/// The directory the run starts in and the repository around it.
+fn open(flags: &Flags) -> Result<(camino::Utf8PathBuf, Repository), CliError> {
+    let start = root::start(flags.directory.as_deref())?;
+    let repository = Repository::open(&start)?;
+    tracing::debug!(root = %repository.root(), "found the root");
+    Ok((start, repository))
+}
+
+/// The stored index as it is, for the commands that never refresh it.
+fn stored(repository: &Repository) -> Result<Loaded, CliError> {
+    repository.stored()?.ok_or_else(|| CliError::NoIndex {
+        root: repository.root().to_owned(),
+    })
 }
 
 /// Reads every path argument of `command` against `base`, the directory the run started in, as a path from `root`.
@@ -74,7 +103,7 @@ fn read_paths(
 
 /// Whether the command reads the index as it was stored, without refreshing it first.
 fn answers_from_the_stored_index(flags: &Flags, command: &Command) -> bool {
-    matches!(command, Command::Status) || (flags.no_refresh && command.is_question())
+    flags.no_refresh && command.is_question()
 }
 
 /// Fails when the workspace has no index to read.

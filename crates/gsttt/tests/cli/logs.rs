@@ -1,6 +1,9 @@
 //! Logs go to stderr, filtered by `GSTTT_LOG`, and never to stdout.
 
-use super::support::{Sandbox, ran};
+use gsttt_scenario::scenario;
+use serde_json::Value;
+
+use super::support::{Sandbox, ran, typescript_project};
 
 #[test]
 fn logs_show_only_when_gsttt_log_asks_for_them() {
@@ -26,13 +29,29 @@ fn logs_show_only_when_gsttt_log_asks_for_them() {
     assert_eq!(ran(&mut command).stderr, "", "debug lines are below warn");
 }
 
+#[scenario("cli", "Logs stay off stdout")]
+#[test]
+fn logs_stay_off_stdout() {
+    let sandbox = Sandbox::new();
+    typescript_project(sandbox.work.path());
+    let mut command = sandbox.gsttt();
+    command.env("GSTTT_LOG", "debug").args(["--json", "index"]);
+    let ran = ran(&mut command);
+    assert_eq!(ran.code, Some(0), "{ran:?}");
+    // `from_str` refuses text after the first document, so a log line on stdout fails here.
+    let document: Value = serde_json::from_str(&ran.stdout)
+        .unwrap_or_else(|error| panic!("stdout is not one JSON document: {error}: {ran:?}"));
+    assert!(document.is_object(), "{document}");
+    assert!(ran.stderr.contains("DEBUG"), "{}", ran.stderr);
+}
+
 #[test]
 fn a_failure_logs_nothing_to_stdout() {
     let sandbox = Sandbox::new();
     let mut command = sandbox.gsttt();
     command
         .env("GSTTT_LOG", "trace")
-        .args(["--json", "coverage"]);
+        .args(["--json", "--no-refresh", "coverage"]);
     let ran = ran(&mut command);
     assert_eq!(ran.code, Some(1));
     assert_eq!(ran.stdout, "");

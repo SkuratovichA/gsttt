@@ -23,11 +23,10 @@ use crate::root::{self, RootError};
 ///
 /// The message names what failed and, where the caller can do something about it, what to do, so that a caller
 /// without a terminal can pass it on as it is.
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
 pub enum RepositoryError {
     /// There is no root to work on, or it is one gsttt refuses.
     #[error(transparent)]
-    #[diagnostic(transparent)]
     Root(#[from] RootError),
 
     /// A rule pack that ships with gsttt does not evaluate.

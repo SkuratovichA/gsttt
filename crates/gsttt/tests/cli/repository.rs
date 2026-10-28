@@ -13,7 +13,7 @@ use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::path::OutsideRoot;
 use tempfile::TempDir;
 
-use super::support::{commit_all, init_repo};
+use super::support::{commit_all, init_repo, write};
 
 /// A committed repository holding `app/a.ts`, which imports `lib/util.ts`, and `lib/util.ts`.
 struct Project {
@@ -41,12 +41,6 @@ impl Project {
     fn open(&self) -> Repository {
         Repository::open(&self.root).unwrap()
     }
-}
-
-fn write(root: &Utf8Path, path: &str, text: &str) {
-    let file = root.join(path);
-    fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(file, text).unwrap();
 }
 
 #[test]

@@ -3,9 +3,12 @@
 use std::io;
 
 use camino::Utf8PathBuf;
+use gsttt_core::engine::changes::ChangesError;
+use gsttt_core::engine::refresh::IndexError;
 use gsttt_core::path::OutsideRoot;
 use miette::{Diagnostic, GraphicalReportHandler, GraphicalTheme, Report};
 
+use crate::repository::RepositoryError;
 use crate::root::RootError;
 use crate::streams::{Io, Outcome, reader_left};
 
@@ -25,6 +28,24 @@ pub(crate) enum CliError {
         "a path is read from the current directory, or from the one `-C` names, and has to name a file inside the repository"
     ))]
     Path(#[from] OutsideRoot),
+
+    /// A failure of the repository that the command line has nothing to add to. The ones it words itself have
+    /// variants of their own, and [`CliError::from`] sorts a [`RepositoryError`] into them.
+    #[error(transparent)]
+    Repository(RepositoryError),
+
+    #[error("`--changed` needs a git repository, and `{root}` is in none")]
+    #[diagnostic(help("name the files instead, as in `gsttt impact path/to/file.ts`"))]
+    ChangedNeedsGit { root: Utf8PathBuf },
+
+    #[error(transparent)]
+    #[diagnostic(help(
+        "`--base` takes a branch, a tag or a commit of this repository, and has to share history with HEAD"
+    ))]
+    Base(ChangesError),
+
+    #[error("cannot print the answer as JSON: {0}")]
+    Json(#[from] serde_json::Error),
 
     #[error("there is no index yet for `{root}`")]
     #[diagnostic(help("run `gsttt index` to build one"))]
@@ -50,11 +71,28 @@ pub(crate) enum CliError {
     NoRefreshWithIndex,
 }
 
+impl From<RepositoryError> for CliError {
+    /// Sorts a failure of the repository into the variant that words it for the command line.
+    fn from(error: RepositoryError) -> Self {
+        match error {
+            RepositoryError::Root(error) => Self::Root(error),
+            RepositoryError::Path(error) => Self::Path(error),
+            RepositoryError::NoGit { root } => Self::ChangedNeedsGit { root },
+            RepositoryError::Index(IndexError::Changes(
+                error @ (ChangesError::Revision { .. } | ChangesError::NoMergeBase { .. }),
+            )) => Self::Base(error),
+            other => Self::Repository(other),
+        }
+    }
+}
+
 impl CliError {
     /// How the command ends: 1 when it could not answer, 2 when it cannot run as given.
     pub(crate) const fn outcome(&self) -> Outcome {
         match self {
             Self::Write { .. }
+            | Self::Json(_)
+            | Self::Repository(_)
             | Self::NoIndex { .. }
             | Self::NotBuilt { .. }
             | Self::Root(RootError::Workspace(_) | RootError::CurrentDirectory { .. }) => {
@@ -62,6 +100,8 @@ impl CliError {
             }
             Self::Root(_)
             | Self::Path(_)
+            | Self::ChangedNeedsGit { .. }
+            | Self::Base(_)
             | Self::EmptyQuery
             | Self::BaseNeedsChanged
             | Self::NoRefreshWithIndex => Outcome::Usage,

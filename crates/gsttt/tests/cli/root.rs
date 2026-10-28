@@ -4,7 +4,7 @@ use std::fs;
 
 use gsttt_scenario::scenario;
 
-use super::support::{Sandbox, init_repo, is_empty, ran};
+use super::support::{Sandbox, init_repo, is_empty, listing, ran, typescript_project};
 
 #[scenario("cli", "A missing -C directory exits 2")]
 #[test]
@@ -115,24 +115,60 @@ fn the_filesystem_root_is_refused() {
     assert!(is_empty(sandbox.cache.path()));
 }
 
-/// The scenario "-C works from another directory" needs `index` to build a snapshot, which a later run adds. Until
-/// then this proves the half that is decided before any command runs: from a directory outside the repository,
-/// `-C <repo>/src` leads to the root of `<repo>`.
+#[scenario("cli", "-C works from another directory")]
 #[test]
-fn c_leads_from_another_directory_to_the_root_of_the_repository() {
+fn c_works_from_another_directory() {
     let sandbox = Sandbox::new();
     let repo = sandbox.home.path().join("repo");
-    fs::create_dir_all(repo.join("src")).unwrap();
-    init_repo(&repo);
     let src = repo.join("src");
-    let ran = sandbox.run(&["-C", src.to_str().unwrap(), "--no-refresh", "status"]);
-    assert_eq!(ran.code, Some(1));
-    let root = repo.canonicalize().unwrap();
+    fs::create_dir_all(&src).unwrap();
+    init_repo(&repo);
+    typescript_project(&src);
+    let before = listing(&src);
+
+    // The work directory of the sandbox is outside the repository.
+    let ran_index = sandbox.run(&["-C", src.to_str().unwrap(), "index"]);
+    assert_eq!(ran_index.code, Some(0), "{ran_index:?}");
     assert!(
-        ran.stderr
-            .contains(&format!("no index yet for `{}`", root.display())),
-        "{}",
-        ran.stderr
+        ran_index.stdout.starts_with("Indexed 3 files"),
+        "{ran_index:?}"
+    );
+
+    // The snapshot belongs to the repository and not to `src`: `status` never builds one, and from the root of the
+    // repository it finds this one.
+    assert_eq!(listing(&src), before, "`src` gained a file");
+    let inside_git = listing(&repo.join(".git"));
+    assert!(
+        inside_git
+            .iter()
+            .any(|path| path.ends_with("snapshot.gsttt")),
+        "{inside_git:?}"
+    );
+    let status = ran(sandbox.gsttt().current_dir(&repo).arg("status"));
+    assert_eq!(status.code, Some(0), "{status:?}");
+    assert!(status.stdout.contains("3 files"), "{status:?}");
+}
+
+#[scenario("cli", "A directory outside git is indexed")]
+#[test]
+fn a_directory_outside_git_is_indexed() {
+    let sandbox = Sandbox::new();
+    typescript_project(sandbox.work.path());
+    let before = listing(sandbox.work.path());
+
+    let ran = sandbox.run(&["index"]);
+    assert_eq!(ran.code, Some(0), "{ran:?}");
+    assert!(ran.stdout.starts_with("Indexed 3 files"), "{ran:?}");
+
+    let kept = listing(sandbox.cache.path());
+    assert!(
+        kept.iter().any(|path| path.ends_with("snapshot.gsttt")),
+        "the snapshot is not in the cache: {kept:?}"
+    );
+    assert_eq!(
+        listing(sandbox.work.path()),
+        before,
+        "the directory gained a file"
     );
 }
 
@@ -153,7 +189,6 @@ fn every_question_and_status_need_an_index_to_read() {
     for args in [
         &["status"][..],
         &["--no-refresh", "impact", "src/a.ts"][..],
-        &["--no-refresh", "impact", "--changed"][..],
         &["--no-refresh", "dependents", "src/a.ts"][..],
         &["--no-refresh", "dependencies", "src/a.ts"][..],
         &["--no-refresh", "path", "src/a.ts", "src/b.ts"][..],

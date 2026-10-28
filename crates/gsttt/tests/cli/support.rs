@@ -68,6 +68,42 @@ pub(crate) fn is_empty(dir: &Path) -> bool {
     std::fs::read_dir(dir).unwrap().next().is_none()
 }
 
+/// Writes `text` to `path` under `dir`, creating the directories above it.
+pub(crate) fn write(dir: impl AsRef<Path>, path: &str, text: &str) {
+    let file = dir.as_ref().join(path);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(file, text).unwrap();
+}
+
+/// Writes three TypeScript files under `dir`: `app/a.ts` imports `lib/util.ts`, and `app/b.ts` imports nothing.
+pub(crate) fn typescript_project(dir: impl AsRef<Path>) {
+    let dir = dir.as_ref();
+    write(dir, "lib/util.ts", "export const util = 1;\n");
+    write(
+        dir,
+        "app/a.ts",
+        "import { util } from '../lib/util';\nexport const a = util;\n",
+    );
+    write(dir, "app/b.ts", "export const b = 2;\n");
+}
+
+/// Every file and directory under `dir`, as paths from `dir`, in order.
+pub(crate) fn listing(dir: &Path) -> Vec<String> {
+    fn walk(dir: &Path, from: &Path, found: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            found.push(path.strip_prefix(from).unwrap().display().to_string());
+            if path.is_dir() {
+                walk(&path, from, found);
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(dir, dir, &mut found);
+    found.sort();
+    found
+}
+
 /// Runs `git` with `args` in `dir`, whatever git settings the machine has, and returns what it printed.
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
