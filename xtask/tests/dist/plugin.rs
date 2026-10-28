@@ -229,6 +229,7 @@ fn the_session_start_hook_has_a_timeout() {
     assert_eq!(session_start_hook().get("timeout"), Some(&json!(5)));
 }
 
+#[gsttt_scenario::scenario("distribution", "The marketplace lists the plugin")]
 #[test]
 fn the_marketplace_lists_the_plugin_and_the_plugin_declares_its_parts() {
     let marketplace = json_file(".claude-plugin/marketplace.json");

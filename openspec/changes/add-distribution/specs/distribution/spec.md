@@ -89,11 +89,26 @@ The GitHub release `v<version>` SHALL carry the packages and notes listing the s
 - **THEN** `install.sh` exits non-zero and `GSTTT_INSTALL_DIR` is unchanged
 
 ### Requirement: Claude Code plugin
-The repository SHALL be a Claude Code plugin marketplace: `.claude-plugin/marketplace.json` SHALL list the plugin `gsttt` from `plugin/`, whose manifest declares the MCP server `gsttt mcp`, a session-start hook and a skill that says when to use gsttt's tools. `cargo xtask check` SHALL verify that the plugin's manifests parse and that every path they name exists.
+The repository SHALL be a Claude Code plugin marketplace: `.claude-plugin/marketplace.json` SHALL list the plugin `gsttt` from `plugin/`, whose manifest declares the MCP server `gsttt mcp`, a session-start hook and a skill that says when to use gsttt's tools.
+
+#### Scenario: The marketplace lists the plugin
+- **WHEN** `.claude-plugin/marketplace.json` and the manifest of the plugin are parsed
+- **THEN** the marketplace lists the plugin `gsttt` from `plugin/`, and the manifest declares the MCP server, the session-start hook and the skill
+
+### Requirement: Plugin check
+`cargo xtask check` SHALL verify that the plugin's manifests parse, that every path a manifest names starts with `./` and exists, and that every program a command runs from the plugin directory is executable, because git keeps the mode and a script that lost it breaks the hook and the server without a word.
 
 #### Scenario: A manifest naming a missing file fails the check
 - **WHEN** the plugin manifest names `skills/gone/SKILL.md` and that file does not exist
 - **THEN** `cargo xtask check` exits non-zero and names the manifest and the path
+
+#### Scenario: A manifest path must start with ./
+- **WHEN** the plugin manifest names the skill `skills/p`, without `./`
+- **THEN** `cargo xtask check` exits non-zero and names the manifest, the field and the path
+
+#### Scenario: A script that is not executable fails the check
+- **WHEN** a hook command of the plugin runs `${CLAUDE_PLUGIN_ROOT}/scripts/run.sh` and that file has no executable bit
+- **THEN** `cargo xtask check` exits non-zero and names the manifest and the script
 
 ### Requirement: Finding the binary
 The plugin's commands SHALL run through a wrapper that looks for `gsttt` on `PATH` and then in the directory `install.sh` installs into, `GSTTT_INSTALL_DIR` or `~/.local/bin`, so that Claude Code started without that directory on its `PATH` still finds it.

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::support::{git, printed, workspace_root, write, xtask};
+use crate::support::{git, printed, set_mode, workspace_root, write, write_executable, xtask};
 
 const PINNED: &str = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
 
@@ -41,7 +41,7 @@ fn clean_repository() -> TempDir {
         &plugin_manifest("./skills/p"),
     );
     write(root, "plugin/skills/p/SKILL.md", "---\nname: p\n---\n");
-    write(root, "plugin/scripts/run.sh", "#!/bin/sh\n");
+    write_executable(root, "plugin/scripts/run.sh", "#!/bin/sh\n");
     repo
 }
 
@@ -109,6 +109,94 @@ fn a_hook_command_naming_a_missing_script_fails_the_check() {
     );
     assert!(
         problems.contains("${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"),
+        "{problems}"
+    );
+}
+
+#[gsttt_scenario::scenario("distribution", "A script that is not executable fails the check")]
+#[test]
+fn a_script_that_is_not_executable_fails_the_check() {
+    let repo = clean_repository();
+    set_mode(repo.path(), "plugin/scripts/run.sh", 0o644);
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains("plugin/.claude-plugin/plugin.json"),
+        "{problems}"
+    );
+    assert!(
+        problems.contains("`${CLAUDE_PLUGIN_ROOT}/scripts/run.sh`, which is not executable"),
+        "{problems}"
+    );
+}
+
+#[test]
+fn a_server_command_that_is_not_executable_fails_the_check() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        "plugin/.claude-plugin/plugin.json",
+        r#"{ "name": "p", "mcpServers": { "s": { "command": "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh", "args": ["mcp"] } } }"#,
+    );
+    set_mode(repo.path(), "plugin/scripts/run.sh", 0o600);
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains("`${CLAUDE_PLUGIN_ROOT}/scripts/run.sh`, which is not executable"),
+        "{problems}"
+    );
+}
+
+#[test]
+fn a_file_that_a_command_reads_needs_no_executable_bit() {
+    let repo = clean_repository();
+    write(repo.path(), "plugin/config.json", "{}\n");
+    write(
+        repo.path(),
+        "plugin/.claude-plugin/plugin.json",
+        r#"{ "name": "p", "mcpServers": { "s": { "command": "sh", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run.sh", "${CLAUDE_PLUGIN_ROOT}/config.json"] } } }"#,
+    );
+    set_mode(repo.path(), "plugin/scripts/run.sh", 0o644);
+
+    assert_eq!(problems(repo.path()), None);
+}
+
+#[gsttt_scenario::scenario("distribution", "A manifest path must start with ./")]
+#[test]
+fn a_path_without_dot_slash_fails_the_check() {
+    let repo = clean_repository();
+    write(
+        repo.path(),
+        "plugin/.claude-plugin/plugin.json",
+        &plugin_manifest("skills/p"),
+    );
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains(
+            "plugin/.claude-plugin/plugin.json: `skills` names `skills/p`, but a path of the manifest must start with `./`"
+        ),
+        "{problems}"
+    );
+}
+
+#[test]
+fn an_absolute_path_fails_the_check_even_when_it_exists() {
+    let repo = clean_repository();
+    let skill = repo.path().join("plugin/skills/p");
+    write(
+        repo.path(),
+        "plugin/.claude-plugin/plugin.json",
+        &plugin_manifest(&skill.display().to_string()),
+    );
+
+    let problems = problems(repo.path()).expect("the check should fail");
+
+    assert!(
+        problems.contains("but a path of the manifest must start with `./`"),
         "{problems}"
     );
 }

@@ -124,6 +124,11 @@ pub(crate) fn write_executable(root: &Path, relative: &str, content: &str) {
     std::fs::set_permissions(root.join(relative), std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
+/// Sets the permission bits of `relative` under `root` to `mode`.
+pub(crate) fn set_mode(root: &Path, relative: &str, mode: u32) {
+    std::fs::set_permissions(root.join(relative), std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
 /// Everything `output` printed: standard output, then standard error.
 pub(crate) fn printed(output: &Output) -> String {
     format!(

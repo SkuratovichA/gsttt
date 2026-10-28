@@ -2,6 +2,7 @@
 
 use std::fmt::Display;
 use std::io::ErrorKind;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
 use anyhow::Context as _;
@@ -113,11 +114,12 @@ impl Check<'_> {
                 self.named_path(plugin, file, field, path)?;
             }
         }
-        self.root_variables(plugin, file, manifest);
-        Ok(())
+        self.root_variables(plugin, file, manifest)
     }
 
-    /// Checks that `path`, which `field` of the manifest `file` names, exists in `plugin`. A JSON file named there holds hooks or servers, so its own references are checked too.
+    /// Checks that `path`, which `field` of the manifest `file` names, starts with `./` and exists in `plugin`. A JSON file named there holds hooks or servers, so its own references are checked too.
+    ///
+    /// A skill must be a directory that holds `SKILL.md`, and a path must start with `./`: `claude plugin validate` (2.1.312) rejects a file and any other path.
     fn named_path(
         &mut self,
         plugin: &Path,
@@ -125,7 +127,16 @@ impl Check<'_> {
         field: &str,
         path: &str,
     ) -> anyhow::Result<()> {
-        let full = plugin.join(path.strip_prefix("./").unwrap_or(path));
+        let Some(relative) = path.strip_prefix("./") else {
+            self.report(
+                file,
+                format!(
+                    "`{field}` names `{path}`, but a path of the manifest must start with `./`"
+                ),
+            );
+            return Ok(());
+        };
+        let full = plugin.join(relative);
         if !full.exists() {
             self.report(
                 file,
@@ -138,13 +149,13 @@ impl Check<'_> {
             .is_some_and(|extension| extension == "json")
             && let Some(configuration) = self.read_json(&full)?
         {
-            self.root_variables(plugin, &full, &configuration);
+            self.root_variables(plugin, &full, &configuration)?;
         }
         Ok(())
     }
 
-    /// Checks that every `${CLAUDE_PLUGIN_ROOT}/<path>` anywhere in `value` names something that exists in `plugin`.
-    fn root_variables(&mut self, plugin: &Path, file: &Path, value: &Value) {
+    /// Checks that every `${CLAUDE_PLUGIN_ROOT}/<path>` anywhere in `value` names something that exists in `plugin`, and that every program a `command` runs from there is executable: git keeps the mode, and a script that lost it breaks the hook or the server without a word.
+    fn root_variables(&mut self, plugin: &Path, file: &Path, value: &Value) -> anyhow::Result<()> {
         let mut paths = Vec::new();
         collect_root_paths(value, &mut paths);
         for path in paths {
@@ -155,6 +166,18 @@ impl Check<'_> {
                 );
             }
         }
+        let mut programs = Vec::new();
+        collect_programs(value, &mut programs);
+        for program in programs {
+            let full = plugin.join(&program);
+            if full.is_file() && !is_executable(&full)? {
+                self.report(
+                    file,
+                    format!("a command runs `{ROOT_VARIABLE}{program}`, which is not executable: set the mode with `chmod +x` and commit it"),
+                );
+            }
+        }
+        Ok(())
     }
 }
 
@@ -167,19 +190,22 @@ fn strings(field: Option<&Value>) -> Vec<&str> {
     }
 }
 
-/// Adds the paths that follow `${CLAUDE_PLUGIN_ROOT}/` in the strings of `value`: up to a space or a quote.
+/// The path at the start of `rest`, up to a space or a quote, or `None` when there is none.
+fn root_path(rest: &str) -> Option<&str> {
+    rest.split(|character: char| character.is_whitespace() || matches!(character, '"' | '\''))
+        .next()
+        .filter(|path| !path.is_empty())
+}
+
+/// Adds the paths that follow `${CLAUDE_PLUGIN_ROOT}/` in the strings of `value`.
 fn collect_root_paths(value: &Value, paths: &mut Vec<String>) {
     match value {
-        Value::String(text) => {
-            for rest in text.split(ROOT_VARIABLE).skip(1) {
-                let path = rest
-                    .split(|character: char| {
-                        character.is_whitespace() || matches!(character, '"' | '\'')
-                    })
-                    .next();
-                paths.extend(path.filter(|path| !path.is_empty()).map(str::to_owned));
-            }
-        }
+        Value::String(text) => paths.extend(
+            text.split(ROOT_VARIABLE)
+                .skip(1)
+                .filter_map(root_path)
+                .map(str::to_owned),
+        ),
         Value::Array(items) => items
             .iter()
             .for_each(|item| collect_root_paths(item, paths)),
@@ -190,11 +216,44 @@ fn collect_root_paths(value: &Value, paths: &mut Vec<String>) {
     }
 }
 
+/// The path of the program that `command` runs, when it starts with `${CLAUDE_PLUGIN_ROOT}/`, quoted or not. A path later in the command is an argument or the script of an interpreter, and needs no executable bit.
+fn program(command: &str) -> Option<&str> {
+    let command = command.trim_start().trim_start_matches(['"', '\'']);
+    root_path(command.strip_prefix(ROOT_VARIABLE)?)
+}
+
+/// Adds the programs that the `command` fields in `value` run from the plugin directory.
+fn collect_programs(value: &Value, programs: &mut Vec<String>) {
+    match value {
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| collect_programs(item, programs)),
+        Value::Object(map) => {
+            for (key, item) in map {
+                match item {
+                    Value::String(command) if key == "command" => {
+                        programs.extend(program(command).map(str::to_owned));
+                    }
+                    _ => collect_programs(item, programs),
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Whether any of the executable bits of the file at `path` is set.
+fn is_executable(path: &Path) -> anyhow::Result<bool> {
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("cannot read the mode of {}", path.display()))?;
+    Ok(metadata.permissions().mode() & 0o111 != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::{collect_root_paths, strings};
+    use super::{collect_programs, collect_root_paths, strings};
 
     #[test]
     fn finds_the_paths_after_the_plugin_root() {
@@ -206,6 +265,24 @@ mod tests {
         collect_root_paths(&value, &mut paths);
         paths.sort();
         assert_eq!(paths, ["config.json", "scripts/run.sh"]);
+    }
+
+    #[test]
+    fn finds_the_programs_a_command_runs_from_the_plugin_root() {
+        let value = json!({
+            "hooks": [{ "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/start.sh\" hook start" }],
+            "server": {
+                "command": "${CLAUDE_PLUGIN_ROOT}/bin/server",
+                "args": ["--config", "${CLAUDE_PLUGIN_ROOT}/config.json"],
+            },
+            "interpreted": { "command": "node ${CLAUDE_PLUGIN_ROOT}/server.js" },
+            "elsewhere": { "command": "gsttt mcp" },
+            "not_a_command": "${CLAUDE_PLUGIN_ROOT}/notes.md",
+        });
+        let mut programs = Vec::new();
+        collect_programs(&value, &mut programs);
+        programs.sort();
+        assert_eq!(programs, ["bin/server", "scripts/start.sh"]);
     }
 
     #[test]
