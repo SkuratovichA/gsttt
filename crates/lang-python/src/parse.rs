@@ -10,7 +10,7 @@ use gsttt_core::fact::{
     FileFacts, Import, ImportFlags, ImportKind, Line, ParseFailure, ParseStatus, UnresolvedReason,
     UnresolvedSite,
 };
-use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Site, callee_matches};
+use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
@@ -688,12 +688,13 @@ impl<'a> Collector<'a> {
     /// A bare name in a class body is also matched as qualified by the classes around it, as many as the pattern has
     /// segments before its last, so `*.Meta.db_table` reads a `db_table` in a class `Meta` that sits in another class
     /// and `*.__tablename__` a `__tablename__` in the body of a class. A pattern of one segment matches the name
-    /// wherever it is assigned.
+    /// wherever it is assigned. A name written with dots, `self.x` or `Model.x`, sets an attribute of an object and is
+    /// no class-body assignment, so no pattern matches it.
     fn target_matches(&self, patterns: &OneOrMany, name: &str) -> bool {
+        if name.contains('.') {
+            return false;
+        }
         patterns.iter().any(|pattern| {
-            if name.contains('.') {
-                return callee_matches(pattern, name);
-            }
             let mut segments = pattern.rsplit('.');
             if !segments
                 .next()

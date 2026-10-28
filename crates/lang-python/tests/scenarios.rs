@@ -1717,3 +1717,21 @@ fn a_router_included_with_a_prefix_and_without_is_served_at_both() {
     );
     assert_eq!(tree.contracts("app/bookings.py"), Vec::<String>::new());
 }
+
+#[gsttt_scenario::scenario("python", "An attribute assignment declares no table")]
+#[test]
+fn an_attribute_assignment_declares_no_table() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"web\"\ndependencies = [\"sqlalchemy\", \"django\"]\n",
+        ),
+        (
+            "models.py",
+            "from sqlalchemy.orm import DeclarativeBase\n\n\nclass Base(DeclarativeBase):\n    pass\n\n\nclass Booking(Base):\n    __tablename__ = \"bookings\"\n\n    def rename(self):\n        self.__tablename__ = \"scratch\"\n\n\nBooking.__tablename__ = \"v2\"\nBooking.Meta.db_table = \"x\"\n",
+        ),
+    ]);
+    // A name written with dots is an attribute of an object, which the qualified targets of the packs, `*.__tablename__`
+    // and `*.Meta.db_table`, are not about: they name the classes around a plain assignment.
+    assert_eq!(tree.contracts("models.py"), ["declares table bookings@9"]);
+}

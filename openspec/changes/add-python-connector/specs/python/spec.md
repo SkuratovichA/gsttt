@@ -268,7 +268,7 @@ With the `requests` and `httpx` packs, `requests.get` and the other verbs, `requ
 - **AND** it calls `http GET /v1/bookings`
 
 ### Requirement: Tables and SQL
-With the `sqlalchemy` pack, `__tablename__ = "<name>"` in the body of a class and `Table("<name>", …)` SHALL declare `table <name>`, and a string passed to `text()` SHALL be an embedded `sql` document. With the `django` pack, `db_table = "<name>"` in a class `Meta` nested in another class SHALL declare `table <name>`. The same names assigned anywhere else SHALL declare nothing.
+With the `sqlalchemy` pack, `__tablename__ = "<name>"` in the body of a class and `Table("<name>", …)` SHALL declare `table <name>`, and a string passed to `text()` SHALL be an embedded `sql` document. With the `django` pack, `db_table = "<name>"` in a class `Meta` nested in another class SHALL declare `table <name>`. The same names assigned anywhere else, as an attribute written with dots such as `self.__tablename__` included, SHALL declare nothing.
 
 #### Scenario: Model tables are declared
 - **WHEN** one class has `__tablename__ = "bookings"` and a Django model's `Meta` has `db_table = "booking_items"`
@@ -278,6 +278,11 @@ With the `sqlalchemy` pack, `__tablename__ = "<name>"` in the body of a class an
 - **WHEN** a file assigns `__tablename__` and `db_table` at module level and in a method, `db_table` in a class `Meta` that is in no class, and `db_table` in a class `Options` of a model
 - **AND** it has a class with `__tablename__` in its body, a class with `__tablename__` inside another class, and models whose `Meta` has `db_table`, one nested in another class and one defined in a function
 - **THEN** it declares only the tables of those class bodies and `Meta` classes
+
+#### Scenario: An attribute assignment declares no table
+- **WHEN** a file assigns `__tablename__` as an attribute of `self` in a method and of a class at module level, and `db_table` as an attribute of the `Meta` of a class at module level
+- **AND** it has a class with `__tablename__` in its body
+- **THEN** it declares only the table of that class body
 
 ### Requirement: Assignment targets
 A pack's assignment rule SHALL match a name assigned in a class body as written and as qualified by the classes around it, as many as its target has segments before the last, so `*.Meta.db_table` is a `db_table` in a class `Meta` inside another class. A target of one segment SHALL match the name wherever it is assigned.
