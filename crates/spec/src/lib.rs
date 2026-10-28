@@ -1,0 +1,1 @@
+//! OpenSpec for gsttt.

@@ -1,0 +1,121 @@
+# Spec Delta
+
+## Purpose
+
+The config is a Lua file, `.gsttt/init.lua`, in the style of a Neovim config: it turns modules on and off, sets their options, adds and removes rule packs, and declares connectors that run as a command. It is evaluated in a sandbox into a `Setup`, deterministically, so the same files always give the same index.
+
+## ADDED Requirements
+
+### Requirement: Config file
+The config SHALL be read from `.gsttt/init.lua` under the repository root. Without that file the setup SHALL turn on every detected module with default options and no packs of the user. A Lua syntax or runtime error SHALL fail the run with the file, the line and Lua's message.
+
+#### Scenario: No config means defaults
+- **WHEN** the repository has no `.gsttt/init.lua`
+- **THEN** the setup detects modules, lists no module options, packs, disabled modules or externals, and has the default size limit
+
+#### Scenario: An error names its line
+- **WHEN** line 3 of `.gsttt/init.lua` calls a nil value
+- **THEN** evaluation fails with a message that starts with `.gsttt/init.lua:3:`
+
+### Requirement: The gsttt module
+`require("gsttt")` SHALL return a module whose functions fill the setup: `setup` sets `exclude`, `http_prefixes`, `max_file_bytes` and `detect`; a function per module of the registry turns that module on with its table as options; `disable` keeps a module off even when it is detected; `pack` adds a pack read like a built-in one; `disable_pack` leaves a built-in pack out; and `external` declares a connector run as a command with `name`, `cmd`, `files` and `version`.
+
+#### Scenario: A config fills the setup
+- **WHEN** the config calls `g.setup { exclude = { "fixtures/**" }, http_prefixes = { "/api" } }`, `g.ts { tsconfig = "tsconfig.base.json" }`, `g.disable "openapi"`, `g.disable_pack "axios"` and `g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" }, version = "1" }`
+- **THEN** the setup holds each of those values, matching the reviewed snapshot
+
+### Requirement: Strict keys
+An unknown key, an unknown module or a malformed pack SHALL fail evaluation with a message naming it, and an unknown module's message SHALL list the known ones.
+
+#### Scenario: A misspelt module is named with the known ones
+- **WHEN** the config calls `g.tss {}`
+- **THEN** evaluation fails with a message naming `tss` and listing `ts`, `python` and `rust` among the known modules
+
+#### Scenario: A misspelt key is named
+- **WHEN** the config calls `g.setup { exlude = { "a" } }`
+- **THEN** evaluation fails with a message naming `exlude`
+
+### Requirement: Option tables
+Tables passed to the gsttt module SHALL become JSON values: a table whose keys are `1` to `n` becomes a list, an empty table an empty list, and any other table a map.
+
+#### Scenario: Tables become lists and maps
+- **WHEN** the config calls `g.ts { conditions = { "import", "types" }, paths = { ["@app/*"] = { "src/*" } }, extra = {} }`
+- **THEN** the options are `{"conditions":["import","types"],"paths":{"@app/*":["src/*"]},"extra":[]}`
+
+### Requirement: Local modules
+`require` SHALL load `<name>` from `.gsttt/lua/<name with dots as slashes>.lua` or `.gsttt/lua/<name>/init.lua`, evaluate each module once per evaluation, and load nothing from anywhere else; a missing module SHALL fail with the paths it tried, and a name containing `..` or starting with `/` SHALL fail.
+
+#### Scenario: A pack in a local module
+- **WHEN** `.gsttt/lua/packs/billing.lua` returns a pack table and the config calls `g.pack(require("packs.billing"))`
+- **THEN** the setup holds the pack `billing`
+
+#### Scenario: Requires cannot leave the config directory
+- **WHEN** the config calls `require("../secrets")`
+- **THEN** evaluation fails with a message naming the module
+
+### Requirement: Sandbox
+The config, its modules and every pack SHALL be evaluated with only the `table`, `string`, `math` and `utf8` libraries and the base functions that cannot reach outside the state: no `io`, `os`, `package`, `debug`, `load`, `loadfile`, `dofile`, `collectgarbage`, `math.random` or `math.randomseed`. `print` SHALL write to the log.
+
+#### Scenario: The machine is out of reach
+- **WHEN** the config calls `io.open("/etc/passwd")`, `os.getenv("HOME")` or `dofile("/etc/passwd")`
+- **THEN** evaluation fails, and no file is read
+
+#### Scenario: Built-in packs share the sandbox
+- **WHEN** a pack source calls `loadfile("x.lua")`
+- **THEN** reading the pack fails with a message naming the pack
+
+### Requirement: Limits
+Evaluation SHALL stop with an error naming the limit when it allocates more than 64 MiB or runs more than 100 million instructions.
+
+#### Scenario: Runaway configs stop
+- **WHEN** the config runs `while true do end`, or builds a string of a billion bytes
+- **THEN** evaluation fails with a message naming the instruction limit or the memory limit
+
+### Requirement: Iteration order
+`pairs` SHALL visit list keys in order and then the other keys sorted, so that evaluation is deterministic.
+
+#### Scenario: Iteration order is fixed
+- **WHEN** the config builds `exclude` by iterating `pairs` over a table with the keys `b`, `a` and `c`
+- **THEN** `exclude` lists them as `a`, `b`, `c` on every evaluation
+
+### Requirement: Fingerprint
+The setup SHALL have a fingerprint computed from its canonical JSON form, so that an edit that changes no value leaves it unchanged.
+
+#### Scenario: Comments do not change the fingerprint
+- **WHEN** a comment is added to `.gsttt/init.lua`
+- **THEN** the fingerprint of the setup is unchanged, and changing `http_prefixes` changes it
+
+### Requirement: Editor support
+The crate SHALL generate LuaLS annotations from the registry's module names and option schemas: a `---@meta` file declaring the `gsttt` module, one `---@class` per module's options with a `---@field` per property (optional, typed, with its description), string enums as literal unions, lists as `T[]`, and the pack and rule types; a `.luarc.json` pointing LuaLS at those annotations and at `.gsttt/lua/`; and a starter `init.lua` that lists the detected modules as comments.
+
+#### Scenario: Options become annotated classes
+- **WHEN** annotations are generated for a module `ts` whose option schema has a string `tsconfig` and a list of strings `conditions`, each with a description
+- **THEN** the output declares `---@class gsttt.TsOptions` with `---@field tsconfig? string` and `---@field conditions? string[]` and their descriptions, and a function `ts` that takes `gsttt.TsOptions`
+
+### Requirement: External connectors
+An external SHALL be a connector that claims the files its `files` globs match and speaks JSON lines with one process started in the repository root on its first request, so that a run answered from the snapshot starts none.
+
+#### Scenario: An unused external starts nothing
+- **WHEN** a run opens an external whose files are all answered from the snapshot, so it parses and resolves nothing
+- **THEN** its command never runs
+
+### Requirement: External protocol
+An external's process SHALL receive `open` with the protocol version, the root and the options, and answer `ready` with its name, version and provides; then `parse` for each file with its path and text, answered by `facts`, and `resolve` for each import, answered by `resolution`; and `done` at the end of the run. Messages SHALL carry the serde forms of the core types and name files by path.
+
+#### Scenario: A well-behaved process indexes its files
+- **WHEN** an external claims `**/*.kt` and its process answers every request
+- **THEN** the files `src/A.kt` and `src/B.kt` carry the facts it sent and the imports resolve as it said
+
+### Requirement: External failures
+A process that exits, answers out of turn, sends a line that does not parse or takes longer than its timeout for one request SHALL fail every file it has not answered, as a panic naming the connector, and the run SHALL go on. The timeout SHALL be 10 seconds.
+
+#### Scenario: A hung process fails its files and nothing else
+- **WHEN** an external's process does not answer the `parse` of `src/B.kt` within the timeout
+- **THEN** `src/B.kt` and every later file of that external fail as panics naming it, and the other connectors' files are indexed
+
+### Requirement: External schema
+The crate SHALL provide the JSON schema of the messages.
+
+#### Scenario: The protocol has a schema
+- **WHEN** the schema of the external protocol is generated
+- **THEN** it describes each message type, matching the reviewed snapshot

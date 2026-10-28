@@ -1,0 +1,1 @@
+//! The gsttt MCP server.

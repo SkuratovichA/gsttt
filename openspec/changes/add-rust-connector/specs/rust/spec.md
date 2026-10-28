@@ -1,0 +1,185 @@
+# Spec Delta
+
+## Purpose
+
+The Rust connector reads Rust into imports and contract sites. It parses with `ra_ap_syntax`, builds each crate's module tree, resolves `use` paths and qualified paths through it and through the workspace's crates, and finds HTTP routes and requests, tables, embedded SQL and environment variables through rule packs.
+
+## ADDED Requirements
+
+### Requirement: Projects
+The connector SHALL open one project per `Cargo.toml` in the file list. A project SHALL claim the `rs` files under its root and its `Cargo.toml`, which it tags as a manifest.
+
+#### Scenario: Every manifest is a project
+- **WHEN** a repository has a virtual `Cargo.toml` at the root, `crates/core/Cargo.toml` and `crates/cli/Cargo.toml`
+- **THEN** the connector opens projects rooted at the repository root, `crates/core` and `crates/cli`
+- **AND** `crates/core/src/lib.rs` belongs to `crates/core`
+
+### Requirement: Crate targets
+A project with a `[package]` table SHALL know its crate targets: `src/lib.rs`, `src/main.rs`, `src/bin/*.rs`, `src/bin/*/main.rs`, `examples/*.rs`, `tests/*.rs`, `benches/*.rs` and `build.rs` when they exist, and the targets its manifest names with a `path`.
+
+#### Scenario: Explicit targets are crate roots
+- **WHEN** `crates/cli/Cargo.toml` has `[[bin]] name = "tool" path = "src/tool/entry.rs"` and `src/tool/entry.rs` has `mod args;`
+- **THEN** the module import resolves to `crates/cli/src/tool/args.rs`
+
+### Requirement: Workspace dependencies
+A dependency declared with `workspace = true` SHALL take its package from `[workspace.dependencies]` of the workspace root.
+
+#### Scenario: A workspace dependency takes its package from the root
+- **WHEN** the root `Cargo.toml` has `[workspace.dependencies]` with `engine = { package = "gsttt-core", path = "crates/core" }`, `crates/web/Cargo.toml` has `engine = { workspace = true }`, and `crates/web/src/main.rs` imports `engine::graph::Graph`
+- **THEN** the import resolves to `crates/core/src/graph.rs`
+
+### Requirement: Module tree
+`mod <name>;` SHALL be an import of kind module that resolves, from a crate root or a `mod.rs`, to `<name>.rs` or `<name>/mod.rs` in the same directory, and from any other file `<dir>/<file>.rs` to `<dir>/<file>/<name>.rs` or `<dir>/<file>/<name>/mod.rs`; inline modules SHALL nest the directory the same way, and a `#[path = "…"]` attribute SHALL name the file relative to the declaring file's directory. Each project SHALL build the module tree of each of its crate targets from these imports.
+
+#### Scenario: Module declarations find their files
+- **WHEN** `src/lib.rs` has `mod a; mod b;`, `src/a.rs` has `mod c;`, and the files `src/a.rs`, `src/b/mod.rs` and `src/a/c.rs` exist
+- **THEN** the three module imports resolve to `src/a.rs`, `src/b/mod.rs` and `src/a/c.rs`
+
+#### Scenario: A path attribute names the file
+- **WHEN** `src/lib.rs` has `#[path = "generated/schema.rs"] mod schema;`
+- **THEN** the module import resolves to `src/generated/schema.rs`
+
+#### Scenario: A missing module file is not found
+- **WHEN** `src/lib.rs` has `mod gone;` and neither `src/gone.rs` nor `src/gone/mod.rs` exists
+- **THEN** the import is unresolved as not found
+
+### Requirement: Imports
+The connector SHALL read `use` declarations, one import per leaf of a use tree, with `pub use` as a re-export and a glob as a re-export of everything when it is public; `extern crate`; qualified paths of two or more segments in code that start with `crate`, `self`, `super` or the name of a crate, including paths inside macro invocations, read from their tokens; and `include!`, `include_str!` and `include_bytes!` with a literal path as includes.
+
+#### Scenario: Every import form is read
+- **WHEN** a file holds one import of each form listed above
+- **THEN** its facts hold each import with its kind, line and names, matching the reviewed snapshot
+
+#### Scenario: Paths in macros are read
+- **WHEN** a file has `assert_eq!(crate::a::helper(), 1)` and no `use` of `crate::a`
+- **THEN** its facts hold an import of `crate::a::helper` at that line
+
+### Requirement: Conditional imports
+Imports inside an item or module under `#[cfg(test)]` SHALL be flagged test-only, and imports under any other `#[cfg(…)]` optional.
+
+#### Scenario: Conditional imports are flagged
+- **WHEN** a file has `#[cfg(test)] mod tests;`, `#[cfg(feature = "cli")] use crate::cli::Args;` and `#[cfg(test)] mod inline { use super::Thing; }`
+- **THEN** the first and third imports are flagged test-only and the second optional
+
+### Requirement: Parse status
+A file with syntax errors SHALL be recorded as recovered with the number of errors and the line of the first, keeping what was read.
+
+#### Scenario: A recoverable error keeps the imports
+- **WHEN** a file has `use crate::a::B;` on line 1 and an unclosed brace on its last line
+- **THEN** its status is recovered and its facts still hold the import of `crate::a::B`
+
+### Requirement: Test files
+Files under a `tests` directory of a package, and files named `tests.rs`, `test.rs`, `*_test.rs` or `*_tests.rs`, SHALL be tagged as tests.
+
+#### Scenario: Test files are tagged
+- **WHEN** a package holds `tests/api.rs`, `src/a/tests.rs`, `src/parse_tests.rs` and `src/a.rs`
+- **THEN** the first three are tagged as tests and `src/a.rs` is not
+
+### Requirement: Resolution
+A path SHALL resolve through the module tree of the crate the file belongs to: `crate` from the crate root, `self` from the file's module, `super` from its parent, and a leading segment that the same module brings in with `use` through that `use`. An include SHALL resolve against the directory of its file, and an `include!` of a `concat!` that starts with `env!("OUT_DIR")` SHALL be an import unresolved as generated.
+
+#### Scenario: Aliases resolve through their use
+- **WHEN** a file has `use crate::a;` and calls `a::c::Thing::new()`
+- **THEN** the path in the call resolves to `src/a/c.rs`
+
+#### Scenario: Includes resolve beside the file
+- **WHEN** `src/a.rs` has `include_str!("../fixtures/a.json")` and `include!(concat!(env!("OUT_DIR"), "/gen.rs"))`
+- **THEN** the first resolves to `fixtures/a.json` in the package and the second is unresolved as generated
+
+### Requirement: Resolution order
+The first segment of a path not starting with `crate`, `self`, `super` or a name the file's module brings in with `use` SHALL be tried, in order, as a child module of the file's module, as a crate (the package's own library from its other targets, a declared dependency by its crate name or its renamed key, `std`, `core`, `alloc`, `proc_macro` and `test` as builtins), and as a module at the crate root; a path that matches none of these SHALL be an unknown package.
+
+#### Scenario: Targets of a package see its library
+- **WHEN** the package `gsttt-core` has `tests/engine.rs` with `use gsttt_core::index::Index;`
+- **THEN** the import resolves to `crates/core/src/index.rs`
+
+#### Scenario: Dependencies, builtins and unknown names are told apart
+- **WHEN** a package declares `serde` directly and `tokio = { workspace = true }`, and a file imports `serde::Deserialize`, `tokio::sync::Mutex`, `std::collections::HashMap` and `rand::random`
+- **THEN** the imports resolve to the packages `serde` and `tokio`, a builtin and an unknown package
+
+### Requirement: Deepest module
+Within a crate a path SHALL resolve to the file of the deepest module it names.
+
+#### Scenario: Paths stop at the deepest module
+- **WHEN** `src/lib.rs` has `mod a;`, `src/a.rs` has `mod c;` and `pub struct Helper;`, and the files `src/lib.rs`, `src/a.rs` and `src/a/c.rs` hold `use crate::a::c::Thing;`, `use self::c::Thing;` and `use super::Helper;`
+- **THEN** the first two resolve to `src/a/c.rs` and the third to `src/a.rs`
+
+### Requirement: Paths into dependencies
+A path into a workspace crate SHALL continue through that crate's module tree, and a path into any other dependency SHALL resolve to that package.
+
+#### Scenario: Workspace crates resolve to their modules
+- **WHEN** `crates/cli` depends on `gsttt-core` by path and imports `gsttt_core::index::Index`, and `crates/web` depends on it as `engine = { package = "gsttt-core", path = "../core" }` and imports `engine::graph::Graph`
+- **THEN** the imports resolve to `crates/core/src/index.rs` and `crates/core/src/graph.rs`
+
+### Requirement: HTTP routes
+With the `axum` pack, `route("<path>", <method router>)` on a `Router` SHALL serve `http <METHOD> <path>` for each of `get`, `post`, `put`, `patch`, `delete`, `head`, `options` and `trace` in the method router, and `*` for `any`.
+
+#### Scenario: An axum route serves each of its methods
+- **WHEN** a file has `Router::new().route("/bookings/{id}", get(show).delete(destroy))`
+- **THEN** it serves `http GET /bookings/{}` and `http DELETE /bookings/{}` at the line of the `route` call
+
+### Requirement: Nested routers
+With the `axum` pack, `nest("<prefix>", <router>)` SHALL serve the nested router's routes under the prefix and `merge(<router>)` without one, where the router is a local binding or a call to a function returning a router, in this file or another, through any number of levels.
+
+#### Scenario: A nested router in another file serves under the prefix
+- **WHEN** `src/bookings.rs` has `pub fn router() -> Router { Router::new().route("/{id}", get(show)) }` and `src/main.rs` has `Router::new().nest("/api/bookings", bookings::router())`
+- **THEN** `src/bookings.rs` serves `http GET /api/bookings/{}` at the line of its `route` call
+
+### Requirement: Actix routes
+With the `actix` pack, the attributes `#[get]`, `#[post]`, `#[put]`, `#[patch]`, `#[delete]`, `#[head]` and `#[route(…, method = …)]` on a function SHALL serve their path, `web::resource("<path>").route(web::<verb>().to(…))` SHALL serve the path with the verb, and `web::scope("<prefix>").service(<handler>)` SHALL serve the handler's routes under the prefix, across files.
+
+#### Scenario: An actix scope prefixes a handler from another file
+- **WHEN** `src/bookings.rs` has `#[get("/{id}")] async fn show()` and `src/main.rs` has `web::scope("/bookings").service(bookings::show)`
+- **THEN** `src/bookings.rs` serves `http GET /bookings/{}` at the line of the attribute
+
+### Requirement: HTTP requests
+With the `reqwest` pack, `reqwest::get(<url>)` SHALL call `http GET <url>`, and `get`, `post`, `put`, `patch`, `delete` and `head` with a URL, and `request(Method::<VERB>, <url>)`, SHALL call the URL with the verb on a receiver bound in the same file to `Client::new()` or a `Client::builder()` chain, or a `self` field or parameter whose type in the same file is reqwest's `Client`.
+
+#### Scenario: A client held in a field calls the URL
+- **WHEN** a file has `struct Api { http: reqwest::Client, base: String }` and a method calling `self.http.get(format!("{}/bookings/{}", self.base, id))`
+- **THEN** it calls `http GET /bookings/{}`
+
+#### Scenario: A get on another receiver is no request
+- **WHEN** a file has `cache.get("/bookings")` and `cache` is a `HashMap`
+- **THEN** the file has no contract site at that line
+
+### Requirement: Request URLs
+With the `reqwest` pack, a URL from `format!` SHALL keep its literal parts with each placeholder as a parameter; a URL with no literal path SHALL be an unread site.
+
+#### Scenario: Built URLs keep their literal parts and bare URLs are unread
+- **WHEN** a file has `let client = reqwest::Client::new();`, `client.delete(format!("/bookings/{}", id))` on line 12 and `client.get(url)` on line 13
+- **THEN** it calls `http DELETE /bookings/{}` at line 12
+- **AND** the file has an unread site at line 13
+
+### Requirement: Tables and SQL
+With the `sqlx` pack, the SQL argument of `query!`, `query_as!`, `query_scalar!`, their `_unchecked` forms, and of the functions `query`, `query_as` and `query_scalar`, SHALL be an embedded `sql` document when it is a literal, and `query_file!` and `query_file_as!` SHALL be includes resolving from the package root. With the `sea_orm` pack, `#[sea_orm(table_name = "<name>")]` SHALL declare `table <name>`.
+
+#### Scenario: Query macros embed SQL
+- **WHEN** a file has `sqlx::query_as!(Booking, "SELECT id FROM bookings WHERE id = $1", id)` on line 9
+- **THEN** it embeds an `sql` document at line 9 with that text
+
+#### Scenario: Query files are includes
+- **WHEN** a file in the package `crates/db` has `sqlx::query_file!("queries/find.sql", id)`
+- **THEN** it has an include that resolves to `crates/db/queries/find.sql`
+
+#### Scenario: An entity declares its table
+- **WHEN** a struct has `#[sea_orm(table_name = "bookings")]`
+- **THEN** the file declares `table bookings`
+
+### Requirement: Environment variables
+With the `env` pack, `env::var`, `env::var_os`, `std::env::var`, `dotenvy::var`, `env!` and `option_env!` with a literal name, and a clap `env = "<NAME>"` argument in `#[arg(…)]` or `#[clap(…)]`, SHALL call `env <NAME>`.
+
+#### Scenario: Every way of reading the environment is seen
+- **WHEN** a file has `env::var("A")`, `std::env::var_os("B")`, `env!("C")`, `option_env!("D")` and a field with `#[arg(long, env = "E")]`
+- **THEN** it calls `env A`, `env B`, `env C`, `env D` and `env E`
+
+### Requirement: Pack activation
+A pack SHALL be active in a project when its manifest declares one of the pack's `detect` crates in `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]` or a target-specific table, directly or through the workspace, or always when its `detect` is empty. Each project SHALL report what it provides, with its blind spots in words.
+
+#### Scenario: Packs follow the manifest
+- **WHEN** `crates/api` declares `axum` and `crates/cli` does not
+- **THEN** `route` calls in `crates/api` produce sites and the same calls in `crates/cli` do not
+
+#### Scenario: Blind spots are reported
+- **WHEN** the coverage of a Rust project is read
+- **THEN** its provides name, among the blind spots, actix `configure`, tonic services, Diesel `table!` and routers passed as values the connector cannot follow

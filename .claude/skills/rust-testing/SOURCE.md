@@ -1,0 +1,1 @@
+Copied unchanged from https://github.com/affaan-m/everything-claude-code/blob/25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b/skills/rust-testing/SKILL.md under the MIT License in `LICENSE` beside this file.

@@ -1,0 +1,8 @@
+[files]
+extend-exclude = [
+  "LICENSE",
+  "tests/fixtures/**",
+  "crates/*/tests/fixtures/**",
+  "**/snapshots/**",
+  "openspec/changes/archive/**",
+]

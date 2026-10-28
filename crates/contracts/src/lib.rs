@@ -1,0 +1,1 @@
+//! Contract formats for gsttt.

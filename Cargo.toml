@@ -1,0 +1,169 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+default-members = ["crates/gsttt"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+repository = "https://github.com/SkuratovichA/gsttt"
+homepage = "https://gsttt.arstoien.com"
+description = "Glass sphere telling the truth: what a code change affects, across files, packages and languages"
+keywords = ["impact-analysis", "dependency-graph", "mcp", "monorepo", "static-analysis"]
+categories = ["command-line-utilities", "development-tools"]
+publish = false
+
+[workspace.dependencies]
+# Internal crates. A module crate (lang-*, contracts, config, mcp) depends on core and never on another module crate.
+gsttt-core = { path = "crates/core" }
+gsttt-lang-ts = { path = "crates/lang-ts" }
+gsttt-lang-python = { path = "crates/lang-python" }
+gsttt-lang-rust = { path = "crates/lang-rust" }
+gsttt-contracts = { path = "crates/contracts" }
+gsttt-config = { path = "crates/config" }
+gsttt-mcp = { path = "crates/mcp" }
+gsttt-spec = { path = "crates/spec" }
+gsttt-scenario = { path = "crates/scenario" }
+
+# Parsers. The 0.0.x crates have no semver promise, so they are pinned exactly and bumped on purpose.
+oxc_allocator = "0.156.0"
+oxc_ast = "0.156.0"
+oxc_ast_visit = "0.156.0"
+oxc_parser = "0.156.0"
+oxc_semantic = "0.156.0"
+oxc_span = "0.156.0"
+oxc_syntax = "0.156.0"
+oxc_resolver = "11.24.3"
+ruff_python_ast = "=0.0.20"
+ruff_python_parser = "=0.0.20"
+ruff_python_stdlib = "=0.0.20"
+ruff_text_size = "=0.0.20"
+ra_ap_edition = "=0.0.360"
+ra_ap_syntax = "=0.0.360"
+apollo-parser = "0.8.7"
+protox-parse = "0.10.0"
+sqlparser = "0.63.0"
+saphyr = "0.3.3"
+serde_norway = "0.9.42"
+jsonc-parser = { version = "0.34.0", features = ["serde"] }
+toml = "0.9.8"
+pulldown-cmark = { version = "0.13.5", default-features = false }
+regex = "1.13.1"
+
+# Engine. Crates add the features they need locally; versions live here.
+gix = { version = "0.90.0", default-features = false }
+ignore = "0.4.34"
+globset = "0.4.21"
+rayon = "1.12.0"
+# Snapshot and parse cache on disk. Validated on load; a file that fails validation is rebuilt, never trusted.
+rkyv = "0.8.18"
+foldhash = "0.2.0"
+hashbrown = "0.17.1"
+indexmap = "2.14.2"
+smallvec = { version = "1.16.4", features = ["union", "const_generics"] }
+compact_str = "0.10.0"
+camino = "1.2.6"
+fixedbitset = "0.5.7"
+memchr = "2.8.3"
+papaya = "0.2.5"
+xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
+tempfile = "3.27.0"
+jiff = "0.2.38"
+
+# Surface: CLI, MCP, config, diagnostics.
+clap = { version = "4.6.7", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4.6.11"
+schemars = "1.2.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+rmcp = { version = "3.8.0", default-features = false }
+tokio = { version = "1.54.1", default-features = false }
+mlua = { version = "0.12.2", features = ["lua54", "vendored", "serialize"] }
+miette = "7.6.0"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["std", "fmt", "ansi", "env-filter"] }
+anstream = "1.0.0"
+anstyle = "1.0.14"
+shlex = "2.0.1"
+mimalloc = "0.1.52"
+anyhow = "1.0.104"
+xshell = "0.2.7"
+
+# Proc macros.
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = { version = "3.0.9", features = ["full"] }
+
+# Tests.
+insta = { version = "1.49.0", features = ["json"] }
+libtest-mimic = "0.8.2"
+proptest = "1.12.0"
+similar-asserts = "2.0.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+unused_lifetimes = "warn"
+let_underscore_drop = "warn"
+missing_debug_implementations = "warn"
+redundant_lifetimes = "warn"
+unit_bindings = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# No panics in shipped code: one bad file must never take the index down. Tests may unwrap (clippy.toml).
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+get_unwrap = "deny"
+string_slice = "deny"
+indexing_slicing = "warn"
+# Libraries return values; only the binary's output layer writes to the terminal.
+print_stdout = "deny"
+print_stderr = "deny"
+dbg_macro = "deny"
+# Every exception says why, and `#[expect]` fails once the lint stops firing.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+mod_module_files = "deny"
+clone_on_ref_ptr = "warn"
+rc_buffer = "warn"
+# Taste.
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+
+[profile.dev]
+# Backtraces keep file:line; full debuginfo would triple target/ on a laptop with little disk.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"
+# Unwinding stays on: per-file catch_unwind turns a parser panic into a coverage line instead of a crash.
+panic = "unwind"
+
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+[profile.profiling]
+inherits = "release"
+debug = "full"
+strip = "none"

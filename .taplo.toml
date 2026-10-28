@@ -1,0 +1,8 @@
+include = ["**/*.toml"]
+exclude = ["target/**", "tests/fixtures/**", "crates/*/tests/fixtures/**"]
+
+[formatting]
+align_entries = false
+column_width = 120
+reorder_keys = false
+array_auto_collapse = false

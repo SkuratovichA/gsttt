@@ -1,0 +1,147 @@
+# Spec Delta
+
+## Purpose
+
+The contract-format connectors read the files that define seams rather than implement them: OpenAPI documents, GraphQL schemas and operations, protobuf services, Prisma schemas, SQL and env files. Their sites are mostly declarations, which is what lets a change to a schema reach the code that serves and calls it. The GraphQL and SQL connectors also read the documents other connectors find embedded in code.
+
+## ADDED Requirements
+
+### Requirement: Connectors and files
+The crate SHALL provide the connectors `openapi`, `graphql`, `proto`, `prisma`, `sql` and `env`, each opening one project at the repository root when the file list holds a file it claims, and none otherwise.
+
+#### Scenario: A connector opens a project only for files it claims
+- **WHEN** the file list holds `schema.graphql` and `.env.example` and no other contract file
+- **THEN** the `graphql` and `env` connectors each open one project at the repository root
+- **AND** the `openapi`, `proto`, `prisma` and `sql` connectors open none
+
+### Requirement: File claims
+`openapi` SHALL claim `openapi.*`, `swagger.*` and `*.openapi.*` with the extensions `yaml`, `yml` and `json`, the files its `files` option names, and, as fragments, the `yaml`, `yml` and `json` files that their `$ref`s reach; `graphql` SHALL claim `graphql`, `graphqls` and `gql` files; `proto` SHALL claim `proto` files; `prisma` SHALL claim `prisma` files; `sql` SHALL claim `sql` files; and `env` SHALL claim `.env`, `.env.*` and `*.env` files.
+
+#### Scenario: Each format claims its files
+- **WHEN** the file list holds `api/openapi.yaml`, which refers to `./paths/bookings.yaml`, and `api/paths/bookings.yaml`, `schema.graphql`, `proto/booking/v1/booking.proto`, `prisma/schema.prisma`, `migrations/001_init.sql`, `.env.example` and `config/app.yaml`
+- **THEN** each of the first seven belongs to the matching connector's project, and `config/app.yaml` is claimed by none of them
+
+### Requirement: Parse failures
+A file a format's parser cannot read SHALL be a syntax failure with its line, and a parser that recovers SHALL give a recovered status with the number of errors and the line of the first.
+
+#### Scenario: A broken document fails alone
+- **WHEN** `api/openapi.yaml` has a tab where YAML expects spaces on line 12
+- **THEN** its status is a syntax failure at line 12 and the other contract files are read
+
+### Requirement: OpenAPI
+Each operation under `paths` SHALL declare `http <METHOD> <base><path>` at the line of the operation, where the base is the path of the first entry of `servers` in OpenAPI 3 or `basePath` in Swagger 2. A `$ref` to another file SHALL be an import resolving relative to the referring file with its fragment dropped, and a path item that is a `$ref` to a fragment SHALL declare the fragment's operations under the referring path, at their lines in the fragment.
+
+#### Scenario: Operations are declared under the server path
+- **WHEN** `openapi.yaml` has `servers: [{url: "https://api.example.com/v1"}]` and the path `/bookings/{id}` with `get` and `delete`
+- **THEN** it declares `http GET /v1/bookings/{}` and `http DELETE /v1/bookings/{}` at the lines of `get` and `delete`
+
+#### Scenario: References are imports
+- **WHEN** `api/openapi.yaml` has `$ref: "./schemas/booking.yaml#/Booking"`
+- **THEN** it has an import that resolves to `api/schemas/booking.yaml`
+
+#### Scenario: Path items in fragments are declared
+- **WHEN** `api/openapi.yaml` has `/bookings: {$ref: "./paths/bookings.yaml"}` and `api/paths/bookings.yaml` has `get` and `post` at its top level
+- **THEN** `api/paths/bookings.yaml` declares `http GET /bookings` and `http POST /bookings`
+
+### Requirement: GraphQL
+In a schema, each field of `Query`, `Mutation` and `Subscription`, including their `extend type` forms and the types a `schema` definition names for those roots, SHALL declare `graphql <Root>.<field>`, with a renamed root written as `Query`, `Mutation` or `Subscription`.
+
+#### Scenario: Schema fields are declared
+- **WHEN** a schema has `schema { query: RootQuery }`, `type RootQuery { bookings: [Booking] }` and `extend type Mutation { cancel(id: ID!): Booking }`
+- **THEN** it declares `graphql Query.bookings` and `graphql Mutation.cancel`
+
+### Requirement: GraphQL operations
+In an operation, each root field SHALL call `graphql <Root>.<field>`, an anonymous operation being a query, and the root fields of a fragment spread at the root SHALL count when the fragment is in the same document.
+
+#### Scenario: Operations call their root fields
+- **WHEN** a document has `query Bookings { bookings { id } me { id } }` and `mutation { cancel(id: 1) { id } }`
+- **THEN** it calls `graphql Query.bookings`, `graphql Query.me` and `graphql Mutation.cancel`
+
+### Requirement: GraphQL imports
+A `#import "<path>"` comment SHALL be an import relative to the file.
+
+#### Scenario: Import comments are imports relative to the file
+- **WHEN** `api/schema.graphql` has the comment `#import "./types/booking.graphql"` and `api/types/booking.graphql` exists
+- **THEN** it has an import that resolves to `api/types/booking.graphql`
+
+### Requirement: Embedded GraphQL
+The connector SHALL read embedded `graphql` documents the same way as it reads `graphql` files, with lines offset to the host file.
+
+#### Scenario: Embedded documents keep host lines
+- **WHEN** a TypeScript file embeds `query { bookings { id } }` at line 5
+- **THEN** that file calls `graphql Query.bookings` at line 5
+
+### Requirement: Protobuf
+Each `rpc` of a `service` SHALL declare `grpc <package>.<Service>/<Method>` at its line, and a `google.api.http` option on it SHALL declare `http <METHOD> <path>` for its binding and each additional binding. An `import` SHALL resolve against the module roots of `buf.yaml` and the directories of `buf.work.yaml` when they exist, and then against each directory above the importing file; `google/protobuf/` imports SHALL resolve to builtins and any other import found nowhere to an unknown package.
+
+#### Scenario: Services and HTTP bindings are declared
+- **WHEN** `booking.proto` has `package booking.v1;` and `service BookingService { rpc GetBooking(GetBookingRequest) returns (Booking) { option (google.api.http) = { get: "/v1/bookings/{id}" }; } }`
+- **THEN** it declares `grpc booking.v1.BookingService/GetBooking` and `http GET /v1/bookings/{}`
+
+#### Scenario: Imports resolve from the proto root
+- **WHEN** `proto/booking/v1/booking.proto` imports `booking/v1/types.proto`, `google/protobuf/timestamp.proto` and `google/api/annotations.proto`, and `proto/booking/v1/types.proto` exists
+- **THEN** the imports resolve to `proto/booking/v1/types.proto`, a builtin and an unknown package
+
+### Requirement: Prisma
+Each `model` SHALL declare `table <model>` and, with `@@map("<name>")`, also `table <name>`. A datasource `url = env("<NAME>")` SHALL call `env <NAME>`.
+
+#### Scenario: A model declares its name and its table
+- **WHEN** a schema has `model BookingItem { id Int @id @@map("booking_items") }` and `datasource db { url = env("DATABASE_URL") }`
+- **THEN** it declares `table bookingitem` and `table booking_items` and calls `env DATABASE_URL`
+
+### Requirement: SQL
+`CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, SHALL declare `table <name>`; `FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM` and `MERGE INTO` SHALL call `table <name>`, leaving out the names of common table expressions. Names SHALL drop their schema and quotes.
+
+#### Scenario: A migration declares its tables
+- **WHEN** a file has `CREATE TABLE IF NOT EXISTS public."BookingItem" (id int);` and `ALTER TABLE bookings ADD COLUMN note text;`
+- **THEN** it declares `table bookingitem` and `table bookings`
+
+#### Scenario: Queries call their tables
+- **WHEN** a file has `WITH recent AS (SELECT * FROM bookings) SELECT * FROM recent JOIN booking_items i ON true WHERE id = %s;`
+- **THEN** it calls `table bookings` and `table booking_items` and not `table recent`
+
+### Requirement: SQL dialects
+Each statement SHALL be read with the dialect that the `sql` connector's `dialect` option names, PostgreSQL by default, and a dialect the parser does not know SHALL be an options error naming the option and the value.
+
+#### Scenario: The dialect option picks the grammar
+- **WHEN** the `dialect` option is `mysql` and a file has ``SELECT id FROM `bookings`;``
+- **THEN** its status is ok and it calls `table bookings`
+
+#### Scenario: An unknown dialect is an options error
+- **WHEN** the `dialect` option is `cobol`
+- **THEN** opening the `sql` connector fails with an options error that names `dialect` and `cobol`
+
+### Requirement: SQL placeholders
+Placeholders of the common drivers (`$1`, `?`, `:name`, `%s`, `%(name)s`) SHALL be read as parameters.
+
+#### Scenario: Driver placeholders are parameters
+- **WHEN** a file has `SELECT * FROM bookings WHERE id = $1;` on line 1 and the same statement on lines 2, 3, 4 and 5 with `?`, `:id`, `%s` and `%(id)s` in place of `$1`, respectively
+- **THEN** its status is not recovered and it calls `table bookings` at lines 1 to 5
+
+### Requirement: SQL recovery
+A statement that does not parse SHALL be counted in a recovered status and the other statements read.
+
+#### Scenario: One bad statement does not hide the rest
+- **WHEN** a file has three statements and the second is not valid SQL
+- **THEN** its status is recovered with one error at the second statement's line and the sites of the first and third are read
+
+### Requirement: Embedded SQL
+The connector SHALL read embedded `sql` documents the same way as it reads `sql` files, with lines offset to the host file.
+
+#### Scenario: Embedded SQL documents keep host lines
+- **WHEN** a Python file embeds `SELECT id FROM bookings` at line 7
+- **THEN** that file calls `table bookings` at line 7
+
+### Requirement: Env files
+Each `<NAME>=` line, with or without `export`, SHALL declare `env <NAME>` at its line; comments and blank lines SHALL be skipped.
+
+#### Scenario: Example env files declare their variables
+- **WHEN** `.env.example` has `# database`, `DATABASE_URL=postgres://localhost/app` and `export PORT=3000`
+- **THEN** it declares `env DATABASE_URL` and `env PORT`
+
+### Requirement: Provides
+Each connector SHALL report what it provides, with its blind spots in words.
+
+#### Scenario: Blind spots are reported
+- **WHEN** the coverage of the contract connectors is read
+- **THEN** among the blind spots are GraphQL fragments spread from other files, environment variables set in compose files, CI and deployment manifests, and schemas generated at build time

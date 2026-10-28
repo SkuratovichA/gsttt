@@ -1,0 +1,9 @@
+/target
+*.profraw
+/lcov.info
+.DS_Store
+node_modules/
+/bench/repos
+/bench/results/*.tmp
+/.claude/worktrees/
+/.claude/settings.local.json

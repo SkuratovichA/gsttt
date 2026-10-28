@@ -1,0 +1,195 @@
+//! Paths inside the repository.
+
+use std::borrow::Borrow;
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
+/// A file path relative to the repository root: `/`-separated, with no `.`, `..` or empty segments. It is the
+/// form git stores, so two spellings of one file are one `RepoPath`.
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[serde(try_from = "String", into = "String")]
+#[rkyv(derive(PartialEq, Eq, PartialOrd, Ord, Hash))]
+pub struct RepoPath(String);
+
+/// Why a string is not a [`RepoPath`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PathError {
+    #[error("empty path")]
+    Empty,
+    #[error("`{0}` is absolute; a repository path is relative to the repository root")]
+    Absolute(String),
+    #[error("`{0}` leaves the repository")]
+    EscapesRoot(String),
+}
+
+impl RepoPath {
+    /// Normalises `raw`: drops `.` and empty segments and lets `..` remove the segment before it.
+    pub fn normalize(raw: &str) -> Result<Self, PathError> {
+        if raw.starts_with('/') {
+            return Err(PathError::Absolute(raw.to_owned()));
+        }
+        let mut segments: Vec<&str> = Vec::new();
+        for segment in raw.split('/') {
+            match segment {
+                "" | "." => {}
+                ".." => {
+                    if segments.pop().is_none() {
+                        return Err(PathError::EscapesRoot(raw.to_owned()));
+                    }
+                }
+                segment => segments.push(segment),
+            }
+        }
+        if segments.is_empty() {
+            return Err(PathError::Empty);
+        }
+        Ok(Self(segments.join("/")))
+    }
+
+    /// `relative` taken from the directory `dir`, where `""` is the repository root.
+    pub fn join(dir: &str, relative: &str) -> Result<Self, PathError> {
+        if relative.starts_with('/') {
+            return Err(PathError::Absolute(relative.to_owned()));
+        }
+        if dir.is_empty() {
+            Self::normalize(relative)
+        } else {
+            Self::normalize(&format!("{dir}/{relative}"))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The last segment: `b.ts` for `src/a/b.ts`.
+    pub fn file_name(&self) -> &str {
+        self.0
+            .rsplit_once('/')
+            .map_or(self.0.as_str(), |(_, name)| name)
+    }
+
+    /// The directory holding the file, `""` at the root.
+    pub fn parent(&self) -> &str {
+        self.0.rsplit_once('/').map_or("", |(dir, _)| dir)
+    }
+
+    /// The text after the last `.` of the file name: `ts` for `a.d.ts`, `None` for `Makefile` and `.env`.
+    pub fn extension(&self) -> Option<&str> {
+        let name = self.file_name();
+        match name.rsplit_once('.') {
+            Some((stem, extension)) if !stem.is_empty() => Some(extension),
+            _ => None,
+        }
+    }
+
+    /// Whether the file lies under `dir`, at any depth. Every file lies under `""`.
+    pub fn is_under(&self, dir: &str) -> bool {
+        dir.is_empty()
+            || self
+                .0
+                .strip_prefix(dir)
+                .is_some_and(|rest| rest.starts_with('/'))
+    }
+}
+
+impl TryFrom<String> for RepoPath {
+    type Error = PathError;
+
+    fn try_from(raw: String) -> Result<Self, PathError> {
+        Self::normalize(&raw)
+    }
+}
+
+impl TryFrom<&str> for RepoPath {
+    type Error = PathError;
+
+    fn try_from(raw: &str) -> Result<Self, PathError> {
+        Self::normalize(raw)
+    }
+}
+
+impl From<RepoPath> for String {
+    fn from(path: RepoPath) -> Self {
+        path.0
+    }
+}
+
+impl Borrow<str> for RepoPath {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for RepoPath {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for RepoPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl fmt::Debug for RepoPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_drops_dots_and_pops_parents() {
+        assert_eq!(
+            RepoPath::normalize("./src//a/../b.ts").unwrap().as_str(),
+            "src/b.ts"
+        );
+        assert_eq!(
+            RepoPath::join("src/a", "../b/c.ts").unwrap().as_str(),
+            "src/b/c.ts"
+        );
+        assert_eq!(RepoPath::join("", "./x.py").unwrap().as_str(), "x.py");
+    }
+
+    #[test]
+    fn normalize_refuses_paths_outside_the_repository() {
+        assert_eq!(
+            RepoPath::normalize("../a"),
+            Err(PathError::EscapesRoot("../a".into()))
+        );
+        assert_eq!(
+            RepoPath::normalize("/etc/passwd"),
+            Err(PathError::Absolute("/etc/passwd".into()))
+        );
+        assert_eq!(RepoPath::normalize("./"), Err(PathError::Empty));
+    }
+
+    #[test]
+    fn parts() {
+        let path = RepoPath::normalize("src/types/a.d.ts").unwrap();
+        assert_eq!(
+            (path.parent(), path.file_name(), path.extension()),
+            ("src/types", "a.d.ts", Some("ts"))
+        );
+        assert_eq!(RepoPath::normalize(".env").unwrap().extension(), None);
+        assert!(path.is_under("src") && path.is_under("") && !path.is_under("sr"));
+    }
+}
