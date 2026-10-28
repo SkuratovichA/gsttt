@@ -34,3 +34,4 @@
 - [x] 6.6 A named re-export of a name the barrel does not export is reached like a use of it, as the oracle of 6.3 requires
 - [x] 6.7 A cycle of `export *` is pinned through the linker and the walk on one fixture, and a router required in place has a test and a scenario
 - [x] 6.8 The Python and the Rust connector are pinned to leave `exports` unknown, so that a reader of `__all__` or `pub` that flips them to by-name has to be decided and tested in the walk
+- [x] 6.9 A file the walk reached stays in the answer whatever its reason can name: a list of names the graph cannot spell becomes the whole file, a file or a contract it does not hold is left empty, and only a file without a path is left out
