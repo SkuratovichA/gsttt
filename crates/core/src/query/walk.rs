@@ -18,7 +18,7 @@ use super::cross::{Crossed, Crossing, Direction};
 pub(super) enum Cause {
     /// The file imports the file the walk came from. `names` are the names it imports that the change can reach, sorted, and none when it takes every name.
     Imports { file: FileId, names: Vec<NameId> },
-    /// The file re-exports `names` of the file the walk came from, sorted. There are no names when the walk could not tell which, because the file it came from does not list what it exports, or when it passes none on, because it has nothing left to export through a star.
+    /// The file re-exports `names` of the file the walk came from, sorted. There are no names when it passes none on, because the file it came from has nothing left to export through a star.
     ReExports { file: FileId, names: Vec<NameId> },
     /// The file has a site with `role` in `contract`, which joins a contract of the file the walk came from.
     Contract { role: Role, contract: ContractId },
@@ -157,6 +157,26 @@ impl Walk<'_> {
         let graph = self.graph;
         let binding = graph.binding(edge);
 
+        // The names `file` gained: all of them when the walk reaches it whole. A file whose exports are unknown could lose or pass on any name, so over an edge into one the importer is followed at file level, whatever names the edge carries, as the walk follows every import of a connector that records no names.
+        let all;
+        let gained: &[NameId] = match delta {
+            Delta::Names(fresh) => fresh,
+            Delta::All => {
+                let Some(names) = self.exported_by(file) else {
+                    self.take_all(
+                        importer,
+                        Cause::Imports {
+                            file,
+                            names: Vec::new(),
+                        },
+                    );
+                    return;
+                };
+                all = names;
+                &all
+            }
+        };
+
         // The names the importer uses itself. One of them is enough to affect it in all of its names.
         let mut used = Vec::new();
         let uses_all = match (binding.uses, delta) {
@@ -166,11 +186,14 @@ impl Walk<'_> {
                 false
             }
             (Uses::Names(wanted), Delta::Names(fresh)) => {
-                // A name the file does not export is kept, because the import may be the very thing the change breaks or mends.
-                let exported = self.exported_by(file);
-                used.extend(wanted.iter().copied().filter(|&name| {
-                    holds(fresh, name) || exported.as_deref().is_none_or(|all| !holds(all, name))
-                }));
+                // A name the file does not export is kept, because the import may be the very thing the change breaks or mends. A file that takes no name has nothing to keep.
+                if !wanted.is_empty() {
+                    let exported = self.exported_by(file);
+                    used.extend(wanted.iter().copied().filter(|&name| {
+                        holds(fresh, name)
+                            || exported.as_deref().is_none_or(|all| !holds(all, name))
+                    }));
+                }
                 false
             }
         };
@@ -190,33 +213,22 @@ impl Walk<'_> {
                 passed.push(exported_as);
             }
         }
-        let mut unlisted = false;
         if binding.star {
-            match delta {
-                Delta::Names(fresh) => passed.extend(
-                    fresh
-                        .iter()
-                        .copied()
-                        .filter(|&name| Some(name) != self.default),
-                ),
-                Delta::All => match self.exported_by(file) {
-                    Some(all) => passed.extend(
-                        all.iter()
-                            .copied()
-                            .filter(|&name| Some(name) != self.default),
-                    ),
-                    None => unlisted = true,
-                },
-            }
+            passed.extend(
+                gained
+                    .iter()
+                    .copied()
+                    .filter(|&name| Some(name) != self.default),
+            );
         }
         passed.sort_unstable();
         passed.dedup();
         // A star edge always reaches its importer, even when the file has nothing left to pass on, because the importers of the barrel answer for the names that no one exports any more.
-        if passed.is_empty() && !unlisted && !binding.star {
+        if passed.is_empty() && !binding.star {
             return;
         }
-        // A file that does not list what it exports could pass on any of its names.
-        if unlisted || graph.exports(importer).is_none() {
+        // An importer that does not list what it exports could pass on any of its names.
+        if graph.exports(importer).is_none() {
             self.take_all(
                 importer,
                 Cause::ReExports {

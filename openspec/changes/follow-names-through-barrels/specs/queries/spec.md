@@ -87,6 +87,25 @@ A file with `export *` SHALL be reached when the file it re-exports is affected,
 - **WHEN** `mid.ts` has `export * from './only'`, `index.ts` has `export * from './mid'`, neither exports anything itself, `only.ts` exports nothing now, `page.ts` imports `foo` from `index.ts`, and `only.ts` changes
 - **THEN** impact lists `mid.ts` at distance 1, `index.ts` at distance 2 with the reason `re-exports mid.ts`, and `page.ts` at distance 3 with the reason `imports foo from index.ts`
 
+### Requirement: Unknown exports mean the whole file
+An edge into a file whose exports are unknown SHALL be followed at file level, whatever names it carries: its importer SHALL be affected in all its names when the file is affected in all of them, with the reason that it imports the file and no names, whether it imports by name, passes names on or re-exports everything. The exports of a file are unknown when its connector lists none, and when it re-exports everything from a file whose exports are unknown. A connector that lists no exports SHALL therefore give the files, distances and reasons of a walk over files.
+
+#### Scenario: A named import of a file with unknown exports is followed at file level
+- **WHEN** `user.py` imports `parse` from `lib.py`, the exports of `lib.py` are unknown, and `lib.py` changes
+- **THEN** impact lists `user.py` at distance 1 with the reason `imports lib.py`, which is what it lists when `user.py` imports `lib.py` without names
+
+#### Scenario: A star re-export of a file with unknown exports is followed at file level
+- **WHEN** `index.py` re-exports everything from `lib.py`, the exports of `lib.py` are unknown, `app.py` imports `parse` from `index.py`, and `lib.py` changes
+- **THEN** impact lists `index.py` at distance 1 with the reason `imports lib.py` and `app.py` at distance 2 with the reason `imports index.py`, which is what it lists when each of them imports its file without names
+
+#### Scenario: A named re-export of a file with unknown exports is followed at file level
+- **WHEN** `index.ts` exports `thing` with `export { thing } from './legacy'`, the exports of `legacy.js` are unknown, `page.ts` imports `thing` from `index.ts`, and `legacy.js` changes
+- **THEN** impact lists `index.ts` at distance 1 with the reason `imports legacy.js`, as it does when `index.ts` imports `legacy.js` without names, and `page.ts` at distance 2 with the reason `imports thing from index.ts`
+
+#### Scenario: A barrel that re-exports a file with unknown exports has unknown exports too
+- **WHEN** `index.ts` exports `own` and has `export * from './legacy'`, the exports of `legacy.js` are unknown, `page.ts` imports `thing` from `index.ts`, and `legacy.js` changes
+- **THEN** impact lists `index.ts` at distance 1 with the reason `imports legacy.js` and `page.ts` at distance 2 with the reason `imports index.ts`
+
 ### Requirement: Imports that take every name
 An importer that imports a namespace, imports for side effects, dynamically, by `require`, or with names its connector does not record SHALL be affected in all its names as soon as any name of the file is affected, and so SHALL a file whose own exports are unknown.
 

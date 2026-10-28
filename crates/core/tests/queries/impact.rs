@@ -817,6 +817,7 @@ fn a_barrel_passes_on_only_what_it_re_exports() {
 fn a_named_re_export_passes_on_its_alias() {
     let index = Tree::new()
         .exports("index.ts", &["other", "useBar"])
+        .exports("foo.ts", &["useFoo"])
         .re_exports("index.ts", "foo.ts", &[("useBar", "useFoo")])
         .re_exports("index.ts", "other.ts", &[("other", "other")])
         .imports_names("x.ts", "index.ts", &["useBar"])
@@ -897,8 +898,8 @@ fn unknown_exports_keep_every_importer() {
     assert_eq!(
         rows(&answer.affected),
         [
-            row("index.ts", 1, "re-exports legacy.js"),
-            row("page.ts", 2, "imports thing from index.ts"),
+            row("index.ts", 1, "imports legacy.js"),
+            row("page.ts", 2, "imports index.ts"),
         ]
     );
 }
@@ -925,6 +926,7 @@ fn a_barrel_reached_for_some_names_crosses_no_contract() {
 #[test]
 fn names_are_cut_after_three() {
     let index = Tree::new()
+        .exports("a.ts", &["four", "one", "three", "two"])
         .imports_names("x.ts", "a.ts", &["one", "two", "three", "four"])
         .imports_names("y.ts", "a.ts", &["one"])
         .build();
@@ -1077,6 +1079,118 @@ fn a_star_barrel_behind_a_star_barrel_reaches_the_importers_of_both() {
             row("mid.ts", 1, "re-exports only.ts"),
             row("index.ts", 2, "re-exports mid.ts"),
             row("page.ts", 3, "imports foo from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A named import of a file with unknown exports is followed at file level"
+)]
+#[test]
+fn a_named_import_of_a_file_with_unknown_exports_is_followed_at_file_level() {
+    // Python and Rust record the names an import takes and list no exports.
+    let named = Tree::new()
+        .imports_names("user.py", "lib.py", &["parse"])
+        .build();
+    let plain = Tree::new().imports("user.py", "lib.py").build();
+
+    let by_name = run(&named, &["lib.py"]);
+
+    assert_eq!(
+        rows(&by_name.affected),
+        [row("user.py", 1, "imports lib.py")]
+    );
+    assert_eq!(by_name.affected, run(&plain, &["lib.py"]).affected);
+    assert_eq!(
+        to_value(&by_name.affected).unwrap(),
+        to_value(&run(&plain, &["lib.py"]).affected).unwrap()
+    );
+}
+
+#[scenario(
+    "queries",
+    "A star re-export of a file with unknown exports is followed at file level"
+)]
+#[test]
+fn a_star_re_export_of_a_file_with_unknown_exports_is_followed_at_file_level() {
+    let star = Tree::new()
+        .re_exports_all("index.py", "lib.py")
+        .imports_names("app.py", "index.py", &["parse"])
+        .build();
+    let plain = Tree::new()
+        .imports("index.py", "lib.py")
+        .imports("app.py", "index.py")
+        .build();
+
+    let by_name = run(&star, &["lib.py"]);
+
+    assert_eq!(
+        rows(&by_name.affected),
+        [
+            row("index.py", 1, "imports lib.py"),
+            row("app.py", 2, "imports index.py"),
+        ]
+    );
+    assert_eq!(by_name.affected, run(&plain, &["lib.py"]).affected);
+    assert_eq!(
+        to_value(&by_name.affected).unwrap(),
+        to_value(&run(&plain, &["lib.py"]).affected).unwrap()
+    );
+}
+
+#[scenario(
+    "queries",
+    "A named re-export of a file with unknown exports is followed at file level"
+)]
+#[test]
+fn a_named_re_export_of_a_file_with_unknown_exports_is_followed_at_file_level() {
+    let named = Tree::new()
+        .exports("index.ts", &["thing"])
+        .re_exports("index.ts", "legacy.js", &[("thing", "thing")])
+        .imports_names("page.ts", "index.ts", &["thing"])
+        .build();
+    let plain = Tree::new()
+        .exports("index.ts", &["thing"])
+        .imports("index.ts", "legacy.js")
+        .imports_names("page.ts", "index.ts", &["thing"])
+        .build();
+
+    let by_name = run(&named, &["legacy.js"]);
+
+    assert_eq!(
+        rows(&by_name.affected),
+        [
+            row("index.ts", 1, "imports legacy.js"),
+            row("page.ts", 2, "imports thing from index.ts"),
+        ]
+    );
+    assert_eq!(by_name.affected, run(&plain, &["legacy.js"]).affected);
+    assert_eq!(
+        to_value(&by_name.affected).unwrap(),
+        to_value(&run(&plain, &["legacy.js"]).affected).unwrap()
+    );
+}
+
+#[scenario(
+    "queries",
+    "A barrel that re-exports a file with unknown exports has unknown exports too"
+)]
+#[test]
+fn a_barrel_that_re_exports_a_file_with_unknown_exports_has_unknown_exports_too() {
+    let index = Tree::new()
+        .exports("index.ts", &["own"])
+        .re_exports_all("index.ts", "legacy.js")
+        .imports_names("page.ts", "index.ts", &["thing"])
+        .build();
+
+    let answer = run(&index, &["legacy.js"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "imports legacy.js"),
+            row("page.ts", 2, "imports index.ts"),
         ]
     );
 }

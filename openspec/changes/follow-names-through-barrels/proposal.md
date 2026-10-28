@@ -25,4 +25,4 @@ None.
 
 ## Impact
 
-`crates/core` (facts, graph, build, snapshot, the walk, impact, neighbours, the testing tree) and `crates/lang-ts` (the analyzer and its version), and `docs/architecture.md`. Every index is rebuilt once, because the fact format and the snapshot layout change. Connectors that record no names, Python and Rust today, give the same answers as before.
+`crates/core` (facts, graph, build, snapshot, the walk, impact, neighbours, the testing tree) and `crates/lang-ts` (the analyzer and its version), and `docs/architecture.md`. Every index is rebuilt once, because the fact format and the snapshot layout change. An edge into a file whose exports are unknown is followed at file level, whatever names it carries, and no connector but TypeScript lists exports, so Python and Rust give the same files, distances and reasons as before. Rust now records the name that an aliased `use` takes from the module, and the name it binds apart, so its neighbours show the first; its connector version is 2.

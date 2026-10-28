@@ -71,7 +71,7 @@ pub enum Reason {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         names: Vec<String>,
     },
-    /// The file re-exports `names` of `file`, which the walk had reached, in byte order. They are left out when `file` does not list what it exports, so the walk could not tell which names it passes on, and when it passes none on, because it has nothing left to export through a star.
+    /// The file re-exports `names` of `file`, which the walk had reached, in byte order. They are left out when it passes none on, because `file` has nothing left to export through a star.
     ReExports {
         file: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
