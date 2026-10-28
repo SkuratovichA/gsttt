@@ -54,7 +54,7 @@ pub struct Coverage {
 )]
 pub struct ConnectorCoverage {
     pub connector: String,
-    /// The roots of its projects, `""` for the repository root.
+    /// The roots of its projects, `.` for the repository root, the way the engine writes a project root to people.
     pub projects: Vec<String>,
     pub files: u32,
     /// Files read past syntax errors.
