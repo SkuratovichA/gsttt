@@ -33,3 +33,4 @@
 - [x] 5.9 Pin the filter that holds back a change named in a failure with a test of a change that removes a requirement a test still claims
 - [x] 5.10 Refuse a spec or delta with a code fence that is never closed, naming the line that opens it
 - [x] 5.11 Keep the reader of `openspec/` from following symbolic links, which read the same specs again under longer capability names
+- [x] 5.12 Drop the unused `pulldown-cmark` dependency and make the proposal and the purpose say what the change does: where the gate runs, the files it touches, the `serde_json` pin

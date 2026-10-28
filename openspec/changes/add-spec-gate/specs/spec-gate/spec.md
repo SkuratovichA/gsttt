@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The spec gate keeps the specs and the tests honest with each other: every scenario in `openspec/specs/` is proven by exactly one test, every test that claims a scenario names one that exists, and a change cannot be finished while its scenarios are unproven. It runs as `cargo xtask spec` in CI, and the archive workflow folds finished changes into the specs.
+The spec gate keeps the specs and the tests honest with each other: every scenario in `openspec/specs/` is proven by exactly one test, every test that claims a scenario names one that exists, and a change cannot be finished while its scenarios are unproven. It runs as `cargo xtask spec`, and the archive workflow folds finished changes into the specs.
 
 ## ADDED Requirements
 
