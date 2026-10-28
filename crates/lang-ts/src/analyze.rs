@@ -19,7 +19,8 @@ use oxc_ast::ast::{
     ExportNamedDeclaration, Expression, ImportDeclaration, ImportDeclarationSpecifier,
     ImportExpression, ImportOrExportKind, MemberExpression, MethodDefinition, ModuleExportName,
     ObjectProperty, ObjectPropertyKind, Program, PropertyDefinition, TSExportAssignment,
-    TSImportEqualsDeclaration, TSModuleReference, TaggedTemplateExpression, VariableDeclarator,
+    TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier, TSModuleReference,
+    TaggedTemplateExpression, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
@@ -695,6 +696,19 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         walk::walk_import_expression(self, it);
     }
 
+    /// `typeof import('x')` and `import('x').T` in a type bind nothing and run nothing, but the file depends on `x`.
+    fn visit_ts_import_type(&mut self, it: &TSImportType<'a>) {
+        if let Some(spec) = it.source.value.as_str() {
+            let mut import = Import::new(spec, ImportKind::Static, self.line(it.source.span.start));
+            import.flags = import.flags | ImportFlags::TYPE_ONLY;
+            if let Some(qualifier) = &it.qualifier {
+                import.names.push(first_name(qualifier).to_owned());
+            }
+            self.out.imports.push(import);
+        }
+        walk::walk_ts_import_type(self, it);
+    }
+
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let Some(init) = &it.init {
             let init = peel(init);
@@ -844,6 +858,14 @@ fn is_require(call: &CallExpression<'_>) -> bool {
 
 fn is_resolvers_name(name: &str) -> bool {
     name == "resolvers" || name.ends_with("Resolvers")
+}
+
+/// The first name of the qualifier of an import type: `A` for `import('x').A.B`.
+fn first_name<'q>(qualifier: &'q TSImportTypeQualifier<'_>) -> &'q str {
+    match qualifier {
+        TSImportTypeQualifier::Identifier(name) => name.name.as_str(),
+        TSImportTypeQualifier::QualifiedName(qualified) => first_name(&qualified.left),
+    }
 }
 
 fn export_name(name: &ModuleExportName<'_>) -> String {
