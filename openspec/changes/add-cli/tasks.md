@@ -15,6 +15,7 @@
 - [x] 3.2 Answer `impact` with paths or `--changed`, `--base` and `--depth`, passing missing named paths as deleted
 - [x] 3.3 Print the `index` summary and its JSON, and answer `status` without refreshing
 - [x] 3.4 Hold the problems of the index in the coverage answer of core, in its text above the connectors and as the last key of its JSON, and delete the wrapper around it in the command line
+- [x] 3.5 List every problem of the index in the coverage answer whatever the line limit, pin `problems` as the last key of its JSON, and decide in `atomic::is_temporary` whether a name is a temporary file of `atomic::write`, with a test that the write is a rename
 
 ## 4. Registry and trust
 
