@@ -130,7 +130,8 @@ struct Entry {
 }
 
 /// The entries of `dir` sorted by name, so that everything the reader emits has a fixed order. A
-/// directory that does not exist has none.
+/// directory that does not exist has none. A symbolic link is not a directory here, whatever it
+/// points to: following one could lead back into the tree and read the same specs again.
 fn entries(root: &Path, dir: &Path) -> Result<Vec<Entry>, Error> {
     let read_error = |source: io::Error| Error::Read {
         path: dir.to_path_buf(),
@@ -144,9 +145,13 @@ fn entries(root: &Path, dir: &Path) -> Result<Vec<Entry>, Error> {
     let mut found = Vec::new();
     for item in listing {
         let item = item.map_err(read_error)?;
+        let kind = item.file_type().map_err(|source| Error::Read {
+            path: dir.join(item.file_name()),
+            source,
+        })?;
         found.push(Entry {
             name: item.file_name().to_string_lossy().into_owned(),
-            is_dir: item.path().is_dir(),
+            is_dir: kind.is_dir(),
         });
     }
     found.sort_by(|a, b| a.name.cmp(&b.name));

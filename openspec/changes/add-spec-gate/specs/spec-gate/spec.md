@@ -63,7 +63,7 @@ A `#[scenario]` attribute SHALL prove nothing, and the gate SHALL fail and name 
 - **THEN** the gate fails and names the test's file and line
 
 ### Requirement: Files that are read
-The gate SHALL look for `.rs` files that no target reaches by walking each package, leaving out `target`, `fixtures` and `snapshots` directories, hidden directories, directories with a `Cargo.toml` of their own and symbolic links, and an entry it cannot read SHALL be an error naming that entry.
+The gate SHALL look for `.rs` files that no target reaches by walking each package, leaving out `target`, `fixtures` and `snapshots` directories, hidden directories, directories with a `Cargo.toml` of their own and symbolic links, and an entry it cannot read SHALL be an error naming that entry. The reader of `openspec/` SHALL not follow symbolic links either.
 
 #### Scenario: Copies of the tree are left out
 - **WHEN** a package holds copies of the workspace under `target/`, in a hidden directory or in a directory with a `Cargo.toml` of its own, and the copies hold tests marked `#[scenario]`

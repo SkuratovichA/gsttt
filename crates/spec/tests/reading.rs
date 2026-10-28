@@ -496,6 +496,47 @@ fn a_tree_without_openspec_is_an_error() {
     );
 }
 
+/// Not annotated: a test marked `#[cfg(unix)]` cannot carry `#[scenario]`, because the gate takes any
+/// condition but `test` for a proof that may not run.
+#[cfg(unix)]
+mod unix {
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+
+    fn capabilities(open: &OpenSpec) -> Vec<&str> {
+        open.specs
+            .iter()
+            .map(|spec| spec.capability.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_symbolic_link_back_into_the_tree_is_not_followed() {
+        let root = tree(&[("openspec/specs/queries/spec.md", SPEC)]);
+        // `openspec/specs/queries/back` leads to `openspec/specs`, which holds `queries` again.
+        symlink("..", root.path().join("openspec/specs/queries/back")).unwrap();
+        let open = read(root.path()).unwrap();
+        assert_eq!(capabilities(&open), ["queries"]);
+    }
+
+    #[test]
+    fn a_symbolic_link_to_a_directory_is_no_change() {
+        let root = tree(&[
+            ("openspec/specs/queries/spec.md", SPEC),
+            ("elsewhere/add-things/tasks.md", "- [ ] a\n"),
+        ]);
+        fs::create_dir_all(root.path().join("openspec/changes")).unwrap();
+        symlink(
+            root.path().join("elsewhere/add-things"),
+            root.path().join("openspec/changes/add-things"),
+        )
+        .unwrap();
+        let open = read(root.path()).unwrap();
+        assert!(open.changes.is_empty(), "{:?}", open.changes);
+    }
+}
+
 proptest! {
     #[test]
     fn task_boxes_round_trip(boxes in prop::collection::vec((any::<bool>(), 0usize..4), 0..20)) {
