@@ -16,7 +16,8 @@ pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
             .map(|rule| (&rule.kind, rule.role))
             .chain(pack.decorators.iter().map(|rule| (&rule.kind, rule.role)))
             .chain(pack.chains.iter().map(|rule| (&rule.kind, rule.role)))
-            .chain(pack.assigns.iter().map(|rule| (&rule.kind, rule.role)));
+            .chain(pack.assigns.iter().map(|rule| (&rule.kind, rule.role)))
+            .chain(pack.imports.iter().map(|rule| (&rule.kind, rule.role)));
         for (kind, role) in rules {
             groups
                 .entry((kind.clone(), role))
@@ -75,7 +76,7 @@ fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
         }
         (ContractKind::Table, Role::Calls) => &[
             "raw SQL and query builders are not read",
-            "clients under a root other than prisma, db, tx, this.prisma, this.prismaService, this.db, ctx.prisma or ctx.db are not recognised",
+            "clients under a root other than prisma, db, tx, this.prisma, this.prismaService, this.db, ctx.prisma or ctx.db are recognised only through an alias of this, or a name the same file declares with the type PrismaClient, PrismaService or Prisma.TransactionClient, directly or through a type alias of that file",
         ],
         (ContractKind::Table, Role::Declares) => &["tables named at run time are not read"],
         (ContractKind::Env, Role::Calls) => {

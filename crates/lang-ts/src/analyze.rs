@@ -2,6 +2,7 @@
 
 mod makers;
 mod maps;
+mod roots;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -26,6 +27,7 @@ use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
 
 use self::makers::Maker;
+use self::roots::Roots;
 use crate::extra::{Binding, Export, ExportTarget, Mount, MountTarget, Route, TsExtra};
 use crate::shape::{
     Shape, chain_of, dotted, literal_text, member_chain, property_name, static_chain,
@@ -54,6 +56,7 @@ pub(crate) fn analyze(
         index,
         packs,
         makers: makers::collect(program, packs),
+        roots: roots::collect(program, packs),
         done: BTreeSet::new(),
         names: BTreeMap::new(),
         classes: Vec::new(),
@@ -77,6 +80,8 @@ struct Analyzer<'p> {
     packs: &'p [Pack],
     /// Variables made by a call in this file, found before the walk so that a route may come before its router.
     makers: BTreeMap<String, Maker>,
+    /// The aliases of `this` and the names declared with a root type, found before the walk because a class may use `self` above the method that binds it.
+    roots: Roots<'p>,
     /// Starts of the calls whose meaning another visit already took, so they are read once.
     done: BTreeSet<u32>,
     /// The name a call is stored under, `appRouter` for `const appRouter = router({…})`, by the start of the call.
@@ -223,10 +228,12 @@ impl Analyzer<'_> {
         }
     }
 
-    /// Applies the chain rules to every root the chain starts with. A rule that lists terminals needs one of them after the first segment, so `trpc.useUtils()` and `prisma.$transaction()` name nothing.
+    /// Applies the chain rules to every root the chain starts with: a root a rule lists, a name declared with one of its root types, or the alias of `this` that the chain starts with, read as `this`. A rule that lists terminals needs one of them after the first segment, so `trpc.useUtils()` and `prisma.$transaction()` name nothing.
     fn chain_rules(&mut self, names: &[Option<String>], offset: u32) {
         let line = self.line(offset);
         let packs = self.packs;
+        let names = self.roots.through_this(names);
+        let names = names.as_ref();
         for pack in packs {
             for rule in &pack.chains {
                 for count in 1..names.len() {
@@ -236,7 +243,7 @@ impl Analyzer<'_> {
                     let Some(root) = dotted(head) else {
                         break;
                     };
-                    if !rule.root.matches(&root) {
+                    if !(rule.root.matches(&root) || self.roots.is_typed_root(rule, &root)) {
                         continue;
                     }
                     let segments: Vec<Option<&str>> = tail.iter().map(Option::as_deref).collect();
@@ -250,6 +257,17 @@ impl Analyzer<'_> {
                     let outcome = rule.apply(&pack.name, &segments, line, &root);
                     self.record(outcome);
                 }
+            }
+        }
+    }
+
+    /// Applies the import rules to a name the file takes from the package `spec`; `line` is the line of the import.
+    fn import_rules(&mut self, spec: &str, name: &str, line: Line) {
+        let packs = self.packs;
+        for pack in packs {
+            for rule in pack.imports.iter().filter(|rule| rule.reads(spec)) {
+                let outcome = rule.apply(&pack.name, name, line);
+                self.record(outcome);
             }
         }
     }
@@ -574,6 +592,9 @@ impl<'a> Visit<'a> for Analyzer<'_> {
             };
             all_type &= is_type;
             self.bind(local, spec, &name);
+            if is_member(&name) {
+                self.import_rules(spec, &name, line);
+            }
             import.names.push(name);
         }
         if matches!(it.import_kind, ImportOrExportKind::Type)
@@ -602,7 +623,8 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         let Some(spec) = it.source.value.as_str() else {
             return;
         };
-        let mut import = Import::new(spec, ImportKind::ReExport, self.line(it.span.start));
+        let line = self.line(it.span.start);
+        let mut import = Import::new(spec, ImportKind::ReExport, line);
         for specifier in &it.specifiers {
             let name = export_name(&specifier.local);
             let target = ExportTarget::From {
@@ -610,6 +632,9 @@ impl<'a> Visit<'a> for Analyzer<'_> {
                 name: name.clone(),
             };
             self.export(&export_name(&specifier.exported), target);
+            if is_member(&name) {
+                self.import_rules(spec, &name, line);
+            }
             import.names.push(name);
         }
         if matches!(it.export_kind, ImportOrExportKind::Type) {
@@ -888,6 +913,11 @@ fn first_name<'q>(qualifier: &'q TSImportTypeQualifier<'_>) -> &'q str {
         TSImportTypeQualifier::Identifier(name) => name.name.as_str(),
         TSImportTypeQualifier::QualifiedName(qualified) => first_name(&qualified.left),
     }
+}
+
+/// Whether an imported or re-exported `name` is a member of the module, not its default export or its namespace.
+fn is_member(name: &str) -> bool {
+    name != "default" && name != "*"
 }
 
 fn export_name(name: &ModuleExportName<'_>) -> String {
