@@ -12,8 +12,8 @@
 
 ## 3. External connectors
 
-- [ ] 3.1 The `Connector` over a process: lazy start, the message loop, the timeout, failure of unanswered files
-- [ ] 3.2 The JSON schema of the messages
+- [x] 3.1 The `Connector` over a process: lazy start, the message loop, the timeout, failure of unanswered files
+- [x] 3.2 The JSON schema of the messages
 
 ## 4. Proof
 

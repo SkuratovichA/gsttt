@@ -1,0 +1,380 @@
+---
+source: crates/config/tests/config/external.rs
+expression: schema
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Message",
+  "description": "One line of the protocol: a request from gsttt or the response of the process.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/Request"
+    },
+    {
+      "$ref": "#/$defs/Response"
+    }
+  ],
+  "$defs": {
+    "Request": {
+      "description": "A message from gsttt to the process.",
+      "oneOf": [
+        {
+          "description": "The first message of a run.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "open"
+            },
+            "protocol": {
+              "description": "The version of the protocol, `1`.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "root": {
+              "description": "The directory the project owns, relative to the repository root: `\"\"` for the root itself. The process runs in the repository root.",
+              "type": "string"
+            },
+            "options": {
+              "description": "The options of the connector, always an object.",
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "type",
+            "protocol",
+            "root",
+            "options"
+          ]
+        },
+        {
+          "description": "Read one file.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "parse"
+            },
+            "path": {
+              "description": "The path of the file, relative to the repository root.",
+              "type": "string"
+            },
+            "text": {
+              "description": "The text of the file, which is UTF-8 and within the size limit.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "text"
+          ]
+        },
+        {
+          "description": "Where one import of a parsed file points.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "resolve"
+            },
+            "from": {
+              "description": "The path of the file that holds the import.",
+              "type": "string"
+            },
+            "import": {
+              "description": "An `Import` of the facts of `from`, in the serde form of the core type: `spec`, `kind`, `line`, `flags` and `names`."
+            }
+          },
+          "required": [
+            "type",
+            "from",
+            "import"
+          ]
+        },
+        {
+          "description": "The end of the run: the process should exit.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "done"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "Response": {
+      "description": "A message from the process to gsttt, the answer to the request before it.",
+      "oneOf": [
+        {
+          "description": "The answer to `open`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ready"
+            },
+            "name": {
+              "description": "The name of the connector.",
+              "type": "string"
+            },
+            "version": {
+              "description": "The version of the connector.",
+              "type": "string"
+            },
+            "provides": {
+              "description": "The contract kinds the connector finds, how, and what it cannot see: `Provide` values in the serde form of the core type, with `kind`, `role`, `via` and `blind_spots`.",
+              "type": "array",
+              "items": true
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "version",
+            "provides"
+          ]
+        },
+        {
+          "description": "The answer to `parse`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "facts"
+            },
+            "path": {
+              "description": "The path of the file, as it was asked.",
+              "type": "string"
+            },
+            "facts": {
+              "description": "What the process read out of the file: a `FileFacts` in the serde form of the core type, with `status`, `tags`, `imports`, `contracts`, `embedded` and `unresolved`."
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "facts"
+          ]
+        },
+        {
+          "description": "The answer to `resolve`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "resolution"
+            },
+            "resolution": {
+              "description": "Where the import points.",
+              "$ref": "#/$defs/WireResolution"
+            }
+          },
+          "required": [
+            "type",
+            "resolution"
+          ]
+        }
+      ]
+    },
+    "WireResolution": {
+      "description": "Where an import points, with files named by path where the core type names them by id.",
+      "oneOf": [
+        {
+          "description": "A file of the repository.",
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "const": "file"
+            },
+            "path": {
+              "description": "The path of the file.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "to",
+            "path"
+          ]
+        },
+        {
+          "description": "Several files, such as a Python package that reaches its `__init__.py` and the modules it imports by name.",
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "const": "files"
+            },
+            "paths": {
+              "description": "The paths of the files.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "to",
+            "paths"
+          ]
+        },
+        {
+          "description": "A third-party package, by its registry name.",
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "const": "external"
+            },
+            "package": {
+              "description": "The registry name of the package.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "to",
+            "package"
+          ]
+        },
+        {
+          "description": "The standard library or the runtime of the language.",
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "const": "builtin"
+            }
+          },
+          "required": [
+            "to"
+          ]
+        },
+        {
+          "description": "The process knows it cannot resolve the import, and says why: `{\"to\":\"unresolved\",\"reason\":\"not-found\"}`, or with a `detail` for the reasons that carry one.",
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "const": "unresolved"
+            }
+          },
+          "$ref": "#/$defs/Reason",
+          "required": [
+            "to"
+          ]
+        }
+      ]
+    },
+    "Reason": {
+      "description": "Why an import is unresolved. These are the reasons of core's `UnresolvedReason`, written the way it serializes them; core's type has no schema, so a test pins the two against each other.",
+      "oneOf": [
+        {
+          "description": "A relative or project path that names no file.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "not-found"
+            }
+          },
+          "required": [
+            "reason"
+          ]
+        },
+        {
+          "description": "The target is computed at run time: `import(name)`, `fetch(url)`.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "non-literal"
+            }
+          },
+          "required": [
+            "reason"
+          ]
+        },
+        {
+          "description": "The target exists on disk but git ignores it, which usually means a build step wrote it.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "ignored"
+            }
+          },
+          "required": [
+            "reason"
+          ]
+        },
+        {
+          "description": "The target is produced by a build step: a Rust macro, `OUT_DIR`, a code generator.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "generated"
+            }
+          },
+          "required": [
+            "reason"
+          ]
+        },
+        {
+          "description": "A bare package name found in no manifest and no workspace.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "unknown-package"
+            }
+          },
+          "required": [
+            "reason"
+          ]
+        },
+        {
+          "description": "A construct the process does not handle yet, named so coverage can count it.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "unsupported"
+            },
+            "detail": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "detail"
+          ]
+        },
+        {
+          "description": "A project file (`tsconfig.json`, `pyproject.toml`, `Cargo.toml`) the process could not read.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "config"
+            },
+            "detail": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "detail"
+          ]
+        }
+      ]
+    }
+  }
+}

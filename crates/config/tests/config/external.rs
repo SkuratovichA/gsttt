@@ -1,0 +1,669 @@
+//! External connectors against scripted fake processes, and the schema of their protocol.
+//!
+//! A fake process is a shell script in the repository root. It appends every line it reads to `requests.log`, answers by the first `case` pattern the line matches, and touches `started` when it starts, so a test sees what gsttt sent, in what order, from which directory, and whether the command ran at all.
+
+use std::fmt::Write as _;
+use std::fs;
+use std::time::Duration;
+
+use gsttt_config::{External, protocol_schema};
+use gsttt_core::connector::{
+    Connector, ConnectorError, DynConnector, Erased, Meta, Parsed, Project, Provide, SourceFile,
+};
+use gsttt_core::contract::{ContractKind, Role};
+use gsttt_core::engine::pipeline::{Module, Output, run};
+use gsttt_core::fact::{FileFacts, Import, ImportKind, ParseFailure, ParseStatus, Resolution};
+use gsttt_core::rules::Pack;
+use gsttt_core::setup::ExternalSetup;
+use gsttt_core::{RepoPath, RepoView};
+use serde_json::{Value, json};
+
+use crate::fakes::NoOptions;
+use crate::tree::Tree;
+
+/// The size limit of a run, far above any file here.
+const LIMIT: u64 = 1 << 20;
+
+const OPEN_LINE: &str = r#"{"type":"open","protocol":1,"root":"","options":{}}"#;
+const DONE_LINE: &str = r#"{"type":"done"}"#;
+
+/// A connector that reads text files, one import per line, so that a test sees the other connectors go on.
+struct Plain;
+
+struct PlainProject;
+
+impl Connector for Plain {
+    type Options = NoOptions;
+    type Project = PlainProject;
+
+    fn meta(&self) -> Meta {
+        Meta {
+            name: "plain",
+            version: 1,
+            summary: "text files",
+            extensions: &["txt"],
+        }
+    }
+
+    fn detect(&self, repo: &RepoView) -> bool {
+        repo.files()
+            .any(|(_, path)| path.extension() == Some("txt"))
+    }
+
+    fn open(
+        &self,
+        _: &RepoView,
+        _: &NoOptions,
+        _: &[Pack],
+    ) -> Result<Vec<PlainProject>, ConnectorError> {
+        Ok(vec![PlainProject])
+    }
+}
+
+impl Project for PlainProject {
+    type Extra = ();
+
+    fn root(&self) -> &'static str {
+        ""
+    }
+
+    fn matches(&self, path: &RepoPath) -> bool {
+        path.extension() == Some("txt")
+    }
+
+    fn salt(&self) -> u64 {
+        0
+    }
+
+    fn provides(&self) -> Vec<Provide> {
+        Vec::new()
+    }
+
+    fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
+        let imports = file
+            .text
+            .lines()
+            .map(|line| Import::new(line, ImportKind::Static, 1))
+            .collect();
+        Parsed::new(FileFacts {
+            imports,
+            ..FileFacts::default()
+        })
+    }
+
+    fn resolve(&self, _: &RepoPath, _: &Import) -> Resolution {
+        Resolution::Builtin
+    }
+}
+
+/// The `g.external` of the Kotlin stand-in, running `command` in the repository root.
+fn setup(command: &[&str]) -> ExternalSetup {
+    ExternalSetup {
+        name: "kotlin".to_owned(),
+        cmd: command.iter().copied().map(str::to_owned).collect(),
+        files: vec!["**/*.kt".to_owned()],
+        version: "1".to_owned(),
+    }
+}
+
+fn kotlin(timeout: Duration) -> External {
+    External::new(&setup(&["sh", "kotlin.sh"]))
+        .unwrap()
+        .with_timeout(timeout)
+}
+
+/// A shell `case` arm: the pattern a request line is matched against, and the shell that answers it. The quotes keep the shell from reading the JSON of the pattern as globs.
+type Arm = (String, String);
+
+fn when(pattern: &str, action: impl Into<String>) -> Arm {
+    (pattern.to_owned(), action.into())
+}
+
+fn request(kind: &str) -> String {
+    format!(r#"*'"type":"{kind}"'*"#)
+}
+
+fn parse_of(path: &str) -> String {
+    format!(r#"*'"type":"parse","path":"{path}"'*"#)
+}
+
+fn resolve_of(path: &str, spec: &str) -> String {
+    format!(r#"*'"type":"resolve","from":"{path}","import":{{"spec":"{spec}"'*"#)
+}
+
+/// The shell that writes one message line.
+fn say(message: &Value) -> String {
+    format!(r"printf '%s\n' '{message}'")
+}
+
+fn ready() -> Value {
+    json!({ "type": "ready", "name": "kotlin", "version": "0.1.0", "provides": [] })
+}
+
+fn facts_of(path: &str, facts: &FileFacts) -> Value {
+    json!({ "type": "facts", "path": path, "facts": facts })
+}
+
+fn resolution(resolution: &Value) -> Value {
+    json!({ "type": "resolution", "resolution": resolution })
+}
+
+fn imports(specs: &[&str]) -> FileFacts {
+    FileFacts {
+        imports: specs
+            .iter()
+            .zip(1..)
+            .map(|(spec, line)| Import::new(*spec, ImportKind::Static, line))
+            .collect(),
+        ..FileFacts::default()
+    }
+}
+
+/// The text of the fake process.
+fn script(arms: &[Arm]) -> String {
+    let mut text = String::from(
+        "#!/bin/sh\ntouch started\nwhile IFS= read -r line; do\n  printf '%s\\n' \"$line\" >> requests.log\n  case \"$line\" in\n",
+    );
+    for (pattern, action) in arms {
+        writeln!(text, "    {pattern}) {action} ;;").unwrap();
+    }
+    text.push_str("  esac\ndone\n");
+    text
+}
+
+/// The arm that answers the parse of `path` with `facts`.
+fn parses(path: &str, facts: &FileFacts) -> Arm {
+    when(&parse_of(path), say(&facts_of(path, facts)))
+}
+
+/// The answers of a process that does everything right for the Kotlin files of [`repository`].
+fn well_behaved() -> Vec<Arm> {
+    vec![
+        when(&request("open"), say(&ready())),
+        parses("src/A.kt", &imports(&["./B"])),
+        parses(
+            "src/B.kt",
+            &imports(&["okio", "kotlin.io", "./gen", "./ghost"]),
+        ),
+        parses("src/C.kt", &FileFacts::default()),
+        when(
+            &resolve_of("src/A.kt", "./B"),
+            say(&resolution(&json!({ "to": "file", "path": "src/B.kt" }))),
+        ),
+        when(
+            &resolve_of("src/B.kt", "okio"),
+            say(&resolution(&json!({ "to": "external", "package": "okio" }))),
+        ),
+        when(
+            &resolve_of("src/B.kt", "kotlin.io"),
+            say(&resolution(&json!({ "to": "builtin" }))),
+        ),
+        // Out of order and twice, as a process may send it; gsttt sorts and dedups.
+        when(
+            &resolve_of("src/B.kt", "./gen"),
+            say(&resolution(
+                &json!({ "to": "files", "paths": ["src/B.kt", "src/A.kt", "src/B.kt", "src/gone.kt"] }),
+            )),
+        ),
+        when(
+            &resolve_of("src/B.kt", "./ghost"),
+            say(&resolution(
+                &json!({ "to": "unresolved", "reason": "not-found" }),
+            )),
+        ),
+        when(&request("done"), "exit 0"),
+    ]
+}
+
+/// A repository of Kotlin files, a text file and the fake process.
+fn repository(arms: &[Arm]) -> Tree {
+    let tree = Tree::empty();
+    tree.write("src/A.kt", "import B\n");
+    tree.write("src/B.kt", "import okio\n");
+    tree.write("src/C.kt", "class C\n");
+    tree.write("notes/a.txt", "one\ntwo");
+    tree.write("kotlin.sh", &script(arms));
+    tree
+}
+
+/// A run over a repository with one thread, so that the files of the external are asked in path order.
+struct Run {
+    tree: Tree,
+    repo: RepoView,
+    output: Output,
+}
+
+impl Run {
+    fn index(tree: Tree, external: External) -> Self {
+        let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
+        let plain = Erased(Plain);
+        let kotlin = Erased(external);
+        let modules = [
+            Module {
+                connector: &plain,
+                options: Value::Null,
+                packs: Vec::new(),
+            },
+            Module {
+                connector: &kotlin,
+                options: Value::Null,
+                packs: Vec::new(),
+            },
+        ];
+        let output = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| run(&repo, &modules, LIMIT))
+            .unwrap();
+        Self { tree, repo, output }
+    }
+
+    fn facts(&self, path: &str) -> &FileFacts {
+        self.output
+            .files
+            .iter()
+            .find(|file| {
+                self.repo
+                    .path(file.id)
+                    .is_some_and(|found| found.as_str() == path)
+            })
+            .map(|file| &file.facts)
+            .unwrap()
+    }
+
+    /// Where the imports of a file point, as the output writes them.
+    fn targets(&self, path: &str) -> Vec<Value> {
+        let json = self.output.to_json(&self.repo);
+        json["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["path"] == path)
+            .unwrap()["imports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|import| import["to"].clone())
+            .collect()
+    }
+
+    /// The lines the process read, in order.
+    fn requests(&self) -> Vec<String> {
+        fs::read_to_string(self.tree.root().join("requests.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn started(&self) -> bool {
+        self.tree.root().join("started").exists()
+    }
+}
+
+/// The message of a file that failed as a panic.
+fn panic_message(facts: &FileFacts) -> &str {
+    let ParseStatus::Failed(ParseFailure::Panicked { message }) = &facts.status else {
+        return "";
+    };
+    message
+}
+
+#[gsttt_scenario::scenario("config", "An unused external starts nothing")]
+#[test]
+fn an_unused_external_starts_nothing() {
+    let tree = repository(&well_behaved());
+    let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
+    let connector = Erased(kotlin(External::TIMEOUT));
+
+    // A run whose files are all answered from the snapshot opens the connector and asks a project what it needs to
+    // key the cache, and nothing else: it parses and resolves nothing.
+    assert!(connector.detect(&repo));
+    let projects = connector.open(&repo, &Value::Null, &[]).unwrap();
+    assert_eq!(projects.len(), 1);
+    let project = projects.first().unwrap();
+    assert_eq!(project.root(), "");
+    assert!(project.matches(&RepoPath::normalize("src/A.kt").unwrap()));
+    assert!(!project.matches(&RepoPath::normalize("notes/a.txt").unwrap()));
+    assert_ne!(project.salt(), 0);
+    assert_eq!(project.provides(), Vec::new());
+    assert!(
+        !tree.root().join("started").exists(),
+        "the command ran without a request"
+    );
+
+    // The control: a request starts it, in the repository root.
+    let id = repo.lookup("src/A.kt").unwrap();
+    let path = RepoPath::normalize("src/A.kt").unwrap();
+    project.parse(&SourceFile {
+        id,
+        path: &path,
+        text: "import B\n",
+    });
+    assert!(tree.root().join("started").exists());
+}
+
+#[test]
+fn a_repository_without_the_files_of_an_external_opens_no_project() {
+    let tree = Tree::empty();
+    tree.write("notes/a.txt", "one");
+    let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
+    let connector = Erased(kotlin(External::TIMEOUT));
+    assert!(!connector.detect(&repo));
+    assert!(connector.open(&repo, &Value::Null, &[]).unwrap().is_empty());
+}
+
+#[test]
+fn the_provides_of_ready_are_known_once_the_process_has_said_them() {
+    let provide = Provide {
+        kind: ContractKind::Http,
+        role: Role::Serves,
+        via: vec!["ktor".to_owned()],
+        blind_spots: vec!["routes built at run time".to_owned()],
+    };
+    let ready =
+        json!({ "type": "ready", "name": "kotlin", "version": "0.1.0", "provides": [provide] });
+    let tree = repository(&[
+        when(&request("open"), say(&ready)),
+        parses("src/A.kt", &FileFacts::default()),
+    ]);
+    let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
+    let connector = Erased(kotlin(External::TIMEOUT));
+    let projects = connector.open(&repo, &Value::Null, &[]).unwrap();
+    let project = projects.first().unwrap();
+    assert_eq!(
+        project.provides(),
+        Vec::new(),
+        "nothing is known before the first request"
+    );
+    let path = RepoPath::normalize("src/A.kt").unwrap();
+    project.parse(&SourceFile {
+        id: repo.lookup("src/A.kt").unwrap(),
+        path: &path,
+        text: "import B\n",
+    });
+    assert_eq!(project.provides(), vec![provide]);
+}
+
+#[gsttt_scenario::scenario("config", "A well-behaved process indexes its files")]
+#[test]
+fn a_well_behaved_process_indexes_its_files() {
+    let run = Run::index(repository(&well_behaved()), kotlin(External::TIMEOUT));
+
+    assert_eq!(
+        run.facts("src/A.kt").imports,
+        imports(&["./B"]).imports,
+        "the facts it sent"
+    );
+    assert_eq!(
+        run.facts("src/B.kt").imports,
+        imports(&["okio", "kotlin.io", "./gen", "./ghost"]).imports
+    );
+    assert_eq!(run.targets("src/A.kt"), [json!({ "file": "src/B.kt" })]);
+    assert_eq!(
+        run.targets("src/B.kt"),
+        [
+            json!({ "external": "okio" }),
+            json!("builtin"),
+            json!({ "files": ["src/A.kt", "src/B.kt"] }),
+            json!({ "unresolved": { "reason": "not-found" } }),
+        ]
+    );
+    assert!(run.output.problems.is_empty(), "{:?}", run.output.problems);
+    insta::assert_json_snapshot!(run.output.to_json(&run.repo));
+
+    // What the process was sent: the lines of the architecture, in the order a run asks them.
+    assert!(run.started());
+    let requests = run.requests();
+    assert_eq!(requests.first().map(String::as_str), Some(OPEN_LINE));
+    assert_eq!(
+        requests.get(1).map(String::as_str),
+        Some(r#"{"type":"parse","path":"src/A.kt","text":"import B\n"}"#)
+    );
+    assert!(requests.contains(
+        &r#"{"type":"resolve","from":"src/A.kt","import":{"spec":"./B","kind":"static","line":1,"flags":0,"names":[]}}"#
+            .to_owned()
+    ));
+    assert_eq!(requests.last().map(String::as_str), Some(DONE_LINE));
+    assert!(
+        !requests.iter().any(|line| line.contains("notes/a.txt")),
+        "the files of other connectors stay with them"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A hung process fails its files and nothing else")]
+#[test]
+fn a_hung_process_fails_its_files_and_nothing_else() {
+    let tree = repository(&[
+        when(&request("open"), say(&ready())),
+        parses("src/A.kt", &imports(&["./B"])),
+        // `exec`, so that killing the process kills the sleep.
+        when(&parse_of("src/B.kt"), "exec sleep 60"),
+    ]);
+    // Long enough for a loaded machine to start the shell, short enough to keep the test quick.
+    let run = Run::index(tree, kotlin(Duration::from_secs(3)));
+
+    for path in ["src/B.kt", "src/C.kt"] {
+        let message = panic_message(run.facts(path));
+        assert!(
+            message.contains("`kotlin`") && message.contains("src/B.kt"),
+            "{path}: {message:?}"
+        );
+        assert!(message.contains("no answer within"), "{message:?}");
+    }
+    assert_eq!(
+        panic_message(run.facts("src/B.kt")),
+        panic_message(run.facts("src/C.kt")),
+        "a stopped process is not started again"
+    );
+    assert_eq!(
+        run.facts("src/A.kt").status,
+        ParseStatus::Ok,
+        "answered before the hang"
+    );
+
+    // The other connectors' files are indexed.
+    assert_eq!(run.facts("notes/a.txt").status, ParseStatus::Ok);
+    assert_eq!(run.facts("notes/a.txt").imports.len(), 2);
+    assert_eq!(
+        run.targets("notes/a.txt"),
+        [json!("builtin"), json!("builtin")]
+    );
+
+    // The imports of a file it did parse cannot be resolved by a process that is gone, and say why.
+    let targets = run.targets("src/A.kt");
+    let reason = targets.first().unwrap()["unresolved"]["detail"]
+        .as_str()
+        .unwrap();
+    assert!(reason.contains("`kotlin`"), "{targets:?}");
+
+    // The request that hung was the last one it was sent.
+    let requests = run.requests();
+    assert!(
+        requests
+            .last()
+            .is_some_and(|line| line.contains("src/B.kt")),
+        "{requests:?}"
+    );
+}
+
+/// Runs the Kotlin files against a process that answers `src/A.kt` well and `src/B.kt` with `action`, and returns the messages of `src/B.kt` and `src/C.kt`.
+fn fails_on_b(action: &str) -> (Run, String, String) {
+    let tree = repository(&[
+        when(&request("open"), say(&ready())),
+        parses("src/A.kt", &imports(&["./B"])),
+        when(&parse_of("src/B.kt"), action),
+        parses("src/C.kt", &FileFacts::default()),
+    ]);
+    let run = Run::index(tree, kotlin(External::TIMEOUT));
+    let b = panic_message(run.facts("src/B.kt")).to_owned();
+    let c = panic_message(run.facts("src/C.kt")).to_owned();
+    (run, b, c)
+}
+
+#[test]
+fn a_process_that_exits_fails_the_files_it_did_not_answer() {
+    let (run, b, c) = fails_on_b("exit 3");
+    assert!(
+        b.contains("`kotlin`") && b.contains("the process exited"),
+        "{b:?}"
+    );
+    assert_eq!(b, c, "the process is not started again");
+    assert_eq!(run.facts("src/A.kt").status, ParseStatus::Ok);
+    assert_eq!(run.facts("notes/a.txt").status, ParseStatus::Ok);
+    assert!(
+        !run.requests().iter().any(|line| line.contains("src/C.kt")),
+        "nothing is sent to a process that stopped"
+    );
+}
+
+#[test]
+fn a_process_that_answers_out_of_turn_fails_the_files_it_did_not_answer() {
+    let wrong_path = say(&facts_of("src/Z.kt", &FileFacts::default()));
+    let wrong_type = say(&resolution(&json!({ "to": "builtin" })));
+    for (answer, expected) in [
+        (
+            wrong_path,
+            "facts for `src/Z.kt` where facts for `src/B.kt` was due",
+        ),
+        (wrong_type, "resolution where facts for `src/B.kt` was due"),
+    ] {
+        let (run, b, c) = fails_on_b(&answer);
+        assert!(
+            b.contains("`kotlin`") && b.contains("out of turn") && b.contains(expected),
+            "{b:?}"
+        );
+        assert_eq!(b, c);
+        assert_eq!(run.facts("notes/a.txt").status, ParseStatus::Ok);
+        assert!(!run.requests().iter().any(|line| line.contains("src/C.kt")));
+    }
+}
+
+#[test]
+fn a_process_that_sends_a_line_that_is_not_a_message_fails_the_files_it_did_not_answer() {
+    let (run, b, c) = fails_on_b("echo 'this is not json'");
+    assert!(
+        b.contains("`kotlin`") && b.contains("not a message") && b.contains("this is not json"),
+        "{b:?}"
+    );
+    assert_eq!(b, c);
+    assert_eq!(run.facts("notes/a.txt").status, ParseStatus::Ok);
+}
+
+#[test]
+fn a_command_that_cannot_run_fails_every_file_it_claims() {
+    let tree = repository(&[]);
+    let external = External::new(&setup(&["gsttt-no-such-command"])).unwrap();
+    let run = Run::index(tree, external);
+    for path in ["src/A.kt", "src/B.kt", "src/C.kt"] {
+        let message = panic_message(run.facts(path));
+        assert!(
+            message.contains("`kotlin`") && message.contains("gsttt-no-such-command"),
+            "{path}: {message:?}"
+        );
+    }
+    assert_eq!(run.facts("notes/a.txt").status, ParseStatus::Ok);
+    assert!(!run.started());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_program_with_a_slash_is_found_from_the_repository_root() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tree = repository(&well_behaved());
+    fs::set_permissions(
+        tree.root().join("kotlin.sh"),
+        fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let run = Run::index(tree, External::new(&setup(&["./kotlin.sh"])).unwrap());
+    assert_eq!(run.facts("src/A.kt").imports, imports(&["./B"]).imports);
+    assert_eq!(run.targets("src/A.kt"), [json!({ "file": "src/B.kt" })]);
+}
+
+#[test]
+fn an_unresolved_reason_of_the_process_reaches_the_output_with_its_detail() {
+    let tree = repository(&[
+        when(&request("open"), say(&ready())),
+        parses("src/A.kt", &imports(&["./B"])),
+        parses("src/B.kt", &FileFacts::default()),
+        parses("src/C.kt", &FileFacts::default()),
+        when(
+            &resolve_of("src/A.kt", "./B"),
+            say(&resolution(
+                &json!({ "to": "unresolved", "reason": "unsupported", "detail": "kotlin script" }),
+            )),
+        ),
+        when(&request("done"), "exit 0"),
+    ]);
+    let run = Run::index(tree, kotlin(External::TIMEOUT));
+    assert_eq!(
+        run.targets("src/A.kt"),
+        [json!({ "unresolved": { "reason": "unsupported", "detail": "kotlin script" } })]
+    );
+}
+
+#[test]
+fn an_external_needs_a_command_and_globs_that_parse() {
+    let mut empty = setup(&["x"]);
+    empty.cmd.clear();
+    let error = External::new(&empty).unwrap_err().to_string();
+    assert!(
+        error.contains("kotlin") && error.contains("`cmd`"),
+        "{error}"
+    );
+
+    let mut broken = setup(&["x"]);
+    broken.files = vec!["src/[".to_owned()];
+    let error = External::new(&broken).unwrap_err().to_string();
+    assert!(
+        error.contains("kotlin") && error.contains("src/["),
+        "{error}"
+    );
+}
+
+#[test]
+fn the_cache_key_follows_the_command_and_its_version() {
+    let tree = repository(&[]);
+    let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
+    let salt = |setup: &ExternalSetup| {
+        let connector = Erased(External::new(setup).unwrap());
+        let projects = connector.open(&repo, &Value::Null, &[]).unwrap();
+        projects.first().unwrap().salt()
+    };
+    let base = setup(&["sh", "kotlin.sh"]);
+    let mut newer = base.clone();
+    newer.version = "2".to_owned();
+    let mut other = base.clone();
+    other.cmd.push("--strict".to_owned());
+    assert_eq!(salt(&base), salt(&base.clone()));
+    assert_ne!(salt(&base), salt(&newer));
+    assert_ne!(salt(&base), salt(&other));
+}
+
+/// The `type` of each variant of a tagged enum in the schema's definitions.
+fn tags(schema: &Value, definition: &str) -> Vec<String> {
+    schema["$defs"][definition]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|variant| {
+            variant["properties"]["type"]["const"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect()
+}
+
+#[gsttt_scenario::scenario("config", "The protocol has a schema")]
+#[test]
+fn the_protocol_has_a_schema() {
+    let schema = protocol_schema();
+    let value = schema.as_value();
+    assert_eq!(tags(value, "Request"), ["open", "parse", "resolve", "done"]);
+    assert_eq!(tags(value, "Response"), ["ready", "facts", "resolution"]);
+    insta::assert_json_snapshot!(schema);
+}

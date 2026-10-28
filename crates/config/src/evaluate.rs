@@ -8,7 +8,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use globset::Glob;
 use gsttt_core::Setup;
 use gsttt_core::connector::DynConnector;
 use gsttt_core::rules::Pack;
@@ -19,6 +18,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::ConfigError;
+use crate::external::glob_set;
 use crate::sandbox::{Sandbox, raise, text_chunk};
 use crate::value::to_json;
 
@@ -354,9 +354,7 @@ fn check_external(state: &Evaluation, external: &ExternalSetup) -> Result<(), St
             "`{name}` needs `files`: the globs of the files it reads"
         ));
     }
-    for glob in &external.files {
-        Glob::new(glob).map_err(|error| format!("`files` of `{name}` holds `{glob}`: {error}"))?;
-    }
+    glob_set(&external.files).map_err(|error| format!("`files` of `{name}` {error}"))?;
     Ok(())
 }
 
