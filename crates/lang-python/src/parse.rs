@@ -334,7 +334,8 @@ impl<'a> Collector<'a> {
     /// The prefix a rule's `receiver` reads from the call that made `var`, when `var` is a name of this file made
     /// by one of the callees the rule names.
     fn receiver_prefix(&self, maker: &Prefix, var: Option<&str>) -> Option<String> {
-        prefix_made_by(maker, self.bindings.get(var?)?)
+        let binding = self.bindings.get(var?)?;
+        prefix_made_by(maker, &binding.callee, binding.arguments)
     }
 
     /// Whether `var` is a name of this file made by a router constructor, as opposed to an application or a client.
@@ -362,7 +363,7 @@ impl<'a> Collector<'a> {
             .filter_map(|(var, binding)| {
                 let prefix = makers
                     .iter()
-                    .find_map(|maker| prefix_made_by(maker, binding))?;
+                    .find_map(|maker| prefix_made_by(maker, &binding.callee, binding.arguments))?;
                 (!prefix.is_empty()).then(|| RouterPrefix {
                     var: var.clone(),
                     prefix,
@@ -417,10 +418,16 @@ impl<'a> Collector<'a> {
                 }
                 let prefix = match &rule.receiver {
                     Some(maker) => {
-                        let Some(read) = self.receiver_prefix(maker, receiver_of(&callee)) else {
+                        let read = match inline_maker(&call.func) {
+                            Some((made, arguments)) => prefix_made_by(maker, &made, arguments),
+                            None => self.receiver_prefix(maker, receiver_of(&callee)),
+                        };
+                        let Some(read) = read else {
                             continue;
                         };
-                        Some(read)
+                        // A client made with no base URL adds nothing, so its calls are read as the module-level
+                        // ones are, which is what tells a URL with no literal path.
+                        (!read.is_empty()).then_some(read)
                     }
                     None => None,
                 };
@@ -712,16 +719,29 @@ impl<'a> Collector<'a> {
     }
 }
 
-/// The prefix a rule's `receiver` reads from the call that made `binding`, when the rule names that callee.
-fn prefix_made_by(maker: &Prefix, binding: &Binding<'_>) -> Option<String> {
-    if !maker.from.matches(&binding.callee) {
+/// The prefix a rule's `receiver` reads from the call of `callee` that made the receiver, when the rule names that
+/// callee.
+fn prefix_made_by(maker: &Prefix, callee: &str, arguments: &Arguments) -> Option<String> {
+    if !maker.from.matches(callee) {
         return None;
     }
     Some(maker.read(&CallSite {
-        callee: &binding.callee,
-        arguments: Some(binding.arguments),
+        callee,
+        arguments: Some(arguments),
         member: None,
     }))
+}
+
+/// The call a method is called on where it is written, `httpx.Client(base_url="…")` of
+/// `httpx.Client(base_url="…").get(…)`: a receiver that no name holds.
+fn inline_maker(func: &Expr) -> Option<(String, &Arguments)> {
+    let Expr::Attribute(attribute) = func else {
+        return None;
+    };
+    let Expr::Call(made) = &*attribute.value else {
+        return None;
+    };
+    Some((dotted(&made.func)?, &made.arguments))
 }
 
 /// Whether a callee builds an object that routes are declared on and that is mounted somewhere else, as opposed to

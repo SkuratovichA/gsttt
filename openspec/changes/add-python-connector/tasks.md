@@ -27,3 +27,4 @@
 - [x] 5.1 Mounts compose along the whole chain: a FastAPI route is served behind the prefix of every call and router on the way up, a Flask registration prefix replaces the blueprint's own, nested blueprints stack, and a mount called on a router imported from another file continues from that router
 - [x] 5.2 A route on a router is served once for each way the router is mounted and never also under the bare prefix; a mount without a prefix adds no second copy
 - [x] 5.3 `link` reads the ways up from each router once, ends a chain that comes back to a router it passed, caps the ways at 64 and the depth at 32, and names what it cut in the log
+- [x] 5.4 A client or session made with no base URL reads its calls as a module-level call does, so a computed URL with no literal path is an unread site, and a client made where it is called is read like one held in a variable

@@ -128,6 +128,16 @@ impl Tree {
             .collect()
     }
 
+    /// The unread sites of a file, as `L<line> <what>`.
+    fn unread(&self, path: &str) -> Vec<String> {
+        self.file(path)
+            .facts
+            .unresolved
+            .iter()
+            .map(|site| format!("L{} {}", site.line, site.detail))
+            .collect()
+    }
+
     /// Everything the first project says about what it cannot see.
     fn blind_spots(&self) -> Vec<&str> {
         self.output
@@ -547,6 +557,25 @@ fn requests_become_calls() {
         .collect();
     assert_eq!(unresolved, [12]);
     insta::assert_json_snapshot!("requests_become_calls", tree.file_json("client.py"));
+}
+
+#[gsttt_scenario::scenario("python", "A client with no base URL leaves a computed URL unread")]
+#[test]
+fn a_client_with_no_base_url_leaves_a_computed_url_unread() {
+    let tree = index("client_urls");
+    // A session or a client made without a base URL adds nothing to the call, so `f"{base}{path}"` holds no path.
+    assert_eq!(tree.unread("client.py"), ["L7 session.get", "L11 ?.get"]);
+    assert_eq!(
+        tree.contracts("client.py"),
+        [
+            "calls http GET /v1/bookings@16",
+            "calls http GET /bookings/1@21"
+        ]
+    );
+    insta::assert_json_snapshot!(
+        "a_client_with_no_base_url_leaves_a_computed_url_unread",
+        tree.file_json("client.py")
+    );
 }
 
 #[gsttt_scenario::scenario("python", "Model tables are declared")]

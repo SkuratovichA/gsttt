@@ -120,11 +120,16 @@ With the `django` pack, `path()` entries in `urlpatterns` SHALL serve their rout
 - **THEN** `bookings/urls.py` serves `http * /api/bookings/{}` at the line of its `path` entry
 
 ### Requirement: HTTP requests
-With the `requests` and `httpx` packs, `requests.get` and the other verbs, `requests.request(method, url)`, the same verbs on `httpx` and on receivers made by `httpx.Client()` or `httpx.AsyncClient()` SHALL call the URL with the verb. An f-string URL SHALL keep its literal parts with each computed part as a parameter, and a URL with no literal path SHALL be an unread site.
+With the `requests` and `httpx` packs, `requests.get` and the other verbs, `requests.request(method, url)`, the same verbs on `httpx` and on receivers made by `requests.Session()`, `httpx.Client()` or `httpx.AsyncClient()`, held in a variable or called where they are made, SHALL call the URL with the verb. An f-string URL SHALL keep its literal parts with each computed part as a parameter, and a URL with no literal path SHALL be an unread site, also when its receiver was made with no base URL.
 
 #### Scenario: Requests become calls
 - **WHEN** a file has `requests.post(f"{BASE}/bookings/{id}/cancel")` and `httpx.get(url)`
 - **THEN** it calls `http POST /bookings/{}/cancel` and has an unread site at the line of `httpx.get`
+
+#### Scenario: A client with no base URL leaves a computed URL unread
+- **WHEN** a file has `session = requests.Session()` and `session.get(f"{base}{path}")`, `httpx.Client().get(f"{url}")`, and `client = httpx.Client(base_url="https://api.example.com/v1")` with `client.get("/bookings")`
+- **THEN** it has an unread site at the line of each of the first two calls
+- **AND** it calls `http GET /v1/bookings`
 
 ### Requirement: Tables and SQL
 With the `sqlalchemy` pack, `__tablename__ = "<name>"` in a class and `Table("<name>", …)` SHALL declare `table <name>`, and a string passed to `text()` SHALL be an embedded `sql` document. With the `django` pack, `db_table = "<name>"` in a model's `Meta` SHALL declare `table <name>`.
