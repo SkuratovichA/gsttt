@@ -70,7 +70,7 @@ The gate SHALL look for `.rs` files that no target reaches by walking each packa
 - **THEN** the gate reads none of them
 
 ### Requirement: The gate
-`cargo xtask spec` SHALL fail when a scenario in `openspec/specs/` has no proof, when a proof names a scenario that is in neither `openspec/specs/` nor the `ADDED` or `MODIFIED` requirements of an open change, when a scenario has more than one proof, when two scenarios of one capability share a title, or when a proof names a scenario of a requirement an open change removes.
+`cargo xtask spec` SHALL fail when a scenario in `openspec/specs/` has no proof, when a proof names a scenario that is in neither `openspec/specs/` nor the `ADDED` or `MODIFIED` requirements of an open change, when a scenario has more than one proof, when two scenarios of one capability share a title, or when a proof names a scenario that an open change takes away, by removing its requirement or by modifying it without that scenario.
 
 #### Scenario: A scenario without a proof fails
 - **WHEN** a scenario in `openspec/specs/queries/spec.md` has no proof
@@ -91,6 +91,10 @@ The gate SHALL look for `.rs` files that no target reaches by walking each packa
 #### Scenario: Removed scenarios may not be claimed
 - **WHEN** an open change removes a requirement and a test still claims one of its scenarios
 - **THEN** the gate exits non-zero and names the test
+
+#### Scenario: Retitled scenarios may not be claimed
+- **WHEN** an open change modifies a requirement so that it no longer has a scenario of `openspec/specs/`, and a test still claims that scenario
+- **THEN** the gate exits non-zero and names the test and the change
 
 ### Requirement: Pending scenarios
 A scenario that an open change adds or modifies and that has no proof SHALL be reported as pending while that change has an unticked task or no task at all, saying which, and SHALL fail once all its tasks are ticked.

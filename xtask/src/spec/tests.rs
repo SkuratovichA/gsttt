@@ -728,8 +728,10 @@ fn a_modified_requirement_replaces_the_main_one() {
     );
 }
 
+#[gsttt_scenario::scenario("spec-gate", "Retitled scenarios may not be claimed")]
 #[test]
 fn a_claim_on_a_scenario_that_a_change_retitles_fails() {
+    let claim = proof("queries", "Old title");
     let tree = Tree::new();
     tree.spec(
         "queries",
@@ -743,16 +745,19 @@ fn a_claim_on_a_scenario_that_a_change_retitles_fails() {
             &delta("MODIFIED", &[requirement("Matching", &["New title"])]),
         )],
     )
-    .source("tests/matching.rs", &proof("queries", "Old title"));
+    .source("tests/matching.rs", &claim);
     let outcome = tree.gate();
     assert!(!outcome.passed, "{}", outcome.output);
-    assert!(
-        outcome.output.contains(
-            "but change `retitle` modifies its requirement `Matching` and no longer has this scenario"
-        ),
-        "{}",
-        outcome.output
+    let failure = format!(
+        "crates/app/tests/matching.rs:{}: `proof` claims scenario `Old title` of capability `queries`, but change `retitle` modifies its requirement `Matching` and no longer has this scenario",
+        line_of(&claim, "fn proof")
     );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+
+    // A claim on the new title is clean: the old scenario needs no proof any more.
+    tree.source("tests/matching.rs", &proof("queries", "New title"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
 }
 
 #[test]
