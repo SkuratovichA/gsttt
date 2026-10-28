@@ -21,7 +21,7 @@ pub fn write(path: &Path, temp_prefix: &str, bytes: &[u8]) -> io::Result<()> {
         .tempfile_in(dir)?;
     file.write_all(bytes)?;
     file.as_file().sync_all()?;
-    file.persist(path).map_err(|error| error.error)?;
+    file.persist(path)?;
     Ok(())
 }
 
