@@ -1,6 +1,6 @@
 # gsttt — working in this repository
 
-gsttt ("ghost", glass sphere telling the truth) answers one question deterministically: what does a change affect, across files, packages, languages and the contracts between services. It builds a graph of files (imports) and contracts (HTTP routes, GraphQL operations, gRPC methods, tRPC procedures, tables, queues, env variables), and every answer says what it covered and how fresh it is. No LLM anywhere in the pipeline.
+gsttt answers one question deterministically: what does a change affect, across files, packages, languages and the contracts between services. It builds a graph of files (imports) and contracts (HTTP routes, GraphQL operations, gRPC methods, tRPC procedures, tables, queues, env variables), and every answer says what it covered and how fresh it is. No LLM anywhere in the pipeline.
 
 Read `docs/architecture.md` before changing anything in `crates/core`, and the spec of the capability you touch in `openspec/specs/`.
 
