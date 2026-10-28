@@ -1,8 +1,10 @@
 //! Which files each connector claims, and what a broken document does to the run.
 
-use gsttt_contracts::{OPENAPI, SQL};
+use gsttt_contracts::{ENV, GRAPHQL, OPENAPI, PRISMA, PROTO, SQL};
 use gsttt_core::connector::DynConnector;
 use gsttt_core::fact::{ParseFailure, ParseStatus};
+use gsttt_core::path::RepoPath;
+use gsttt_core::repo::RepoView;
 use serde_json::{Value, json};
 
 use crate::support::{Run, all_modules, connectors, fixture};
@@ -37,6 +39,50 @@ fn a_connector_opens_a_project_only_for_files_it_claims() {
             ("env", one_at_the_root),
         ]
     );
+}
+
+/// What the engine asks before it runs a connector nobody configured: whether the file list holds anything for it. The
+/// list alone answers, so one built in memory is enough.
+#[test]
+fn a_connector_is_detected_only_when_the_file_list_holds_a_file_it_claims() {
+    let listing = |paths: &[&str]| {
+        let files = paths
+            .iter()
+            .map(|path| RepoPath::try_from(*path).unwrap())
+            .collect();
+        RepoView::new(".", files)
+    };
+    let cases: [(&'static dyn DynConnector, &str, &str); 4] = [
+        (&OPENAPI, "api/openapi.yaml", "config/app.yaml"),
+        (&PROTO, "proto/booking.proto", "proto/booking.txt"),
+        (&PRISMA, "prisma/schema.prisma", "prisma/schema.txt"),
+        (&ENV, ".env.example", ".env.d.ts"),
+    ];
+    let mut wrong = Vec::new();
+    for (connector, claimed, other) in cases {
+        for (paths, expected) in [
+            (vec![claimed, other], true),
+            (vec![other], false),
+            (vec![], false),
+        ] {
+            if connector.detect(&listing(&paths)) != expected {
+                wrong.push(format!(
+                    "{} with {paths:?}: expected {expected}",
+                    connector.meta().name
+                ));
+            }
+        }
+    }
+    // Code in any language can embed a GraphQL or an SQL document, so these two have something to read in any list.
+    for connector in [&GRAPHQL as &dyn DynConnector, &SQL] {
+        if !connector.detect(&listing(&[])) {
+            wrong.push(format!(
+                "{} with no file: expected true",
+                connector.meta().name
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
 #[gsttt_scenario::scenario("contract-formats", "Each format claims its files")]
