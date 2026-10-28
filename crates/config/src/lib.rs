@@ -2,7 +2,9 @@
 //!
 //! - [`evaluate()`] runs the config in a sandbox and returns the [`Setup`](gsttt_core::Setup); [`fingerprint()`] hashes it.
 //! - [`pack`]: a rule pack is a Lua chunk that returns one table; [`eval_pack`] reads it into a [`Pack`](gsttt_core::rules::Pack).
+//! - [`annotations()`], [`luarc()`] and [`starter()`] are what `gsttt init` writes so that an editor completes and checks the config.
 
+mod editor;
 mod error;
 mod evaluate;
 mod fingerprint;
@@ -10,7 +12,8 @@ pub mod pack;
 mod sandbox;
 mod value;
 
+pub use editor::{ANNOTATIONS_PATH, LUARC_PATH, annotations, luarc, starter};
 pub use error::ConfigError;
-pub use evaluate::evaluate;
+pub use evaluate::{INIT_PATH, evaluate};
 pub use fingerprint::fingerprint;
 pub use pack::{PackError, builtin_packs, eval_pack};

@@ -14,6 +14,7 @@ use gsttt_core::connector::DynConnector;
 use gsttt_core::rules::Pack;
 use gsttt_core::setup::{ExternalSetup, ModuleSetup};
 use mlua::{FromLuaMulti, Function, IntoLuaMulti, Lua, Table, Value};
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -22,10 +23,10 @@ use crate::sandbox::{Sandbox, raise, text_chunk};
 use crate::value::to_json;
 
 /// The config file, relative to the repository root. Also the chunk name, so that errors start with it.
-const INIT: &str = ".gsttt/init.lua";
+pub const INIT_PATH: &str = ".gsttt/init.lua";
 
 /// Where `require` looks, relative to the repository root.
-const MODULES: &str = ".gsttt/lua";
+pub(crate) const MODULES: &str = ".gsttt/lua";
 
 /// Registry keys under which the callbacks find the gsttt module and the modules loaded so far. Lua values stay in Lua: a Rust closure that held a table of the state it is stored in would never be freed.
 const MODULE_KEY: &str = "gsttt.module";
@@ -35,7 +36,7 @@ const LOADED_KEY: &str = "gsttt.loaded";
 pub(crate) const FUNCTIONS: [&str; 5] = ["setup", "disable", "pack", "disable_pack", "external"];
 
 /// What `g.setup` takes. Every key is optional and a key that is not given leaves the setup as it was.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SetupOptions {
     /// Gitignore-style patterns of files to leave out, on top of what git ignores.
@@ -62,12 +63,12 @@ struct Evaluation {
 ///
 /// `registry` lists the modules the binary ships: the gsttt module has one function per name in it, and a name outside it is an error that lists the known ones.
 pub fn evaluate(root: &Path, registry: &[&dyn DynConnector]) -> Result<Setup, ConfigError> {
-    let source = match fs::read_to_string(root.join(INIT)) {
+    let source = match fs::read_to_string(root.join(INIT_PATH)) {
         Ok(source) => source,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Setup::default()),
         Err(error) => {
             return Err(ConfigError::Read {
-                path: INIT.to_owned(),
+                path: INIT_PATH.to_owned(),
                 message: format!("{error}; expected a UTF-8 text file"),
             });
         }
@@ -84,7 +85,7 @@ pub fn evaluate(root: &Path, registry: &[&dyn DynConnector]) -> Result<Setup, Co
     });
     install(sandbox.lua(), &state).map_err(|error| ConfigError::Sandbox(error.to_string()))?;
     sandbox
-        .load(INIT, &source)
+        .load(INIT_PATH, &source)
         .exec()
         .map_err(|error| ConfigError::Lua(sandbox.explain(&error)))?;
     let setup = state.setup.borrow().clone();

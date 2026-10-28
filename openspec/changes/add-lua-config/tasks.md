@@ -8,7 +8,7 @@
 
 ## 2. Editor support
 
-- [ ] 2.1 LuaLS annotations from option schemas, `.luarc.json`, the starter config
+- [x] 2.1 LuaLS annotations from option schemas, `.luarc.json`, the starter config
 
 ## 3. External connectors
 
