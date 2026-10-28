@@ -19,6 +19,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "page"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -44,6 +47,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "util"
+      ],
       "imports": [],
       "path": "apps/web/src/util.ts",
       "project": "ts apps/web",

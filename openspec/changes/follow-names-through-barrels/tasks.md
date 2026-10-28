@@ -3,7 +3,7 @@
 ## 1. Facts
 
 - [x] 1.1 `FileFacts.exports` and `Import.exported`, left out of the JSON when empty; `FACT_FORMAT` 2
-- [ ] 1.2 The TypeScript connector records a file's own exports, the aliases of its named re-exports, and unknown exports for CommonJS, `export =` and files read past errors; connector version 2; snapshots reviewed
+- [x] 1.2 The TypeScript connector records a file's own exports, the aliases of its named re-exports, and unknown exports for CommonJS, `export =` and files read past errors; connector version 2; snapshots reviewed
 
 ## 2. Graph
 

@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "StatusController"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -64,6 +67,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "StatusController"
+      ],
       "imports": [
         {
           "flags": 0,

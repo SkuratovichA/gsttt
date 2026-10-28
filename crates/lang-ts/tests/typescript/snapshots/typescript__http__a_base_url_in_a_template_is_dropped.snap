@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "list"
+      ],
       "imports": [],
       "path": "src/api.ts",
       "project": "ts .",

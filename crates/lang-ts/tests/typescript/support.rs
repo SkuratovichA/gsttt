@@ -151,6 +151,34 @@ pub(crate) fn imports(json: &Value, path: &str) -> Vec<String> {
         .collect()
 }
 
+/// The names the file at `path` exports itself, `None` when the output has no such file or says they are unknown.
+pub(crate) fn exports<'a>(json: &'a Value, path: &str) -> Option<Vec<&'a str>> {
+    let exports = file(json, path)?.get("exports")?.as_array()?;
+    Some(exports.iter().filter_map(Value::as_str).collect())
+}
+
+/// What the named re-exports of the file at `path` export each name as, in file order: `<specifier> <name> as <exported>, …`.
+pub(crate) fn exported_as(json: &Value, path: &str) -> Vec<String> {
+    file(json, path)
+        .into_iter()
+        .flat_map(|file| items(file, "imports"))
+        .filter(|import| items(import, "exported").next().is_some())
+        .map(|import| {
+            let names = items(import, "names").filter_map(Value::as_str);
+            let exported = items(import, "exported").filter_map(Value::as_str);
+            let pairs: Vec<String> = names
+                .zip(exported)
+                .map(|(name, exported)| format!("{name} as {exported}"))
+                .collect();
+            format!(
+                "{} {}",
+                text(import, "spec").unwrap_or("?"),
+                pairs.join(", ")
+            )
+        })
+        .collect()
+}
+
 /// The contract facts the file at `path` carries: `<role> <key> @<line>`.
 pub(crate) fn contracts(json: &Value, path: &str) -> Vec<String> {
     file(json, path)

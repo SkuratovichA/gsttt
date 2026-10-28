@@ -19,6 +19,7 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [],
       "imports": [],
       "path": "src/__tests__/b.ts",
       "project": "ts .",
@@ -31,6 +32,7 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [],
       "imports": [],
       "path": "src/a.test.ts",
       "project": "ts .",
@@ -43,6 +45,7 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [],
       "imports": [],
       "path": "src/d.ts",
       "project": "ts .",
@@ -55,6 +58,7 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [],
       "imports": [],
       "path": "test/c.ts",
       "project": "ts .",

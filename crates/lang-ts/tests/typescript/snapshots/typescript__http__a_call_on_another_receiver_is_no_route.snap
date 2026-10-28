@@ -19,6 +19,10 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "app",
+        "hit"
+      ],
       "imports": [
         {
           "flags": 0,

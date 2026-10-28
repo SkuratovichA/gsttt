@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "all"
+      ],
       "imports": [
         {
           "flags": 0,

@@ -85,6 +85,8 @@ fn assemble(text: &str, analysis: Analysis, status: ParseStatus) -> Parsed<TsExt
         .map(|(spec, line)| Import::new(spec, ImportKind::Reference, line))
         .collect();
     imports.extend(analysis.imports);
+    // A file read past errors may have lost an export with the line that held it.
+    let exports = analysis.exports.filter(|_| status == ParseStatus::Ok);
     Parsed {
         facts: FileFacts {
             status,
@@ -93,7 +95,7 @@ fn assemble(text: &str, analysis: Analysis, status: ParseStatus) -> Parsed<TsExt
             contracts: analysis.contracts,
             embedded: analysis.embedded,
             unresolved: analysis.unresolved,
-            exports: None,
+            exports,
         },
         extra: analysis.extra,
     }
