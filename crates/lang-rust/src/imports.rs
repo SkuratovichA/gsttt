@@ -84,15 +84,32 @@ pub(crate) fn read(
     imports
 }
 
-/// The names that `imports` bring into a file, each with the path it stands for: one for every `use` or `extern crate` leaf that binds a single name, and none for a glob or a `mod`.
+/// The name `import` binds in its file, when it binds one: a `use` or `extern crate` leaf that takes a single name. That is the name it takes from the module, or the one it renames it to; `as _` binds none, and neither does a glob or a `mod`.
+pub(crate) fn binding(import: &Import) -> Option<&str> {
+    if !matches!(import.kind, ImportKind::Static | ImportKind::ReExport) {
+        return None;
+    }
+    let [taken] = import.names.as_slice() else {
+        return None;
+    };
+    let bound = import.exported.first().unwrap_or(taken);
+    (bound != "*" && bound != "_").then_some(bound.as_str())
+}
+
+/// The name a `use` leaf or an `extern crate` renames its item to: `_` for `as _`, and none when there is no `as`.
+fn renamed(rename: Option<ast::Rename>) -> Option<String> {
+    let rename = rename?;
+    if rename.underscore_token().is_some() {
+        return Some("_".to_owned());
+    }
+    rename.name().map(|name| text(&name))
+}
+
+/// The names that `imports` bring into a file, each with the path it stands for.
 pub(crate) fn bindings(imports: &[Import]) -> impl Iterator<Item = (&str, &str)> {
     imports
         .iter()
-        .filter(|import| matches!(import.kind, ImportKind::Static | ImportKind::ReExport))
-        .filter_map(|import| match import.names.as_slice() {
-            [name] if name != "*" => Some((name.as_str(), import.spec.as_str())),
-            _ => None,
-        })
+        .filter_map(|import| Some((binding(import)?, import.spec.as_str())))
 }
 
 /// Whether the module that holds the `use` of `leaf` declares `macro_rules! name` before it. A `macro_rules!` macro is in scope only after its declaration, so the declaration cannot come later.
@@ -188,11 +205,6 @@ impl Reader<'_> {
             return;
         }
         let glob = tree.star_token().is_some();
-        let binding = match tree.rename() {
-            Some(rename) if rename.underscore_token().is_some() => None,
-            Some(rename) => rename.name().map(|name| text(&name)),
-            None => path.last().cloned(),
-        };
         let spec = self.use_spec(tree, &path, cx.rooted);
         let kind = match (glob, cx.reexport) {
             (true, true) => ImportKind::ReExportAll,
@@ -200,11 +212,13 @@ impl Reader<'_> {
             (_, false) => ImportKind::Static,
         };
         let mut import = self.import(spec, kind, tree.syntax(), cx.flags);
-        import.names = if glob {
-            vec!["*".to_owned()]
+        if glob {
+            import.names = vec!["*".to_owned()];
         } else {
-            binding.into_iter().collect()
-        };
+            // What the module is asked for is the name it declares, as in the other connectors; the name the file knows it by, when that differs, goes to `exported`.
+            import.names = path.last().cloned().into_iter().collect();
+            import.exported = renamed(tree.rename()).into_iter().collect();
+        }
         out.push(import);
     }
 
@@ -252,17 +266,14 @@ impl Reader<'_> {
         if name == "self" {
             return;
         }
-        let binding = item
-            .rename()
-            .and_then(|rename| rename.name())
-            .map_or_else(|| name.clone(), |alias| text(&alias));
         let mut import = self.import(
-            name,
+            name.clone(),
             ImportKind::Static,
             item.syntax(),
             cfg_flags(item.syntax()),
         );
-        import.names = vec![binding];
+        import.names = vec![name];
+        import.exported = renamed(item.rename()).into_iter().collect();
         out.push(import);
     }
 

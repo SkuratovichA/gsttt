@@ -15,6 +15,8 @@ use gsttt_core::path::RepoPath;
 use gsttt_core::rules::contract_key;
 use serde::{Deserialize, Serialize};
 
+use crate::imports;
+
 /// How deep routers may be mounted in one another before the walk stops, so a generated chain of thousands cannot exhaust the stack. No program nests routers anywhere near this.
 pub(crate) const MAX_DEPTH: usize = 64;
 
@@ -305,9 +307,10 @@ impl<'a> Graph<'a> {
                 {
                     return Some((home.id, name.as_str()));
                 }
-                let brought = home.imports.iter().find(
-                    |resolved| matches!(resolved.import.names.as_slice(), [bound] if bound == name),
-                )?;
+                let brought = home
+                    .imports
+                    .iter()
+                    .find(|resolved| imports::binding(&resolved.import) == Some(name.as_str()))?;
                 let Resolution::File { file } = &brought.to else {
                     return None;
                 };

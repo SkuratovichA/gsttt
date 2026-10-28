@@ -177,7 +177,7 @@ pub struct Import {
     pub flags: ImportFlags,
     /// The names the import takes from `spec`: `a` and `b` in `import { a, b } from 'spec'`, `default` for a default import, `*` for a namespace. Resolution may depend on them too: Python `from pkg import sub` may import the module `pkg/sub.py`. Empty when the connector records none.
     pub names: Vec<String>,
-    /// For a named re-export, the name each entry of `names` is exported as: `w` for `export { z as w } from 'spec'`, `ns` for `export * as ns from 'spec'`. Empty for every other import.
+    /// For a named re-export, the name each entry of `names` is exported as: `w` for `export { z as w } from 'spec'`, `ns` for `export * as ns from 'spec'`. A connector may also give, for any import, the name the file binds an entry as when it is not the name taken, which Rust does for `use a::Foo as Bar`; the graph reads it only in a re-export. Empty for every other import.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exported: Vec<String>,
 }
