@@ -20,11 +20,13 @@ serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 tracing.workspace = true
+xxhash-rust.workspace = true
 
 [dev-dependencies]
 gsttt-config.workspace = true
 gsttt-scenario.workspace = true
 insta.workspace = true
+proptest.workspace = true
 tempfile.workspace = true
 
 [lints]
