@@ -482,7 +482,7 @@ struct Rebuild<'r, 'a> {
     /// Lines for the coverage about what git could not tell.
     problems: Vec<String>,
     /// The directories the listing could not read, which get a line of the coverage each.
-    unreadable: Vec<RepoPath>,
+    unreadable: Vec<String>,
     own: Option<&'r ArchivedStored>,
     started: Instant,
     /// The unix second at which the listing began.
@@ -1528,6 +1528,34 @@ mod tests {
         let again = index(&rig, &dir, &Setup::default()).unwrap();
         assert!(again.unchanged);
         assert_eq!(again.index.coverage.problems, *problems);
+    }
+
+    #[cfg(unix)]
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A directory outside git that cannot be read does not fail the run"
+    )]
+    #[test]
+    fn a_directory_outside_git_that_cannot_be_read_does_not_fail_the_run() {
+        let rig = Rig::new();
+        let plain = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        write(plain.path(), "a.txt", "");
+        write(plain.path(), "locked/b.txt", "");
+        let Some(_locked) = Locked::new(&plain.path().join("locked")) else {
+            return;
+        };
+
+        let run = index_at(&rig, plain.path(), cache.path(), &Setup::default());
+
+        let graph = &run.index.graph;
+        assert!(graph.file_id("a.txt").is_some());
+        assert!(graph.file_id("locked/b.txt").is_none());
+        let problems = &run.index.coverage.problems;
+        assert!(
+            problems.iter().any(|line| line.contains("`locked`")),
+            "{problems:?}"
+        );
     }
 
     #[test]

@@ -38,6 +38,10 @@ The engine SHALL index the tracked files present in the work tree, conflicted on
 - **WHEN** a tracked directory cannot be opened by the process
 - **THEN** the run succeeds, the index holds the other files and none of that directory's, the coverage names the directory as a problem, and a repeated run with nothing else changed is still a no-op
 
+#### Scenario: A directory outside git that cannot be read does not fail the run
+- **WHEN** a directory of a tree outside git cannot be opened by the process
+- **THEN** the run succeeds, the index holds the other files and none of that directory's, and the coverage names the directory as a problem
+
 #### Scenario: A deleted tracked file is gone
 - **WHEN** a committed file is removed from the work tree without a commit
 - **THEN** the index does not hold it

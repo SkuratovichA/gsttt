@@ -54,3 +54,4 @@
 - [x] 5.25 The architecture document says what the code does: the racy rule of a stored stamp and the id of a file above `max_file_bytes` in the content ids, the project root in the fact key, and the layout, prefix, checksum and `fsync` of the snapshot
 - [x] 5.26 A snapshot write removes the temporary files an earlier write left behind: those named like its own that nobody has touched for an hour, as nothing locks the state directory against two processes that write at once
 - [x] 5.27 The architecture document lists among its known gaps that a save between the listing and the read which keeps the size and the modification time files its facts under the id of the older bytes
+- [x] 5.28 A directory the scan outside git cannot read no longer fails the run: `RepoView::scan_reporting` skips each one the walk cannot read and returns it (`.` for the root and for an error that names no path), and the engine names it in the coverage problems, as it does in git

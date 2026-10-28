@@ -205,9 +205,9 @@ impl Excluder {
 pub struct Scanned {
     /// The files of the work tree in path order, each with its stamp.
     pub files: Vec<FileState>,
-    /// The directories the process cannot read, in path order, less the ones `Setup.exclude` leaves out. The scan
-    /// goes on without them, so files under them may be missing from `files`. Outside git none is reported.
-    pub unreadable: Vec<RepoPath>,
+    /// The directories the process cannot read, in path order, less the ones `Setup.exclude` leaves out: `.` is the
+    /// root. The scan goes on without them, so files under them may be missing from `files`.
+    pub unreadable: Vec<String>,
 }
 
 /// The files of the work tree in path order, each with its stamp. `previous` gives the stamp a file had in the
@@ -224,10 +224,7 @@ pub fn scan(
     let mut scanned = if workspace.git().is_some() {
         scan_git(workspace.root(), &excluder, max_file_bytes, previous)?
     } else {
-        Scanned {
-            files: scan_plain(workspace.root(), &excluder, max_file_bytes, previous)?,
-            unreadable: Vec::new(),
-        }
+        scan_plain(workspace.root(), &excluder, max_file_bytes, previous)
     };
     scanned.files.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     scanned.unreadable.sort_unstable();
@@ -300,8 +297,12 @@ fn scan_git(
     let walked = walk_untracked(root, &repo, &index, &known)?;
     candidates.extend(walked.files.into_iter().map(|path| (path, None)));
     candidates.retain(|(path, _)| !excluder.excludes(path));
-    let mut unreadable = walked.unreadable;
-    unreadable.retain(|path| !excluder.excludes_dir(path));
+    let unreadable = walked
+        .unreadable
+        .into_iter()
+        .filter(|path| !excluder.excludes_dir(path))
+        .map(String::from)
+        .collect();
 
     // The id git's index gives a file that is clean, without reading it.
     let clean_oid = |path: &RepoPath, tracked: Option<&Tracked>| {
@@ -441,24 +442,26 @@ fn scan_plain(
     excluder: &Excluder,
     max_file_bytes: u64,
     previous: &(dyn Fn(&RepoPath) -> Option<Stamp> + Sync),
-) -> Result<Vec<FileState>, FilesError> {
-    let view = RepoView::scan(root.to_owned()).map_err(|error| FilesError::List {
-        root: root.to_owned(),
-        message: error.to_string(),
-    })?;
+) -> Scanned {
+    let (view, mut unreadable) = RepoView::scan_reporting(root.to_owned());
+    // The root is not a path of the tree, so no pattern leaves it out.
+    unreadable.retain(|directory| {
+        RepoPath::normalize(directory).map_or(true, |directory| !excluder.excludes_dir(&directory))
+    });
     let paths: Vec<&RepoPath> = view
         .files()
         .map(|(_, path)| path)
         .filter(|path| !excluder.excludes(path))
         .collect();
-    Ok(paths
+    let files = paths
         .into_par_iter()
         .filter_map(|path| {
             stamp_file(root, path, max_file_bytes, |meta| {
                 previous(path)?.id_of_unchanged(meta)
             })
         })
-        .collect())
+        .collect();
+    Scanned { files, unreadable }
 }
 
 /// Stamps a present regular file. `known` gives its id from what is already known, without reading it; when it
@@ -550,7 +553,7 @@ mod tests {
 
     #[cfg(unix)]
     fn unreadable(scanned: &Scanned) -> Vec<&str> {
-        scanned.unreadable.iter().map(RepoPath::as_str).collect()
+        scanned.unreadable.iter().map(String::as_str).collect()
     }
 
     #[cfg(unix)]
@@ -661,6 +664,31 @@ mod tests {
         let scanned = scanned(dir.path(), &["vendor/"], u64::MAX);
 
         assert_eq!(paths(&scanned.files), ["src/a.ts", "src/new.ts"]);
+        assert_eq!(unreadable(&scanned), ["locked"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_outside_git_that_cannot_be_read_is_left_out_and_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        write(dir.path(), "src/a.ts", "a");
+        write(dir.path(), "locked/deep/b.ts", "b");
+        write(dir.path(), "vendor/c.ts", "c");
+        let Some(_locked) = Locked::new(&dir.path().join("locked")) else {
+            return;
+        };
+        // Excluded, so it is none of the engine's business that it cannot be read.
+        let _vendor = Locked::new(&dir.path().join("vendor"));
+        let workspace = Workspace::locate_with(
+            Utf8Path::from_path(dir.path()).unwrap(),
+            Some(Utf8PathBuf::from_path_buf(cache.path().to_path_buf()).unwrap()),
+        )
+        .unwrap();
+
+        let scanned = scan(&workspace, &["vendor/".to_owned()], u64::MAX, &|_| None).unwrap();
+
+        assert_eq!(paths(&scanned.files), ["src/a.ts"]);
         assert_eq!(unreadable(&scanned), ["locked"]);
     }
 
