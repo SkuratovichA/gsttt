@@ -1,6 +1,6 @@
 # gsttt — working in this repository
 
-gsttt ("ghost", glass sphere telling the truth) answers one question deterministically: what does a change affect, across files, packages, languages and the contracts between services. It builds a graph of files (imports) and contracts (HTTP routes, GraphQL operations, gRPC methods, tRPC procedures, tables, queues, env variables), and every answer says what it covered and how fresh it is. No LLM anywhere in the pipeline.
+gsttt answers one question deterministically: what does a change affect, across files, packages, languages and the contracts between services. It builds a graph of files (imports) and contracts (HTTP routes, GraphQL operations, gRPC methods, tRPC procedures, tables, queues, env variables), and every answer says what it covered and how fresh it is. No LLM anywhere in the pipeline.
 
 Read `docs/architecture.md` before changing anything in `crates/core`, and the spec of the capability you touch in `openspec/specs/`.
 
@@ -9,12 +9,13 @@ Read `docs/architecture.md` before changing anything in `crates/core`, and the s
 | Path | What lives there |
 | --- | --- |
 | `crates/core` | The data model, the connector contract, the engine, the queries. Language-independent. |
-| `crates/lang-ts`, `crates/lang-python`, `crates/lang-rust` | Language connectors, each with its built-in rule packs in `packs/*.lua`. Each depends on `gsttt-core` only. |
+| `crates/lang-ts`, `crates/lang-python`, `crates/lang-rust` | Language connectors, each with its built-in rule packs in `packs/*.toml`. Each depends on `gsttt-core` only. |
 | `crates/contracts` | Contract-format connectors: OpenAPI, GraphQL, protobuf, Prisma, SQL, env files. Depends on `gsttt-core` only. |
-| `crates/config` | The Lua config (`.gsttt/init.lua`), evaluation of rule packs, external connectors over JSON lines. |
+| `crates/config` | The TOML config (`.gsttt/config.toml`), the rule packs (`.gsttt/packs/*.toml`), the JSON Schemas of both, external connectors over JSON lines. |
 | `crates/mcp` | The MCP server. |
 | `crates/gsttt` | The binary: CLI, output layer, the connector registry. The only crate that writes to the terminal. |
-| `crates/spec`, `crates/scenario`, `xtask` | OpenSpec tooling: the spec parser, `#[scenario]`, the spec gate. |
+| `crates/spec`, `crates/scenario` | OpenSpec tooling: the spec parser and `#[scenario]`. |
+| `xtask` | `cargo xtask <task>`: the spec gate (`xtask/src/spec/`), and the build and checks of a release: `package`, `check`, `notes`, `version` (`xtask/src/dist/`). |
 | `openspec/` | Specs (`specs/`) and change proposals (`changes/`). |
 | `plugin/` | The Claude Code plugin that ships the MCP server and the hook. |
 
@@ -27,9 +28,10 @@ All of them run from the repository root.
 | Command | What it proves |
 | --- | --- |
 | `cargo check --workspace --all-targets` | It compiles. |
-| `cargo nextest run --workspace` | Tests pass. Use `-p <crate>` for one crate. |
-| `cargo clippy --workspace --all-targets -- -D warnings` | Lints are clean. CI runs exactly this. |
+| `cargo nextest run --workspace` | Tests pass. Use `-p <crate>` for one crate. The `xtask` tests run `cargo deny`, so `cargo-deny` must be installed. |
+| `cargo clippy --locked --workspace --all-targets -- -D warnings` | Lints are clean. CI runs exactly this. |
 | `cargo fmt --all --check` | Formatting. Run `cargo fmt --all` to fix. |
+| `taplo fmt --check` | TOML formatting, with the settings in `.taplo.toml`. Run `taplo fmt` to fix. |
 | `cargo insta review` | Review changed snapshots; never accept a snapshot you have not read. |
 | `cargo xtask spec` | Every OpenSpec scenario has a test that names it with `#[scenario]`, and every `#[scenario]` names a real scenario. |
 | `cargo run -- index` | Dogfooding: gsttt indexes this repository. |
@@ -46,7 +48,8 @@ Send long output to a file and read the part you need: `cargo nextest run --work
 - **Before writing new logic, search for it.** The workspace usually already holds the helper, mapping or validator you are about to write — grep first, reuse or extend what exists, and write new code only when nothing fits. Extending an existing helper beats a parallel copy; when a parallel copy is unavoidable, say where the other one lives and pin the two against each other with a test.
 - **Determinism**: the same tree gives the same index, byte for byte. Sort before you emit; never iterate a hash map into output.
 - **Speed is a feature**: no per-file allocation you can avoid on the hot path, no disk access during resolution (resolve against `RepoView`), no `String` where a `&str` into the source lives long enough.
-- Comments say why, not what. Doc comments on every public item, in plain sentences.
+- Comments say why, not what. Doc comments on every public item, in plain sentences. A paragraph of a comment is one line however long, never wrapped: the JSON schemas keep the line breaks of a doc comment, and an editor wraps on its own.
+- **Unix only**: gsttt builds and runs on Linux and macOS only, so code and tests may use `std::os::unix` and `rustix` without a `cfg(unix)` guard. A test that proves a scenario carries no `cfg` but `test`, because the gate counts a test under another `cfg` as no proof.
 
 ## Tests
 

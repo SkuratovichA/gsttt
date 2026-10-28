@@ -9,7 +9,7 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use gsttt_config::{External, protocol_schema};
+use gsttt_config::{CONFIG_PATH, External, protocol_schema};
 use gsttt_core::connector::{
     Connector, ConnectorError, DynConnector, Erased, Meta, Parsed, Project, Provide, SourceFile,
 };
@@ -22,7 +22,7 @@ use gsttt_core::{RepoPath, RepoView};
 use serde_json::{Value, json};
 
 use crate::fakes::NoOptions;
-use crate::tree::Tree;
+use crate::tree::{Tree, failure};
 
 /// The size limit of a run, far above any file here.
 const LIMIT: u64 = 1 << 20;
@@ -99,7 +99,7 @@ impl Project for PlainProject {
     }
 }
 
-/// The `g.external` of the Kotlin stand-in, running `command` in the repository root.
+/// The `[[external]]` entry of the Kotlin stand-in, running `command` in the repository root.
 fn setup(command: &[&str]) -> ExternalSetup {
     ExternalSetup {
         name: "kotlin".to_owned(),
@@ -391,8 +391,7 @@ fn an_unused_external_starts_nothing() {
     let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
     let connector = Erased(kotlin(External::TIMEOUT));
 
-    // A run whose files are all answered from the snapshot opens the connector and asks a project what it needs to
-    // key the cache, and nothing else: it parses and resolves nothing.
+    // A run whose files are all answered from the snapshot opens the connector and asks a project what it needs to key the cache, and nothing else: it parses and resolves nothing.
     assert!(connector.detect(&repo));
     let projects = connector.open(&repo, &Value::Null, &[]).unwrap();
     assert_eq!(projects.len(), 1);
@@ -473,21 +472,24 @@ fn a_repository_without_the_files_of_an_external_opens_no_project() {
     assert!(connector.open(&repo, &Value::Null, &[]).unwrap().is_empty());
 }
 
-/// A `g.external` that declares what the connector provides and the options the process reads.
+/// An `[[external]]` that declares what the connector provides and the options the process reads.
 const DECLARED: &str = r#"
-local g = require("gsttt")
-g.external {
-  name = "kotlin",
-  cmd = { "sh", "kotlin.sh" },
-  files = { "**/*.kt" },
-  provides = { { kind = "http", role = "serves", via = { "ktor" }, blind_spots = { "routes built at run time" } } },
-  options = { strict = true, depth = 3 },
-}
+[[external]]
+name = "kotlin"
+cmd = ["sh", "kotlin.sh"]
+files = ["**/*.kt"]
+options = { strict = true, depth = 3 }
+
+[[external.provides]]
+kind = "http"
+role = "serves"
+via = ["ktor"]
+blind_spots = ["routes built at run time"]
 "#;
 
 /// The external the config of `tree` declares.
 fn declared(tree: &Tree) -> External {
-    tree.write(".gsttt/init.lua", DECLARED);
+    tree.write(CONFIG_PATH, DECLARED);
     let setup = tree.evaluate().unwrap();
     External::new(setup.externals.first().unwrap()).unwrap()
 }
@@ -512,6 +514,23 @@ fn declared_provides_need_no_process() {
         !tree.root().join("started").exists(),
         "the command ran to say what it provides"
     );
+
+    // A key that is misspelt is refused where it is written: in place of the right one it would read as a missing one, and beside it, be ignored.
+    let in_place = DECLARED.replace("blind_spots", "blind_spot");
+    let beside = DECLARED.replace("via = [\"ktor\"]", "via = [\"ktor\"]\nblind_spot = []");
+    for config in [in_place, beside] {
+        let line = config
+            .lines()
+            .position(|line| line.starts_with("blind_spot "))
+            .unwrap()
+            + 1;
+        let message = failure(&config);
+        assert!(
+            message.starts_with(&format!("{CONFIG_PATH}:{line}:"))
+                && message.contains("unknown field `blind_spot`"),
+            "{message}"
+        );
+    }
 }
 
 #[gsttt_scenario::scenario("config", "Options reach the process")]
@@ -818,6 +837,17 @@ fn a_process_that_sends_a_line_that_is_not_a_message_fails_the_files_it_did_not_
 }
 
 #[test]
+fn a_line_that_is_not_a_message_cannot_put_a_control_character_in_the_failure() {
+    // The failure quotes the line, which the process wrote and which may hold anything, and it reaches the terminal: the escape is dropped and the rest of the line stays.
+    let (_, b, _) = fails_on_b(r"printf '\033[31mred\n'");
+    assert!(
+        b.contains("`kotlin`") && b.contains("not a message") && b.contains("[31mred"),
+        "{b:?}"
+    );
+    assert!(!b.contains('\u{1b}'), "{b:?}");
+}
+
+#[test]
 fn a_process_that_leaves_in_the_middle_of_a_line_fails_the_files_it_did_not_answer() {
     let (run, b, c) = fails_on_b(r#"printf '{"type":"facts","pa'; exit 0"#);
     assert!(
@@ -830,8 +860,8 @@ fn a_process_that_leaves_in_the_middle_of_a_line_fails_the_files_it_did_not_answ
 
 #[test]
 fn a_line_that_does_not_end_within_the_limit_fails_the_files_it_did_not_answer() {
-    // 65 MiB without a newline: one more than the 64 MiB a line may be.
-    let (run, b, c) = fails_on_b(r"head -c 68157440 /dev/zero | tr '\0' x");
+    // 65 MiB without a newline, one more than the 64 MiB a line may be. The bytes are zeros straight from `head`: the reader counts them without looking at them, and on macOS a `tr` that made them printable took seconds over 65 MiB, past the 10 s an answer may take when the whole suite runs at once.
+    let (run, b, c) = fails_on_b("head -c 68157440 /dev/zero");
     assert!(
         b.contains("`kotlin`") && b.contains("a line longer than 67108864 bytes"),
         "{b:.300}"
@@ -1010,7 +1040,7 @@ fn a_name_is_kept_once_however_often_the_connector_is_built() {
 
 #[test]
 fn options_must_be_a_table_of_named_values() {
-    for options in [json!([1, 2]), json!("x"), json!(3), json!(true)] {
+    for options in [json!([]), json!([1, 2]), json!("x"), json!(3), json!(true)] {
         let mut broken = setup(&["x"]);
         broken.options = options.clone();
         let error = External::new(&broken).unwrap_err().to_string();
@@ -1019,8 +1049,8 @@ fn options_must_be_a_table_of_named_values() {
             "{options}: {error}"
         );
     }
-    // An empty table reaches the setup as an empty list, and a setup written by hand may leave the options null.
-    for options in [json!({}), json!([]), json!(null), json!({ "a": [1, 2] })] {
+    // A setup written by hand may leave the options null, which is no options.
+    for options in [json!({}), json!(null), json!({ "a": [1, 2] })] {
         let mut fine = setup(&["x"]);
         fine.options = options.clone();
         External::new(&fine).unwrap_or_else(|error| panic!("{options}: {error}"));

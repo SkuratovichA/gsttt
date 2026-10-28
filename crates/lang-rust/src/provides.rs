@@ -9,17 +9,14 @@ use gsttt_core::connector::Provide;
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::rules::Pack;
 
-/// Something the connector cannot see, filed under the contract it would have found. Every project reports all of
-/// them, with or without a pack for that contract: an answer that says nothing about gRPC would pass for one that
-/// looked and found none.
+/// Something the connector cannot see, filed under the contract it would have found. Every project reports all of them, with or without a pack for that contract: an answer that says nothing about gRPC would pass for one that looked and found none.
 struct Gap {
     kind: ContractKind,
     role: Role,
     text: &'static str,
 }
 
-/// What applies to every contract, because it is true of the files before it is true of any contract: nothing here
-/// reads a dependency, expands a macro or runs a build script. The sentence about generated code comes last.
+/// What applies to every contract, because it is true of the files before it is true of any contract: nothing here reads a dependency, expands a macro or runs a build script. The sentence about generated code comes last.
 const EVERYWHERE: [&str; 5] = [
     "names that a glob import brings in, such as `prop` after `use proptest::prelude::*`, are not known: a path that starts with one is reported as an unknown package",
     "a crate target with more than 10000 modules is read up to that many, and a path into the modules past the cut stops at the deepest module before it",
@@ -83,8 +80,7 @@ struct Entry<'a> {
     blind_spots: Vec<&'static str>,
 }
 
-/// What a project whose manifest switched on `packs` provides. The list is in the order of the contracts, so the same
-/// project reports the same list on every run.
+/// What a project whose manifest switched on `packs` provides. The list is in the order of the contracts, so the same project reports the same list on every run.
 pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut entries: BTreeMap<(ContractKind, Role), Entry<'_>> = BTreeMap::new();
     for pack in packs {
@@ -130,8 +126,7 @@ fn found_by(pack: &Pack) -> impl Iterator<Item = (ContractKind, Role)> + '_ {
         .assigns
         .iter()
         .map(|rule| (rule.kind.clone(), rule.role));
-    // The connector for the document's language reads what it holds. An embedded query is something the code runs,
-    // so it calls the contract.
+    // The connector for the document's language reads what it holds. An embedded query is something the code runs, so it calls the contract.
     let embeds = pack
         .embeds
         .iter()

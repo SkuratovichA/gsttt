@@ -1,0 +1,59 @@
+---
+source: crates/contracts/tests/contracts/graphql.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "graphql",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "./types/booking.graphql",
+          "kind": "include",
+          "line": 1,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "file": "api/types/booking.graphql"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "key": "graphql Query.booking",
+          "role": "declares",
+          "line": 4,
+          "via": "graphql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/schema.graphql",
+      "project": "graphql ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/types/booking.graphql",
+      "project": "graphql ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

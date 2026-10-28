@@ -20,8 +20,7 @@ fn a_path_that_starts_with_an_inline_module_lands_on_the_file_that_declares_it()
     assert_json_snapshot!(out.file("src/lib.rs")["imports"]);
 }
 
-/// The connector reads no dependency, so it cannot tell what `use proptest::prelude::*` brings in. The blind spots
-/// say so; this pins the answer so that a better one is a decision, made together with the sentence.
+/// The connector reads no dependency, so it cannot tell what `use proptest::prelude::*` brings in. The blind spots say so; this pins the answer so that a better one is a decision, made together with the sentence.
 #[scenario("rust", "A name a glob import brings in is an unknown package")]
 #[test]
 fn a_name_a_glob_brings_in_is_an_unknown_package() {

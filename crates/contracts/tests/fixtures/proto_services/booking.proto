@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package booking.v1;
+
+service BookingService {
+  rpc GetBooking(GetBookingRequest) returns (Booking) {
+    option (google.api.http) = { get: "/v1/bookings/{id}" };
+  }
+}
+
+message GetBookingRequest {
+  string id = 1;
+}
+
+message Booking {
+  string id = 1;
+}

@@ -1,0 +1,66 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"db.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "sqlite3",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": "builtin"
+    }
+  ],
+  "contracts": [],
+  "embedded": [
+    {
+      "lang": "sql",
+      "line": 7,
+      "text": "SELECT id FROM bookings WHERE id = %s",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    },
+    {
+      "lang": "sql",
+      "line": 14,
+      "text": "\n        SELECT id\n        FROM bookings\n        WHERE id IN %s\n        ",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    },
+    {
+      "lang": "sql",
+      "line": 27,
+      "text": "SELECT id \nFROM bookings \nWHERE id = %s",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    },
+    {
+      "lang": "sql",
+      "line": 38,
+      "text": "SELECT id \nFROM bookings \nWHERE id = %s",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    },
+    {
+      "lang": "sql",
+      "line": 48,
+      "text": "SELECT id FROM bookings WHERE id = %s",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    }
+  ],
+  "unresolved": [],
+  "path": "db.py",
+  "project": "python ."
+}

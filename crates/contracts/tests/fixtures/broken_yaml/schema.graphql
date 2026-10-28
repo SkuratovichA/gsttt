@@ -1,0 +1,7 @@
+type Query {
+  bookings: [Booking]
+}
+
+type Booking {
+  id: ID!
+}

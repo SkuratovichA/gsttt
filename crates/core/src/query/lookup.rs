@@ -1,5 +1,4 @@
-//! Finding what a question names: a file by the path a person typed, and the unresolved imports that may have meant
-//! a file the index does not hold.
+//! Finding what a question names: a file by the path a person typed, and the unresolved imports that may have meant a file the index does not hold.
 
 use std::fmt;
 
@@ -10,11 +9,7 @@ use crate::ids::FileId;
 use crate::index::Index;
 use crate::path::RepoPath;
 
-/// The file `raw` names, with its path. A file is in the index for a question only when a connector owns it, because
-/// the graph lists every file of the tree and an answer about a file no connector claimed would state a certainty it
-/// does not have. A file the connector owns but failed to parse is in the index, and its answers say so from its
-/// parse status. When the index holds no such file, the error is the path to print for it: `raw` taken to its
-/// canonical form when it has one.
+/// The file `raw` names, with its path. A file is in the index for a question only when a connector owns it, because the graph lists every file of the tree and an answer about a file no connector claimed would state a certainty it does not have. A file the connector owns but failed to parse is in the index, and its answers say so from its parse status. When the index holds no such file, the error is the path to print for it: `raw` taken to its canonical form when it has one.
 pub(super) fn find<'a>(index: &'a Index, raw: &str) -> Result<(FileId, &'a RepoPath), String> {
     let owned = |path: &str| {
         let file = index.graph.file_id(path)?;
@@ -30,8 +25,7 @@ pub(super) fn find<'a>(index: &'a Index, raw: &str) -> Result<(FileId, &'a RepoP
     }
 }
 
-/// An import that resolved to nothing and whose specifier ends like the name of a file, so that it may have
-/// meant that file: a path alias the connector does not know, or an import of a file that has since been deleted.
+/// An import that resolved to nothing and whose specifier ends like the name of a file, so that it may have meant that file: a path alias the connector does not know, or an import of a file that has since been deleted.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Miss {
     /// The file with the import.
@@ -43,8 +37,7 @@ pub struct Miss {
 }
 
 impl Miss {
-    /// Puts `misses` in the order they are read in: by file, then line, then specifier. A connector lists the imports
-    /// of a file in the order it found them, which is not always the order they stand in.
+    /// Puts `misses` in the order they are read in: by file, then line, then specifier. A connector lists the imports of a file in the order it found them, which is not always the order they stand in.
     pub(super) fn sort(misses: &mut [Self]) {
         misses.sort_by(|a, b| (&a.path, a.line, &a.spec).cmp(&(&b.path, b.line, &b.spec)));
     }

@@ -1,10 +1,6 @@
-//! Questions over an [`Index`](crate::index::Index): what a file depends on, what depends on it, what a change
-//! affects, where a contract is declared, served and called, and how two files are connected.
+//! Questions over an [`Index`](crate::index::Index): what a file depends on, what depends on it, what a change affects, where a contract is declared, served and called, and how two files are connected.
 //!
-//! Each question is a function over `&Index` and a [`Freshness`](crate::index::Freshness), because the index does
-//! not know whether the tree has moved since it was built. Each returns an answer that implements
-//! [`Display`](std::fmt::Display) for the text people and agents read and [`Serialize`](serde::Serialize) for
-//! scripts. Nothing here prints.
+//! Each question is a function over `&Index` and a [`Freshness`](crate::index::Freshness), because the index does not know whether the tree has moved since it was built. Each returns an answer that implements [`Display`](std::fmt::Display) for the text people and agents read and [`Serialize`](serde::Serialize) for scripts. Nothing here prints.
 
 mod contracts;
 mod cross;

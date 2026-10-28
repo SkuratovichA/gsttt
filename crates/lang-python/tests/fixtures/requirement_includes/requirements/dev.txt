@@ -1,0 +1,4 @@
+-r ../private/secret.txt
+-r ../../outside.txt
+--requirement base.txt
+pytest

@@ -1,0 +1,217 @@
+---
+source: crates/config/tests/config/schema.rs
+expression: config_schema(&registry.connectors())
+---
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "gsttt config",
+  "description": "The config of a repository: these keys, and a table named after a module, like `[ts]`, which turns the module on and holds its options. A key that is left out keeps its default.",
+  "type": "object",
+  "properties": {
+    "exclude": {
+      "description": "Gitignore-style patterns of files to leave out, on top of what git ignores.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "http_prefixes": {
+      "description": "Path prefixes a gateway or proxy puts in front of routes, like `/api`: with it, a call to `/api/bookings` meets the route `/bookings`.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "max_file_bytes": {
+      "description": "Files above this size, in bytes, are counted in coverage and not parsed.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "detect": {
+      "description": "Turns on every module whose detection finds something in the repository. A module with a table runs either way.",
+      "type": "boolean"
+    },
+    "disable": {
+      "description": "Modules that stay off even when detected or given a table.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "disable_packs": {
+      "description": "Built-in packs to leave out, by name.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "external": {
+      "description": "Connectors that run as a command speaking JSON lines, for languages gsttt does not ship.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExternalSetup"
+      },
+      "default": []
+    },
+    "ts": {
+      "$ref": "#/definitions/TsOptions"
+    },
+    "python": {
+      "$ref": "#/definitions/NoOptions"
+    },
+    "rust": {
+      "$ref": "#/definitions/NoOptions"
+    },
+    "openapi": {
+      "$ref": "#/definitions/NoOptions"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "TsOptions": {
+      "description": "The options of the stand-in `ts`.",
+      "type": "object",
+      "properties": {
+        "tsconfig": {
+          "description": "The tsconfig the project reads, relative to the repository root.",
+          "type": "string"
+        },
+        "conditions": {
+          "description": "Export conditions to follow, in order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "NoOptions": {
+      "description": "The options of a stand-in without any.",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "ExternalSetup": {
+      "description": "A connector that runs as a command, one `[[external]]` entry of the config: `name = \"kotlin\"`, `cmd = [\"gsttt-kotlin\"]`, `files = [\"**/*.kt\"]`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The name answers and configs use.",
+          "type": "string"
+        },
+        "cmd": {
+          "description": "The program and its arguments.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "description": "Globs of the files it reads.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "description": "Mixed into the cache key with the command, so a new release of the connector drops its cached facts.",
+          "type": "string",
+          "default": ""
+        },
+        "env": {
+          "description": "Names of environment variables the process may read, on top of the few every program needs (`PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TMPDIR`). The rest of gsttt's environment, where secrets live, stays out of its reach.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "provides": {
+          "description": "What the connector finds and what it cannot see, as `[[external.provides]]` tables with `kind`, `role`, `via` and `blind_spots`. They are declared here and not asked of the process, because a run answered from the snapshot never starts it and must still report the same coverage as a run that did.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Provide"
+          },
+          "default": []
+        },
+        "options": {
+          "description": "The options of the connector: a table of named values, sent to the process in `open` and mixed into the cache key. `{}` when it has none.",
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "cmd",
+        "files"
+      ]
+    },
+    "Provide": {
+      "description": "One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run time`.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "The family of contract: `http`, `graphql`, `grpc`, `trpc`, `table`, `queue`, `env`, or a name of your own.",
+          "type": "string"
+        },
+        "role": {
+          "description": "What the connector does with it: `declares`, `serves` or `calls`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Role"
+            }
+          ]
+        },
+        "via": {
+          "description": "The packs or formats that find it.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blind_spots": {
+          "description": "What it cannot see, in words an answer can quote.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "role",
+        "via",
+        "blind_spots"
+      ]
+    },
+    "Role": {
+      "description": "What a site does with a contract.",
+      "oneOf": [
+        {
+          "description": "A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration, `.env.example`.",
+          "type": "string",
+          "const": "declares"
+        },
+        {
+          "description": "Code implements it: a controller, a resolver, a gRPC server.",
+          "type": "string",
+          "const": "serves"
+        },
+        {
+          "description": "Code uses it: a fetch, a generated client, a query, an env read.",
+          "type": "string",
+          "const": "calls"
+        }
+      ]
+    }
+  }
+}

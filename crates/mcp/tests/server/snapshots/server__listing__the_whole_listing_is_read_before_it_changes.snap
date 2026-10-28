@@ -1,0 +1,208 @@
+---
+source: crates/mcp/tests/server/listing.rs
+expression: tools
+---
+[
+  {
+    "name": "impact",
+    "title": "Impact of a change",
+    "description": "Lists the files that a change to some files can break: the files that import them, directly or through other files, and the files that share a contract with them (an HTTP route, a GraphQL operation, a gRPC method, a table, a queue or an environment variable). Tests the change reaches are listed apart. Call it before changing a file that other code may use, and with `changed` set to true before finishing a task, to see what your edits reach. The answer ends with what the index covered and how fresh it is.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "description": "The files to ask about, as paths from the repository root, such as `src/a.ts`. A path with no file on disk is asked about as deleted, so that the answer can still list what used to import it. Leave it out when `changed` is true.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "changed": {
+          "description": "Ask about the files that differ from HEAD instead of naming paths: the modified, added and untracked files, and the deleted ones as deleted. Use it before finishing a task.",
+          "type": "boolean",
+          "default": false
+        },
+        "base": {
+          "description": "With `changed`: compare against the best common ancestor of HEAD and this git revision, such as a branch name, instead of against HEAD.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "depth": {
+          "description": "Stop the walk after this many hops from a changed file. Leave it out to follow every hop.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "all": {
+          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "dependents",
+    "title": "Files that import a file",
+    "description": "Lists the files that import one file, one level up, with how each import is written. Call it before renaming, moving or deleting a file, to find what has to change with it.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "The file to ask about, as a path from the repository root, for example \"src/a.ts\".",
+          "type": "string"
+        },
+        "all": {
+          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "dependencies",
+    "title": "Imports of a file",
+    "description": "Lists what one file imports: the files, the third-party packages and the builtins, and the imports that resolve to nothing, with the reason. Call it to learn what a file relies on, or why an import does not resolve.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "The file to ask about, as a path from the repository root, for example \"src/a.ts\".",
+          "type": "string"
+        },
+        "all": {
+          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "path",
+    "title": "Chain between two files",
+    "description": "Finds a shortest chain of imports and contract hops from one file to another, and names every file and contract on the way. Call it to learn how two files are connected. When no chain joins them it says how many files the first one reaches.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+        "from",
+        "to"
+      ],
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "The file the chain starts at, as a path from the repository root, for example \"src/a.ts\".",
+          "type": "string"
+        },
+        "to": {
+          "description": "The file the chain ends at, as a path from the repository root, for example \"src/b.ts\".",
+          "type": "string"
+        },
+        "all": {
+          "description": "Show every file of the chain. Without it a long chain is cut, with a line that counts the rest.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "contract",
+    "title": "Sites of a contract",
+    "description": "Shows who declares, serves and calls a contract, by role: an HTTP route, a GraphQL operation, a gRPC method, a table, a queue or an environment variable. Part of a key lists the keys that contain it. Call it to find who serves an endpoint and who calls it, before changing its shape.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "query": {
+          "description": "A contract key such as \"http GET /bookings/{}\", or part of one, such as \"/bookings\", which lists the keys that contain it.",
+          "type": "string"
+        },
+        "all": {
+          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "coverage",
+    "title": "What the index covers",
+    "description": "Shows what the index could and could not read: for each connector the files it read, the files it failed on and the imports it could not resolve, and the code that no connector reads. Call it when an answer names a gap, or before relying on an answer for a language or a directory the index may not cover.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "index_status",
+    "title": "State of the index",
+    "description": "Shows how the stored index was built, from how many files and at which commit, and whether the tree has changed since. It does not refresh the index, so it answers at once. Call it to check how fresh the earlier answers are before asking again.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  }
+]

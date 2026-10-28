@@ -1,0 +1,48 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[\"linked\"] })"
+---
+{
+  "app": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "fastapi",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [
+          "APIRouter",
+          "FastAPI"
+        ],
+        "to": {
+          "external": "fastapi"
+        }
+      }
+    ],
+    "contracts": [
+      {
+        "key": "http TRACE /echo",
+        "role": "serves",
+        "line": 12,
+        "via": "fastapi"
+      }
+    ],
+    "embedded": [],
+    "unresolved": [],
+    "path": "app.py",
+    "project": "python ."
+  },
+  "linked": [
+    {
+      "key": "http TRACE /probe",
+      "role": "serves",
+      "line": 7,
+      "via": "fastapi",
+      "file": "app.py"
+    }
+  ]
+}

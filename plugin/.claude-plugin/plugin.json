@@ -1,0 +1,28 @@
+{
+  "name": "gsttt",
+  "description": "Answers what a change affects across files, packages, languages and the contracts between services: imports, HTTP routes, GraphQL operations, gRPC methods, tables, queues and environment variables.",
+  "homepage": "https://gsttt.arstoien.com",
+  "repository": "https://github.com/SkuratovichA/gsttt",
+  "license": "Apache-2.0",
+  "keywords": ["impact", "dependencies", "contracts", "mcp"],
+  "skills": ["./skills/gsttt"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/gsttt.sh\" hook session-start",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "gsttt": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/gsttt.sh",
+      "args": ["mcp"]
+    }
+  }
+}

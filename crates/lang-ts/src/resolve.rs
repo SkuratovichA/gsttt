@@ -1,25 +1,21 @@
-//! Import resolution over the repository's own file list. The disk is read only when the list has found nothing, to tell
-//! a file that git ignores from a file that does not exist. The reason `generated` is never produced: a file a code
-//! generator will write cannot be told from one that is missing.
+//! Import resolution over the repository's own file list. The disk is read only when the list has found nothing, to tell a file that git ignores from a file that does not exist. The reason `generated` is never produced: a file a code generator will write cannot be told from one that is missing.
 
 use gsttt_core::fact::{Import, ImportKind, Resolution, UnresolvedReason};
+use gsttt_core::tree::Value;
 use gsttt_core::{FileId, RepoPath};
 
 use crate::builtins::is_builtin;
 use crate::config::Effective;
-use crate::json::Json;
 use crate::manifest::Manifest;
 use crate::pathing::{
-    ancestors, is_config_name, is_json, is_relative, join_dir, join_file, split_package, strip_dir,
+    ancestors, is_config_name, is_json, is_relative, join_file, split_package, strip_dir,
 };
 use crate::shared::Shared;
 
-/// What is appended to a specifier that names no file, in the order tsc tries it. `.mts` and `.cts` are not here: tsc
-/// reaches them only through a specifier that says `.mjs` or `.cjs`.
+/// What is appended to a specifier that names no file, in the order tsc tries it. `.mts` and `.cts` are not here: tsc reaches them only through a specifier that says `.mjs` or `.cjs`.
 const EXTENSIONLESS: [&str; 5] = [".ts", ".tsx", ".d.ts", ".js", ".jsx"];
 
-/// An extension a build writes and the extensions of the files it may be written from, in the order tsc tries them. A
-/// declaration file is a source already and has no row.
+/// An extension a build writes and the extensions of the files it may be written from, in the order tsc tries them. A declaration file is a source already and has no row.
 const BUILT: [(&str, &[&str]); 4] = [
     (".js", &[".ts", ".tsx", ".d.ts", ".js", ".jsx"]),
     (".jsx", &[".tsx", ".jsx"]),
@@ -40,8 +36,7 @@ enum Lookup {
     Unmapped,
 }
 
-/// The conditions an `exports` or `imports` map is read with for one import: the configured ones, and `import` or
-/// `require` by the form of the import, never both.
+/// The conditions an `exports` or `imports` map is read with for one import: the configured ones, and `import` or `require` by the form of the import, never both.
 struct Conditions<'a> {
     configured: &'a [String],
     form: &'static str,
@@ -99,12 +94,11 @@ fn found(file: Option<FileId>) -> Resolution {
 fn relative(shared: &Shared, dir: &str, spec: &str) -> Resolution {
     // A trailing slash, `.` and `..` name a directory, which only an index file can stand for.
     let directory = spec.ends_with('/') || matches!(spec.rsplit('/').next(), Some("." | ".."));
-    let path = join_dir(dir, spec);
+    let path = RepoPath::join_dir(dir, spec);
     located(shared, path.iter().map(String::as_str), directory)
 }
 
-/// Where the first of `paths` that names a file leads. A path the view lacks but the disk has is an ignored file, which
-/// is not the same as a missing one.
+/// Where the first of `paths` that names a file leads. A path the view lacks but the disk has is an ignored file, which is not the same as a missing one.
 fn located<'p>(
     shared: &Shared,
     paths: impl Iterator<Item = &'p str> + Clone,
@@ -160,7 +154,7 @@ fn bare(
             effective
                 .base_url
                 .as_deref()
-                .and_then(|base| join_dir(base, spec)),
+                .and_then(|base| RepoPath::join_dir(base, spec)),
         );
         if let Some(file) = leads.iter().find_map(|path| probe(shared, path)) {
             return Resolution::File { file };
@@ -238,7 +232,7 @@ fn alias(effective: &Effective, spec: &str) -> Vec<String> {
     mapping
         .targets
         .iter()
-        .filter_map(|target| join_dir(base, &target.replacen('*', captured, 1)))
+        .filter_map(|target| RepoPath::join_dir(base, &target.replacen('*', captured, 1)))
         .collect()
 }
 
@@ -313,10 +307,10 @@ fn package_file(shared: &Shared, package_dir: &str, manifest: &Manifest) -> Opti
 
 /// The file below a package that a path inside it names, in the package or in its source root.
 fn subpath_file(shared: &Shared, package_dir: &str, subpath: &str) -> Option<FileId> {
-    join_dir(package_dir, subpath)
+    RepoPath::join_dir(package_dir, subpath)
         .and_then(|path| probe(shared, &path))
         .or_else(|| {
-            join_dir(&source_root(shared, package_dir), subpath)
+            RepoPath::join_dir(&source_root(shared, package_dir), subpath)
                 .and_then(|path| probe(shared, &path))
         })
 }
@@ -329,10 +323,9 @@ fn source_root(shared: &Shared, package_dir: &str) -> String {
         .unwrap_or_else(|| join_file(package_dir, "src"))
 }
 
-/// The source file behind `target`, a path a manifest names relative to the package: the file itself, or what the
-/// package's build writes it from.
+/// The source file behind `target`, a path a manifest names relative to the package: the file itself, or what the package's build writes it from.
 fn built_file(shared: &Shared, package_dir: &str, target: &str) -> Option<FileId> {
-    let path = join_dir(package_dir, target)?;
+    let path = RepoPath::join_dir(package_dir, target)?;
     if let Some(file) = probe(shared, &path) {
         return Some(file);
     }
@@ -340,7 +333,7 @@ fn built_file(shared: &Shared, package_dir: &str, target: &str) -> Option<FileId
         let out_dir = effective.out_dir.as_deref()?;
         let rest = strip_dir(&path, out_dir)?;
         let root = effective.root_dir.as_deref().unwrap_or(package_dir);
-        probe(shared, &join_dir(root, rest)?)
+        probe(shared, &RepoPath::join_dir(root, rest)?)
     });
     if by_config.is_some() {
         return by_config;
@@ -353,11 +346,7 @@ fn built_file(shared: &Shared, package_dir: &str, target: &str) -> Option<FileId
     None
 }
 
-/// Calls `visit` with each path `path` may stand for, in the order tsc tries them, until it answers `true`. A path with
-/// a built extension (`.js`) stands for the sources it may be built from. A source (`.ts`) stands for itself. Any other
-/// name stands for itself, for the name with an extension added, and for the index file of a directory of that name.
-/// `directory` says the specifier named a directory (it ended in `/`, `.` or `..`), so only the index files count. Every
-/// candidate is built in one buffer.
+/// Calls `visit` with each path `path` may stand for, in the order tsc tries them, until it answers `true`. A path with a built extension (`.js`) stands for the sources it may be built from. A source (`.ts`) stands for itself. Any other name stands for itself, for the name with an extension added, and for the index file of a directory of that name. `directory` says the specifier named a directory (it ended in `/`, `.` or `..`), so only the index files count. Every candidate is built in one buffer.
 fn candidates(path: &str, directory: bool, mut visit: impl FnMut(&str) -> bool) {
     let mut buffer = String::with_capacity(path.len() + 16);
     if !directory {
@@ -411,8 +400,7 @@ fn locate(shared: &Shared, path: &str, directory: bool) -> Option<FileId> {
     found
 }
 
-/// Whether a file `path` stands for exists on disk although the view does not list it. It looks at the same candidates
-/// in the same order as [`locate`].
+/// Whether a file `path` stands for exists on disk although the view does not list it. It looks at the same candidates in the same order as [`locate`].
 fn ignored(shared: &Shared, path: &str, directory: bool) -> bool {
     // The path itself may be a directory on disk, which is no module: it counts only when it ends like a file.
     let file_like = is_json(path)
@@ -426,8 +414,7 @@ fn ignored(shared: &Shared, path: &str, directory: bool) -> bool {
     hit
 }
 
-/// The file a path stands for: the path itself, with an extension added, as a directory with an index, or the source
-/// of a built file.
+/// The file a path stands for: the path itself, with an extension added, as a directory with an index, or the source of a built file.
 pub(crate) fn probe(shared: &Shared, path: &str) -> Option<FileId> {
     locate(shared, path, false)
 }
@@ -462,9 +449,8 @@ fn subpath_import(
     })
 }
 
-/// The target of `subpath` in a package's `exports`: `.` for the package, `./name` below it. `None` when the map leaves
-/// the subpath out, blocks it with `null`, or has no active condition for it.
-fn exports_target(exports: &Json, subpath: &str, conditions: &Conditions<'_>) -> Option<String> {
+/// The target of `subpath` in a package's `exports`: `.` for the package, `./name` below it. `None` when the map leaves the subpath out, blocks it with `null`, or has no active condition for it.
+fn exports_target(exports: &Value, subpath: &str, conditions: &Conditions<'_>) -> Option<String> {
     let key = if subpath.is_empty() {
         ".".to_owned()
     } else {
@@ -485,9 +471,8 @@ fn exports_target(exports: &Json, subpath: &str, conditions: &Conditions<'_>) ->
     }
 }
 
-/// The target of `key` in a map of subpaths: an exact key, else the pattern with the longest prefix and the first listed
-/// of equals.
-fn pattern_target(map: &Json, key: &str, conditions: &Conditions<'_>) -> Option<String> {
+/// The target of `key` in a map of subpaths: an exact key, else the pattern with the longest prefix and the first listed of equals.
+fn pattern_target(map: &Value, key: &str, conditions: &Conditions<'_>) -> Option<String> {
     let entries = map.entries();
     if let Some(entry) = entries.iter().find(|entry| entry.key == key) {
         return pick_target(&entry.value, conditions)
@@ -523,25 +508,25 @@ impl<'j> Picked<'j> {
     }
 }
 
-/// The first target of a conditional value, in the order its keys are written, whose condition is active; a string is
-/// its own target and `null` closes the path. An object with no active key leaves the choice to what follows it.
-fn pick_target<'j>(value: &'j Json, conditions: &Conditions<'_>) -> Option<Picked<'j>> {
+/// The first target of a conditional value, in the order its keys are written, whose condition is active; a string is its own target and `null` closes the path. An object with no active key leaves the choice to what follows it.
+fn pick_target<'j>(value: &'j Value, conditions: &Conditions<'_>) -> Option<Picked<'j>> {
     match value {
-        Json::Str(target) => Some(Picked::Path(target.as_str())),
-        Json::Null => Some(Picked::Blocked),
-        Json::Array(items) => items.iter().find_map(|item| pick_target(item, conditions)),
-        Json::Object(entries) => entries.iter().find_map(|entry| {
+        Value::Str(target) => Some(Picked::Path(target.as_str())),
+        Value::Null => Some(Picked::Blocked),
+        Value::Seq(items) => items.iter().find_map(|item| pick_target(item, conditions)),
+        Value::Map(entries) => entries.iter().find_map(|entry| {
             conditions
                 .holds(&entry.key)
                 .then(|| pick_target(&entry.value, conditions))
                 .flatten()
         }),
-        Json::Other => None,
+        Value::Other => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use gsttt_core::tree::parse_json;
     use proptest::prelude::*;
 
     use super::*;
@@ -630,7 +615,7 @@ mod tests {
 
     #[test]
     fn the_first_active_condition_decides_even_when_it_is_null() {
-        let map = crate::json::parse(r#"{"import": null, "default": "./x.js"}"#).unwrap();
+        let map = parse_json(r#"{"import": null, "default": "./x.js"}"#).unwrap();
         let configured = ["default".to_owned()];
         let import = Conditions {
             configured: &configured,
