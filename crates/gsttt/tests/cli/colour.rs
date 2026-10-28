@@ -6,8 +6,7 @@ use gsttt_scenario::scenario;
 
 use super::support::{Sandbox, ran};
 
-/// What the environment of a user who asks for colour looks like: a terminal that supports it, and every variable
-/// that forces it. None of it may reach a pipe.
+/// What the environment of a user who asks for colour looks like: a terminal that supports it, and every variable that forces it. None of it may reach a pipe.
 const WANTING_COLOUR: [(&str, &str); 4] = [
     ("CLICOLOR_FORCE", "1"),
     ("CLICOLOR", "1"),

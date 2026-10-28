@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 camino = { workspace = true, features = ["serde1"] }
+faster-hex.workspace = true
 fixedbitset.workspace = true
 foldhash.workspace = true
 gix = { workspace = true, features = ["sha1", "dirwalk", "revision", "parallel"] }

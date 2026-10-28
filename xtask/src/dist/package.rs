@@ -103,7 +103,10 @@ fn pack(root: &Path, target_dir: &Path, target: &str) -> anyhow::Result<Package>
     // The `sha256sum` format, so `sha256sum --check` and `shasum --algorithm 256 --check` read it as well.
     let bytes = fs::read(&archive).with_context(|| format!("cannot read {}", archive.display()))?;
     let checksum = directory.join(format!("{name}.sha256"));
-    let line = format!("{}  {name}\n", hex(&Sha256::digest(&bytes)));
+    let line = format!(
+        "{}  {name}\n",
+        faster_hex::hex_string(&Sha256::digest(&bytes))
+    );
     fs::write(&checksum, line).with_context(|| format!("cannot write {}", checksum.display()))?;
     Ok(Package { archive, checksum })
 }

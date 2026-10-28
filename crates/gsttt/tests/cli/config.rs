@@ -62,8 +62,57 @@ fn config_show_marks_an_untrusted_external() {
     );
 }
 
-/// An option that a module does not take stops every command that opens the repository, not only `config check`,
-/// and the error names the module and the option.
+/// The built-in modules in the order the spec gives for the registry, written out here so that the test does not read the order from the code it checks. The unit test of the registry holds the same list as `ORDER`, because a test of the binary's library cannot share a constant with this one.
+const REGISTRY_ORDER: [&str; 9] = [
+    "ts", "python", "rust", "openapi", "graphql", "proto", "prisma", "sql", "env",
+];
+
+#[scenario("cli", "config show lists the modules in registry order")]
+#[test]
+fn config_show_lists_the_modules_in_registry_order() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.repository();
+    assert!(!root.join(CONFIG).exists(), "the repository has a config");
+
+    let shown = json(&sandbox.run_in(&root, &["--json", "config", "show"]));
+
+    let modules = shown["modules"].as_array().unwrap();
+    let names: Vec<_> = modules
+        .iter()
+        .map(|module| module["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, REGISTRY_ORDER, "{shown}");
+    // `options` is what the config gives a module, so every module has the key and no config makes it `null`.
+    for module in modules {
+        assert_eq!(
+            module.get("options"),
+            Some(&serde_json::Value::Null),
+            "{module}"
+        );
+    }
+
+    let text = sandbox.run_in(&root, &["config", "show"]);
+    assert_eq!(text.code, Some(0), "{text:?}");
+    let lines: Vec<_> = text
+        .stdout
+        .lines()
+        .skip_while(|line| *line != "modules:")
+        .skip(1)
+        .take_while(|line| line.starts_with("  "))
+        .collect();
+    let listed: Vec<_> = lines
+        .iter()
+        .map(|line| line.trim_start().split(':').next().unwrap())
+        .collect();
+    assert_eq!(listed, REGISTRY_ORDER, "{text:?}");
+    // A line shows `, options {…}` only for a module the config gives some.
+    assert!(
+        lines.iter().all(|line| !line.contains("options")),
+        "{text:?}"
+    );
+}
+
+/// An option that a module does not take stops every command that opens the repository, not only `config check`, and the error names the module and the option.
 #[test]
 fn a_bad_option_stops_every_command_that_opens_the_repository() {
     let sandbox = Sandbox::new();

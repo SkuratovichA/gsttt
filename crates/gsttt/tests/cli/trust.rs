@@ -1,8 +1,6 @@
 //! An external connector runs only in a repository where the person trusted it.
 //!
-//! Each repository declares the external `fake`, whose program creates a marker file and ends, so a marker says the
-//! connector was started. The runs share one sandbox, and so one trust store, which is the sandbox's and never the
-//! real one of the user.
+//! Each repository declares the external `fake`, whose program creates a marker file and ends, so a marker says the connector was started. The runs share one sandbox, and so one trust store, which is the sandbox's and never the real one of the user.
 
 use std::path::Path;
 
@@ -24,8 +22,7 @@ fn trust(sandbox: &Sandbox, root: &Path, typed: &str) -> Ran {
     sandbox.run_typing(root, &["config", "trust"], typed)
 }
 
-/// Trusts `fake` in its repository, and shows that it is trusted: the next index starts it and leaves the marker,
-/// which is removed again.
+/// Trusts `fake` in its repository, and shows that it is trusted: the next index starts it and leaves the marker, which is removed again.
 fn trusted(sandbox: &Sandbox, fake: &Fake) {
     let granted = trust(sandbox, &fake.root, "y\n");
     assert_eq!(granted.code, Some(0), "{granted:?}");
@@ -37,8 +34,7 @@ fn trusted(sandbox: &Sandbox, fake: &Fake) {
     std::fs::remove_file(&fake.marker).unwrap();
 }
 
-/// What `gsttt coverage` says in `root`: it names the external that is not trusted, and counts its files as
-/// unclaimed.
+/// What `gsttt coverage` says in `root`: it names the external that is not trusted, and counts its files as unclaimed.
 fn assert_names_the_untrusted(sandbox: &Sandbox, root: &Path) {
     let coverage = sandbox.run_in(root, &["coverage"]);
     assert_eq!(coverage.code, Some(0), "{coverage:?}");
@@ -230,8 +226,7 @@ fn coverage_names_every_external_that_waits_for_trust() {
     assert!(!coverage.stdout.contains("… "), "{coverage:?}");
 }
 
-/// Only `y` and `yes` grant trust. An empty answer, which is the default of the question, and any other word
-/// decline it, and so does a capital letter.
+/// Only `y` and `yes` grant trust. An empty answer, which is the default of the question, and any other word decline it, and so does a capital letter.
 #[test]
 fn only_yes_grants_trust() {
     for typed in ["\n", "no\n", "yep\n", "Y\n", "YES\n", "sure\n"] {

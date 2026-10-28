@@ -71,8 +71,7 @@ pub(super) const fn kind_label(kind: ImportKind) -> &'static str {
 pub struct Dependents {
     /// The file asked about as the index names it, or as it was asked when the index does not hold it.
     pub path: String,
-    /// Whether a connector owns the file, which is what it takes to be in the index. The connector may still have
-    /// failed to parse it: importers are found from the importing files, so they stay true of such a file.
+    /// Whether a connector owns the file, which is what it takes to be in the index. The connector may still have failed to parse it: importers are found from the importing files, so they stay true of such a file.
     pub in_index: bool,
     /// The importers, ordered by path.
     pub files: Vec<Neighbour>,
@@ -158,13 +157,11 @@ pub struct External {
 pub struct Dependencies {
     /// The file asked about as the index names it, or as it was asked when the index does not hold it.
     pub path: String,
-    /// Whether a connector owns the file, which is what it takes to be in the index. The connector may still have
-    /// failed to parse it, which `status` says.
+    /// Whether a connector owns the file, which is what it takes to be in the index. The connector may still have failed to parse it, which `status` says.
     pub in_index: bool,
     /// The connector that owns the file.
     pub read_by: Option<String>,
-    /// How the parse of the file went, `None` when the index does not hold the file. The imports below are all the
-    /// file has only when this is [`ParseStatus::Ok`]: a failed parse leaves none, a recovered one may leave some out.
+    /// How the parse of the file went, `None` when the index does not hold the file. The imports below are all the file has only when this is [`ParseStatus::Ok`]: a failed parse leaves none, a recovered one may leave some out.
     pub status: Option<ParseStatus>,
     /// The files it imports, ordered by path.
     pub files: Vec<Neighbour>,
@@ -259,9 +256,7 @@ fn externals(found: BTreeMap<&str, Vec<Line>>) -> Vec<External> {
 }
 
 impl Dependencies {
-    /// What the parse status of the file means for the lists, when it is not a clean read: a file that failed to
-    /// parse has no imports to list, and one read past syntax errors may have lost some, so neither may be told as
-    /// a file that imports nothing.
+    /// What the parse status of the file means for the lists, when it is not a clean read: a file that failed to parse has no imports to list, and one read past syntax errors may have lost some, so neither may be told as a file that imports nothing.
     fn caveat(&self) -> Option<String> {
         match self.status.as_ref()? {
             ParseStatus::Ok => None,

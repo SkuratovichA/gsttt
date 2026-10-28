@@ -13,8 +13,7 @@ use serde_json::{Value, json};
 
 use super::support::{Sandbox, is_empty, write};
 
-/// How long a test waits for the server to say or do something it should do at once, before it calls the server
-/// stuck. Every read is bounded by it, so that a hung server fails the test and does not hang the run.
+/// How long a test waits for the server to say or do something it should do at once, before it calls the server stuck. Every read is bounded by it, so that a hung server fails the test and does not hang the run.
 const PATIENCE: Duration = Duration::from_secs(10);
 
 /// The newest protocol version that still opens a session with `initialize`.
@@ -147,8 +146,7 @@ impl Server {
         assert!(listed["result"]["tools"].is_array(), "{listed}");
     }
 
-    /// Calls `tool` with `arguments` and returns its result, which fails the test when the server answered with a
-    /// protocol error instead.
+    /// Calls `tool` with `arguments` and returns its result, which fails the test when the server answered with a protocol error instead.
     fn call(&mut self, tool: &str, arguments: &Value) -> Reply {
         let response = self.request("tools/call", &json!({"name": tool, "arguments": arguments}));
         let result = response

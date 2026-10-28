@@ -391,8 +391,7 @@ fn an_unused_external_starts_nothing() {
     let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
     let connector = Erased(kotlin(External::TIMEOUT));
 
-    // A run whose files are all answered from the snapshot opens the connector and asks a project what it needs to
-    // key the cache, and nothing else: it parses and resolves nothing.
+    // A run whose files are all answered from the snapshot opens the connector and asks a project what it needs to key the cache, and nothing else: it parses and resolves nothing.
     assert!(connector.detect(&repo));
     let projects = connector.open(&repo, &Value::Null, &[]).unwrap();
     assert_eq!(projects.len(), 1);

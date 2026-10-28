@@ -1,5 +1,4 @@
-//! Which files differ from what git recorded: the work tree against HEAD, or against the best common ancestor of
-//! HEAD and another revision.
+//! Which files differ from what git recorded: the work tree against HEAD, or against the best common ancestor of HEAD and another revision.
 
 use std::collections::BTreeMap;
 
@@ -66,8 +65,7 @@ pub fn diff(from: &Listing, to: &Listing) -> Vec<Change> {
     changes
 }
 
-/// The commit HEAD points at, `None` before the first commit. A HEAD git cannot resolve is an error: it is not
-/// the same as a branch without commits.
+/// The commit HEAD points at, `None` before the first commit. A HEAD git cannot resolve is an error: it is not the same as a branch without commits.
 pub fn head_commit(root: &Utf8Path) -> Result<Option<String>, ChangesError> {
     let repo = open(root)?;
     let commit = head_commit_of(&repo, root)?;
@@ -143,8 +141,7 @@ fn open(root: &Utf8Path) -> Result<gix::Repository, ChangesError> {
     })
 }
 
-/// The regular files of a commit's tree. Symbolic links, submodules and files the setup excludes are left out, the
-/// way the listing of the work tree leaves them out.
+/// The regular files of a commit's tree. Symbolic links, submodules and files the setup excludes are left out, the way the listing of the work tree leaves them out.
 fn flatten(
     root: &Utf8Path,
     commit: &gix::Commit<'_>,

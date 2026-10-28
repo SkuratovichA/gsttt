@@ -1,9 +1,6 @@
-//! Contract sites: the calls, method calls, macro calls and attributes of a file, matched against the rules of the
-//! packs in force, and the member chains and assignments that the other two rule kinds read.
+//! Contract sites: the calls, method calls, macro calls and attributes of a file, matched against the rules of the packs in force, and the member chains and assignments that the other two rule kinds read.
 //!
-//! [`candidate`] says how a site is named and how its arguments are read, [`receiver`] how a rule that wants a
-//! particular receiver finds out whether it has one, [`chain`] the two rule kinds that read names, not calls, and
-//! [`routers`] which routes are served together and which routers are mounted in which.
+//! [`candidate`] says how a site is named and how its arguments are read, [`receiver`] how a rule that wants a particular receiver finds out whether it has one, [`chain`] the two rule kinds that read names, not calls, and [`routers`] which routes are served together and which routers are mounted in which.
 
 mod candidate;
 mod chain;
@@ -85,8 +82,7 @@ pub(crate) fn read(
     sites
 }
 
-/// The dotted path each name that `imports` bring in stands for. A name that two imports bring in from different
-/// paths, as two modules of one file may, stands for neither.
+/// The dotted path each name that `imports` bring in stands for. A name that two imports bring in from different paths, as two modules of one file may, stands for neither.
 fn uses_of(imports: &[Import]) -> HashMap<String, String> {
     let mut found: HashMap<String, Option<String>> = HashMap::new();
     for (name, spec) in imports::bindings(imports) {
@@ -184,8 +180,7 @@ impl<'a> Reader<'a> {
                 .iter()
                 .flat_map(|pack| pack.calls.iter().map(move |rule| (pack, rule)))
                 .collect(),
-            // A class or a receiver is where a decorator in another language finds its prefix, and an attribute has
-            // neither.
+            // A class or a receiver is where a decorator in another language finds its prefix, and an attribute has neither.
             decorators: packs
                 .iter()
                 .flat_map(|pack| pack.decorators.iter().map(move |rule| (pack, rule)))
@@ -293,9 +288,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// The path a callee stands for when it starts with a name that a `use` of the file brought in: `get` is
-    /// `reqwest.get` after `use reqwest::get;`. The imports do not say which module a `use` sits in, so a name that two
-    /// of them bring in from different paths is left alone.
+    /// The path a callee stands for when it starts with a name that a `use` of the file brought in: `get` is `reqwest.get` after `use reqwest::get;`. The imports do not say which module a `use` sits in, so a name that two of them bring in from different paths is left alone.
     fn brought_in(&self, callee: &str) -> Option<String> {
         let (first, rest) = match callee.split_once('.') {
             Some((first, rest)) => (first, Some(rest)),

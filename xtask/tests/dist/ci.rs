@@ -7,8 +7,8 @@ use std::process::{Command, Output};
 use serde_json::{Map, Value, json};
 
 use crate::support::{
-    RELEASE_TARGETS, commit, git, isolate_git, printed, repository, workspace_root, write,
-    write_executable,
+    RELEASE_TARGETS, TARGET, commit, git, isolate_git, package, printed, repository,
+    workspace_root, write, write_executable,
 };
 
 fn workflow() -> Value {
@@ -471,4 +471,170 @@ fn versions_are_compared_as_numbers_to_find_the_latest() {
         release.gh
     );
     assert_eq!(release.gh.len(), 1);
+}
+
+/// The targets whose runner can execute them: an `x86_64` Linux runner and an arm64 macOS runner.
+const NATIVE_TARGETS: [&str; 2] = ["x86_64-unknown-linux-musl", "aarch64-apple-darwin"];
+
+#[gsttt_scenario::scenario("cli", "The release build runs the packaged binary")]
+#[test]
+fn the_release_build_runs_the_packaged_binary() {
+    let workflow = workflow();
+    let build = &jobs(&workflow)["build"];
+
+    let entries = matrix(build);
+    for entry in &entries {
+        assert!(
+            entry["native"].is_boolean(),
+            "{} does not say whether it is native",
+            entry["target"]
+        );
+    }
+    let native: BTreeSet<&str> = entries
+        .iter()
+        .filter(|entry| entry["native"] == true)
+        .filter_map(|entry| entry["target"].as_str())
+        .collect();
+    assert_eq!(native, BTreeSet::from(NATIVE_TARGETS));
+
+    // The package is run once it is packed, and before the upload takes `target/packages` whole.
+    let steps = build["steps"].as_array().unwrap();
+    let position = |label: &str| {
+        steps.iter().position(|step| {
+            step["name"] == label
+                || step["uses"]
+                    .as_str()
+                    .is_some_and(|uses| uses.starts_with(label))
+        })
+    };
+    let packed = position("Package").unwrap();
+    let run = position("Run the packaged binary").unwrap();
+    let upload = position("actions/upload-artifact@").unwrap();
+    assert!(
+        packed < run && run < upload,
+        "the steps Package, Run the packaged binary and the upload are at {packed}, {run} and {upload}"
+    );
+
+    let packaged = step(build, "Run the packaged binary").unwrap();
+    assert_eq!(packaged["if"], "${{ matrix.native }}");
+    assert_eq!(
+        packaged["env"]["VERSION"],
+        "${{ steps.version.outputs.version }}"
+    );
+    assert_eq!(packaged["env"]["TARGET"], "${{ matrix.target }}");
+    let script = packaged["run"].as_str().unwrap();
+    assert!(script.contains("unpacked=\"${RUNNER_TEMP}/"), "{script}");
+    assert!(
+        script.contains(
+            "tar -xzf \"target/packages/gsttt-${VERSION}-${TARGET}.tar.gz\" -C \"$unpacked\""
+        ),
+        "{script}"
+    );
+    for arguments in ["--version", "index", "impact"] {
+        assert!(
+            script.contains(&format!("\"${{unpacked}}/gsttt\" {arguments}")),
+            "nothing runs the unpacked binary with `{arguments}`: {script}"
+        );
+    }
+    let file = script
+        .lines()
+        .find_map(|line| line.strip_prefix("\"${unpacked}/gsttt\" impact "))
+        .unwrap();
+    assert!(
+        workspace_root().join(file).is_file(),
+        "`impact` is given {file}, which is no file of the repository"
+    );
+}
+
+/// What the `Run the packaged binary` step did: how it ended, and a line for each run of the packaged `gsttt` with the directory it ran in and the arguments it was given. The two directories are the temporary directory of the runner, where the package is unpacked, and the checkout.
+struct Packaged {
+    output: Output,
+    runs: Vec<String>,
+    runner_temp: tempfile::TempDir,
+    checkout: tempfile::TempDir,
+}
+
+/// Runs the `Run the packaged binary` step as the runner would, in a checkout of one commit whose package holds a `gsttt` that says it is `says`, with `version` as the version of the `Version` step.
+fn run_packaged(version: &str, says: &str) -> Packaged {
+    let script = workflow()
+        .pointer("/jobs/build")
+        .and_then(|build| step(build, "Run the packaged binary"))
+        .and_then(|packaged| packaged.get("run"))
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_owned();
+    let checkout = repository("0.1.0");
+    let target_dir = checkout.path().join("target");
+    write_executable(
+        &target_dir,
+        &format!("{TARGET}/dist/gsttt"),
+        &format!(
+            "#!/bin/sh\necho \"$(pwd -P): $0 $*\" >> \"$GSTTT_LOG\"\n[ \"$1\" = --version ] && echo \"gsttt {says}\"\nexit 0\n"
+        ),
+    );
+    let packed = package(checkout.path(), &target_dir, TARGET);
+    assert!(packed.status.success(), "{}", printed(&packed));
+
+    let runner_temp = tempfile::tempdir().unwrap();
+    let log = runner_temp.path().join("runs.log");
+    let output = Command::new("bash")
+        .args(["-e", "-c", &script])
+        .current_dir(checkout.path())
+        .env("RUNNER_TEMP", runner_temp.path())
+        .env("VERSION", version)
+        .env("TARGET", TARGET)
+        .env("GSTTT_LOG", &log)
+        .output()
+        .unwrap();
+    let runs = std::fs::read_to_string(&log)
+        .map(|text| text.lines().map(str::to_owned).collect())
+        .unwrap_or_default();
+    Packaged {
+        output,
+        runs,
+        runner_temp,
+        checkout,
+    }
+}
+
+#[test]
+fn the_packaged_binary_is_run_unpacked_on_the_checkout() {
+    let ran = run_packaged("0.1.1", "0.1.1");
+
+    assert!(ran.output.status.success(), "{}", printed(&ran.output));
+    let program = ran.runner_temp.path().join("gsttt-package/gsttt");
+    let checkout = ran.checkout.path().canonicalize().unwrap();
+    let prefix = format!("{}: {}", checkout.display(), program.display());
+    let [version, index, impact] = ran.runs.as_slice() else {
+        panic!("the binary was run as {:?}", ran.runs);
+    };
+    assert_eq!(version, &format!("{prefix} --version"));
+    assert_eq!(index, &format!("{prefix} index"));
+    assert!(impact.starts_with(&format!("{prefix} impact ")), "{impact}");
+}
+
+#[test]
+fn a_binary_that_says_another_version_fails_the_step() {
+    let ran = run_packaged("0.1.1", "0.1.0-dev");
+
+    assert!(!ran.output.status.success(), "{}", printed(&ran.output));
+    assert!(
+        printed(&ran.output).contains("gsttt 0.1.0-dev"),
+        "{}",
+        printed(&ran.output)
+    );
+    assert_eq!(ran.runs.len(), 1, "only --version is run: {:?}", ran.runs);
+}
+
+#[test]
+fn a_package_of_another_version_is_not_run() {
+    let ran = run_packaged("0.1.2", "0.1.2");
+
+    assert!(!ran.output.status.success(), "{}", printed(&ran.output));
+    assert!(
+        printed(&ran.output).contains("gsttt-0.1.2-x86_64-unknown-linux-musl.tar.gz"),
+        "{}",
+        printed(&ran.output)
+    );
+    assert_eq!(ran.runs, Vec::<String>::new());
 }

@@ -13,8 +13,7 @@ pub struct Task {
     pub line: usize,
 }
 
-/// Reads the checkboxes of a `tasks.md`: nested ones count, and so do those in fenced code, because
-/// `openspec list` counts them too and the gate must agree with it on whether a change is finished.
+/// Reads the checkboxes of a `tasks.md`: nested ones count, and so do those in fenced code, because `openspec list` counts them too and the gate must agree with it on whether a change is finished.
 #[must_use]
 pub fn parse_tasks(text: &str) -> Vec<Task> {
     markdown::lines(text)

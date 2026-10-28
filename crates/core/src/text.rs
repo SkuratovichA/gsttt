@@ -1,5 +1,4 @@
-//! Text helpers shared by the connectors and by the words of answers: line numbers from byte offsets, counts,
-//! names and times.
+//! Text helpers shared by the connectors and by the words of answers: line numbers from byte offsets, counts, names and times.
 
 use crate::fact::Line;
 
@@ -72,9 +71,7 @@ pub fn thousands(count: impl TryInto<u64>) -> String {
     out
 }
 
-/// `part` of `whole` as a whole percentage: `29%`. It is rounded down, so that a tree with one lost import never
-/// claims to resolve all of them, and it is computed from the counts, because a share kept as a float prints 29 of
-/// 100 as `28%`. Nothing out of nothing counts as all of it.
+/// `part` of `whole` as a whole percentage: `29%`. It is rounded down, so that a tree with one lost import never claims to resolve all of them, and it is computed from the counts, because a share kept as a float prints 29 of 100 as `28%`. Nothing out of nothing counts as all of it.
 pub fn percent(part: u32, whole: u32) -> String {
     let share = (u64::from(part) * 100)
         .checked_div(u64::from(whole))
@@ -125,8 +122,7 @@ pub fn duration(micros: u64) -> String {
     }
 }
 
-/// `micros / unit` rounded to one decimal place, with integers only so that no float's rounding decides it. A
-/// `unit` of zero gives `0.0`.
+/// `micros / unit` rounded to one decimal place, with integers only so that no float's rounding decides it. A `unit` of zero gives `0.0`.
 pub fn tenths(micros: u64, unit: u64) -> String {
     let tenths = micros
         .saturating_mul(10)

@@ -1,5 +1,4 @@
-//! Contracts joining files: which contracts a given key meets, how a walk crosses one, and the sites of one file in a
-//! contract.
+//! Contracts joining files: which contracts a given key meets, how a walk crosses one, and the sites of one file in a contract.
 
 use std::collections::BTreeMap;
 
@@ -10,21 +9,17 @@ use crate::index::Index;
 
 use super::http::HttpMatcher;
 
-/// Which way a walk crosses a contract. A contract joins files in three roles, `Declares < Serves < Calls`, and a walk
-/// leaves a file from its role at one end of that order towards the roles beyond it.
+/// Which way a walk crosses a contract. A contract joins files in three roles, `Declares < Serves < Calls`, and a walk leaves a file from its role at one end of that order towards the roles beyond it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Direction {
-    /// From a declarer to the servers and callers, and from a server to the callers: the way a change travels,
-    /// because code follows the schema it is written against.
+    /// From a declarer to the servers and callers, and from a server to the callers: the way a change travels, because code follows the schema it is written against.
     ToCallers,
-    /// From a caller to the servers and declarers, and from a server to the declarers: the way a chain runs from a
-    /// caller to the schema behind it.
+    /// From a caller to the servers and declarers, and from a server to the declarers: the way a chain runs from a caller to the schema behind it.
     ToDeclarers,
 }
 
 impl Direction {
-    /// The role that decides where a file with `roles`, which are in role order, leaves a contract: its role at the
-    /// walk's own end of the order, because that one reaches the most.
+    /// The role that decides where a file with `roles`, which are in role order, leaves a contract: its role at the walk's own end of the order, because that one reaches the most.
     fn leaving(self, roles: &[Role]) -> Option<Role> {
         match self {
             Self::ToCallers => roles.first().copied(),
@@ -74,9 +69,7 @@ impl Crossed {
 pub(super) struct Crossing<'a> {
     graph: &'a Graph,
     matcher: HttpMatcher,
-    /// The HTTP contracts of the graph by the number of segments their path has, as written and with each prefix
-    /// taken off. Two paths can meet only at a number of segments they both have, so a lookup compares the keys of
-    /// the buckets it can meet in instead of every route of the graph.
+    /// The HTTP contracts of the graph by the number of segments their path has, as written and with each prefix taken off. Two paths can meet only at a number of segments they both have, so a lookup compares the keys of the buckets it can meet in instead of every route of the graph.
     http: BTreeMap<usize, Vec<ContractId>>,
 }
 
@@ -100,8 +93,7 @@ impl<'a> Crossing<'a> {
         }
     }
 
-    /// The contracts whose sites join `key`'s, in key order: the contract of `key` itself, and for an HTTP key every
-    /// HTTP contract that meets it, whether or not `key` is a contract of the graph.
+    /// The contracts whose sites join `key`'s, in key order: the contract of `key` itself, and for an HTTP key every HTTP contract that meets it, whether or not `key` is a contract of the graph.
     pub(super) fn meeting(&self, key: &ContractKey) -> Vec<ContractId> {
         let Some((_, path)) = key.http_parts() else {
             return self.graph.contract_id(key).into_iter().collect();
@@ -124,10 +116,7 @@ impl<'a> Crossing<'a> {
         candidates
     }
 
-    /// The sites a walk reaches by following `contract` out of `file`, each with the contract it is a site of: the
-    /// contract itself, or for an HTTP key one that meets it. They come contract by contract in key order, and within
-    /// a contract by file and line. A contract is followed once from each of the two roles that can leave it, because
-    /// a walk meets files by growing distance, so a later file can only be as far away or farther.
+    /// The sites a walk reaches by following `contract` out of `file`, each with the contract it is a site of: the contract itself, or for an HTTP key one that meets it. They come contract by contract in key order, and within a contract by file and line. A contract is followed once from each of the two roles that can leave it, because a walk meets files by growing distance, so a later file can only be as far away or farther.
     pub(super) fn cross(
         &self,
         crossed: &mut Crossed,

@@ -86,8 +86,7 @@ fn embedded_documents_report_lines_within_the_document() {
     );
 }
 
-/// The pipeline hands the host's document to the connector and keeps what it reads. The snapshot shows the lines
-/// as the engine places them, so it changes when the engine moves them to the host file.
+/// The pipeline hands the host's document to the connector and keeps what it reads. The snapshot shows the lines as the engine places them, so it changes when the engine moves them to the host file.
 #[test]
 fn embedded_documents_are_read_when_a_host_carries_them() {
     let run = Run::new("graphql_embedded", &[module(&HOST), module(&GRAPHQL)]);

@@ -21,8 +21,7 @@ fn schema_external_prints_the_protocol_schema() {
     assert!(ran.stdout.ends_with("}\n"), "{}", ran.stdout);
 }
 
-/// The schema needs no repository and no config, so it is printed in the home directory too, which every command
-/// about a repository refuses. It is JSON already, so `--json` changes nothing.
+/// The schema needs no repository and no config, so it is printed in the home directory too, which every command about a repository refuses. It is JSON already, so `--json` changes nothing.
 #[test]
 fn schema_external_needs_no_root_and_prints_the_same_under_json() {
     let sandbox = Sandbox::new();

@@ -1,8 +1,6 @@
 //! Answering a call: what each tool asks of the source and of the queries.
 //!
-//! The paths are read, and the changed files listed, before the index is refreshed, so that a call that cannot be
-//! answered does not first pay for an index. The answer is the text the command line prints, produced by the same
-//! functions in `gsttt-core`.
+//! The paths are read, and the changed files listed, before the index is refreshed, so that a call that cannot be answered does not first pay for an index. The answer is the text the command line prints, produced by the same functions in `gsttt-core`.
 
 use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::query::{self, Answer, Entries, ImpactRequest};
@@ -15,8 +13,7 @@ use crate::arguments::{
 use crate::error::ToolError;
 use crate::source::IndexSource;
 
-/// What `index_status` says before the first index. It points at the questions that build one, because the tool does
-/// not.
+/// What `index_status` says before the first index. It points at the questions that build one, because the tool does not.
 const NO_INDEX: &str = "There is no index yet: the first question builds one. Ask `impact`, `dependents` or \
                         `dependencies` about a file to build it, which can take a while on a large repository.";
 
@@ -72,8 +69,7 @@ fn text_if_held<A: Answer>(answer: &A, entries: Entries) -> Result<String, ToolE
     }
 }
 
-/// The files `impact` is asked about, then the answer. A path with no file on disk is asked about as deleted, so that
-/// the answer can still list what used to import it; so is a file that git lists as deleted.
+/// The files `impact` is asked about, then the answer. A path with no file on disk is asked about as deleted, so that the answer can still list what used to import it; so is a file that git lists as deleted.
 fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolError> {
     let ImpactCall {
         subject,

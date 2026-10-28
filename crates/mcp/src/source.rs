@@ -1,7 +1,6 @@
 //! What the server asks of the repository, and what comes back.
 //!
-//! This crate cannot depend on the binary, which holds the root, the evaluated config, the registry and the trust
-//! store. The binary implements [`IndexSource`] once, and the server only ever sees the trait.
+//! This crate cannot depend on the binary, which holds the root, the evaluated config, the registry and the trust store. The binary implements [`IndexSource`] once, and the server only ever sees the trait.
 
 use gsttt_core::engine::changes::Change;
 use gsttt_core::{Loaded, Target};
@@ -27,12 +26,9 @@ impl SourceError {
 
 /// Where the server gets its index.
 ///
-/// Every method may read the disk, run git or build an index, so the server calls them on a blocking thread and one
-/// at a time. The binary opens its repository again on every call, because a session outlives edits to the config,
-/// the trust store and the checked-out branch.
+/// Every method may read the disk, run git or build an index, so the server calls them on a blocking thread and one at a time. The binary opens its repository again on every call, because a session outlives edits to the config, the trust store and the checked-out branch.
 pub trait IndexSource: Send + Sync + 'static {
-    /// Refreshes the index and returns it. This is the call that can take minutes on the first index of a large
-    /// repository.
+    /// Refreshes the index and returns it. This is the call that can take minutes on the first index of a large repository.
     fn refreshed(&self) -> Result<Loaded, SourceError>;
 
     /// The stored index without refreshing it, or `None` before the first index.

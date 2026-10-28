@@ -96,8 +96,7 @@ fn strings_at(json: &Value, key: &str) -> Option<Vec<String>> {
         .map(|value| value.strings().into_iter().map(str::to_owned).collect())
 }
 
-/// One `paths` entry, remembering the directory of the config that declares it: a target is read from `baseUrl` when one is
-/// set, and from that directory when not.
+/// One `paths` entry, remembering the directory of the config that declares it: a target is read from `baseUrl` when one is set, and from that directory when not.
 #[derive(Debug, Clone)]
 pub(crate) struct PathMapping {
     pub pattern: String,
@@ -201,8 +200,7 @@ pub(crate) struct Cover {
 }
 
 impl Cover {
-    /// The cover of `effective`, a config that lies in `dir`. A config with neither `include` nor `files` lists
-    /// everything below it; one with `files` alone lists only those.
+    /// The cover of `effective`, a config that lies in `dir`. A config with neither `include` nor `files` lists everything below it; one with `files` alone lists only those.
     pub(crate) fn of(dir: &str, effective: &Effective) -> Self {
         let include = match (&effective.include, &effective.files) {
             (Some(patterns), _) => Some(globs(patterns.iter().map(String::as_str))),

@@ -17,10 +17,7 @@ fn names(out: &Indexed, root: &str, needle: &str) -> bool {
         .any(|spot| spot.as_str().is_some_and(|spot| spot.contains(needle)))
 }
 
-/// Whether the blind spots explain an import that points nowhere. Code a build step generated is one. A path that
-/// starts with a name a glob import brought in is the other, but only a glob of a crate outside this repository can
-/// bring in a name that nothing here declares, so a path that starts with an unknown name in a file whose globs all
-/// land on files of the repository is a mistake.
+/// Whether the blind spots explain an import that points nowhere. Code a build step generated is one. A path that starts with a name a glob import brought in is the other, but only a glob of a crate outside this repository can bring in a name that nothing here declares, so a path that starts with an unknown name in a file whose globs all land on files of the repository is a mistake.
 fn explained(reason: &str, file: &Value) -> bool {
     let has_outside_glob = file["imports"].as_array().unwrap().iter().any(|import| {
         import["names"] == json!(["*"])
@@ -39,9 +36,7 @@ fn is_fixture(path: &str) -> bool {
     path.starts_with("tests/fixtures/") || path.contains("/tests/fixtures/")
 }
 
-/// Imports of the Rust files that point nowhere and that the blind spots do not explain, as
-/// `<path>:<line> <spec> (<reason>)`. The trees under `tests/fixtures` are left out: they are inputs of tests, and the
-/// ones for imports are written to be unresolved.
+/// Imports of the Rust files that point nowhere and that the blind spots do not explain, as `<path>:<line> <spec> (<reason>)`. The trees under `tests/fixtures` are left out: they are inputs of tests, and the ones for imports are written to be unresolved.
 fn unexplained(out: &Indexed) -> Vec<String> {
     let json = out.json();
     let mut found = Vec::new();

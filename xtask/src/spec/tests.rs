@@ -1,5 +1,4 @@
-//! The spec gate on small repository trees. Each test writes the files it needs into a temporary
-//! directory and runs the gate on them, so nothing depends on this repository's own specs.
+//! The spec gate on small repository trees. Each test writes the files it needs into a temporary directory and runs the gate on them, so nothing depends on this repository's own specs.
 
 mod reach;
 
@@ -19,8 +18,7 @@ const OPEN: &str = "- [x] 1.1 Design it\n- [ ] 1.2 Build it\n";
 const PACKAGE: &str =
     "[package]\nname = \"app\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[features]\nslow = []\n";
 
-/// A repository in a temporary directory with a real cargo workspace, whose targets the gate asks
-/// cargo for.
+/// A repository in a temporary directory with a real cargo workspace, whose targets the gate asks cargo for.
 struct Tree {
     dir: tempfile::TempDir,
 }
@@ -43,8 +41,7 @@ impl Tree {
         tree
     }
 
-    /// A workspace whose only member is the package at its root, so that a walk of the package
-    /// takes in the whole tree. Its files are written with [`Tree::write`].
+    /// A workspace whose only member is the package at its root, so that a walk of the package takes in the whole tree. Its files are written with [`Tree::write`].
     fn rooted() -> Self {
         let tree = Self::empty();
         tree.write("Cargo.toml", &format!("{PACKAGE}\n[workspace]\n"))
@@ -625,8 +622,7 @@ fn a_change_that_names_a_requirement_main_lacks_is_not_ready() {
             requirement("Delta", &["Delta works"]),
         ]),
     );
-    // Every change is finished and proven. Those named `...-existing` find what they name in the
-    // main spec; `renames-and-modifies` refers to its modified requirement by the new name.
+    // Every change is finished and proven. Those named `...-existing` find what they name in the main spec; `renames-and-modifies` refers to its modified requirement by the new name.
     let renamed_and_modified = format!(
         "{}\n## MODIFIED Requirements\n\n{}",
         delta("RENAMED", &[renaming("Delta", "Delta renamed")]),
@@ -811,9 +807,7 @@ fn two_changes_that_take_one_requirement_away_fail() {
 #[test]
 fn a_change_that_a_failure_names_is_not_ready() {
     let tree = Tree::new();
-    // The change is finished, adds nothing that lacks a proof and removes a requirement the main
-    // spec has, so only the failure of the test that still claims the removed scenario holds it
-    // back.
+    // The change is finished, adds nothing that lacks a proof and removes a requirement the main spec has, so only the failure of the test that still claims the removed scenario holds it back.
     tree.spec(
         "queries",
         &main_spec(&[requirement("Wormholes", &["Impact goes through wormholes"])]),

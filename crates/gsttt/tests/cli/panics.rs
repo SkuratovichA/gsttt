@@ -1,8 +1,6 @@
 //! A panic the engine contains prints nothing, and one that reaches `main` prints one line and exits with 101.
 //!
-//! The panic hook belongs to the process, so every case runs in a child process: the test starts this test binary
-//! again with the one ignored test `child` and a mode, and reads how the child ended. The commands that ship never
-//! panic, so the child runs `gsttt::panics::guard`, the function `main` runs everything in, around code that does.
+//! The panic hook belongs to the process, so every case runs in a child process: the test starts this test binary again with the one ignored test `child` and a mode, and reads how the child ended. The commands that ship never panic, so the child runs `gsttt::panics::guard`, the function `main` runs everything in, around code that does.
 
 use std::io;
 use std::panic::{self, Location};
@@ -110,8 +108,7 @@ fn bug(message: &str) -> Outcome {
     panic!("{message}")
 }
 
-/// What the child of a test does, chosen by the `PANICS_MODE` the test sets. It ends the process with the code
-/// that `guard` returns, as `main` does.
+/// What the child of a test does, chosen by the `PANICS_MODE` the test sets. It ends the process with the code that `guard` returns, as `main` does.
 #[test]
 #[ignore = "runs in a child process of the tests below"]
 fn child() {
@@ -128,8 +125,7 @@ fn child() {
             bug("a later bug")
         }
         "bug" => bug("the index is out of bounds"),
-        // A worker that panics hands the panic to the thread that waits for it with `resume_unwind`, which does not
-        // run the hook again: this is how a panic on one of rayon's threads reaches `main`.
+        // A worker that panics hands the panic to the thread that waits for it with `resume_unwind`, which does not run the hook again: this is how a panic on one of rayon's threads reaches `main`.
         "worker" => match std::thread::spawn(|| bug("a worker broke")).join() {
             Ok(outcome) => outcome,
             Err(payload) => panic::resume_unwind(payload),
@@ -177,8 +173,7 @@ fn the_line(child: &Ran, message: &str) -> String {
 #[scenario("cli", "A contained panic prints nothing")]
 #[test]
 fn a_contained_panic_prints_nothing() {
-    // With `RUST_BACKTRACE` set a panic that reached the hook would print the standard output, so this is the run
-    // in which a contained panic that leaks shows.
+    // With `RUST_BACKTRACE` set a panic that reached the hook would print the standard output, so this is the run in which a contained panic that leaks shows.
     let child = in_child("contained", Some("1"));
     assert_eq!(child.stderr, "", "{child:?}");
     assert_eq!(child.code, Some(0), "{child:?}");

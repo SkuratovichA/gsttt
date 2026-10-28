@@ -15,8 +15,7 @@ pub(super) fn impact(
     args: &ImpactArgs,
     io: &mut Io<'_>,
 ) -> Result<Outcome, CliError> {
-    // Reading the request tells every usage error before the index is read, so a bad command line fails the same
-    // way whatever the index holds.
+    // Reading the request tells every usage error before the index is read, so a bad command line fails the same way whatever the index holds.
     let request = request(session, args)?;
     let Loaded { index, freshness } = session.loaded()?;
     print::answer(
@@ -26,8 +25,7 @@ pub(super) fn impact(
     )
 }
 
-/// What to ask: the named files, with those that are not on disk passed as deleted, or the files git lists as changed,
-/// where a deleted file is passed as deleted.
+/// What to ask: the named files, with those that are not on disk passed as deleted, or the files git lists as changed, where a deleted file is passed as deleted.
 fn request(session: &Session<'_>, args: &ImpactArgs) -> Result<ImpactRequest, CliError> {
     let mut request = ImpactRequest {
         depth: args.depth,

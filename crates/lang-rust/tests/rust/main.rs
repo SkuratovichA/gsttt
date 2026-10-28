@@ -1,5 +1,4 @@
-//! Scenario tests of the Rust connector, run through the engine on the fixture trees under `tests/fixtures/`, and one
-//! test that runs it over this repository.
+//! Scenario tests of the Rust connector, run through the engine on the fixture trees under `tests/fixtures/`, and one test that runs it over this repository.
 
 #[cfg(test)]
 mod support;

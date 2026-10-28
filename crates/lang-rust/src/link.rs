@@ -1,14 +1,6 @@
-//! Routes that only show across files: a router built in one file and mounted in another, a scope in `main.rs` that
-//! prefixes handlers declared elsewhere.
+//! Routes that only show across files: a router built in one file and mounted in another, a scope in `main.rs` that prefixes handlers declared elsewhere.
 //!
-//! Reading a file records, for each chain of method calls or handler that serves routes, a [`Group`] with the routes
-//! it serves and the routers it mounts, and for each function the groups it hands back. Linking follows the mounts
-//! from the groups nothing mounts, collecting the prefixes on the way, and reports every route of a mounted router
-//! once for each mount, keyed again with the prefix in front. Each reported fact names the route the file declares, so
-//! the engine drops that one: a router is served under its mounts and under no other path. A mount at the root is
-//! reported only for a router that is mounted under a prefix as well, because a router that is merged and nothing else
-//! is served by the route the file declares. A router that nothing mounts is not reported, and neither is a route below
-//! a cap, so both keep the paths they are written with.
+//! Reading a file records, for each chain of method calls or handler that serves routes, a [`Group`] with the routes it serves and the routers it mounts, and for each function the groups it hands back. Linking follows the mounts from the groups nothing mounts, collecting the prefixes on the way, and reports every route of a mounted router once for each mount, keyed again with the prefix in front. Each reported fact names the route the file declares, so the engine drops that one: a router is served under its mounts and under no other path. A mount at the root is reported only for a router that is mounted under a prefix as well, because a router that is merged and nothing else is served by the route the file declares. A router that nothing mounts is not reported, and neither is a route below a cap, so both keep the paths they are written with.
 
 #[cfg(test)]
 mod tests;
@@ -23,12 +15,10 @@ use gsttt_core::path::RepoPath;
 use gsttt_core::rules::contract_key;
 use serde::{Deserialize, Serialize};
 
-/// How deep routers may be mounted in one another before the walk stops, so a generated chain of thousands cannot
-/// exhaust the stack. No program nests routers anywhere near this.
+/// How deep routers may be mounted in one another before the walk stops, so a generated chain of thousands cannot exhaust the stack. No program nests routers anywhere near this.
 pub(crate) const MAX_DEPTH: usize = 64;
 
-/// How many times one walk may enter a router, so that routers mounted twice at every level, which give a path for
-/// each way down, cannot take the index with them.
+/// How many times one walk may enter a router, so that routers mounted twice at every level, which give a path for each way down, cannot take the index with them.
 pub(crate) const MAX_VISITS: usize = 50_000;
 
 /// The cap that cut a walk short.
@@ -74,8 +64,7 @@ pub struct Extra {
     pub(crate) functions: Vec<Function>,
 }
 
-/// Routes that are served together: a chain of method calls such as `Router::new().route(..).nest(..)`, or a handler
-/// that an attribute gives a path to.
+/// Routes that are served together: a chain of method calls such as `Router::new().route(..).nest(..)`, or a handler that an attribute gives a path to.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Group {
     /// Where the chain or the handler starts in the file, which is also how the routes of the facts are told apart.
@@ -128,9 +117,7 @@ impl Prefix {
     }
 }
 
-/// The routes of the files of one project, once for every prefix they are mounted behind. `resolve` says which file
-/// the module path written in a file reaches. A walk that a cap cuts short is logged here, and every project names the
-/// caps among its blind spots, because the link step returns facts or an error and never both.
+/// The routes of the files of one project, once for every prefix they are mounted behind. `resolve` says which file the module path written in a file reaches. A walk that a cap cuts short is logged here, and every project names the caps among its blind spots, because the link step returns facts or an error and never both.
 pub(crate) fn link(
     input: &LinkInput<'_, Extra>,
     resolve: &dyn Fn(&RepoPath, &str) -> Resolution,
@@ -173,8 +160,7 @@ fn follow(
         prefixed: BTreeSet::new(),
     };
     let mut cuts = Vec::new();
-    // A group nothing mounts is where a program starts serving, so the prefixes start there. Groups that only
-    // mount each other in a ring are never reached.
+    // A group nothing mounts is where a program starts serving, so the prefixes start there. Groups that only mount each other in a ring are never reached.
     for (root, _) in mounted.iter().enumerate().filter(|(_, mounted)| !**mounted) {
         // Each of them has a budget of its own, so one that fans out cannot leave the next with none.
         walk.visits = 0;
@@ -193,8 +179,7 @@ fn follow(
         prefixed,
         ..
     } = walk;
-    // Dropping the route a file declares for a mount under a prefix takes the mount at the root with it, so that one is
-    // reported too. A router that is merged and nothing else keeps the route the file declares.
+    // Dropping the route a file declares for a mount under a prefix takes the mount at the root with it, so that one is reported too. A router that is merged and nothing else keeps the route the file declares.
     out.extend(
         bare.into_iter()
             .filter(|(node, _)| prefixed.contains(node))
@@ -270,8 +255,7 @@ impl<'a> Graph<'a> {
             .collect()
     }
 
-    /// The groups that `target`, written in `file`, stands for. A function is followed once, however many ways lead to
-    /// it, which is also what ends functions that return each other's routers.
+    /// The groups that `target`, written in `file`, stands for. A function is followed once, however many ways lead to it, which is also what ends functions that return each other's routers.
     fn reach(&self, file: FileId, target: &'a Target) -> Vec<usize> {
         let mut groups = Vec::new();
         let mut followed = BTreeSet::new();
@@ -308,9 +292,7 @@ impl<'a> Graph<'a> {
         groups
     }
 
-    /// The file a function called through `names` is in, and its name there. A name on its own is a function of the
-    /// file or something it brought in with `use`; `Self::name` is a function of the file; anything longer names the
-    /// module that holds the function.
+    /// The file a function called through `names` is in, and its name there. A name on its own is a function of the file or something it brought in with `use`; `Self::name` is a function of the file; anything longer names the module that holds the function.
     fn locate(&self, home: &LinkFile<'a, Extra>, names: &'a [String]) -> Option<(FileId, &'a str)> {
         let (name, module) = names.split_last()?;
         match module {
@@ -360,8 +342,7 @@ struct Walk<'a> {
 }
 
 impl<'a> Walk<'a> {
-    /// Visits `node` entered behind the prefix `entering`, parts in the order they are written. `stack` holds the
-    /// groups being visited, so a router that mounts itself does not go round for ever.
+    /// Visits `node` entered behind the prefix `entering`, parts in the order they are written. `stack` holds the groups being visited, so a router that mounts itself does not go round for ever.
     fn visit(&mut self, node: usize, entering: &[&'a str], stack: &mut Vec<usize>) {
         let (graph, edges) = (self.graph, self.edges);
         let Some(current) = graph.nodes.get(node) else {
@@ -384,8 +365,7 @@ impl<'a> Walk<'a> {
             return;
         }
         self.visits += 1;
-        // A group that starts a walk is reported only behind the prefix of its own scope; one entered through a mount is
-        // reported at the root as well.
+        // A group that starts a walk is reported only behind the prefix of its own scope; one entered through a mount is reported at the root as well.
         if !stack.is_empty() || !here.is_empty() {
             self.report(node, current, &here);
         }
@@ -402,8 +382,7 @@ impl<'a> Walk<'a> {
         stack.pop();
     }
 
-    /// Reports the routes of the group `index`, which is `node`, behind `prefix`, each keying again the route that the
-    /// file declares. A mount at the root keys it as it is written, and waits in `bare` until the walk is over.
+    /// Reports the routes of the group `index`, which is `node`, behind `prefix`, each keying again the route that the file declares. A mount at the root keys it as it is written, and waits in `bare` until the walk is over.
     fn report(&mut self, index: usize, node: &Node<'a>, prefix: &[&str]) {
         let behind = prefix.join("/");
         for route in &node.group.routes {
@@ -422,8 +401,7 @@ impl<'a> Walk<'a> {
     }
 }
 
-/// `parts` with `part` after them, unless it is nothing but slashes. Slashes between the parts are the key's to sort
-/// out.
+/// `parts` with `part` after them, unless it is nothing but slashes. Slashes between the parts are the key's to sort out.
 fn with<'a>(parts: &[&'a str], part: &'a str) -> Vec<&'a str> {
     let mut parts = parts.to_vec();
     if !part.trim_matches('/').is_empty() {

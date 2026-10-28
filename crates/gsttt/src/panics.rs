@@ -1,8 +1,6 @@
 //! What the binary does with a panic.
 //!
-//! The engine catches the panics of connector calls and reports each as a line of coverage, so the hook prints
-//! nothing for those. A panic that nothing catches ends the command: [`guard`] turns it into one line on stderr and
-//! the exit code 101, which is what Rust itself exits with when a panic unwinds out of `main`.
+//! The engine catches the panics of connector calls and reports each as a line of coverage, so the hook prints nothing for those. A panic that nothing catches ends the command: [`guard`] turns it into one line on stderr and the exit code 101, which is what Rust itself exits with when a panic unwinds out of `main`.
 
 use std::panic::{self, AssertUnwindSafe, PanicHookInfo};
 use std::sync::OnceLock;
@@ -19,9 +17,7 @@ const BUG: u8 = 101;
 
 /// What the hook saw of the first panic that no connector call contained.
 ///
-/// It lives in a static and not in a thread-local because the panic and `main` are usually on different threads: a
-/// worker that panics hands its payload to the thread that waits for it with `resume_unwind`, which does not run the
-/// hook again, so only the worker's own thread-local would hold the message and the place.
+/// It lives in a static and not in a thread-local because the panic and `main` are usually on different threads: a worker that panics hands its payload to the thread that waits for it with `resume_unwind`, which does not run the hook again, so only the worker's own thread-local would hold the message and the place.
 static FIRST: OnceLock<Bug> = OnceLock::new();
 
 /// A panic as the hook saw it.
@@ -68,15 +64,12 @@ fn one_line(text: &str) -> String {
     }
 }
 
-/// Whether the person asked for Rust's own panic output, which they do by setting `RUST_BACKTRACE` to anything but
-/// `0`, the way the standard hook reads it.
+/// Whether the person asked for Rust's own panic output, which they do by setting `RUST_BACKTRACE` to anything but `0`, the way the standard hook reads it.
 fn standard_output_wanted() -> bool {
     std::env::var_os("RUST_BACKTRACE").is_some_and(|value| value != "0")
 }
 
-/// Records the first panic, prints nothing for it unless the person asked for the standard output, and leaves out
-/// the panics the engine contains. The order matters: the engine's filter wraps whatever hook is installed when it
-/// is called, so it has to come after ours.
+/// Records the first panic, prints nothing for it unless the person asked for the standard output, and leaves out the panics the engine contains. The order matters: the engine's filter wraps whatever hook is installed when it is called, so it has to come after ours.
 fn install() {
     let standard = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
@@ -89,12 +82,10 @@ fn install() {
     quiet_contained_panics();
 }
 
-/// Installs the panic hook and runs `command`, returning the exit code of the process. A panic that gets out of
-/// the command is told in one line on stderr and ends in 101. Call it once per process.
+/// Installs the panic hook and runs `command`, returning the exit code of the process. A panic that gets out of the command is told in one line on stderr and ends in 101. Call it once per process.
 pub fn guard(io: &mut Io<'_>, command: impl FnOnce(&mut Io<'_>) -> Outcome) -> u8 {
     install();
-    // The streams are only written to after a panic, never read, so a half-finished write cannot be mistaken for a
-    // whole one.
+    // The streams are only written to after a panic, never read, so a half-finished write cannot be mistaken for a whole one.
     let Ok(outcome) = panic::catch_unwind(AssertUnwindSafe(|| command(&mut *io))) else {
         let line = FIRST.get().map_or_else(|| Bug::default().line(), Bug::line);
         io.complain(format!("{line}\n").as_bytes());

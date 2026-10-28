@@ -16,10 +16,7 @@ use crate::trust::{Declared, Store};
 
 pub(super) use show::show;
 
-/// `gsttt config check`: opens the repository, which reads the config and has every module read its options, and
-/// says the config is valid, with a line for each external connector the user does not trust yet. An error ends the
-/// run the way it ends any other command that opens the repository. It prints plain text under `--json` too, because
-/// it has no answer to give but yes.
+/// `gsttt config check`: opens the repository, which reads the config and has every module read its options, and says the config is valid, with a line for each external connector the user does not trust yet. An error ends the run the way it ends any other command that opens the repository. It prints plain text under `--json` too, because it has no answer to give but yes.
 pub(super) fn check(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, CliError> {
     let mut text = String::from("The config is valid.\n");
     for external in session
@@ -35,11 +32,9 @@ pub(super) fn check(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, C
     Ok(Outcome::Answered)
 }
 
-/// `gsttt config trust`: shows what each external connector that waits for trust would run, asks once, and records
-/// trust in all of them when the answer is `y` or `yes`. Any other answer trusts nothing.
+/// `gsttt config trust`: shows what each external connector that waits for trust would run, asks once, and records trust in all of them when the answer is `y` or `yes`. Any other answer trusts nothing.
 ///
-/// It needs stdin and stderr to be terminals and nothing skips that, because the point is that a program driving
-/// gsttt cannot trust on the user's behalf.
+/// It needs stdin and stderr to be terminals and nothing skips that, because the point is that a program driving gsttt cannot trust on the user's behalf.
 pub(super) fn trust(flags: &Flags, io: &mut Io<'_>) -> Result<Outcome, CliError> {
     if !(io::stdin().is_terminal() && io::stderr().is_terminal()) {
         return Err(CliError::TrustNeedsTerminal);
@@ -112,8 +107,7 @@ fn prompt(root: &str, waiting: &[&Declared]) -> String {
     text
 }
 
-/// Whether the first line of `input` is `y` or `yes`, once trimmed. A line that is empty, anything else, or that
-/// cannot be read is a no: the default of the question.
+/// Whether the first line of `input` is `y` or `yes`, once trimmed. A line that is empty, anything else, or that cannot be read is a no: the default of the question.
 fn agreed(input: &mut impl BufRead) -> bool {
     let mut line = String::new();
     input.read_line(&mut line).is_ok() && matches!(line.trim(), "y" | "yes")

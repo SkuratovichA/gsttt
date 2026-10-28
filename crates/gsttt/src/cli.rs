@@ -8,8 +8,7 @@ use clap_complete::Shell;
 
 use crate::streams::{Io, Outcome};
 
-/// The version `--version` prints: `GSTTT_VERSION` as it was at build time, or the package version followed by
-/// `-dev` when it was unset or empty.
+/// The version `--version` prints: `GSTTT_VERSION` as it was at build time, or the package version followed by `-dev` when it was unset or empty.
 pub const VERSION: &str = match option_env!("GSTTT_VERSION") {
     Some(version) if !version.is_empty() => version,
     _ => concat!(env!("CARGO_PKG_VERSION"), "-dev"),
@@ -197,8 +196,7 @@ impl Command {
 
 /// Reads the command line `args`, the program name first.
 ///
-/// A request for help or the version is printed to stdout, and a command line that cannot be read is reported on
-/// stderr. Either way the caller gets the [`Outcome`] to exit with in place of a command.
+/// A request for help or the version is printed to stdout, and a command line that cannot be read is reported on stderr. Either way the caller gets the [`Outcome`] to exit with in place of a command.
 pub fn parse<I, T>(args: I, io: &mut Io<'_>) -> Result<Cli, Outcome>
 where
     I: IntoIterator<Item = T>,

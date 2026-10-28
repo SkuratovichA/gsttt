@@ -1,8 +1,6 @@
 //! The handler of the protocol: what the server says on `initialize`, which tools it lists, and how it takes a call.
 //!
-//! It is written by hand and not with the `#[tool]` router, because the router answers arguments that do not
-//! deserialize with a JSON-RPC error, while the specification of the protocol calls those tool execution errors, so
-//! that the model can correct the call.
+//! It is written by hand and not with the `#[tool]` router, because the router answers arguments that do not deserialize with a JSON-RPC error, while the specification of the protocol calls those tool execution errors, so that the model can correct the call.
 //!
 //! The one exception is an `arguments` that is not an object. rmcp reads the parameters of a call before it asks the handler, so such a call never reaches `call_tool`, and `on_custom_request` answers it with the protocol error for invalid parameters.
 
@@ -59,15 +57,13 @@ impl<S: IndexSource> Server<S> {
         Ok(ListToolsResult::with_all_items(tools))
     }
 
-    /// Answers a call to one of the tools. A tool the server does not offer is a protocol error; everything that goes
-    /// wrong in a known tool is a result with `isError` set, so that the model reads it and corrects the call.
+    /// Answers a call to one of the tools. A tool the server does not offer is a protocol error; everything that goes wrong in a known tool is a result with `isError` set, so that the model reads it and corrects the call.
     async fn answer(&self, request: CallToolRequestParams) -> Result<CallToolResponse, McpError> {
         let Some(tool) = ToolName::from_name(&request.name) else {
             return Err(unknown_tool(&request.name));
         };
         tracing::debug!(%tool, "tool call");
-        // The arguments are read before the call waits for its turn, so that a call that is wrong from the start is
-        // told so at once and not after the refresh in front of it.
+        // The arguments are read before the call waits for its turn, so that a call that is wrong from the start is told so at once and not after the refresh in front of it.
         let reply = match Call::read(tool, request.arguments) {
             Ok(call) => self.call_source(tool, call).await,
             Err(error) => Err(error),
@@ -82,8 +78,7 @@ impl<S: IndexSource> Server<S> {
         Ok(CallToolResponse::Complete(result))
     }
 
-    /// Puts `call` to the source: on a blocking thread, and with no other call in progress. The turn is the whole tool
-    /// call, so the paths it reads and the refresh that follows are not split by another call.
+    /// Puts `call` to the source: on a blocking thread, and with no other call in progress. The turn is the whole tool call, so the paths it reads and the refresh that follows are not split by another call.
     async fn call_source(&self, tool: ToolName, call: Call) -> Result<String, ToolError> {
         let source = Arc::clone(&self.source);
         match self.gate.run(move || ask::run(source.as_ref(), call)).await {
@@ -116,8 +111,7 @@ impl<S: IndexSource> ServerHandler for Server<S> {
         self.answer(request)
     }
 
-    /// Takes a request that did not read as any request the server knows, which includes a `tools/call` whose
-    /// `arguments` is not an object: rmcp reads the parameters before the handler is asked.
+    /// Takes a request that did not read as any request the server knows, which includes a `tools/call` whose `arguments` is not an object: rmcp reads the parameters before the handler is asked.
     fn on_custom_request(
         &self,
         request: CustomRequest,
@@ -127,8 +121,7 @@ impl<S: IndexSource> ServerHandler for Server<S> {
     }
 }
 
-/// The protocol error for a request that did not read. rmcp's own answer is `method not found` with the method's
-/// name, which, for a `tools/call` with malformed parameters, tells the client that the server has no tools at all.
+/// The protocol error for a request that did not read. rmcp's own answer is `method not found` with the method's name, which, for a `tools/call` with malformed parameters, tells the client that the server has no tools at all.
 fn unreadable(method: String) -> McpError {
     if method == CallToolRequestMethod::VALUE {
         McpError::invalid_params(

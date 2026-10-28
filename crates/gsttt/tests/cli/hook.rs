@@ -16,8 +16,7 @@ use super::support::{Ran, Sandbox, commit_all, init_repo, is_empty, ran};
 
 const HOOK: [&str; 2] = ["hook", "session-start"];
 
-/// The workspace of `tree`, with its state under `cache` when it is in no repository, which is where the binary
-/// looks when its `XDG_CACHE_HOME` is `cache`.
+/// The workspace of `tree`, with its state under `cache` when it is in no repository, which is where the binary looks when its `XDG_CACHE_HOME` is `cache`.
 fn workspace(tree: &Path, cache: &Path) -> Workspace {
     let utf8 = |path: &Path| Utf8PathBuf::from_path_buf(path.to_owned()).unwrap();
     Workspace::locate_with(&utf8(tree), Some(utf8(cache))).unwrap()

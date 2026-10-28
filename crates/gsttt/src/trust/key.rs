@@ -5,7 +5,6 @@ use std::io;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use gsttt_core::engine::keys::canonical_json;
-use gsttt_core::hex;
 use gsttt_core::setup::ExternalSetup;
 use sha2::{Digest, Sha256};
 
@@ -38,17 +37,13 @@ pub enum KeyError {
 /// The key of `external` in the repository at `root`, a canonical path: the SHA-256, as lowercase hex, of
 ///
 /// 1. the canonical JSON of the setup: name, command, files, version, environment, provides and options;
-/// 2. for each element of the command, in order, that names a regular file inside `root` once read against it: the
-///    path of that file from `root`, then its bytes.
+/// 2. for each element of the command, in order, that names a regular file inside `root` once read against it: the path of that file from `root`, then its bytes.
 ///
-/// Every part is written as its length in bytes, as eight bytes in big-endian order, and then the part itself, so
-/// that no two lists of parts make the same input. Elements that name nothing, a file outside the root or a
-/// directory add nothing: they are the program name looked up in `PATH`, flags and their values.
+/// Every part is written as its length in bytes, as eight bytes in big-endian order, and then the part itself, so that no two lists of parts make the same input. Elements that name nothing, a file outside the root or a directory add nothing: they are the program name looked up in `PATH`, flags and their values.
 ///
 /// # Errors
 ///
-/// When the setup does not turn into JSON, or a file that the command names exists and cannot be read. A key that
-/// left that file out would stay the same when the file changed.
+/// When the setup does not turn into JSON, or a file that the command names exists and cannot be read. A key that left that file out would stay the same when the file changed.
 pub fn key(root: &Utf8Path, external: &ExternalSetup) -> Result<String, KeyError> {
     let name = || external.name.clone();
     let setup = serde_json::to_value(external).map_err(|source| KeyError::Setup {
@@ -69,12 +64,10 @@ pub fn key(root: &Utf8Path, external: &ExternalSetup) -> Result<String, KeyError
         feed(&mut hasher, path.as_str().as_bytes());
         feed(&mut hasher, &bytes);
     }
-    Ok(hex::encode(hasher.finalize()))
+    Ok(faster_hex::hex_string(&hasher.finalize()))
 }
 
-/// The regular file that `argument` names when read against `root`, as its path from `root` and its resolved path.
-/// `None` when it names nothing, a directory or a file outside the root. A link that leads out of the root is
-/// followed, and so is left out.
+/// The regular file that `argument` names when read against `root`, as its path from `root` and its resolved path. `None` when it names nothing, a directory or a file outside the root. A link that leads out of the root is followed, and so is left out.
 fn file_in(root: &Utf8Path, argument: &str) -> Option<(Utf8PathBuf, Utf8PathBuf)> {
     let resolved = root.join(argument).canonicalize_utf8().ok()?;
     let inside = resolved.strip_prefix(root).ok()?.to_owned();
@@ -190,7 +183,7 @@ mod tests {
 
         assert_eq!(
             key(&root, &setup).unwrap(),
-            hex::encode(expected.finalize())
+            faster_hex::hex_string(&expected.finalize())
         );
     }
 
@@ -229,8 +222,7 @@ mod tests {
         assert_ne!(key(&root, &absolute).unwrap(), before.1);
     }
 
-    /// The known gap that the design lists among its risks: a link is followed, and a target outside the root is not
-    /// covered.
+    /// The known gap that the design lists among its risks: a link is followed, and a target outside the root is not covered.
     #[cfg(unix)]
     #[test]
     fn a_link_that_leads_out_of_the_root_is_followed_and_left_out() {

@@ -30,8 +30,7 @@ impl Sandbox {
         }
     }
 
-    /// The binary, started in the work directory with an environment of its own: only the sandbox's `HOME`,
-    /// `XDG_CACHE_HOME` and `XDG_STATE_HOME`.
+    /// The binary, started in the work directory with an environment of its own: only the sandbox's `HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME`.
     pub(crate) fn gsttt(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_gsttt"));
         command
@@ -70,9 +69,7 @@ impl Sandbox {
         Ran::of(output)
     }
 
-    /// Runs the binary with `args` in `dir`, with stdin and stderr on one pseudo-terminal where `typed` was typed
-    /// before the run began to read. `stderr` of the result is what the terminal showed, the echo of `typed`
-    /// included, with its line ends read as `\n`.
+    /// Runs the binary with `args` in `dir`, with stdin and stderr on one pseudo-terminal where `typed` was typed before the run began to read. `stderr` of the result is what the terminal showed, the echo of `typed` included, with its line ends read as `\n`.
     pub(crate) fn run_typing(&self, dir: &Path, args: &[&str], typed: &str) -> Ran {
         let master = rustix::pty::openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
         rustix::pty::grantpt(&master).unwrap();
@@ -87,8 +84,7 @@ impl Sandbox {
         let mut keyboard = File::from(master.try_clone().unwrap());
         let mut screen = File::from(master);
         keyboard.write_all(typed.as_bytes()).unwrap();
-        // The screen is read while the run writes to it, and not afterwards: some systems drop what a terminal
-        // holds when its last user closes it.
+        // The screen is read while the run writes to it, and not afterwards: some systems drop what a terminal holds when its last user closes it.
         let seen = std::thread::spawn(move || {
             let mut shown = Vec::new();
             // The read ends with an error on some systems when the run has closed the terminal.
@@ -111,10 +107,7 @@ impl Sandbox {
         run
     }
 
-    /// A git repository `name` in the work directory whose config declares the external connector `fake`: the
-    /// command `/bin/sh fake.sh` over the files `*.fake`. The script creates [`Fake::marker`] and ends, so a run
-    /// that started the connector leaves the marker behind. Every repository made by one sandbox has the same
-    /// script, and so the same marker.
+    /// A git repository `name` in the work directory whose config declares the external connector `fake`: the command `/bin/sh fake.sh` over the files `*.fake`. The script creates [`Fake::marker`] and ends, so a run that started the connector leaves the marker behind. Every repository made by one sandbox has the same script, and so the same marker.
     pub(crate) fn fake_external(&self, name: &str) -> Fake {
         let root = self.work.path().join(name);
         std::fs::create_dir_all(&root).unwrap();
@@ -131,8 +124,7 @@ impl Sandbox {
         }
     }
 
-    /// A git repository `repo` in the work directory, holding the project of [`typescript_project`] in a first
-    /// commit. Returns the canonical path of its root.
+    /// A git repository `repo` in the work directory, holding the project of [`typescript_project`] in a first commit. Returns the canonical path of its root.
     pub(crate) fn repository(&self) -> PathBuf {
         let repo = self.work.path().join("repo");
         std::fs::create_dir_all(&repo).unwrap();
@@ -155,8 +147,7 @@ pub(crate) const FAKE_CONFIG: &str =
 pub(crate) struct Fake {
     /// The canonical path of the root.
     pub(crate) root: PathBuf,
-    /// The file the program creates. It is outside the repository, and a run that did not start the connector
-    /// leaves it out.
+    /// The file the program creates. It is outside the repository, and a run that did not start the connector leaves it out.
     pub(crate) marker: PathBuf,
 }
 

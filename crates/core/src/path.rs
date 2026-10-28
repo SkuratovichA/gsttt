@@ -6,8 +6,7 @@ use std::fmt;
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 
-/// A file path relative to the repository root: `/`-separated, with no `.`, `..` or empty segments. It is the
-/// form git stores, so two spellings of one file are one `RepoPath`.
+/// A file path relative to the repository root: `/`-separated, with no `.`, `..` or empty segments. It is the form git stores, so two spellings of one file are one `RepoPath`.
 #[derive(
     Clone,
     PartialEq,
@@ -116,10 +115,7 @@ impl RepoPath {
         }
     }
 
-    /// [`RepoPath::join`] for a directory: `""` is the repository root in `dir` and in the result. A `RepoPath` names
-    /// a file, so `join` fails with [`PathError::Empty`] for the root, which is what `.` from the root and a `..`
-    /// that climbs back to it come to; this returns `Some("")` for it. `None` when `relative` is absolute or leaves
-    /// the repository.
+    /// [`RepoPath::join`] for a directory: `""` is the repository root in `dir` and in the result. A `RepoPath` names a file, so `join` fails with [`PathError::Empty`] for the root, which is what `.` from the root and a `..` that climbs back to it come to; this returns `Some("")` for it. `None` when `relative` is absolute or leaves the repository.
     pub fn join_dir(dir: &str, relative: &str) -> Option<String> {
         match Self::join(dir, relative) {
             Ok(path) => Some(path.0),
@@ -128,12 +124,9 @@ impl RepoPath {
         }
     }
 
-    /// `argument` read against `base`, a directory inside `root`, as a path from `root`. An absolute `argument`
-    /// stands on its own.
+    /// `argument` read against `base`, a directory inside `root`, as a path from `root`. An absolute `argument` stands on its own.
     ///
-    /// The reading is by text alone: `.` is dropped and `..` removes the segment before it, and the disk is never
-    /// touched, so a file that is gone can still be named. Links are not followed, which is why `root` and `base`
-    /// should be canonical paths, and an absolute `argument` has to spell the root the way `root` does.
+    /// The reading is by text alone: `.` is dropped and `..` removes the segment before it, and the disk is never touched, so a file that is gone can still be named. Links are not followed, which is why `root` and `base` should be canonical paths, and an absolute `argument` has to spell the root the way `root` does.
     ///
     /// # Errors
     ///
@@ -187,8 +180,7 @@ impl RepoPath {
         }
     }
 
-    /// The directories the file lies under, the deepest first and the root `""` last: `a/b`, `a` and `""` for
-    /// `a/b/c.ts`.
+    /// The directories the file lies under, the deepest first and the root `""` last: `a/b`, `a` and `""` for `a/b/c.ts`.
     pub fn directories(&self) -> impl Iterator<Item = &str> {
         std::iter::successors(Some(self.parent()), |dir| {
             (!dir.is_empty()).then(|| dir.rsplit_once('/').map_or("", |(parent, _)| parent))
@@ -450,9 +442,7 @@ mod tests {
         assert_eq!(from_the_top("/../../x").unwrap().as_str(), "x");
     }
 
-    /// Up to `longest` segments of the kinds an argument is made of: names, the current and the parent
-    /// directory, and the empty segment a doubled slash leaves. `srv` and `repo` let a path come back into the
-    /// root after it left, and `repo2` is a neighbour whose name starts with the root's.
+    /// Up to `longest` segments of the kinds an argument is made of: names, the current and the parent directory, and the empty segment a doubled slash leaves. `srv` and `repo` let a path come back into the root after it left, and `repo2` is a neighbour whose name starts with the root's.
     fn segments(longest: usize) -> impl Strategy<Value = Vec<&'static str>> {
         prop::collection::vec(
             prop_oneof![
@@ -487,8 +477,7 @@ mod tests {
         })
     }
 
-    /// What `argument` names read against `base`, found another way than the code under test finds it: with the
-    /// standard parser of components and a stack. `None` when it is not a path inside `root`.
+    /// What `argument` names read against `base`, found another way than the code under test finds it: with the standard parser of components and a stack. `None` when it is not a path inside `root`.
     fn model(root: &Utf8Path, base: &Utf8Path, argument: &str) -> Option<String> {
         fn resolve(path: &Utf8Path) -> Vec<String> {
             let mut stack = Vec::new();

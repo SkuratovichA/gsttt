@@ -14,8 +14,7 @@ use crate::root::RootError;
 use crate::streams::{Io, Outcome, reader_left};
 use crate::trust::StoreError;
 
-/// Why a command did not answer. The message names what was expected, and the `help:` line, where there is one,
-/// says what the user can do.
+/// Why a command did not answer. The message names what was expected, and the `help:` line, where there is one, says what the user can do.
 #[derive(Debug, thiserror::Error, Diagnostic)]
 pub(crate) enum CliError {
     #[error("cannot write the answer to stdout: {source}")]
@@ -31,8 +30,7 @@ pub(crate) enum CliError {
     ))]
     Path(#[from] OutsideRoot),
 
-    /// A failure of the repository that the command line has nothing to add to. The ones it words itself have
-    /// variants of their own, and [`CliError::from`] sorts a [`RepositoryError`] into them.
+    /// A failure of the repository that the command line has nothing to add to. The ones it words itself have variants of their own, and [`CliError::from`] sorts a [`RepositoryError`] into them.
     #[error(transparent)]
     Repository(RepositoryError),
 
@@ -164,8 +162,7 @@ impl CliError {
     }
 }
 
-/// The report as text: the message, its causes and the help line. Lines are never wrapped, so that the same
-/// failure reads the same in a pipe and on a terminal of any width.
+/// The report as text: the message, its causes and the help line. Lines are never wrapped, so that the same failure reads the same in a pipe and on a terminal of any width.
 fn render(report: &Report) -> String {
     let handler =
         GraphicalReportHandler::new_themed(GraphicalTheme::unicode()).with_wrap_lines(false);

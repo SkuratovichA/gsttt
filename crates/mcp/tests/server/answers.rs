@@ -169,8 +169,7 @@ async fn all_lists_every_entry() {
     assert_eq!(cut.text.matches("static import").count(), query::LIST_CAP);
 }
 
-/// A tree whose every list is longer than the cut: 45 importers of a file, a file that imports 45, 45 served routes,
-/// 45 skipped files, and a chain of 45 hops from `src/chain00.ts` to `src/chain45.ts`.
+/// A tree whose every list is longer than the cut: 45 importers of a file, a file that imports 45, 45 served routes, 45 skipped files, and a chain of 45 hops from `src/chain00.ts` to `src/chain45.ts`.
 fn long_lists() -> Fake {
     let tree = (0..45).fold(Tree::new().skipped(45), |tree, number| {
         tree.imports(&format!("src/user{number:02}.ts"), "lib/util.ts")

@@ -241,8 +241,7 @@ fn missing(spec: &str, kind: ImportKind, line: u32) -> (Import, To) {
 
 #[test]
 fn possible_misses_are_ordered_by_path_then_line_then_specifier() {
-    // Each file lists its imports out of line order, as a connector that finds dynamic imports after static ones
-    // would.
+    // Each file lists its imports out of line order, as a connector that finds dynamic imports after static ones would.
     let mut tree = Tree::new().read_by("ts", "src/old.ts");
     for (from, spec, kind, line) in [
         ("src/b.ts", "./old", ImportKind::Static, 9),

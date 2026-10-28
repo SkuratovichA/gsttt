@@ -116,8 +116,7 @@ impl Project for TsProject {
     }
 }
 
-/// A `package.json` or a tsconfig: tagged as a manifest, and a tsconfig's `extends` are its imports. A file that is not
-/// JSON fails alone.
+/// A `package.json` or a tsconfig: tagged as a manifest, and a tsconfig's `extends` are its imports. A file that is not JSON fails alone.
 fn parse_json(path: &RepoPath, text: &str, tags: FileTags) -> Parsed<TsExtra> {
     let mut facts = match tree::parse_json(text) {
         Ok(json) => {

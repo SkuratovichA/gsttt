@@ -1,9 +1,6 @@
 # Folds the specs of finished changes into openspec/specs/ once they are on main.
 #
-# `cargo xtask spec --ready` prints the open changes that OpenSpec can archive. The OpenSpec CLI
-# archives each of them, the spec gate runs on the result, and only a passing gate is committed and
-# pushed. A change that cannot be archived does not stop the others: it is named and fails the job
-# at the end.
+# `cargo xtask spec --ready` prints the open changes that OpenSpec can archive. The OpenSpec CLI archives each of them, the spec gate runs on the result, and only a passing gate is committed and pushed. A change that cannot be archived does not stop the others: it is named and fails the job at the end.
 name: archive-specs
 
 on:
@@ -20,8 +17,7 @@ concurrency:
 
 jobs:
   archive:
-    # No condition on the actor is needed: the push below is made with the default token, and GitHub
-    # starts no workflow for a push made with it, so the job never runs on its own commit.
+    # No condition on the actor is needed: the push below is made with the default token, and GitHub starts no workflow for a push made with it, so the job never runs on its own commit.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -51,9 +47,7 @@ jobs:
             echo "No change is ready to archive."
           fi
 
-      # `archive --yes` archives a change whatever its tasks say, which is why only the changes
-      # that the gate lists are passed to it. OpenSpec changes nothing for a change it refuses, so
-      # the others can still be archived; the last step fails the job for the ones it refused.
+      # `archive --yes` archives a change whatever its tasks say, which is why only the changes that the gate lists are passed to it. OpenSpec changes nothing for a change it refuses, so the others can still be archived; the last step fails the job for the ones it refused.
       - name: Archive them
         if: steps.ready.outputs.any == 'true'
         run: |

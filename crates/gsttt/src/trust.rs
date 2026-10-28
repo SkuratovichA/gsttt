@@ -1,9 +1,6 @@
 //! Trust for the external connectors of a repository.
 //!
-//! An external connector is a command that the config names, so reading a repository that someone else wrote would
-//! run what they chose. Nothing runs until the user says so in a terminal: the answer is recorded in a [`Store`]
-//! outside every repository, under a [`key`] that covers the command and the files it runs, so that a change to
-//! any of them asks again.
+//! An external connector is a command that the config names, so reading a repository that someone else wrote would run what they chose. Nothing runs until the user says so in a terminal: the answer is recorded in a [`Store`] outside every repository, under a [`key`] that covers the command and the files it runs, so that a change to any of them asks again.
 
 mod key;
 mod store;
@@ -39,8 +36,7 @@ impl Declared {
             .unwrap_or_else(|_| self.setup.cmd.join(" "))
     }
 
-    /// Whether the user trusts this declaration in this repository, which it was asked about with this very command
-    /// and these very files.
+    /// Whether the user trusts this declaration in this repository, which it was asked about with this very command and these very files.
     pub const fn trusted(&self) -> bool {
         self.trusted
     }
@@ -60,9 +56,7 @@ impl Declared {
     }
 }
 
-/// The trust of each of `externals` in `root`, a canonical path, in the order of the config. Without a `store`, or
-/// with one that cannot be read, nothing is trusted: the user is asked again, and the command that asks reports why
-/// it cannot record the answer.
+/// The trust of each of `externals` in `root`, a canonical path, in the order of the config. Without a `store`, or with one that cannot be read, nothing is trusted: the user is asked again, and the command that asks reports why it cannot record the answer.
 pub fn declare(
     root: &Utf8Path,
     externals: &[ExternalSetup],

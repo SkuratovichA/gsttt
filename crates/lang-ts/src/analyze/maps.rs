@@ -1,5 +1,4 @@
-//! Contracts that are read from the shape of an object literal rather than from a call: GraphQL resolver maps and tRPC
-//! routers.
+//! Contracts that are read from the shape of an object literal rather than from a call: GraphQL resolver maps and tRPC routers.
 
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::ContractFact;
@@ -14,8 +13,7 @@ use crate::shape::{chain_of, dotted, property_name};
 const ROOTS: [&str; 3] = ["Query", "Mutation", "Subscription"];
 
 impl Analyzer<'_> {
-    /// `{ Query: { bookings() {} }, Mutation: { cancelBooking() {} } }` serves `graphql Query.bookings` and
-    /// `graphql Mutation.cancelBooking`; types other than the roots are not entry points.
+    /// `{ Query: { bookings() {} }, Mutation: { cancelBooking() {} } }` serves `graphql Query.bookings` and `graphql Mutation.cancelBooking`; types other than the roots are not entry points.
     pub(super) fn resolver_map(&mut self, object: &ObjectExpression<'_>) {
         for root in &object.properties {
             let ObjectPropertyKind::ObjectProperty(root) = root else {
@@ -53,8 +51,7 @@ impl Analyzer<'_> {
         }
     }
 
-    /// `router({ get: procedure.query(…), nested: router({…}), other })` declares a tRPC router. The link phase puts
-    /// the routers together, because a router is mostly composed in another file than it is built in.
+    /// `router({ get: procedure.query(…), nested: router({…}), other })` declares a tRPC router. The link phase puts the routers together, because a router is mostly composed in another file than it is built in.
     pub(super) fn trpc_router(&mut self, call: &CallExpression<'_>, callee: &str) {
         if !self.has_trpc || !is_router_callee(callee) {
             return;

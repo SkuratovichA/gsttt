@@ -100,8 +100,7 @@ fn a_file_no_declaration_reaches_has_no_module() {
 #[scenario("rust", "A tree that the module cap cuts keeps the modules before it")]
 #[test]
 fn a_tree_that_the_module_cap_cuts_keeps_the_modules_before_it() {
-    // Each of three files declares the next one under 22 names through `#[path]`, so that a few lines of declarations
-    // grow into 22 * 22 * 22 modules at the bottom, more than the 10000 the cap lets in.
+    // Each of three files declares the next one under 22 names through `#[path]`, so that a few lines of declarations grow into 22 * 22 * 22 modules at the bottom, more than the 10000 the cap lets in.
     let fan = |name: &str| -> String {
         let mut text = String::new();
         for number in 0..22 {

@@ -3,6 +3,7 @@
 
 mod colour;
 mod config;
+mod dogfood;
 mod hook;
 mod impact;
 mod index;

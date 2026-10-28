@@ -14,8 +14,7 @@ pub(crate) struct Line<'a> {
 /// The lines of a file and the fence that nothing closes.
 pub(crate) struct Lines<'a> {
     pub(crate) lines: Vec<Line<'a>>,
-    /// The line that opens a fence that is still open at the end of the file, from which every
-    /// line counts as fenced.
+    /// The line that opens a fence that is still open at the end of the file, from which every line counts as fenced.
     pub(crate) unclosed: Option<usize>,
 }
 

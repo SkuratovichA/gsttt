@@ -7,8 +7,7 @@ use tracing::level_filters::LevelFilter;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::{EnvFilter, fmt};
 
-/// The variable that filters the logs, in the syntax of [`EnvFilter`]: a level such as `debug`, or targets with
-/// levels such as `gsttt_core=trace,warn`. Without it only errors show.
+/// The variable that filters the logs, in the syntax of [`EnvFilter`]: a level such as `debug`, or targets with levels such as `gsttt_core=trace,warn`. Without it only errors show.
 pub const FILTER_VARIABLE: &str = "GSTTT_LOG";
 
 /// Starts the logs of the process: lines on stderr, filtered by `GSTTT_LOG` and styled when `styled`.
@@ -21,8 +20,7 @@ pub fn init(styled: bool) {
     let _ = tracing::subscriber::set_global_default(logger);
 }
 
-/// A logger for `directives`, which are the text of `GSTTT_LOG`. Directives that cannot be read are skipped, and
-/// when none is left only errors show. Lines carry no time, so that the same run logs the same text.
+/// A logger for `directives`, which are the text of `GSTTT_LOG`. Directives that cannot be read are skipped, and when none is left only errors show. Lines carry no time, so that the same run logs the same text.
 fn subscriber<W>(directives: &str, styled: bool, writer: W) -> impl Subscriber + Send + Sync
 where
     W: for<'a> MakeWriter<'a> + Send + Sync + 'static,

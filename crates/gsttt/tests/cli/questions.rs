@@ -1,5 +1,4 @@
-//! The questions answer from the index they refresh first: the subject they are asked about, the cut of long lists,
-//! and what `--no-refresh` and `--json` change.
+//! The questions answer from the index they refresh first: the subject they are asked about, the cut of long lists, and what `--no-refresh` and `--json` change.
 
 use std::fs;
 
@@ -208,8 +207,7 @@ fn contract_joins_its_words_into_one_query() {
     );
 }
 
-/// The line `index` ends with is the line a question ends its footer with. The two are written in different places,
-/// because `gsttt-core` offers no way to take the one from the other.
+/// The line `index` ends with is the line a question ends its footer with. The two are written in different places, because `gsttt-core` offers no way to take the one from the other.
 #[test]
 fn the_coverage_line_of_index_is_the_one_a_question_ends_with() {
     let sandbox = Sandbox::new();

@@ -1,8 +1,6 @@
 //! One call into the source at a time, on a blocking thread.
 //!
-//! A refresh can take minutes on the first index of a large repository. Two at once would build the same index twice
-//! and fight over the file that holds it, and one on the thread that reads the transport would stop the server from
-//! answering anything until it ended. So a call waits for its turn, and then runs on a thread of the blocking pool.
+//! A refresh can take minutes on the first index of a large repository. Two at once would build the same index twice and fight over the file that holds it, and one on the thread that reads the transport would stop the server from answering anything until it ended. So a call waits for its turn, and then runs on a thread of the blocking pool.
 
 use std::sync::Arc;
 
@@ -19,8 +17,7 @@ pub(crate) struct Stopped;
 impl Gate {
     /// Waits for the turn, then runs `work` on a blocking thread and returns what it returned.
     ///
-    /// The turn belongs to the work and not to the caller. It is handed on when `work` ends, even if the caller has
-    /// stopped waiting for it by then, so a call that is dropped halfway cannot let the next one start beside it.
+    /// The turn belongs to the work and not to the caller. It is handed on when `work` ends, even if the caller has stopped waiting for it by then, so a call that is dropped halfway cannot let the next one start beside it.
     ///
     /// # Errors
     ///

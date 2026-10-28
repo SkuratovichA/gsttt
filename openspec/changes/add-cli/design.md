@@ -193,9 +193,9 @@ pub fn session_line(header: &Header, now: jiff::Timestamp) -> Option<String>;
 
 ### CI smoke run
 
-- The build matrix gains `smoke: true` on the entries whose runner can execute the target: `x86_64-unknown-linux-musl` on `ubuntu-latest`, and `aarch64-apple-darwin` on `macos-latest`.
-- A step after Package, under `if: matrix.smoke`, unpacks the archive and runs `gsttt --version`, `gsttt index` and `gsttt impact crates/core/src/lib.rs` in the checkout.
-- `xtask/tests/dist/ci.rs` pins the step and the two flags, the way it already pins the rest of the workflow.
+- Every entry of the build matrix gains `native`, true where the runner can execute the target (`x86_64-unknown-linux-musl` on `ubuntu-latest`, `aarch64-apple-darwin` on `macos-latest`) and false for the other two.
+- A step `Run the packaged binary` after Package, under `if: ${{ matrix.native }}`, unpacks the archive into the temporary directory of the runner, never into `target/packages`, which the upload takes whole. It runs `gsttt --version` and fails unless it says the version of the Version step, which is also the version in the name of the archive, then `gsttt index` and `gsttt impact crates/core/src/lib.rs` in the checkout.
+- `xtask/tests/dist/ci.rs` pins the step and the flags, the way it already pins the rest of the workflow, and runs the step on a package that `xtask package` made, to show that a package of another version and a binary that says another version both fail it.
 
 ### Showing the config
 

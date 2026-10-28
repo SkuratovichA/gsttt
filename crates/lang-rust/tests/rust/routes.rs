@@ -96,8 +96,7 @@ fn routers_that_mount_each_other_are_visited_once_each() {
 #[test]
 fn a_prefix_that_is_not_text_is_a_blind_spot_and_places_nothing() {
     let out = index("routers");
-    // `under(prefix)` nests the bookings router at a path nobody can read, so the only sites are the two that the
-    // other mounts place.
+    // `under(prefix)` nests the bookings router at a path nobody can read, so the only sites are the two that the other mounts place.
     assert_json_snapshot!(out.sites("src/main.rs"));
     assert_eq!(out.linked("src/bookings.rs").len(), 2);
 }

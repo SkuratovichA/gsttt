@@ -14,8 +14,7 @@ const SNAPSHOT_FILE: &str = "snapshot.gsttt";
 /// The git directories of a work tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitDirs {
-    /// The directory of this work tree's own git data: `.git` of a main work tree, `<common dir>/worktrees/<name>`
-    /// of a linked one.
+    /// The directory of this work tree's own git data: `.git` of a main work tree, `<common dir>/worktrees/<name>` of a linked one.
     pub git_dir: Utf8PathBuf,
     /// The directory every work tree of the repository shares: `.git` of the main work tree.
     pub common_dir: Utf8PathBuf,
@@ -47,8 +46,7 @@ pub enum WorkspaceError {
 }
 
 impl Workspace {
-    /// Finds the workspace around `start`: the work tree it is in, or `start` itself when no repository encloses
-    /// it, in which case the state goes under `$XDG_CACHE_HOME` (`~/.cache` when unset).
+    /// Finds the workspace around `start`: the work tree it is in, or `start` itself when no repository encloses it, in which case the state goes under `$XDG_CACHE_HOME` (`~/.cache` when unset).
     pub fn locate(start: &Utf8Path) -> Result<Self, WorkspaceError> {
         Self::locate_with(start, UserDir::Cache.locate())
     }
@@ -121,8 +119,7 @@ impl Workspace {
         self.state_dir.join(SNAPSHOT_FILE)
     }
 
-    /// The snapshots of the other work trees of the same repository that exist, in path order: the main work
-    /// tree's and every linked one's.
+    /// The snapshots of the other work trees of the same repository that exist, in path order: the main work tree's and every linked one's.
     pub fn sibling_snapshots(&self) -> Vec<Utf8PathBuf> {
         let Some(git) = &self.git else {
             return Vec::new();
@@ -159,17 +156,14 @@ fn canonical(path: &Path) -> Result<Utf8PathBuf, WorkspaceError> {
 /// A folder of the user's home where a program keeps what it writes, by the XDG base directory rules.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UserDir {
-    /// What can be made again, such as the state of a directory outside git: `$XDG_CACHE_HOME`, or `$HOME/.cache`
-    /// when that is unset or empty.
+    /// What can be made again, such as the state of a directory outside git: `$XDG_CACHE_HOME`, or `$HOME/.cache` when that is unset or empty.
     Cache,
-    /// What a person decided and the program must not lose, such as the trust in a connector:
-    /// `$XDG_STATE_HOME`, or `$HOME/.local/state` when that is unset or empty.
+    /// What a person decided and the program must not lose, such as the trust in a connector: `$XDG_STATE_HOME`, or `$HOME/.local/state` when that is unset or empty.
     State,
 }
 
 impl UserDir {
-    /// The folder as the environment of this process names it, `None` when neither its variable nor `HOME` is
-    /// set to a path.
+    /// The folder as the environment of this process names it, `None` when neither its variable nor `HOME` is set to a path.
     pub fn locate(self) -> Option<Utf8PathBuf> {
         let (variable, from_home) = match self {
             Self::Cache => ("XDG_CACHE_HOME", ".cache"),
@@ -200,8 +194,7 @@ mod tests {
         Utf8Path::from_path(path).unwrap()
     }
 
-    /// The child side of [`locate_in`]: prints what `Workspace::locate` makes of the directory in
-    /// `GSTTT_TEST_START`, in the environment the parent chose.
+    /// The child side of [`locate_in`]: prints what `Workspace::locate` makes of the directory in `GSTTT_TEST_START`, in the environment the parent chose.
     #[test]
     #[ignore = "runs in a child process of the tests that set the environment"]
     fn locate_for_the_parent_process() {
@@ -221,8 +214,7 @@ mod tests {
         }
     }
 
-    /// What `Workspace::locate` prints for `start` in a process whose environment has `set` added and `remove`
-    /// taken out, as `name=value` lines.
+    /// What `Workspace::locate` prints for `start` in a process whose environment has `set` added and `remove` taken out, as `name=value` lines.
     fn locate_in(start: &Path, set: &[(&str, &str)], remove: &[&str]) -> String {
         let mut set: Vec<(&str, &OsStr)> = set
             .iter()
@@ -245,8 +237,7 @@ mod tests {
             .unwrap_or_else(|| panic!("no `{name}` in {output}"))
     }
 
-    /// The state dir `Workspace::locate` is meant to give a directory outside git: `cache_home/gsttt/<hash of the
-    /// root>`.
+    /// The state dir `Workspace::locate` is meant to give a directory outside git: `cache_home/gsttt/<hash of the root>`.
     fn state_dir_under(cache_home: &str, dir: &Path) -> String {
         let root = canonical(dir).unwrap();
         let hash = format!("{:016x}", xxh3_64(root.as_str().as_bytes()));

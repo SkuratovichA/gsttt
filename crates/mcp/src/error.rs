@@ -1,7 +1,6 @@
 //! Why a tool call ends in a result with `isError` set.
 //!
-//! The model reads the message and corrects the call, so each one names the argument or the failure and says what to
-//! do. The tool's name leads a message about arguments, because the arguments are the part the model chose.
+//! The model reads the message and corrects the call, so each one names the argument or the failure and says what to do. The tool's name leads a message about arguments, because the arguments are the part the model chose.
 
 use gsttt_core::query::ContractLookupError;
 
@@ -47,14 +46,12 @@ pub(crate) enum ToolError {
     /// The question names a file the index does not hold. The text is the answer's own, the one the command line prints on stderr when it fails for the same reason.
     #[error("{0}")]
     NotInIndex(String),
-    /// The source could not answer. Its message is already a sentence that names what failed and what to do, so it
-    /// goes to the model as it is.
+    /// The source could not answer. Its message is already a sentence that names what failed and what to do, so it goes to the model as it is.
     #[error(transparent)]
     Source(#[from] SourceError),
     #[error("contract: {0}")]
     Contract(#[from] ContractLookupError),
-    /// The work behind the call did not finish: it panicked, or the runtime was shutting down. The cause is in the
-    /// log, and the model is told to ask again.
+    /// The work behind the call did not finish: it panicked, or the runtime was shutting down. The cause is in the log, and the model is told to ask again.
     #[error(
         "{tool}: the call stopped before it could answer; ask again, or run the same question on the gsttt command \
          line to see why"

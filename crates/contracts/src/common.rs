@@ -23,8 +23,7 @@ pub(crate) fn site(
     }
 }
 
-/// A site of an HTTP route; the path goes through the shared normaliser, so a server prefix and a parameter style
-/// never keep two spellings of one route apart.
+/// A site of an HTTP route; the path goes through the shared normaliser, so a server prefix and a parameter style never keep two spellings of one route apart.
 pub(crate) fn http_site(
     method: &str,
     path: &str,

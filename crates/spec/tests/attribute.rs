@@ -21,12 +21,10 @@ fn error_start(expanded: &TokenStream) -> Option<LineColumn> {
     })
 }
 
-// The compiler's view of the same cases, through the attribute itself, is `gsttt-scenario`'s
-// `tests/ui.rs`, which proves the scenario.
+// The compiler's view of the same cases, through the attribute itself, is `gsttt-scenario`'s `tests/ui.rs`, which proves the scenario.
 #[test]
 fn wrong_arguments_expand_to_an_error_at_the_argument() {
-    // The arguments and the column the error must point at: the offending argument, or the first
-    // one when the count is wrong.
+    // The arguments and the column the error must point at: the offending argument, or the first one when the count is wrong.
     let cases = [
         (r#""only-one""#, 0),
         (r#"capability, "x""#, 0),
