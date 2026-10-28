@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::ConfigError;
-use crate::external::{check_env, glob_set};
+use crate::external::{check_env, glob_set, options_object};
 use crate::sandbox::{Sandbox, raise, text_chunk};
 use crate::source::read_source;
 use crate::value::to_json;
@@ -312,15 +312,15 @@ fn pack(lua: &Lua, state: &Evaluation, table: &Value) -> mlua::Result<()> {
 }
 
 fn external(lua: &Lua, state: &Evaluation, table: &Value) -> mlua::Result<()> {
-    let external: ExternalSetup = read(lua, "g.external", table)?;
-    check_external(state, &external)
+    let mut external: ExternalSetup = read(lua, "g.external", table)?;
+    check_external(state, &mut external)
         .map_err(|message| raise(lua, format!("g.external: {message}")))?;
     state.setup.borrow_mut().externals.push(external);
     Ok(())
 }
 
-/// What serde cannot check: the name is usable as a module name, the command, the globs and the environment names make sense.
-fn check_external(state: &Evaluation, external: &ExternalSetup) -> Result<(), String> {
+/// What serde cannot check: the name is usable as a module name, the command, the globs, the environment names and the options make sense. The options are left as the object they mean: a table without keys is read as an empty list, and the setup of an external without options must not depend on how the config wrote it.
+fn check_external(state: &Evaluation, external: &mut ExternalSetup) -> Result<(), String> {
     let name = &external.name;
     if name.is_empty()
         || !name
@@ -355,6 +355,9 @@ fn check_external(state: &Evaluation, external: &ExternalSetup) -> Result<(), St
     }
     glob_set(&external.files).map_err(|error| format!("`files` of `{name}` {error}"))?;
     check_env(&external.env).map_err(|error| format!("`env` of `{name}` {error}"))?;
+    external.options = options_object(&external.options)
+        .map(serde_json::Value::Object)
+        .map_err(|error| format!("`options` of `{name}` {error}"))?;
     Ok(())
 }
 

@@ -10,10 +10,9 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use gsttt_core::connector::Provide;
 use gsttt_core::fact::{FileFacts, Import};
 use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
-use serde_json::Map;
+use serde_json::{Map, Value};
 
 use super::protocol::{PROTOCOL, Request, Response, WireResolution};
 use crate::text::{LOG_LINE_LIMIT, log_line};
@@ -41,6 +40,8 @@ pub(super) struct Launch {
     pub(super) arguments: Vec<String>,
     /// Names of the variables to pass on besides [`INHERITED_ENV`].
     pub(super) env: Vec<String>,
+    /// What `open` carries as the options of the connector.
+    pub(super) options: Map<String, Value>,
     /// Where the process runs: the repository root.
     pub(super) root: PathBuf,
     /// How long it gets to answer one request.
@@ -100,7 +101,6 @@ pub(super) struct Process {
     /// The way to the thread that owns the pipes of the process; `None` once the process is stopped.
     requests: Option<Sender<Exchange>>,
     timeout: Duration,
-    provides: Vec<Provide>,
     stopped: bool,
 }
 
@@ -140,14 +140,10 @@ impl Process {
             child,
             requests: Some(requests),
             timeout: launch.timeout,
-            provides: Vec::new(),
             stopped: false,
         };
-        match process.open() {
-            Ok(provides) => {
-                process.provides = provides;
-                Ok(process)
-            }
+        match process.open(&launch.options) {
+            Ok(()) => Ok(process),
             Err(failure) => {
                 process.kill();
                 Err(failure)
@@ -155,21 +151,15 @@ impl Process {
         }
     }
 
-    /// What the process said it provides in `ready`.
-    pub(super) fn provides(&self) -> &[Provide] {
-        &self.provides
-    }
-
-    /// `open`: the answer is `ready`, and its provides come back.
-    fn open(&mut self) -> Result<Vec<Provide>, Failure> {
-        let options = Map::new();
+    /// `open`: the answer is `ready`.
+    fn open(&mut self, options: &Map<String, Value>) -> Result<(), Failure> {
         let request = Request::Open {
             protocol: PROTOCOL,
             root: "",
-            options: &options,
+            options,
         };
         match self.round_trip(&request)? {
-            Response::Ready { provides, .. } => Ok(provides),
+            Response::Ready { .. } => Ok(()),
             other => Err(out_of_turn(&other, "ready")),
         }
     }

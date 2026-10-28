@@ -20,8 +20,10 @@ use gsttt_core::fact::{FileFacts, Import, ParseFailure, Resolution, UnresolvedRe
 use gsttt_core::rules::Pack;
 use gsttt_core::setup::ExternalSetup;
 use gsttt_core::{FileId, RepoPath, RepoView};
+use serde_json::{Map, Value, json};
 use xxhash_rust::xxh3::Xxh3;
 
+use crate::fingerprint::canonical;
 use process::{Failure, Launch, Process};
 pub use protocol::PROTOCOL;
 use protocol::WireResolution;
@@ -35,6 +37,8 @@ pub struct External {
     env: Vec<String>,
     version: String,
     files: GlobSet,
+    provides: Vec<Provide>,
+    options: Map<String, Value>,
     timeout: Duration,
 }
 
@@ -42,19 +46,21 @@ impl External {
     /// How long the process gets to answer one request.
     pub const TIMEOUT: Duration = Duration::from_secs(10);
 
-    /// The connector for `setup`. An empty command or a glob that does not parse is an error that names the connector.
+    /// The connector for `setup`. An empty command, a glob that does not parse, a name that is not an environment variable or options that are not a table of named values is an error that names the connector.
     pub fn new(setup: &ExternalSetup) -> Result<Self, ConnectorError> {
-        let options = |message: String| ConnectorError::Options {
+        let invalid = |message: String| ConnectorError::Options {
             connector: setup.name.clone(),
             message,
         };
         let Some((program, arguments)) = setup.cmd.split_first() else {
-            return Err(options(
+            return Err(invalid(
                 "`cmd` is empty: it needs the program and its arguments".to_owned(),
             ));
         };
-        let files = glob_set(&setup.files).map_err(|error| options(format!("`files` {error}")))?;
-        check_env(&setup.env).map_err(|error| options(format!("`env` {error}")))?;
+        let files = glob_set(&setup.files).map_err(|error| invalid(format!("`files` {error}")))?;
+        check_env(&setup.env).map_err(|error| invalid(format!("`env` {error}")))?;
+        let options = options_object(&setup.options)
+            .map_err(|error| invalid(format!("`options` {error}")))?;
         Ok(Self {
             name: intern(&setup.name),
             program: program.clone(),
@@ -62,6 +68,8 @@ impl External {
             env: setup.env.clone(),
             version: setup.version.clone(),
             files,
+            provides: setup.provides.clone(),
+            options,
             timeout: Self::TIMEOUT,
         })
     }
@@ -87,6 +95,14 @@ impl External {
             hash.update(&[1]);
             hash.update(name.as_bytes());
         }
+        // What else the declaration says: the process reads the options, and the provides are part of what the index reports. Written the way the fingerprint of the setup writes them, so that the order of the keys does not matter.
+        let mut declared = String::new();
+        canonical(
+            &json!({ "options": self.options, "provides": self.provides }),
+            &mut declared,
+        );
+        hash.update(&[2]);
+        hash.update(declared.as_bytes());
         hash.digest()
     }
 }
@@ -123,12 +139,14 @@ impl Connector for External {
             files: self.files.clone(),
             repo: repo.clone(),
             salt: self.salt(),
+            provides: self.provides.clone(),
             session: Mutex::new(Session {
                 launch: Launch {
                     name: self.name,
                     program: self.program.clone(),
                     arguments: self.arguments.clone(),
                     env: self.env.clone(),
+                    options: self.options.clone(),
                     root: repo.root().as_std_path().to_path_buf(),
                     timeout: self.timeout,
                 },
@@ -145,6 +163,7 @@ pub struct ExternalProject {
     files: GlobSet,
     repo: RepoView,
     salt: u64,
+    provides: Vec<Provide>,
     /// Requests come from many threads and go to one process one at a time.
     session: Mutex<Session>,
 }
@@ -197,13 +216,9 @@ impl Project for ExternalProject {
         self.salt
     }
 
-    /// What the process said in `ready`. Asking never starts it, so this is empty until a request has.
+    /// What the config declares. Asking never starts the process, so a run answered from the snapshot reports what a cold run does.
     fn provides(&self) -> Vec<Provide> {
-        self.lock()
-            .process
-            .as_ref()
-            .map(|process| process.provides().to_vec())
-            .unwrap_or_default()
+        self.provides.clone()
     }
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
@@ -274,6 +289,27 @@ pub(crate) fn check_env(names: &[String]) -> Result<(), EnvNameError> {
         Some(name) => Err(EnvNameError { name: name.clone() }),
         None => Ok(()),
     }
+}
+
+/// The `options` of an external are not a table of named values.
+#[derive(Debug, thiserror::Error)]
+#[error("must be a table of named options, not {found}")]
+pub(crate) struct OptionsError {
+    found: &'static str,
+}
+
+/// The options of an external as the object that `open` carries. A Lua table without keys reaches here as an empty list, and `null` is what a setup written by hand leaves out: both mean no options.
+pub(crate) fn options_object(options: &Value) -> Result<Map<String, Value>, OptionsError> {
+    let found = match options {
+        Value::Object(named) => return Ok(named.clone()),
+        Value::Null => return Ok(Map::new()),
+        Value::Array(items) if items.is_empty() => return Ok(Map::new()),
+        Value::Array(_) => "a list",
+        Value::Bool(_) => "a boolean",
+        Value::Number(_) => "a number",
+        Value::String(_) => "a string",
+    };
+    Err(OptionsError { found })
 }
 
 /// The state of the one process of a project: not started yet, running, or stopped for good.

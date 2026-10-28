@@ -155,6 +155,25 @@ An external SHALL be a connector that claims the files its `files` globs match a
 - **WHEN** a run opens an external whose files are all answered from the snapshot, so it parses and resolves nothing
 - **THEN** its command never runs
 
+### Requirement: External declaration
+A `g.external` SHALL take `provides`, the contract kinds the connector finds with how and what it cannot see, and `options`, a table of named values that is empty when left out. The provides SHALL be known without starting the process, so that coverage does not depend on the cache, and the options SHALL be sent to the process in `open`. Both SHALL be part of the cache key of the external's files.
+
+#### Scenario: Declared provides need no process
+- **WHEN** a config declares an external with `provides` and a run asks the external what it provides
+- **THEN** it answers with what the config declared, and its command never runs
+
+#### Scenario: Options reach the process
+- **WHEN** a config declares an external with `options` and a request starts its process
+- **THEN** the `open` the process reads carries those options as an object with sorted keys
+
+#### Scenario: Options must be named
+- **WHEN** the `options` of an external are a list, a number, a string or a boolean
+- **THEN** evaluation fails with a message that names the external, its `options` and what they are instead of a table of named values
+
+#### Scenario: A changed declaration drops the cached facts
+- **WHEN** the command, the version, the listed variables, the provides or the options of an external change
+- **THEN** the cache key of its files changes, and it does not change when only the order of the keys of the options does
+
 ### Requirement: External environment
 An external's process SHALL get only the variables `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE` and `TMPDIR` of gsttt's own environment, when gsttt has them, and the ones named in the `env` of its declaration; the rest of the environment, where secrets live, SHALL stay out of its reach.
 
@@ -163,7 +182,7 @@ An external's process SHALL get only the variables `PATH`, `HOME`, `USER`, `LOGN
 - **THEN** the environment holds `PATH` and the listed variable and not the other one
 
 ### Requirement: External protocol
-An external's process SHALL receive `open` with the protocol version, the root and the options, and answer `ready` with its name, version and provides; then `parse` for each file with its path and text, answered by `facts`, and `resolve` for each import, answered by `resolution`; and `done` at the end of the run. Messages SHALL carry the serde forms of the core types and name files by path.
+An external's process SHALL receive `open` with the protocol version, the root and the `options` of its declaration, and answer `ready` with its name and version; then `parse` for each file with its path and text, answered by `facts`, and `resolve` for each import, answered by `resolution`; and `done` at the end of the run. Messages SHALL carry the serde forms of the core types and name files by path.
 
 #### Scenario: A well-behaved process indexes its files
 - **WHEN** an external claims `**/*.kt` and its process answers every request

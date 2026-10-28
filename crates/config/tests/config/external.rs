@@ -107,6 +107,8 @@ fn setup(command: &[&str]) -> ExternalSetup {
         files: vec!["**/*.kt".to_owned()],
         version: "1".to_owned(),
         env: Vec::new(),
+        provides: Vec::new(),
+        options: json!({}),
     }
 }
 
@@ -141,7 +143,7 @@ fn say(message: &Value) -> String {
 }
 
 fn ready() -> Value {
-    json!({ "type": "ready", "name": "kotlin", "version": "0.1.0", "provides": [] })
+    json!({ "type": "ready", "name": "kotlin", "version": "0.1.0" })
 }
 
 fn facts_of(path: &str, facts: &FileFacts) -> Value {
@@ -443,36 +445,58 @@ fn a_repository_without_the_files_of_an_external_opens_no_project() {
     assert!(connector.open(&repo, &Value::Null, &[]).unwrap().is_empty());
 }
 
+/// A `g.external` that declares what the connector provides and the options the process reads.
+const DECLARED: &str = r#"
+local g = require("gsttt")
+g.external {
+  name = "kotlin",
+  cmd = { "sh", "kotlin.sh" },
+  files = { "**/*.kt" },
+  provides = { { kind = "http", role = "serves", via = { "ktor" }, blind_spots = { "routes built at run time" } } },
+  options = { strict = true, depth = 3 },
+}
+"#;
+
+/// The external the config of `tree` declares.
+fn declared(tree: &Tree) -> External {
+    tree.write(".gsttt/init.lua", DECLARED);
+    let setup = tree.evaluate().unwrap();
+    External::new(setup.externals.first().unwrap()).unwrap()
+}
+
+#[gsttt_scenario::scenario("config", "Declared provides need no process")]
 #[test]
-fn the_provides_of_ready_are_known_once_the_process_has_said_them() {
-    let provide = Provide {
-        kind: ContractKind::Http,
-        role: Role::Serves,
-        via: vec!["ktor".to_owned()],
-        blind_spots: vec!["routes built at run time".to_owned()],
-    };
-    let ready =
-        json!({ "type": "ready", "name": "kotlin", "version": "0.1.0", "provides": [provide] });
-    let tree = repository(&[
-        when(&request("open"), say(&ready)),
-        parses("src/A.kt", &FileFacts::default()),
-    ]);
+fn declared_provides_need_no_process() {
+    let tree = repository(&well_behaved());
     let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
-    let connector = Erased(kotlin(External::TIMEOUT));
+    let connector = Erased(declared(&tree));
     let projects = connector.open(&repo, &Value::Null, &[]).unwrap();
-    let project = projects.first().unwrap();
     assert_eq!(
-        project.provides(),
-        Vec::new(),
-        "nothing is known before the first request"
+        projects.first().unwrap().provides(),
+        vec![Provide {
+            kind: ContractKind::Http,
+            role: Role::Serves,
+            via: vec!["ktor".to_owned()],
+            blind_spots: vec!["routes built at run time".to_owned()],
+        }]
     );
-    let path = RepoPath::normalize("src/A.kt").unwrap();
-    project.parse(&SourceFile {
-        id: repo.lookup("src/A.kt").unwrap(),
-        path: &path,
-        text: "import B\n",
-    });
-    assert_eq!(project.provides(), vec![provide]);
+    assert!(
+        !tree.root().join("started").exists(),
+        "the command ran to say what it provides"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "Options reach the process")]
+#[test]
+fn options_reach_the_process() {
+    let tree = repository(&well_behaved());
+    let external = declared(&tree);
+    let run = Run::index(tree, external);
+    // The keys come sorted from the config, so the line is the same on every machine.
+    assert_eq!(
+        run.requests().first().map(String::as_str),
+        Some(r#"{"type":"open","protocol":1,"root":"","options":{"depth":3,"strict":true}}"#)
+    );
 }
 
 #[gsttt_scenario::scenario("config", "A well-behaved process indexes its files")]
@@ -776,7 +800,27 @@ fn an_environment_name_must_be_the_name_of_a_variable() {
 }
 
 #[test]
-fn the_cache_key_follows_the_command_and_its_version() {
+fn options_must_be_a_table_of_named_values() {
+    for options in [json!([1, 2]), json!("x"), json!(3), json!(true)] {
+        let mut broken = setup(&["x"]);
+        broken.options = options.clone();
+        let error = External::new(&broken).unwrap_err().to_string();
+        assert!(
+            error.contains("kotlin") && error.contains("`options`"),
+            "{options}: {error}"
+        );
+    }
+    // An empty table reaches the setup as an empty list, and a setup written by hand may leave the options null.
+    for options in [json!({}), json!([]), json!(null), json!({ "a": [1, 2] })] {
+        let mut fine = setup(&["x"]);
+        fine.options = options.clone();
+        External::new(&fine).unwrap_or_else(|error| panic!("{options}: {error}"));
+    }
+}
+
+#[gsttt_scenario::scenario("config", "A changed declaration drops the cached facts")]
+#[test]
+fn the_cache_key_follows_the_declaration() {
     let tree = repository(&[]);
     let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
     let salt = |setup: &ExternalSetup| {
@@ -791,10 +835,25 @@ fn the_cache_key_follows_the_command_and_its_version() {
     other.cmd.push("--strict".to_owned());
     let mut listed = base.clone();
     listed.env.push("JAVA_HOME".to_owned());
+    let mut provides = base.clone();
+    provides.provides.push(Provide {
+        kind: ContractKind::Http,
+        role: Role::Serves,
+        via: Vec::new(),
+        blind_spots: Vec::new(),
+    });
+    let mut options = base.clone();
+    options.options = json!({ "strict": true });
     assert_eq!(salt(&base), salt(&base.clone()));
-    assert_ne!(salt(&base), salt(&newer));
-    assert_ne!(salt(&base), salt(&other));
-    assert_ne!(salt(&base), salt(&listed));
+    for changed in [&newer, &other, &listed, &provides, &options] {
+        assert_ne!(salt(&base), salt(changed), "{changed:?}");
+    }
+
+    // The order the keys were written in is not a change.
+    let (mut first, mut second) = (base.clone(), base.clone());
+    first.options = json!({ "a": 1, "b": { "c": 2, "d": 3 } });
+    second.options = json!({ "b": { "d": 3, "c": 2 }, "a": 1 });
+    assert_eq!(salt(&first), salt(&second));
 }
 
 /// The `type` of each variant of a tagged enum in the schema's definitions.

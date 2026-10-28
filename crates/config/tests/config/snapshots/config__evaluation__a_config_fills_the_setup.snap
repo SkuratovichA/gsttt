@@ -35,7 +35,22 @@ expression: setup
       "version": "1",
       "env": [
         "JAVA_HOME"
-      ]
+      ],
+      "provides": [
+        {
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "ktor"
+          ],
+          "blind_spots": [
+            "routes built at run time"
+          ]
+        }
+      ],
+      "options": {
+        "strict": true
+      }
     }
   ],
   "http_prefixes": [

@@ -37,7 +37,7 @@ expression: schema
               "type": "string"
             },
             "options": {
-              "description": "The options of the connector, always an object.",
+              "description": "The `options` of the connector's declaration in the config, always an object: `{}` when it has none.",
               "type": "object",
               "additionalProperties": true
             }
@@ -127,18 +127,12 @@ expression: schema
             "version": {
               "description": "The version of the connector.",
               "type": "string"
-            },
-            "provides": {
-              "description": "The contract kinds the connector finds, how, and what it cannot see: `Provide` values in the serde form of the core type, with `kind`, `role`, `via` and `blind_spots`.",
-              "type": "array",
-              "items": true
             }
           },
           "required": [
             "type",
             "name",
-            "version",
-            "provides"
+            "version"
           ]
         },
         {

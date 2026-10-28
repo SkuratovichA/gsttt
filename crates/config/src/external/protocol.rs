@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! → {"type":"open","protocol":1,"root":"","options":{}}
-//! ← {"type":"ready","name":"kotlin","version":"0.1.0","provides":[]}
+//! ← {"type":"ready","name":"kotlin","version":"0.1.0"}
 //! → {"type":"parse","path":"src/A.kt","text":"…"}
 //! ← {"type":"facts","path":"src/A.kt","facts":{…}}
 //! → {"type":"resolve","from":"src/A.kt","import":{…}}
@@ -12,9 +12,8 @@
 //! → {"type":"done"}
 //! ```
 //!
-//! Facts, imports and provides are the serde forms of the core types, and files are named by repository-relative path with `/` separators, never by id.
+//! Facts and imports are the serde forms of the core types, and files are named by repository-relative path with `/` separators, never by id. What the connector provides is not in the protocol: the config declares it, so that a run knows it without starting the process.
 
-use gsttt_core::connector::Provide;
 use gsttt_core::fact::{FileFacts, Import, UnresolvedReason};
 use schemars::{JsonSchema, Schema, schema_for};
 use serde::{Deserialize, Serialize};
@@ -33,7 +32,7 @@ pub enum Request<'a> {
         protocol: u32,
         /// The directory the project owns, relative to the repository root: `""` for the root itself. The process runs in the repository root.
         root: &'a str,
-        /// The options of the connector, always an object.
+        /// The `options` of the connector's declaration in the config, always an object: `{}` when it has none.
         options: &'a Map<String, Value>,
     },
     /// Read one file.
@@ -66,9 +65,6 @@ pub enum Response {
         name: String,
         /// The version of the connector.
         version: String,
-        /// The contract kinds the connector finds, how, and what it cannot see: `Provide` values in the serde form of the core type, with `kind`, `role`, `via` and `blind_spots`.
-        #[schemars(with = "Vec<serde_json::Value>")]
-        provides: Vec<Provide>,
     },
     /// The answer to `parse`.
     Facts {
@@ -213,7 +209,7 @@ mod tests {
     #[test]
     fn responses_read_back() {
         let ready: Response = serde_json::from_value(
-            json!({ "type": "ready", "name": "kotlin", "version": "0.1.0", "provides": [] }),
+            json!({ "type": "ready", "name": "kotlin", "version": "0.1.0" }),
         )
         .unwrap();
         assert!(matches!(ready, Response::Ready { name, .. } if name == "kotlin"));

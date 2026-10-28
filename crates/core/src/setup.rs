@@ -3,6 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::connector::Provide;
 use crate::rules::Pack;
 
 /// The modules to run with their options, the packs, and the files to leave out.
@@ -73,6 +74,19 @@ pub struct ExternalSetup {
     /// Names of environment variables the process may read, on top of the few every program needs (`PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TMPDIR`). The rest of gsttt's environment, where secrets live, stays out of its reach.
     #[serde(default)]
     pub env: Vec<String>,
+    /// What the connector finds and what it cannot see, as `Provide` values with `kind`, `role`, `via` and `blind_spots`. They are declared here and not asked of the process, because a run answered from the snapshot never starts it and must still report the same coverage as a run that did.
+    #[serde(default)]
+    // `Provide` has no schema yet; once it derives `JsonSchema`, this names the type.
+    #[schemars(with = "Vec<serde_json::Value>")]
+    pub provides: Vec<Provide>,
+    /// The options of the connector: a table of named values, sent to the process in `open` and mixed into the cache key. `{}` when it has none.
+    #[serde(default = "no_options")]
+    pub options: serde_json::Value,
+}
+
+/// The options of a connector that was given none.
+fn no_options() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
 }
 
 impl Setup {

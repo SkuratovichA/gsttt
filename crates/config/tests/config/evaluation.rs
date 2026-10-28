@@ -31,6 +31,45 @@ fn a_config_fills_the_setup() {
     insta::assert_json_snapshot!(setup);
 }
 
+#[gsttt_scenario::scenario("config", "Options must be named")]
+#[test]
+fn the_options_of_an_external_are_a_table_of_named_values() {
+    let declare = |options: &str| {
+        format!(
+            "local g = require(\"gsttt\")\ng.external {{ name = \"k\", cmd = {{ \"x\" }}, files = {{ \"*.k\" }}, {options} }}\n"
+        )
+    };
+    // Left out, empty and nil are one setup: an empty Lua table is an empty list until the setup says what it means.
+    let none = Tree::with_init(&declare("")).evaluate().unwrap();
+    assert_eq!(none.externals.first().unwrap().options, json!({}));
+    for same in ["options = {}", "options = nil"] {
+        assert_eq!(Tree::with_init(&declare(same)).evaluate().unwrap(), none);
+    }
+    let named = Tree::with_init(&declare("options = { b = 1, a = { 2 } }"))
+        .evaluate()
+        .unwrap();
+    assert_eq!(
+        named.externals.first().unwrap().options,
+        json!({ "a": [2], "b": 1 })
+    );
+
+    for (options, found) in [
+        ("options = { 1, 2 }", "a list"),
+        ("options = 3", "a number"),
+        ("options = \"fast\"", "a string"),
+        ("options = true", "a boolean"),
+    ] {
+        let message = failure(&declare(options));
+        assert!(message.starts_with(".gsttt/init.lua:2:"), "{message}");
+        assert!(
+            message.contains(&format!(
+                "`options` of `k` must be a table of named options, not {found}"
+            )),
+            "{message}"
+        );
+    }
+}
+
 #[gsttt_scenario::scenario("config", "A misspelt module is named with the known ones")]
 #[test]
 fn a_misspelt_module_is_named_with_the_known_ones() {

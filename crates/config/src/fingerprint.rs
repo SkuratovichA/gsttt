@@ -14,7 +14,8 @@ pub fn fingerprint(setup: &Setup) -> Result<u128, serde_json::Error> {
     Ok(xxh3_128(text.as_bytes()))
 }
 
-fn canonical(value: &Value, out: &mut String) {
+/// Writes `value` as canonical JSON: keys sorted, no whitespace. The key of a cache is written the same way as the fingerprint of a setup.
+pub(crate) fn canonical(value: &Value, out: &mut String) {
     match value {
         Value::Object(entries) => {
             let mut keys: Vec<&String> = entries.keys().collect();
