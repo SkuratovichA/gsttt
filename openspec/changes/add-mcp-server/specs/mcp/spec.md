@@ -50,7 +50,7 @@ Every tool except `index_status` SHALL refresh the index through the source and 
 
 ### Requirement: Errors
 
-A call to a known tool SHALL never fail with a protocol error. Arguments that do not match the tool's schema, conflicting arguments, a failed refresh and a source error SHALL each be a result with `isError` set and a plain-English text that names the argument or the failure and says what to do. A call to an unknown tool SHALL be the protocol error the MCP specification prescribes.
+A call to a known tool whose `arguments` is an object or is left out SHALL never fail with a protocol error. Arguments that do not match the tool's schema, conflicting arguments, a failed refresh and a source error SHALL each be a result with `isError` set and a plain-English text that names the argument or the failure and says what to do. A call to an unknown tool SHALL be the protocol error the MCP specification prescribes.
 
 #### Scenario: A malformed argument is a tool error
 - **WHEN** `impact` is called with `paths` set to the number 3
@@ -71,6 +71,14 @@ A call to a known tool SHALL never fail with a protocol error. Arguments that do
 #### Scenario: A file the index does not hold is a tool error
 - **WHEN** `dependents`, `dependencies` or `path` is called with a file that no connector read
 - **THEN** the result has `isError` set and its text is the one the CLI prints on stderr for the same question, which starts with the file's path and "is not in the index"
+
+### Requirement: Malformed requests
+
+A `tools/call` whose `arguments` is not an object SHALL be answered with the JSON-RPC error for invalid parameters, and the server SHALL keep serving.
+
+#### Scenario: Arguments that are not an object are refused
+- **WHEN** `coverage` is called with `arguments` set to `[]`, to `"x"`, to the number 3 or to true
+- **THEN** each call is answered with the JSON-RPC error for invalid parameters, and a call after them is answered as usual
 
 ### Requirement: One refresh at a time
 

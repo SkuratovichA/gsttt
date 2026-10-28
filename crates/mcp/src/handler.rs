@@ -3,13 +3,16 @@
 //! It is written by hand and not with the `#[tool]` router, because the router answers arguments that do not
 //! deserialize with a JSON-RPC error, while the specification of the protocol calls those tool execution errors, so
 //! that the model can correct the call.
+//!
+//! The one exception is an `arguments` that is not an object. rmcp reads the parameters of a call before it asks the handler, so such a call never reaches `call_tool`, and `on_custom_request` answers it with the protocol error for invalid parameters.
 
 use std::sync::Arc;
 
 use gsttt_core::text::join_and;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
-    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
+    CallToolRequestMethod, CallToolRequestParams, CallToolResponse, CallToolResult, ConstString,
+    ContentBlock, CustomRequest, CustomResult, ErrorCode, Implementation, ListToolsResult,
+    PaginatedRequestParams, ServerCapabilities, ServerConfig,
 };
 use rmcp::service::{MaybeSendFuture, RequestContext};
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
@@ -111,6 +114,29 @@ impl<S: IndexSource> ServerHandler for Server<S> {
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResponse, McpError>> + MaybeSendFuture + '_ {
         self.answer(request)
+    }
+
+    /// Takes a request that did not read as any request the server knows, which includes a `tools/call` whose
+    /// `arguments` is not an object: rmcp reads the parameters before the handler is asked.
+    fn on_custom_request(
+        &self,
+        request: CustomRequest,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<CustomResult, McpError>> + MaybeSendFuture + '_ {
+        std::future::ready(Err(unreadable(request.method)))
+    }
+}
+
+/// The protocol error for a request that did not read. rmcp's own answer is `method not found` with the method's
+/// name, which, for a `tools/call` with malformed parameters, tells the client that the server has no tools at all.
+fn unreadable(method: String) -> McpError {
+    if method == CallToolRequestMethod::VALUE {
+        McpError::invalid_params(
+            "`tools/call` takes `name`, a string, and `arguments`, an object that may be left out",
+            None,
+        )
+    } else {
+        McpError::new(ErrorCode::METHOD_NOT_FOUND, method, None)
     }
 }
 

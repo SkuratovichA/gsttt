@@ -9,6 +9,7 @@ mod fake;
 mod fixture;
 mod lifecycle;
 mod listing;
+mod malformed;
 mod session;
 mod source;
 mod startup;
