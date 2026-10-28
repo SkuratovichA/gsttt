@@ -22,6 +22,7 @@ fn sites(source: &str, pack: &str) -> Sites {
         &LineIndex::new(source),
         &[pack],
         Edition::CURRENT,
+        &[],
     )
 }
 
@@ -582,8 +583,8 @@ proptest! {
         let source = parts.join(" ");
         let lines = LineIndex::new(&source);
         let parse = ast::SourceFile::parse(&source, Edition::CURRENT);
-        let first = read(&parse.syntax_node(), &lines, &packs, Edition::CURRENT);
-        let second = read(&parse.syntax_node(), &lines, &packs, Edition::CURRENT);
+        let first = read(&parse.syntax_node(), &lines, &packs, Edition::CURRENT, &[]);
+        let second = read(&parse.syntax_node(), &lines, &packs, Edition::CURRENT, &[]);
         let last_line = u32::try_from(source.matches('\n').count()).unwrap() + 1;
         prop_assert!(first.found.iter().all(|found| (1..=last_line).contains(&found.fact.line)));
         prop_assert!(first.unresolved.iter().all(|site| (1..=last_line).contains(&site.line)));
@@ -614,8 +615,7 @@ proptest! {
             &parse.syntax_node(),
             &LineIndex::new(&source),
             &packs,
-            Edition::CURRENT,
-        ));
+            Edition::CURRENT, &[]));
     }
 }
 
@@ -626,6 +626,26 @@ fn no_rules_means_no_reading() {
         &LineIndex::new("fn f() { env::var(\"A\"); }"),
         &[],
         Edition::CURRENT,
+        &[],
     );
     assert!(out.found.is_empty() && out.embedded.is_empty() && out.unresolved.is_empty());
+}
+
+#[test]
+fn a_name_two_imports_disagree_on_stands_for_neither() {
+    let import = |spec: &str, name: &str| {
+        let mut import =
+            gsttt_core::fact::Import::new(spec, gsttt_core::fact::ImportKind::Static, 1);
+        import.names = vec![name.to_owned()];
+        import
+    };
+    let uses = super::uses_of(&[
+        import("reqwest::get", "get"),
+        import("::std::env::var", "var"),
+        import("a::run", "run"),
+        import("b::run", "run"),
+    ]);
+    assert_eq!(uses.get("get").map(String::as_str), Some("reqwest.get"));
+    assert_eq!(uses.get("var").map(String::as_str), Some("std.env.var"));
+    assert_eq!(uses.get("run"), None);
 }

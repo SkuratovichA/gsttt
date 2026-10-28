@@ -12,12 +12,13 @@ mod routers;
 #[cfg(test)]
 mod tests;
 
-use gsttt_core::fact::{ContractFact, Embedded, UnresolvedSite};
+use gsttt_core::fact::{ContractFact, Embedded, Import, ImportKind, UnresolvedSite};
 use gsttt_core::rules::{AssignRule, CallRule, ChainRule, DecoratorRule, EmbedRule, Outcome, Pack};
 use gsttt_core::text::LineIndex;
 use ra_ap_edition::Edition;
 use ra_ap_syntax::{SyntaxKind, SyntaxNode};
 use std::cell::OnceCell;
+use std::collections::HashMap;
 
 use self::candidate::{Candidate, Prepared, View, apply_per_verb, lacks_keywords};
 use crate::link::Extra;
@@ -67,8 +68,9 @@ pub(crate) fn read(
     lines: &LineIndex,
     packs: &[Pack],
     edition: Edition,
+    imports: &[Import],
 ) -> Sites {
-    let reader = Reader::new(root, lines, packs, edition);
+    let reader = Reader::new(root, lines, packs, edition, imports);
     let mut sites = Sites::default();
     if reader.is_idle() {
         return sites;
@@ -80,6 +82,48 @@ pub(crate) fn read(
     reader.routers(root, &mut sites);
     sites.finish();
     sites
+}
+
+/// The dotted path each name that `imports` bring in stands for. A name that two imports bring in from different
+/// paths, as two modules of one file may, stands for neither.
+fn uses_of(imports: &[Import]) -> HashMap<String, String> {
+    let mut found: HashMap<String, Option<String>> = HashMap::new();
+    let brought = imports
+        .iter()
+        .filter(|import| matches!(import.kind, ImportKind::Static | ImportKind::ReExport));
+    for import in brought {
+        let [name] = import.names.as_slice() else {
+            continue;
+        };
+        if name == "*" {
+            continue;
+        }
+        let path = import.spec.trim_start_matches("::").replace("::", ".");
+        found
+            .entry(name.clone())
+            .and_modify(|known| {
+                if known.as_deref() != Some(path.as_str()) {
+                    *known = None;
+                }
+            })
+            .or_insert(Some(path));
+    }
+    found
+        .into_iter()
+        .filter_map(|(name, path)| Some((name, path?)))
+        .collect()
+}
+
+/// The call and embed rules that name a callee, each with the pack it belongs to.
+struct Matched<'a> {
+    calls: Vec<(&'a Pack, &'a CallRule)>,
+    embeds: Vec<(&'a Pack, &'a EmbedRule)>,
+}
+
+impl Matched<'_> {
+    fn is_empty(&self) -> bool {
+        self.calls.is_empty() && self.embeds.is_empty()
+    }
 }
 
 /// The rules of the packs in force, by kind, with the pack each belongs to.
@@ -99,6 +143,10 @@ struct Reader<'a> {
     edition: Edition,
     /// What the receivers of the file can be traced to, found when a rule with a receiver first asks.
     traced: OnceCell<receiver::Scope>,
+    /// The imports of the file, which tell what a name that a call starts with was brought in from.
+    imports: &'a [Import],
+    /// The dotted path each name that the imports bring in stands for.
+    uses: OnceCell<HashMap<String, String>>,
 }
 
 /// What the rules produced at one site. A site that yields a contract is not also a blind spot.
@@ -135,6 +183,7 @@ impl<'a> Reader<'a> {
         lines: &'a LineIndex,
         packs: &'a [Pack],
         edition: Edition,
+        imports: &'a [Import],
     ) -> Self {
         Self {
             root,
@@ -166,6 +215,8 @@ impl<'a> Reader<'a> {
             actix: packs.iter().any(|pack| pack.name == "actix"),
             edition,
             traced: OnceCell::new(),
+            imports,
+            uses: OnceCell::new(),
         }
     }
 
@@ -202,37 +253,64 @@ impl<'a> Reader<'a> {
         if self.calls.is_empty() && self.embeds.is_empty() {
             return;
         }
-        let Some(candidate) = Candidate::of_call(node, self.lines) else {
+        let Some(mut candidate) = Candidate::of_call(node, self.lines) else {
             return;
         };
-        let calls: Vec<(&Pack, &CallRule)> = self
-            .calls
-            .iter()
-            .filter(|(_, rule)| rule.callee.matches(&candidate.callee))
-            .copied()
-            .collect();
-        let embeds: Vec<(&Pack, &EmbedRule)> = self
-            .embeds
-            .iter()
-            .filter(|(_, rule)| rule.callee.matches(&candidate.callee))
-            .copied()
-            .collect();
-        if calls.is_empty() && embeds.is_empty() {
+        let mut matched = self.rules_for(&candidate.callee);
+        if matched.is_empty() && node.kind() == SyntaxKind::CALL_EXPR {
+            // A function that a `use` brought in is called by its bare name: `get` after `use reqwest::get;`.
+            let Some(full) = self.brought_in(&candidate.callee) else {
+                return;
+            };
+            matched = self.rules_for(&full);
+            candidate.callee = full;
+        }
+        if matched.is_empty() {
             return;
         }
         let prepared = candidate.prepare(self.edition);
         let mut outcomes = Outcomes::default();
-        for (pack, rule) in calls {
+        for (pack, rule) in matched.calls {
             self.apply_call(pack, rule, &candidate, &prepared, &mut outcomes);
         }
         outcomes.flush(candidate.anchor, sites);
         let view = View::new(&prepared);
-        for (pack, rule) in embeds {
+        for (pack, rule) in matched.embeds {
             match rule.apply(&pack.name, &view, candidate.line, &candidate.callee) {
                 Ok(document) => sites.embedded.push(document),
                 Err(blind) => sites.unresolved.push(blind),
             }
         }
+    }
+
+    /// The call and embed rules that name `callee`.
+    fn rules_for(&self, callee: &str) -> Matched<'_> {
+        Matched {
+            calls: self
+                .calls
+                .iter()
+                .filter(|(_, rule)| rule.callee.matches(callee))
+                .copied()
+                .collect(),
+            embeds: self
+                .embeds
+                .iter()
+                .filter(|(_, rule)| rule.callee.matches(callee))
+                .copied()
+                .collect(),
+        }
+    }
+
+    /// The path a callee stands for when it starts with a name that a `use` of the file brought in: `get` is
+    /// `reqwest.get` after `use reqwest::get;`. The imports do not say which module a `use` sits in, so a name that two
+    /// of them bring in from different paths is left alone.
+    fn brought_in(&self, callee: &str) -> Option<String> {
+        let (first, rest) = match callee.split_once('.') {
+            Some((first, rest)) => (first, Some(rest)),
+            None => (callee, None),
+        };
+        let full = self.uses.get_or_init(|| uses_of(self.imports)).get(first)?;
+        Some(rest.map_or_else(|| full.clone(), |rest| format!("{full}.{rest}")))
     }
 
     fn apply_call(

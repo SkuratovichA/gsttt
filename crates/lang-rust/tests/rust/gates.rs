@@ -31,3 +31,21 @@ fn a_client_builder_makes_a_client() {
         "{found:?}"
     );
 }
+
+#[scenario("rust", "A function a use brought in is matched by its full path")]
+#[test]
+fn a_function_a_use_brought_in_is_matched_by_its_full_path() {
+    let found = index("gates").contracts("src/imported.rs");
+    assert!(
+        found
+            .iter()
+            .any(|site| site.ends_with("calls http GET /imported")),
+        "{found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|site| site.ends_with("calls env IMPORTED")),
+        "{found:?}"
+    );
+}
