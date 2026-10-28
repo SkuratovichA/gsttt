@@ -20,5 +20,5 @@
 
 ## 4. Proof
 
-- [ ] 4.1 A test annotated `#[scenario("queries", …)]` for every scenario of the `queries` spec
-- [ ] 4.2 `cargo nextest run -p gsttt-core`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+- [x] 4.1 A test annotated `#[scenario("queries", …)]` for every scenario of the `queries` spec
+- [x] 4.2 `cargo nextest run -p gsttt-core`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass

@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use gsttt_core::contract::{ContractKey, Role};
 use gsttt_core::coverage::{ConnectorCoverage, Coverage};
 use gsttt_core::fact::{
-    FileTags, Import, ImportKind, ParseStatus, Resolution, ResolvedImport, UnresolvedReason,
-    UnresolvedSite,
+    FileTags, Import, ImportKind, ParseFailure, ParseStatus, Resolution, ResolvedImport,
+    UnresolvedReason, UnresolvedSite,
 };
 use gsttt_core::graph::{ContractSite, Edge, GraphBuilder};
 use gsttt_core::index::{FileRecord, Index, IndexInfo, ProjectInfo};
@@ -19,6 +19,9 @@ const DEFAULT_CONNECTOR: &str = "ts";
 #[derive(Clone, Debug)]
 pub(crate) enum To {
     File(String),
+    Files(Vec<String>),
+    Package(String),
+    Builtin,
     Missing(UnresolvedReason),
 }
 
@@ -27,17 +30,30 @@ pub(crate) fn file(path: &str) -> To {
     To::File(path.to_owned())
 }
 
+/// An import that resolved to a third-party package.
+pub(crate) fn package(name: &str) -> To {
+    To::Package(name.to_owned())
+}
+
 impl To {
     fn paths(&self) -> Vec<&str> {
         match self {
             Self::File(path) => vec![path.as_str()],
-            Self::Missing(_) => Vec::new(),
+            Self::Files(paths) => paths.iter().map(String::as_str).collect(),
+            Self::Package(_) | Self::Builtin | Self::Missing(_) => Vec::new(),
         }
     }
 
     fn resolve(&self, ids: &BTreeMap<String, FileId>) -> Resolution {
         match self {
             Self::File(path) => Resolution::File { file: ids[path] },
+            Self::Files(paths) => Resolution::Files {
+                files: paths.iter().map(|path| ids[path]).collect(),
+            },
+            Self::Package(package) => Resolution::External {
+                package: package.clone(),
+            },
+            Self::Builtin => Resolution::Builtin,
             Self::Missing(reason) => Resolution::Unresolved(reason.clone()),
         }
     }
@@ -149,8 +165,37 @@ impl Tree {
         self.site(path, key, Role::Calls, 1)
     }
 
+    /// A file its connector could not read at all.
+    pub(crate) fn failed(mut self, path: &str, failure: ParseFailure) -> Self {
+        self.entry(path).status = ParseStatus::Failed(failure);
+        self
+    }
+
+    /// A site in `path` that its connector saw and could not read.
+    pub(crate) fn blind(
+        mut self,
+        path: &str,
+        line: u32,
+        reason: UnresolvedReason,
+        detail: &str,
+    ) -> Self {
+        self.entry(path).blind.push(UnresolvedSite {
+            line,
+            reason,
+            detail: detail.to_owned(),
+        });
+        self
+    }
+
     pub(crate) fn prefixes(mut self, prefixes: &[&str]) -> Self {
         self.prefixes = prefixes.iter().map(|prefix| (*prefix).to_owned()).collect();
+        self
+    }
+
+    /// The commit the index was built at and how many files differed from it.
+    pub(crate) fn commit(mut self, head: &str, dirty: u32) -> Self {
+        self.head = Some(head.to_owned());
+        self.dirty = dirty;
         self
     }
 
@@ -263,4 +308,15 @@ impl Tree {
             http_prefixes: self.prefixes,
         }
     }
+}
+
+/// Makes the coverage of `connector` say it owns `files` files, so that a small tree can stand for a large one.
+pub(crate) fn own(index: &mut Index, connector: &str, files: u32) {
+    let coverage = index
+        .coverage
+        .connectors
+        .iter_mut()
+        .find(|coverage| coverage.connector == connector)
+        .unwrap();
+    coverage.files = files;
 }
