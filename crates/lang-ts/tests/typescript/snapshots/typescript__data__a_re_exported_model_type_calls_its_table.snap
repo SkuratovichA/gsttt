@@ -48,6 +48,38 @@ expression: json
       },
       "tags": 0,
       "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "table tenant",
+          "line": 1,
+          "role": "calls",
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 0,
+          "kind": "re-export",
+          "line": 1,
+          "names": [
+            "Tenant"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/renamed.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
     }
   ],
   "linked": [],

@@ -127,7 +127,9 @@ A pack MAY name a contract for each name a file takes from a package. With the `
 
 #### Scenario: A re-exported model type calls its table
 - **WHEN** `src/models.ts` has `export type { Tenant, Prisma } from '@prisma/client'` on line 1
-- **THEN** the file calls `table tenant` at line 1 and no other table
+- **AND** `src/renamed.ts` has `export { Tenant as T } from '@prisma/client'` on line 1
+- **THEN** `src/models.ts` calls `table tenant` at line 1 and no other table
+- **AND** `src/renamed.ts` calls `table tenant` at line 1 and not `table t`, because the table is named as the package exports the model and not as the file renames it
 
 #### Scenario: An import type reaches the import rules
 - **WHEN** `src/types.ts` has `import('@prisma/client').Tenant` on line 1, `import('@prisma/client').TenantBranch[]` on line 2, `import('@prisma/client').Prisma.TenantWhereInput`, `import('@prisma/client').PrismaClient`, `typeof import('@prisma/client')` and `import('ui-kit').Tenant`

@@ -213,6 +213,10 @@ fn an_imported_model_type_calls_its_table() -> Result<(), Box<dyn Error>> {
 fn a_re_exported_model_type_calls_its_table() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-model-reexport")?;
     assert_eq!(contracts(&json, "src/models.ts"), ["calls table tenant @1"]);
+    assert_eq!(
+        contracts(&json, "src/renamed.ts"),
+        ["calls table tenant @1"]
+    );
     insta::assert_json_snapshot!(json);
     Ok(())
 }
