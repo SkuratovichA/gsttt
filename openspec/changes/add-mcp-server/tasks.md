@@ -7,7 +7,7 @@
 
 ## 2. Binary
 
-- [ ] 2.1 After the CLI change has landed, add `gsttt mcp` and implement `IndexSource` over `Repository`, opened on every call
+- [x] 2.1 After the CLI change has landed, add `gsttt mcp` and implement `IndexSource` over `Repository`, opened on every call
 
 ## 3. Gates
 

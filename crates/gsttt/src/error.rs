@@ -6,6 +6,7 @@ use camino::Utf8PathBuf;
 use gsttt_core::engine::changes::ChangesError;
 use gsttt_core::engine::refresh::IndexError;
 use gsttt_core::path::OutsideRoot;
+use gsttt_mcp::ServeError;
 use miette::{Diagnostic, GraphicalReportHandler, GraphicalTheme, Report};
 
 use crate::repository::RepositoryError;
@@ -54,6 +55,12 @@ pub(crate) enum CliError {
     #[error("`gsttt {command}` is not built yet")]
     NotBuilt { command: &'static str },
 
+    #[error(transparent)]
+    Serve(#[from] ServeError),
+
+    #[error("cannot start the runtime of the MCP server: {source}")]
+    Runtime { source: io::Error },
+
     #[error("the contract query is empty")]
     #[diagnostic(help(
         "ask for a contract key such as `http GET /bookings/{{id}}`, or for part of one"
@@ -95,6 +102,8 @@ impl CliError {
             | Self::Repository(_)
             | Self::NoIndex { .. }
             | Self::NotBuilt { .. }
+            | Self::Serve(_)
+            | Self::Runtime { .. }
             | Self::Root(RootError::Workspace(_) | RootError::CurrentDirectory { .. }) => {
                 Outcome::Failed
             }

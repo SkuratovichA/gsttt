@@ -8,7 +8,7 @@ use crate::cli::{Cli, Command, ContractArgs, Flags, HookCommand, ImpactArgs};
 use crate::error::CliError;
 use crate::repository::Repository;
 use crate::streams::{Io, Outcome};
-use crate::{hook, root};
+use crate::{hook, mcp, root};
 
 mod impact;
 mod index;
@@ -56,6 +56,7 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
         Command::Impact(args) => impact::impact(&Session::open(flags)?, args, io),
         Command::Index => index::index(&Session::open(flags)?, io),
         Command::Status => index::status(&Session::open(flags)?, io),
+        Command::Mcp => mcp::run(flags),
         Command::Dependents(args) => questions::dependents(&Session::open(flags)?, args, io),
         Command::Dependencies(args) => questions::dependencies(&Session::open(flags)?, args, io),
         Command::Path(args) => questions::path(&Session::open(flags)?, args, io),

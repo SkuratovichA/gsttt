@@ -6,8 +6,8 @@ use gsttt_scenario::scenario;
 
 use super::support::Sandbox;
 
-/// The commands the spec lists, each as it is typed.
-const COMMANDS: [&str; 16] = [
+/// The commands the specs list, each as it is typed: those of the cli capability, and `mcp`, which the mcp capability adds.
+const COMMANDS: [&str; 17] = [
     "index",
     "impact",
     "dependents",
@@ -16,6 +16,7 @@ const COMMANDS: [&str; 16] = [
     "contract",
     "coverage",
     "status",
+    "mcp",
     "hook session-start",
     "init",
     "config check",
