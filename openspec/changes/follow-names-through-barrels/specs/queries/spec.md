@@ -67,6 +67,11 @@ A named re-export SHALL affect the names it exports affected names as, and `expo
 - **THEN** impact lists `index.ts` at distance 1 with the reason `re-exports fromA from a.ts` and `form.ts` at distance 2 with the reason `imports fromA from index.ts`
 - **AND** it does not list `page.ts`
 
+#### Scenario: A star does not forward default
+- **WHEN** `index.ts` exports `default` and `own` and has `export * from './a'`, `a.ts` exports `default` and `fromA`, `form.ts` imports `fromA` from `index.ts`, `page.ts` imports `default` from it, and `a.ts` changes
+- **THEN** impact lists `index.ts` at distance 1 with the reason `re-exports fromA from a.ts` and `form.ts` at distance 2
+- **AND** it does not list `page.ts`, which takes the default export of `index.ts` itself
+
 #### Scenario: A named re-export passes on its alias
 - **WHEN** `index.ts` has `export { useFoo as useBar } from './foo'` and `export { other } from './other'`, `x.ts` imports `useBar` from `index.ts`, `y.ts` imports `other` from it, and `foo.ts` changes
 - **THEN** impact lists `index.ts` with the reason `re-exports useFoo as useBar from foo.ts` and `x.ts` with the reason `imports useBar from index.ts`
