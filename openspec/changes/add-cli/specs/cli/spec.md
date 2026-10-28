@@ -20,11 +20,15 @@ The `gsttt` binary SHALL offer the commands `index`, `impact`, `dependents`, `de
 
 ### Requirement: Version
 
-`gsttt --version` SHALL print `gsttt` and the version: `GSTTT_VERSION` as it was at build time, or the package version followed by `-dev` when it was unset.
+`gsttt --version` SHALL print `gsttt` and the version: `GSTTT_VERSION` as it was at build time, or the package version followed by `-dev` when it was unset. `gsttt status` SHALL name the version that built the index in the same form.
 
 #### Scenario: A development build says so in its version
 - **WHEN** `gsttt --version` runs on a binary built without `GSTTT_VERSION`
 - **THEN** stdout is `gsttt <package version>-dev` and the exit code is 0
+
+#### Scenario: status names the version --version prints
+- **WHEN** a repository is indexed and `gsttt status` runs
+- **THEN** stdout says that the index was built by the version `gsttt --version` prints
 
 ### Requirement: Exit codes
 

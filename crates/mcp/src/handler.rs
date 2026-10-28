@@ -91,7 +91,7 @@ impl<S: IndexSource> Server<S> {
 impl<S: IndexSource> ServerHandler for Server<S> {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("gsttt", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("gsttt", gsttt_core::VERSION))
             .with_instructions(INSTRUCTIONS)
     }
 

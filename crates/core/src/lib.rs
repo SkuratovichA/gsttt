@@ -42,3 +42,9 @@ pub use index::{Freshness, Index, Loaded};
 pub use path::{RepoPath, Target};
 pub use repo::RepoView;
 pub use setup::Setup;
+
+/// The version of this build of gsttt: `GSTTT_VERSION` as it was at build time, which every release sets, or the package version followed by `-dev` when it was unset or empty. `--version` prints it, the MCP server names itself with it, and a snapshot records the version that wrote it and is read only by the same one, because a release may parse a file differently from the release before without changing the shape of the snapshot.
+pub const VERSION: &str = match option_env!("GSTTT_VERSION") {
+    Some(version) if !version.is_empty() => version,
+    _ => concat!(env!("CARGO_PKG_VERSION"), "-dev"),
+};
