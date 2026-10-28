@@ -6,5 +6,7 @@ node_modules/
 /bench/repos
 /bench/tools
 /bench/results/*.tmp
+/bench/results/agents/
+/bench/agents/*.tmp
 /.claude/worktrees/
 /.claude/settings.local.json

@@ -8,12 +8,16 @@ use serde::Deserialize;
 
 use crate::digest::is_hex;
 
+mod agents;
+
+pub(crate) use self::agents::{Agents, RepositoryAgents};
+
 /// Where the pins are, relative to the repository root.
 const FILE: &str = "bench/bench.toml";
 
 /// A tool the benchmarks time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Tool {
+pub(crate) enum Tool {
     /// The binary the task is given: the only tool that is not pinned.
     Gsttt,
     /// Reads TypeScript and JavaScript.
@@ -28,7 +32,7 @@ pub(super) enum Tool {
 
 impl Tool {
     /// The name the results give the tool.
-    pub(super) fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Gsttt => "gsttt",
             Self::DependencyCruiser => "dependency-cruiser",
@@ -39,7 +43,7 @@ impl Tool {
     }
 
     /// The program a reader types to run the tool.
-    pub(super) fn program(self) -> &'static str {
+    pub(crate) fn program(self) -> &'static str {
         match self {
             Self::Gsttt => "gsttt",
             Self::DependencyCruiser => "depcruise",
@@ -53,7 +57,7 @@ impl Tool {
 /// The language of a repository, which decides the tools that measure it.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub(super) enum Language {
+pub(crate) enum Language {
     Typescript,
     Python,
     Rust,
@@ -61,7 +65,7 @@ pub(super) enum Language {
 
 impl Language {
     /// The tools that measure a repository of this language, gsttt first.
-    pub(super) fn tools(self) -> &'static [Tool] {
+    pub(crate) fn tools(self) -> &'static [Tool] {
         match self {
             Self::Typescript => &[
                 Tool::Gsttt,
@@ -75,7 +79,7 @@ impl Language {
     }
 
     /// The extensions, without the dot, of the files that count as source of this language.
-    pub(super) fn extensions(self) -> &'static [&'static str] {
+    pub(crate) fn extensions(self) -> &'static [&'static str] {
         match self {
             Self::Typescript => &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"],
             Self::Python => &["py"],
@@ -87,66 +91,71 @@ impl Language {
 /// A repository the benchmarks measure.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Repository {
+pub(crate) struct Repository {
     /// The directory under `bench/repos` and the name in the results.
-    pub(super) name: String,
-    pub(super) url: String,
+    pub(crate) name: String,
+    pub(crate) url: String,
     /// The release the commit belongs to. It is for readers: the commit is what is fetched.
-    pub(super) tag: String,
+    pub(crate) tag: String,
     /// The full commit, 40 lower-case hexadecimal digits.
-    pub(super) commit: String,
-    pub(super) language: Language,
+    pub(crate) commit: String,
+    pub(crate) language: Language,
     /// The `tsconfig.json` the TypeScript tools read, relative to the checkout.
-    pub(super) tsconfig: Option<String>,
+    pub(crate) tsconfig: Option<String>,
     /// The packages grimp reads.
     #[serde(default)]
-    pub(super) packages: Vec<String>,
+    pub(crate) packages: Vec<String>,
+    /// What the agent benchmarks ask about this repository; absent when they ask nothing.
+    pub(crate) agents: Option<RepositoryAgents>,
 }
 
 /// A tool that is pinned by its version alone.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Version {
-    pub(super) version: String,
+pub(crate) struct Version {
+    pub(crate) version: String,
 }
 
 /// An archive of codebase-memory-mcp.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Archive {
+pub(crate) struct Archive {
     /// The file name in the release.
-    pub(super) file: String,
+    pub(crate) file: String,
     /// The SHA-256 of the file, 64 lower-case hexadecimal digits.
-    pub(super) sha256: String,
+    pub(crate) sha256: String,
 }
 
 /// codebase-memory-mcp, which is downloaded as a release archive.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Cbm {
-    pub(super) version: String,
+pub(crate) struct Cbm {
+    pub(crate) version: String,
     /// The base of the download URLs: it is followed by `v<version>/<file>`.
-    pub(super) releases: String,
+    pub(crate) releases: String,
     /// The archives by platform, such as `darwin-arm64`.
-    pub(super) archives: BTreeMap<String, Archive>,
+    pub(crate) archives: BTreeMap<String, Archive>,
 }
 
 /// The tools, each at a version.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Tools {
+pub(crate) struct Tools {
     #[serde(rename = "dependency-cruiser")]
     dependency_cruiser: Version,
     madge: Version,
-    typescript: Version,
-    pub(super) grimp: Version,
+    pub(crate) typescript: Version,
+    /// The language server of the `lsp` setup of the agent benchmarks, installed beside TypeScript.
+    #[serde(rename = "typescript-language-server")]
+    pub(crate) typescript_language_server: Version,
+    pub(crate) grimp: Version,
     #[serde(rename = "codebase-memory-mcp")]
-    pub(super) codebase_memory: Cbm,
+    pub(crate) codebase_memory: Cbm,
 }
 
 impl Tools {
     /// The pinned version of `tool`; `None` for gsttt, which is the binary the task is given.
-    pub(super) fn version(&self, tool: Tool) -> Option<&str> {
+    pub(crate) fn version(&self, tool: Tool) -> Option<&str> {
         match tool {
             Tool::Gsttt => None,
             Tool::DependencyCruiser => Some(&self.dependency_cruiser.version),
@@ -156,12 +165,16 @@ impl Tools {
         }
     }
 
-    /// The packages pnpm installs into `bench/tools/node`, each with its version. TypeScript is there so that the other two find their parser.
-    pub(super) fn node_packages(&self) -> [(&'static str, &str); 3] {
+    /// The packages pnpm installs into `bench/tools/node`, each with its version. TypeScript is there so that the other tools find their parser.
+    pub(crate) fn node_packages(&self) -> [(&'static str, &str); 4] {
         [
             ("dependency-cruiser", &self.dependency_cruiser.version),
             ("madge", &self.madge.version),
             ("typescript", &self.typescript.version),
+            (
+                "typescript-language-server",
+                &self.typescript_language_server.version,
+            ),
         ]
     }
 }
@@ -169,14 +182,16 @@ impl Tools {
 /// Everything `bench/bench.toml` pins.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Pins {
-    pub(super) repository: Vec<Repository>,
-    pub(super) tools: Tools,
+pub(crate) struct Pins {
+    pub(crate) repository: Vec<Repository>,
+    pub(crate) tools: Tools,
+    /// What the agent runs share.
+    pub(crate) agents: Agents,
 }
 
 impl Pins {
     /// Reads and checks the pins of the repository at `root`.
-    pub(super) fn load(root: &Path) -> anyhow::Result<Self> {
+    pub(crate) fn load(root: &Path) -> anyhow::Result<Self> {
         let file = root.join(FILE);
         let text = std::fs::read_to_string(&file)
             .with_context(|| format!("cannot read {}", file.display()))?;
@@ -184,7 +199,7 @@ impl Pins {
     }
 
     /// Parses pins and refuses the ones that do not pin: a commit that is not a full commit, a version that is not a version, an archive without a checksum.
-    pub(super) fn parse(text: &str) -> anyhow::Result<Self> {
+    pub(crate) fn parse(text: &str) -> anyhow::Result<Self> {
         let pins: Self = toml::from_str(text)?;
         pins.validate()?;
         Ok(pins)
@@ -192,6 +207,7 @@ impl Pins {
 
     fn validate(&self) -> anyhow::Result<()> {
         ensure!(!self.repository.is_empty(), "no repository is pinned");
+        self.agents.validate()?;
         let mut names = BTreeSet::new();
         for repository in &self.repository {
             let name = &repository.name;
@@ -217,6 +233,9 @@ impl Pins {
                     repository.language == Language::Typescript && is_inside(tsconfig),
                     "the tsconfig of `{name}` must be a path inside a TypeScript checkout"
                 );
+            }
+            if let Some(agents) = &repository.agents {
+                agents.validate(repository)?;
             }
             let python = repository.language == Language::Python;
             ensure!(
@@ -309,6 +328,9 @@ version = "1.0.0"
 [tools.typescript]
 version = "1.0.0"
 
+[tools.typescript-language-server]
+version = "1.0.0"
+
 [tools.grimp]
 version = "1.0"
 
@@ -319,6 +341,31 @@ releases = "https://example.test/releases"
 [tools.codebase-memory-mcp.archives.linux-amd64]
 file = "cbm.tar.gz"
 sha256 = "8453015145f072c1b9b019cbdd02cea8cc6f18cc5e116036dd20992631c638c7"
+
+[agents]
+model = "sonnet"
+repeats = 3
+seed = "seed"
+seconds = 900
+turns = 80
+"#;
+
+    /// A TypeScript repository that asks for agent questions, to be added to the minimal pins and broken one rule at a time.
+    const VITE: &str = r#"
+[[repository]]
+name = "vite"
+url = "https://example.test/vite"
+tag = "8.3.5"
+commit = "981f07fa4580fb88b333c4450431e4715d2a0b82"
+language = "typescript"
+tsconfig = "packages/vite/tsconfig.json"
+
+[repository.agents]
+scope = "packages/vite"
+users = 4
+tests = 4
+install = ["pnpm", "install"]
+test = ["pnpm", "exec", "vitest", "run"]
 "#;
 
     /// The pins as they are committed.
@@ -375,6 +422,102 @@ sha256 = "8453015145f072c1b9b019cbdd02cea8cc6f18cc5e116036dd20992631c638c7"
         for (platform, archive) in archives {
             assert!(is_hex(&archive.sha256, 64), "{platform}");
         }
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "The agent runs are pinned")]
+    #[test]
+    fn the_agent_runs_are_pinned() {
+        let pins = committed();
+        let agents = &pins.agents;
+        assert!(!agents.model.is_empty() && !agents.model.contains(char::is_whitespace));
+        assert!(agents.repeats >= 1);
+        assert_ne!(agents.seed.trim(), "");
+        assert!(agents.seconds >= 60);
+        assert!(agents.turns >= 1);
+        assert!(is_version(&pins.tools.typescript_language_server.version));
+        assert!(
+            pins.repository
+                .iter()
+                .any(|repository| repository.agents.is_some()),
+            "no repository asks agent questions"
+        );
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "Questions about tests need a test command")]
+    #[test]
+    fn questions_about_tests_need_a_test_command() {
+        Pins::parse(&format!("{MINIMAL}{VITE}")).unwrap();
+        let without = VITE.replace("test = [\"pnpm\", \"exec\", \"vitest\", \"run\"]\n", "");
+        assert_ne!(without, VITE);
+        let error = Pins::parse(&format!("{MINIMAL}{without}"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("`vite`") && error.contains("test command"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_shared_agent_pins_are_broken_one_rule_at_a_time() {
+        for (from, to, message) in [
+            ("model = \"sonnet\"", "model = \"two words\"", "model"),
+            ("model = \"sonnet\"", "model = \"\"", "model"),
+            ("repeats = 3", "repeats = 0", "repeat"),
+            ("seed = \"seed\"", "seed = \" \"", "seed"),
+            ("seconds = 900", "seconds = 59", "at least 60"),
+            ("turns = 80", "turns = 0", "turn"),
+        ] {
+            let error = Pins::parse(&MINIMAL.replace(from, to))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(message), "{to}: {error}");
+        }
+    }
+
+    #[test]
+    fn the_agent_pins_of_a_repository_are_broken_one_rule_at_a_time() {
+        for (from, to, message) in [
+            (
+                "scope = \"packages/vite\"",
+                "scope = \"/packages\"",
+                "scope",
+            ),
+            ("scope = \"packages/vite\"", "scope = \"../vite\"", "scope"),
+            (
+                "scope = \"packages/vite\"",
+                "scope = \"packages//vite\"",
+                "scope",
+            ),
+            ("scope = \"packages/vite\"", "scope = \"\"", "scope"),
+            ("users = 4", "users = 0", "users"),
+            ("tests = 4", "tests = 0", "tests"),
+            (
+                "install = [\"pnpm\", \"install\"]",
+                "install = [\"pnpm\", \"\"]",
+                "install command",
+            ),
+            (
+                "install = [\"pnpm\", \"install\"]",
+                "install = []",
+                "install command",
+            ),
+        ] {
+            let text = format!("{MINIMAL}{}", VITE.replace(from, to));
+            let error = Pins::parse(&text).unwrap_err().to_string();
+            assert!(
+                error.contains(message) && error.contains("`vite`"),
+                "{to}: {error}"
+            );
+        }
+        let rust = format!(
+            "{MINIMAL}{}",
+            VITE.replace("language = \"typescript\"", "language = \"rust\"")
+        );
+        assert!(
+            Pins::parse(&rust).is_err(),
+            "only a TypeScript repository asks agent questions"
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@
 
 ## 2. The pins
 
-- [ ] 2.1 The `agents` table and the repository fields of `bench/bench.toml`, typescript-language-server among the Node tools, and `/bench/results/agents/` in `.gitignore`
+- [x] 2.1 The `agents` table and the repository fields of `bench/bench.toml`, typescript-language-server among the Node tools, and `/bench/results/agents/` in `.gitignore`
 
 ## 3. The questions
 

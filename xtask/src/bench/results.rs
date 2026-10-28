@@ -86,6 +86,11 @@ pub(super) fn write(out: &Path, results: &Results, local: &[&str]) -> anyhow::Re
             "the results hold the local path {path}, which must not be published"
         );
     }
+    write_atomically(out, &text)
+}
+
+/// Writes `text` to `out` through a temporary file beside it, so that a failed run leaves no half of a file.
+pub(crate) fn write_atomically(out: &Path, text: &str) -> anyhow::Result<()> {
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
@@ -188,6 +193,7 @@ mod tests {
             language: Language::Typescript,
             tsconfig: Some("tsconfig.json".to_owned()),
             packages: Vec::new(),
+            agents: None,
         };
         let tools = plan(&repository, &programs)
             .iter()

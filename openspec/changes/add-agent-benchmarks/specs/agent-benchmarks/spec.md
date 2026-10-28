@@ -7,7 +7,7 @@ Agent benchmarks are the comparison of the README and the site of what Claude Co
 ## ADDED Requirements
 
 ### Requirement: Pinned agent runs
-`bench/bench.toml` SHALL pin the agent runs in an `agents` table: the model, the repeats, the seed, the wall-clock limit of a run in seconds and its limit of turns. A repository the questions come from SHALL name the directory they are about, its tsconfig, the number of questions of each kind, and the commands that install it and run its tests. typescript-language-server SHALL be pinned at a version.
+`bench/bench.toml` SHALL pin the agent runs in an `agents` table: the model, the repeats, the seed, the wall-clock limit of a run in seconds and its limit of turns. A repository the questions come from SHALL name the directory they are about, its tsconfig, the number of questions of each kind, and the commands that install it, build it where its tests need a build, and run its tests. typescript-language-server SHALL be pinned at a version.
 
 #### Scenario: The agent runs are pinned
 - **WHEN** `bench/bench.toml` is read

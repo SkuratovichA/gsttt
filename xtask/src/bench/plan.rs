@@ -18,19 +18,19 @@ const WARMUP_RUNS: u32 = 1;
 
 /// Where the programs of the tools are on this machine: the layout of `bench/tools`, and the binary of gsttt.
 #[derive(Debug)]
-pub(super) struct Programs {
+pub(crate) struct Programs {
     /// The directory pnpm installs the Node tools into.
-    pub(super) node: PathBuf,
+    pub(crate) node: PathBuf,
     /// The virtual environment uv installs grimp into.
-    pub(super) venv: PathBuf,
+    pub(crate) venv: PathBuf,
     /// The directory codebase-memory-mcp is unpacked into, with its home and its cache beside the binary.
-    pub(super) cbm: PathBuf,
+    pub(crate) cbm: PathBuf,
     gsttt: PathBuf,
 }
 
 impl Programs {
     /// The programs as the task installs them under `tools`, and `gsttt` as the task was given it.
-    pub(super) fn new(tools: &Path, gsttt: &Path) -> Self {
+    pub(crate) fn new(tools: &Path, gsttt: &Path) -> Self {
         Self {
             node: tools.join("node"),
             venv: tools.join("python"),
@@ -40,7 +40,7 @@ impl Programs {
     }
 
     /// The program of `tool`.
-    pub(super) fn of(&self, tool: Tool) -> PathBuf {
+    pub(crate) fn of(&self, tool: Tool) -> PathBuf {
         match tool {
             Tool::Gsttt => self.gsttt.clone(),
             Tool::DependencyCruiser => self.node.join("node_modules/.bin/depcruise"),
@@ -56,7 +56,7 @@ impl Programs {
     }
 
     /// The `CBM_CACHE_DIR` codebase-memory-mcp runs with.
-    pub(super) fn cbm_cache(&self) -> PathBuf {
+    pub(crate) fn cbm_cache(&self) -> PathBuf {
         self.cbm.join("cache")
     }
 }
@@ -277,6 +277,7 @@ mod tests {
             language,
             tsconfig: tsconfig.map(str::to_owned),
             packages: strings(packages),
+            agents: None,
         }
     }
 

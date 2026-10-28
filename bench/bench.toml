@@ -9,6 +9,16 @@ commit = "981f07fa4580fb88b333c4450431e4715d2a0b82"
 language = "typescript"
 tsconfig = "packages/vite/tsconfig.json"
 
+# What the agent runs ask about vite: the functions of packages/vite (the other packages import vite through `dist`, which a checkout that is not built does not have), 4 questions about the files that refer to a function and 4 about the test files that break with it. vite pins pnpm 12.14.0 in its `packageManager` and the pnpm of a machine is another one, so the install runs that version through `pnpm dlx`; it skips lifecycle scripts, because vite's `preinstall` runs npx and the `postinstall` of its playwright-chromium downloads browsers into the Playwright cache of the user and prunes the ones it finds there, and the unit tests need none of that. The unit tests are the files under `__tests__` that `vitest.config.ts` includes, run from the root.
+[repository.agents]
+scope = "packages/vite"
+users = 4
+tests = 4
+install = ["pnpm", "dlx", "pnpm@12.14.0", "install", "--frozen-lockfile", "--ignore-scripts"]
+# Vitest does not start until the package this repository is named after is built: its config imports vite, which resolves to packages/vite/dist. The bundle alone builds in a second, and the types are not needed.
+build = ["pnpm", "--filter", "vite", "run", "build-bundle"]
+test = ["pnpm", "exec", "vitest", "run"]
+
 # excalidraw, a TypeScript application with a tsconfig.json at its root.
 [[repository]]
 name = "excalidraw"
@@ -17,6 +27,11 @@ tag = "v0.18.1"
 commit = "a2ec2889babf7d2295469c6d90ebe77fae57df84"
 language = "typescript"
 tsconfig = "tsconfig.json"
+
+# What the agent runs ask about excalidraw: its whole checkout, since its tsconfig maps its packages to their sources, and only questions about the files that refer to a function, because it installs with yarn and nothing but its lockfile pins what its tests run against.
+[repository.agents]
+scope = "."
+users = 4
 
 # django, a Python project whose package grimp reads.
 [[repository]]
@@ -35,6 +50,14 @@ tag = "15.2.0"
 commit = "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f"
 language = "rust"
 
+# The agent runs of `cargo xtask agents`, specified in `openspec/changes/add-agent-benchmarks/`: the model as the alias Claude Code takes, how many times every question is asked in every setup, the seed that orders the candidates of the questions (another seed draws other questions), the wall-clock limit of one run in seconds and its limit of turns.
+[agents]
+model = "sonnet"
+repeats = 3
+seed = "gsttt-agents-1"
+seconds = 900
+turns = 80
+
 # dependency-cruiser, installed by pnpm into bench/tools/node.
 [tools.dependency-cruiser]
 version = "18.7.0"
@@ -46,6 +69,10 @@ version = "8.0.0"
 # typescript, installed beside the two Node tools so that they find their TypeScript parser; 5.9.3 is the newest release that both support (dependency-cruiser needs one below 7.0.0, madge asks for ^5.4.4).
 [tools.typescript]
 version = "5.9.3"
+
+# typescript-language-server, installed beside TypeScript; 6.0.2 is what the TypeScript plugin of Claude Code runs on the machine this was pinned on, and it runs with the TypeScript above when it is told where its tsserver is (`initializationOptions.tsserver.path`).
+[tools.typescript-language-server]
+version = "6.0.2"
 
 # grimp, installed by uv into the virtual environment bench/tools/python.
 [tools.grimp]
