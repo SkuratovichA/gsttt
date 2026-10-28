@@ -40,7 +40,7 @@
 ## ADDED Requirements
 
 ### Requirement: Impact through names
-Where the import edges name what the importer takes, `impact` SHALL carry a change name by name. A changed file and a file reached across a contract SHALL be affected in all their names, and an importer SHALL be affected in all its names when it imports by name an affected name of a file or a name the file does not export.
+Where the import edges name what the importer takes, `impact` SHALL carry a change name by name. A changed file and a file reached across a contract SHALL be affected in all their names, and an importer SHALL be affected in all its names when it imports by name an affected name of a file or a name the file does not export, and a file that re-exports such a name by name SHALL be affected in the names it exports it as.
 
 #### Scenario: A changed barrel reaches every importer
 - **WHEN** `index.ts` exports `own` and has `export * from './a'`, `form.ts` imports `fromA` from it, `page.ts` imports `own` from it, and `index.ts` changes
@@ -53,6 +53,11 @@ Where the import edges name what the importer takes, `impact` SHALL carry a chan
 #### Scenario: A name the barrel does not export is affected
 - **WHEN** `index.ts` has `export * from './a'`, `a.ts` exports `kept`, `old.ts` imports `gone` from `index.ts`, nothing exports `gone`, and `a.ts` changes
 - **THEN** impact lists `old.ts` with the reason `imports gone from index.ts`
+
+#### Scenario: A re-export of a name the barrel does not export is affected
+- **WHEN** `index.ts` has `export * from './a'`, `a.ts` exports `kept`, `outer.ts` exports `gone`, `kept` and `stable` and has `export { gone, kept } from './index'`, `page.ts` imports `gone` from `outer.ts`, `other.ts` imports `stable` from it, nothing else exports `gone`, and `a.ts` changes
+- **THEN** impact lists `outer.ts` at distance 2 with the reason `re-exports gone, kept from index.ts` and `page.ts` at distance 3 with the reason `imports gone from outer.ts`
+- **AND** it does not list `other.ts`
 
 ### Requirement: Names through re-exports
 A named re-export SHALL affect the names it exports affected names as, and `export *` every affected name but `default`, where all the names of a file are those it exports itself and through its own `export *`. A file affected in some of its names only SHALL be listed with the reason that it re-exports them, each by the name the file it re-exports has for it, followed by `as` and the name it is exported as when that is another, so that a search of the file for what the reason names finds it.

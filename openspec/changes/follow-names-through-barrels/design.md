@@ -29,7 +29,7 @@ Each reached file F holds A(F), the names of F the change may reach, or all. The
 - X(T) unknown and Δ all: I gets all, whatever the edge carries, whether it uses names, passes them on or re-exports everything. This is how a file whose exports no connector lists is followed, and it is the walk over files, with the reason that I imports T and no names.
 - `uses` all: I gets all, whatever Δ is, even when it holds no name.
 - `uses` U, not empty: I gets all when Δ is all, when U and Δ share a name, or when U holds a name that is not in X(T) or X(T) is unknown, which only a file reached in some names can still be.
-- `passes` (as, src): I gets `as` when Δ is all, when src is in Δ, or when src is `*`, whatever Δ is.
+- `passes` (as, src): I gets `as` when Δ is all, when src is in Δ, when src is not in X(T) or X(T) is unknown, or when src is `*`, whatever Δ is.
 - `star`: I is always reached, and gets Δ without `default`; when Δ is all it gets X(T) without `default`. It may get no name, because T has nothing left to pass on: T exports nothing more, or only `default`, which a star never forwards. I is then held with no names and expanded once, so its own importers are still measured against X(I), and a name that nothing exports any more reaches the file that imports it. This repeats on every star hop.
 - When the own exports of I are unknown and I gets anything, I gets all.
 
@@ -41,7 +41,7 @@ X(T), all the names of T, is the own exports of T together with X(U) without `de
 
 ## Decisions
 
-- A name the target does not export is affected. A change that removes an export behind `export *` leaves no trace in the new facts but the name in the importer, and the importer is exactly what the change breaks.
+- A name the target does not export is affected. A change that removes an export behind `export *` leaves no trace in the new facts but the name in the importer, and the importer is exactly what the change breaks. This holds for a named re-export as much as for a use: `export { gone } from './index'` is reached, in `gone`, like an import of it.
 - A star re-export never drops its importer, whatever it has left to pass on. The file that lost its last export is the case where the importers of the barrel break, and a barrel dropped for passing nothing would hide them and every barrel behind it.
 - Unknown exports fall back to the whole file, so CommonJS, `export =` and files read past errors stay as safe as they are today, and so do the Python and Rust files, whose connectors list no exports and whose imports do record names. The edge is followed as a plain one is, and its reason carries no names.
 - Only whole files cross contracts: a barrel reached for some of its names has not changed what it does.

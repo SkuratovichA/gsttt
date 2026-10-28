@@ -189,13 +189,10 @@ impl Walk<'_> {
                 false
             }
             (Uses::Names(wanted), Delta::Names(fresh)) => {
-                // A name the file does not export is kept, because the import may be the very thing the change breaks or mends. A file that takes no name has nothing to keep.
-                if !wanted.is_empty() {
-                    let exported = self.exported_by(file);
-                    used.extend(wanted.iter().copied().filter(|&name| {
-                        holds(fresh, name)
-                            || exported.as_deref().is_none_or(|all| !holds(all, name))
-                    }));
+                for &name in wanted {
+                    if self.reaches(file, fresh, name) {
+                        used.push(name);
+                    }
                 }
                 false
             }
@@ -210,7 +207,7 @@ impl Walk<'_> {
         for &(exported_as, taken) in binding.passes {
             let reached = match delta {
                 Delta::All => true,
-                Delta::Names(fresh) => Some(taken) == self.star || holds(fresh, taken),
+                Delta::Names(fresh) => Some(taken) == self.star || self.reaches(file, fresh, taken),
             };
             if reached {
                 passed.push((taken, exported_as));
@@ -282,6 +279,11 @@ impl Walk<'_> {
             self.held.remove(&file);
         }
         self.next.push(file);
+    }
+
+    /// Whether an importer of `file` that takes `name`, to use it or to pass it on, meets the names `fresh` that `file` gained: it is one of them, or `file` does not export it, because the import may be the very thing the change breaks or mends. A file whose exports are unknown could lose any name, so none is ruled out. X(file) is only worked out when `name` is not among `fresh`.
+    fn reaches(&mut self, file: FileId, fresh: &[NameId], name: NameId) -> bool {
+        holds(fresh, name) || self.exported_by(file).is_none_or(|all| !holds(&all, name))
     }
 
     /// X(file), worked out once.

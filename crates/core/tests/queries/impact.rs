@@ -785,6 +785,39 @@ fn a_name_the_barrel_does_not_export_is_affected() {
     );
 }
 
+#[scenario(
+    "queries",
+    "A re-export of a name the barrel does not export is affected"
+)]
+#[test]
+fn a_re_export_of_a_name_the_barrel_does_not_export_is_affected() {
+    // `a.ts` used to export `gone` as well, and `index.ts` passed it on through its star.
+    let index = Tree::new()
+        .exports("a.ts", &["kept"])
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("outer.ts", &["gone", "kept", "stable"])
+        .re_exports(
+            "outer.ts",
+            "index.ts",
+            &[("gone", "gone"), ("kept", "kept")],
+        )
+        .imports_names("page.ts", "outer.ts", &["gone"])
+        .imports_names("other.ts", "outer.ts", &["stable"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports kept from a.ts"),
+            row("outer.ts", 2, "re-exports gone, kept from index.ts"),
+            row("page.ts", 3, "imports gone from outer.ts"),
+        ]
+    );
+}
+
 /// A barrel of `fromA` and `fromB`, and a page for each name.
 fn two_sources() -> Tree {
     Tree::new()
