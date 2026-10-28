@@ -49,15 +49,21 @@ A specifier with a query, such as `./terms.md?raw`, `./logo.svg?url` or `ui-kit/
 - **AND** the facts keep the specifiers with their queries
 
 ### Requirement: Aliases of this
-A chain rule SHALL read a chain that starts at a name bound by `const <name> = this` or `let <name> = this`, whatever the name, as a chain from `this`. The alias SHALL hold for the whole file, and a name bound to anything else SHALL be no alias.
+A chain rule SHALL read a chain that starts at a name bound by `const <name> = this` or `let <name> = this`, whatever the name, as a chain from `this`. The alias SHALL hold for the whole file, and a name that the file binds to anything else anywhere in it, as a variable, a parameter, a function, a class or an import, SHALL be no alias.
 
 #### Scenario: An alias of this reaches the Prisma client
 - **WHEN** `src/tenants.ts` has a class with the field `prisma = new PrismaClient()`, a method that binds `const self = this` and calls `self.prisma.tenant.findUnique({ where: { id } })` on line 9, a method that binds `let that = this` and calls `that.prisma.booking.count()` on line 15, and a function that binds `const holder = shared` and calls `holder.prisma.invoice.findMany()`
 - **THEN** the file calls `table tenant` at line 9 and `table booking` at line 15
 - **AND** it calls no other table
 
+#### Scenario: A name bound to anything else is no alias of this
+- **WHEN** `src/self-alias.ts` has a class with the field `prisma = new PrismaClient()` and a method that binds `const self = this` and calls `self.prisma.tenant.findFirst()`, and a function with the parameter `self: Mock` that calls `self.prisma.tenant.findMany()`
+- **AND** `src/consistent.ts` has a class with the field `prisma = new PrismaClient()`, a method that binds `const self = this` and calls `self.prisma.tenant.findFirst()` on line 8, and a method that binds `let self = this` and calls `self.prisma.booking.count()` on line 13
+- **THEN** `src/self-alias.ts` calls no table
+- **AND** `src/consistent.ts` calls `table tenant` at line 8 and `table booking` at line 13
+
 ### Requirement: Roots by type
-A chain rule MAY list root types. A parameter, a variable or a class property declared with one of them, alone, in a union or as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, SHALL then start a chain of the rule, and a constructor parameter with a modifier SHALL start one as `this.<name>` too. The `prisma` pack lists `PrismaClient`, `PrismaService` and `Prisma.TransactionClient`.
+A chain rule MAY list root types. A parameter, a variable or a class property declared with one of them, alone, in a union or as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, SHALL then start a chain of the rule, and a constructor parameter with a modifier SHALL start one as `this.<name>` too. A name or a property that the file also declares anywhere in it with another type, or with none, SHALL start no chain. The `prisma` pack lists `PrismaClient`, `PrismaService` and `Prisma.TransactionClient`.
 
 #### Scenario: A parameter typed as a pick of the client is a root
 - **WHEN** `src/tenants.ts` has `import type { Prisma } from '@prisma/client'`, a function with the parameter `reader: Pick<Prisma.TransactionClient, 'tenant' | 'tenantBranch'>` that calls `reader.tenant.findUnique()` on line 4 and `reader.tenantBranch.findMany()` on line 5, and a function with the parameter `options: { tenant: { findFirst(): void } }` that calls `options.tenant.findFirst()`, and `src/tenants.test.ts` has `const mockPrisma = { tenant: { findFirst: vi.fn() } }` and calls `mockPrisma.tenant.findFirst()`
@@ -68,6 +74,20 @@ A chain rule MAY list root types. A parameter, a variable or a class property de
 - **WHEN** `src/invoices.ts` has a class with the property `private readonly client: PrismaClient` and the constructor `constructor(private readonly store: PrismaService, plain: PrismaService)`, whose methods call `this.store.invoice.findMany()` on line 12, `this.client.payment.findUnique()` on line 16 and `this.plain.refund.findMany()` on line 20, and a function with the parameter `client: PrismaClient | null` that calls `client.booking.count()` on line 25
 - **THEN** the file calls `table invoice` at line 12, `table payment` at line 16 and `table booking` at line 25
 - **AND** the call on `this.plain` names no table, because a constructor parameter without a modifier is no property
+
+#### Scenario: A name declared with another type is no root
+- **WHEN** `src/names.ts` has a function with the parameter `tx2: Pick<Prisma.TransactionClient, 'tenant'>` and a function with the parameter `tx2: { tenant: { findFirst(): void } }`, and both call `tx2.tenant.findFirst()`
+- **AND** `src/properties.ts` has a class with the property `client: PrismaClient` and a class with the property `client: { tenant: { findFirst(): void } }`, and a method of each calls `this.client.tenant.findFirst()`
+- **AND** `src/consistent.ts` has a function with the parameter `client: PrismaClient` that calls `client.tenant.findFirst()` on line 4 and a function with the parameter `client: PrismaClient | null` that calls `client.booking.count()` on line 8
+- **THEN** `src/names.ts` and `src/properties.ts` call no table
+- **AND** `src/consistent.ts` calls `table tenant` at line 4 and `table booking` at line 8
+
+### Requirement: Signatures bind nothing
+A parameter of a signature without a body SHALL bind no name, so that it is neither a root nor a reason for another declaration of its name to be no root. These are the method, call and construct signatures of an interface or a type literal, a function type, a constructor type, an overload, an abstract method and a `declare function`.
+
+#### Scenario: A signature without a body binds nothing
+- **WHEN** `src/signatures.ts` has a parameter typed `PrismaClient`, each with another name, in an interface method signature, a call signature, a construct signature, a function type, a `declare function`, an overload signature and an abstract method, and calls `.tenant.findFirst()` on each of those seven names, none of which the file declares anywhere else
+- **THEN** the file calls no table
 
 ### Requirement: Type aliases of root types
 A `type` alias of the same file SHALL be read as the type it defines, through any number of aliases, when a declaration is checked for a root type. An alias that is defined by itself, directly or through other aliases, SHALL define no root type, and no alias SHALL be followed more than once for a declaration, so that a type that names itself many times is read as fast as one that names itself once.

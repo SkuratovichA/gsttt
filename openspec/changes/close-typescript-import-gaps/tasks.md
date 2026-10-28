@@ -22,3 +22,5 @@
 
 - [x] 3.1 A name the file declares as a `type` alias, an `interface`, a `class` or an `enum` is that local type and never a root type of the pack, and a root type imported under another name, reached through a renamed namespace import or intersected with another type stays unread
 - [x] 3.2 The walk through the type aliases of a file keeps a list of the names it has followed instead of a depth limit, so that a chain of any length is followed, a cycle ends, and a type that names itself many times is followed once
+- [x] 3.3 A name is an alias of `this` or a typed root only when every binding of it in the file, and of `this.<name>` for a class property, binds `this` or a root type, and one other binding makes it neither for the whole file
+- [x] 3.4 The parameters of a signature without a body bind nothing

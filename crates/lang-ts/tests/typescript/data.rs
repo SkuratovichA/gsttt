@@ -86,6 +86,42 @@ fn a_long_chain_of_type_aliases_is_followed_to_its_end() -> Result<(), Box<dyn E
 }
 
 #[test]
+#[scenario("typescript", "A name bound to anything else is no alias of this")]
+fn a_name_bound_to_anything_else_is_no_alias_of_this() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-mixed-aliases")?;
+    assert_eq!(contracts(&json, "src/self-alias.ts"), NOTHING);
+    assert_eq!(
+        contracts(&json, "src/consistent.ts"),
+        ["calls table tenant @8", "calls table booking @13"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A name declared with another type is no root")]
+fn a_name_declared_with_another_type_is_no_root() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-mixed-types")?;
+    assert_eq!(contracts(&json, "src/names.ts"), NOTHING);
+    assert_eq!(contracts(&json, "src/properties.ts"), NOTHING);
+    assert_eq!(
+        contracts(&json, "src/consistent.ts"),
+        ["calls table tenant @4", "calls table booking @8"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A signature without a body binds nothing")]
+fn a_signature_without_a_body_binds_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-signatures")?;
+    assert_eq!(contracts(&json, "src/signatures.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A local type shadows a root type")]
 fn a_local_type_shadows_a_root_type() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-local-types")?;

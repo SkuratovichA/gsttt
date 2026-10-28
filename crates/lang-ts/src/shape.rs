@@ -5,8 +5,8 @@ use std::num::NonZeroU32;
 
 use gsttt_core::rules::Site;
 use oxc_ast::ast::{
-    Argument, ChainElement, Expression, MemberExpression, ObjectPropertyKind, PropertyKey,
-    TemplateLiteral,
+    Argument, ChainElement, Expression, MemberExpression, ObjectPropertyKind, PropertyDefinition,
+    PropertyKey, TemplateLiteral,
 };
 use oxc_syntax::operator::BinaryOperator;
 
@@ -121,13 +121,26 @@ fn arg_of(expr: &Expression<'_>) -> Arg {
     }
 }
 
-/// The name of a property key written as an identifier or a string.
-pub(crate) fn property_name(key: &PropertyKey<'_>) -> Option<String> {
+/// The name of a property key written as an identifier or a string, as the source spells it.
+pub(crate) fn property_str<'a>(key: &PropertyKey<'a>) -> Option<&'a str> {
     match key {
-        PropertyKey::StaticIdentifier(name) => Some(name.name.as_str().to_owned()),
-        PropertyKey::StringLiteral(text) => text.value.as_str().map(str::to_owned),
+        PropertyKey::StaticIdentifier(name) => Some(name.name.as_str()),
+        PropertyKey::StringLiteral(text) => text.value.as_str(),
         _ => None,
     }
+}
+
+/// The name of a property key written as an identifier or a string.
+pub(crate) fn property_name(key: &PropertyKey<'_>) -> Option<String> {
+    property_str(key).map(str::to_owned)
+}
+
+/// The name of the field that `field` declares in its class, `None` for a computed key.
+pub(crate) fn field_name<'a>(field: &PropertyDefinition<'a>) -> Option<&'a str> {
+    if field.computed {
+        return None;
+    }
+    property_str(&field.key)
 }
 
 /// The text of a string, a template or a concatenation, with each computed part written `${}`; the first element that has text for an array. `None` for anything else.

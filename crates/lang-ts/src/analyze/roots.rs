@@ -1,17 +1,19 @@
-//! The names of a file that start a chain without being written as the root of a rule: `self` after `const self = this`, and `reader` or `this.db` when their declared type is one the rules list as a root type.
+//! The names of a file that start a chain without being written as the root of a rule: `self` after `const self = this`, and `reader` or `this.db` when their declared type is one the rules list as a root type. A name counts only when every binding of it in the file is of that kind, so `self` bound to `this` in one method and to a mock in another function is neither.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 
 use gsttt_core::rules::{ChainRule, Pack};
 use oxc_ast::ast::{
-    BindingPattern, Class, Expression, FormalParameter, Program, PropertyDefinition,
-    TSEnumDeclaration, TSInterfaceDeclaration, TSType, TSTypeAliasDeclaration, TSTypeName,
-    VariableDeclarator,
+    BindingIdentifier, BindingPattern, Class, Expression, FormalParameter, Function, Program,
+    PropertyDefinition, TSEnumDeclaration, TSInterfaceDeclaration, TSType, TSTypeAliasDeclaration,
+    TSTypeAnnotation, TSTypeName, TSTypeParameter, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
+use oxc_syntax::scope::ScopeFlags;
 
-use crate::shape::property_name;
+use crate::shape::field_name;
 
 /// The generic types that keep the members of their first type argument: `Pick<PrismaClient, 'tenant'>` is a client with fewer models.
 const WRAPPERS: [&str; 6] = [
@@ -23,7 +25,7 @@ const WRAPPERS: [&str; 6] = [
     "NonNullable",
 ];
 
-/// The names of one file that start a chain on top of the roots the rules list. Both sets hold per file, not per scope: a name declared in one function also counts in another function of the same file.
+/// The names of one file that start a chain on top of the roots the rules list. Both sets hold per file, not per scope, and only for a name that nothing else binds anywhere in the file.
 #[derive(Debug, Default)]
 pub(super) struct Roots<'p> {
     /// Names bound by `const self = this`.
@@ -75,35 +77,72 @@ pub(super) fn collect<'p>(program: &Program<'_>, packs: &'p [Pack]) -> Roots<'p>
     }
     let mut collector = Collector {
         wanted,
+        heads: Vec::new(),
         declared: Vec::new(),
         aliases: Vec::new(),
         locals: Vec::new(),
-        this_aliases: BTreeSet::new(),
+        this_bound: BTreeSet::new(),
+        others: Vec::new(),
     };
     collector.visit_program(program);
     collector.finish()
+}
+
+/// What a binding binds: a name in scope, or the property `this.<name>` of a class.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Name<'a> {
+    Local(&'a str),
+    Property(&'a str),
+}
+
+impl Name<'_> {
+    /// The name as a chain of the rules writes it.
+    fn key(self) -> String {
+        match self {
+            Self::Local(name) => name.to_owned(),
+            Self::Property(name) => format!("this.{name}"),
+        }
+    }
 }
 
 /// What the walk saw, before the aliases of types are followed: a type alias may come after the name that uses it.
 struct Collector<'p, 'a> {
     /// Every root type of every rule.
     wanted: Vec<&'p str>,
-    /// A declared name and a name its type stands for at its head, one row for each.
-    declared: Vec<(Cow<'a, str>, Cow<'a, str>)>,
+    /// The names that the types of the bindings stand for at their head, the rows of one binding after another.
+    heads: Vec<Cow<'a, str>>,
+    /// A binding that has a type, with the rows of `heads` that hold the type.
+    declared: Vec<(Name<'a>, Range<usize>)>,
     /// A local `type` alias and a name its definition stands for at its head, one row for each.
     aliases: Vec<(&'a str, Cow<'a, str>)>,
     /// Every name the file declares as a `type` alias, an `interface`, a `class` or an `enum`: such a name is the type the file says it is, never the root type of a pack that has the same name.
     locals: Vec<&'a str>,
-    this_aliases: BTreeSet<String>,
+    /// Every name that `const name = this` binds.
+    this_bound: BTreeSet<&'a str>,
+    /// Every binding that is neither `this` nor given a type: a name bound to anything else is no alias and no root for the whole file.
+    others: Vec<Name<'a>>,
 }
 
 impl<'a> Collector<'_, 'a> {
-    /// The name `name()` is declared with `ty`. The name is built once for each row, so a type that stands for nothing costs no allocation.
-    fn declare(&mut self, name: impl Fn() -> Cow<'a, str>, ty: &TSType<'a>) {
-        if self.wanted.is_empty() {
-            return;
+    /// Binds each of `names` to the type `annotation` when it stands for some name at its head, and to something else when it does not.
+    fn bind(
+        &mut self,
+        names: impl IntoIterator<Item = Name<'a>>,
+        annotation: Option<&TSTypeAnnotation<'a>>,
+    ) {
+        let start = self.heads.len();
+        if let Some(annotation) = annotation.filter(|_| !self.wanted.is_empty()) {
+            heads(&annotation.type_annotation, &mut |head| {
+                self.heads.push(head);
+            });
         }
-        heads(ty, &mut |head| self.declared.push((name(), head)));
+        let rows = start..self.heads.len();
+        if rows.is_empty() {
+            self.others.extend(names);
+        } else {
+            self.declared
+                .extend(names.into_iter().map(|name| (name, rows.clone())));
+        }
     }
 
     /// The file declares a type called `name`.
@@ -115,23 +154,36 @@ impl<'a> Collector<'_, 'a> {
 }
 
 impl<'p> Collector<'p, '_> {
-    fn finish(self) -> Roots<'p> {
-        let mut typed: BTreeMap<String, Vec<&'p str>> = BTreeMap::new();
+    fn finish(&self) -> Roots<'p> {
+        let mut typed: BTreeMap<Name<'_>, Vec<&'p str>> = BTreeMap::new();
+        let mut untyped = Vec::new();
         let mut seen = Vec::new();
-        for (name, head) in &self.declared {
+        for (name, rows) in &self.declared {
             seen.clear();
             let mut found = Vec::new();
-            self.root_types(head, &mut seen, &mut found);
-            if !found.is_empty() {
-                typed
-                    .entry(name.clone().into_owned())
-                    .or_default()
-                    .extend(found);
+            for head in self.heads.get(rows.clone()).unwrap_or_default() {
+                self.root_types(head, &mut seen, &mut found);
+            }
+            if found.is_empty() {
+                untyped.push(*name);
+            } else {
+                typed.entry(*name).or_default().extend(found);
             }
         }
+        let bound_otherwise =
+            |name: Name<'_>| self.others.contains(&name) || untyped.contains(&name);
         Roots {
-            this_aliases: self.this_aliases,
-            typed,
+            this_aliases: self
+                .this_bound
+                .iter()
+                .filter(|&&name| !bound_otherwise(Name::Local(name)))
+                .map(|&name| name.to_owned())
+                .collect(),
+            typed: typed
+                .into_iter()
+                .filter(|&(name, _)| !bound_otherwise(name))
+                .map(|(name, found)| (name.key(), found))
+                .collect(),
         }
     }
 
@@ -152,49 +204,67 @@ impl<'p> Collector<'p, '_> {
 }
 
 impl<'a> Visit<'a> for Collector<'_, 'a> {
+    /// Every name that no visitor below classifies is bound to something else: a destructured parameter, a function, a class, an import, a catch clause.
+    fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
+        self.others.push(Name::Local(it.name.as_str()));
+    }
+
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let BindingPattern::BindingIdentifier(id) = &it.id {
             let name = id.name.as_str();
             if it.init.as_ref().is_some_and(|init| {
                 matches!(init.get_inner_expression(), Expression::ThisExpression(_))
             }) {
-                self.this_aliases.insert(name.to_owned());
+                self.this_bound.insert(name);
+            } else {
+                self.bind([Name::Local(name)], it.type_annotation.as_deref());
             }
-            if let Some(annotation) = &it.type_annotation {
-                self.declare(|| Cow::Borrowed(name), &annotation.type_annotation);
-            }
+        } else {
+            self.visit_binding_pattern(&it.id);
         }
-        walk::walk_variable_declarator(self, it);
+        if let Some(init) = &it.init {
+            self.visit_expression(init);
+        }
     }
 
     fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
-        if let (BindingPattern::BindingIdentifier(id), Some(annotation)) =
-            (&it.pattern, &it.type_annotation)
-        {
+        if let BindingPattern::BindingIdentifier(id) = &it.pattern {
             let name = id.name.as_str();
-            self.declare(|| Cow::Borrowed(name), &annotation.type_annotation);
             // `constructor(private readonly db: PrismaService)` declares the property `this.db` as well.
-            if it.accessibility.is_some() || it.readonly {
-                self.declare(
-                    || Cow::Owned(format!("this.{name}")),
-                    &annotation.type_annotation,
-                );
-            }
+            let property =
+                (it.accessibility.is_some() || it.readonly).then_some(Name::Property(name));
+            self.bind(
+                std::iter::once(Name::Local(name)).chain(property),
+                it.type_annotation.as_deref(),
+            );
+        } else {
+            self.visit_binding_pattern(&it.pattern);
         }
-        walk::walk_formal_parameter(self, it);
+        for decorator in &it.decorators {
+            self.visit_decorator(decorator);
+        }
+        if let Some(initializer) = &it.initializer {
+            self.visit_expression(initializer);
+        }
     }
 
     fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
-        if !it.computed
-            && let Some(annotation) = &it.type_annotation
-            && let Some(name) = property_name(&it.key)
-        {
-            self.declare(
-                || Cow::Owned(format!("this.{name}")),
-                &annotation.type_annotation,
-            );
+        if let Some(name) = field_name(it) {
+            self.bind([Name::Property(name)], it.type_annotation.as_deref());
         }
         walk::walk_property_definition(self, it);
+    }
+
+    /// An overload, a `declare function` and an abstract method have no body, and the parameters of a signature without a body bind nothing.
+    fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
+        if it.body.is_some() {
+            walk::walk_function(self, it, flags);
+        }
+    }
+
+    /// The members of an interface are signatures without a body.
+    fn visit_ts_interface_declaration(&mut self, it: &TSInterfaceDeclaration<'a>) {
+        self.declare_type(it.id.name.as_str());
     }
 
     fn visit_ts_type_alias_declaration(&mut self, it: &TSTypeAliasDeclaration<'a>) {
@@ -205,13 +275,13 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
                 self.aliases.push((alias, head));
             });
         }
-        walk::walk_ts_type_alias_declaration(self, it);
     }
 
-    fn visit_ts_interface_declaration(&mut self, it: &TSInterfaceDeclaration<'a>) {
-        self.declare_type(it.id.name.as_str());
-        walk::walk_ts_interface_declaration(self, it);
-    }
+    /// A type binds no name of the file: the parameters of its function types and the keys of its mapped types only describe.
+    fn visit_ts_type(&mut self, _it: &TSType<'a>) {}
+
+    /// The name of a type parameter belongs to the types.
+    fn visit_ts_type_parameter(&mut self, _it: &TSTypeParameter<'a>) {}
 
     fn visit_ts_enum_declaration(&mut self, it: &TSEnumDeclaration<'a>) {
         self.declare_type(it.id.name.as_str());
