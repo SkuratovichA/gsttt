@@ -46,3 +46,4 @@
 - [x] 7.6 `cut` never returns more than its limit, and leaves the mark out when it does not fit
 - [x] 7.7 The maps of module options and of external options are sorted at every level by one function, which a test pins on a value written out of order, and the tests of evaluation compare a nested map
 - [x] 7.8 The comment of the header loop of the depth check says what its stop bounds
+- [x] 7.9 `mod evaluation` of the test crate is under `cfg(test)` like its siblings

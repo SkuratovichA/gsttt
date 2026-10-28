@@ -3,6 +3,7 @@
 // The helpers unwrap like the tests that call them; clippy only knows that for code under `cfg(test)`.
 #[cfg(test)]
 mod editor;
+#[cfg(test)]
 mod evaluation;
 #[cfg(test)]
 mod external;
