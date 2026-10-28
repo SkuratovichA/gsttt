@@ -2,8 +2,11 @@
 //!
 //! - `spec`: the spec gate ([`spec`]).
 //! - `version`, `package`, `notes`, `check`: releases and repository checks ([`dist`]).
+//!
+//! [`root`] finds the repository a task works on.
 
 mod dist;
+mod root;
 mod spec;
 
 use std::process::ExitCode;
