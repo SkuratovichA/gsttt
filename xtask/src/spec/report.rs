@@ -1,6 +1,6 @@
 //! The text the gate prints.
 
-use super::rules::{Entry, Judgement, Status};
+use super::rules::{Entry, Judgement, Progress, Status};
 
 /// Every scenario of every capability as proven, pending or failing, then the failures with the
 /// places to look at, then one line of totals.
@@ -21,7 +21,11 @@ pub(super) fn render(judgement: &Judgement) -> String {
             count(Status::Pending),
             count(Status::Failing)
         ));
-        lines.extend(group.iter().map(|entry| format!("  {}", describe(entry))));
+        lines.extend(
+            group
+                .iter()
+                .map(|entry| format!("  {}", describe(entry, judgement))),
+        );
     }
     if !judgement.failures.is_empty() {
         lines.push(String::new());
@@ -50,7 +54,7 @@ pub(super) fn ready(judgement: &Judgement) -> String {
     text
 }
 
-fn describe(entry: &Entry) -> String {
+fn describe(entry: &Entry, judgement: &Judgement) -> String {
     let Entry {
         title,
         site,
@@ -64,10 +68,14 @@ fn describe(entry: &Entry) -> String {
         .join(", ");
     match entry.status {
         Status::Proven => format!("proven   {title}  ({site})  proof: {proofs}"),
-        Status::Pending => format!(
-            "pending  {title}  ({site})  change `{}` still has unticked tasks",
-            entry.change().unwrap_or_default()
-        ),
+        Status::Pending => {
+            let change = entry.change().unwrap_or_default();
+            let state = match judgement.progress(change) {
+                Some(Progress::NoTasks) => "has no tasks",
+                _ => "still has unticked tasks",
+            };
+            format!("pending  {title}  ({site})  change `{change}` {state}")
+        }
         Status::Failing if proofs.is_empty() => format!("failing  {title}  ({site})"),
         Status::Failing => format!("failing  {title}  ({site})  proofs: {proofs}"),
     }

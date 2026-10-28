@@ -89,11 +89,15 @@ The gate SHALL look for `.rs` files that no target reaches by walking each packa
 - **THEN** the gate exits non-zero and names the test
 
 ### Requirement: Pending scenarios
-A scenario that an open change adds or modifies and that has no proof SHALL be reported as pending while that change has an unticked task, and SHALL fail once all its tasks are ticked.
+A scenario that an open change adds or modifies and that has no proof SHALL be reported as pending while that change has an unticked task or no task at all, saying which, and SHALL fail once all its tasks are ticked.
 
 #### Scenario: An open change is pending
 - **WHEN** an open change with an unticked task adds a scenario that has no proof
 - **THEN** the gate exits zero and reports the scenario as pending
+
+#### Scenario: A change without tasks is pending
+- **WHEN** an open change has no `tasks.md`, or none with a checkbox in it, and adds a scenario that has no proof
+- **THEN** the gate exits zero and reports the scenario as pending because the change has no tasks
 
 #### Scenario: A finished change must be proven
 - **WHEN** every task of an open change is ticked and one of its scenarios has no proof

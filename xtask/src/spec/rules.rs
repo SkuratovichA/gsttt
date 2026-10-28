@@ -80,11 +80,34 @@ pub(super) struct Failure {
     pub(super) changes: Vec<String>,
 }
 
+/// How far an open change has come, by its `tasks.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Progress {
+    /// No task at all: a proposal that is not yet broken into work, and so never finished.
+    NoTasks,
+    /// At least one task is not ticked.
+    Unticked,
+    /// Every task is ticked.
+    Finished,
+}
+
+impl Progress {
+    fn of(change: &Change) -> Self {
+        if change.is_finished() {
+            Self::Finished
+        } else if change.tasks.is_empty() {
+            Self::NoTasks
+        } else {
+            Self::Unticked
+        }
+    }
+}
+
 /// An open change, as far as archiving cares.
 #[derive(Debug)]
 struct Open {
     name: String,
-    finished: bool,
+    progress: Progress,
     /// Whether the main specs have every requirement that the change modifies, removes or renames:
     /// `openspec archive` stops at one that is missing.
     applies: bool,
@@ -106,13 +129,21 @@ impl Judgement {
         self.failures.is_empty()
     }
 
+    /// How far the open change with this name has come.
+    pub(super) fn progress(&self, change: &str) -> Option<Progress> {
+        self.changes
+            .iter()
+            .find(|open| open.name == change)
+            .map(|open| open.progress)
+    }
+
     /// The open changes that can be archived: every task ticked, every scenario proven, every
     /// requirement they modify, remove or rename in the main specs, and no failure that mentions
     /// them. In the order of their names.
     pub(super) fn ready(&self) -> Vec<&str> {
         self.changes
             .iter()
-            .filter(|change| change.finished && change.applies)
+            .filter(|change| change.progress == Progress::Finished && change.applies)
             .filter(|change| {
                 self.entries
                     .iter()
@@ -152,10 +183,14 @@ struct Dropped {
 /// Judges the scenarios of the specs against the claims found in the sources.
 pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
     let (mut entries, dropped) = effective(openspec);
-    let unfinished: BTreeMap<&str, bool> = openspec
+    let changes: Vec<Open> = openspec
         .changes
         .iter()
-        .map(|change| (change.name.as_str(), !change.is_finished()))
+        .map(|change| Open {
+            name: change.name.clone(),
+            progress: Progress::of(change),
+            applies: change.deltas.iter().all(|delta| applies(openspec, delta)),
+        })
         .collect();
 
     let mut homes: BTreeMap<(String, String), Vec<(Site, Source)>> = BTreeMap::new();
@@ -191,7 +226,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
         entry.status = if duplicated {
             Status::Failing
         } else {
-            status(entry, &unfinished, &mut failures)
+            status(entry, &changes, &mut failures)
         };
     }
     for claim in &marks.claims {
@@ -211,15 +246,6 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
         (&a.capability, &a.source, &a.site).cmp(&(&b.capability, &b.source, &b.site))
     });
     failures.sort();
-    let changes = openspec
-        .changes
-        .iter()
-        .map(|change| Open {
-            name: change.name.clone(),
-            finished: change.is_finished(),
-            applies: change.deltas.iter().all(|delta| applies(openspec, delta)),
-        })
-        .collect();
     Judgement {
         entries,
         failures,
@@ -329,7 +355,7 @@ fn applies(openspec: &OpenSpec, delta: &Delta) -> bool {
 }
 
 /// The status of a scenario that is written once, with the failure when it fails.
-fn status(entry: &Entry, unfinished: &BTreeMap<&str, bool>, failures: &mut Vec<Failure>) -> Status {
+fn status(entry: &Entry, open: &[Open], failures: &mut Vec<Failure>) -> Status {
     let capability = &entry.capability;
     let title = &entry.title;
     let changes: Vec<String> = entry.change().map(str::to_owned).into_iter().collect();
@@ -341,9 +367,13 @@ fn status(entry: &Entry, unfinished: &BTreeMap<&str, bool>, failures: &mut Vec<F
         });
         Status::Failing
     };
+    let unfinished = |name: &str| {
+        open.iter()
+            .any(|change| change.name == name && change.progress != Progress::Finished)
+    };
     match (entry.proofs.len(), entry.change()) {
         (1, _) => Status::Proven,
-        (0, Some(name)) if unfinished.get(name).copied().unwrap_or(false) => Status::Pending,
+        (0, Some(name)) if unfinished(name) => Status::Pending,
         (0, Some(name)) => fail(format!(
             "scenario `{title}` of capability `{capability}` has no proof, and every task of change `{name}` is ticked"
         )),

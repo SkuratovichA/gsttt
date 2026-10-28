@@ -403,6 +403,40 @@ fn an_open_change_is_pending() {
     );
 }
 
+#[gsttt_scenario::scenario("spec-gate", "A change without tasks is pending")]
+#[test]
+fn a_change_without_tasks_is_pending() {
+    let tree = Tree::new();
+    // One change has a `tasks.md` with no checkbox in it, the other has no `tasks.md` at all.
+    tree.change(
+        "no-checkboxes",
+        "# Tasks\n\nNothing is planned yet.\n",
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("Wormholes", &["Wormholes exist"])]),
+        )],
+    )
+    .write(
+        "openspec/changes/no-file/specs/queries/spec.md",
+        &delta("ADDED", &[requirement("Portals", &["Portals open"])]),
+    );
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    for (scenario, change) in [
+        ("Wormholes exist", "no-checkboxes"),
+        ("Portals open", "no-file"),
+    ] {
+        let line =
+            format!("pending  {scenario}  (openspec/changes/{change}/specs/queries/spec.md:");
+        let found = outcome.output.lines().find(|found| found.contains(&line));
+        assert!(
+            found.is_some_and(|found| found.ends_with(&format!("change `{change}` has no tasks"))),
+            "{}",
+            outcome.output
+        );
+    }
+}
+
 #[gsttt_scenario::scenario("spec-gate", "A finished change must be proven")]
 #[test]
 fn a_finished_change_must_be_proven() {
