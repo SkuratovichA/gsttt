@@ -394,6 +394,14 @@ A requirements file SHALL be read together with the files it includes with `-r` 
 - **WHEN** a project has `requirements.txt`, `requirements/base.txt` and `requirements/dev.txt`
 - **THEN** the project claims all three and tags each as a manifest
 
+### Requirement: Keywords of a setup.py
+The `install_requires` list and the `package_dir` dict of a `setup.py` SHALL be read only when a bracket of the right kind follows the keyword's `=` directly. A keyword whose value is a name or a call, and a bracket that belongs to a later keyword such as `extras_require` or `entry_points`, SHALL give nothing. A backslash in a string SHALL make the character after it part of the string.
+
+#### Scenario: A setup.py keyword is read only when a literal follows it
+- **WHEN** a project has a `setup.py` with `install_requires=REQS` and `extras_require={"dev": ["fastapi"]}` after it
+- **AND** another has `package_dir=PKG_DIRS` and `entry_points={"": "lib"}` after it, and a third has `install_requires=["left\"right", "fastapi"]`
+- **THEN** the first has no `fastapi` pack in force, the second has no source root `lib`, so `from bookings import api` does not resolve to `lib/bookings/api.py`, and the third has the `fastapi` pack in force
+
 ### Requirement: Pack activation
 A pack SHALL be active in a project when its manifests declare one of the pack's `detect` packages, compared by normalised name, in `[project]` dependencies, optional dependencies, dependency groups, Poetry dependencies, the `install_requires` of `setup.py` and `setup.cfg` or a requirements file, or always when its `detect` is empty. Each project SHALL report what it provides, with its blind spots in words.
 

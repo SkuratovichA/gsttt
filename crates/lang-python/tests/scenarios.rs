@@ -1816,3 +1816,41 @@ fn a_name_bound_by_two_imports_is_read_as_the_last() {
         tree.blind_spots()
     );
 }
+
+#[gsttt_scenario::scenario("python", "A setup.py keyword is read only when a literal follows it")]
+#[test]
+fn a_setup_py_keyword_is_read_only_when_a_literal_follows_it() {
+    let router = "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get(\"/ping\")\ndef ping():\n    return {}\n";
+    // `install_requires` is a name, and the list after it belongs to `extras_require`, which the reader does not take.
+    let extras = index_files(&[
+        (
+            "setup.py",
+            "from setuptools import setup\n\nsetup(\n    install_requires=REQS,\n    extras_require={\"dev\": [\"fastapi\"]},\n)\n",
+        ),
+        ("app.py", router),
+    ]);
+    assert_eq!(extras.linked("app.py"), Vec::<String>::new());
+    // `package_dir` is a name, and the dict after it is the one of `entry_points`.
+    let dirs = index_files(&[
+        (
+            "setup.py",
+            "from setuptools import setup\n\nsetup(\n    package_dir=PKG_DIRS,\n    entry_points={\"\": \"lib\"},\n)\n",
+        ),
+        ("lib/bookings/__init__.py", ""),
+        ("lib/bookings/api.py", ""),
+        ("app.py", "from bookings import api\n"),
+    ]);
+    assert_eq!(
+        dirs.target("app.py", "bookings", &["api"]),
+        "unresolved UnknownPackage"
+    );
+    // A backslash makes the quote after it part of the string, so the requirement after that string is still read.
+    let escaped = index_files(&[
+        (
+            "setup.py",
+            "from setuptools import setup\n\nsetup(\n    install_requires=[\"left\\\"right\", \"fastapi\"],\n)\n",
+        ),
+        ("app.py", router),
+    ]);
+    assert_eq!(escaped.linked("app.py"), ["serves http GET /ping@6"]);
+}

@@ -62,3 +62,4 @@
 - [x] 6.9 An `env_prefix` that is not a literal, in a `SettingsConfigDict` call, a `model_config` dict or an inner `Config`, leaves the fields that would take their name from it as unread sites, and an aliased field is still read
 - [x] 6.10 A pattern that starts with `*` meets a name as written only, so a function imported by name from a library is no `*.execute` or `*.get`, and the env pack names the two libraries that define `BaseSettings` for a class that imports it under another name
 - [x] 6.11 A name that two imports bind stands for the second from its statement on, each call going with the import above it, and the provides of the client packs name a client library imported under one name in `try` and in `except`
+- [x] 6.12 A `setup.py` keyword is read only when its bracket follows the `=` directly, so a name or a call as the value and the bracket of a later keyword give nothing, and a backslash keeps the next character in its string

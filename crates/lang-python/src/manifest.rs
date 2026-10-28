@@ -351,29 +351,31 @@ fn string_start(value: &str) -> Option<&str> {
     Some(content)
 }
 
-/// The contents of every single- or double-quoted string, without escapes, between the first `open` after `key` and
-/// the `close` that matches it. A bracket inside a string belongs to the string, so `"fastapi[standard]>=0.1"` is one
-/// requirement, and a comment is skipped whole, apostrophe and bracket included. A text that ends before the bracket
-/// closes gives the strings read so far.
+/// The contents of every single- or double-quoted string between the `open` that stands right after `key=` and the
+/// `close` that matches it, so a value that is a name or a call gives nothing, and neither does the bracket of a later
+/// keyword. A bracket inside a string belongs to the string, so `"fastapi[standard]>=0.1"` is one requirement, a
+/// backslash makes the character after it part of the string, and a comment is skipped whole, apostrophe and bracket
+/// included. A text that ends before the bracket closes gives the strings read so far.
 fn quoted_in(text: &str, key: &str, open: char, close: char) -> Vec<String> {
-    let after = text
-        .find(key)
-        .and_then(|at| text.get(at + key.len()..))
-        .unwrap_or_default();
-    let inner = after
-        .find(open)
-        .and_then(|at| after.get(at + open.len_utf8()..))
+    let inner = keyword_value(text, key)
+        .and_then(|value| value.strip_prefix(open))
         .unwrap_or_default();
     let mut found = Vec::new();
     let mut depth = 0_usize;
     let mut quote: Option<(char, String)> = None;
     let mut comment = false;
+    let mut escaped = false;
     for ch in inner.chars() {
         if comment {
             comment = ch != '\n';
             continue;
         }
         match &mut quote {
+            Some((_, content)) if escaped => {
+                content.push(ch);
+                escaped = false;
+            }
+            Some(_) if ch == '\\' => escaped = true,
             Some((mark, content)) if ch == *mark => {
                 found.push(std::mem::take(content));
                 quote = None;
