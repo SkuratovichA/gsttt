@@ -158,7 +158,8 @@ fn read(text: &str) -> (Vec<ContractFact>, ParseStatus) {
             open = Some((kind, number));
             (kind, rest)
         };
-        let (body, closes) = match body.find('}') {
+        // A brace inside a string, as in `@default("{}")`, closes nothing.
+        let (body, closes) = match find_outside_strings(body, |c, _| c == '}') {
             Some(close) => (body.get(..close).unwrap_or(body), true),
             None => (body, false),
         };
@@ -213,6 +214,15 @@ fn quoted_argument<'a>(text: &'a str, marker: &str) -> Option<&'a str> {
 
 /// The line without its `//` comment; a `//` inside a string literal is part of the string.
 fn strip_comment(line: &str) -> &str {
+    find_outside_strings(line, |c, next| c == '/' && next == Some('/'))
+        .and_then(|comment| line.get(..comment))
+        .unwrap_or(line)
+}
+
+/// The byte offset of the first character that `wanted` accepts and that stands outside a string literal; `wanted`
+/// gets the character and the one after it. A string ends at its next quote unless a backslash escapes it, and a
+/// string never continues on the next line, so the scan starts outside one on every line.
+fn find_outside_strings(line: &str, wanted: impl Fn(char, Option<char>) -> bool) -> Option<usize> {
     let mut in_string = false;
     let mut escaped = false;
     let mut chars = line.char_indices().peekable();
@@ -226,11 +236,11 @@ fn strip_comment(line: &str) -> &str {
             }
         } else if c == '"' {
             in_string = true;
-        } else if c == '/' && chars.peek().is_some_and(|&(_, next)| next == '/') {
-            return line.get(..index).unwrap_or(line);
+        } else if wanted(c, chars.peek().map(|&(_, next)| next)) {
+            return Some(index);
         }
     }
-    line
+    None
 }
 
 #[cfg(test)]
@@ -281,6 +291,17 @@ mod tests {
                 prop_assert!(fact.line >= 1 && fact.line <= lines);
             }
         }
+    }
+
+    #[test]
+    fn a_brace_inside_a_string_does_not_close_the_block() {
+        let text = "model A {\n  meta Json @default(\"{}\")\n  @@map(\"x\")\n}\n";
+        assert_eq!(tables(text), vec![(1, "a".to_owned()), (3, "x".to_owned())]);
+        assert_eq!(read(text).1, ParseStatus::Ok);
+        // The same on the line that opens the block, and with an escaped quote before the brace.
+        let text = "model B { n String @default(\"\\\"}\") @@map(\"y\") }\n";
+        assert_eq!(tables(text), vec![(1, "b".to_owned()), (1, "y".to_owned())]);
+        assert_eq!(read(text).1, ParseStatus::Ok);
     }
 
     #[test]

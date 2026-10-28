@@ -98,11 +98,15 @@ An `import` SHALL resolve against the module roots of `buf.yaml` and the directo
 - **THEN** the imports resolve to `proto/booking/v1/types.proto`, a builtin and an unknown package
 
 ### Requirement: Prisma
-Each `model` SHALL declare `table <model>` and, with `@@map("<name>")`, also `table <name>`. A datasource `url = env("<NAME>")` SHALL call `env <NAME>`.
+Each `model` SHALL declare `table <model>` and, with `@@map("<name>")`, also `table <name>`. A datasource `url = env("<NAME>")` SHALL call `env <NAME>`. A brace inside a string literal SHALL close no block.
 
 #### Scenario: A model declares its name and its table
 - **WHEN** a schema has `model BookingItem { id Int @id @@map("booking_items") }` and `datasource db { url = env("DATABASE_URL") }`
 - **THEN** it declares `table bookingitem` and `table booking_items` and calls `env DATABASE_URL`
+
+#### Scenario: A brace inside a string does not end a model
+- **WHEN** a model has `meta Json @default("{}")` on one line and `@@map("bookings")` on the next
+- **THEN** the model declares `table bookings` and the schema is read without errors
 
 ### Requirement: SQL
 `CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, SHALL declare `table <name>`; `FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM` and `MERGE INTO` SHALL call `table <name>`, leaving out the names of common table expressions. Names SHALL drop their schema and quotes. `ALTER TABLE <name> RENAME TO <new>` SHALL declare the new name as well.

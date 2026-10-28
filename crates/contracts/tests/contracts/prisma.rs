@@ -20,3 +20,20 @@ fn a_model_declares_its_name_and_its_table() {
     );
     insta::assert_json_snapshot!(run.snapshot());
 }
+
+#[gsttt_scenario::scenario("contract-formats", "A brace inside a string does not end a model")]
+#[test]
+fn a_brace_inside_a_string_does_not_end_a_model() {
+    let run = Run::new("prisma_strings", &[module(&PRISMA)]);
+    assert_eq!(run.status("prisma/schema.prisma"), &ParseStatus::Ok);
+    assert_eq!(
+        run.sites("prisma/schema.prisma"),
+        vec![
+            "calls env DATABASE_URL @3",
+            "declares table booking @6",
+            "declares table bookings @10",
+            "declares table cart @13",
+        ]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}

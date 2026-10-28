@@ -29,3 +29,4 @@
 - [x] 4.6 SQL declares the new name of a renamed table, keeps one site per line, key and role, picks its grammar once when the project opens, and lists the scope of common table expressions and table functions among its blind spots
 - [x] 4.7 A proto path variable is a parameter wherever it stands, `{id}:cancel` and variables that span segments included, and a binding set as `option (google.api.http).get = "…"` is read
 - [x] 4.8 The proto line map borrows the location paths of the descriptor instead of cloning one vector for every location
+- [x] 4.9 A brace inside a Prisma string literal closes no block, and the scan for the closing brace shares its string logic with the one for comments
