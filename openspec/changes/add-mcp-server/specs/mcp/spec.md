@@ -14,7 +14,7 @@ The server SHALL answer `initialize` and `tools/list` without calling its index 
 
 ### Requirement: Tools
 
-The server SHALL offer the tools `impact` (`paths`, `changed`, `base`, `depth`, `all`), `dependents` (`path`, `all`), `dependencies` (`path`, `all`), `path` (`from`, `to`), `contract` (`query`, `all`), `coverage` (`all`) and `index_status` (no arguments). Each tool SHALL have a description that says what it answers and when to call it, and an input schema of its arguments. Paths SHALL be read from the root, by the same rule the CLI uses.
+The server SHALL offer the tools `impact` (`paths`, `changed`, `base`, `depth`, `all`), `dependents` (`path`, `all`), `dependencies` (`path`, `all`), `path` (`from`, `to`, `all`), `contract` (`query`, `all`), `coverage` (`all`) and `index_status` (no arguments). Each tool SHALL have a description that says what it answers and when to call it, and an input schema of its arguments. Paths SHALL be read from the root, by the same rule the CLI uses.
 
 #### Scenario: tools/list names the seven tools
 - **WHEN** a client sends `tools/list`

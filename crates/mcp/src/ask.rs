@@ -30,13 +30,12 @@ pub(crate) fn run<S: IndexSource>(source: &S, call: Call) -> Result<String, Tool
         Call::Impact(call) => impact(source, call),
         Call::Dependents(arguments) => about_a_file(source, &arguments, query::dependents),
         Call::Dependencies(arguments) => about_a_file(source, &arguments, query::dependencies),
-        Call::Path(RouteArguments { from, to }) => {
+        Call::Path(RouteArguments { from, to, all }) => {
             let from = source.path(&from)?;
             let to = source.path(&to)?;
             let Loaded { index, freshness } = source.refreshed()?;
             let route = query::path(&index, freshness, from.path.as_str(), to.path.as_str());
-            // The tool has no `all`: a chain is the answer itself and is seldom long enough to be cut.
-            Ok(route.text(Entries::Capped))
+            Ok(route.text(shown(all)))
         }
         Call::Contract(ContractArguments { query: wanted, all }) => {
             let Loaded { index, freshness } = source.refreshed()?;

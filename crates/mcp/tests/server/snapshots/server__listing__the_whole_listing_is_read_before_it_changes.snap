@@ -129,6 +129,11 @@ expression: tools
         "to": {
           "description": "The file the chain ends at, as a path from the repository root, for example \"src/b.ts\".",
           "type": "string"
+        },
+        "all": {
+          "description": "Show every file of the chain. Without it a long chain is cut, with a line that counts the rest.",
+          "type": "boolean",
+          "default": false
         }
       }
     },

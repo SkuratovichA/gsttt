@@ -109,10 +109,17 @@ pub(crate) struct RouteArguments {
     pub(crate) from: String,
     /// The file the chain ends at, as a path from the repository root, for example "src/b.ts".
     pub(crate) to: String,
+    /// Show every file of the chain. Without it a long chain is cut, with a line that counts the rest.
+    #[serde(default)]
+    pub(crate) all: bool,
 }
 
 impl Arguments for RouteArguments {
-    const FIELDS: &'static [Field] = &[Field::required("from", PATH), Field::required("to", PATH)];
+    const FIELDS: &'static [Field] = &[
+        Field::required("from", PATH),
+        Field::required("to", PATH),
+        Field::optional("all", FLAG),
+    ];
 }
 
 /// What `contract` is asked about.
