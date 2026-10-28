@@ -11,6 +11,7 @@ use gsttt_core::Setup;
 use gsttt_core::engine::refresh::Engine;
 use serde_json::{Map, Value};
 
+use super::print;
 use crate::cli::Flags;
 use crate::error::CliError;
 use crate::registry::Registry;
@@ -101,7 +102,7 @@ fn write(file: &Utf8Path, text: &str, existing: Existing) -> io::Result<bool> {
 }
 
 /// The text of a schema as `init` writes it: the schema with a `$comment` before the rest that says where it came
-/// from, indented, ending in a line break.
+/// from, in the form of [`print::indented`].
 fn generated(schema: impl Into<Value>) -> String {
     let document = match schema.into() {
         Value::Object(object) => {
@@ -112,7 +113,7 @@ fn generated(schema: impl Into<Value>) -> String {
         }
         other => other,
     };
-    format!("{document:#}\n")
+    print::indented(&document)
 }
 
 #[cfg(test)]

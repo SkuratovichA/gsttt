@@ -214,6 +214,10 @@ pub fn session_line(header: &Header, now: jiff::Timestamp) -> Option<String>;
 - A schema that is there is removed and created again. A link in its place is removed and not written through, so that a repository cannot make `init` overwrite a file outside it, and the new file has the permissions the user's umask gives any file.
 - It prints `wrote <path>` or `kept <path>` for each file as it goes, in the order config, config schema, pack schema, so that a failure on the third still shows the first two. A file or folder it cannot make ends the run with exit code 1 and the path. It prints text under `--json` too, because the list of files is all it has to say.
 
+### Schema
+
+- `schema external` prints `gsttt_config::protocol_schema()` indented with two spaces and ending in a line break, the form `init` gives the schemas it writes, from one function, `print::indented`. It needs no repository, so it finds no root and runs in the home directory too, and it prints the same text under `--json`, because a schema is JSON already.
+
 ## Risks
 
 - **A terminal check is a speed bump, not a sandbox.** A user who types `y` without reading still runs the command. The prompt prints the full command so there is something to read.

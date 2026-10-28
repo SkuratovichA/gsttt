@@ -3,7 +3,9 @@
 use camino::Utf8PathBuf;
 use clap::CommandFactory;
 
-use crate::cli::{Cli, Command, ConfigCommand, ContractArgs, Flags, HookCommand, ImpactArgs};
+use crate::cli::{
+    Cli, Command, ConfigCommand, ContractArgs, Flags, HookCommand, ImpactArgs, SchemaCommand,
+};
 use crate::error::CliError;
 use crate::repository::{Loaded, Repository, Target};
 use crate::streams::{Io, Outcome};
@@ -15,6 +17,7 @@ mod index;
 mod init;
 mod print;
 mod questions;
+mod schema;
 
 /// Runs the command `cli` names, writing the answer to `io.stdout` and the failure, if any, to `io.stderr`.
 pub fn run(cli: Cli, io: &mut Io<'_>) -> Outcome {
@@ -49,7 +52,7 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
             hook::session_start(flags, io);
             Ok(Outcome::Answered)
         }
-        Command::Schema(_) => Err(not_built(command)),
+        Command::Schema(SchemaCommand::External) => schema::external(io),
         Command::Config(ConfigCommand::Trust) => config::trust(flags, io),
         Command::Config(ConfigCommand::Untrust) => config::untrust(flags, io),
         Command::Config(ConfigCommand::Check) => config::check(&Session::open(flags)?, io),
@@ -125,11 +128,4 @@ fn check_arguments(flags: &Flags, command: &Command) -> Result<(), CliError> {
 
 fn is_blank(query: &ContractArgs) -> bool {
     query.text().trim().is_empty()
-}
-
-/// The commands of the third run, `init`, `config` and `schema`, fail here until they are built.
-fn not_built(command: &Command) -> CliError {
-    CliError::NotBuilt {
-        command: command.name(),
-    }
 }

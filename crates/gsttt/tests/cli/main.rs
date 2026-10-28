@@ -13,6 +13,7 @@ mod paths;
 mod questions;
 mod repository;
 mod root;
+mod schema;
 mod support;
 mod trust;
 mod usage;

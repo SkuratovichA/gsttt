@@ -52,9 +52,6 @@ pub(crate) enum CliError {
     #[diagnostic(help("run `gsttt index` to build one"))]
     NoIndex { root: Utf8PathBuf },
 
-    #[error("`gsttt {command}` is not built yet")]
-    NotBuilt { command: &'static str },
-
     #[error(
         "trusting an external connector needs a terminal, and stdin and stderr are not both one"
     )]
@@ -120,7 +117,6 @@ impl CliError {
             | Self::Json(_)
             | Self::Repository(_)
             | Self::NoIndex { .. }
-            | Self::NotBuilt { .. }
             | Self::Key(_)
             | Self::Store(_)
             | Self::Init { .. }
