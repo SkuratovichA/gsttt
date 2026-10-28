@@ -10,3 +10,5 @@ import schema from '../generated/schema.json?url';
 import plainSchema from '../generated/schema.json';
 import absent from './absent.md?raw';
 import plainAbsent from './absent.md';
+import kit from 'ui-kit?raw';
+import plainKit from 'ui-kit';

@@ -275,6 +275,7 @@ fn a_query_does_not_change_where_an_import_leads() -> Result<(), Box<dyn Error>>
         ("ui-kit/theme.css", "?inline", "external ui-kit"),
         ("../generated/schema.json", "?url", "unresolved ignored"),
         ("./absent.md", "?raw", "unresolved not-found"),
+        ("ui-kit", "?raw", "external ui-kit"),
     ];
     for (spec, query, target) in expected {
         let with_query = format!("{spec}{query}");

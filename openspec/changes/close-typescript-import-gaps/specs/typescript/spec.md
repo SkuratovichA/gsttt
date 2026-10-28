@@ -43,9 +43,9 @@ The connector SHALL read the first argument of `vi.mock`, `vi.doMock`, `vi.unmoc
 A specifier with a query, such as `./terms.md?raw`, `./logo.svg?url` or `ui-kit/theme.css?inline`, SHALL resolve as the same specifier without the query does, and the import SHALL keep the specifier as written.
 
 #### Scenario: A query does not change where an import leads
-- **WHEN** `src/page.ts` imports `../docs/terms.md?raw`, `./worker?worker`, `./logo.svg?url`, `ui-kit/theme.css?inline`, `../generated/schema.json?url` and `./absent.md?raw`, and each of them again without its query, where `docs/terms.md`, `src/worker.ts` and `src/logo.svg` exist, `ui-kit` is declared in `package.json`, `generated/schema.json` exists on disk but an ignore file keeps it out of the file list, and `absent.md` does not exist
+- **WHEN** `src/page.ts` imports `../docs/terms.md?raw`, `./worker?worker`, `./logo.svg?url`, `ui-kit/theme.css?inline`, `../generated/schema.json?url`, `./absent.md?raw` and `ui-kit?raw`, and each of them again without its query, where `docs/terms.md`, `src/worker.ts` and `src/logo.svg` exist, `ui-kit` is declared in `package.json`, `generated/schema.json` exists on disk but an ignore file keeps it out of the file list, and `absent.md` does not exist
 - **THEN** each import with a query leads where the same specifier without the query leads
-- **AND** the first three resolve to `docs/terms.md`, `src/worker.ts` and `src/logo.svg`, the fourth to the package `ui-kit`, the fifth is unresolved as ignored and the sixth as not found
+- **AND** the first three resolve to `docs/terms.md`, `src/worker.ts` and `src/logo.svg`, the fourth and the seventh to the package `ui-kit`, the fifth is unresolved as ignored and the sixth as not found
 - **AND** the facts keep the specifiers with their queries
 
 ### Requirement: Aliases of this

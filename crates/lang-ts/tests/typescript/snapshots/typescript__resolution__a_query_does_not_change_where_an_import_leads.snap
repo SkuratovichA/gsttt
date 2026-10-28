@@ -171,6 +171,30 @@ expression: json
               "reason": "not-found"
             }
           }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 13,
+          "names": [
+            "default"
+          ],
+          "spec": "ui-kit?raw",
+          "to": {
+            "external": "ui-kit"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 14,
+          "names": [
+            "default"
+          ],
+          "spec": "ui-kit",
+          "to": {
+            "external": "ui-kit"
+          }
         }
       ],
       "path": "src/page.ts",
