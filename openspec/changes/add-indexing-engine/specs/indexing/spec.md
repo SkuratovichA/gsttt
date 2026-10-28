@@ -121,7 +121,7 @@ The engine SHALL catch a panic in every connector call. A panic in `parse` SHALL
 - **AND** coverage names the connector, the project and `link`
 
 #### Scenario: Bad options fail the run
-- **WHEN** the setup gives a module an option its schema does not allow
+- **WHEN** the setup gives a module an option its schema does not allow, an unknown one or one of the wrong type
 - **THEN** the run fails with an error naming the module and the option
 
 ### Requirement: Failure containment of detection and matching

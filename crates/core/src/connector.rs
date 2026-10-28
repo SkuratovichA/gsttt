@@ -314,9 +314,17 @@ impl<C: Connector> DynConnector for Erased<C> {
         let options = if options.is_null() {
             C::Options::default()
         } else {
-            C::Options::deserialize(options).map_err(|error| ConnectorError::Options {
-                connector: meta.name.to_owned(),
-                message: error.to_string(),
+            serde_path_to_error::deserialize(options).map_err(|error| {
+                // serde's own message names the option only for an unknown one; the path names it for every kind.
+                let message = if error.path().iter().next().is_none() {
+                    error.inner().to_string()
+                } else {
+                    format!("`{}`: {}", error.path(), error.inner())
+                };
+                ConnectorError::Options {
+                    connector: meta.name.to_owned(),
+                    message,
+                }
             })?
         };
         let projects = self.0.open(repo, &options, packs)?;
@@ -541,7 +549,13 @@ mod tests {
         );
 
         let bad = connector.open(&repo, &serde_json::json!({ "tag": 3 }), &[]);
-        assert!(matches!(bad, Err(ConnectorError::Options { .. })));
+        assert_eq!(
+            bad.err(),
+            Some(ConnectorError::Options {
+                connector: "lines".to_owned(),
+                message: "`tag`: invalid type: integer `3`, expected a string".to_owned(),
+            })
+        );
         let projects = connector
             .open(&repo, &serde_json::json!({ "tag": "jobs" }), &[])
             .unwrap();

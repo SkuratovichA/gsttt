@@ -32,3 +32,4 @@
 - [x] 5.3 A snapshot that cannot be written is logged and the built index is returned
 - [x] 5.4 A HEAD or a history git cannot read becomes a coverage line instead of a silent unborn branch or a dirty count of 0
 - [x] 5.5 A panic in `detect` or `matches` is contained (false and a coverage line), and a file is offered only to the projects whose root lies above it
+- [x] 5.6 An option of the wrong type fails the run with an error that names the option, as an unknown one already did

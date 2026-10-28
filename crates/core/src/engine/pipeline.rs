@@ -1083,10 +1083,12 @@ mod tests {
             options: json!({"tag": 5}),
             packs: Vec::new(),
         }];
-        assert!(matches!(
-            run(&repo, &modules, LIMIT),
-            Err(ConnectorError::Options { .. })
-        ));
+        let error = run(&repo, &modules, LIMIT).unwrap_err();
+        let ConnectorError::Options { connector, message } = error else {
+            panic!("expected an options error, got {error:?}")
+        };
+        assert_eq!(connector, "notes");
+        assert!(message.contains("`tag`"), "{message}");
     }
 
     #[test]

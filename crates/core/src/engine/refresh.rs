@@ -847,13 +847,16 @@ mod tests {
     fn bad_options_fail_the_run() {
         let rig = Rig::new();
         let dir = init_repo(&[("a.txt", "")]);
-        let mut setup = Setup::default();
-        setup.modules.push(ModuleSetup {
-            module: "notes".to_owned(),
-            options: json!({"nope": 5}),
-        });
-        let error = index(&rig, &dir, &setup).unwrap_err().to_string();
-        assert!(error.contains("notes") && error.contains("nope"), "{error}");
+        // An option the schema does not have, and an option of the wrong type.
+        for (options, option) in [(json!({"nope": 5}), "nope"), (json!({"tag": 5}), "tag")] {
+            let mut setup = Setup::default();
+            setup.modules.push(ModuleSetup {
+                module: "notes".to_owned(),
+                options,
+            });
+            let error = index(&rig, &dir, &setup).unwrap_err().to_string();
+            assert!(error.contains("notes") && error.contains(option), "{error}");
+        }
     }
 
     #[gsttt_scenario::scenario("indexing", "One thread and eight agree")]
