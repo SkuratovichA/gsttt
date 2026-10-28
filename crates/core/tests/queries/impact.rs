@@ -1005,3 +1005,78 @@ fn a_barrel_whose_names_grow_over_two_layers_passes_each_gain_on_once() {
         ]
     );
 }
+
+#[scenario(
+    "queries",
+    "A file that exports nothing more still reaches the importers of its barrel"
+)]
+#[test]
+fn a_file_that_exports_nothing_more_still_reaches_the_importers_of_its_barrel() {
+    let index = Tree::new()
+        .exports("only.ts", &[])
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "only.ts")
+        .imports_names("page.ts", "index.ts", &["foo"])
+        .build();
+
+    let answer = run(&index, &["only.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports only.ts"),
+            row("page.ts", 2, "imports foo from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A file left with only a default export still reaches the importers of its barrel"
+)]
+#[test]
+fn a_file_left_with_only_a_default_export_still_reaches_the_importers_of_its_barrel() {
+    let index = Tree::new()
+        .exports("only.ts", &["default"])
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "only.ts")
+        .imports_names("page.ts", "index.ts", &["foo"])
+        .build();
+
+    let answer = run(&index, &["only.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports only.ts"),
+            row("page.ts", 2, "imports foo from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A star barrel behind a star barrel reaches the importers of both"
+)]
+#[test]
+fn a_star_barrel_behind_a_star_barrel_reaches_the_importers_of_both() {
+    let index = Tree::new()
+        .exports("only.ts", &[])
+        .exports("mid.ts", &[])
+        .exports("index.ts", &[])
+        .re_exports_all("mid.ts", "only.ts")
+        .re_exports_all("index.ts", "mid.ts")
+        .imports_names("page.ts", "index.ts", &["foo"])
+        .build();
+
+    let answer = run(&index, &["only.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("mid.ts", 1, "re-exports only.ts"),
+            row("index.ts", 2, "re-exports mid.ts"),
+            row("page.ts", 3, "imports foo from index.ts"),
+        ]
+    );
+}

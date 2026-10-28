@@ -18,7 +18,7 @@ use super::cross::{Crossed, Crossing, Direction};
 pub(super) enum Cause {
     /// The file imports the file the walk came from. `names` are the names it imports that the change can reach, sorted, and none when it takes every name.
     Imports { file: FileId, names: Vec<NameId> },
-    /// The file re-exports `names` of the file the walk came from, sorted. There are no names when the walk could not tell which, because the file it came from does not list what it exports.
+    /// The file re-exports `names` of the file the walk came from, sorted. There are no names when the walk could not tell which, because the file it came from does not list what it exports, or when it passes none on, because it has nothing left to export through a star.
     ReExports { file: FileId, names: Vec<NameId> },
     /// The file has a site with `role` in `contract`, which joins a contract of the file the walk came from.
     Contract { role: Role, contract: ContractId },
@@ -38,7 +38,7 @@ pub(super) struct Reached {
 enum Delta {
     /// Every name: the file is changed, or the walk has just found it affected in all its names.
     All,
-    /// Only these names, sorted: the file is a barrel that passes them on.
+    /// Only these names, sorted, and none at all for a barrel that a star reached while it has nothing to pass on: its importers are still checked against the names it does not export.
     Names(Vec<NameId>),
 }
 
@@ -55,7 +55,7 @@ struct Held {
 ///
 /// A hop goes from a file to the files that import it, except where the import is only a Rust `mod` declaration, which owns the child file and uses nothing from it; or across a contract: a file that declares one reaches the files that serve or call it, and a file that serves one reaches the files that call it. The changed files are never reached.
 ///
-/// An import that records names is followed by name. A file that uses a name the change can reach is reached in all its names. A file that only re-exports is reached in the names it passes on, and passes on those and no others, so an `export *` barrel stops fanning out to importers of names the change cannot touch. A file whose names do not grow is not visited again.
+/// An import that records names is followed by name. A file that uses a name the change can reach is reached in all its names. A file that only re-exports is reached in the names it passes on, and passes on those and no others, so an `export *` barrel stops fanning out to importers of names the change cannot touch. A star re-export always reaches its importer, and holds it with no names when there is nothing to pass on. A file whose names do not grow is not visited again.
 pub(super) fn reach(
     graph: &Graph,
     crossing: &Crossing<'_>,
@@ -114,7 +114,7 @@ struct Walk<'a> {
     /// The distance of the files being reached now.
     distance: u32,
     reached: Vec<Reached>,
-    /// The files whose names grew in this layer, once for each time they grew.
+    /// The files to expand in the next layer: those that were reached in some names for the first time or whose names grew in this layer, and those that became whole.
     next: Vec<FileId>,
 }
 
@@ -211,7 +211,8 @@ impl Walk<'_> {
         }
         passed.sort_unstable();
         passed.dedup();
-        if passed.is_empty() && !unlisted {
+        // A star edge always reaches its importer, even when the file has nothing left to pass on, because the importers of the barrel answer for the names that no one exports any more.
+        if passed.is_empty() && !unlisted && !binding.star {
             return;
         }
         // A file that does not list what it exports could pass on any of its names.
@@ -244,7 +245,8 @@ impl Walk<'_> {
                 },
             });
         }
-        if grew {
+        // A barrel met for the first time is expanded once, with whatever it holds, even if that is nothing.
+        if first || grew {
             self.next.push(importer);
         }
     }
@@ -287,10 +289,8 @@ impl Walk<'_> {
                 frontier.push((file, Delta::All));
             } else if let Some(held) = self.held.get_mut(&file) {
                 let mut gained = std::mem::take(&mut held.growth);
-                if !gained.is_empty() {
-                    gained.sort_unstable();
-                    frontier.push((file, Delta::Names(gained)));
-                }
+                gained.sort_unstable();
+                frontier.push((file, Delta::Names(gained)));
             }
         }
         frontier
