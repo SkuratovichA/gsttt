@@ -1,9 +1,12 @@
 //! The commands: what each one checks, and what it ends with.
 
 use clap::CommandFactory;
+use gsttt_core::engine::snapshot;
+use gsttt_core::engine::workspace::Workspace;
 
 use crate::cli::{Cli, Command, ContractArgs, Flags, ImpactArgs};
 use crate::error::CliError;
+use crate::root;
 use crate::streams::{Io, Outcome};
 
 /// Runs the command `cli` names, writing the answer to `io.stdout` and the failure, if any, to `io.stderr`.
@@ -35,8 +38,31 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<(), Cli
         }
         command => {
             check_arguments(flags, command)?;
+            if command.needs_root() {
+                let start = root::start(flags.directory.as_deref())?;
+                let workspace = root::locate(&start)?;
+                tracing::debug!(root = %workspace.root(), "found the root");
+                if answers_from_the_stored_index(flags, command) {
+                    require_index(&workspace)?;
+                }
+            }
             Err(not_built(command))
         }
+    }
+}
+
+/// Whether the command reads the index as it was stored, without refreshing it first.
+fn answers_from_the_stored_index(flags: &Flags, command: &Command) -> bool {
+    matches!(command, Command::Status) || (flags.no_refresh && command.is_question())
+}
+
+/// Fails when the workspace has no index to read.
+fn require_index(workspace: &Workspace) -> Result<(), CliError> {
+    match snapshot::peek(workspace.snapshot_path().as_std_path()) {
+        Some(_) => Ok(()),
+        None => Err(CliError::NoIndex {
+            root: workspace.root().to_owned(),
+        }),
     }
 }
 

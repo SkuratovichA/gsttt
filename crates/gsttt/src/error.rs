@@ -2,8 +2,10 @@
 
 use std::io;
 
+use camino::Utf8PathBuf;
 use miette::{Diagnostic, GraphicalReportHandler, GraphicalTheme, Report};
 
+use crate::root::RootError;
 use crate::streams::{Io, Outcome, reader_left};
 
 /// Why a command did not answer. The message names what was expected, and the `help:` line, where there is one,
@@ -12,6 +14,14 @@ use crate::streams::{Io, Outcome, reader_left};
 pub(crate) enum CliError {
     #[error("cannot write the answer to stdout: {source}")]
     Write { source: io::Error },
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Root(#[from] RootError),
+
+    #[error("there is no index yet for `{root}`")]
+    #[diagnostic(help("run `gsttt index` to build one"))]
+    NoIndex { root: Utf8PathBuf },
 
     #[error("`gsttt {command}` is not built yet")]
     NotBuilt { command: &'static str },
@@ -37,8 +47,16 @@ impl CliError {
     /// How the command ends: 1 when it could not answer, 2 when it cannot run as given.
     pub(crate) const fn outcome(&self) -> Outcome {
         match self {
-            Self::Write { .. } | Self::NotBuilt { .. } => Outcome::Failed,
-            Self::EmptyQuery | Self::BaseNeedsChanged | Self::NoRefreshWithIndex => Outcome::Usage,
+            Self::Write { .. }
+            | Self::NoIndex { .. }
+            | Self::NotBuilt { .. }
+            | Self::Root(RootError::Workspace(_) | RootError::CurrentDirectory { .. }) => {
+                Outcome::Failed
+            }
+            Self::Root(_)
+            | Self::EmptyQuery
+            | Self::BaseNeedsChanged
+            | Self::NoRefreshWithIndex => Outcome::Usage,
         }
     }
 

@@ -1,5 +1,6 @@
 //! What the tests that run the binary share: a sandbox for its environment, and what a run left behind.
 
+use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
@@ -60,4 +61,21 @@ pub(crate) fn ran(command: &mut Command) -> Ran {
         stdout: String::from_utf8(output.stdout).unwrap(),
         stderr: String::from_utf8(output.stderr).unwrap(),
     }
+}
+
+/// Whether anything was written under `dir`.
+pub(crate) fn is_empty(dir: &Path) -> bool {
+    std::fs::read_dir(dir).unwrap().next().is_none()
+}
+
+/// Makes `dir` the work tree of a new git repository, whatever git settings the machine has.
+pub(crate) fn init_repo(dir: &Path) {
+    let output = Command::new("git")
+        .args(["init", "--quiet"])
+        .arg(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
 }

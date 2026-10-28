@@ -3,5 +3,6 @@
 
 mod colour;
 mod logs;
+mod root;
 mod support;
 mod usage;
