@@ -61,3 +61,4 @@
 - [x] 6.8 A name written with dots, `self.__tablename__` or `Model.Meta.db_table`, sets an attribute of an object and declares no table, because the qualified targets of the packs name the classes around a plain assignment
 - [x] 6.9 An `env_prefix` that is not a literal, in a `SettingsConfigDict` call, a `model_config` dict or an inner `Config`, leaves the fields that would take their name from it as unread sites, and an aliased field is still read
 - [x] 6.10 A pattern that starts with `*` meets a name as written only, so a function imported by name from a library is no `*.execute` or `*.get`, and the env pack names the two libraries that define `BaseSettings` for a class that imports it under another name
+- [x] 6.11 A name that two imports bind stands for the second from its statement on, each call going with the import above it, and the provides of the client packs name a client library imported under one name in `try` and in `except`

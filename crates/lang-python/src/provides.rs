@@ -22,6 +22,10 @@ const MOUNTS_UNFOLLOWED: &str = "mounts of a router by a file of another Python 
 const APPLICATIONS_MOUNTED: &str =
     "applications mounted under a path with mount, as Starlette does";
 
+/// A file is read as one scope, so a name two imports bind in turn stands for the last of them. A fallback import,
+/// `try: import httpx as http` and `except ImportError: import requests as http`, is the case that matters for clients.
+const CLIENTS_REBOUND: &str = "a client library imported under one name in try and in except, of which the last import is read";
+
 /// What the `dbapi` pack leaves out. SQL is declared (`CREATE TABLE`) or called (`SELECT`), so each is told under both.
 const DBAPI_GAPS: [&str; 2] = [
     "execute and executemany calls on a receiver of more than three segments",
@@ -77,11 +81,13 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
             calls("URLs held in variables"),
             calls("HTTP clients other than requests and httpx"),
             calls("sessions created in another module than the one that uses them"),
+            calls(CLIENTS_REBOUND),
         ],
         "httpx" => vec![
             calls("URLs held in variables"),
             calls("HTTP clients other than requests and httpx"),
             calls("clients created in another module than the one that uses them"),
+            calls(CLIENTS_REBOUND),
         ],
         "sqlalchemy" | "alembic" => vec![tables("table names held in variables")],
         "dbapi" => DBAPI_GAPS

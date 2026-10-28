@@ -84,6 +84,13 @@ A callee, decorator, base class or subscripted name SHALL be matched by a rule a
 - **WHEN** `project/urls.py` has `from django.urls import include as inc` and `path as p` and `p("api/", inc("bookings.urls"))`, and `bookings/urls.py` has `p("bookings/<int:pk>/", views.detail)`
 - **THEN** `bookings/urls.py` serves `http * /api/bookings/{}` once linked, and neither file serves a route of its own
 
+### Requirement: Names bound by two imports
+A name that two imports bind one after the other SHALL stand, from the second on, for the second, the file being read as one scope: each call goes with the import just above it, and a fallback import in `try` and `except` is read as the `except` one. The provides of a project with the `requests` or `httpx` pack SHALL name a client library imported under one name in `try` and in `except` as a blind spot.
+
+#### Scenario: A name bound by two imports is read as the last
+- **WHEN** a project declares `requests` and `httpx`, and a file has `import requests as c` and `c.get("/x")` in one function, `import httpx as c` and `c.get("/y")` in the next, then `import httpx as http` in a `try`, `import requests as http` in its `except` and `http.get("/z")`
+- **THEN** the calls go with `requests`, `httpx` and `requests`, and the provides name a client library imported under one name in `try` and in `except` as a blind spot
+
 ### Requirement: Parse status
 A file with syntax errors from which the parser recovered SHALL be recorded as recovered with the number of errors and the line of the first, keeping what was read.
 

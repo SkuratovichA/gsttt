@@ -1784,3 +1784,35 @@ fn a_function_imported_by_name_is_no_method_of_a_receiver() {
     assert_eq!(tree.unread("app.py"), Vec::<String>::new());
     assert_eq!(tree.contracts("app.py"), ["calls env PORT@7"]);
 }
+
+#[gsttt_scenario::scenario("python", "A name bound by two imports is read as the last")]
+#[test]
+fn a_name_bound_by_two_imports_is_read_as_the_last() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"web\"\ndependencies = [\"requests\", \"httpx\"]\n",
+        ),
+        (
+            "clients.py",
+            "def first():\n    import requests as c\n    c.get(\"/x\")\n\n\ndef second():\n    import httpx as c\n    c.get(\"/y\")\n\n\ntry:\n    import httpx as http\nexcept ImportError:\n    import requests as http\n\nhttp.get(\"/z\")\n",
+        ),
+    ]);
+    // The binding in force is the last one the walk met, so each call goes with the library imported just above it.
+    let facts: Vec<_> = tree
+        .file("clients.py")
+        .facts
+        .contracts
+        .iter()
+        .map(|fact| (fact.line, fact.via.as_str()))
+        .collect();
+    assert_eq!(facts, [(3, "requests"), (8, "httpx"), (16, "requests")]);
+    // The fallback library is the one that is read, which the provides of the clients say.
+    assert!(
+        tree.blind_spots().contains(
+            &"a client library imported under one name in try and in except, of which the last import is read"
+        ),
+        "{:?}",
+        tree.blind_spots()
+    );
+}
