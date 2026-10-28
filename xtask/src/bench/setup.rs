@@ -60,7 +60,7 @@ pub(super) fn installed_version(tool: Tool, programs: &Programs) -> anyhow::Resu
 }
 
 /// Puts the repository at its pinned commit in `dir`: a shallow fetch of that commit alone, unless `dir` is already at it.
-pub(super) fn checkout(dir: &Path, repository: &Repository) -> anyhow::Result<()> {
+pub(crate) fn checkout(dir: &Path, repository: &Repository) -> anyhow::Result<()> {
     // `.git` is looked for first: without it `rev-parse` would find the repository that holds `dir`.
     if dir.join(".git").exists() && git(dir, &["rev-parse", "HEAD"])? == repository.commit {
         return Ok(());
@@ -110,8 +110,8 @@ fn count_source_files(listing: &str, language: Language) -> u64 {
     u64::try_from(files.count()).unwrap_or(u64::MAX)
 }
 
-/// Installs dependency-cruiser, madge and the TypeScript they read with, side by side, with pnpm.
-fn node_tools(programs: &Programs, pins: &Pins) -> anyhow::Result<()> {
+/// Installs dependency-cruiser, madge, typescript-language-server and the TypeScript they read with, side by side, with pnpm.
+pub(crate) fn node_tools(programs: &Programs, pins: &Pins) -> anyhow::Result<()> {
     let packages = pins.tools.node_packages();
     if packages
         .iter()

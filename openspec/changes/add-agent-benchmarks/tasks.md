@@ -10,9 +10,9 @@
 
 ## 3. The questions
 
-- [ ] 3.1 The Node script in `bench/agents/` that lists the exported functions of a scope with their referring files and their bodies, over the pinned TypeScript, and refuses imports that do not resolve
-- [ ] 3.2 The runs of the test command with and without the throw, and the checkout restored after each
-- [ ] 3.3 `cargo xtask agents questions`: the seeded draw and `bench/agents/questions.json`
+- [x] 3.1 The Node script in `bench/agents/` that lists the exported functions of a scope with their referring files and their bodies, over the pinned TypeScript, and refuses imports that do not resolve
+- [x] 3.2 The runs of the test command with and without the throw, and the checkout restored after each
+- [x] 3.3 `cargo xtask agents questions`: the seeded draw and `bench/agents/questions.json`
 - [ ] 3.4 The questions of vite and excalidraw drawn and checked in
 
 ## 4. The runs
