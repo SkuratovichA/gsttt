@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use gsttt_core::connector::{
-    Connector, ConnectorError, Meta, Parsed, Project, Provide, SourceFile,
+    Connector, ConnectorError, Meta, Parsed, Project, Provide, SourceFile, salt_of,
 };
 use gsttt_core::engine::keys::canonical_json;
 use gsttt_core::fact::{FileFacts, Import, ParseFailure, Resolution, UnresolvedReason};
@@ -22,7 +22,6 @@ use gsttt_core::rules::Pack;
 use gsttt_core::setup::ExternalSetup;
 use gsttt_core::{FileId, RepoPath, RepoView};
 use serde_json::{Map, Value, json};
-use xxhash_rust::xxh3::Xxh3;
 
 use crate::text::cut;
 use process::{Failure, Launch, Process};
@@ -86,26 +85,18 @@ impl External {
         self
     }
 
-    /// Mixed into the cache key of every file: a new release of the command, or a new protocol, drops the cached facts.
+    /// Mixed into the cache key of every file: a new release of the command, a new protocol or a changed declaration drops the cached facts.
     fn salt(&self) -> u64 {
-        let mut hash = Xxh3::new();
-        hash.update(&PROTOCOL.to_le_bytes());
-        hash.update(self.version.as_bytes());
-        for part in std::iter::once(&self.program).chain(&self.arguments) {
-            hash.update(&[0]);
-            hash.update(part.as_bytes());
-        }
-        // The names and not the values: a value may be a secret, and the same name is the same setup on every machine.
-        for name in &self.env {
-            hash.update(&[1]);
-            hash.update(name.as_bytes());
-        }
-        // What else the declaration says: the process reads the options, and the provides are part of what the index reports. Written the way the fingerprint of the setup writes them, so that the order of the keys does not matter.
-        let declared =
-            canonical_json(&json!({ "options": self.options, "provides": self.provides }));
-        hash.update(&[2]);
-        hash.update(declared.as_bytes());
-        hash.digest()
+        // Canonical JSON, so that the order of the keys of the options does not matter. The names of the variables and not their values: a value may be a secret, and the same name is the same setup on every machine.
+        let declared = canonical_json(&json!({
+            "protocol": PROTOCOL,
+            "version": self.version,
+            "cmd": std::iter::once(&self.program).chain(&self.arguments).collect::<Vec<_>>(),
+            "env": self.env,
+            "options": self.options,
+            "provides": self.provides,
+        }));
+        salt_of(&[&declared])
     }
 }
 
