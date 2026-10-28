@@ -28,6 +28,8 @@ fn blind_spots_are_reported() {
             "actix `configure`",
             "tonic services",
             "Diesel `table!`",
+            "paths written inside `macro_rules!` bodies",
+            "mounts written `Type::router()`",
             "routers passed as values the connector cannot follow",
         ] {
             assert!(

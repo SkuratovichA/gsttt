@@ -72,6 +72,12 @@ fn a_module_declared_twice_gives_both_files_a_module() {
         out.to("src/win.rs", "super::util::shared"),
         json!({ "file": "src/util.rs" })
     );
+    // The project says that only one of the two files is reachable by name.
+    assert!(
+        out.json()["projects"]
+            .to_string()
+            .contains("a module declared twice under different `cfg`s")
+    );
 }
 
 #[scenario("rust", "A file no declaration reaches has no module")]
