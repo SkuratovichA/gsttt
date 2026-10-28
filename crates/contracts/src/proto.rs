@@ -17,13 +17,12 @@ use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
 use gsttt_core::text::LineIndex;
+use gsttt_core::tree::{SyntaxError, Value};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{
-    SyntaxError, any_claimed, byte_offset, http_site, provide, site, syntax_failure,
-};
-use crate::tree::{Value, parse_yaml};
+use crate::common::{any_claimed, http_site, provide, site, syntax_failure};
+use crate::tree::parse_yaml;
 
 const VIA: &str = "proto";
 
@@ -126,7 +125,7 @@ impl Project for ProtoProject {
                 contracts: read.facts,
                 ..FileFacts::default()
             }),
-            Err(error) => Parsed::new(syntax_failure(error.line, error.message)),
+            Err(error) => Parsed::new(syntax_failure(error)),
         }
     }
 
@@ -229,7 +228,7 @@ fn read(name: &str, text: &str) -> Result<Read, SyntaxError> {
     let descriptor = protox_parse::parse(name, text).map_err(|error| SyntaxError {
         line: error
             .span()
-            .map_or(1, |span| LineIndex::new(text).line(byte_offset(span.start))),
+            .map_or(1, |span| LineIndex::new(text).line_at(span.start)),
         message: error.to_string(),
     })?;
     // The descriptor numbers its locations by path (`[6, 0, 2, 1]` is the second rpc of the first service); the

@@ -12,7 +12,8 @@ gsttt reads a repository into a graph of files and contracts and answers one fam
 | `gsttt-config` | `.gsttt/config.toml` and `.gsttt/packs/*.toml` → `Setup`, the JSON Schemas of both, external connectors | core |
 | `gsttt-mcp` | MCP server over the queries | core |
 | `gsttt` | The binary: connector registry, CLI, hook, output | everything |
-| `gsttt-spec`, `gsttt-scenario`, `xtask` | Spec parser, `#[scenario]`, the spec gate | — |
+| `gsttt-spec`, `gsttt-scenario` | Spec parser, `#[scenario]` | — |
+| `xtask` | The spec gate (`xtask/src/spec/`), and the build and checks of a release: `cargo xtask package`, `check`, `notes`, `version` (`xtask/src/dist/`) | — |
 
 A module crate never depends on another module crate; the binary wires them. Libraries never print; they return values and log with `tracing`.
 
@@ -65,6 +66,8 @@ A contract is a seam between files that imports do not show. Its key is `<kind> 
 | `queue` | `queue booking-created` | as written |
 | `env` | `env DATABASE_URL` | upper case: pydantic settings read `database_url` from `DATABASE_URL`, and no project tells two variables apart by case alone |
 | other | `<kind> <key>` | kinds a pack or an external connector introduces; trimmed |
+
+An origin, which `path_after_origin` reads in one place, may be written with placeholders: a placeholder scheme and host as in `${}://${}/v1/x`, or a placeholder, `//` and a host that holds a placeholder as in `${}//${}/v1/x`, which is what a protocol that holds its own colon leaves. Every segment of an HTTP path is trimmed of whitespace, so `/bookings /{id}` and `/bookings/{id}` are one key.
 
 Every site has a role. `declares`: a schema or spec defines it (OpenAPI, `.proto`, GraphQL SDL, a Prisma model, a migration, `.env.example`). `serves`: code implements it (a controller, a resolver). `calls`: code uses it (a fetch, a query, an env read). A Prisma model declares both its model name and its mapped table, so `prisma.bookingItem` and `FROM booking_items` meet at the schema.
 

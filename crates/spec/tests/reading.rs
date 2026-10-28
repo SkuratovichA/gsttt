@@ -500,7 +500,7 @@ fn a_tree_without_openspec_is_an_error() {
 /// condition but `test` for a proof that may not run.
 #[cfg(unix)]
 mod unix {
-    use std::os::unix::fs::symlink;
+    use std::os::unix::fs::{PermissionsExt as _, symlink};
 
     use super::*;
 
@@ -534,6 +534,41 @@ mod unix {
         .unwrap();
         let open = read(root.path()).unwrap();
         assert!(open.changes.is_empty(), "{:?}", open.changes);
+    }
+
+    /// Puts the permissions of a directory back when it goes out of scope, so that the temporary directory can be removed.
+    struct Restore {
+        directory: PathBuf,
+        permissions: fs::Permissions,
+    }
+
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            fs::set_permissions(&self.directory, self.permissions.clone()).ok();
+        }
+    }
+
+    #[test]
+    fn a_directory_that_cannot_be_listed_is_named_relative_to_the_root() {
+        let root = tree(&[
+            ("openspec/specs/queries/spec.md", SPEC),
+            ("openspec/changes/add-things/tasks.md", "- [ ] a\n"),
+        ]);
+        let changes = root.path().join("openspec/changes");
+        let _restore = Restore {
+            permissions: fs::metadata(&changes).unwrap().permissions(),
+            directory: changes.clone(),
+        };
+        fs::set_permissions(&changes, fs::Permissions::from_mode(0o000)).unwrap();
+        // The permissions change nothing for root, and then there is no failure to name.
+        if fs::read_dir(&changes).is_ok() {
+            return;
+        }
+        let error = read(root.path()).unwrap_err();
+        assert!(
+            matches!(&error, Error::Read { path, .. } if path == Path::new("openspec/changes")),
+            "{error}"
+        );
     }
 }
 
@@ -590,14 +625,74 @@ fn a_purpose_is_the_prose_of_its_section_and_the_line_it_starts_on() {
         ("First line.\nSecond line.", 5)
     );
 
-    // No section, or one with no prose, is no purpose.
-    for text in [
+    // No section is no purpose.
+    let spec = parse_spec(
+        "queries",
+        Path::new("spec.md"),
         "# Spec\n\n## Requirements\n",
+    )
+    .unwrap();
+    assert_eq!(spec.purpose, None);
+}
+
+#[test]
+fn a_purpose_section_with_no_prose_is_an_empty_purpose_on_the_line_of_its_heading() {
+    // Blank lines and fenced code are no prose; the heading may be the last line of the file.
+    for text in [
         "# Spec\n\n## Purpose\n\n## Requirements\n",
+        "# Spec\n\n## Purpose\n```\nnot prose\n```\n\n## Requirements\n",
+        "# Spec\n\n## Purpose\n",
     ] {
-        let spec = parse_spec("queries", Path::new("spec.md"), text).unwrap();
-        assert_eq!(spec.purpose, None);
+        let purpose = parse_spec("queries", Path::new("spec.md"), text)
+            .unwrap()
+            .purpose
+            .unwrap();
+        assert_eq!((purpose.text.as_str(), purpose.line), ("", 3), "{text:?}");
     }
+    let delta = "# Spec Delta\n\n## Purpose\n\n## ADDED Requirements\n";
+    let purpose = parse_delta("queries", Path::new("delta.md"), delta)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("", 3));
+}
+
+#[test]
+fn a_purpose_heading_with_trailing_spaces_still_starts_the_purpose() {
+    let spec = "# Spec\n\n## Purpose  \t\n\nImpact queries.\n\n## Requirements\n";
+    let purpose = parse_spec("queries", Path::new("spec.md"), spec)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!(
+        (purpose.text.as_str(), purpose.line),
+        ("Impact queries.", 5)
+    );
+    let delta = "# Spec Delta\n\n## Purpose  \t\n\nChanges.\n\n## ADDED Requirements\n";
+    let purpose = parse_delta("queries", Path::new("delta.md"), delta)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("Changes.", 5));
+}
+
+#[test]
+fn a_spec_with_windows_line_endings_has_the_same_purpose_and_line() {
+    let spec = SPEC.replace('\n', "\r\n");
+    let purpose = parse_spec("queries", Path::new("spec.md"), &spec)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!(
+        (purpose.text.as_str(), purpose.line),
+        ("Impact queries.", 4)
+    );
+    let delta = DELTA.replace('\n', "\r\n");
+    let purpose = parse_delta("queries", Path::new("delta.md"), &delta)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("Changes.", 4));
 }
 
 #[test]

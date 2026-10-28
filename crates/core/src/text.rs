@@ -26,6 +26,11 @@ impl LineIndex {
         u32::try_from(line).unwrap_or(u32::MAX).max(1)
     }
 
+    /// The line holding the byte at `offset`, for a parser that reports its spans as `usize`. An offset that does not fit a `u32` lies on the last line, as the starts of the lines saturate at `u32::MAX` too.
+    pub fn line_at(&self, offset: usize) -> Line {
+        self.line(u32::try_from(offset).unwrap_or(u32::MAX))
+    }
+
     /// The 1-based column of the byte at `offset` on its line, counted in characters, so that it is the column an editor shows. `text` is the text the index was built from. An offset inside a character is the column of that character, and one past the end of the text is the column after the last character.
     pub fn column(&self, text: &str, offset: u32) -> u32 {
         let start = usize::try_from(self.line(offset))
@@ -142,6 +147,17 @@ mod tests {
             .map(|offset| index.line(offset))
             .to_vec();
         assert_eq!(lines, vec![1, 1, 2, 3, 4, 4]);
+    }
+
+    #[test]
+    fn a_usize_offset_maps_to_the_same_lines_and_saturates_past_a_u32() {
+        let index = LineIndex::new("ab\ncd\n\nef");
+        let lines: Vec<Line> = [0, 2, 3, 6, 7, 99]
+            .map(|offset| index.line_at(offset))
+            .to_vec();
+        assert_eq!(lines, vec![1, 1, 2, 3, 4, 4]);
+        assert_eq!(index.line_at(usize::MAX), 4);
+        assert_eq!(index.line_at(usize::MAX), index.line(u32::MAX));
     }
 
     #[test]

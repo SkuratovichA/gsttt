@@ -5,6 +5,7 @@
 //! - [`fact`], [`contract`], [`path`]: what a connector says about one file.
 //! - [`rules`]: framework rule packs, read the same way by every language connector.
 //! - [`setup`]: what a config asks for.
+//! - [`tree`]: the ordered tree a JSON or YAML document is read into, with the line of every key.
 //! - [`engine`], [`graph`], [`index`], [`coverage`]: what a run builds.
 //! - [`query`]: what an answer asks.
 
@@ -22,6 +23,7 @@ pub mod repo;
 pub mod rules;
 pub mod setup;
 pub mod text;
+pub mod tree;
 
 pub use connector::{
     Connector, DynConnector, DynProject, Erased, Meta, Parsed, Project, SourceFile,

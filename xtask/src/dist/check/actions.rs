@@ -2,9 +2,10 @@
 //!
 //! The parsed YAML says which `uses` are real, and a scan of the lines says where they are. A scan of lines alone misses a `uses` in a flow mapping or behind a quoted key, and reports one in the text of a `run: |` script.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context as _;
+use gsttt_spec::{Entry, read_directory};
 use serde_norway::{Mapping, Value};
 
 /// Where the workflows are, from the repository root.
@@ -17,7 +18,7 @@ const ACTIONS: &str = ".github/actions";
 pub(super) fn problems(root: &Path) -> anyhow::Result<Vec<String>> {
     let mut problems = Vec::new();
     let mut files = Vec::new();
-    match read_directory(&root.join(WORKFLOWS))? {
+    match read_directory(&root.join(WORKFLOWS)).context("listing the workflows")? {
         Some(entries) => files.extend(entries.into_iter().filter(|entry| is_yaml(&entry.path))),
         None => problems.push(format!(
             "{WORKFLOWS}: the directory is missing, so no workflow is checked"
@@ -30,33 +31,6 @@ pub(super) fn problems(root: &Path) -> anyhow::Result<Vec<String>> {
     Ok(problems)
 }
 
-/// A file or a directory found by [`read_directory`].
-struct Entry {
-    path: PathBuf,
-    is_directory: bool,
-}
-
-/// What is in `directory`, sorted by path, or `None` when there is no such directory.
-fn read_directory(directory: &Path) -> anyhow::Result<Option<Vec<Entry>>> {
-    let reader = match std::fs::read_dir(directory) {
-        Ok(reader) => reader,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(error).with_context(|| format!("cannot read {}", directory.display()));
-        }
-    };
-    let mut entries = Vec::new();
-    for entry in reader {
-        let entry = entry?;
-        entries.push(Entry {
-            path: entry.path(),
-            is_directory: entry.file_type()?.is_dir(),
-        });
-    }
-    entries.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(Some(entries))
-}
-
 fn is_yaml(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|extension| extension.to_str()),
@@ -67,8 +41,11 @@ fn is_yaml(path: &Path) -> bool {
 /// The `action.yml` files below `directory`, however deep. No directory means no composite actions.
 fn composite_actions(directory: &Path) -> anyhow::Result<Vec<Entry>> {
     let mut found = Vec::new();
-    for entry in read_directory(directory)?.unwrap_or_default() {
-        if entry.is_directory {
+    for entry in read_directory(directory)
+        .context("listing the composite actions")?
+        .unwrap_or_default()
+    {
+        if entry.kind.is_dir() {
             found.extend(composite_actions(&entry.path)?);
         } else if matches!(
             entry.path.file_name().and_then(|name| name.to_str()),

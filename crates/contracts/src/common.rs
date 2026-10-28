@@ -5,6 +5,7 @@ use gsttt_core::contract::{ContractKey, ContractKind, Role};
 use gsttt_core::fact::{ContractFact, FileFacts, Line, ParseFailure, Resolution, UnresolvedReason};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
+use gsttt_core::tree::SyntaxError;
 
 /// A site of a contract of `kind`, with the key put in the canonical form of its kind.
 pub(crate) fn site(
@@ -59,11 +60,6 @@ pub(crate) fn line_number(index: usize) -> Line {
     u32::try_from(index.saturating_add(1)).unwrap_or(u32::MAX)
 }
 
-/// A byte offset as the `u32` that [`gsttt_core::text::LineIndex`] takes.
-pub(crate) fn byte_offset(offset: usize) -> u32 {
-    u32::try_from(offset).unwrap_or(u32::MAX)
-}
-
 /// Whether the repository holds a file that `claims` takes.
 pub(crate) fn any_claimed(repo: &RepoView, claims: fn(&RepoPath) -> bool) -> bool {
     repo.files().any(|(_, path)| claims(path))
@@ -79,17 +75,10 @@ pub(crate) fn resolve_relative(repo: &RepoView, from: &RepoPath, spec: &str) -> 
         })
 }
 
-/// Why a document does not parse, and where.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SyntaxError {
-    pub(crate) line: Line,
-    pub(crate) message: String,
-}
-
-/// Facts of a file the format's parser could not read at `line`.
-pub(crate) fn syntax_failure(line: Line, message: impl Into<String>) -> FileFacts {
+/// Facts of a file the format's parser could not read.
+pub(crate) fn syntax_failure(error: SyntaxError) -> FileFacts {
     FileFacts::failed(ParseFailure::Syntax {
-        line,
-        message: message.into(),
+        line: error.line,
+        message: error.message,
     })
 }

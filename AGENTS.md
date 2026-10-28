@@ -14,7 +14,8 @@ Read `docs/architecture.md` before changing anything in `crates/core`, and the s
 | `crates/config` | The TOML config (`.gsttt/config.toml`), the rule packs (`.gsttt/packs/*.toml`), the JSON Schemas of both, external connectors over JSON lines. |
 | `crates/mcp` | The MCP server. |
 | `crates/gsttt` | The binary: CLI, output layer, the connector registry. The only crate that writes to the terminal. |
-| `crates/spec`, `crates/scenario`, `xtask` | OpenSpec tooling: the spec parser, `#[scenario]`, the spec gate. |
+| `crates/spec`, `crates/scenario` | OpenSpec tooling: the spec parser and `#[scenario]`. |
+| `xtask` | `cargo xtask <task>`: the spec gate (`xtask/src/spec/`), and the build and checks of a release: `package`, `check`, `notes`, `version` (`xtask/src/dist/`). |
 | `openspec/` | Specs (`specs/`) and change proposals (`changes/`). |
 | `plugin/` | The Claude Code plugin that ships the MCP server and the hook. |
 
@@ -28,7 +29,7 @@ All of them run from the repository root.
 | --- | --- |
 | `cargo check --workspace --all-targets` | It compiles. |
 | `cargo nextest run --workspace` | Tests pass. Use `-p <crate>` for one crate. The `xtask` tests run `cargo deny`, so `cargo-deny` must be installed. |
-| `cargo clippy --workspace --all-targets -- -D warnings` | Lints are clean. CI runs exactly this. |
+| `cargo clippy --locked --workspace --all-targets -- -D warnings` | Lints are clean. CI runs exactly this. |
 | `cargo fmt --all --check` | Formatting. Run `cargo fmt --all` to fix. |
 | `taplo fmt --check` | TOML formatting, with the settings in `.taplo.toml`. Run `taplo fmt` to fix. |
 | `cargo insta review` | Review changed snapshots; never accept a snapshot you have not read. |
@@ -48,6 +49,7 @@ Send long output to a file and read the part you need: `cargo nextest run --work
 - **Determinism**: the same tree gives the same index, byte for byte. Sort before you emit; never iterate a hash map into output.
 - **Speed is a feature**: no per-file allocation you can avoid on the hot path, no disk access during resolution (resolve against `RepoView`), no `String` where a `&str` into the source lives long enough.
 - Comments say why, not what. Doc comments on every public item, in plain sentences.
+- **Unix only**: gsttt builds and runs on Linux and macOS only, so code and tests may use `std::os::unix` and `rustix` without a `cfg(unix)` guard. A test that proves a scenario carries no `cfg` but `test`, because the gate counts a test under another `cfg` as no proof.
 
 ## Tests
 

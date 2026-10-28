@@ -8,7 +8,7 @@ pub enum Error {
     /// The file or directory could not be read.
     #[error("{}: cannot read: {source}", .path.display())]
     Read {
-        /// The path that failed, relative to the repository root.
+        /// The path that failed. The reader of the `openspec/` tree names it relative to the repository root, and [`read_directory`](crate::read_directory) as it was given.
         path: PathBuf,
         /// The underlying failure.
         source: std::io::Error,

@@ -31,24 +31,29 @@ pub(super) struct Package {
 /// The members of the workspace and the directory that holds `openspec/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Workspace {
+    /// The top of the repository, as the caller says: cargo is not asked where the repository starts.
     pub(super) root: PathBuf,
     /// Sorted by directory.
     pub(super) packages: Vec<Package>,
 }
 
 impl Workspace {
-    /// Asks cargo about the workspace that holds `dir`.
-    pub(super) fn load(dir: &Path) -> anyhow::Result<Self> {
+    /// Asks cargo for the members of the workspace in `root`, the top of the repository (`crate::root`).
+    pub(super) fn load(root: &Path) -> anyhow::Result<Self> {
         let sh = Shell::new().context("starting cargo metadata")?;
-        sh.change_dir(dir);
+        sh.change_dir(root);
         let json = cmd!(sh, "cargo metadata --no-deps --format-version 1")
             .read()
-            .with_context(|| format!("running cargo metadata in {}", dir.display()))?;
-        Self::parse(&json)
+            .with_context(|| format!("running cargo metadata in {}", root.display()))?;
+        // Cargo names a member by its real directory, links resolved, and the files are named relative to the root, so the root is spelled the same way.
+        let real = root
+            .canonicalize()
+            .with_context(|| format!("cannot resolve {}", root.display()))?;
+        Self::parse(&json, &real)
     }
 
-    /// Reads the output of `cargo metadata --no-deps --format-version 1`.
-    pub(super) fn parse(json: &str) -> anyhow::Result<Self> {
+    /// Reads the output of `cargo metadata --no-deps --format-version 1`, run in the workspace at `root`. The root is the one given: where the repository starts is not for cargo to say.
+    pub(super) fn parse(json: &str, root: &Path) -> anyhow::Result<Self> {
         let metadata: Metadata =
             serde_json::from_str(json).context("reading the output of cargo metadata")?;
         let mut packages = Vec::new();
@@ -77,7 +82,7 @@ impl Workspace {
         }
         packages.sort_by(|a, b| a.dir.cmp(&b.dir));
         Ok(Self {
-            root: metadata.workspace_root,
+            root: root.to_path_buf(),
             packages,
         })
     }
@@ -101,7 +106,6 @@ pub(super) fn clean(path: &Path) -> PathBuf {
 
 #[derive(Deserialize)]
 struct Metadata {
-    workspace_root: PathBuf,
     packages: Vec<Described>,
 }
 
@@ -135,9 +139,17 @@ mod tests {
     }
 
     #[test]
-    fn metadata_without_a_root_is_refused() {
-        let error = Workspace::parse(r#"{"packages": []}"#).unwrap_err();
-        assert!(format!("{error:#}").contains("workspace_root"), "{error:#}");
+    fn metadata_without_packages_is_refused() {
+        let error =
+            Workspace::parse(r#"{"workspace_root": "/repo"}"#, Path::new("/repo")).unwrap_err();
+        assert!(format!("{error:#}").contains("packages"), "{error:#}");
+    }
+
+    #[test]
+    fn the_root_is_the_one_given_and_not_the_one_cargo_reports() {
+        let json = r#"{"workspace_root": "/elsewhere", "packages": []}"#;
+        let workspace = Workspace::parse(json, Path::new("/repo")).unwrap();
+        assert_eq!(workspace.root, Path::new("/repo"));
     }
 
     #[test]
@@ -154,7 +166,7 @@ mod tests {
                 ]
             }]
         }"#;
-        let workspace = Workspace::parse(json).unwrap();
+        let workspace = Workspace::parse(json, Path::new("/repo")).unwrap();
         assert_eq!(workspace.root, Path::new("/repo"));
         let [package] = workspace.packages.as_slice() else {
             panic!("one package expected: {workspace:?}");
