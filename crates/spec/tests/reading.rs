@@ -361,9 +361,9 @@ fn spec_errors_name_the_line_and_what_was_expected() {
             "scenario `S` is not under a requirement",
         ),
         (
-            "## Requirements\n\n### Requirment: R\n",
+            "## Requirements\n\n### Rule: R\n",
             3,
-            "expected `### Requirement: <name>`, found `Requirment: R`",
+            "expected `### Requirement: <name>`, found `Rule: R`",
         ),
         (
             "## Purpose\n\n### Requirement: R\n",

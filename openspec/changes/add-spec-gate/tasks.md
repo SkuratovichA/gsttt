@@ -39,3 +39,4 @@
 ## 6. Integration fixes
 
 - [x] 6.1 Compile the tests of nine scenarios of earlier changes on every target by taking `#[cfg(unix)]` off them and off the helpers they share, because the gate counts no proof under a `cfg` other than `test` and gsttt builds for unix only
+- [x] 6.2 Write the third-level heading that is not a requirement as `### Rule: R` in the reader's test, so that `typos` no longer flags the deliberate `Requirment`
