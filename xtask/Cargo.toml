@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Repository tasks: the spec gate, archiving finished changes, benchmarks"
+description = "Repository tasks: the spec gate with the list of changes ready to archive, the version, packaging and notes of a release, and the checks of the repository"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
