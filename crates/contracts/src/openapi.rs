@@ -11,7 +11,7 @@ use gsttt_core::connector::{
     Connector, ConnectorError, Erased, LinkInput, LinkedFact, Meta, Parsed, Project, Provide,
     SourceFile,
 };
-use gsttt_core::contract::{ContractKind, Role, path_after_origin};
+use gsttt_core::contract::{ContractKind, Role, path_after_origin, without_query_and_fragment};
 use gsttt_core::fact::{ContractFact, FileFacts, Import, ImportKind, Line, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
@@ -398,7 +398,7 @@ fn server_paths(root: &Value) -> Vec<&str> {
 
 /// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route and is written three ways: `https://host` and `{scheme}://host`, which [`path_after_origin`] drops as the key normaliser does, and `//host` and `{baseUrl}`, a variable for the whole origin, which the normaliser would keep as the first segment. A query string or a fragment is no part of the path and goes, so `https://host?key=1` has the empty path.
 fn path_of_server(url: &str) -> &str {
-    let url = url.trim().split(['?', '#']).next().unwrap_or_default();
+    let url = without_query_and_fragment(url.trim());
     if let Some(path) = path_after_origin(url) {
         return path.trim_end_matches('/');
     }
