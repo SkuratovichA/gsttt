@@ -18,7 +18,7 @@
 - [x] 3.1 A snapshot of the TypeScript connector's built-in packs, taken while they are Lua
 - [x] 3.2 `read_pack`, `builtin_packs` and `.gsttt/packs/*.toml`, the name checked against the file
 - [x] 3.3 The ten TypeScript packs in TOML, with the snapshot unchanged
-- [ ] 3.4 The packs of the Python and Rust connectors converted the same way, once this change merges above them
+- [x] 3.4 The packs of the Python and Rust connectors converted the same way, once this change merges above them
 
 ## 4. Editor support
 
@@ -36,7 +36,7 @@
 
 - [x] 6.1 A test annotated `#[scenario("config", …)]` for every scenario of this change's delta, and no test left for a removed requirement
 - [x] 6.2 `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check` and `openspec validate switch-config-to-toml --strict` pass
-- [ ] 6.3 CI runs `taplo fmt --check` beside `cargo fmt --all --check`, added when this change merges above the change that adds CI
+- [x] 6.3 CI runs `taplo fmt --check` beside `cargo fmt --all --check`, added when this change merges above the change that adds CI
 
 ## 7. Review fixes
 
