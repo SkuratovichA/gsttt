@@ -2,10 +2,10 @@
 
 ## 1. Reading
 
-- [ ] 1.1 `read_source` checks the repository root before the bound, so a pack folder that links outside the repository is refused
-- [ ] 1.2 The depth check on toml_parser's events, an array of tables counting twice
-- [ ] 1.3 Errors as `<file>:<line>:<column>: <message>`, the column in characters through `LineIndex`, cut at 1 KiB
-- [ ] 1.4 Dates, times and floats that are not finite refused wherever they appear, with their key
+- [x] 1.1 `read_source` checks the repository root before the bound, so a pack folder that links outside the repository is refused
+- [x] 1.2 The depth check on toml_parser's events, an array of tables counting twice
+- [x] 1.3 Errors as `<file>:<line>:<column>: <message>`, the column in characters through `LineIndex`, cut at 1 KiB
+- [x] 1.4 Dates, times and floats that are not finite refused wherever they appear, with their key
 
 ## 2. The config
 

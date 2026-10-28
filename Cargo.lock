@@ -1762,6 +1762,8 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "toml",
+ "toml_parser",
  "tracing",
  "tracing-subscriber",
  "xxhash-rust",

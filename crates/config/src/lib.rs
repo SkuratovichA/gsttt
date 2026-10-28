@@ -5,6 +5,8 @@
 //! - [`annotations()`], [`luarc()`] and [`starter()`] are what `gsttt init` writes so that an editor completes and checks the config.
 //! - [`external`]: an [`External`] is the connector for one `g.external { … }` of the setup, and [`protocol_schema()`] is the JSON schema of the messages it exchanges with its process.
 
+mod depth;
+mod document;
 mod editor;
 mod error;
 mod evaluate;

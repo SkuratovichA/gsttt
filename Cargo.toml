@@ -48,6 +48,8 @@ saphyr = "0.3.3"
 serde_norway = "0.9.42"
 jsonc-parser = { version = "0.34.0", features = ["serde"] }
 toml = "0.9.8"
+# The events of a TOML file, for counting its nesting before `toml` builds values from it.
+toml_parser = "1.1.5"
 pulldown-cmark = { version = "0.13.5", default-features = false }
 regex = "1.13.1"
 

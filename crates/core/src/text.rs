@@ -25,6 +25,24 @@ impl LineIndex {
         let line = self.starts.partition_point(|&start| start <= offset);
         u32::try_from(line).unwrap_or(u32::MAX).max(1)
     }
+
+    /// The 1-based column of the byte at `offset` on its line, counted in characters, so that it is the column an editor shows. `text` is the text the index was built from. An offset inside a character is the column of that character, and one past the end of the text is the column after the last character.
+    pub fn column(&self, text: &str, offset: u32) -> u32 {
+        let start = usize::try_from(self.line(offset))
+            .ok()
+            .and_then(|line| line.checked_sub(1))
+            .and_then(|index| self.starts.get(index))
+            .map_or(0, |&start| usize::try_from(start).unwrap_or(usize::MAX));
+        let mut end = usize::try_from(offset).map_or(text.len(), |offset| offset.min(text.len()));
+        // Offset 0 is always a boundary, so this ends.
+        while !text.is_char_boundary(end) {
+            end = end.saturating_sub(1);
+        }
+        let before = text
+            .get(start..end)
+            .map_or(0, |before| before.chars().count());
+        u32::try_from(before).unwrap_or(u32::MAX).saturating_add(1)
+    }
 }
 
 /// A count with a thousands separator: `4,213`.
@@ -115,6 +133,24 @@ mod tests {
             .map(|offset| index.line(offset))
             .to_vec();
         assert_eq!(lines, vec![1, 1, 2, 3, 4, 4]);
+    }
+
+    #[test]
+    fn columns_count_characters_from_one() {
+        // `ä` and `ü` are two bytes each: `ab\n` is bytes 0 to 2, `ä` is 3 and 4, and the last `ü` is 9 and 10.
+        let text = "ab\näb = ü";
+        let index = LineIndex::new(text);
+        let columns: Vec<u32> = [0, 1, 2, 3, 4, 5, 9, 10, 11, 99]
+            .map(|offset| index.column(text, offset))
+            .to_vec();
+        assert_eq!(columns, vec![1, 2, 3, 1, 1, 2, 6, 6, 7, 7]);
+    }
+
+    #[test]
+    fn a_column_of_an_empty_text_is_one() {
+        let index = LineIndex::new("");
+        assert_eq!(index.column("", 0), 1);
+        assert_eq!(index.column("", 7), 1);
     }
 
     fn names(names: &[&str]) -> Vec<String> {
