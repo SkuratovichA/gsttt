@@ -7,7 +7,7 @@ The spec gate keeps the specs and the tests honest with each other: every scenar
 ## ADDED Requirements
 
 ### Requirement: Reading specs
-The `gsttt-spec` crate SHALL read OpenSpec files into capabilities, requirements and scenarios with their files and lines: `openspec/specs/<capability>/spec.md`, and for each change under `openspec/changes/` other than `archive`, its `tasks.md` checkboxes and its deltas `specs/<capability>/spec.md` with their `ADDED`, `MODIFIED`, `REMOVED` and `RENAMED` sections. A file that does not follow the format SHALL be an error naming the file and line.
+The `gsttt-spec` crate SHALL read OpenSpec files into capabilities, requirements and scenarios with their files and lines: `openspec/specs/<capability>/spec.md`, and for each change under `openspec/changes/` other than `archive`, its `tasks.md` checkboxes and its deltas `specs/<capability>/spec.md` with their `ADDED`, `MODIFIED`, `REMOVED` and `RENAMED` sections. A file that does not follow the format, or that opens a code fence it never closes, SHALL be an error naming the file and line.
 
 #### Scenario: The repository's own specs read cleanly
 - **WHEN** the gate reads this repository's `openspec/` directory
@@ -16,6 +16,10 @@ The `gsttt-spec` crate SHALL read OpenSpec files into capabilities, requirements
 #### Scenario: A malformed scenario is named
 - **WHEN** a spec has a `#### Scenario:` heading with no `WHEN` line under it
 - **THEN** reading fails with the file and the line of the heading
+
+#### Scenario: An unclosed code fence is named
+- **WHEN** a spec or a delta opens a code fence that nothing closes
+- **THEN** reading fails with the file and the line that opens the fence, even when the fence hides the steps of the scenario above it
 
 ### Requirement: The scenario attribute
 `#[scenario("<capability>", "<scenario>")]` SHALL take exactly two string literals and SHALL leave the function it marks unchanged; any other arguments SHALL be a compile error.

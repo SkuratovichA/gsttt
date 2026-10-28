@@ -11,19 +11,30 @@ pub(crate) struct Line<'a> {
     pub(crate) fenced: bool,
 }
 
+/// The lines of a file and the fence that nothing closes.
+pub(crate) struct Lines<'a> {
+    pub(crate) lines: Vec<Line<'a>>,
+    /// The line that opens a fence that is still open at the end of the file, from which every
+    /// line counts as fenced.
+    pub(crate) unclosed: Option<usize>,
+}
+
 /// Splits `text` into lines and marks the fenced ones.
-pub(crate) fn lines(text: &str) -> Vec<Line<'_>> {
+pub(crate) fn lines(text: &str) -> Lines<'_> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let mut open: Option<(char, usize)> = None;
-    text.lines()
+    // The fence that is open, with the line that opened it.
+    let mut open: Option<((char, usize), usize)> = None;
+    let lines = text
+        .lines()
         .enumerate()
         .map(|(index, text)| {
+            let number = index + 1;
             let fenced = match open {
                 None => {
-                    open = fence(text);
+                    open = fence(text).map(|opening| (opening, number));
                     open.is_some()
                 }
-                Some(opening) => {
+                Some((opening, _)) => {
                     if closes(text, opening) {
                         open = None;
                     }
@@ -31,12 +42,16 @@ pub(crate) fn lines(text: &str) -> Vec<Line<'_>> {
                 }
             };
             Line {
-                number: index + 1,
+                number,
                 text,
                 fenced,
             }
         })
-        .collect()
+        .collect();
+    Lines {
+        lines,
+        unclosed: open.map(|(_, number)| number),
+    }
 }
 
 /// The marker and length of the fence a line opens, if it opens one.

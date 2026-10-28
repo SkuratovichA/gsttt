@@ -18,6 +18,7 @@ pub struct Task {
 #[must_use]
 pub fn parse_tasks(text: &str) -> Vec<Task> {
     markdown::lines(text)
+        .lines
         .into_iter()
         .filter_map(|line| {
             let (done, text) = checkbox(line.text)?;

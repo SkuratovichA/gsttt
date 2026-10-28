@@ -31,3 +31,4 @@
 - [x] 5.7 Archive the other changes when OpenSpec refuses one and fail the job at the end, rebase before pushing, set a timeout, run cargo with `--locked`, and drop the redundant actor condition
 - [x] 5.8 Report a change with no tasks as having none, not as having unticked tasks
 - [x] 5.9 Pin the filter that holds back a change named in a failure with a test of a change that removes a requirement a test still claims
+- [x] 5.10 Refuse a spec or delta with a code fence that is never closed, naming the line that opens it

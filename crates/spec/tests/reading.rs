@@ -177,6 +177,66 @@ fn malformed_scenario_is_named() {
     ));
 }
 
+#[gsttt_scenario::scenario("spec-gate", "An unclosed code fence is named")]
+#[test]
+fn an_unclosed_code_fence_is_named() {
+    let hidden = "#### Scenario: Hidden\n- **WHEN** c\n- **THEN** d\n";
+    let spec = |fence: &str| {
+        format!(
+            "## Requirements\n\n### Requirement: R\nSHALL.\n\n#### Scenario: S\n- **WHEN** a\n- **THEN** b\n\n{fence}\n{hidden}"
+        )
+    };
+    let delta = format!(
+        "## ADDED Requirements\n\n### Requirement: R\nSHALL.\n\n#### Scenario: S\n- **WHEN** a\n- **THEN** b\n\n```\n{hidden}"
+    );
+    // The fence opens on line 10 of each, and the only thing after it is the hidden scenario.
+    let cases = [
+        ("backticks", spec("```text"), 10),
+        ("tildes", spec("~~~"), 10),
+        // A fence of four is not closed by a line of three.
+        ("a shorter closing line", spec("````\n```"), 10),
+        ("a delta", delta, 10),
+        // The fence hides the `THEN` step of the scenario above it: the fence is the problem, not
+        // the missing step.
+        (
+            "a fence over a step",
+            "## Requirements\n\n### Requirement: R\nSHALL.\n\n#### Scenario: S\n- **WHEN** a\n```text\n- **THEN** b\n".to_owned(),
+            8,
+        ),
+    ];
+    for (name, text, line) in cases {
+        let file = Path::new("openspec/specs/q/spec.md");
+        let error = if name == "a delta" {
+            parse_delta("q", file, &text).unwrap_err()
+        } else {
+            parse_spec("q", file, &text).unwrap_err()
+        };
+        assert!(
+            matches!(
+                &error,
+                Error::Format { line: found, problem: Problem::UnclosedFence, .. } if *found == line
+            ),
+            "{name}: {error}"
+        );
+    }
+
+    let root = tree(&[("openspec/specs/queries/spec.md", &spec("```"))]);
+    assert_eq!(
+        read(root.path()).unwrap_err().to_string(),
+        "openspec/specs/queries/spec.md:10: code fence is never closed, so the rest of the file counts as code; expected a closing fence"
+    );
+}
+
+#[test]
+fn an_unclosed_fence_in_a_task_list_hides_no_task() {
+    // `openspec list` counts the checkboxes in code too, so the task list has nothing to hide.
+    let tasks = parse_tasks("- [x] first\n```\n- [ ] second\n");
+    assert_eq!(
+        tasks.iter().map(|task| task.done).collect::<Vec<_>>(),
+        [true, false]
+    );
+}
+
 #[test]
 fn a_malformed_delta_is_named_with_its_own_file() {
     let root = tree(&[

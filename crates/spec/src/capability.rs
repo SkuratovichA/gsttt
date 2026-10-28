@@ -203,14 +203,17 @@ impl<'a> Parser<'a> {
             removed: Vec::new(),
             renamed: Vec::new(),
         };
-        for line in markdown::lines(text)
-            .into_iter()
-            .filter(|line| !line.fenced)
-        {
+        let read = markdown::lines(text);
+        for line in read.lines.into_iter().filter(|line| !line.fenced) {
             match markdown::heading(line.text) {
                 Some((level, title)) => parser.heading(level, title, line.number)?,
                 None => parser.body(line.text, line.number)?,
             }
+        }
+        // Checked before the scenario and the requirement are closed: a fence that hides a step is
+        // the cause of the step missing.
+        if let Some(line) = read.unclosed {
+            return Err(parser.fail(line, Problem::UnclosedFence));
         }
         parser.close_scenario()?;
         parser.close_requirement();
