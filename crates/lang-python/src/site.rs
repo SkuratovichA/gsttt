@@ -195,14 +195,25 @@ fn dict_value<'a>(expr: &'a Expr, prop: &str) -> Option<&'a Expr> {
 /// something else, such as a call or a subscript, has `?` for that segment so that `*` patterns still match:
 /// `Session().execute` is `?.execute`. `None` when the expression is not a name at all.
 pub(crate) fn dotted(expr: &Expr) -> Option<String> {
+    let mut name = String::new();
+    write_dotted(expr, &mut name).then_some(name)
+}
+
+/// Appends the dotted name of `expr` to `out`, as [`dotted`] reads it, and tells whether `expr` is one. The calls of
+/// a file are many, so they are read into one buffer instead of a `String` each.
+pub(crate) fn write_dotted(expr: &Expr, out: &mut String) -> bool {
     match expr {
-        Expr::Name(name) => Some(name.id.as_str().to_owned()),
+        Expr::Name(name) => out.push_str(name.id.as_str()),
         Expr::Attribute(attribute) => {
-            let base = dotted(&attribute.value).unwrap_or_else(|| "?".to_owned());
-            Some(format!("{base}.{}", attribute.attr.as_str()))
+            if !write_dotted(&attribute.value, out) {
+                out.push('?');
+            }
+            out.push('.');
+            out.push_str(attribute.attr.as_str());
         }
-        _ => None,
+        _ => return false,
     }
+    true
 }
 
 /// `outer` and `inner` as one prefix, with `/` between them for HTTP and `.` otherwise; an empty side is left out.

@@ -31,6 +31,44 @@ The connector SHALL read `import a.b`, `import a.b as c`, `from a.b import c`, r
 - **WHEN** a file imports `a` under `if TYPE_CHECKING:` and `b` in `try: … except ImportError:`
 - **THEN** the import of `a` is flagged type-checking and the import of `b` optional
 
+### Requirement: Names of an import
+A name imported more than once from one module in a single `from` statement SHALL be listed once among the names of the import.
+
+#### Scenario: A name imported twice is listed once
+- **WHEN** a file has `from bookings import views as first, views as second`
+- **THEN** its one import of `bookings` lists the name `views` once
+
+### Requirement: Imports under another name
+A callee, decorator, base class or subscripted name SHALL be matched by a rule as the file writes it and as its imports spell it, so `import requests as r`, `import httpx as hx`, `import os as _os`, `from requests import post as send`, `from sqlalchemy import text as t` and `from fastapi import APIRouter as R` read like the plain forms. An import SHALL apply from its statement on, and a name bound by a relative import SHALL stay as written.
+
+#### Scenario: A module imported under another name is followed
+- **WHEN** a file has `import requests as r` and `r.post(f"{BASE}/bookings/{id}/cancel")` on line 7
+- **THEN** it calls `http POST /bookings/{}/cancel` at line 7
+
+#### Scenario: A name imported from a module is followed
+- **WHEN** a file has `from requests import get` and `from requests import post as send`, and calls `get(f"{BASE}/bookings/{id}")` and `send(f"{BASE}/bookings/{id}/cancel")`
+- **THEN** it calls `http GET /bookings/{}` and `http POST /bookings/{}/cancel`, the method being the one of the function and not of the name it is imported as
+
+#### Scenario: A client made through an aliased module is followed
+- **WHEN** a file has `import httpx as hx`, calls `hx.get(f"{BASE}/bookings/{id}")`, and makes `client = hx.Client(base_url="https://api.example.com/v1")` for `client.get("/bookings")`
+- **THEN** it calls `http GET /bookings/{}` and `http GET /v1/bookings`
+
+#### Scenario: A function imported under another name embeds its document
+- **WHEN** a file has `from sqlalchemy import text as t` and `connection.execute(t("SELECT id FROM bookings WHERE id = :id"), {"id": id})`
+- **THEN** it embeds one `sql` document with the text `SELECT id FROM bookings WHERE id = :id`
+
+#### Scenario: A router class imported under another name serves its routes
+- **WHEN** a file has `import fastapi as fa`, `from fastapi import APIRouter as R`, `app = fa.FastAPI()`, `router = R(prefix="/bookings")`, `@app.get("/ping")` and `@router.get("/{booking_id}")`
+- **THEN** it serves `http GET /ping`, and `http GET /bookings/{}` once the router is linked
+
+#### Scenario: The environment is read through an aliased os
+- **WHEN** a file has `import os as _os`, `_os.getenv("A")`, `_os.environ["B"]` and `_os.environ.get("C")`
+- **THEN** it calls `env A`, `env B` and `env C`
+
+#### Scenario: Django routes imported under another name compose
+- **WHEN** `project/urls.py` has `from django.urls import include as inc` and `path as p` and `p("api/", inc("bookings.urls"))`, and `bookings/urls.py` has `p("bookings/<int:pk>/", views.detail)`
+- **THEN** `bookings/urls.py` serves `http * /api/bookings/{}` once linked, and neither file serves a route of its own
+
 ### Requirement: Parse status
 A file with syntax errors from which the parser recovered SHALL be recorded as recovered with the number of errors and the line of the first, keeping what was read.
 

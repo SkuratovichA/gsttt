@@ -4,6 +4,7 @@
 
 mod extra;
 mod files;
+mod imports;
 mod link;
 mod manifest;
 mod names;

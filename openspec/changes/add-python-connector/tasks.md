@@ -32,3 +32,4 @@
 - [x] 5.6 An absolute import is looked up in one order, the first place that has the module winning: the project's own source roots, the standard library, the source roots of the other Python projects of the repository, the declared distributions, then namespace directories; resolution goes through the repository view, and a bare namespace import names no file
 - [x] 5.7 A package directory beats a module of the same name, and a stub beside its source is reached together with it
 - [x] 5.8 An import reaches the `__init__` file of every package it passes through, except the packages the importing file sits in
+- [x] 5.9 A name an import gives another is read by both names: `import requests as r`, `from requests import post as send` and the like match the packs' callees, decorators, base classes and subscripted names as the file writes them and as the import spells them, every file keeps its imports for this, and a name imported twice from one module is listed once

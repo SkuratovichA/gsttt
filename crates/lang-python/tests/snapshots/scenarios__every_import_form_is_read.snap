@@ -54,7 +54,6 @@ expression: "tree.file_json(\"pkg/sub/forms.py\")"
       "line": 5,
       "flags": 0,
       "names": [
-        "VALUE",
         "VALUE"
       ],
       "to": {

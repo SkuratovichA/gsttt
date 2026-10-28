@@ -13,15 +13,16 @@ use gsttt_core::rules::{Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Arguments, Decorator, Expr, ExprCall, ExprContext, ExprSubscript, PySourceType, Stmt,
-    StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtImport, StmtImportFrom,
-    StmtTry, WithItem,
+    Arguments, Decorator, Expr, ExprCall, ExprContext, ExprSubscript, Identifier, PySourceType,
+    Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtImport,
+    StmtImportFrom, StmtTry, WithItem,
 };
 use ruff_python_parser::{ParseError, parse_unchecked_source};
 use ruff_text_size::{Ranged, TextSize};
 
-use crate::extra::{Bind, Mount, PyExtra, Route, RouterPrefix, Target};
+use crate::extra::{Mount, PyExtra, Route, RouterPrefix, Target};
 use crate::files::{is_python_source, tags_of};
+use crate::imports::{Imports, Name, specifier};
 use crate::project::PythonProject;
 use crate::site::{
     AssignSite, CallSite, EmbedSite, dict_prop, dotted, join_prefixes, literal_of, text_of,
@@ -69,7 +70,7 @@ fn status_of(errors: &[ParseError], lines: &LineIndex) -> ParseStatus {
 /// A name assigned a call, `router = APIRouter(prefix="/bookings")`. Rules written for a receiver read it to tell
 /// what the receiver was made by.
 struct Binding<'a> {
-    callee: String,
+    callee: Name,
     arguments: &'a Arguments,
 }
 
@@ -81,8 +82,8 @@ enum Frame<'a> {
 
 struct ClassFrame<'a> {
     /// The decorators of the class by dotted name, with their arguments when they are called.
-    decorators: Vec<(String, Option<&'a Arguments>)>,
-    bases: Vec<String>,
+    decorators: Vec<(Name, Option<&'a Arguments>)>,
+    bases: Vec<Name>,
     /// What a settings class puts before the name of each field.
     env_prefix: String,
 }
@@ -93,12 +94,14 @@ struct Collector<'a> {
     lines: &'a LineIndex,
     facts: FileFacts,
     extra: PyExtra,
-    binds: Vec<Bind>,
+    imports: Imports<'a>,
     flags: ImportFlags,
     frames: Vec<Frame<'a>>,
     /// Names assigned a call anywhere in the file. A name assigned twice keeps its last assignment: the file is
     /// read as one scope, which is how a module-level router or client is used.
     bindings: HashMap<String, Binding<'a>>,
+    /// The buffers the name of each call and subscript is read into, so that none of them allocates.
+    scratch: Name,
 }
 
 impl<'a> Collector<'a> {
@@ -108,10 +111,11 @@ impl<'a> Collector<'a> {
             lines,
             facts: FileFacts::default(),
             extra: PyExtra::default(),
-            binds: Vec::new(),
+            imports: Imports::default(),
             flags: ImportFlags::NONE,
             frames: Vec::new(),
             bindings: HashMap::new(),
+            scratch: Name::default(),
         }
     }
 
@@ -126,7 +130,7 @@ impl<'a> Collector<'a> {
             self.extra.routers = self.router_prefixes();
         }
         if !self.extra.mounts.is_empty() {
-            self.extra.binds = self.binds;
+            self.extra.binds = self.imports.binds();
         }
         // Visit order is deterministic; a stable sort by line puts the facts of a decorator and of its body in order.
         self.facts.contracts.sort_by_key(|fact| fact.line);
@@ -174,52 +178,36 @@ impl<'a> Collector<'a> {
         self.flags = outer;
     }
 
-    fn import(&mut self, stmt: &StmtImport) {
+    fn import(&mut self, stmt: &'a StmtImport) {
         let line = self.line_of(stmt.start());
         for alias in &stmt.names {
             let spec = alias.name.as_str();
             self.push_import(Import::new(spec, ImportKind::Static, line));
-            // `import a.b.c` binds `a` only, which is not the module the import resolves to; the forms that name
-            // their module are the ones a router can be reached through.
-            let local = match &alias.asname {
-                Some(asname) => Some(asname.as_str()),
-                None if !spec.contains('.') => Some(spec),
-                None => None,
-            };
-            if let Some(local) = local {
-                self.binds.push(Bind {
-                    local: local.to_owned(),
-                    spec: spec.to_owned(),
-                    line,
-                    name: None,
-                });
-            }
+            let asname = alias.asname.as_ref().map(Identifier::as_str);
+            self.imports.module(spec, asname, line);
         }
     }
 
-    fn import_from(&mut self, stmt: &StmtImportFrom) {
+    fn import_from(&mut self, stmt: &'a StmtImportFrom) {
         let line = self.line_of(stmt.start());
-        let dots = ".".repeat(usize::try_from(stmt.level).unwrap_or_default());
-        let module = stmt.module.as_ref().map_or("", |module| module.as_str());
-        let spec = format!("{dots}{module}");
+        let module = stmt.module.as_ref().map_or("", Identifier::as_str);
+        let spec = specifier(stmt.level, module);
         let mut import = Import::new(spec.as_str(), ImportKind::Static, line);
-        import.names = stmt
-            .names
-            .iter()
-            .map(|alias| alias.name.as_str().to_owned())
-            .collect();
+        // `from m import a as b, a as c` takes `a` from the module once.
+        for alias in &stmt.names {
+            let name = alias.name.as_str();
+            if !import.names.iter().any(|seen| seen == name) {
+                import.names.push(name.to_owned());
+            }
+        }
         if import.names.iter().any(|name| name.as_str() == "*") {
             import.kind = ImportKind::ReExportAll;
         }
         self.push_import(import);
         for alias in stmt.names.iter().filter(|alias| alias.name.as_str() != "*") {
-            let local = alias.asname.as_ref().unwrap_or(&alias.name);
-            self.binds.push(Bind {
-                local: local.as_str().to_owned(),
-                spec: spec.clone(),
-                line,
-                name: Some(alias.name.as_str().to_owned()),
-            });
+            let asname = alias.asname.as_ref().map(Identifier::as_str);
+            self.imports
+                .name(module, stmt.level, alias.name.as_str(), asname, line);
         }
     }
 
@@ -245,10 +233,14 @@ impl<'a> Collector<'a> {
             decorators: class
                 .decorator_list
                 .iter()
-                .filter_map(|decorator| decorator_parts(&decorator.expression))
+                .filter_map(|decorator| decorator_parts(&decorator.expression, &self.imports))
                 .collect(),
             bases: arguments.map_or_else(Vec::new, |arguments| {
-                arguments.args.iter().filter_map(dotted).collect()
+                arguments
+                    .args
+                    .iter()
+                    .filter_map(|base| Name::of(base, &self.imports))
+                    .collect()
             }),
             env_prefix: env_prefix(&class.body),
         };
@@ -262,22 +254,22 @@ impl<'a> Collector<'a> {
     fn decorator(&mut self, decorator: &'a Decorator, member: &str) {
         let line = self.line_of(decorator.expression.start());
         let (call, name) = match &decorator.expression {
-            Expr::Call(call) => (Some(call), dotted(&call.func)),
-            other => (None, dotted(other)),
+            Expr::Call(call) => (Some(call), Name::of(&call.func, &self.imports)),
+            other => (None, Name::of(other, &self.imports)),
         };
         if let Some(name) = name {
-            let site = CallSite {
-                callee: &name,
-                arguments: call.map(|call| &call.arguments),
-                member: Some(member),
-            };
-            let receiver = receiver_of(&name);
+            let receiver = receiver_of(name.written());
             let packs = self.packs;
             for pack in packs {
                 for rule in &pack.decorators {
-                    if !rule.decorator.matches(&name) {
+                    let Some(matched) = name.matching(&rule.decorator) else {
                         continue;
-                    }
+                    };
+                    let site = CallSite {
+                        callee: matched,
+                        arguments: call.map(|call| &call.arguments),
+                        member: Some(member),
+                    };
                     let mut prefix = None;
                     if let Some(class) = &rule.class {
                         let Some(read) = self.class_prefix(class) else {
@@ -302,7 +294,8 @@ impl<'a> Collector<'a> {
                             });
                         }
                     }
-                    let outcome = rule.apply(&pack.name, &site, prefix.as_deref(), line, &name);
+                    let outcome =
+                        rule.apply(&pack.name, &site, prefix.as_deref(), line, name.written());
                     self.record(outcome, router);
                 }
             }
@@ -320,17 +313,14 @@ impl<'a> Collector<'a> {
     /// The prefix a decorator rule's `class` reads from the decorators of the class around the statement.
     fn class_prefix(&self, class: &Prefix) -> Option<String> {
         let frame = self.top_class()?;
-        frame
-            .decorators
-            .iter()
-            .find(|(callee, _)| class.from.matches(callee))
-            .map(|(callee, arguments)| {
-                class.read(&CallSite {
-                    callee,
-                    arguments: *arguments,
-                    member: None,
-                })
-            })
+        frame.decorators.iter().find_map(|(callee, arguments)| {
+            let matched = callee.matching(&class.from)?;
+            Some(class.read(&CallSite {
+                callee: matched,
+                arguments: *arguments,
+                member: None,
+            }))
+        })
     }
 
     /// The prefix a rule's `receiver` reads from the call that made `var`, when `var` is a name of this file made
@@ -398,31 +388,41 @@ impl<'a> Collector<'a> {
         }
     }
 
+    /// Reads `expr` as a name into the collector's buffers and hands it to `read`. A call or a subscript on anything
+    /// else, `make()()` or `(a or b)()`, has no name to match.
+    fn named(&mut self, expr: &Expr, read: impl FnOnce(&mut Self, &Name)) {
+        let mut name = std::mem::take(&mut self.scratch);
+        if name.read(expr, &self.imports) {
+            read(self, &name);
+        }
+        self.scratch = name;
+    }
+
     fn call(&mut self, call: &ExprCall) {
-        // A call on something that is not a name, `make()()` or `(a or b)()`, has no callee to match.
-        let Some(callee) = dotted(&call.func) else {
-            return;
-        };
+        self.named(&call.func, |this, callee| this.read_call(call, callee));
+    }
+
+    fn read_call(&mut self, call: &ExprCall, callee: &Name) {
         let line = self.line_of(call.start());
-        if self.dynamic_import(call, &callee, line) || self.mount(call, &callee, line) {
+        if self.dynamic_import(call, callee, line) || self.mount(call, callee, line) {
             return;
         }
-        let site = CallSite {
-            callee: &callee,
-            arguments: Some(&call.arguments),
-            member: None,
-        };
         let packs = self.packs;
         for pack in packs {
             for rule in &pack.calls {
-                if !rule.callee.matches(&callee) {
+                let Some(matched) = callee.matching(&rule.callee) else {
                     continue;
-                }
+                };
+                let site = CallSite {
+                    callee: matched,
+                    arguments: Some(&call.arguments),
+                    member: None,
+                };
                 let prefix = match &rule.receiver {
                     Some(maker) => {
-                        let read = match inline_maker(&call.func) {
+                        let read = match inline_maker(&call.func, &self.imports) {
                             Some((made, arguments)) => prefix_made_by(maker, &made, arguments),
-                            None => self.receiver_prefix(maker, receiver_of(&callee)),
+                            None => self.receiver_prefix(maker, receiver_of(callee.written())),
                         };
                         let Some(read) = read else {
                             continue;
@@ -433,19 +433,25 @@ impl<'a> Collector<'a> {
                     }
                     None => None,
                 };
-                let outcome = rule.apply(&pack.name, &site, prefix.as_deref(), line, &callee);
+                let outcome =
+                    rule.apply(&pack.name, &site, prefix.as_deref(), line, callee.written());
                 // A route a call declares, Django's `path()`, belongs to the module's URL list, which an
                 // including module mounts like a router.
                 self.record(outcome, Some(""));
             }
             for rule in &pack.embeds {
-                if !rule.callee.matches(&callee) {
+                let Some(matched) = callee.matching(&rule.callee) else {
                     continue;
-                }
+                };
+                let site = CallSite {
+                    callee: matched,
+                    arguments: Some(&call.arguments),
+                    member: None,
+                };
                 // The document starts where the text the rule read does, which is not the line of the call when
                 // the argument is on a line of its own.
                 let embed = EmbedSite::new(site, self.lines, line);
-                match rule.apply(&pack.name, &embed, line, &callee) {
+                match rule.apply(&pack.name, &embed, line, callee.written()) {
                     Ok(mut document) => {
                         document.line = embed.line();
                         self.facts.embedded.push(document);
@@ -464,9 +470,9 @@ impl<'a> Collector<'a> {
     }
 
     /// `importlib.import_module("a.b")` and `__import__("a.b")`. Returns whether the call was one.
-    fn dynamic_import(&mut self, call: &ExprCall, callee: &str, line: Line) -> bool {
+    fn dynamic_import(&mut self, call: &ExprCall, callee: &Name, line: Line) -> bool {
         if !matches!(
-            callee,
+            callee.imported(),
             "importlib.import_module" | "import_module" | "__import__"
         ) {
             return false;
@@ -475,23 +481,30 @@ impl<'a> Collector<'a> {
             Some(Expr::StringLiteral(name)) => {
                 self.push_import(Import::new(name.value.to_str(), ImportKind::Dynamic, line));
             }
-            Some(_) => self.unresolved(line, callee),
+            Some(_) => self.unresolved(line, callee.written()),
             None => {}
         }
         true
     }
 
     /// A call that mounts a router or an included URL module under a prefix. Returns whether the call was one.
-    fn mount(&mut self, call: &ExprCall, callee: &str, line: Line) -> bool {
-        let last = callee.rsplit('.').next().unwrap_or(callee);
+    fn mount(&mut self, call: &ExprCall, callee: &Name, line: Line) -> bool {
+        // The function is told by the name its import gives it, `path` for `p` after `from django.urls import path as
+        // p`; the router the mount is called on is read as written, because `link` follows it through the binds.
+        let called = callee.imported();
+        let last = called.rsplit('.').next().unwrap_or(called);
         match last {
             "include_router" if self.has_pack("fastapi") => {
-                self.router_mount(call, callee, line, ("router", "prefix"), false)
+                self.router_mount(call, callee.written(), line, ("router", "prefix"), false)
             }
             // Flask replaces the blueprint's own `url_prefix` with the registration's; FastAPI puts it in front.
-            "register_blueprint" if self.has_pack("flask") => {
-                self.router_mount(call, callee, line, ("blueprint", "url_prefix"), true)
-            }
+            "register_blueprint" if self.has_pack("flask") => self.router_mount(
+                call,
+                callee.written(),
+                line,
+                ("blueprint", "url_prefix"),
+                true,
+            ),
             "path" | "re_path" | "url" if self.has_pack("django") => self.include_mount(call, line),
             _ => false,
         }
@@ -545,7 +558,9 @@ impl<'a> Collector<'a> {
         let Some(Expr::Call(include)) = call.arguments.find_positional(1) else {
             return false;
         };
-        if dotted(&include.func).is_none_or(|name| name.rsplit('.').next() != Some("include")) {
+        let includes = Name::of(&include.func, &self.imports)
+            .is_some_and(|name| name.imported().rsplit('.').next() == Some("include"));
+        if !includes {
             return false;
         }
         let mut prefix = None;
@@ -575,9 +590,12 @@ impl<'a> Collector<'a> {
     }
 
     fn subscript(&mut self, subscript: &ExprSubscript) {
-        let Some(root) = dotted(&subscript.value) else {
-            return;
-        };
+        self.named(&subscript.value, |this, root| {
+            this.read_subscript(subscript, root);
+        });
+    }
+
+    fn read_subscript(&mut self, subscript: &ExprSubscript, root: &Name) {
         let segment = match &*subscript.slice {
             Expr::StringLiteral(name) => Some(name.value.to_str()),
             _ => None,
@@ -586,8 +604,8 @@ impl<'a> Collector<'a> {
         let packs = self.packs;
         for pack in packs {
             for rule in &pack.chains {
-                if rule.root.matches(&root) {
-                    let outcome = rule.apply(&pack.name, &[segment], line, &root);
+                if root.matching(&rule.root).is_some() {
+                    let outcome = rule.apply(&pack.name, &[segment], line, root.written());
                     self.record(outcome, None);
                 }
             }
@@ -599,7 +617,7 @@ impl<'a> Collector<'a> {
         let Expr::Call(call) = value else {
             return;
         };
-        if let (Some(var), Some(callee)) = (dotted(target), dotted(&call.func)) {
+        if let (Some(var), Some(callee)) = (dotted(target), Name::of(&call.func, &self.imports)) {
             self.bindings.insert(
                 var,
                 Binding {
@@ -638,8 +656,12 @@ impl<'a> Collector<'a> {
                 }
                 let class = self.top_class();
                 if let Some(bases) = &rule.class
-                    && !class
-                        .is_some_and(|class| class.bases.iter().any(|base| bases.matches(base)))
+                    && !class.is_some_and(|class| {
+                        class
+                            .bases
+                            .iter()
+                            .any(|base| base.matching(bases).is_some())
+                    })
                 {
                     continue;
                 }
@@ -729,12 +751,10 @@ impl<'a> Collector<'a> {
 
 /// The prefix a rule's `receiver` reads from the call of `callee` that made the receiver, when the rule names that
 /// callee.
-fn prefix_made_by(maker: &Prefix, callee: &str, arguments: &Arguments) -> Option<String> {
-    if !maker.from.matches(callee) {
-        return None;
-    }
+fn prefix_made_by(maker: &Prefix, callee: &Name, arguments: &Arguments) -> Option<String> {
+    let matched = callee.matching(&maker.from)?;
     Some(maker.read(&CallSite {
-        callee,
+        callee: matched,
         arguments: Some(arguments),
         member: None,
     }))
@@ -742,20 +762,23 @@ fn prefix_made_by(maker: &Prefix, callee: &str, arguments: &Arguments) -> Option
 
 /// The call a method is called on where it is written, `httpx.Client(base_url="…")` of
 /// `httpx.Client(base_url="…").get(…)`: a receiver that no name holds.
-fn inline_maker(func: &Expr) -> Option<(String, &Arguments)> {
+fn inline_maker<'e>(func: &'e Expr, imports: &Imports<'_>) -> Option<(Name, &'e Arguments)> {
     let Expr::Attribute(attribute) = func else {
         return None;
     };
     let Expr::Call(made) = &*attribute.value else {
         return None;
     };
-    Some((dotted(&made.func)?, &made.arguments))
+    Some((Name::of(&made.func, imports)?, &made.arguments))
 }
 
 /// Whether a callee builds an object that routes are declared on and that is mounted somewhere else, as opposed to
 /// an application, which nothing mounts.
-fn is_router_type(callee: &str) -> bool {
-    matches!(callee.rsplit('.').next(), Some("APIRouter" | "Blueprint"))
+fn is_router_type(callee: &Name) -> bool {
+    matches!(
+        callee.imported().rsplit('.').next(),
+        Some("APIRouter" | "Blueprint")
+    )
 }
 
 /// The part of a dotted callee before its last segment: `router` of `router.get`, `self.client` of
@@ -765,10 +788,13 @@ fn receiver_of(callee: &str) -> Option<&str> {
 }
 
 /// A decorator as `(dotted name, arguments when called)`.
-fn decorator_parts(expression: &Expr) -> Option<(String, Option<&Arguments>)> {
+fn decorator_parts<'e>(
+    expression: &'e Expr,
+    imports: &Imports<'_>,
+) -> Option<(Name, Option<&'e Arguments>)> {
     match expression {
-        Expr::Call(call) => dotted(&call.func).map(|name| (name, Some(&call.arguments))),
-        other => dotted(other).map(|name| (name, None)),
+        Expr::Call(call) => Name::of(&call.func, imports).map(|name| (name, Some(&call.arguments))),
+        other => Name::of(other, imports).map(|name| (name, None)),
     }
 }
 

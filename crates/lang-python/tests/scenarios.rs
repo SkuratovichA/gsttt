@@ -216,7 +216,7 @@ fn every_import_form_is_read() {
             "pkg.parent Static L2 []",
             "pkg.parent Static L3 []",
             "pkg.parent Static L4 [\"VALUE\"]",
-            "pkg.parent Static L5 [\"VALUE\", \"VALUE\"]",
+            "pkg.parent Static L5 [\"VALUE\"]",
             ". Static L6 [\"sibling\"]",
             ".. Static L7 [\"parent\"]",
             "...far Static L8 [\"thing\"]",
@@ -803,6 +803,148 @@ fn a_settings_prefix_is_applied() {
     insta::assert_json_snapshot!(
         "a_settings_prefix_is_applied",
         tree.file_json("settings.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A module imported under another name is followed")]
+#[test]
+fn a_module_imported_under_another_name_is_followed() {
+    let tree = index("aliases");
+    // `import requests as r` makes `r.post` the call `requests.post`.
+    assert_eq!(
+        tree.contracts("requests_module.py"),
+        ["calls http POST /bookings/{}/cancel@7"]
+    );
+    insta::assert_json_snapshot!(
+        "a_module_imported_under_another_name_is_followed",
+        tree.file_json("requests_module.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A name imported from a module is followed")]
+#[test]
+fn a_name_imported_from_a_module_is_followed() {
+    let tree = index("aliases");
+    // `from requests import post as send` calls `post`: the verb is the one of the function, not of the name it is
+    // imported as.
+    assert_eq!(
+        tree.contracts("requests_name.py"),
+        [
+            "calls http GET /bookings/{}@8",
+            "calls http POST /bookings/{}/cancel@12"
+        ]
+    );
+    insta::assert_json_snapshot!(
+        "a_name_imported_from_a_module_is_followed",
+        tree.file_json("requests_name.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A client made through an aliased module is followed")]
+#[test]
+fn a_client_made_through_an_aliased_module_is_followed() {
+    let tree = index("aliases");
+    // `hx.Client(…)` is an `httpx.Client`, so the calls on its variable are read behind its base URL.
+    assert_eq!(
+        tree.contracts("httpx_module.py"),
+        [
+            "calls http GET /bookings/{}@7",
+            "calls http GET /v1/bookings@12"
+        ]
+    );
+    insta::assert_json_snapshot!(
+        "a_client_made_through_an_aliased_module_is_followed",
+        tree.file_json("httpx_module.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A function imported under another name embeds its document")]
+#[test]
+fn a_function_imported_under_another_name_embeds_its_document() {
+    let tree = index("aliases");
+    let embedded = &tree.file("sqlalchemy_name.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded[0].lang, "sql");
+    assert_eq!(embedded[0].line, 5);
+    assert_eq!(embedded[0].text, "SELECT id FROM bookings WHERE id = :id");
+    insta::assert_json_snapshot!(
+        "a_function_imported_under_another_name_embeds_its_document",
+        tree.file_json("sqlalchemy_name.py")
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A router class imported under another name serves its routes"
+)]
+#[test]
+fn a_router_class_imported_under_another_name_serves_its_routes() {
+    let tree = index("aliases");
+    // `app = fa.FastAPI()` is an application and its route a fact of the file; `router = R(prefix=…)` is a router,
+    // which `link` serves behind its prefix.
+    assert_eq!(
+        tree.contracts("fastapi_router.py"),
+        ["serves http GET /ping@8"]
+    );
+    assert_eq!(
+        tree.linked("fastapi_router.py"),
+        ["serves http GET /bookings/{}@13"]
+    );
+    insta::assert_json_snapshot!(
+        "a_router_class_imported_under_another_name_serves_its_routes",
+        json!({
+            "file": tree.file_json("fastapi_router.py"),
+            "linked": tree.linked("fastapi_router.py"),
+        })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "The environment is read through an aliased os")]
+#[test]
+fn the_environment_is_read_through_an_aliased_os() {
+    let tree = index("aliases");
+    assert_eq!(
+        tree.contracts("environment.py"),
+        ["calls env A@3", "calls env B@4", "calls env C@5"]
+    );
+    insta::assert_json_snapshot!(
+        "the_environment_is_read_through_an_aliased_os",
+        tree.file_json("environment.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Django routes imported under another name compose")]
+#[test]
+fn django_routes_imported_under_another_name_compose() {
+    let tree = index("aliases");
+    assert_eq!(
+        tree.linked("bookings/urls.py"),
+        ["serves http * /api/bookings/{}@6"]
+    );
+    assert_eq!(tree.contracts("bookings/urls.py"), Vec::<String>::new());
+    assert_eq!(tree.contracts("project/urls.py"), Vec::<String>::new());
+    insta::assert_json_snapshot!(
+        "django_routes_imported_under_another_name_compose",
+        json!({
+            "project": tree.file_json("project/urls.py"),
+            "bookings": tree.file_json("bookings/urls.py"),
+            "linked": tree.linked("bookings/urls.py"),
+        })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A name imported twice is listed once")]
+#[test]
+fn a_name_imported_twice_is_listed_once() {
+    let tree = index("aliases");
+    // `from bookings import views as first, views as second` imports `views` twice and the import names it once.
+    assert_eq!(
+        tree.target("reexport.py", "bookings", &["views"]),
+        "bookings/views.py"
+    );
+    insta::assert_json_snapshot!(
+        "a_name_imported_twice_is_listed_once",
+        tree.file_json("reexport.py")
     );
 }
 
