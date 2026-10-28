@@ -171,8 +171,8 @@ A route SHALL be served once under each mount of its router and under no other p
 The engine replaces every parsed fact of a file that shares a line, role and kind with a fact that `link` returns. `link` SHALL therefore return, as they are, the parsed facts that share a line, role and kind with a fact it returns, so that a fact of another rule on the line of a route stays in the graph.
 
 #### Scenario: A fact of another rule on the line of a route is kept
-- **WHEN** one line of `app.ts` has `app.get('/b', h)` on an Express app and a `@Get('a')` method of a `@Controller('x')` class
-- **THEN** `app.ts` serves `http GET /b` and `http GET /x/a`, both at that line
+- **WHEN** one line of `app.ts` has `app.get('/b', h)` on an Express app, `fetch('/c')` and a `@Get('a')` method of a `@Controller('x')` class
+- **THEN** `app.ts` serves `http GET /b` and `http GET /x/a` and calls `http * /c`, all at that line
 
 ### Requirement: NestJS routes
 With the `nestjs` pack, `@Get`, `@Post`, `@Put`, `@Patch`, `@Delete`, `@Options`, `@Head` and `@All` on a method of a `@Controller('<prefix>')` class SHALL serve the prefix and the path joined.

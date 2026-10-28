@@ -174,11 +174,12 @@ fn routes_on_one_line_are_keyed_apart() -> Result<(), Box<dyn Error>> {
 fn a_fact_of_another_rule_on_the_line_of_a_route_is_kept() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         contracts(&run("express-and-nestjs-on-one-line")?, "src/app.ts"),
-        ["serves http GET /x/a @4"]
+        ["calls http * /c @4", "serves http GET /x/a @4"]
     );
     assert_eq!(
         sites("express-and-nestjs-on-one-line")?,
         [
+            "calls http * /c @4 in src/app.ts",
             "serves http GET /b @4 in src/app.ts",
             "serves http GET /x/a @4 in src/app.ts",
         ]

@@ -29,7 +29,8 @@ pub(crate) fn link(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
 
 /// Where a fact sits in a file, without its key: the file, the line, the role and the kind of contract. The engine
 /// decides what a link replaces by the same tuple, in a `place_of` of its own that is private to `engine::build`;
-/// `a_fact_of_another_rule_on_the_line_of_a_route_is_kept` reads the graph the engine builds and pins one case of it.
+/// `a_fact_of_another_rule_on_the_line_of_a_route_is_kept` reads the graph the engine builds from a line that holds a
+/// fact of the same place and a fact of another role.
 type Place<'a> = (FileId, Line, Role, &'a ContractKind);
 
 fn place_of(file: FileId, fact: &ContractFact) -> Place<'_> {
