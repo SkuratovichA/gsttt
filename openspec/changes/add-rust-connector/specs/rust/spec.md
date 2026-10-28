@@ -214,6 +214,27 @@ With the `axum` pack, `nest("<prefix>", <router>)` SHALL serve the nested router
 - **WHEN** `src/bookings.rs` has `pub fn router() -> Router { Router::new().route("/{id}", get(show)) }` and `src/main.rs` has `Router::new().nest("/api/bookings", bookings::router())`
 - **THEN** `src/bookings.rs` serves `http GET /api/bookings/{}` at the line of its `route` call
 
+### Requirement: Routes under every mount
+A route SHALL be served once under each mount of its router and under no other path. `nest` mounts a router under a prefix and `merge` mounts it at the root, so a merged router serves its routes as written, and so does a router that nothing mounts. A route below a mount that a cap cuts keeps the path it is written with.
+
+#### Scenario: A nested router serves only under its prefix
+- **WHEN** `nested.rs` has `fn router() -> Router { Router::new().route("/x", get(x)) }` and `Router::new().nest("/api", router())`
+- **THEN** `nested.rs` serves `http GET /api/x` at the line of the `route` call
+- **AND** it serves nothing under `http GET /x`
+
+#### Scenario: A merged router serves at the root
+- **WHEN** `merged.rs` has the same `router` and `Router::new().merge(router())`
+- **THEN** `merged.rs` serves `http GET /x` at the line of the `route` call and nothing else
+
+#### Scenario: A router both merged and nested serves under both
+- **WHEN** `both.rs` has the same `router` and `Router::new().nest("/api", router()).merge(router())`
+- **THEN** `both.rs` serves `http GET /api/x` and `http GET /x`, both at the line of the `route` call
+
+#### Scenario: A route below a mount cut keeps the path it is written with
+- **WHEN** routers are mounted one in the next 64 levels deep or more, and each serves `GET /r`
+- **THEN** the routers within the limit serve `/r` under the prefixes they are mounted at
+- **AND** the routers below the limit serve `http GET /r`
+
 ### Requirement: Walk and module caps
 Following nested routers SHALL give every router that nothing mounts a budget of its own of 64 levels and 50000 visits, and a crate target SHALL be read up to 10000 modules. A walk or a tree that a cap cuts SHALL be logged with the cap, and every project SHALL name the caps among its blind spots.
 

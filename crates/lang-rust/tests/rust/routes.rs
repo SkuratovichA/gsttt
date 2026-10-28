@@ -36,7 +36,7 @@ fn a_nested_router_in_another_file_serves_under_the_prefix() {
         out.linked("src/bookings.rs"),
         ["5 serves http GET /api/bookings/{}"]
     );
-    // The router may also be run on its own, so the path it declares stays among the file's own sites.
+    // The output keeps the site the file declares, and the graph drops it, because the linked fact keys it again.
     assert_eq!(out.contracts("src/bookings.rs"), ["5 serves http GET /{}"]);
     assert_eq!(out.linked("src/main.rs"), Vec::<String>::new());
 }
@@ -93,4 +93,30 @@ fn a_prefix_that_is_not_text_is_a_blind_spot_and_places_nothing() {
     // other mounts place.
     assert_json_snapshot!(out.sites("src/main.rs"));
     assert_eq!(out.linked("src/bookings.rs").len(), 2);
+}
+
+#[scenario("rust", "A nested router serves only under its prefix")]
+#[test]
+fn a_nested_router_serves_only_under_its_prefix() {
+    let out = index("mounts");
+    assert_eq!(out.graph("src/nested.rs"), ["7 serves http GET /api/x"]);
+}
+
+#[scenario("rust", "A merged router serves at the root")]
+#[test]
+fn a_merged_router_serves_at_the_root() {
+    let out = index("mounts");
+    assert_eq!(out.graph("src/merged.rs"), ["7 serves http GET /x"]);
+}
+
+#[scenario("rust", "A router both merged and nested serves under both")]
+#[test]
+fn a_router_both_merged_and_nested_serves_under_both() {
+    let out = index("mounts");
+    assert_eq!(
+        out.graph("src/both.rs"),
+        ["7 serves http GET /api/x", "7 serves http GET /x"]
+    );
+    // The root mount is reported too: it replaces the bare site with itself, or the nested mount would drop it.
+    assert_json_snapshot!(out.json()["linked"]);
 }

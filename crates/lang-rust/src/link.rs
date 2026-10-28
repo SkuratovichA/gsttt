@@ -3,9 +3,12 @@
 //!
 //! Reading a file records, for each chain of method calls or handler that serves routes, a [`Group`] with the routes
 //! it serves and the routers it mounts, and for each function the groups it hands back. Linking follows the mounts
-//! from the groups nothing mounts, collecting the prefixes on the way, and reports every route that sits behind a
-//! prefix again with the prefix in front. The route without the prefix stays in the facts of its file, because the
-//! engine keeps those as they are: a router that is only ever mounted is indexed at both paths.
+//! from the groups nothing mounts, collecting the prefixes on the way, and reports every route of a mounted router
+//! once for each mount, keyed again with the prefix in front. Each reported fact names the route the file declares, so
+//! the engine drops that one: a router is served under its mounts and under no other path. A mount at the root is
+//! reported only for a router that is mounted under a prefix as well, because a router that is merged and nothing else
+//! is served by the route the file declares. A router that nothing mounts is not reported, and neither is a route below
+//! a cap, so both keep the paths they are written with.
 
 #[cfg(test)]
 mod tests;
@@ -166,6 +169,8 @@ fn follow(
         visits: 0,
         cut: None,
         out: Vec::new(),
+        bare: Vec::new(),
+        prefixed: BTreeSet::new(),
     };
     let mut cuts = Vec::new();
     // A group nothing mounts is where a program starts serving, so the prefixes start there. Groups that only
@@ -182,13 +187,27 @@ fn follow(
             });
         }
     }
-    let mut facts = walk.out;
+    let Walk {
+        mut out,
+        bare,
+        prefixed,
+        ..
+    } = walk;
+    // Dropping the route a file declares for a mount under a prefix takes the mount at the root with it, so that one is
+    // reported too. A router that is merged and nothing else keeps the route the file declares.
+    out.extend(
+        bare.into_iter()
+            .filter(|(node, _)| prefixed.contains(node))
+            .map(|(_, fact)| fact),
+    );
+    let mut facts = out;
     facts.sort_by(|a, b| {
-        (a.file, a.fact.line, &a.fact.key, &a.fact.via).cmp(&(
+        (a.file, a.fact.line, &a.fact.key, &a.fact.via, &a.replaces).cmp(&(
             b.file,
             b.fact.line,
             &b.fact.key,
             &b.fact.via,
+            &b.replaces,
         ))
     });
     facts.dedup();
@@ -332,7 +351,12 @@ struct Walk<'a> {
     visits: usize,
     /// The cap that cut the walk from the current root, if one did.
     cut: Option<Cap>,
+    /// The facts for the mounts behind a prefix.
     out: Vec<LinkedFact>,
+    /// The facts for the mounts at the root, with the group they are of.
+    bare: Vec<(usize, LinkedFact)>,
+    /// The groups that were reported behind a prefix.
+    prefixed: BTreeSet<usize>,
 }
 
 impl<'a> Walk<'a> {
@@ -360,8 +384,10 @@ impl<'a> Walk<'a> {
             return;
         }
         self.visits += 1;
-        if !here.is_empty() {
-            self.report(current, &here);
+        // A group that starts a walk is reported only behind the prefix of its own scope; one entered through a mount is
+        // reported at the root as well.
+        if !stack.is_empty() || !here.is_empty() {
+            self.report(node, current, &here);
         }
         stack.push(node);
         for edge in edges.get(node).into_iter().flatten() {
@@ -376,22 +402,22 @@ impl<'a> Walk<'a> {
         stack.pop();
     }
 
-    /// Reports the routes of `node` behind `prefix`.
-    fn report(&mut self, node: &Node<'a>, prefix: &[&str]) {
-        let prefix = prefix.join("/");
+    /// Reports the routes of the group `index`, which is `node`, behind `prefix`, each keying again the route that the
+    /// file declares. A mount at the root keys it as it is written, and waits in `bare` until the walk is over.
+    fn report(&mut self, index: usize, node: &Node<'a>, prefix: &[&str]) {
+        let behind = prefix.join("/");
         for route in &node.group.routes {
             let Some((method, path)) = route.key.http_parts() else {
                 continue;
             };
-            self.out.push(LinkedFact::found(
-                node.file,
-                ContractFact {
-                    key: contract_key(&ContractKind::Http, Some(&prefix), path, Some(method)),
-                    role: route.role,
-                    line: route.line,
-                    via: route.via.clone(),
-                },
-            ));
+            let key = contract_key(&ContractKind::Http, Some(&behind), path, Some(method));
+            let fact = LinkedFact::rekeyed(node.file, route, key);
+            if prefix.is_empty() {
+                self.bare.push((index, fact));
+            } else {
+                self.prefixed.insert(index);
+                self.out.push(fact);
+            }
         }
     }
 }

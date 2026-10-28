@@ -310,6 +310,7 @@ fn routers_that_mount_each_other_are_walked_once_around() {
     );
 }
 
+#[gsttt_scenario::scenario("rust", "A route below a mount cut keeps the path it is written with")]
 #[test]
 fn a_chain_of_mounts_that_no_program_has_stops_at_the_depth_limit() {
     let depth = u32::try_from(MAX_DEPTH * 4).unwrap();
@@ -322,8 +323,20 @@ fn a_chain_of_mounts_that_no_program_has_stops_at_the_depth_limit() {
             )
         })
         .collect();
+    let files = [source(groups, Vec::new())];
     // The first router sits at the root with no prefix, so it adds nothing, and the walk goes no further than the limit.
-    assert_eq!(linked(&[source(groups, Vec::new())]).len(), MAX_DEPTH - 1);
+    assert_eq!(linked(&files).len(), MAX_DEPTH - 1);
+    // The engine drops the own fact that a linked fact names at its line and no other, so the routes below the cut, which
+    // none names, keep the path they are written with.
+    let replaced: Vec<u32> = over(&files, link)
+        .iter()
+        .filter(|found| found.replaces.is_some())
+        .map(|found| found.fact.line)
+        .collect();
+    assert_eq!(
+        replaced,
+        (2..=u32::try_from(MAX_DEPTH).unwrap()).collect::<Vec<_>>()
+    );
 }
 
 #[test]

@@ -7,6 +7,7 @@ expression: "out.json()[\"linked\"]"
     "file": "src/admin.rs",
     "key": "http GET /admin/v1/users",
     "line": 7,
+    "replaces": "http GET /users",
     "role": "serves",
     "via": "axum"
   },
@@ -14,6 +15,7 @@ expression: "out.json()[\"linked\"]"
     "file": "src/bookings.rs",
     "key": "http GET /api/bookings/{}",
     "line": 5,
+    "replaces": "http GET /{}",
     "role": "serves",
     "via": "axum"
   },
@@ -21,6 +23,7 @@ expression: "out.json()[\"linked\"]"
     "file": "src/bookings.rs",
     "key": "http GET /api/rooms/{}",
     "line": 5,
+    "replaces": "http GET /{}",
     "role": "serves",
     "via": "axum"
   },
@@ -28,6 +31,7 @@ expression: "out.json()[\"linked\"]"
     "file": "src/main.rs",
     "key": "http GET /api/reports",
     "line": 16,
+    "replaces": "http GET /reports",
     "role": "serves",
     "via": "axum"
   },
@@ -35,6 +39,7 @@ expression: "out.json()[\"linked\"]"
     "file": "src/rings.rs",
     "key": "http GET /rings/ping",
     "line": 7,
+    "replaces": "http GET /ping",
     "role": "serves",
     "via": "axum"
   },
@@ -42,6 +47,7 @@ expression: "out.json()[\"linked\"]"
     "file": "src/rings.rs",
     "key": "http GET /rings/pong/pong",
     "line": 11,
+    "replaces": "http GET /pong",
     "role": "serves",
     "via": "axum"
   }

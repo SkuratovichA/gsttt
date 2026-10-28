@@ -1,7 +1,9 @@
 //! Running the engine over a fixture tree and reading what it found.
 
 use gsttt_config::builtin_packs;
+use gsttt_core::engine::build::build_index;
 use gsttt_core::engine::pipeline::{self, Module, Output};
+use gsttt_core::index::IndexInfo;
 use gsttt_core::repo::RepoView;
 use gsttt_lang_rust::{PACKS, RUST};
 use serde::Serialize;
@@ -94,6 +96,32 @@ impl Indexed {
     /// The contract sites of one file as `<line> <role> <key>`, in the order the engine prints them.
     pub(crate) fn contracts(&self, path: &str) -> Vec<String> {
         described(self.file(path)["contracts"].as_array().unwrap())
+    }
+
+    /// The contract sites of one file in the graph the engine builds from the output, as `<line> <role> <key>` in byte
+    /// order. Unlike [`Indexed::contracts`], the graph has applied the rule that a linked fact replaces the own fact it
+    /// names, so it is what a query answers from.
+    pub(crate) fn graph(&self, path: &str) -> Vec<String> {
+        let index = build_index(
+            &self.repo,
+            &self.output,
+            &["rust"],
+            &[],
+            IndexInfo::default(),
+        );
+        let graph = &index.graph;
+        let mut sites: Vec<String> = graph
+            .contracts()
+            .flat_map(|(id, key)| {
+                graph
+                    .sites(id)
+                    .iter()
+                    .filter(|site| graph.path(site.file).is_some_and(|at| at.as_str() == path))
+                    .map(move |site| format!("{} {} {key}", site.line, site.role))
+            })
+            .collect();
+        sites.sort();
+        sites
     }
 
     /// The sites that linking found in one file, written the way [`Indexed::contracts`] writes its own.
