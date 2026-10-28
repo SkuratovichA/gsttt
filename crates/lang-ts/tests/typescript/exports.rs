@@ -87,3 +87,24 @@ fn a_star_does_not_forward_default_to_a_mount() -> Result<(), Box<dyn Error>> {
     );
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A cycle of stars ends")]
+fn a_cycle_of_stars_ends_and_both_followers_find_the_name() -> Result<(), Box<dyn Error>> {
+    // `a.ts` and `b.ts` re-export each other. The linker looks for a name that nothing exports round the cycle until its depth limit, and the walk meets `a.ts` again from the file it just left.
+    assert_eq!(
+        sites("star-cycle")?,
+        ["serves http GET /users/{} @6 in src/b.ts"],
+        "`users` is found behind the cycle and `gone` is not, so only the first is mounted"
+    );
+    assert_eq!(
+        affected_by("star-cycle", "src/extra.ts")?,
+        [
+            "src/a.ts 1 re-exports extra from src/extra.ts",
+            "src/b.ts 2 re-exports extra from src/a.ts",
+            "src/by-gone.ts 2 imports gone from src/a.ts",
+        ],
+        "`a.ts` exports `users` through the cycle, so the importer of `users` is not reached, and it does not export `gone`"
+    );
+    Ok(())
+}

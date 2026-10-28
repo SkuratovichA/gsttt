@@ -32,3 +32,4 @@
 - [x] 6.4 The `re-exports` reason names the source name and its alias; X(T) is built only for a file with an `export *` line and only when a name of it is wanted, whether it exists is asked without collecting a name, and any other file lends the list of the graph
 - [x] 6.5 The TypeScript linker does not forward `default` through `export *`, pinned against the core by a test; one `owned` for the tests; the cut after three names comes from `summary`
 - [x] 6.6 A named re-export of a name the barrel does not export is reached like a use of it, as the oracle of 6.3 requires
+- [x] 6.7 A cycle of `export *` is pinned through the linker and the walk on one fixture, and a router required in place has a test and a scenario

@@ -130,6 +130,16 @@ fn a_mount_cycle_is_cut_where_it_closes() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario("typescript", "A router required in place serves under the mount")]
+fn a_router_required_in_place_serves_under_the_mount() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("express-mount-require")?,
+        ["serves http GET /items/{} @4 in src/items.js"]
+    );
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A router mounted at the root serves without a prefix")]
 fn a_router_mounted_at_the_root_serves_without_a_prefix() -> Result<(), Box<dyn Error>> {
     assert_eq!(
