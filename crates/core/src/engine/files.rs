@@ -3,6 +3,9 @@
 //! In git the set is the tracked files that are present plus the untracked files git does not ignore, minus
 //! submodules, symbolic links and skip-worktree entries. Outside git it is every file the ignore files inside the
 //! root leave in. `Setup.exclude` comes off either way.
+//!
+//! A file is identified by the git blob id of its content. One above `Setup.max_file_bytes` is never parsed, so it
+//! is not read for its id either: its size and modification time stand in for it.
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
@@ -18,10 +21,6 @@ use super::workspace::{GitDirs, Workspace};
 use crate::path::RepoPath;
 use crate::repo::RepoView;
 
-/// Files above this size get no content id: reading them whole costs more than the answer is worth, and the
-/// engine leaves such files unparsed anyway.
-const HASH_LIMIT: u64 = 256 * 1024 * 1024;
-
 /// The git blob id of a file's content: the same 20 bytes `git hash-object` prints.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
@@ -30,8 +29,24 @@ const HASH_LIMIT: u64 = 256 * 1024 * 1024;
 pub struct ContentId([u8; 20]);
 
 impl ContentId {
-    /// The id of a file that could not be read or is too big to hash. It is never a real blob id.
+    /// The id of a file that could not be read. It is never a real blob id.
     pub const UNKNOWN: Self = Self([0; 20]);
+
+    /// The id of a file that is not read, made of its size, the seconds of its modification time and their
+    /// nanoseconds, each little-endian: 8, 8 and 4 bytes. It changes whenever the file is saved, and never equals
+    /// the blob id git gives the file, so a touched file above the size limit shows as modified against git.
+    pub fn from_stat(size: u64, mtime_secs: i64, mtime_nanos: u32) -> Self {
+        let mut id = [0_u8; 20];
+        let parts = size
+            .to_le_bytes()
+            .into_iter()
+            .chain(mtime_secs.to_le_bytes())
+            .chain(mtime_nanos.to_le_bytes());
+        for (slot, byte) in id.iter_mut().zip(parts) {
+            *slot = byte;
+        }
+        Self(id)
+    }
 
     /// The id held by `bytes`, `None` unless they are exactly 20.
     pub fn from_slice(bytes: &[u8]) -> Option<Self> {
@@ -158,16 +173,18 @@ impl Excluder {
 }
 
 /// The files of the work tree in path order, each with its stamp. `previous` gives the stamp a file had in the
-/// last snapshot; outside git a file whose size and modification time still match keeps that id unread.
+/// last snapshot; outside git a file whose size and modification time still match keeps that id unread. A file
+/// above `max_file_bytes` is not read: its id is made of its size and modification time ([`ContentId::from_stat`]).
 pub fn scan(
     workspace: &Workspace,
     exclude: &[String],
+    max_file_bytes: u64,
     previous: &(dyn Fn(&RepoPath) -> Option<Stamp> + Sync),
 ) -> Result<Vec<FileState>, FilesError> {
     let excluder = Excluder::new(workspace.root(), exclude)?;
     let mut states = match workspace.git() {
-        Some(git) => scan_git(workspace.root(), git, &excluder)?,
-        None => scan_plain(workspace.root(), &excluder, previous)?,
+        Some(git) => scan_git(workspace.root(), git, &excluder, max_file_bytes)?,
+        None => scan_plain(workspace.root(), &excluder, max_file_bytes, previous)?,
     };
     states.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     Ok(states)
@@ -191,6 +208,7 @@ fn scan_git(
     root: &Utf8Path,
     git: &GitDirs,
     excluder: &Excluder,
+    max_file_bytes: u64,
 ) -> Result<Vec<FileState>, FilesError> {
     let index_error = |message: String| FilesError::Index {
         root: root.to_owned(),
@@ -245,7 +263,7 @@ fn scan_git(
     Ok(candidates
         .into_par_iter()
         .filter_map(|(path, tracked)| {
-            stamp_file(root, &path, |_| {
+            stamp_file(root, &path, max_file_bytes, |_| {
                 let tracked = tracked.as_ref()?;
                 // The index compares its own stat type, which only gix can build from a path.
                 let metadata = gix::index::fs::Metadata::from_path_no_follow(
@@ -315,6 +333,7 @@ fn is_nested_repo(entry: &ignore::DirEntry) -> bool {
 fn scan_plain(
     root: &Utf8Path,
     excluder: &Excluder,
+    max_file_bytes: u64,
     previous: &(dyn Fn(&RepoPath) -> Option<Stamp> + Sync),
 ) -> Result<Vec<FileState>, FilesError> {
     let view = RepoView::scan(root.to_owned()).map_err(|error| FilesError::List {
@@ -328,15 +347,21 @@ fn scan_plain(
         .collect();
     Ok(paths
         .into_par_iter()
-        .filter_map(|path| stamp_file(root, path, |meta| previous(path)?.id_of_unchanged(meta)))
+        .filter_map(|path| {
+            stamp_file(root, path, max_file_bytes, |meta| {
+                previous(path)?.id_of_unchanged(meta)
+            })
+        })
         .collect())
 }
 
 /// Stamps a present regular file. `known` gives its id from what is already known, without reading it; when it
-/// cannot, the file is hashed. A file that is gone or is not a regular file gives `None`.
+/// cannot, the file is hashed, unless it is above `max_file_bytes` and so never parsed. A file that is gone or is
+/// not a regular file gives `None`.
 fn stamp_file(
     root: &Utf8Path,
     path: &RepoPath,
+    max_file_bytes: u64,
     known: impl FnOnce(&Metadata) -> Option<ContentId>,
 ) -> Option<FileState> {
     let absolute = root.join(path.as_str());
@@ -344,17 +369,21 @@ fn stamp_file(
     if !meta.is_file() {
         return None;
     }
-    let id = known(&meta).unwrap_or_else(|| hash_file(&absolute, meta.len()));
+    let id = known(&meta).unwrap_or_else(|| {
+        if meta.len() > max_file_bytes {
+            let (size, secs, nanos) = stat_of(&meta);
+            ContentId::from_stat(size, secs, nanos)
+        } else {
+            hash_file(&absolute)
+        }
+    });
     Some(FileState {
         path: path.clone(),
         stamp: Stamp::of(id, &meta),
     })
 }
 
-fn hash_file(path: &Utf8Path, size: u64) -> ContentId {
-    if size > HASH_LIMIT {
-        return ContentId::UNKNOWN;
-    }
+fn hash_file(path: &Utf8Path) -> ContentId {
     fs::read(path).map_or(ContentId::UNKNOWN, |bytes| blob_id(&bytes))
 }
 
@@ -384,9 +413,13 @@ mod tests {
     use crate::engine::testing::{git, init_repo, merge_with_conflict, write};
 
     fn scan_dir(dir: &Path, exclude: &[&str]) -> Vec<FileState> {
+        scan_limited(dir, exclude, u64::MAX)
+    }
+
+    fn scan_limited(dir: &Path, exclude: &[&str], max_file_bytes: u64) -> Vec<FileState> {
         let workspace = Workspace::locate_with(Utf8Path::from_path(dir).unwrap(), None).unwrap();
         let exclude: Vec<String> = exclude.iter().map(|&pattern| pattern.to_owned()).collect();
-        scan(&workspace, &exclude, &|_| None).unwrap()
+        scan(&workspace, &exclude, max_file_bytes, &|_| None).unwrap()
     }
 
     fn paths(states: &[FileState]) -> Vec<&str> {
@@ -466,16 +499,59 @@ mod tests {
             Some(Utf8PathBuf::from_path_buf(cache.path().to_path_buf()).unwrap()),
         )
         .unwrap();
-        let first = scan(&workspace, &[], &|_| None).unwrap();
+        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
         assert_eq!(first[0].stamp.id, blob_id(b"content"));
 
         let stored = Stamp {
             id: blob_id(b"stored"),
             ..first[0].stamp
         };
-        let second = scan(&workspace, &[], &|_| Some(stored)).unwrap();
+        let second = scan(&workspace, &[], u64::MAX, &|_| Some(stored)).unwrap();
 
         assert_eq!(second[0].stamp.id, stored.id);
+    }
+
+    #[test]
+    fn a_stat_id_is_made_of_the_size_and_the_time() {
+        let id = ContentId::from_stat(1, 2, 3);
+        assert_eq!(
+            id.as_bytes(),
+            &[1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0]
+        );
+        assert_eq!(
+            &ContentId::from_stat(0, -1, 0).as_bytes()[8..16],
+            &[0xff; 8]
+        );
+        assert_ne!(id, ContentId::from_stat(1, 2, 4));
+    }
+
+    #[cfg(unix)]
+    #[gsttt_scenario::scenario("indexing", "A file above the size limit is not read for its id")]
+    #[test]
+    fn a_file_above_the_limit_is_not_read_for_its_id() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = init_repo(&[("a.ts", "a")]);
+        write(dir.path(), "dump.sql", "0123456789");
+        let dump = dir.path().join("dump.sql");
+        fs::set_permissions(&dump, fs::Permissions::from_mode(0o000)).unwrap();
+        // A process that can read the file anyway cannot show that it was not read.
+        if fs::read(&dump).is_ok() {
+            return;
+        }
+        let dump_id = |limit: u64| {
+            let states = scan_limited(dir.path(), &[], limit);
+            let state = states
+                .iter()
+                .find(|state| state.path.as_str() == "dump.sql")
+                .unwrap();
+            state.stamp.id
+        };
+
+        let (size, secs, nanos) = stat_of(&fs::metadata(&dump).unwrap());
+        assert_eq!(dump_id(4), ContentId::from_stat(size, secs, nanos));
+        // Under the limit the file is read for its id, and this one cannot be.
+        assert_eq!(dump_id(100), ContentId::UNKNOWN);
     }
 
     #[test]
@@ -488,13 +564,13 @@ mod tests {
             Some(Utf8PathBuf::from_path_buf(cache.path().to_path_buf()).unwrap()),
         )
         .unwrap();
-        let first = scan(&workspace, &[], &|_| None).unwrap();
+        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
         let unknown = Stamp {
             id: ContentId::UNKNOWN,
             ..first[0].stamp
         };
 
-        let second = scan(&workspace, &[], &|_| Some(unknown)).unwrap();
+        let second = scan(&workspace, &[], u64::MAX, &|_| Some(unknown)).unwrap();
 
         assert_eq!(second[0].stamp.id, blob_id(b"content"));
     }

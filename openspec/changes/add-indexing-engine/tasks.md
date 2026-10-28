@@ -36,3 +36,4 @@
 - [x] 5.7 A file saved between the listing and the read of a run is filed under the id of the bytes that were read, and one that changed while it was being read has no id
 - [x] 5.8 Sibling snapshots are read only when the own snapshot is absent or lacks the facts of more than max(64, 5%) of the claimed files, their headers are checked before their bodies, and a run reports how many it read
 - [x] 5.9 The no-op comparison, the stamps of the listing and the seeds read the snapshot where it lies, found by path with a binary search, and copy out only the index and the facts of the files that are taken; a file whose read failed is stored without a key
+- [x] 5.10 A file above `max_file_bytes` is not read for its id (its size and modification time stand in), the 256 MiB hashing limit is gone, and only a file that cannot be read has no content id

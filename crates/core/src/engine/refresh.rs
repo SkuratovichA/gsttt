@@ -402,9 +402,12 @@ impl<'a> Engine<'a> {
 
     /// The files of the work tree, with the stamps of the previous snapshot to spare hashing what did not change.
     fn listing(&self, previous: Option<&ArchivedStored>) -> Result<Vec<FileState>, FilesError> {
-        files::scan(&self.workspace, &self.setup.exclude, &|path| {
-            previous?.stamp_of(path)
-        })
+        files::scan(
+            &self.workspace,
+            &self.setup.exclude,
+            self.setup.max_file_bytes,
+            &|path| previous?.stamp_of(path),
+        )
     }
 
     fn changes_since(
@@ -1158,6 +1161,35 @@ mod tests {
         assert!(!third.unchanged);
         assert_eq!((third.parsed, third.reused), (1, 1));
         assert_eq!(imports_of(&third.index, "a.txt"), 1);
+    }
+
+    #[cfg(unix)]
+    #[gsttt_scenario::scenario("indexing", "A file above the size limit does not stop a no-op")]
+    #[test]
+    fn a_file_above_the_limit_does_not_stop_a_no_op() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "use b.txt\n"), ("b.txt", "")]);
+        write(dir.path(), "dump.txt", "0123456789012345678\n");
+        let dump = dir.path().join("dump.txt");
+        fs::set_permissions(&dump, fs::Permissions::from_mode(0o000)).unwrap();
+        // A process that can read the file anyway cannot show that it is not read.
+        if fs::read(&dump).is_ok() {
+            return;
+        }
+        let setup = Setup {
+            max_file_bytes: 12,
+            ..Setup::default()
+        };
+
+        let first = index(&rig, &dir, &setup).unwrap();
+        let file = first.index.graph.file_id("dump.txt").unwrap();
+        assert!(matches!(
+            first.index.record(file).unwrap().status,
+            ParseStatus::Failed(ParseFailure::TooLarge { .. })
+        ));
+        assert!(index(&rig, &dir, &setup).unwrap().unchanged);
     }
 
     #[gsttt_scenario::scenario("indexing", "A file that could not be read is read again")]

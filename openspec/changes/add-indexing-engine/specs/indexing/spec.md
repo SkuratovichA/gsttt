@@ -35,7 +35,15 @@ The engine SHALL index the tracked files present in the work tree, conflicted on
 - **THEN** the index holds that file with the id of the work tree file, conflict markers included
 
 ### Requirement: Content ids
-The engine SHALL identify each file's content by its git blob id, SHALL take the id of a clean tracked file from the git index without reading the file, and SHALL hash a modified or untracked file. Outside git a file whose size and modification time match the snapshot SHALL keep its stored id.
+The engine SHALL identify each file's content by its git blob id, SHALL take the id of a clean tracked file from the git index without reading the file, and SHALL hash a modified or untracked file. Outside git a file whose size and modification time match the snapshot SHALL keep its stored id. A file above `max_file_bytes` is never parsed, so it SHALL NOT be read for its id: its size and modification time SHALL stand in for it, and touching such a file makes it count as modified.
+
+#### Scenario: A file above the size limit is not read for its id
+- **WHEN** a file larger than `max_file_bytes` is in the work tree and the process is not allowed to read it
+- **THEN** its content id is made of its size and modification time, whereas an unreadable file under the limit has no content id
+
+#### Scenario: A file above the size limit does not stop a no-op
+- **WHEN** a tree holds a file larger than `max_file_bytes` that the process cannot read, and it is indexed twice
+- **THEN** the second refresh is a no-op
 
 #### Scenario: An edited file gets the id git would give it
 - **WHEN** a committed file is edited and the engine refreshes
