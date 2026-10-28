@@ -42,6 +42,14 @@ pub struct Miss {
     pub reason: UnresolvedReason,
 }
 
+impl Miss {
+    /// Puts `misses` in the order they are read in: by file, then line, then specifier. A connector lists the imports
+    /// of a file in the order it found them, which is not always the order they stand in.
+    pub(super) fn sort(misses: &mut [Self]) {
+        misses.sort_by(|a, b| (&a.path, a.line, &a.spec).cmp(&(&b.path, b.line, &b.spec)));
+    }
+}
+
 /// `src/a.ts:4 imports ./old (no such file)`.
 impl fmt::Display for Miss {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -83,6 +91,7 @@ pub(super) fn possible_misses(index: &Index, files: &[&RepoPath]) -> Vec<Miss> {
             }
         }
     }
+    Miss::sort(&mut misses);
     misses
 }
 

@@ -232,6 +232,71 @@ fn dependencies_are_ordered_by_path_and_packages_by_name() {
     );
 }
 
+/// An import that points at nothing, which is all the ordering tests below need of it.
+fn missing(spec: &str, kind: ImportKind, line: u32) -> (Import, To) {
+    (
+        Import::new(spec, kind, line),
+        To::Missing(UnresolvedReason::NotFound),
+    )
+}
+
+#[test]
+fn possible_misses_are_ordered_by_path_then_line_then_specifier() {
+    // Each file lists its imports out of line order, as a connector that finds dynamic imports after static ones
+    // would.
+    let mut tree = Tree::new().read_by("ts", "src/old.ts");
+    for (from, spec, kind, line) in [
+        ("src/b.ts", "./old", ImportKind::Static, 9),
+        ("src/b.ts", "./old", ImportKind::Dynamic, 2),
+        ("src/a.ts", "./old", ImportKind::Static, 5),
+        ("src/a.ts", "../lib/old", ImportKind::Static, 5),
+    ] {
+        let (import, to) = missing(spec, kind, line);
+        tree = tree.import(from, import, to);
+    }
+    let index = tree.build();
+
+    let answer = dependents(&index, Freshness::Fresh, "src/old.ts");
+
+    let misses: Vec<(&str, u32, &str)> = answer
+        .possible_misses
+        .iter()
+        .map(|miss| (miss.path.as_str(), miss.line, miss.spec.as_str()))
+        .collect();
+    assert_eq!(
+        misses,
+        [
+            ("src/a.ts", 5, "../lib/old"),
+            ("src/a.ts", 5, "./old"),
+            ("src/b.ts", 2, "./old"),
+            ("src/b.ts", 9, "./old"),
+        ]
+    );
+}
+
+#[test]
+fn unresolved_imports_are_ordered_by_line_then_specifier() {
+    let mut tree = Tree::new();
+    for (spec, kind, line) in [
+        ("./z", ImportKind::Static, 7),
+        ("./y", ImportKind::Dynamic, 7),
+        ("./x", ImportKind::Static, 3),
+    ] {
+        let (import, to) = missing(spec, kind, line);
+        tree = tree.import("src/a.ts", import, to);
+    }
+    let index = tree.build();
+
+    let answer = dependencies(&index, Freshness::Fresh, "src/a.ts");
+
+    let unresolved: Vec<(u32, &str)> = answer
+        .unresolved
+        .iter()
+        .map(|miss| (miss.line, miss.spec.as_str()))
+        .collect();
+    assert_eq!(unresolved, [(3, "./x"), (7, "./y"), (7, "./z")]);
+}
+
 #[test]
 fn a_file_that_imports_nothing_says_so() {
     let index = Tree::new().imports("b.ts", "a.ts").build();

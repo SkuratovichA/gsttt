@@ -219,7 +219,7 @@ pub fn dependencies(index: &Index, freshness: Freshness, path: &str) -> Dependen
             Resolution::File { .. } | Resolution::Files { .. } => {}
         }
     }
-    unresolved.sort_by(|a, b| (a.line, &a.spec).cmp(&(b.line, &b.spec)));
+    Miss::sort(&mut unresolved);
 
     Dependencies {
         path: name.to_string(),
