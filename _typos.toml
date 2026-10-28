@@ -8,11 +8,25 @@ extend-exclude = [
 ]
 
 [default]
-# Test data that is misspelled or encoded on purpose, allowed where it stands and nowhere else, so that "exlude" or "caf" anywhere else is still reported.
+# Test data that is misspelled or encoded on purpose, and names that a dependency chose, allowed where they stand and nowhere else, so that "exlude", "caf" or "ba" anywhere else is still reported.
 extend-ignore-re = [
   # The Lua config spec sets up a misspelled option to check that it is rejected.
   'exlude = \{',
   'naming `exlude`',
+  # The config test asserts that the message names that option.
+  'contains\("`exlude`"\)',
   # "café" as the bytes of Latin-1, in the engine test of a file that is not UTF-8.
   'b"caf\\xe9',
+  # The Python linker test mounts a package at "/ba", a path that is not a word.
+  'mount\("a", "b", "/ba"\)',
+  # The TypeScript resolver test matches the glob "ab*ba" against "aba", letters that are not a word.
+  'capture\("ab\*ba", "aba"\)',
+  # gix names the path of a directory entry `rela_path`, short for relative.
+  'entry\.rela_path',
 ]
+
+[default.extend-words]
+# The engine's `Excluder` compiles the `exclude` patterns of the setup and is the matcher that excludes; the word is English, and typos does not know it.
+excluder = "excluder"
+# `Failure::Unparseable` is the variant for a line that an external process sent and that is not a message; the word is English, and typos does not know it.
+unparseable = "unparseable"

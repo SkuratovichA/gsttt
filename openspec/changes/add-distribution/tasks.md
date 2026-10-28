@@ -39,3 +39,7 @@
 - [x] 5.14 A test pins the fields that make a package the same on every machine (the times, owners and format of the tar headers, and the time and system byte of the gzip header), the code says what else the bytes depend on, and AGENTS.md says that the tests need `cargo-deny`
 - [x] 5.15 `docs/architecture.md` says that the manifest declares the server and the hook inline and that the wrapper runs both, and where the wrapper looks for the binary
 - [x] 5.16 `_typos.toml` lets the two deliberate test strings (a misspelled option name and a Latin-1 byte string) pass only where they stand, by patterns that name the text around them, and the same words anywhere else are still reported
+
+## 6. Integration fixes
+
+- [x] 6.1 `typos` exits 0 on the whole stack: `_typos.toml` accepts the engine's `excluder` and the config's `unparseable` as the words they are, and lets the test data of the lower layers and the name of a field of gix pass only where they stand
