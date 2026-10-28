@@ -18,5 +18,5 @@
 
 ## 4. Proof
 
-- [ ] 4.1 A test annotated `#[scenario("distribution", …)]` for every scenario of the `distribution` spec, the installer ones against a local directory
-- [ ] 4.2 `cargo xtask check` passes on this repository, and `cargo nextest run -p xtask`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+- [x] 4.1 A test annotated `#[scenario("distribution", …)]` for every scenario of the `distribution` spec, the installer ones against a local directory
+- [x] 4.2 `cargo xtask check` passes on this repository, and `cargo nextest run -p xtask`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
