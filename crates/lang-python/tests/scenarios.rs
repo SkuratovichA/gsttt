@@ -980,6 +980,38 @@ fn a_migration_declares_its_tables() {
     insta::assert_json_snapshot!("a_migration_declares_its_tables", tree.file_json(path));
 }
 
+#[gsttt_scenario::scenario("python", "A migration with an aliased op declares its tables")]
+#[test]
+fn a_migration_with_an_aliased_op_declares_its_tables() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"shop\"\ndependencies = [\"alembic\"]\n",
+        ),
+        (
+            "versions/0002.py",
+            r#"import sqlalchemy as sa
+from alembic import op as o
+from alembic.op import drop_table as drop
+
+
+def upgrade():
+    o.create_table("bookings", sa.Column("id", sa.Integer))
+    o.create_index("ix_items_note", "booking_items", ["note"])
+    drop("old_bookings")
+"#,
+        ),
+    ]);
+    assert_eq!(
+        tree.contracts("versions/0002.py"),
+        [
+            "declares table bookings@7",
+            "declares table booking_items@8",
+            "declares table old_bookings@9"
+        ]
+    );
+}
+
 #[gsttt_scenario::scenario("python", "Raw SQL is embedded")]
 #[test]
 fn raw_sql_is_embedded() {

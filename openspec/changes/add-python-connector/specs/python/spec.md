@@ -332,11 +332,15 @@ With the `sqlalchemy` pack, a table name that a `declared_attr` function gives o
 - **AND** the provides of the project name table names given by a `declared_attr` or inherited from a mixin as a blind spot
 
 ### Requirement: Alembic migrations
-With the `alembic` pack, `op.create_table`, `op.drop_table`, `op.rename_table`, `op.add_column`, `op.drop_column`, `op.alter_column` and `op.create_index` SHALL declare `table <name>` for the table they name.
+With the `alembic` pack, `op.create_table`, `op.drop_table`, `op.rename_table`, `op.add_column`, `op.drop_column`, `op.alter_column` and `op.create_index` SHALL declare `table <name>` for the table they name, whatever `op` is imported as.
 
 #### Scenario: A migration declares its tables
 - **WHEN** an Alembic revision has `op.create_table("bookings", sa.Column("id", sa.Integer))` and `op.add_column("booking_items", sa.Column("note", sa.Text))`
 - **THEN** it declares `table bookings` and `table booking_items`
+
+#### Scenario: A migration with an aliased op declares its tables
+- **WHEN** an Alembic revision has `from alembic import op as o` and `from alembic.op import drop_table as drop`, and calls `o.create_table("bookings", …)`, `o.create_index("ix_items_note", "booking_items", ["note"])` and `drop("old_bookings")`
+- **THEN** it declares `table bookings`, `table booking_items` and `table old_bookings`
 
 ### Requirement: DB-API SQL
 With the `dbapi` pack, the first argument of `execute` and `executemany` on a receiver of up to three segments SHALL be an embedded `sql` document when it is a string literal. The document SHALL start on the line its first literal starts on and keep the lines of the source: each part of a literal joined by `+` or implicit concatenation stays on its own line, a line break in the source stays, and one an escape writes adds none; a `--` comment before it SHALL make the call an unread site.
