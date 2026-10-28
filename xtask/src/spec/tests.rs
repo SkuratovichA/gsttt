@@ -1447,6 +1447,26 @@ fn a_block_that_leaves_out_two_scenarios_names_both() {
     assert!(outcome.output.contains(&failure), "{}", outcome.output);
 }
 
+#[test]
+fn a_title_that_the_replaced_block_holds_twice_is_named_once() {
+    let tree = Tree::new();
+    // The main spec holds `Same title` twice and `reword` writes neither copy. The block leaves out one title, so the failure names it once and in the singular.
+    let modified = delta("MODIFIED", &[requirement("Matching", &["Other title"])]);
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["Same title", "Same title"])]),
+    )
+    .change("reword", TICKED, &[("queries", &modified)])
+    .source("tests/same.rs", &proof("queries", "Same title"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/reword/specs/queries/spec.md:{}: change `reword` modifies requirement `Matching` of capability `queries` and leaves out scenario `Same title` of the requirement it replaces, and `openspec archive` refuses such a block",
+        line_of(&modified, "Requirement: Matching")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+}
+
 /// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine` with the `## Purpose` taken out of its delta.
 const PLACEHOLDER: &str =
     "TBD - created by archiving change add-indexing-engine. Update Purpose after archive.";

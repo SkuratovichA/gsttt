@@ -587,24 +587,22 @@ fn rivals(changes: &[Open]) -> Vec<Failure> {
         .collect()
 }
 
-/// The titles of the scenarios of `replaced` that `modified` does not match, counting a title as often as it is written the way `openspec archive` does: a title that `replaced` holds more often than `modified` leaves the difference.
+/// The titles of the scenarios of `replaced` that `modified` does not match, each once, counting a title as often as it is written the way `openspec archive` does: a title that `replaced` holds more often than `modified` leaves the difference.
 fn missing_titles<'a>(replaced: &'a Requirement, modified: &Requirement) -> Vec<&'a str> {
     let mut available: BTreeMap<&str, usize> = BTreeMap::new();
     for scenario in &modified.scenarios {
         *available.entry(scenario.title.as_str()).or_default() += 1;
     }
-    replaced
-        .scenarios
-        .iter()
-        .map(|scenario| scenario.title.as_str())
-        .filter(|title| {
-            let Some(left) = available.get_mut(*title).filter(|left| **left > 0) else {
-                return true;
-            };
-            *left -= 1;
-            false
-        })
-        .collect()
+    let mut missing = Vec::new();
+    for scenario in &replaced.scenarios {
+        let title = scenario.title.as_str();
+        match available.get_mut(title).filter(|left| **left > 0) {
+            Some(left) => *left -= 1,
+            None if missing.contains(&title) => {}
+            None => missing.push(title),
+        }
+    }
+    missing
 }
 
 /// A modified requirement that leaves out scenarios of the requirement it replaces, which `openspec archive` refuses: the change waits until it keeps them.
