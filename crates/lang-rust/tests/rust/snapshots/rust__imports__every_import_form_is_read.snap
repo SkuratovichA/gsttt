@@ -1,0 +1,161 @@
+---
+source: crates/lang-rust/tests/rust/imports.rs
+expression: "out.file(\"src/forms.rs\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "crate::a::helper",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "helper"
+      ],
+      "to": {
+        "file": "src/a.rs"
+      }
+    },
+    {
+      "spec": "crate::a",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "a"
+      ],
+      "to": {
+        "file": "src/a.rs"
+      }
+    },
+    {
+      "spec": "crate::a::c::Thing",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "Renamed"
+      ],
+      "to": {
+        "file": "src/a/c.rs"
+      }
+    },
+    {
+      "spec": "crate::a::SAMPLE",
+      "kind": "re-export",
+      "line": 3,
+      "flags": 0,
+      "names": [
+        "SAMPLE"
+      ],
+      "to": {
+        "file": "src/a.rs"
+      }
+    },
+    {
+      "spec": "crate::a::c",
+      "kind": "static",
+      "line": 4,
+      "flags": 0,
+      "names": [
+        "*"
+      ],
+      "to": {
+        "file": "src/a/c.rs"
+      }
+    },
+    {
+      "spec": "crate::a::c",
+      "kind": "re-export-all",
+      "line": 5,
+      "flags": 0,
+      "names": [
+        "*"
+      ],
+      "to": {
+        "file": "src/a/c.rs"
+      }
+    },
+    {
+      "spec": "serde",
+      "kind": "static",
+      "line": 6,
+      "flags": 0,
+      "names": [
+        "sd"
+      ],
+      "to": {
+        "external": "serde"
+      }
+    },
+    {
+      "spec": "local",
+      "kind": "module",
+      "line": 7,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "src/forms/local.rs"
+      }
+    },
+    {
+      "spec": "crate::a::helper",
+      "kind": "static",
+      "line": 10,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "src/a.rs"
+      }
+    },
+    {
+      "spec": "self::local::go",
+      "kind": "static",
+      "line": 10,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "src/forms/local.rs"
+      }
+    },
+    {
+      "spec": "data.txt",
+      "kind": "include",
+      "line": 13,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "src/data.txt"
+      }
+    },
+    {
+      "spec": "data.txt",
+      "kind": "include",
+      "line": 14,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "src/data.txt"
+      }
+    },
+    {
+      "spec": "snippet.rs",
+      "kind": "include",
+      "line": 15,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "src/snippet.rs"
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "src/forms.rs",
+  "project": "rust ."
+}

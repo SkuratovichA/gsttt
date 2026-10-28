@@ -1,0 +1,54 @@
+---
+source: crates/lang-rust/tests/rust/workspace.rs
+expression: imports
+---
+[
+  {
+    "spec": "serde::Deserialize",
+    "kind": "static",
+    "line": 1,
+    "flags": 0,
+    "names": [
+      "Deserialize"
+    ],
+    "to": {
+      "external": "serde"
+    }
+  },
+  {
+    "spec": "tokio::sync::Mutex",
+    "kind": "static",
+    "line": 2,
+    "flags": 0,
+    "names": [
+      "Mutex"
+    ],
+    "to": {
+      "external": "tokio"
+    }
+  },
+  {
+    "spec": "std::collections::HashMap",
+    "kind": "static",
+    "line": 3,
+    "flags": 0,
+    "names": [
+      "HashMap"
+    ],
+    "to": "builtin"
+  },
+  {
+    "spec": "rand::random",
+    "kind": "static",
+    "line": 4,
+    "flags": 0,
+    "names": [
+      "random"
+    ],
+    "to": {
+      "unresolved": {
+        "reason": "unknown-package"
+      }
+    }
+  }
+]

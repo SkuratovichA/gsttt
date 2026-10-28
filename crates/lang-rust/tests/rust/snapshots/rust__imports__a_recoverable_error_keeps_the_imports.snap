@@ -1,0 +1,31 @@
+---
+source: crates/lang-rust/tests/rust/imports.rs
+expression: file
+---
+{
+  "status": {
+    "status": "recovered",
+    "errors": 1,
+    "first_error_line": 3
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "crate::a::B",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "B"
+      ],
+      "to": {
+        "file": "src/a.rs"
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "src/broken.rs",
+  "project": "rust ."
+}

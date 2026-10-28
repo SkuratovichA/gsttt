@@ -1,0 +1,40 @@
+---
+source: crates/lang-rust/tests/rust/imports.rs
+expression: imports
+---
+[
+  {
+    "spec": "tests",
+    "kind": "module",
+    "line": 2,
+    "flags": 8,
+    "names": [],
+    "to": {
+      "file": "src/conditional/tests.rs"
+    }
+  },
+  {
+    "spec": "crate::cli::Args",
+    "kind": "static",
+    "line": 4,
+    "flags": 2,
+    "names": [
+      "Args"
+    ],
+    "to": {
+      "file": "src/lib.rs"
+    }
+  },
+  {
+    "spec": "self::Thing",
+    "kind": "static",
+    "line": 7,
+    "flags": 8,
+    "names": [
+      "Thing"
+    ],
+    "to": {
+      "file": "src/conditional.rs"
+    }
+  }
+]
