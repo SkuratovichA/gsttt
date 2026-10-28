@@ -61,6 +61,13 @@ A `$ref` to another file SHALL be an import resolving relative to the referring 
 - **WHEN** `api/openapi.yaml` has `/bookings: {$ref: "./paths/bookings.yaml"}` and `api/paths/bookings.yaml` has `get` and `post` at its top level
 - **THEN** `api/paths/bookings.yaml` declares `http GET /bookings` and `http POST /bookings`
 
+### Requirement: OpenAPI anchors
+An operation that a YAML alias or a `<<` merge key brings into a path item SHALL be declared like one written there, at the line where it is written. An entry the mapping sets itself SHALL win over a merged one, and the first of several merged mappings SHALL win over the later.
+
+#### Scenario: Operations reached through an alias or a merge key are declared
+- **WHEN** `openapi.yaml` anchors a path item with a `get` as `&list` at line 4, gives `/bookings` the alias `*list`, and gives `/carts` the merge key `<<: *list` and a `post` of its own at line 12
+- **THEN** it declares `http GET /bookings` and `http GET /carts` at line 5, where the `get` is written, and `http POST /carts` at line 12
+
 ### Requirement: OpenAPI documents that cannot be searched
 A document that is too large, unreadable or invalid when the connector looks for the fragments a `$ref` reaches SHALL be skipped with a logged warning that names it, and the references of the other documents SHALL still be followed.
 

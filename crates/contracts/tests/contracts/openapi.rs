@@ -58,6 +58,26 @@ fn swagger_two_documents_use_their_base_path() {
     );
 }
 
+#[gsttt_scenario::scenario(
+    "contract-formats",
+    "Operations reached through an alias or a merge key are declared"
+)]
+#[test]
+fn operations_reached_through_an_alias_or_a_merge_key_are_declared() {
+    let run = Run::new("openapi_anchors", &[module(&OPENAPI)]);
+    assert_eq!(run.status("openapi.yaml"), &ParseStatus::Ok);
+    // The anchored `get` is written at line 5, which is where both paths that reach it report it.
+    assert_eq!(
+        run.sites("openapi.yaml"),
+        vec![
+            "declares http GET /bookings @5",
+            "declares http GET /carts @5",
+            "declares http POST /carts @12",
+        ]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
 #[gsttt_scenario::scenario("contract-formats", "References are imports")]
 #[test]
 fn references_are_imports() {

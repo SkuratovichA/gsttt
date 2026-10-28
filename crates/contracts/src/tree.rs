@@ -1,6 +1,8 @@
 //! A small tree for YAML and JSON documents that remembers the line of every key, so OpenAPI documents and buf
 //! configs are read in one way whichever syntax they are written in.
 
+use std::collections::HashSet;
+
 use gsttt_core::fact::Line;
 use gsttt_core::text::LineIndex;
 use jsonc_parser::common::Ranged;
@@ -12,6 +14,9 @@ use crate::common::{SyntaxError, byte_offset};
 /// Documents nested deeper than this read as [`Value::Other`] below that level, so hostile input cannot exhaust the
 /// stack of the readers that walk the tree.
 pub(crate) const MAX_DEPTH: usize = 64;
+
+/// The YAML key whose value, a mapping or a sequence of mappings, is merged into the mapping that holds the key.
+const MERGE_KEY: &str = "<<";
 
 /// A YAML or JSON value; scalars other than strings are not told apart because no reader needs them.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -95,20 +100,20 @@ fn from_yaml(node: &MarkedYaml<'_>, depth: usize) -> Value {
         return Value::Other;
     }
     if let Some(mapping) = node.data.as_mapping() {
-        return Value::Map(
-            mapping
-                .iter()
-                .filter_map(|(key, value)| {
-                    Some(Entry {
-                        key: key.data.as_str()?.to_owned(),
-                        line: u32::try_from(key.span.start.line())
-                            .unwrap_or(u32::MAX)
-                            .max(1),
-                        value: from_yaml(value, depth + 1),
-                    })
+        // A key that is not a string, a status code written `200:`, is dropped: no reader asks for one.
+        let entries = mapping
+            .iter()
+            .filter_map(|(key, value)| {
+                Some(Entry {
+                    key: key.data.as_str()?.to_owned(),
+                    line: u32::try_from(key.span.start.line())
+                        .unwrap_or(u32::MAX)
+                        .max(1),
+                    value: from_yaml(value, depth + 1),
                 })
-                .collect(),
-        );
+            })
+            .collect();
+        return Value::Map(merge_keys(entries));
     }
     if let Some(sequence) = node.data.as_sequence() {
         return Value::Seq(
@@ -121,6 +126,44 @@ fn from_yaml(node: &MarkedYaml<'_>, depth: usize) -> Value {
     node.data
         .as_str()
         .map_or(Value::Other, |text| Value::Str(text.to_owned()))
+}
+
+/// Resolves the `<<` merge keys of a mapping, which the YAML loader leaves as entries named `<<` that hold the mapping
+/// they name. The entries of a merged mapping follow those the mapping sets itself and never replace one, and of
+/// several merged mappings the first wins. A `<<` that names no mapping stays an entry.
+fn merge_keys(entries: Vec<Entry>) -> Vec<Entry> {
+    if !entries.iter().any(|entry| entry.key == MERGE_KEY) {
+        return entries;
+    }
+    let mut own = Vec::with_capacity(entries.len());
+    let mut sources: Vec<Vec<Entry>> = Vec::new();
+    for entry in entries {
+        if entry.key != MERGE_KEY {
+            own.push(entry);
+            continue;
+        }
+        match entry.value {
+            Value::Map(merged) => sources.push(merged),
+            Value::Seq(items) if items.iter().any(|item| matches!(item, Value::Map(_))) => {
+                sources.extend(items.into_iter().filter_map(|item| match item {
+                    Value::Map(merged) => Some(merged),
+                    _ => None,
+                }));
+            }
+            value => own.push(Entry {
+                key: entry.key,
+                line: entry.line,
+                value,
+            }),
+        }
+    }
+    let mut taken: HashSet<String> = own.iter().map(|entry| entry.key.clone()).collect();
+    for entry in sources.into_iter().flatten() {
+        if taken.insert(entry.key.clone()) {
+            own.push(entry);
+        }
+    }
+    own
 }
 
 fn from_json(value: &ast::Value<'_>, lines: &LineIndex, depth: usize) -> Value {
@@ -179,6 +222,53 @@ mod tests {
         assert_eq!(paths.get("/a").unwrap().entries()[0].line, 3);
     }
 
+    fn keys(value: &Value) -> Vec<(&str, Line)> {
+        value
+            .entries()
+            .iter()
+            .map(|entry| (entry.key.as_str(), entry.line))
+            .collect()
+    }
+
+    #[test]
+    fn an_alias_reads_as_the_node_it_names() {
+        let tree = parse_yaml("base: &base\n  get: {}\nuse: *base\n").unwrap();
+        assert_eq!(keys(tree.get("use").unwrap()), vec![("get", 2)]);
+    }
+
+    #[test]
+    fn a_merge_key_adds_the_entries_of_the_mapping_it_names() {
+        let tree = parse_yaml("base: &base\n  get: {}\nuse:\n  <<: *base\n  post: {}\n").unwrap();
+        assert_eq!(
+            keys(tree.get("use").unwrap()),
+            vec![("post", 5), ("get", 2)]
+        );
+    }
+
+    #[test]
+    fn an_entry_a_mapping_sets_itself_wins_over_a_merged_one() {
+        let text = "base: &base\n  get: { a: 1 }\n  put: {}\nuse:\n  <<: *base\n  get: {}\n";
+        let tree = parse_yaml(text).unwrap();
+        let used = tree.get("use").unwrap();
+        assert_eq!(keys(used), vec![("get", 6), ("put", 3)]);
+        assert_eq!(used.get("get"), Some(&Value::Map(Vec::new())));
+    }
+
+    #[test]
+    fn the_first_of_several_merged_mappings_wins() {
+        let text = "a: &a\n  get: { a: 1 }\nb: &b\n  get: {}\n  put: {}\nuse:\n  <<: [*a, *b]\n";
+        let tree = parse_yaml(text).unwrap();
+        let used = tree.get("use").unwrap();
+        assert_eq!(keys(used), vec![("get", 2), ("put", 5)]);
+        assert_eq!(used.get("get").map(|get| get.entries().len()), Some(1));
+    }
+
+    #[test]
+    fn a_merge_key_that_names_no_mapping_stays_an_entry() {
+        let tree = parse_yaml("use:\n  <<: text\n  get: {}\n").unwrap();
+        assert_eq!(keys(tree.get("use").unwrap()), vec![("<<", 2), ("get", 3)]);
+    }
+
     #[test]
     fn json_keys_remember_their_lines_and_comments_are_allowed() {
         let tree = parse_json("{\n  // note\n  \"paths\": {\n    \"/a\": {},\n  }\n}").unwrap();
@@ -202,7 +292,7 @@ mod tests {
     proptest! {
         #[test]
         fn lines_stay_inside_the_document(
-            text in "[a-z0-9:\\-\\[\\]{}\", \n#]{0,120}",
+            text in "[a-z0-9:\\-\\[\\]{}\", \n#&*<]{0,120}",
             json in any::<bool>(),
         ) {
             let count = u32::try_from(text.lines().count()).unwrap_or(u32::MAX).saturating_add(1);

@@ -36,3 +36,4 @@
 - [x] 4.13 GraphQL lists a root type renamed in another file and the `# import <names> from "<file>"` form as blind spots, and builds its root and fragment maps only for documents that hold a type or a fragment
 - [x] 4.14 Env files: a `.env.*` file in a programming language is not claimed, and the lines inside a quoted value that runs over several lines declare nothing
 - [x] 4.15 `detect` is tested: `openapi`, `proto`, `prisma` and `env` are detected only for a file they claim, `graphql` and `sql` for any file list
+- [x] 4.16 The YAML tree resolves `<<` merge keys, which the loader leaves as entries, so an operation merged into a path item is declared; aliases were already resolved by the loader
