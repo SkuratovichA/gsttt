@@ -971,6 +971,7 @@ fn blind_spots_are_reported() {
     let blind_spots = tree.blind_spots();
     for words in [
         "Flask routes with several methods beyond the first",
+        "Flask routes whose methods are held in a variable, which are read as GET",
         "prefixes held in variables",
         "Django default table names",
     ] {

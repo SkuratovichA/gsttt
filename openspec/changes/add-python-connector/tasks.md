@@ -33,3 +33,4 @@
 - [x] 5.7 A package directory beats a module of the same name, and a stub beside its source is reached together with it
 - [x] 5.8 An import reaches the `__init__` file of every package it passes through, except the packages the importing file sits in
 - [x] 5.9 A name an import gives another is read by both names: `import requests as r`, `from requests import post as send` and the like match the packs' callees, decorators, base classes and subscripted names as the file writes them and as the import spells them, every file keeps its imports for this, and a name imported twice from one module is listed once
+- [x] 5.10 A Flask route whose `methods` is held in a variable is read as GET, which the rule language cannot tell from an absent keyword, so the provides of a project with the `flask` pack name it as a blind spot

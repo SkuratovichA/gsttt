@@ -15,6 +15,7 @@ expression: "tree.json[\"projects\"]"
           "flask"
         ],
         "blind_spots": [
+          "Flask routes whose methods are held in a variable, which are read as GET",
           "Flask routes with several methods beyond the first",
           "mounts of a router by a file of another Python project, in a cycle, or in more ways than are followed",
           "prefixes held in variables",

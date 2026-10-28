@@ -257,4 +257,4 @@ A pack SHALL be active in a project when its manifests declare one of the pack's
 
 #### Scenario: Blind spots are reported
 - **WHEN** the coverage of a Python project is read
-- **THEN** its provides name, among the blind spots, Flask routes with several methods beyond the first, prefixes held in variables and Django default table names
+- **THEN** its provides name, among the blind spots, Flask routes with several methods beyond the first, Flask routes whose methods are held in a variable, prefixes held in variables and Django default table names
