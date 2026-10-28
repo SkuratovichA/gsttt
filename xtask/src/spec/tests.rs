@@ -1530,6 +1530,39 @@ fn a_rename_onto_a_name_that_an_earlier_change_adds_fails() {
     assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "a-adds\n");
 }
 
+#[test]
+fn a_claim_on_a_renamed_and_removed_requirement_names_the_name_the_change_removes_it_by() {
+    let claim = proof("queries", "R works");
+    let tree = Tree::new();
+    // `a-adds` writes `R`, `b-renames` makes it `S` and `c-removes` removes `S`. The delta of `c-removes` names `S` and never `R`, so the failure does too.
+    tree.change(
+        "a-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R works"])]),
+        )],
+    )
+    .change(
+        "b-renames",
+        TICKED,
+        &[("queries", &delta("RENAMED", &[renaming("R", "S")]))],
+    )
+    .change(
+        "c-removes",
+        TICKED,
+        &[("queries", &delta("REMOVED", &[removal("S")]))],
+    )
+    .source("tests/works.rs", &claim);
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "crates/app/tests/works.rs:{}: `proof` claims scenario `R works` of capability `queries`, but change `c-removes` removes its requirement `S`",
+        line_of(&claim, "fn proof")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+}
+
 /// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine` with the `## Purpose` taken out of its delta.
 const PLACEHOLDER: &str =
     "TBD - created by archiving change add-indexing-engine. Update Purpose after archive.";

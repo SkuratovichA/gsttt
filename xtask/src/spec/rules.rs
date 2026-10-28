@@ -191,6 +191,7 @@ enum Replacement {
 #[derive(Debug)]
 struct Dropped {
     change: String,
+    /// The name the requirement stood under when the change took it away, which is the name the change writes.
     requirement: String,
     how: Replacement,
 }
@@ -319,7 +320,13 @@ impl<'a> Fold<'a> {
         }
         for removed in &delta.removed {
             let gone = self.standing.remove(&key(&removed.name));
-            self.take_away(gone, capability, &change.name, Replacement::Removed);
+            self.take_away(
+                gone,
+                capability,
+                &removed.name,
+                &change.name,
+                Replacement::Removed,
+            );
         }
         for requirement in &delta.modified {
             // Two places that add one name hold one block for the archive, or it stops at the second, so the first stands for them.
@@ -338,7 +345,13 @@ impl<'a> Fold<'a> {
             let gone = self
                 .standing
                 .insert(key(&requirement.name), vec![written(requirement)]);
-            self.take_away(gone, capability, &change.name, Replacement::Modified);
+            self.take_away(
+                gone,
+                capability,
+                &requirement.name,
+                &change.name,
+                Replacement::Modified,
+            );
         }
         for requirement in &delta.added {
             self.standing
@@ -348,11 +361,12 @@ impl<'a> Fold<'a> {
         }
     }
 
-    /// Notes every scenario of the requirements `gone` as taken away by `change`.
+    /// Notes every scenario of the requirements `gone` as taken away by `change`, which names them `requirement`: the name they stood under when it took them, and not the one they were written with, which a rename may have changed.
     fn take_away(
         &mut self,
         gone: Option<Vec<Held<'_>>>,
         capability: &str,
+        requirement: &str,
         change: &str,
         how: Replacement,
     ) {
@@ -362,7 +376,7 @@ impl<'a> Fold<'a> {
                     (capability.to_owned(), scenario.title.clone()),
                     Dropped {
                         change: change.to_owned(),
-                        requirement: held.requirement.name.clone(),
+                        requirement: requirement.to_owned(),
                         how,
                     },
                 );
