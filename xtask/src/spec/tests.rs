@@ -115,11 +115,15 @@ fn main_spec(requirements: &[String]) -> String {
     spec_with_purpose("A purpose.", requirements)
 }
 
-/// A delta with one section, `ADDED`, `MODIFIED` or `REMOVED`, under the purpose that a delta
-/// needs when it creates a capability.
+/// A delta with one section, `ADDED`, `MODIFIED` or `REMOVED`, under the purpose that a delta needs when it creates a capability.
 fn delta(section: &str, requirements: &[String]) -> String {
+    delta_with_purpose("A purpose.", section, requirements)
+}
+
+/// A delta with one section under the given purpose, which may be empty.
+fn delta_with_purpose(purpose: &str, section: &str, requirements: &[String]) -> String {
     format!(
-        "# Spec Delta\n\n## Purpose\nA purpose.\n\n## {section} Requirements\n\n{}",
+        "# Spec Delta\n\n## Purpose\n{purpose}\n\n## {section} Requirements\n\n{}",
         requirements.join("\n")
     )
 }
@@ -924,6 +928,83 @@ fn a_delta_that_creates_no_capability_needs_no_purpose() {
     );
     let outcome = tree.gate();
     assert!(outcome.passed, "{}", outcome.output);
+}
+
+#[gsttt_scenario::scenario("spec-gate", "An empty purpose fails")]
+#[test]
+fn an_empty_purpose_fails() {
+    let requirements = [requirement("Matching", &["HTTP matching is symmetric"])];
+    let empty = spec_with_purpose("", &requirements);
+    let tree = Tree::new();
+    tree.spec("queries", &empty).source(
+        "tests/matching.rs",
+        &proof("queries", "HTTP matching is symmetric"),
+    );
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/specs/queries/spec.md:{}: capability `queries` has an empty `## Purpose`; write what the capability is for",
+        line_of(&empty, "## Purpose")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+
+    // A delta that creates a capability with a heading and no prose under it says so, where a delta without the heading says it has none.
+    let empty = delta_with_purpose("", "ADDED", &requirements);
+    let tree = Tree::new();
+    tree.change("add-matching", TICKED, &[("queries", &empty)])
+        .source(
+            "tests/matching.rs",
+            &proof("queries", "HTTP matching is symmetric"),
+        );
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/add-matching/specs/queries/spec.md:{}: change `add-matching` creates capability `queries` and its `## Purpose` is empty, so archiving it would write the placeholder purpose; write what the capability is for under it",
+        line_of(&empty, "Requirement: Matching")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+}
+
+#[gsttt_scenario::scenario("spec-gate", "An unfinished change needs a purpose too")]
+#[test]
+fn an_unfinished_change_needs_a_purpose_too() {
+    let requirements = [requirement("Matching", &["HTTP matching is symmetric"])];
+    let bare = bare_delta("ADDED", &requirements);
+    let tree = Tree::new();
+    tree.change("add-matching", OPEN, &[("queries", &bare)]);
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/add-matching/specs/queries/spec.md:{}: change `add-matching` creates capability `queries` and its delta has no `## Purpose`, so archiving it would write the placeholder purpose; add one above the first section",
+        line_of(&bare, "Requirement: Matching")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+
+    tree.change(
+        "add-matching",
+        OPEN,
+        &[("queries", &delta("ADDED", &requirements))],
+    );
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+}
+
+#[test]
+fn a_delta_that_adds_and_modifies_is_not_the_one_that_creates_its_capability() {
+    let tree = Tree::new();
+    // `openspec archive` refuses a delta that modifies a requirement of a capability that does not exist, so it never writes the placeholder purpose for this one; the gate leaves the purpose to that refusal and `--ready` keeps the change back.
+    let adds_and_modifies = format!(
+        "{}\n## MODIFIED Requirements\n\n{}",
+        bare_delta("ADDED", &[requirement("Fresh", &["Fresh works"])]),
+        requirement("Other", &["Other works better"])
+    );
+    tree.change("add-fresh", TICKED, &[("fresh", &adds_and_modifies)])
+        .source("tests/fresh.rs", &proof("fresh", "Fresh works"))
+        .source("tests/other.rs", &proof("fresh", "Other works better"));
+    let outcome = tree.gate();
+    assert!(outcome.passed, "{}", outcome.output);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
 }
 
 #[test]
