@@ -18,7 +18,7 @@
 
 - [x] 4.1 The walk follows names: names per file, the next frontier for growth, X(T) closed over cycles, unknown exports falling back to the whole file, names the target does not export, contracts crossed only from whole files
 - [x] 4.2 `Reason::Imports` with names and `Reason::ReExports`, in text and in JSON
-- [ ] 4.3 `docs/architecture.md` describes the walk by names
+- [x] 4.3 `docs/architecture.md` describes the walk by names
 
 ## 5. Proof
 
