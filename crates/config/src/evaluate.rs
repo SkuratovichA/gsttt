@@ -112,9 +112,12 @@ fn read_packs(root: &Path) -> Result<Vec<Pack>, ConfigError> {
     let mut packs = Vec::with_capacity(names.len());
     for name in names {
         let file = format!("{PACKS_PATH}/{name}");
-        // A link that leads nowhere is no file, as it is for the config.
+        // The folder has just listed the file, so a file that does not resolve is a link that leads nowhere. It fails where the config does not: a missing config means every detected module with its defaults, and a pack that the folder lists has no such meaning, so skipping it would drop its rules without a word.
         let Some(text) = read_text(root, &file, Some(PACKS_PATH))? else {
-            continue;
+            return Err(ConfigError::Read {
+                path: file,
+                message: "is a link that leads nowhere".to_owned(),
+            });
         };
         packs.push(read_pack(&file, &text).map_err(|error| ConfigError::Invalid(error.message))?);
     }

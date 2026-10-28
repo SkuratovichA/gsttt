@@ -66,6 +66,7 @@ fn a_config_that_links_inside_the_repository_is_read() {
     assert_eq!(tree.evaluate().unwrap().exclude, ["linked"]);
 }
 
+#[gsttt_scenario::scenario("config", "A config that links to nothing is no config")]
 #[test]
 fn a_link_to_nothing_is_no_config() {
     let tree = Tree::empty();
@@ -138,6 +139,18 @@ fn a_pack_that_links_outside_its_folder_is_refused() {
     assert_eq!(
         tree.evaluate().unwrap_err().to_string(),
         "cannot read .gsttt/packs/x.toml: resolves outside .gsttt/packs"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A pack that links to nothing is refused")]
+#[test]
+fn a_pack_that_links_to_nothing_is_refused() {
+    let tree = Tree::empty();
+    fs::create_dir_all(tree.root().join(".gsttt/packs")).unwrap();
+    symlink("missing.toml", tree.root().join(".gsttt/packs/x.toml")).unwrap();
+    assert_eq!(
+        tree.evaluate().unwrap_err().to_string(),
+        "cannot read .gsttt/packs/x.toml: is a link that leads nowhere"
     );
 }
 

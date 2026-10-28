@@ -153,6 +153,7 @@ segments = 1
 - `read_pack` replaces `eval_pack`, and `builtin_packs` keeps its signature, so a connector's `PACKS` table changes only from `include_str!("../packs/<name>.lua")` to `.toml`.
 - The user's packs are the files of `.gsttt/packs/` whose names end in `.toml` and do not start with `.`, read in the byte order of their names, each bound to `.gsttt/packs`. A pack's `name` must be its file name without `.toml`.
 - `Pack` and its rules deny unknown fields already, so a misspelt rule key fails with its line in step 5.
+- A pack that is a link to nothing fails with `is a link that leads nowhere`, where a config that is one counts as no config: a missing config means every detected module with its defaults, while a pack that the folder has just listed has no such meaning, and skipping it would drop its rules without a word.
 
 A user's pack starts with `#:schema ../schema/pack.json`, the schema `gsttt init` writes. A built-in pack has no such line, because the repository of gsttt has no generated schema to point at.
 

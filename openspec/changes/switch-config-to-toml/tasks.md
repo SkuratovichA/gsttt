@@ -35,3 +35,7 @@
 
 - [ ] 6.1 A test annotated `#[scenario("config", …)]` for every scenario of this change's delta, and no test left for a removed requirement
 - [ ] 6.2 `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check` and `openspec validate switch-config-to-toml --strict` pass
+
+## 7. Review fixes
+
+- [x] 7.1 A pack that is a link to nothing fails, where a config that is one stays no config

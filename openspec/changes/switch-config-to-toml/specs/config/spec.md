@@ -122,7 +122,7 @@ A module's table and an external's `options` SHALL become JSON: an array becomes
 - **THEN** evaluation fails with a message that names `ts.since`, or `ts.limit`, with its line, and says that the value has no JSON form
 
 ### Requirement: Source files
-The config and the pack files SHALL be read only from a regular file of at most 1 MiB that, once symbolic links are resolved, lies inside the repository and, for a pack, inside `.gsttt/packs`. Any other file SHALL fail the evaluation at once with a message that names the file and says why, and nothing SHALL wait for a named pipe to be written.
+The config and the pack files SHALL be read only from a regular file of at most 1 MiB that, once symbolic links are resolved, lies inside the repository and, for a pack, inside `.gsttt/packs`. Any other file SHALL fail the evaluation at once with a message that names the file and says why, and nothing SHALL wait for a named pipe to be written. A config that is a link to nothing SHALL count as no config, and a pack that is one SHALL fail.
 
 #### Scenario: A config that links outside the repository is refused
 - **WHEN** `.gsttt/config.toml` is a symbolic link to a file outside the repository
@@ -143,6 +143,14 @@ The config and the pack files SHALL be read only from a regular file of at most 
 #### Scenario: A pack folder that links outside the repository is refused
 - **WHEN** `.gsttt/packs` is a symbolic link to a folder outside the repository that holds `x.toml`
 - **THEN** evaluation fails with a message that names `.gsttt/packs/x.toml` and says it resolves outside the repository
+
+#### Scenario: A config that links to nothing is no config
+- **WHEN** `.gsttt/config.toml` is a symbolic link to a file that does not exist
+- **THEN** evaluation succeeds with the setup of a repository that has no config
+
+#### Scenario: A pack that links to nothing is refused
+- **WHEN** `.gsttt/packs/x.toml` is a symbolic link to a file that does not exist
+- **THEN** evaluation fails with a message that names `.gsttt/packs/x.toml` and says it is a link that leads nowhere
 
 ### Requirement: Fingerprint
 The setup SHALL have a fingerprint computed from its canonical JSON form, so that an edit that changes no value leaves it unchanged.
