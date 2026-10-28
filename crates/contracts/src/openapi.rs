@@ -396,9 +396,9 @@ fn server_paths(root: &Value) -> Vec<&str> {
     paths
 }
 
-/// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route and is written three ways: `https://host` and `{scheme}://host`, which [`path_after_origin`] drops as the key normaliser does, and `//host` and `{baseUrl}`, a variable for the whole origin, which the normaliser would keep as the first segment.
+/// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route and is written three ways: `https://host` and `{scheme}://host`, which [`path_after_origin`] drops as the key normaliser does, and `//host` and `{baseUrl}`, a variable for the whole origin, which the normaliser would keep as the first segment. A query string or a fragment is no part of the path and goes, so `https://host?key=1` has the empty path.
 fn path_of_server(url: &str) -> &str {
-    let url = url.trim();
+    let url = url.trim().split(['?', '#']).next().unwrap_or_default();
     if let Some(path) = path_after_origin(url) {
         return path.trim_end_matches('/');
     }
@@ -481,6 +481,9 @@ mod tests {
             ("//api.example.com/v1", "/v1"),
             ("{baseUrl}/v1", "/v1"),
             ("{baseUrl}", ""),
+            ("https://api.example.com?key=1", ""),
+            ("https://api.example.com/v1?key=1#top", "/v1"),
+            ("{baseUrl}/v1?key=1", "/v1"),
             (
                 "{baseUrl}/redirect/http://example.com",
                 "/redirect/http://example.com",
