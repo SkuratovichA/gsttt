@@ -21,6 +21,9 @@ pub const LUARC_PATH: &str = ".gsttt/.luarc.json";
 /// The folder of the annotations, which the language server reads as a library.
 const TYPES_DIR: &str = ".gsttt/types";
 
+/// The folder the language server has to be opened in, relative to the repository root. It reads [`LUARC_PATH`] from the root of the folder it is opened in and from nowhere else, so the paths in the settings start here, not at the repository root.
+const WORKSPACE: &str = ".gsttt";
+
 /// The annotations of the functions of the `gsttt` module besides the one per registry module, in the order of `FUNCTIONS` in `evaluate.rs`.
 const SIGNATURES: [&str; 5] = [
     "---Sets what is not about one module: files to leave out, route prefixes, the size limit and whether detection turns modules on. A key that is not given keeps its value.\n---@param options? gsttt.SetupOptions\nfunction gsttt.setup(options) end",
@@ -78,26 +81,41 @@ pub fn annotations(registry: &[&dyn DynConnector]) -> String {
 
 /// The settings `LuaLS` reads from [`LUARC_PATH`]: Lua 5.4, the annotations as a library and `.gsttt/lua/` on the path `require` searches, so a local module completes and checks like the config does.
 ///
-/// The paths are relative to the repository root, so the language server has to run there.
+/// `LuaLS` reads the file only when `.gsttt/` is the folder it is opened in, so the paths are relative to `.gsttt/`, not to the repository root. The file is JSON and cannot say so itself; the starter `init.lua` does.
 #[must_use]
 pub fn luarc() -> String {
+    let modules = in_workspace(MODULES);
     let settings = json!({
         "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
         "runtime.version": "Lua 5.4",
-        "runtime.path": [format!("{MODULES}/?.lua"), format!("{MODULES}/?/init.lua")],
-        "workspace.library": [TYPES_DIR],
+        "runtime.path": [format!("{modules}/?.lua"), format!("{modules}/?/init.lua")],
+        "workspace.library": [in_workspace(TYPES_DIR)],
     });
     format!("{settings:#}\n")
 }
 
-/// The first `.gsttt/init.lua`: it loads the module and lists the `detected` modules as comments to uncomment when one needs options. Detected modules run with their defaults without any line, so the starter changes nothing.
+/// `path`, which is under [`WORKSPACE`] and given from the repository root, as the settings write it: from the workspace.
+fn in_workspace(path: &str) -> &str {
+    path.strip_prefix(WORKSPACE)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .unwrap_or(path)
+}
+
+/// The first `.gsttt/init.lua`: a note on where to open an editor, the line that loads the module, and the `detected` modules as comments to uncomment when one needs options. Detected modules run with their defaults without any line, so the starter changes nothing.
 #[must_use]
 pub fn starter(detected: &[&str]) -> String {
     let mut names = detected.to_vec();
     names.sort_unstable();
     names.dedup();
 
-    let mut lines = vec!["local g = require(\"gsttt\")".to_owned(), String::new()];
+    let mut lines = vec![
+        format!(
+            "-- To have an editor complete and check this file, open the {WORKSPACE} folder as the workspace: lua-language-server reads .luarc.json only from the root of the folder it is opened in."
+        ),
+        String::new(),
+        "local g = require(\"gsttt\")".to_owned(),
+        String::new(),
+    ];
     if names.is_empty() {
         lines.push("-- No module was detected in this repository. Turn one on by calling it, like g.ts {}.".to_owned());
     } else {
@@ -526,5 +544,26 @@ mod tests {
     #[test]
     fn the_annotations_live_in_the_folder_the_language_server_reads() {
         assert_eq!(ANNOTATIONS_PATH.strip_prefix(TYPES_DIR), Some("/gsttt.lua"));
+    }
+
+    #[test]
+    fn everything_the_settings_name_lives_in_the_workspace() {
+        // `in_workspace` hands back a path it cannot shorten as it is, so a folder that left `.gsttt/` would put a path from the repository root into the settings without a sound; this is the sound.
+        for path in [
+            LUARC_PATH,
+            ANNOTATIONS_PATH,
+            TYPES_DIR,
+            MODULES,
+            crate::evaluate::INIT_PATH,
+        ] {
+            assert!(
+                path.strip_prefix(WORKSPACE)
+                    .is_some_and(|rest| rest.starts_with('/')),
+                "{path} is not under {WORKSPACE}/"
+            );
+        }
+        assert_eq!(in_workspace(MODULES), "lua");
+        assert_eq!(in_workspace(TYPES_DIR), "types");
+        assert_eq!(in_workspace(".gsttt-other/lua"), ".gsttt-other/lua");
     }
 }

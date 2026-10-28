@@ -1,5 +1,7 @@
 //! Editor support: the `LuaLS` annotations, the language server settings and the starter config.
 
+use std::path::{Path, PathBuf};
+
 use gsttt_config::{ANNOTATIONS_PATH, LUARC_PATH, annotations, luarc, starter};
 use gsttt_core::Setup;
 use gsttt_core::connector::{DynConnector, Erased};
@@ -80,27 +82,62 @@ fn a_module_that_is_not_a_lua_identifier_gets_no_function() {
     lua.load(text.as_str()).exec().unwrap();
 }
 
+#[gsttt_scenario::scenario("config", "The editor settings are relative to the config folder")]
 #[test]
-fn the_language_server_reads_the_annotations_and_the_local_modules() {
-    let settings: serde_json::Value = serde_json::from_str(&luarc()).unwrap();
-    assert_eq!(
-        settings["workspace.library"],
-        serde_json::json!([".gsttt/types"])
-    );
-    assert_eq!(
-        settings["runtime.path"],
-        serde_json::json!([".gsttt/lua/?.lua", ".gsttt/lua/?/init.lua"])
-    );
-    assert_eq!(settings["runtime.version"], "Lua 5.4");
+fn the_editor_settings_are_relative_to_the_config_folder() {
+    // The language server reads the settings from the root of the folder it is opened in, which is the folder they are written to.
     assert_eq!(LUARC_PATH, ".gsttt/.luarc.json");
-    assert!(ANNOTATIONS_PATH.starts_with(".gsttt/types/"));
+    let workspace = Path::new(LUARC_PATH).parent().unwrap();
+    let settings: serde_json::Value = serde_json::from_str(&luarc()).unwrap();
+    assert_eq!(settings["runtime.version"], "Lua 5.4");
+
+    // The library is the folder of the annotations ...
+    let library: Vec<String> =
+        serde_json::from_value(settings["workspace.library"].clone()).unwrap();
+    let folders: Vec<PathBuf> = library
+        .iter()
+        .map(|folder| workspace.join(folder))
+        .collect();
+    let annotations_folder = Path::new(ANNOTATIONS_PATH).parent().unwrap();
+    assert_eq!(folders, vec![annotations_folder.to_path_buf()]);
+
+    // ... and the patterns find the files `require` reads, which it does read: the config loads both modules.
+    let tree = Tree::with_init("require('shared')\nrequire('deep.folder')\n");
+    tree.write(".gsttt/lua/shared.lua", "return {}");
+    tree.write(".gsttt/lua/deep/folder/init.lua", "return {}");
+    tree.evaluate().unwrap();
+    let patterns: Vec<String> = serde_json::from_value(settings["runtime.path"].clone()).unwrap();
+    let found = |module: &str| -> Vec<PathBuf> {
+        let relative = module.replace('.', "/");
+        patterns
+            .iter()
+            .map(|pattern| workspace.join(pattern.replace('?', &relative)))
+            .filter(|candidate| tree.root().join(candidate).is_file())
+            .collect()
+    };
+    assert_eq!(
+        found("shared"),
+        vec![PathBuf::from(".gsttt/lua/shared.lua")]
+    );
+    assert_eq!(
+        found("deep.folder"),
+        vec![PathBuf::from(".gsttt/lua/deep/folder/init.lua")]
+    );
+
+    // The settings cannot say where to open the editor, so the first line of the starter does.
+    let note = format!("open the {} folder as the workspace", workspace.display());
+    for detected in [&[][..], &["ts"][..]] {
+        let text = starter(detected);
+        let first = text.lines().next().unwrap();
+        assert!(first.starts_with("--") && first.contains(&note), "{first}");
+    }
 }
 
 #[test]
 fn the_starter_lists_the_detected_modules_as_comments_and_changes_nothing() {
     let text = starter(&["ts", "rust", "ts"]);
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines.first(), Some(&"local g = require(\"gsttt\")"));
+    assert!(lines.contains(&"local g = require(\"gsttt\")"));
     assert_eq!(
         lines.iter().filter(|line| **line == "-- g.ts {}").count(),
         1

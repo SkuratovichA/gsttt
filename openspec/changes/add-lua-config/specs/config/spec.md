@@ -142,11 +142,18 @@ The setup SHALL have a fingerprint computed from its canonical JSON form, so tha
 - **THEN** the fingerprint of the setup is unchanged, and changing `http_prefixes`, an option of a module or an option of an external changes it
 
 ### Requirement: Editor support
-The crate SHALL generate LuaLS annotations from the registry's module names and option schemas: a `---@meta` file declaring the `gsttt` module, one `---@class` per module's options with a `---@field` per property (optional, typed, with its description), string enums as literal unions, lists as `T[]`, and the pack and rule types; a `.luarc.json` pointing LuaLS at those annotations and at `.gsttt/lua/`; and a starter `init.lua` that lists the detected modules as comments.
+The crate SHALL generate LuaLS annotations from the registry's module names and option schemas: a `---@meta` file declaring the `gsttt` module, one `---@class` per module's options with a `---@field` per property (optional, typed, with its description), string enums as literal unions, lists as `T[]`, and the pack and rule types.
 
 #### Scenario: Options become annotated classes
 - **WHEN** annotations are generated for a module `ts` whose option schema has a string `tsconfig` and a list of strings `conditions`, each with a description
 - **THEN** the output declares `---@class gsttt.TsOptions` with `---@field tsconfig? string` and `---@field conditions? string[]` and their descriptions, and a function `ts` that takes `gsttt.TsOptions`
+
+### Requirement: Editor settings
+The crate SHALL generate a `.luarc.json` and a starter `init.lua`. LuaLS reads `.luarc.json` only from the root of the folder it is opened in, so the paths in it SHALL be relative to `.gsttt/`: the annotations as a library and `.gsttt/lua/` on the path `require` searches. The starter SHALL list the detected modules as comments, and its first line SHALL say to open `.gsttt/` as the workspace.
+
+#### Scenario: The editor settings are relative to the config folder
+- **WHEN** the editor settings are generated
+- **THEN** the library and the module paths in `.luarc.json` are relative to `.gsttt/`, so that from there they name the folder of the annotations and the files `require` reads, and the first line of the starter says to open `.gsttt/` as the workspace
 
 ### Requirement: External connectors
 An external SHALL be a connector that claims the files its `files` globs match and speaks JSON lines with one process started in the repository root on its first request, so that a run answered from the snapshot starts none.
