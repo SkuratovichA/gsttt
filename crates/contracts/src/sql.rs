@@ -1,7 +1,8 @@
 //! SQL files: migrations and queries, and the SQL other connectors find embedded in code.
 //!
-//! `CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, declare `table <name>`; queries and
-//! statements that change rows call the tables they name, leaving out the names of common table expressions.
+//! `CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, declare `table <name>`, and a rename declares
+//! the new name as well; queries and statements that change rows call the tables they name, leaving out the names of
+//! common table expressions.
 //! Statements are read one by one, so a statement that does not parse, or has a string or comment that is never closed,
 //! is counted and the others still count.
 //!
@@ -24,9 +25,14 @@ use gsttt_core::rules::Pack;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    ObjectName, ObjectNamePart, ObjectType, Query, Statement, TableFactor, Visit, Visitor,
+    AlterTableOperation, ObjectName, ObjectNamePart, ObjectType, Query, RenameTableNameKind,
+    Statement, TableFactor, Visit, Visitor,
 };
-use sqlparser::dialect::{Dialect, PostgreSqlDialect, dialect_from_str};
+use sqlparser::dialect::{
+    AnsiDialect, BigQueryDialect, ClickHouseDialect, DatabricksDialect, Dialect, DuckDbDialect,
+    GenericDialect, HiveDialect, MsSqlDialect, MySqlDialect, OracleDialect, PostgreSqlDialect,
+    RedshiftSqlDialect, SQLiteDialect, SnowflakeDialect, SparkSqlDialect, TeradataDialect,
+};
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Location, Token, TokenWithSpan, Tokenizer, Whitespace};
 
@@ -37,25 +43,37 @@ const VIA: &str = "sql";
 /// The dialect statements are read with when the options name none.
 const DEFAULT_DIALECT: &str = "postgresql";
 
-/// The names `dialect_from_str` knows, for the message of an unknown one; a test checks each of them.
-const DIALECTS: [&str; 16] = [
-    "generic",
-    "mysql",
-    "postgresql",
-    "hive",
-    "sqlite",
-    "snowflake",
-    "redshift",
-    "mssql",
-    "clickhouse",
-    "bigquery",
-    "ansi",
-    "duckdb",
-    "databricks",
-    "spark",
-    "oracle",
-    "teradata",
+/// The grammars the `dialect` option names, by the names `sqlparser`'s `dialect_from_str` knows; a test checks each
+/// of them against it. That function builds a lower-case copy of the name on every call, which is too much to pay
+/// for every file and every embedded document, so a project holds its grammar from the moment it is opened.
+static DIALECTS: [(&str, &(dyn Dialect + Sync)); 18] = [
+    ("generic", &GenericDialect),
+    ("mysql", &MySqlDialect {}),
+    ("postgresql", &PostgreSqlDialect {}),
+    ("postgres", &PostgreSqlDialect {}),
+    ("hive", &HiveDialect {}),
+    ("sqlite", &SQLiteDialect {}),
+    ("snowflake", &SnowflakeDialect),
+    ("redshift", &RedshiftSqlDialect {}),
+    ("mssql", &MsSqlDialect {}),
+    ("clickhouse", &ClickHouseDialect {}),
+    ("bigquery", &BigQueryDialect),
+    ("ansi", &AnsiDialect {}),
+    ("duckdb", &DuckDbDialect {}),
+    ("databricks", &DatabricksDialect {}),
+    ("spark", &SparkSqlDialect {}),
+    ("sparksql", &SparkSqlDialect {}),
+    ("oracle", &OracleDialect {}),
+    ("teradata", &TeradataDialect {}),
 ];
+
+/// The grammar a name in the options stands for, whatever its case.
+fn dialect_named(name: &str) -> Option<&'static (dyn Dialect + Sync)> {
+    DIALECTS
+        .iter()
+        .find(|(known, _)| known.eq_ignore_ascii_case(name))
+        .map(|(_, dialect)| *dialect)
+}
 
 /// The connector for SQL.
 #[derive(Clone, Copy, Debug)]
@@ -77,8 +95,8 @@ pub struct SqlOptions {
 /// The project of the `sql` connector.
 #[derive(Clone, Debug)]
 pub struct SqlProject {
-    /// The lower-case name of a dialect `dialect_from_str` knows.
-    dialect: String,
+    /// The grammar every statement is read with.
+    dialect: &'static (dyn Dialect + Sync),
 }
 
 fn claims(path: &RepoPath) -> bool {
@@ -110,29 +128,18 @@ impl Connector for Sql {
         _: &[Pack],
     ) -> Result<Vec<SqlProject>, ConnectorError> {
         // An unknown dialect is a mistake in the configuration whether or not the repository holds SQL.
-        let dialect = match &options.dialect {
-            None => DEFAULT_DIALECT.to_owned(),
-            Some(name) => {
-                let lowered = name.trim().to_lowercase();
-                if dialect_from_str(&lowered).is_none() {
-                    return Err(ConnectorError::Options {
-                        connector: "sql".into(),
-                        message: format!(
-                            "`dialect` is {name:?}, which is not a SQL dialect; expected one of {}",
-                            DIALECTS.join(", ")
-                        ),
-                    });
-                }
-                lowered
-            }
-        };
+        let name = options
+            .dialect
+            .as_deref()
+            .map_or(DEFAULT_DIALECT, str::trim);
+        let dialect = dialect_named(name).ok_or_else(|| ConnectorError::Options {
+            connector: "sql".into(),
+            message: format!(
+                "`dialect` is {name:?}, which is not a SQL dialect; expected one of {}",
+                DIALECTS.map(|(known, _)| known).join(", ")
+            ),
+        })?;
         Ok(vec![SqlProject { dialect }])
-    }
-}
-
-impl SqlProject {
-    fn grammar(&self) -> Box<dyn Dialect> {
-        dialect_from_str(&self.dialect).unwrap_or_else(|| Box::new(PostgreSqlDialect {}))
     }
 }
 
@@ -170,13 +177,14 @@ impl Project for SqlProject {
                 &[
                     "SQL built from strings at run time",
                     "statements the SQL parser does not read",
+                    "tables named like a common table expression or a table function elsewhere in the same statement",
                 ],
             ),
         ]
     }
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
-        let (contracts, status) = read(self.grammar().as_ref(), file.text);
+        let (contracts, status) = read(self.dialect, file.text);
         Parsed::new(FileFacts {
             status,
             contracts,
@@ -196,7 +204,7 @@ impl Project for SqlProject {
 
     fn parse_embedded(&self, document: &Embedded) -> Vec<ContractFact> {
         // Lines count from the document's first line; the engine places them in the host file.
-        read(self.grammar().as_ref(), &document.text).0
+        read(self.dialect, &document.text).0
     }
 }
 
@@ -238,8 +246,13 @@ fn read(dialect: &dyn Dialect, text: &str) -> (Vec<ContractFact>, ParseStatus) {
         rest = next;
         before = before.saturating_add(skipped);
     }
-    // Source order, the same everywhere; one site per line and key.
-    facts.sort_by(|a, b| a.line.cmp(&b.line).then_with(|| a.key.cmp(&b.key)));
+    // Source order, the same everywhere; one site per line, key and role, which the sort has to keep together.
+    facts.sort_by(|a, b| {
+        a.line
+            .cmp(&b.line)
+            .then_with(|| a.key.cmp(&b.key))
+            .then_with(|| a.role.cmp(&b.role))
+    });
     facts.dedup_by(|a, b| a.line == b.line && a.key == b.key && a.role == b.role);
     (facts, errors.status())
 }
@@ -412,7 +425,18 @@ fn read_statement(statement: &Statement, start: Line, facts: &mut Vec<ContractFa
             call_in(view.query.as_ref(), start, facts);
         }
         Statement::CreateIndex(index) => declare(&index.table_name, start, facts),
-        Statement::AlterTable(alter) => declare(&alter.name, start, facts),
+        Statement::AlterTable(alter) => {
+            declare(&alter.name, start, facts);
+            // A rename brings the table under a name that no statement creates.
+            for operation in &alter.operations {
+                if let AlterTableOperation::RenameTable {
+                    table_name: RenameTableNameKind::To(renamed) | RenameTableNameKind::As(renamed),
+                } = operation
+                {
+                    declare(renamed, start, facts);
+                }
+            }
+        }
         Statement::Drop {
             object_type: ObjectType::Table | ObjectType::View | ObjectType::MaterializedView,
             names,
@@ -507,14 +531,24 @@ impl Visitor for Relations {
     }
 
     fn pre_visit_relation(&mut self, relation: &ObjectName) -> ControlFlow<Self::Break> {
-        if let Some((table, line)) = table_of(relation) {
-            let lowered = table.to_lowercase();
-            let is_cte = relation.0.len() == 1 && self.ctes.contains(&lowered);
-            if !is_cte && !self.functions.contains(&lowered) {
-                self.found.push((table.to_owned(), line));
-            }
+        if let Some((table, line)) = table_of(relation)
+            && !self.names_no_table(relation, table)
+        {
+            self.found.push((table.to_owned(), line));
         }
         ControlFlow::Continue(())
+    }
+}
+
+impl Relations {
+    /// Whether a relation is the name of a common table expression or of a table function of the statement. Most
+    /// statements have neither, and then no name is lower-cased to find out.
+    fn names_no_table(&self, relation: &ObjectName, table: &str) -> bool {
+        if self.ctes.is_empty() && self.functions.is_empty() {
+            return false;
+        }
+        let lowered = table.to_lowercase();
+        (relation.0.len() == 1 && self.ctes.contains(&lowered)) || self.functions.contains(&lowered)
     }
 }
 
@@ -582,6 +616,7 @@ fn neutralise_placeholders(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
+    use sqlparser::dialect::dialect_from_str;
 
     use super::*;
 
@@ -611,10 +646,19 @@ mod tests {
     }
 
     #[test]
-    fn every_listed_dialect_is_known() {
-        for name in DIALECTS {
-            assert!(dialect_from_str(name).is_some(), "{name}");
+    fn every_dialect_is_the_one_sqlparser_names() {
+        for (name, dialect) in DIALECTS {
+            let known = dialect_from_str(name).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(dialect.dialect(), known.dialect(), "{name}");
         }
+        assert!(dialect_named(DEFAULT_DIALECT).is_some());
+    }
+
+    #[test]
+    fn a_dialect_is_found_in_any_case() {
+        let mysql = dialect_named("MySQL").map(Dialect::dialect);
+        assert_eq!(mysql, Some(MySqlDialect {}.dialect()));
+        assert!(dialect_named("cobol").is_none());
     }
 
     #[test]
@@ -677,6 +721,67 @@ mod tests {
         assert_eq!(
             read_in("postgresql", text),
             (vec![call(1, "a"), call(1, "b")], ParseStatus::Ok)
+        );
+    }
+
+    #[test]
+    fn a_quoted_path_is_split_by_the_grammar_that_reads_it_as_one() {
+        // BigQuery writes a whole path in one pair of backticks, and its grammar already cuts the path into names.
+        assert_eq!(
+            calls("bigquery", "SELECT * FROM `proj.ds.bookings`;"),
+            vec![call(1, "bookings")]
+        );
+        // Everywhere else a quoted name is one name, dots included.
+        assert_eq!(
+            calls("postgresql", "SELECT * FROM \"proj.ds.bookings\";"),
+            vec![call(1, "proj.ds.bookings")]
+        );
+    }
+
+    #[test]
+    fn a_rename_declares_both_names() {
+        assert_eq!(
+            read_in(
+                "postgresql",
+                "ALTER TABLE a RENAME TO b;\nALTER TABLE c RENAME AS d;"
+            ),
+            (
+                vec![
+                    (1, "table a".to_owned(), Role::Declares),
+                    (1, "table b".to_owned(), Role::Declares),
+                    (2, "table c".to_owned(), Role::Declares),
+                    (2, "table d".to_owned(), Role::Declares),
+                ],
+                ParseStatus::Ok
+            )
+        );
+    }
+
+    #[test]
+    fn one_site_is_kept_per_line_key_and_role() {
+        // Declared, called, and declared again on one line: the two declarations are not told apart by a sort that
+        // leaves the role out, and then only a neighbour is ever removed.
+        assert_eq!(
+            read_in(
+                "postgresql",
+                "CREATE TABLE x AS SELECT * FROM x; DROP TABLE x;"
+            )
+            .0,
+            vec![
+                (1, "table x".to_owned(), Role::Declares),
+                (1, "table x".to_owned(), Role::Calls),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_common_table_expression_belongs_to_its_own_statement() {
+        assert_eq!(
+            calls(
+                "postgresql",
+                "WITH a AS (SELECT 1) SELECT * FROM a;\nSELECT * FROM a;"
+            ),
+            vec![call(2, "a")]
         );
     }
 

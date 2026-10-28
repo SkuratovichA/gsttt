@@ -94,11 +94,15 @@ Each `model` SHALL declare `table <model>` and, with `@@map("<name>")`, also `ta
 - **THEN** it declares `table bookingitem` and `table booking_items` and calls `env DATABASE_URL`
 
 ### Requirement: SQL
-`CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, SHALL declare `table <name>`; `FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM` and `MERGE INTO` SHALL call `table <name>`, leaving out the names of common table expressions. Names SHALL drop their schema and quotes.
+`CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, SHALL declare `table <name>`; `FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM` and `MERGE INTO` SHALL call `table <name>`, leaving out the names of common table expressions. Names SHALL drop their schema and quotes. `ALTER TABLE <name> RENAME TO <new>` SHALL declare the new name as well.
 
 #### Scenario: A migration declares its tables
 - **WHEN** a file has `CREATE TABLE IF NOT EXISTS public."BookingItem" (id int);` and `ALTER TABLE bookings ADD COLUMN note text;`
 - **THEN** it declares `table bookingitem` and `table bookings`
+
+#### Scenario: A rename declares the new name
+- **WHEN** a file has `ALTER TABLE bookings RENAME TO reservations;`
+- **THEN** it declares `table bookings` and `table reservations`
 
 #### Scenario: Queries call their tables
 - **WHEN** a file has `WITH recent AS (SELECT * FROM bookings) SELECT * FROM recent JOIN booking_items i ON true WHERE id = %s;`

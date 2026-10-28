@@ -119,7 +119,8 @@ expression: provides
         ],
         "blind_spots": [
           "SQL built from strings at run time",
-          "statements the SQL parser does not read"
+          "statements the SQL parser does not read",
+          "tables named like a common table expression or a table function elsewhere in the same statement"
         ]
       }
     ]

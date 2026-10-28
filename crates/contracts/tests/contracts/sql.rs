@@ -35,6 +35,21 @@ fn queries_call_their_tables() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
+#[gsttt_scenario::scenario("contract-formats", "A rename declares the new name")]
+#[test]
+fn a_rename_declares_the_new_name() {
+    let run = Run::new("sql_rename", &[module(&SQL)]);
+    assert_eq!(run.status("migrations/002_rename.sql"), &ParseStatus::Ok);
+    assert_eq!(
+        run.sites("migrations/002_rename.sql"),
+        vec![
+            "declares table bookings @1",
+            "declares table reservations @1"
+        ]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
 #[gsttt_scenario::scenario("contract-formats", "The dialect option picks the grammar")]
 #[test]
 fn the_dialect_option_picks_the_grammar() {
