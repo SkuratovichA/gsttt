@@ -27,4 +27,4 @@
 
 ## 3. Gates
 
-- [ ] 3.1 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `cargo xtask spec` and `openspec validate add-mcp-server --strict --no-interactive` all pass
+- [x] 3.1 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `cargo xtask spec` and `openspec validate add-mcp-server --strict --no-interactive` all pass
