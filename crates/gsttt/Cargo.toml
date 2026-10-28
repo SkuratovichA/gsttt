@@ -36,6 +36,7 @@ gsttt-scenario.workspace = true
 insta.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
 
 [lints]
 workspace = true

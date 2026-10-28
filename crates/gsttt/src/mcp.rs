@@ -65,3 +65,106 @@ impl From<RepositoryError> for SourceError {
         Self::new(error.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    use gsttt_core::engine::changes::Change;
+    use gsttt_core::{Loaded, Target};
+    use gsttt_mcp::{IndexSource, SourceError, serve_on};
+    use serde_json::json;
+    use tokio::io::{AsyncWriteExt, DuplexStream};
+
+    use super::block_on;
+
+    /// How long the session may take to end once its input has closed. The server gives the calls in progress a few seconds to answer, and the refresh below would take thirty.
+    const ENDS_WITHIN: Duration = Duration::from_secs(10);
+
+    /// A source whose refresh says that it has started, and then takes longer than anything in the test waits for.
+    #[derive(Debug)]
+    struct Slow {
+        started: mpsc::Sender<()>,
+    }
+
+    impl IndexSource for Slow {
+        fn refreshed(&self) -> Result<Loaded, SourceError> {
+            self.started
+                .send(())
+                .map_err(|_| SourceError::new("the test stopped listening"))?;
+            thread::sleep(Duration::from_secs(30));
+            Err(SourceError::new("the refresh took thirty seconds"))
+        }
+
+        fn stored(&self) -> Result<Option<Loaded>, SourceError> {
+            Ok(None)
+        }
+
+        fn path(&self, _argument: &str) -> Result<Target, SourceError> {
+            Err(SourceError::new("the question reads no path"))
+        }
+
+        fn changed(&self, _base: Option<&str>) -> Result<Vec<Change>, SourceError> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// What an agent does: opens the session, asks a question that needs a refresh, waits until the refresh is running, and closes its end.
+    fn close_during_a_refresh(end: DuplexStream, refresh: &mpsc::Receiver<()>) {
+        let messages = [
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": { "name": "a test", "version": "0" },
+                },
+            }),
+            json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+            json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": { "name": "coverage", "arguments": {} },
+            }),
+        ];
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut end = end;
+            for message in messages {
+                end.write_all(format!("{message}\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+            refresh
+                .recv_timeout(ENDS_WITHIN)
+                .expect("the refresh started");
+            drop(end);
+        });
+    }
+
+    #[test]
+    fn the_session_ends_when_its_input_closes_during_a_refresh() {
+        let (client_end, server_end) = tokio::io::duplex(1 << 16);
+        let (started, refresh) = mpsc::channel();
+        let client = thread::spawn(move || close_during_a_refresh(client_end, &refresh));
+        let (ended, session) = mpsc::channel();
+        // The session runs on a thread of its own, so that a session that does not end fails the test and does not hang it.
+        thread::spawn(move || {
+            let (input, output) = tokio::io::split(server_end);
+            ended
+                .send(block_on(serve_on(Slow { started }, input, output)))
+                .ok();
+        });
+
+        let result = session.recv_timeout(ENDS_WITHIN);
+
+        client
+            .join()
+            .expect("the input closed while the refresh was running");
+        let result = result.expect("the session ended within ten seconds of its input closing");
+        assert!(result.is_ok(), "{result:?}");
+    }
+}
