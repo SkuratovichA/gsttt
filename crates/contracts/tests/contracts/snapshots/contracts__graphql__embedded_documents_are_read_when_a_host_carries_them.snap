@@ -51,7 +51,7 @@ expression: run.snapshot()
             {
               "key": "graphql Query.bookings",
               "role": "calls",
-              "line": 5,
+              "line": 1,
               "via": "graphql"
             }
           ]

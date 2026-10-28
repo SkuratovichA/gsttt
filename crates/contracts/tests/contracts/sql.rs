@@ -6,7 +6,7 @@ use gsttt_core::connector::ConnectorError;
 use gsttt_core::fact::ParseStatus;
 use serde_json::json;
 
-use crate::support::{HOST, Run, fixture, module, try_run, with_options};
+use crate::support::{HOST, Run, fixture, module, read_embedded, try_run, with_options};
 
 #[gsttt_scenario::scenario("contract-formats", "A migration declares its tables")]
 #[test]
@@ -101,13 +101,31 @@ fn one_bad_statement_does_not_hide_the_rest() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
-#[gsttt_scenario::scenario("contract-formats", "Embedded SQL documents keep host lines")]
+#[gsttt_scenario::scenario("contract-formats", "Embedded SQL reports lines within the document")]
 #[test]
-fn embedded_sql_documents_keep_host_lines() {
+fn embedded_sql_reports_lines_within_the_document() {
+    // The document starts on line 7 of its host file; the engine, not the connector, moves its lines there.
+    assert_eq!(
+        read_embedded(&SQL, "sql_queries", "sql", 7, "SELECT id FROM bookings"),
+        vec!["calls table bookings @1"]
+    );
+    // A statement further down reports its own line within the document, with or without a placeholder to read
+    // around.
+    let text = "SELECT 1;\nSELECT id FROM bookings WHERE a = %s";
+    assert_eq!(
+        read_embedded(&SQL, "sql_queries", "sql", 7, text),
+        vec!["calls table bookings @2"]
+    );
+}
+
+/// The pipeline hands the host's document to the connector and keeps what it reads. The snapshot shows the lines
+/// as the engine places them, so it changes when the engine moves them to the host file.
+#[test]
+fn embedded_sql_is_read_when_a_host_carries_it() {
     let run = Run::new("sql_embedded", &[module(&HOST), module(&SQL)]);
     assert_eq!(
         run.embedded("app/repo.py"),
-        vec![(Some("sql"), vec!["calls table bookings @7".to_owned()])]
+        vec![(Some("sql"), vec!["calls table bookings".to_owned()])]
     );
     insta::assert_json_snapshot!(run.snapshot());
 }

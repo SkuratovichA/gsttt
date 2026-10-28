@@ -3,7 +3,7 @@
 use gsttt_contracts::GRAPHQL;
 use gsttt_core::fact::ParseStatus;
 
-use crate::support::{HOST, Run, module};
+use crate::support::{HOST, Run, module, read_embedded};
 
 #[gsttt_scenario::scenario("contract-formats", "Schema fields are declared")]
 #[test]
@@ -50,15 +50,48 @@ fn import_comments_are_imports_relative_to_the_file() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
-#[gsttt_scenario::scenario("contract-formats", "Embedded documents keep host lines")]
+#[gsttt_scenario::scenario(
+    "contract-formats",
+    "Embedded documents report lines within the document"
+)]
 #[test]
-fn embedded_documents_keep_host_lines() {
+fn embedded_documents_report_lines_within_the_document() {
+    // The document starts on line 5 of its host file; the engine, not the connector, moves its lines there.
+    assert_eq!(
+        read_embedded(
+            &GRAPHQL,
+            "claims_graphql_env",
+            "graphql",
+            5,
+            "query { bookings { id } }"
+        ),
+        vec!["calls graphql Query.bookings @1"]
+    );
+    assert_eq!(
+        read_embedded(
+            &GRAPHQL,
+            "claims_graphql_env",
+            "graphql",
+            5,
+            "query Bookings {\n  me { id }\n  bookings { id }\n}"
+        ),
+        vec![
+            "calls graphql Query.me @2",
+            "calls graphql Query.bookings @3"
+        ]
+    );
+}
+
+/// The pipeline hands the host's document to the connector and keeps what it reads. The snapshot shows the lines
+/// as the engine places them, so it changes when the engine moves them to the host file.
+#[test]
+fn embedded_documents_are_read_when_a_host_carries_them() {
     let run = Run::new("graphql_embedded", &[module(&HOST), module(&GRAPHQL)]);
     assert_eq!(
         run.embedded("src/client.ts"),
         vec![(
             Some("graphql"),
-            vec!["calls graphql Query.bookings @5".to_owned()]
+            vec!["calls graphql Query.bookings".to_owned()]
         )]
     );
     insta::assert_json_snapshot!(run.snapshot());

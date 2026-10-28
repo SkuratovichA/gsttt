@@ -21,7 +21,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::common::{
-    Errors, any_claimed, byte_offset, line_number, provide, resolve_relative, shift_to_host, site,
+    Errors, any_claimed, byte_offset, line_number, provide, resolve_relative, site,
 };
 
 const VIA: &str = "graphql";
@@ -145,8 +145,8 @@ impl Project for GraphqlProject {
         }
         let lines = LineIndex::new(&document.text);
         let tree = Parser::new(&document.text).parse();
-        // The pipeline hands lines back as they are, so the offset to the host file is this connector's job.
-        shift_to_host(read_document(&tree.document(), &lines), document.line)
+        // Lines count from the document's first line; the engine places them in the host file.
+        read_document(&tree.document(), &lines)
     }
 }
 

@@ -117,16 +117,6 @@ impl Errors {
     }
 }
 
-/// Moves the lines of the facts of an embedded document, which count from the document's first line, to the lines
-/// of the host file the document starts on.
-pub(crate) fn shift_to_host(mut facts: Vec<ContractFact>, host_line: Line) -> Vec<ContractFact> {
-    let shift = host_line.saturating_sub(1);
-    for fact in &mut facts {
-        fact.line = fact.line.saturating_add(shift);
-    }
-    facts
-}
-
 /// A hash of the strings that changes when any of them does, for the salt of a project whose output depends on its
 /// options. FNV-1a, because the standard hasher is free to change between releases and a salt is stored.
 pub(crate) fn salt_of(parts: &[&str]) -> u64 {

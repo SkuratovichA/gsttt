@@ -32,7 +32,7 @@ expression: run.snapshot()
             {
               "key": "table bookings",
               "role": "calls",
-              "line": 7,
+              "line": 1,
               "via": "sql"
             }
           ]

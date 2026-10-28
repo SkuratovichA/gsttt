@@ -26,7 +26,7 @@ use sqlparser::dialect::{Dialect, PostgreSqlDialect, dialect_from_str};
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
-use crate::common::{Errors, any_claimed, provide, salt_of, shift_to_host, site, syntax_failure};
+use crate::common::{Errors, any_claimed, provide, salt_of, site, syntax_failure};
 use crate::tree::SyntaxError;
 
 const VIA: &str = "sql";
@@ -196,11 +196,9 @@ impl Project for SqlProject {
     }
 
     fn parse_embedded(&self, document: &Embedded) -> Vec<ContractFact> {
-        // The pipeline hands lines back as they are, so the offset to the host file is this connector's job.
-        read(self.grammar().as_ref(), &document.text).map_or_else(
-            |_| Vec::new(),
-            |(facts, _)| shift_to_host(facts, document.line),
-        )
+        // Lines count from the document's first line; the engine places them in the host file.
+        read(self.grammar().as_ref(), &document.text)
+            .map_or_else(|_| Vec::new(), |(facts, _)| facts)
     }
 }
 
@@ -286,7 +284,12 @@ fn read_with_parameters(
     let statement = parse_group(dialect, tokens)?;
     let mut facts = Vec::new();
     read_statement(&statement, 1, &mut facts);
-    Some(shift_to_host(facts, base))
+    // The lines of the new text count from its first line, which is `base` in the text it was made from.
+    let shift = base.saturating_sub(1);
+    for fact in &mut facts {
+        fact.line = fact.line.saturating_add(shift);
+    }
+    Some(facts)
 }
 
 /// The tokens of each statement; a semicolon inside a string, a comment or a dollar-quoted body is part of one

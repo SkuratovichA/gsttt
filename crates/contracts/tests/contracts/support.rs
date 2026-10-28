@@ -98,12 +98,16 @@ impl Run {
         describe(&self.file(path).facts.contracts)
     }
 
-    /// The embedded documents of a file: who read each one, and the sites it gave.
+    /// The embedded documents of a file: who read each one, and the sites it gave as `<role> <key>`. Lines are left
+    /// out because placing them in the host file is the engine's job; the snapshots show what it did.
     pub(crate) fn embedded(&self, path: &str) -> Vec<(Option<&'static str>, Vec<String>)> {
         self.file(path)
             .embedded
             .iter()
-            .map(|run| (run.read_by, describe(&run.facts)))
+            .map(|run| {
+                let sites = describe(&run.facts).into_iter().map(without_line);
+                (run.read_by, sites.collect())
+            })
             .collect()
     }
 
@@ -167,6 +171,32 @@ impl Run {
             other => format!("{other:?}"),
         }
     }
+}
+
+fn without_line(site: String) -> String {
+    match site.rsplit_once(" @") {
+        Some((head, _)) => head.to_owned(),
+        None => site,
+    }
+}
+
+/// What the project of a connector reads out of one document embedded in code at `line` of its host file, asked
+/// directly and without the pipeline: the sites as `<role> <key> @<line>`, lines counted from the document's first.
+pub(crate) fn read_embedded(
+    connector: &dyn DynConnector,
+    repo: &str,
+    lang: &str,
+    line: u32,
+    text: &str,
+) -> Vec<String> {
+    let projects = connector.open(&fixture(repo), &Value::Null, &[]).unwrap();
+    let document = Embedded {
+        lang: lang.to_owned(),
+        line,
+        text: text.to_owned(),
+        via: "host".to_owned(),
+    };
+    describe(&projects[0].parse_embedded(&document))
 }
 
 fn site(fact: &ContractFact) -> String {

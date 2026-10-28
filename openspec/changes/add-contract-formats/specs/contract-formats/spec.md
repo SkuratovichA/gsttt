@@ -65,11 +65,11 @@ A `#import "<path>"` comment SHALL be an import relative to the file.
 - **THEN** it has an import that resolves to `api/types/booking.graphql`
 
 ### Requirement: Embedded GraphQL
-The connector SHALL read embedded `graphql` documents the same way as it reads `graphql` files, with lines offset to the host file.
+The connector SHALL read embedded `graphql` documents the same way as it reads `graphql` files and SHALL return lines within the document, line 1 being its first line; the engine places them in the host file.
 
-#### Scenario: Embedded documents keep host lines
-- **WHEN** a TypeScript file embeds `query { bookings { id } }` at line 5
-- **THEN** that file calls `graphql Query.bookings` at line 5
+#### Scenario: Embedded documents report lines within the document
+- **WHEN** `parse_embedded` gets `query { bookings { id } }` embedded at line 5
+- **THEN** it returns a call to `graphql Query.bookings` at line 1
 
 ### Requirement: Protobuf
 Each `rpc` of a `service` SHALL declare `grpc <package>.<Service>/<Method>` at its line, and a `google.api.http` option on it SHALL declare `http <METHOD> <path>` for its binding and each additional binding. An `import` SHALL resolve against the module roots of `buf.yaml` and the directories of `buf.work.yaml` when they exist, and then against each directory above the importing file; `google/protobuf/` imports SHALL resolve to builtins and any other import found nowhere to an unknown package.
@@ -126,11 +126,11 @@ A statement that does not parse SHALL be counted in a recovered status and the o
 - **THEN** its status is recovered with one error at the second statement's line and the sites of the first and third are read
 
 ### Requirement: Embedded SQL
-The connector SHALL read embedded `sql` documents the same way as it reads `sql` files, with lines offset to the host file.
+The connector SHALL read embedded `sql` documents the same way as it reads `sql` files and SHALL return lines within the document, line 1 being its first line; the engine places them in the host file.
 
-#### Scenario: Embedded SQL documents keep host lines
-- **WHEN** a Python file embeds `SELECT id FROM bookings` at line 7
-- **THEN** that file calls `table bookings` at line 7
+#### Scenario: Embedded SQL reports lines within the document
+- **WHEN** `parse_embedded` gets `SELECT id FROM bookings` embedded at line 7
+- **THEN** it returns a call to `table bookings` at line 1
 
 ### Requirement: Env files
 Each `<NAME>=` line, with or without `export`, SHALL declare `env <NAME>` at its line; comments and blank lines SHALL be skipped.
