@@ -852,6 +852,9 @@ impl Output {
             .map(|linked| {
                 let mut fact = object(&linked.fact);
                 fact.insert("file".to_owned(), path(linked.file));
+                if let Some(key) = &linked.replaces {
+                    fact.insert("replaces".to_owned(), to_value(key));
+                }
                 Value::Object(fact)
             })
             .collect();
@@ -1142,6 +1145,20 @@ mod tests {
             .map(|fact| fact["file"].clone())
             .collect();
         assert_eq!(linked, [json!("a.txt"), json!("pkg/c.txt")]);
+    }
+
+    #[test]
+    fn a_linked_fact_shows_the_key_it_replaces_only_when_it_names_one() {
+        let text = b"fact 1 serves http GET /a\nlinked 1 serves http GET /api/a replaces http GET /a\nlinked 1 serves http GET /b\n";
+        let (_dir, repo) = tree(&[("a.txt", text)]);
+        let output = run(&repo, &modules(), LIMIT).unwrap();
+        let json = output.to_json(&repo);
+        let linked = json["linked"].as_array().unwrap();
+        assert_eq!(linked.len(), 2);
+        assert_eq!(linked[0]["key"], json!("http GET /api/a"));
+        assert_eq!(linked[0]["replaces"], json!("http GET /a"));
+        assert_eq!(linked[1]["key"], json!("http GET /b"));
+        assert!(linked[1].get("replaces").is_none(), "{:?}", linked[1]);
     }
 
     #[test]
