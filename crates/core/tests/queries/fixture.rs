@@ -171,6 +171,15 @@ impl Tree {
         self
     }
 
+    /// A file its connector read past `errors` syntax errors, the first on `line`.
+    pub(crate) fn recovered(mut self, path: &str, errors: u32, line: u32) -> Self {
+        self.entry(path).status = ParseStatus::Recovered {
+            errors,
+            first_error_line: line,
+        };
+        self
+    }
+
     /// A site in `path` that its connector saw and could not read.
     pub(crate) fn blind(
         mut self,

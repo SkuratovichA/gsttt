@@ -60,7 +60,7 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 - **THEN** the answer lists `src/old.ts` as deleted with `src/a.ts:4` importing `./old` as a possible miss
 
 #### Scenario: An unknown path is named
-- **WHEN** impact is asked about `notes.txt`, which no connector read
+- **WHEN** impact is asked about `notes.txt`, which no connector owns
 - **THEN** the answer says that `notes.txt` is not in the index
 
 ### Requirement: Neighbours
@@ -73,6 +73,17 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 #### Scenario: Dependents show edge kinds
 - **WHEN** `b.ts` imports `a.ts` and `c.ts` re-exports everything from it
 - **THEN** dependents of `a.ts` lists `b.ts` with a static import and `c.ts` with a re-export of everything
+
+### Requirement: Dependencies of a file that was not read cleanly
+`dependencies` of a file whose connector failed to parse it SHALL say that the file could not be parsed and so its imports are unknown, with the failure. For a file the connector read past syntax errors it SHALL say that imports may be missing. It SHALL NOT say of either that the file imports nothing.
+
+#### Scenario: A file that failed to parse is not one that imports nothing
+- **WHEN** `ts` owns `src/broken.ts`, its parse failed with a syntax error at line 3, and its dependencies are asked
+- **THEN** the answer says that `src/broken.ts` could not be parsed, so its imports are unknown, names the syntax error, and does not say that the file imports nothing
+
+#### Scenario: A file read past syntax errors says its imports may be missing
+- **WHEN** `ts` read `src/rough.ts` past 2 syntax errors, the first at line 7, and found no imports in it
+- **THEN** the dependencies of `src/rough.ts` say that it was read past 2 syntax errors, the first at line 7, so imports may be missing, and do not say that it imports nothing
 
 ### Requirement: Paths between files
 `path` SHALL return a shortest chain from one file to another, where a step is an import, a hop from a file that calls a contract to a file that serves or declares it, or a hop from a file that serves a contract to a file that declares it. HTTP hops SHALL follow keys that meet. When there is no chain, the answer SHALL say so and how many files are reachable from the first file.

@@ -10,21 +10,22 @@ use crate::ids::FileId;
 use crate::index::Index;
 use crate::path::RepoPath;
 
-/// The file `raw` names, with its path. A file is in the index for a question only when a connector read it, because
-/// the graph lists every file of the tree and an answer about a file nobody read would claim a certainty it does
-/// not have. When the index holds no such file, the error is the path to print for it: `raw` taken to its
+/// The file `raw` names, with its path. A file is in the index for a question only when a connector owns it, because
+/// the graph lists every file of the tree and an answer about a file no connector claimed would state a certainty it
+/// does not have. A file the connector owns but failed to parse is in the index, and its answers say so from its
+/// parse status. When the index holds no such file, the error is the path to print for it: `raw` taken to its
 /// canonical form when it has one.
 pub(super) fn find<'a>(index: &'a Index, raw: &str) -> Result<(FileId, &'a RepoPath), String> {
-    let read = |path: &str| {
+    let owned = |path: &str| {
         let file = index.graph.file_id(path)?;
         index.project_of(file)?;
         Some((file, index.graph.path(file)?))
     };
-    if let Some(found) = read(raw) {
+    if let Some(found) = owned(raw) {
         return Ok(found);
     }
     match RepoPath::normalize(raw) {
-        Ok(path) => read(path.as_str()).ok_or_else(|| path.to_string()),
+        Ok(path) => owned(path.as_str()).ok_or_else(|| path.to_string()),
         Err(_) => Err(raw.to_owned()),
     }
 }

@@ -28,3 +28,4 @@
 - [x] 5.1 An HTTP prefix is removed from one path only, and a path that is only a prefix is no path
 - [x] 5.2 A lookup compares an HTTP key with the routes that have a segment count it can meet, not with every route of the index
 - [x] 5.3 The properties of HTTP matching draw their prefixes from the vocabulary of the keys and draw more cases
+- [x] 5.4 `dependencies` of a file that failed to parse says so with the failure, and of one read past syntax errors that imports may be missing, in place of saying that it imports nothing

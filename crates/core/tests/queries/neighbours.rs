@@ -1,6 +1,6 @@
 //! `dependents` and `dependencies`: one level of the import graph around a file.
 
-use gsttt_core::fact::{Import, ImportFlags, ImportKind, UnresolvedReason};
+use gsttt_core::fact::{Import, ImportFlags, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::Freshness;
 use gsttt_core::query::{External, Neighbour, dependencies, dependents};
 use gsttt_scenario::scenario;
@@ -241,6 +241,73 @@ fn a_file_that_imports_nothing_says_so() {
     assert!(
         text.starts_with("a.ts imports nothing; ts found no imports in it\n"),
         "{text}"
+    );
+}
+
+#[scenario(
+    "queries",
+    "A file that failed to parse is not one that imports nothing"
+)]
+#[test]
+fn a_file_that_failed_to_parse_does_not_say_it_imports_nothing() {
+    let index = Tree::new()
+        .failed(
+            "src/broken.ts",
+            ParseFailure::Syntax {
+                line: 3,
+                message: "unexpected token".to_owned(),
+            },
+        )
+        .build();
+
+    let answer = dependencies(&index, Freshness::Fresh, "src/broken.ts");
+
+    let text = answer.to_string();
+    assert!(
+        text.starts_with(
+            "src/broken.ts could not be parsed, so its imports are unknown: \
+             syntax error at line 3: unexpected token\n"
+        ),
+        "{text}"
+    );
+    assert!(!text.contains("imports nothing"), "{text}");
+    let json = serde_json::to_value(&answer).unwrap();
+    assert_eq!(json["status"]["status"], "failed");
+    assert_eq!(json["status"]["failure"], "syntax");
+}
+
+#[scenario(
+    "queries",
+    "A file read past syntax errors says its imports may be missing"
+)]
+#[test]
+fn a_file_read_past_syntax_errors_says_its_imports_may_be_missing() {
+    let bare = Tree::new().recovered("src/rough.ts", 2, 7).build();
+    let rich = Tree::new()
+        .recovered("src/rough.ts", 1, 9)
+        .imports("src/rough.ts", "src/a.ts")
+        .build();
+
+    let bare = dependencies(&bare, Freshness::Fresh, "src/rough.ts").to_string();
+    let rich = dependencies(&rich, Freshness::Fresh, "src/rough.ts").to_string();
+
+    assert!(
+        bare.starts_with(
+            "src/rough.ts was read past 2 syntax errors, the first at line 7, \
+             so imports may be missing\n"
+        ),
+        "{bare}"
+    );
+    assert!(!bare.contains("imports nothing"), "{bare}");
+    assert!(
+        rich.starts_with(
+            "dependencies of src/rough.ts\n\
+             src/rough.ts was read past 1 syntax error, the first at line 9, \
+             so imports may be missing\n\
+             files (1):\n\
+             src/a.ts  static import\n"
+        ),
+        "{rich}"
     );
 }
 

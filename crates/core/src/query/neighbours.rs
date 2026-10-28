@@ -5,10 +5,11 @@ use std::fmt;
 
 use serde::Serialize;
 
-use crate::fact::{ImportKind, Line, Resolution};
+use crate::fact::{ImportKind, Line, ParseStatus, Resolution};
 use crate::graph::{Edge, Graph};
 use crate::ids::FileId;
 use crate::index::{Freshness, Index};
+use crate::text::noun;
 
 use super::lookup::{Miss, find, possible_misses};
 use super::render::{Answer, Entries, Footer, Searched, display_as_text, list};
@@ -70,7 +71,8 @@ pub(super) const fn kind_label(kind: ImportKind) -> &'static str {
 pub struct Dependents {
     /// The file asked about as the index names it, or as it was asked when the index does not hold it.
     pub path: String,
-    /// Whether a connector read the file, which is what it takes to be in the index.
+    /// Whether a connector owns the file, which is what it takes to be in the index. The connector may still have
+    /// failed to parse it: importers are found from the importing files, so they stay true of such a file.
     pub in_index: bool,
     /// The importers, ordered by path.
     pub files: Vec<Neighbour>,
@@ -152,10 +154,14 @@ pub struct External {
 pub struct Dependencies {
     /// The file asked about as the index names it, or as it was asked when the index does not hold it.
     pub path: String,
-    /// Whether a connector read the file, which is what it takes to be in the index.
+    /// Whether a connector owns the file, which is what it takes to be in the index. The connector may still have
+    /// failed to parse it, which `status` says.
     pub in_index: bool,
-    /// The connector that read the file.
+    /// The connector that owns the file.
     pub read_by: Option<String>,
+    /// How the parse of the file went, `None` when the index does not hold the file. The imports below are all the
+    /// file has only when this is [`ParseStatus::Ok`]: a failed parse leaves none, a recovered one may leave some out.
+    pub status: Option<ParseStatus>,
     /// The files it imports, ordered by path.
     pub files: Vec<Neighbour>,
     /// Third-party packages, ordered by name.
@@ -177,6 +183,7 @@ pub fn dependencies(index: &Index, freshness: Freshness, path: &str) -> Dependen
                 path: unknown,
                 in_index: false,
                 read_by: None,
+                status: None,
                 files: Vec::new(),
                 packages: Vec::new(),
                 builtins: Vec::new(),
@@ -194,7 +201,8 @@ pub fn dependencies(index: &Index, freshness: Freshness, path: &str) -> Dependen
     let mut packages: BTreeMap<&str, Vec<Line>> = BTreeMap::new();
     let mut builtins: BTreeMap<&str, Vec<Line>> = BTreeMap::new();
     let mut unresolved = Vec::new();
-    for resolved in index.record(file).map_or(&[][..], |record| &record.imports) {
+    let record = index.record(file);
+    for resolved in record.map_or(&[][..], |record| &record.imports) {
         let import = &resolved.import;
         match &resolved.to {
             Resolution::External { package } => {
@@ -219,6 +227,7 @@ pub fn dependencies(index: &Index, freshness: Freshness, path: &str) -> Dependen
         read_by: index
             .project_of(file)
             .map(|project| project.connector.clone()),
+        status: record.map(|record| record.status.clone()),
         files,
         packages: externals(packages),
         builtins: externals(builtins),
@@ -245,8 +254,32 @@ fn externals(found: BTreeMap<&str, Vec<Line>>) -> Vec<External> {
         .collect()
 }
 
+impl Dependencies {
+    /// What the parse status of the file means for the lists, when it is not a clean read: a file that failed to
+    /// parse has no imports to list, and one read past syntax errors may have lost some, so neither may be told as
+    /// a file that imports nothing.
+    fn caveat(&self) -> Option<String> {
+        match self.status.as_ref()? {
+            ParseStatus::Ok => None,
+            ParseStatus::Recovered {
+                errors,
+                first_error_line,
+            } => Some(format!(
+                "{} was read past {}, the first at line {first_error_line}, so imports may be missing",
+                self.path,
+                noun(*errors, "syntax error"),
+            )),
+            ParseStatus::Failed(failure) => Some(format!(
+                "{} could not be parsed, so its imports are unknown: {failure}",
+                self.path,
+            )),
+        }
+    }
+}
+
 impl Answer for Dependencies {
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
+        let caveat = self.caveat();
         if !self.in_index {
             writeln!(f, "{} is not in the index", self.path)?;
         } else if self.files.is_empty()
@@ -254,13 +287,20 @@ impl Answer for Dependencies {
             && self.builtins.is_empty()
             && self.unresolved.is_empty()
         {
-            write!(f, "{} imports nothing", self.path)?;
-            if let Some(connector) = &self.read_by {
-                write!(f, "; {connector} found no imports in it")?;
+            if let Some(caveat) = caveat {
+                writeln!(f, "{caveat}")?;
+            } else {
+                write!(f, "{} imports nothing", self.path)?;
+                if let Some(connector) = &self.read_by {
+                    write!(f, "; {connector} found no imports in it")?;
+                }
+                f.write_str("\n")?;
             }
-            f.write_str("\n")?;
         } else {
             writeln!(f, "dependencies of {}", self.path)?;
+            if let Some(caveat) = caveat {
+                writeln!(f, "{caveat}")?;
+            }
             list(f, "files", &self.files, entries, |f, file| {
                 write!(f, "{file}")
             })?;
