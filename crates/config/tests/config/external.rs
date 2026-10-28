@@ -2,6 +2,7 @@
 //!
 //! A fake process is a shell script in the repository root. It appends every line it reads to `requests.log`, answers by the first `case` pattern the line matches, and touches `started` when it starts, so a test sees what gsttt sent, in what order, from which directory, and whether the command ran at all.
 
+use std::env;
 use std::fmt::Write as _;
 use std::fs;
 use std::time::Duration;
@@ -103,6 +104,7 @@ fn setup(command: &[&str]) -> ExternalSetup {
         cmd: command.iter().copied().map(str::to_owned).collect(),
         files: vec!["**/*.kt".to_owned()],
         version: "1".to_owned(),
+        env: Vec::new(),
     }
 }
 
@@ -342,6 +344,51 @@ fn an_unused_external_starts_nothing() {
         text: "import B\n",
     });
     assert!(tree.root().join("started").exists());
+}
+
+#[gsttt_scenario::scenario("config", "A process sees only the environment it was given")]
+#[test]
+fn a_process_sees_only_the_environment_it_was_given() {
+    // Cargo gives every test its package name and manifest directory. The first is listed in `env`; the second is neither listed nor inherited.
+    let (listed, withheld) = ("CARGO_PKG_NAME", "CARGO_MANIFEST_DIR");
+    for name in ["PATH", listed, withheld] {
+        assert!(
+            env::var_os(name).is_some(),
+            "{name} is not set: run the tests through cargo"
+        );
+    }
+    let tree = repository(&[
+        when(
+            &request("open"),
+            format!("env > environment.log; {}", say(&ready())),
+        ),
+        parses("src/A.kt", &FileFacts::default()),
+    ]);
+    let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
+    let external = External::new(&ExternalSetup {
+        env: vec![listed.to_owned()],
+        ..setup(&["sh", "kotlin.sh"])
+    })
+    .unwrap();
+    let connector = Erased(external);
+    let projects = connector.open(&repo, &Value::Null, &[]).unwrap();
+    let path = RepoPath::normalize("src/A.kt").unwrap();
+    projects.first().unwrap().parse(&SourceFile {
+        id: repo.lookup("src/A.kt").unwrap(),
+        path: &path,
+        text: "",
+    });
+
+    // The process wrote its environment before it said `ready`, so the file is complete once the parse has an answer.
+    let log = fs::read_to_string(tree.root().join("environment.log")).unwrap();
+    let names: Vec<&str> = log
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(name, _)| name)
+        .collect();
+    assert!(names.contains(&"PATH"), "inherited: {names:?}");
+    assert!(names.contains(&listed), "listed: {names:?}");
+    assert!(!names.contains(&withheld), "withheld: {names:?}");
 }
 
 #[test]
@@ -630,6 +677,19 @@ fn an_external_needs_a_command_and_globs_that_parse() {
 }
 
 #[test]
+fn an_environment_name_must_be_the_name_of_a_variable() {
+    for name in ["", "A=B", "A\0B"] {
+        let mut broken = setup(&["x"]);
+        broken.env = vec![name.to_owned()];
+        let error = External::new(&broken).unwrap_err().to_string();
+        assert!(
+            error.contains("kotlin") && error.contains("`env`"),
+            "{name:?}: {error}"
+        );
+    }
+}
+
+#[test]
 fn the_cache_key_follows_the_command_and_its_version() {
     let tree = repository(&[]);
     let repo = RepoView::scan(tree.root().to_str().unwrap()).unwrap();
@@ -643,9 +703,12 @@ fn the_cache_key_follows_the_command_and_its_version() {
     newer.version = "2".to_owned();
     let mut other = base.clone();
     other.cmd.push("--strict".to_owned());
+    let mut listed = base.clone();
+    listed.env.push("JAVA_HOME".to_owned());
     assert_eq!(salt(&base), salt(&base.clone()));
     assert_ne!(salt(&base), salt(&newer));
     assert_ne!(salt(&base), salt(&other));
+    assert_ne!(salt(&base), salt(&listed));
 }
 
 /// The `type` of each variant of a tagged enum in the schema's definitions.

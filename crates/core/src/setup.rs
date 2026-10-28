@@ -70,6 +70,9 @@ pub struct ExternalSetup {
     /// Mixed into the cache key with the command, so a new release of the connector drops its cached facts.
     #[serde(default)]
     pub version: String,
+    /// Names of environment variables the process may read, on top of the few every program needs (`PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TMPDIR`). The rest of gsttt's environment, where secrets live, stays out of its reach.
+    #[serde(default)]
+    pub env: Vec<String>,
 }
 
 impl Setup {

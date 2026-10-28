@@ -18,10 +18,10 @@ The config SHALL be read from `.gsttt/init.lua` under the repository root. Witho
 - **THEN** evaluation fails with a message that starts with `.gsttt/init.lua:3:`
 
 ### Requirement: The gsttt module
-`require("gsttt")` SHALL return a module whose functions fill the setup: `setup` sets `exclude`, `http_prefixes`, `max_file_bytes` and `detect`; a function per module of the registry turns that module on with its table as options; `disable` keeps a module off even when it is detected; `pack` adds a pack read like a built-in one; `disable_pack` leaves a built-in pack out; and `external` declares a connector run as a command with `name`, `cmd`, `files` and `version`.
+`require("gsttt")` SHALL return a module whose functions fill the setup: `setup` sets `exclude`, `http_prefixes`, `max_file_bytes` and `detect`; a function per module of the registry turns that module on with its table as options; `disable` keeps a module off even when it is detected; `pack` adds a pack read like a built-in one; `disable_pack` leaves a built-in pack out; and `external` declares a connector run as a command with `name`, `cmd`, `files`, `version` and `env`.
 
 #### Scenario: A config fills the setup
-- **WHEN** the config calls `g.setup { exclude = { "fixtures/**" }, http_prefixes = { "/api" } }`, `g.ts { tsconfig = "tsconfig.base.json" }`, `g.disable "openapi"`, `g.disable_pack "axios"` and `g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" }, version = "1" }`
+- **WHEN** the config calls `g.setup { exclude = { "fixtures/**" }, http_prefixes = { "/api" } }`, `g.ts { tsconfig = "tsconfig.base.json" }`, `g.disable "openapi"`, `g.disable_pack "axios"` and `g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" }, version = "1", env = { "JAVA_HOME" } }`
 - **THEN** the setup holds each of those values, matching the reviewed snapshot
 
 ### Requirement: Strict keys
@@ -93,11 +93,15 @@ The crate SHALL generate LuaLS annotations from the registry's module names and 
 - **THEN** the output declares `---@class gsttt.TsOptions` with `---@field tsconfig? string` and `---@field conditions? string[]` and their descriptions, and a function `ts` that takes `gsttt.TsOptions`
 
 ### Requirement: External connectors
-An external SHALL be a connector that claims the files its `files` globs match and speaks JSON lines with one process started in the repository root on its first request, so that a run answered from the snapshot starts none.
+An external SHALL be a connector that claims the files its `files` globs match and speaks JSON lines with one process started in the repository root on its first request, so that a run answered from the snapshot starts none. The process SHALL get only the variables `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE` and `TMPDIR` of gsttt's own environment, when gsttt has them, and the ones named in the `env` of its declaration; the rest of the environment, where secrets live, SHALL stay out of its reach.
 
 #### Scenario: An unused external starts nothing
 - **WHEN** a run opens an external whose files are all answered from the snapshot, so it parses and resolves nothing
 - **THEN** its command never runs
+
+#### Scenario: A process sees only the environment it was given
+- **WHEN** gsttt runs with `PATH`, a variable listed in `env` and a variable that is neither inherited nor listed, and an external's process writes its environment
+- **THEN** the environment holds `PATH` and the listed variable and not the other one
 
 ### Requirement: External protocol
 An external's process SHALL receive `open` with the protocol version, the root and the options, and answer `ready` with its name, version and provides; then `parse` for each file with its path and text, answered by `facts`, and `resolve` for each import, answered by `resolution`; and `done` at the end of the run. Messages SHALL carry the serde forms of the core types and name files by path.

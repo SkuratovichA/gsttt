@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::ConfigError;
-use crate::external::glob_set;
+use crate::external::{check_env, glob_set};
 use crate::sandbox::{Sandbox, raise, text_chunk};
 use crate::value::to_json;
 
@@ -320,7 +320,7 @@ fn external(lua: &Lua, state: &Evaluation, table: &Value) -> mlua::Result<()> {
     Ok(())
 }
 
-/// What serde cannot check: the name is usable as a module name, the command and the globs make sense.
+/// What serde cannot check: the name is usable as a module name, the command, the globs and the environment names make sense.
 fn check_external(state: &Evaluation, external: &ExternalSetup) -> Result<(), String> {
     let name = &external.name;
     if name.is_empty()
@@ -355,6 +355,7 @@ fn check_external(state: &Evaluation, external: &ExternalSetup) -> Result<(), St
         ));
     }
     glob_set(&external.files).map_err(|error| format!("`files` of `{name}` {error}"))?;
+    check_env(&external.env).map_err(|error| format!("`env` of `{name}` {error}"))?;
     Ok(())
 }
 

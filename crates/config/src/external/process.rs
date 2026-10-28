@@ -1,7 +1,9 @@
 //! The child process of an external connector: started on the first request and spoken to one line at a time.
 
+use std::env;
+use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::thread;
@@ -21,6 +23,44 @@ const EXIT_GRACE: Duration = Duration::from_secs(2);
 
 /// How often the exit of the process is looked for while it is given its grace.
 const EXIT_POLL: Duration = Duration::from_millis(5);
+
+/// The variables a process gets from gsttt's own environment, when gsttt has them: what a program needs to find its tools and its home. Anything else, a secret among it, reaches the process only by name in the `env` of its declaration.
+const INHERITED_ENV: [&str; 8] = [
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR",
+];
+
+/// What it takes to start the process of a connector.
+#[derive(Debug)]
+pub(super) struct Launch {
+    /// The connector's name, for the log and the messages.
+    pub(super) name: &'static str,
+    pub(super) program: String,
+    pub(super) arguments: Vec<String>,
+    /// Names of the variables to pass on besides [`INHERITED_ENV`].
+    pub(super) env: Vec<String>,
+    /// Where the process runs: the repository root.
+    pub(super) root: PathBuf,
+    /// How long it gets to answer one request.
+    pub(super) timeout: Duration,
+}
+
+impl Launch {
+    /// The command line, as a message shows it.
+    fn command_line(&self) -> String {
+        std::iter::once(self.program.as_str())
+            .chain(self.arguments.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// The part of gsttt's environment the process is given: the names of [`INHERITED_ENV`] and the listed ones, each with its value when gsttt has one.
+    fn environment(&self) -> impl Iterator<Item = (&str, OsString)> {
+        INHERITED_ENV
+            .into_iter()
+            .chain(self.env.iter().map(String::as_str))
+            .filter_map(|name| env::var_os(name).map(|value| (name, value)))
+    }
+}
 
 /// Why a request got no usable answer.
 #[derive(Debug, thiserror::Error)]
@@ -62,43 +102,39 @@ pub(super) struct Process {
 }
 
 impl Process {
-    /// Starts `program` in `root` and runs the handshake: `open`, answered by `ready`. The lines of its standard error go to the log under `name`.
-    pub(super) fn start(
-        name: &'static str,
-        program: &str,
-        arguments: &[String],
-        root: &Path,
-        timeout: Duration,
-    ) -> Result<Self, Failure> {
-        let mut child = Command::new(program)
-            .args(arguments)
-            .current_dir(root)
+    /// Starts the process in the repository root, with the environment of [`Launch::environment`] and nothing else, and runs the handshake: `open`, answered by `ready`. The lines of its standard error go to the log under its name.
+    pub(super) fn start(launch: &Launch) -> Result<Self, Failure> {
+        let mut child = Command::new(&launch.program)
+            .args(&launch.arguments)
+            .current_dir(&launch.root)
+            .env_clear()
+            .envs(launch.environment())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|source| Failure::Start {
-                command: command_line(program, arguments),
+                command: launch.command_line(),
                 source,
             })?;
         let (requests, exchanges) = mpsc::channel();
         let threads = match (child.stdin.take(), child.stdout.take(), child.stderr.take()) {
             (Some(stdin), Some(stdout), Some(stderr)) => {
-                spawn_threads(name, stdin, stdout, stderr, exchanges)
+                spawn_threads(launch.name, stdin, stdout, stderr, exchanges)
             }
             _ => Err(io::Error::other("the standard streams were not piped")),
         };
         if let Err(source) = threads {
             stop(&mut child);
             return Err(Failure::Start {
-                command: command_line(program, arguments),
+                command: launch.command_line(),
                 source,
             });
         }
         let mut process = Self {
             child,
             requests: Some(requests),
-            timeout,
+            timeout: launch.timeout,
             provides: Vec::new(),
             stopped: false,
         };
@@ -307,11 +343,4 @@ fn out_of_turn(got: &Response, due: &str) -> Failure {
         got: got.describe(),
         due: due.to_owned(),
     }
-}
-
-fn command_line(program: &str, arguments: &[String]) -> String {
-    std::iter::once(program)
-        .chain(arguments.iter().map(String::as_str))
-        .collect::<Vec<_>>()
-        .join(" ")
 }

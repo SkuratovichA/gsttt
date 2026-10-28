@@ -19,3 +19,7 @@
 
 - [x] 4.1 A test annotated `#[scenario("config", …)]` for every scenario of the `config` spec, the external ones against a scripted fake process
 - [x] 4.2 `cargo nextest run -p gsttt-config`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+
+## 5. Review fixes
+
+- [x] 5.1 An external's process starts with a cleared environment: a short allowlist and the names its `env` lists

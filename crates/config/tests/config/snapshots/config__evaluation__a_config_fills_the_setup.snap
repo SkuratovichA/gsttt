@@ -32,7 +32,10 @@ expression: setup
       "files": [
         "**/*.kt"
       ],
-      "version": "1"
+      "version": "1",
+      "env": [
+        "JAVA_HOME"
+      ]
     }
   ],
   "http_prefixes": [

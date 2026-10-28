@@ -9,7 +9,6 @@ pub mod protocol;
 
 use std::collections::BTreeSet;
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -23,7 +22,7 @@ use gsttt_core::setup::ExternalSetup;
 use gsttt_core::{FileId, RepoPath, RepoView};
 use xxhash_rust::xxh3::Xxh3;
 
-use process::{Failure, Process};
+use process::{Failure, Launch, Process};
 pub use protocol::PROTOCOL;
 use protocol::WireResolution;
 
@@ -33,6 +32,7 @@ pub struct External {
     name: &'static str,
     program: String,
     arguments: Vec<String>,
+    env: Vec<String>,
     version: String,
     files: GlobSet,
     timeout: Duration,
@@ -54,10 +54,12 @@ impl External {
             ));
         };
         let files = glob_set(&setup.files).map_err(|error| options(format!("`files` {error}")))?;
+        check_env(&setup.env).map_err(|error| options(format!("`env` {error}")))?;
         Ok(Self {
             name: intern(&setup.name),
             program: program.clone(),
             arguments: arguments.to_vec(),
+            env: setup.env.clone(),
             version: setup.version.clone(),
             files,
             timeout: Self::TIMEOUT,
@@ -79,6 +81,11 @@ impl External {
         for part in std::iter::once(&self.program).chain(&self.arguments) {
             hash.update(&[0]);
             hash.update(part.as_bytes());
+        }
+        // The names and not the values: a value may be a secret, and the same name is the same setup on every machine.
+        for name in &self.env {
+            hash.update(&[1]);
+            hash.update(name.as_bytes());
         }
         hash.digest()
     }
@@ -117,11 +124,14 @@ impl Connector for External {
             repo: repo.clone(),
             salt: self.salt(),
             session: Mutex::new(Session {
-                name: self.name,
-                program: self.program.clone(),
-                arguments: self.arguments.clone(),
-                root: repo.root().as_std_path().to_path_buf(),
-                timeout: self.timeout,
+                launch: Launch {
+                    name: self.name,
+                    program: self.program.clone(),
+                    arguments: self.arguments.clone(),
+                    env: self.env.clone(),
+                    root: repo.root().as_std_path().to_path_buf(),
+                    timeout: self.timeout,
+                },
                 process: None,
                 stopped: None,
             }),
@@ -248,14 +258,28 @@ pub(crate) fn glob_set(patterns: &[String]) -> Result<GlobSet, GlobError> {
     set.build().map_err(GlobError::new)
 }
 
+/// A name in `env` that no environment variable can have.
+#[derive(Debug, thiserror::Error)]
+#[error("holds {name:?}, which cannot be the name of an environment variable")]
+pub(crate) struct EnvNameError {
+    name: String,
+}
+
+/// The names in `env` of an external are names of environment variables: not empty, without `=` and without a NUL byte.
+pub(crate) fn check_env(names: &[String]) -> Result<(), EnvNameError> {
+    match names
+        .iter()
+        .find(|name| name.is_empty() || name.contains(['=', '\0']))
+    {
+        Some(name) => Err(EnvNameError { name: name.clone() }),
+        None => Ok(()),
+    }
+}
+
 /// The state of the one process of a project: not started yet, running, or stopped for good.
 #[derive(Debug)]
 struct Session {
-    name: &'static str,
-    program: String,
-    arguments: Vec<String>,
-    root: PathBuf,
-    timeout: Duration,
+    launch: Launch,
     process: Option<Process>,
     /// Why the process stopped. Every request after that fails with it, so a dead command is not started again.
     stopped: Option<String>,
@@ -274,7 +298,7 @@ impl Session {
         self.call(call).map_err(|failure| {
             let message = format!(
                 "external connector `{}` stopped at {what}: {failure}",
-                self.name
+                self.launch.name
             );
             tracing::warn!("{message}");
             if let Some(mut process) = self.process.take() {
@@ -291,13 +315,7 @@ impl Session {
     ) -> Result<T, Failure> {
         let process = match &mut self.process {
             Some(process) => process,
-            None => self.process.insert(Process::start(
-                self.name,
-                &self.program,
-                &self.arguments,
-                &self.root,
-                self.timeout,
-            )?),
+            None => self.process.insert(Process::start(&self.launch)?),
         };
         call(process)
     }

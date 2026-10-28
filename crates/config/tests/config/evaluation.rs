@@ -261,6 +261,8 @@ fn an_external_is_checked_when_it_is_declared() {
     assert!(files.contains("needs `files`"), "{files}");
     let glob = declare("name = \"k\", cmd = { \"x\" }, files = { \"[\" }");
     assert!(glob.contains("holds `[`"), "{glob}");
+    let env = declare("name = \"k\", cmd = { \"x\" }, files = { \"*.x\" }, env = { \"A=B\" }");
+    assert!(env.contains("`env` of `k`") && env.contains("A=B"), "{env}");
     let missing = declare("name = \"k\"");
     assert!(missing.contains("missing field"), "{missing}");
 
