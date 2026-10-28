@@ -1,0 +1,82 @@
+---
+source: crates/contracts/tests/contracts/claims.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "openapi",
+      "root": "."
+    },
+    {
+      "connector": "graphql",
+      "root": "."
+    },
+    {
+      "connector": "sql",
+      "root": "."
+    },
+    {
+      "connector": "env",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "env DATABASE_URL",
+          "role": "declares",
+          "line": 1,
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": ".env.example",
+      "project": "env ."
+    },
+    {
+      "status": {
+        "status": "failed",
+        "failure": "syntax",
+        "line": 12,
+        "message": "tabs disallowed within this context (block indentation)"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/openapi.yaml",
+      "project": "openapi ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "graphql Query.bookings",
+          "role": "declares",
+          "line": 2,
+          "via": "graphql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "schema.graphql",
+      "project": "graphql ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

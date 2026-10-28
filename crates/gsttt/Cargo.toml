@@ -28,7 +28,6 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 shlex.workspace = true
-tempfile.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
@@ -40,6 +39,7 @@ insta.workspace = true
 proptest.workspace = true
 # A pseudo-terminal, so that the tests can answer the prompt of `config trust` the way a person does.
 rustix = { workspace = true, features = ["fs", "pty"] }
+tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 
 [lints]

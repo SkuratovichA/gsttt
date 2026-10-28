@@ -226,3 +226,21 @@ fn the_coverage_line_of_index_is_the_one_a_question_ends_with() {
     assert!(line_of(&index).is_some(), "{index:?}");
     assert_eq!(line_of(&index), line_of(&coverage));
 }
+
+/// The document of `gsttt coverage --json` ends with the key `problems`. Serde writes the keys in the order of the fields of the report, so a field added after `problems` would move it.
+#[test]
+fn the_coverage_document_ends_with_problems() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+
+    let coverage = sandbox.run_in(&repo, &["coverage", "--json"]);
+
+    let document = json(&coverage);
+    let problems = &document["problems"];
+    assert!(problems.is_array(), "{coverage:?}");
+    let ending = format!(",\"problems\":{problems}}}");
+    assert!(
+        coverage.stdout.trim_end().ends_with(&ending),
+        "{coverage:?}"
+    );
+}

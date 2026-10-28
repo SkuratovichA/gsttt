@@ -16,6 +16,7 @@ gix = { workspace = true, features = ["sha1", "dirwalk", "revision", "parallel"]
 globset.workspace = true
 ignore.workspace = true
 jiff.workspace = true
+jsonc-parser.workspace = true
 memchr.workspace = true
 rayon.workspace = true
 rkyv.workspace = true

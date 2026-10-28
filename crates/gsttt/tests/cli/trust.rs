@@ -53,6 +53,15 @@ fn config_with_argument() -> String {
     edited
 }
 
+/// The config of `fake` declared `count` times, as `fake00`, `fake01` and so on.
+fn config_with_externals(count: usize) -> String {
+    let declared: String = (0..count)
+        .map(|n| FAKE_CONFIG.replace("name = \"fake\"", &format!("name = \"fake{n:02}\"")))
+        .collect();
+    assert_ne!(declared, FAKE_CONFIG.repeat(count));
+    declared
+}
+
 #[scenario("cli", "An untrusted external is not started")]
 #[test]
 fn an_untrusted_external_is_not_started() {
@@ -183,8 +192,7 @@ fn declining_trusts_nothing() {
     assert!(!fake.marker.exists(), "the connector was started");
 }
 
-/// The document of `gsttt coverage --json` holds the problems of the index under one key. The engine's own report
-/// does not list them, and the command adds them; when the report does, the command must stop adding them.
+/// The document of `gsttt coverage --json` holds the problems of the index under one key: the report of the engine holds them, and the command adds none of its own.
 #[test]
 fn the_coverage_document_holds_problems_once() {
     let sandbox = Sandbox::new();
@@ -196,6 +204,30 @@ fn the_coverage_document_holds_problems_once() {
     assert_eq!(coverage.stdout.matches("\"problems\":").count(), 1);
     let document = json(&coverage);
     assert_eq!(document["problems"], serde_json::json!([NOT_TRUSTED]));
+}
+
+/// The coverage names every external that waits for trust. Its other lists stop at 30 entries, and the line that tells a person to run `gsttt config trust` must not be the one left out.
+#[test]
+fn coverage_names_every_external_that_waits_for_trust() {
+    let sandbox = Sandbox::new();
+    let fake = sandbox.fake_external("repo");
+    write(&fake.root, FAKE_CONFIG_PATH, &config_with_externals(31));
+
+    let coverage = sandbox.run_in(&fake.root, &["coverage"]);
+
+    assert_eq!(coverage.code, Some(0), "{coverage:?}");
+    assert!(
+        coverage.stdout.starts_with("problems (31):\n"),
+        "{coverage:?}"
+    );
+    for n in 0..31 {
+        let line = NOT_TRUSTED.replace("`fake`", &format!("`fake{n:02}`"));
+        assert!(
+            coverage.stdout.contains(&format!("\n  {line}\n")),
+            "{n}: {coverage:?}"
+        );
+    }
+    assert!(!coverage.stdout.contains("… "), "{coverage:?}");
 }
 
 /// Only `y` and `yes` grant trust. An empty answer, which is the default of the question, and any other word

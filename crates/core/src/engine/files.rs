@@ -12,7 +12,6 @@
 //! anything ([`Stamp::is_settled`]).
 
 use std::collections::HashSet;
-use std::fmt::Write as _;
 use std::fs::{self, Metadata};
 use std::io::ErrorKind;
 use std::ops::ControlFlow;
@@ -28,6 +27,7 @@ use rayon::iter::Either;
 use rayon::prelude::*;
 
 use super::workspace::Workspace;
+use crate::hex;
 use crate::path::RepoPath;
 use crate::repo::RepoView;
 
@@ -69,12 +69,7 @@ impl ContentId {
 
     /// The id as 40 lower-case hex digits.
     pub fn to_hex(self) -> String {
-        let mut hex = String::with_capacity(40);
-        for byte in self.0 {
-            // Writing to a String cannot fail.
-            let _ = write!(hex, "{byte:02x}");
-        }
-        hex
+        hex::encode(self.0)
     }
 }
 
@@ -553,7 +548,6 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    #[cfg(unix)]
     use crate::engine::testing::Locked;
     use crate::engine::testing::{add_worktree, git, init_repo, merge_with_conflict, touch, write};
 
@@ -575,12 +569,10 @@ mod tests {
         states.iter().map(|state| state.path.as_str()).collect()
     }
 
-    #[cfg(unix)]
     fn unreadable(scanned: &Scanned) -> Vec<&str> {
         scanned.unreadable.iter().map(String::as_str).collect()
     }
 
-    #[cfg(unix)]
     #[gsttt_scenario::scenario("indexing", "Ignored, excluded and linked files stay out")]
     #[test]
     fn ignored_excluded_and_linked_files_stay_out() {
@@ -653,7 +645,6 @@ mod tests {
         assert_eq!(paths(&states), ["src/a.ts", "src/new.ts"]);
     }
 
-    #[cfg(unix)]
     #[gsttt_scenario::scenario(
         "indexing",
         "An untracked directory that cannot be read is left out"
@@ -673,7 +664,6 @@ mod tests {
         assert_eq!(unreadable(&scanned), ["locked"]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_tracked_directory_that_cannot_be_read_is_left_out_and_reported() {
         let dir = init_repo(&[("src/a.ts", "a"), ("locked/b.ts", "b")]);
@@ -691,7 +681,6 @@ mod tests {
         assert_eq!(unreadable(&scanned), ["locked"]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn an_untracked_directory_that_can_be_listed_but_not_searched_is_left_out() {
         let dir = init_repo(&[("src/a.ts", "a")]);
@@ -706,7 +695,6 @@ mod tests {
         assert_eq!(unreadable(&scanned), ["locked"]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_tracked_directory_that_can_be_listed_but_not_searched_is_left_out_and_reported() {
         let dir = init_repo(&[("src/a.ts", "a"), ("locked/b.ts", "b")]);
@@ -722,7 +710,6 @@ mod tests {
         assert_eq!(unreadable(&scanned), ["locked"]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_directory_outside_git_that_cannot_be_read_is_left_out_and_reported() {
         let dir = tempfile::tempdir().unwrap();
@@ -747,7 +734,6 @@ mod tests {
         assert_eq!(unreadable(&scanned), ["locked"]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_directory_outside_git_that_can_be_listed_but_not_searched_is_reported() {
         let dir = tempfile::tempdir().unwrap();
@@ -853,7 +839,6 @@ mod tests {
         assert_ne!(id, ContentId::from_stat(1, 2, 4));
     }
 
-    #[cfg(unix)]
     #[gsttt_scenario::scenario("indexing", "A file above the size limit is not read for its id")]
     #[test]
     fn a_file_above_the_limit_is_not_read_for_its_id() {

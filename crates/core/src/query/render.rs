@@ -12,10 +12,10 @@ use crate::text::{join_and, noun, percent, short, thousands};
 /// How many entries of a list the text of an answer shows unless every entry is asked for.
 pub const LIST_CAP: usize = 30;
 
-/// How many entries of each list the text of an answer shows.
+/// How many entries of each list the text of an answer shows. The one list that is never cut is the problems of a coverage answer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Entries {
-    /// The first [`LIST_CAP`] entries of each list, then a line with the count of the rest.
+    /// The first [`LIST_CAP`] entries of each list that can be cut, then a line with the count of the rest.
     #[default]
     Capped,
     /// Every entry.

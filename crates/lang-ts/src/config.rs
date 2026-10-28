@@ -2,9 +2,10 @@
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use gsttt_core::fact::Line;
+use gsttt_core::path::RepoPath;
+use gsttt_core::tree::Value;
 
-use crate::json::Json;
-use crate::pathing::{join_dir, join_file};
+use crate::pathing::join_file;
 
 /// The options of one tsconfig file as written, before `extends` is followed.
 #[derive(Debug, Clone, Default)]
@@ -23,12 +24,12 @@ pub(crate) struct ConfigFile {
 }
 
 impl ConfigFile {
-    pub(crate) fn from_json(json: &Json) -> Self {
+    pub(crate) fn from_json(json: &Value) -> Self {
         let options = json.get("compilerOptions");
         let text = |key: &str| {
             options
                 .and_then(|options| options.get(key))
-                .and_then(Json::as_str)
+                .and_then(Value::as_str)
                 .map(str::to_owned)
         };
         Self {
@@ -64,7 +65,7 @@ impl ConfigFile {
 }
 
 /// The configs a tsconfig extends, as written, with the line of the `extends` key.
-pub(crate) fn extends_of(json: &Json) -> Vec<(String, Line)> {
+pub(crate) fn extends_of(json: &Value) -> Vec<(String, Line)> {
     json.entry("extends")
         .map(|entry| {
             entry
@@ -78,11 +79,11 @@ pub(crate) fn extends_of(json: &Json) -> Vec<(String, Line)> {
 }
 
 /// The `path` of every project reference of a tsconfig, as written.
-fn references_of(json: &Json) -> Vec<String> {
+fn references_of(json: &Value) -> Vec<String> {
     match json.get("references") {
-        Some(Json::Array(items)) => items
+        Some(Value::Seq(items)) => items
             .iter()
-            .filter_map(|item| item.get("path").and_then(Json::as_str))
+            .filter_map(|item| item.get("path").and_then(Value::as_str))
             .map(str::to_owned)
             .collect(),
         _ => Vec::new(),
@@ -90,7 +91,7 @@ fn references_of(json: &Json) -> Vec<String> {
 }
 
 /// The strings of the list at `key`, when the config has one.
-fn strings_at(json: &Json, key: &str) -> Option<Vec<String>> {
+fn strings_at(json: &Value, key: &str) -> Option<Vec<String>> {
     json.get(key)
         .map(|value| value.strings().into_iter().map(str::to_owned).collect())
 }
@@ -145,8 +146,11 @@ impl Effective {
 
     /// Lets the options `config` sets, read from the directory `dir` it lies in, win over what is already here.
     pub(crate) fn apply(&mut self, config: &ConfigFile, dir: &str) {
-        let resolve =
-            |value: &Option<String>| value.as_deref().and_then(|value| join_dir(dir, value));
+        let resolve = |value: &Option<String>| {
+            value
+                .as_deref()
+                .and_then(|value| RepoPath::join_dir(dir, value))
+        };
         if let Some(base_url) = resolve(&config.base_url) {
             self.base_url = Some(base_url);
         }
@@ -160,7 +164,7 @@ impl Effective {
             list.as_ref().map(|items| {
                 items
                     .iter()
-                    .filter_map(|item| join_dir(dir, item))
+                    .filter_map(|item| RepoPath::join_dir(dir, item))
                     .collect::<Vec<_>>()
             })
         };
@@ -252,13 +256,14 @@ fn directory_form(pattern: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::json::parse;
+    use gsttt_core::tree::parse_json;
 
     #[test]
     fn a_child_overrides_what_its_parent_sets_and_keeps_the_rest() {
-        let base = ConfigFile::from_json(&parse(r#"{"compilerOptions": {"baseUrl": ".", "outDir": "dist", "paths": {"@a/*": ["a/*"]}}}"#).unwrap());
-        let child =
-            ConfigFile::from_json(&parse(r#"{"compilerOptions": {"outDir": "build"}}"#).unwrap());
+        let base = ConfigFile::from_json(&parse_json(r#"{"compilerOptions": {"baseUrl": ".", "outDir": "dist", "paths": {"@a/*": ["a/*"]}}}"#).unwrap());
+        let child = ConfigFile::from_json(
+            &parse_json(r#"{"compilerOptions": {"outDir": "build"}}"#).unwrap(),
+        );
         let mut parent = Effective::default();
         parent.apply(&base, "");
         let mut effective = Effective::default();
@@ -272,7 +277,7 @@ mod tests {
     #[test]
     fn a_solution_config_lists_references_and_no_files() {
         let solution = ConfigFile::from_json(
-            &parse(r#"{"files": [], "references": [{"path": "./tsconfig.app.json"}, {"path": "./node"}]}"#).unwrap(),
+            &parse_json(r#"{"files": [], "references": [{"path": "./tsconfig.app.json"}, {"path": "./node"}]}"#).unwrap(),
         );
         assert_eq!(solution.references, ["./tsconfig.app.json", "./node"]);
         assert_eq!(solution.files, Some(Vec::new()));
@@ -284,7 +289,8 @@ mod tests {
     #[test]
     fn include_and_exclude_choose_the_files_a_config_covers() {
         let config = ConfigFile::from_json(
-            &parse(r#"{"include": ["src", "vite.config.ts"], "exclude": ["src/legacy"]}"#).unwrap(),
+            &parse_json(r#"{"include": ["src", "vite.config.ts"], "exclude": ["src/legacy"]}"#)
+                .unwrap(),
         );
         let mut effective = Effective::default();
         effective.apply(&config, "app");
@@ -309,11 +315,11 @@ mod tests {
     #[test]
     fn extends_may_be_one_config_or_several() {
         assert_eq!(
-            extends_of(&parse(r#"{"extends": "./a.json"}"#).unwrap()),
+            extends_of(&parse_json(r#"{"extends": "./a.json"}"#).unwrap()),
             [("./a.json".to_owned(), 1)]
         );
         assert_eq!(
-            extends_of(&parse("{\n\"extends\": [\"./a\", \"./b\"]}").unwrap()).len(),
+            extends_of(&parse_json("{\n\"extends\": [\"./a\", \"./b\"]}").unwrap()).len(),
             2
         );
     }

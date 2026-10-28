@@ -20,7 +20,7 @@ use std::str::FromStr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::contract::{ContractKey, ContractKind, Role, normalize_http_path};
+use crate::contract::{ContractKey, ContractKind, Role, normalize_http_path, path_after_origin};
 use crate::fact::{ContractFact, Embedded, Line, UnresolvedReason, UnresolvedSite};
 
 /// The rules for one framework or library.
@@ -460,8 +460,8 @@ impl Outcome {
 }
 
 /// The verbs an HTTP method expression may yield; anything else means the site is not a route or a request.
-const HTTP_METHODS: [&str; 10] = [
-    "*", "ALL", "ANY", "DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT",
+const HTTP_METHODS: [&str; 11] = [
+    "*", "ALL", "ANY", "DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE",
 ];
 
 /// The parts every rule kind evaluates the same way.
@@ -525,7 +525,10 @@ fn is_http_method(method: &str) -> bool {
 
 /// Whether a request target names a URL or an absolute path rather than, say, a cache key.
 fn looks_like_url(key: &str) -> bool {
-    key.starts_with('/') || key.contains("://") || key.starts_with("${") || key.starts_with("{}")
+    key.starts_with('/')
+        || path_after_origin(key).is_some()
+        || key.starts_with("${")
+        || key.starts_with("{}")
 }
 
 fn is_computed(key: &str) -> bool {
@@ -751,12 +754,35 @@ mod tests {
     }
 
     #[test]
+    fn every_standard_http_verb_is_a_method() {
+        let serves = rule(serde_json::json!({
+            "callee": "app.*", "kind": "http", "role": "serves", "key": "$arg1", "method": "$callee",
+        }));
+        for verb in [
+            "delete", "get", "head", "options", "patch", "post", "put", "trace",
+        ] {
+            let callee = format!("app.{verb}");
+            let site = call(&callee, &[Some("/x")]);
+            assert_eq!(
+                key(serves.apply("express", &site, None, 1, &callee)),
+                format!("http {} /x", verb.to_ascii_uppercase())
+            );
+        }
+    }
+
+    #[gsttt_scenario::scenario("contract-formats", "A computed origin alone is a blind spot")]
+    #[test]
     fn http_calls_skip_what_is_not_a_url_and_count_what_is_computed() {
         let get = rule(serde_json::json!({
             "callee": "*.get", "kind": "http", "role": "calls", "key": "$arg1", "method": "$callee",
         }));
         let apply = |site: &Call<'_>| get.apply("api", site, None, 7, site.callee);
         assert_eq!(apply(&call("cache.get", &[Some("user")])), Outcome::Skip);
+        // A `://` inside a query string is no origin, so this is a cache key and no URL.
+        assert_eq!(
+            apply(&call("cache.get", &[Some("cache?next=https://b")])),
+            Outcome::Skip
+        );
         assert_eq!(
             key(apply(&call("api.get", &[Some("/bookings/${}")]))),
             "http GET /bookings/{}"
@@ -765,7 +791,13 @@ mod tests {
             key(apply(&call("api.get", &[Some("${}/bookings")]))),
             "http GET /bookings"
         );
-        for computed in [None, Some("${}"), Some("https://${}")] {
+        for computed in [
+            None,
+            Some("${}"),
+            Some("https://${}"),
+            Some("${}://${}"),
+            Some("${}//${}"),
+        ] {
             let Outcome::Blind(site) = apply(&call("api.get", &[computed])) else {
                 panic!("{computed:?} is a blind spot")
             };

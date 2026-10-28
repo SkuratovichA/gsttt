@@ -1,0 +1,463 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: packs
+---
+[
+  {
+    "name": "alembic",
+    "language": "python",
+    "detect": [
+      "alembic"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "op.create_table",
+          "alembic.op.create_table",
+          "op.drop_table",
+          "alembic.op.drop_table",
+          "op.rename_table",
+          "alembic.op.rename_table",
+          "op.add_column",
+          "alembic.op.add_column",
+          "op.drop_column",
+          "alembic.op.drop_column",
+          "op.alter_column",
+          "alembic.op.alter_column"
+        ],
+        "kind": "table",
+        "role": "declares",
+        "key": "$arg1",
+        "method": null,
+        "receiver": null
+      },
+      {
+        "callee": [
+          "op.create_index",
+          "alembic.op.create_index"
+        ],
+        "kind": "table",
+        "role": "declares",
+        "key": "$arg2",
+        "method": null,
+        "receiver": null
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "dbapi",
+    "language": "python",
+    "detect": [],
+    "calls": [],
+    "decorators": [],
+    "chains": [],
+    "embeds": [
+      {
+        "callee": [
+          "*.execute",
+          "*.executemany",
+          "*.*.execute",
+          "*.*.executemany",
+          "*.*.*.execute",
+          "*.*.*.executemany"
+        ],
+        "lang": "sql",
+        "text": null
+      }
+    ],
+    "assigns": []
+  },
+  {
+    "name": "django",
+    "language": "python",
+    "detect": [
+      "django"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "path",
+          "django.urls.path",
+          "urls.path"
+        ],
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1|$route",
+        "method": null,
+        "receiver": null
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": [
+      {
+        "target": "*.Meta.db_table",
+        "class": null,
+        "kind": "table",
+        "role": "declares",
+        "key": "$arg1"
+      }
+    ]
+  },
+  {
+    "name": "env",
+    "language": "python",
+    "detect": [],
+    "calls": [
+      {
+        "callee": [
+          "os.environ.get",
+          "environ.get",
+          "os.environ.setdefault",
+          "environ.setdefault",
+          "os.getenv",
+          "getenv"
+        ],
+        "kind": "env",
+        "role": "calls",
+        "key": "$arg1",
+        "method": null,
+        "receiver": null
+      }
+    ],
+    "decorators": [],
+    "chains": [
+      {
+        "root": [
+          "os.environ",
+          "environ"
+        ],
+        "kind": "env",
+        "role": "calls",
+        "segments": 1,
+        "terminals": [],
+        "case": null
+      }
+    ],
+    "embeds": [],
+    "assigns": [
+      {
+        "target": "*",
+        "class": [
+          "BaseSettings",
+          "*.BaseSettings",
+          "pydantic_settings.BaseSettings",
+          "pydantic.BaseSettings"
+        ],
+        "kind": "env",
+        "role": "calls",
+        "key": "$env|$validation_alias|$alias|$callee"
+      }
+    ]
+  },
+  {
+    "name": "fastapi",
+    "language": "python",
+    "detect": [
+      "fastapi"
+    ],
+    "calls": [],
+    "decorators": [
+      {
+        "decorator": [
+          "*.get",
+          "*.post",
+          "*.put",
+          "*.patch",
+          "*.delete",
+          "*.options",
+          "*.head",
+          "*.trace"
+        ],
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1|$path",
+        "method": "$callee",
+        "class": null,
+        "receiver": {
+          "from": [
+            "FastAPI",
+            "fastapi.FastAPI",
+            "APIRouter",
+            "fastapi.APIRouter"
+          ],
+          "key": "$prefix"
+        },
+        "prefix": null
+      },
+      {
+        "decorator": "*.api_route",
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1|$path",
+        "method": "$methods|*",
+        "class": null,
+        "receiver": {
+          "from": [
+            "FastAPI",
+            "fastapi.FastAPI",
+            "APIRouter",
+            "fastapi.APIRouter"
+          ],
+          "key": "$prefix"
+        },
+        "prefix": null
+      }
+    ],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "flask",
+    "language": "python",
+    "detect": [
+      "flask"
+    ],
+    "calls": [],
+    "decorators": [
+      {
+        "decorator": "*.route",
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1|$rule",
+        "method": "$methods|GET",
+        "class": null,
+        "receiver": {
+          "from": [
+            "Flask",
+            "flask.Flask",
+            "Blueprint",
+            "flask.Blueprint"
+          ],
+          "key": "$url_prefix"
+        },
+        "prefix": null
+      },
+      {
+        "decorator": [
+          "*.get",
+          "*.post",
+          "*.put",
+          "*.patch",
+          "*.delete"
+        ],
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1|$rule",
+        "method": "$callee",
+        "class": null,
+        "receiver": {
+          "from": [
+            "Flask",
+            "flask.Flask",
+            "Blueprint",
+            "flask.Blueprint"
+          ],
+          "key": "$url_prefix"
+        },
+        "prefix": null
+      }
+    ],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "httpx",
+    "language": "python",
+    "detect": [
+      "httpx"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "httpx.get",
+          "httpx.post",
+          "httpx.put",
+          "httpx.patch",
+          "httpx.delete",
+          "httpx.head",
+          "httpx.options"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1|$url",
+        "method": "$callee",
+        "receiver": null
+      },
+      {
+        "callee": "httpx.request",
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg2|$url",
+        "method": "$arg1|$method",
+        "receiver": null
+      },
+      {
+        "callee": [
+          "*.get",
+          "*.post",
+          "*.put",
+          "*.patch",
+          "*.delete",
+          "*.head",
+          "*.options",
+          "*.*.get",
+          "*.*.post",
+          "*.*.put",
+          "*.*.patch",
+          "*.*.delete",
+          "*.*.head",
+          "*.*.options"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1|$url",
+        "method": "$callee",
+        "receiver": {
+          "from": [
+            "httpx.Client",
+            "httpx.AsyncClient"
+          ],
+          "key": "$base_url"
+        }
+      },
+      {
+        "callee": [
+          "*.request",
+          "*.*.request"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg2|$url",
+        "method": "$arg1|$method",
+        "receiver": {
+          "from": [
+            "httpx.Client",
+            "httpx.AsyncClient"
+          ],
+          "key": "$base_url"
+        }
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "requests",
+    "language": "python",
+    "detect": [
+      "requests"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "requests.get",
+          "requests.post",
+          "requests.put",
+          "requests.patch",
+          "requests.delete",
+          "requests.head",
+          "requests.options"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1|$url",
+        "method": "$callee",
+        "receiver": null
+      },
+      {
+        "callee": "requests.request",
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg2|$url",
+        "method": "$arg1|$method",
+        "receiver": null
+      },
+      {
+        "callee": [
+          "*.get",
+          "*.post",
+          "*.put",
+          "*.patch",
+          "*.delete",
+          "*.head",
+          "*.options",
+          "*.*.get",
+          "*.*.post",
+          "*.*.put",
+          "*.*.patch",
+          "*.*.delete",
+          "*.*.head",
+          "*.*.options"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1|$url",
+        "method": "$callee",
+        "receiver": {
+          "from": [
+            "requests.Session",
+            "requests.session"
+          ],
+          "key": null
+        }
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "sqlalchemy",
+    "language": "python",
+    "detect": [
+      "sqlalchemy"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "Table",
+          "sa.Table",
+          "sqlalchemy.Table"
+        ],
+        "kind": "table",
+        "role": "declares",
+        "key": "$arg1",
+        "method": null,
+        "receiver": null
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [
+      {
+        "callee": [
+          "text",
+          "sa.text",
+          "sqlalchemy.text"
+        ],
+        "lang": "sql",
+        "text": null
+      }
+    ],
+    "assigns": [
+      {
+        "target": "*.__tablename__",
+        "class": null,
+        "kind": "table",
+        "role": "declares",
+        "key": "$arg1"
+      }
+    ]
+  }
+]

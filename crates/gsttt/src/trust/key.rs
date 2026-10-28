@@ -1,11 +1,11 @@
 //! The key a person's trust in an external connector is recorded under.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::io;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use gsttt_core::engine::keys::canonical_json;
+use gsttt_core::hex;
 use gsttt_core::setup::ExternalSetup;
 use sha2::{Digest, Sha256};
 
@@ -69,12 +69,7 @@ pub fn key(root: &Utf8Path, external: &ExternalSetup) -> Result<String, KeyError
         feed(&mut hasher, path.as_str().as_bytes());
         feed(&mut hasher, &bytes);
     }
-    let mut hex = String::with_capacity(64);
-    for byte in hasher.finalize() {
-        // Writing to a String cannot fail.
-        let _ = write!(hex, "{byte:02x}");
-    }
-    Ok(hex)
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// The regular file that `argument` names when read against `root`, as its path from `root` and its resolved path.
@@ -86,7 +81,9 @@ fn file_in(root: &Utf8Path, argument: &str) -> Option<(Utf8PathBuf, Utf8PathBuf)
     resolved.is_file().then_some((inside, resolved))
 }
 
-/// Writes `part` to `hasher` after its length.
+/// Writes `part` to `hasher` after its length, as eight bytes in big-endian order.
+///
+/// The cache keys of the engine frame their parts in the same way with a little-endian length (`feed` in `crates/core/src/connector.rs`, pinned by the value of a salt in `a_salt_hashes_its_parts_with_their_lengths`), and this key pins its own order in `the_key_hashes_the_framed_parts_in_order`. Neither side can take the other's order without breaking what pins it: another order for the engine would read every project again, and another for this key would ask for trust again. So the two functions are kept apart on purpose.
 fn feed(hasher: &mut Sha256, part: &[u8]) {
     let length = u64::try_from(part.len()).unwrap_or(u64::MAX);
     hasher.update(length.to_be_bytes());
@@ -124,13 +121,6 @@ mod tests {
             base.extend(changes.clone());
         }
         serde_json::from_value(setup).unwrap()
-    }
-
-    fn hex(bytes: impl IntoIterator<Item = u8>) -> String {
-        bytes.into_iter().fold(String::new(), |mut hex, byte| {
-            write!(hex, "{byte:02x}").unwrap();
-            hex
-        })
     }
 
     #[test]
@@ -198,7 +188,10 @@ mod tests {
             expected.update(part);
         }
 
-        assert_eq!(key(&root, &setup).unwrap(), hex(expected.finalize()));
+        assert_eq!(
+            key(&root, &setup).unwrap(),
+            hex::encode(expected.finalize())
+        );
     }
 
     #[test]

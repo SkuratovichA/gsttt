@@ -1,0 +1,52 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: tree.file_json(path)
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "sqlalchemy",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "external": "sqlalchemy"
+      }
+    },
+    {
+      "spec": "alembic",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "op"
+      ],
+      "to": {
+        "external": "alembic"
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "table bookings",
+      "role": "declares",
+      "line": 6,
+      "via": "alembic"
+    },
+    {
+      "key": "table booking_items",
+      "role": "declares",
+      "line": 7,
+      "via": "alembic"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [],
+  "path": "migrations/versions/0001_bookings.py",
+  "project": "python ."
+}

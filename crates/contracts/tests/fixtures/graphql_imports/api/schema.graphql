@@ -1,0 +1,5 @@
+#import "./types/booking.graphql"
+
+type Query {
+  booking: Booking
+}

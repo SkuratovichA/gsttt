@@ -1,0 +1,67 @@
+---
+source: crates/contracts/tests/contracts/openapi.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "openapi",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [
+        {
+          "spec": "./paths/bookings.yaml",
+          "kind": "reference",
+          "line": 6,
+          "flags": 0,
+          "names": [],
+          "to": {
+            "file": "api/paths/bookings.yaml"
+          }
+        }
+      ],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/openapi.yaml",
+      "project": "openapi ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [],
+      "embedded": [],
+      "unresolved": [],
+      "path": "api/paths/bookings.yaml",
+      "project": "openapi ."
+    }
+  ],
+  "linked": [
+    {
+      "key": "http GET /bookings",
+      "role": "declares",
+      "line": 1,
+      "via": "openapi",
+      "file": "api/paths/bookings.yaml"
+    },
+    {
+      "key": "http POST /bookings",
+      "role": "declares",
+      "line": 5,
+      "via": "openapi",
+      "file": "api/paths/bookings.yaml"
+    }
+  ],
+  "unclaimed": [],
+  "problems": []
+}

@@ -1,0 +1,20 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.json[\"linked\"]"
+---
+[
+  {
+    "key": "http GET /a/x/one",
+    "role": "serves",
+    "line": 9,
+    "via": "fastapi",
+    "file": "app/a.py"
+  },
+  {
+    "key": "http GET /a/x/b/y/two",
+    "role": "serves",
+    "line": 9,
+    "via": "fastapi",
+    "file": "app/b.py"
+  }
+]

@@ -1,0 +1,70 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"django\":\n    tree.file_json(\"items/models.py\"),\n})"
+---
+{
+  "sqlalchemy": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "sqlalchemy.orm",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [
+          "DeclarativeBase"
+        ],
+        "to": {
+          "external": "sqlalchemy"
+        }
+      }
+    ],
+    "contracts": [
+      {
+        "key": "table bookings",
+        "role": "declares",
+        "line": 9,
+        "via": "sqlalchemy"
+      }
+    ],
+    "embedded": [],
+    "unresolved": [],
+    "path": "models.py",
+    "project": "python ."
+  },
+  "django": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "django.db",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [
+          "models"
+        ],
+        "to": {
+          "external": "django"
+        }
+      }
+    ],
+    "contracts": [
+      {
+        "key": "table booking_items",
+        "role": "declares",
+        "line": 8,
+        "via": "django"
+      }
+    ],
+    "embedded": [],
+    "unresolved": [],
+    "path": "items/models.py",
+    "project": "python ."
+  }
+}

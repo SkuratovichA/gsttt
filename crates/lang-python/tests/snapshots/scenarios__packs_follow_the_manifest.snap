@@ -1,0 +1,50 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"app.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "fastapi",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "APIRouter"
+      ],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    },
+    {
+      "spec": "flask",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "Flask"
+      ],
+      "to": {
+        "external": "flask"
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "http GET /flask",
+      "role": "serves",
+      "line": 8,
+      "via": "flask"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [],
+  "path": "app.py",
+  "project": "python ."
+}

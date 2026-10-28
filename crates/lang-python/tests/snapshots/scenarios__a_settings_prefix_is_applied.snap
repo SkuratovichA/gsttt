@@ -1,0 +1,39 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"settings.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "pydantic_settings",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "BaseSettings",
+        "SettingsConfigDict"
+      ],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "key": "env APP_PORT",
+      "role": "calls",
+      "line": 7,
+      "via": "env"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [],
+  "path": "settings.py",
+  "project": "python ."
+}

@@ -132,6 +132,7 @@ fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorErro
 - The key is the SHA-256, as 64 lowercase hex digits, of the parts below, in this order. Every part is written as its length in bytes, as eight bytes in big-endian order, and then the part itself, so that no two lists of parts make the same input:
   - the canonical JSON of the external's setup, made by `keys::canonical_json`, the function the config's own fingerprint uses: name, cmd, files, version, env, options and provides;
   - then, for each element of `cmd`, in order, that names a regular file inside the root, read against the root with links resolved: the path of that file from the root, and its bytes. A `git pull` can change such a file without touching `.gsttt/config.toml`. Covering every element, not only `cmd[0]`, also covers `python3 tools/connector.py`. An element that names nothing, a directory or a file outside the root adds no part: it is a program found in `PATH`, a flag or the value of one.
+- The length is big-endian here and little-endian in the cache keys of the engine (`connector::feed` in core), which a test pins with the value of a salt, so the key keeps its own `feed` and the two functions name each other in their comments.
 - A file that the command names, that exists and cannot be read, makes the key fail. The external stays untrusted and `config trust` names the file, because a key that left it out would not change when the file did.
 
 ```rust
@@ -148,7 +149,7 @@ for argument in &external.cmd {
 ```
 
 - The key is computed on every run that builds the registry. A connector binary of tens of megabytes costs a few tens of milliseconds to hash, and nothing caches the result, because a cache would be one more thing a pull could get out of step.
-- The store is `$XDG_STATE_HOME/gsttt/trust`, or `$HOME/.local/state/gsttt/trust` when that is unset or empty. `UserDir::State` in `crates/core/src/engine/workspace.rs` picks it, by the same function that picks the cache folder. It holds one line per trusted external, `<key> <canonical root>`, sorted and without duplicates, and is written through a temporary file in the same folder and a rename. A missing file is an empty store. A store that cannot be read trusts nothing and logs why.
+- The store is `$XDG_STATE_HOME/gsttt/trust`, or `$HOME/.local/state/gsttt/trust` when that is unset or empty. `UserDir::State` in `crates/core/src/engine/workspace.rs` picks it, by the same function that picks the cache folder. It holds one line per trusted external, `<key> <canonical root>`, sorted and without duplicates, and is written by `atomic::write` of core, the function that writes the snapshot too: it fills a temporary file in the same folder, syncs it and renames it over the store. A missing file is an empty store. A store that cannot be read trusts nothing and logs why.
 - `Repository::open` makes the key of each external of the config and looks it up for this root. A trusted external joins the registry after the built-ins, in the order of the config, as `Erased(External::new(setup)?)`, and a failure of `External::new` is an error of the config. An untrusted one stays out, so no connector claims its files and coverage counts them as unclaimed.
 - `config trust`:
   - refuses unless both stdin and stderr are terminals. It checks before it reads anything, says that trusting needs a terminal, trusts nothing and exits 2. No variable and no flag skips the check: a process with no terminal cannot answer, and the point is that an agent cannot trust on the user's behalf;
@@ -162,7 +163,7 @@ for argument in &external.cmd {
 the external connector `kotlin` (gsttt-kotlin --stdio) is not trusted in this repository; run `gsttt config trust` in a terminal to allow it
 ```
 
-- The queries of core do not list `Coverage.problems` yet, so `gsttt coverage` prints them itself, above its report as `problems (N):` and under `--json` as a `problems` array (`commands/questions.rs`). The test `the_coverage_document_holds_problems_once` fails when core adds the same key, which is the reminder to delete the wrapper.
+- The coverage answer of core holds `Coverage.problems` and lists every one of them, above the connectors as `problems (N):` with one indented line each, with `--all` or without it. The lines are sorted, so the one that tells a person to run `gsttt config trust` can be the last, and a cut would hide it; every other list is cut as before. Under `--json` the problems are a `problems` array, the last key. `gsttt coverage` prints that answer with no wrapper of its own, and the test `the_coverage_document_holds_problems_once` keeps the key to one.
 - The scenarios that answer the prompt run the real binary on a pseudo-terminal opened with the `pty` module of `rustix`, a dev-dependency that adds no crate to the lock file, with the sandbox's environment and so with the sandbox's store.
 
 ### Panics
@@ -199,7 +200,7 @@ pub fn session_line(header: &Header, now: jiff::Timestamp) -> Option<String>;
 ### Showing the config
 
 - `config show` is one document that is printed as text or, under `--json`, as one JSON object with the same parts: `root`, `modules`, `packs`, `externals`, and the settings `detect`, `exclude`, `max_file_bytes` and `http_prefixes`.
-- Each module of the registry is listed in registry order, so the built-in ones and then the externals the user trusts, with `on` and the reason (`why`) in the order the engine decides: `disabled`, `configured` (the config has a table for it), `detection_off`, `detected`, `not_detected`. `on` comes from the reason, and a test pins the reason against `Setup::runs` for every combination of the four facts it rests on.
+- Each module of the registry is listed in registry order, so the built-in ones and then the externals the user trusts, with `on` and the reason (`why`) in the order the engine decides: `disabled`, `configured` (the config has a table for it), `detection_off`, `detected`, `not_detected`. The reason is `Setup::reason`, which `Setup::runs` also uses, so `on` and the engine cannot disagree, and a test in core checks it for every combination of the four facts it rests on.
 - `options` is what the config wrote for the module, `null` when it wrote none. The options a module fills in itself are not shown, because the engine would have to be asked what they come to.
 - `packs` lists, for each module that is on, the packs it receives as `merge_packs` hands them over, with their origin: `built-in`, or `config` for a pack of the config or of `.gsttt/packs/` that replaces or adds to them.
 - `externals` lists every `[[external]]` of the config, whether the user trusts it or not, with `cmd` and `files`. An external that is not trusted is not a module of the run, so it is only here.

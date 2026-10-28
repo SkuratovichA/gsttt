@@ -5,10 +5,11 @@ use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{Import, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index, Timings};
 use gsttt_core::query::{
-    Failure, Reasons, UnclaimedExtension, UnclaimedLanguage, coverage, status,
+    Answer, Entries, Failure, Reasons, UnclaimedExtension, UnclaimedLanguage, coverage, status,
 };
 use gsttt_core::testing::{To, Tree, resolving};
 use gsttt_scenario::scenario;
+use serde_json::{json, to_value};
 
 /// The reason, the count and the first place of each entry, as a reader of the answer sees them.
 fn reasons(list: &[Reasons]) -> Vec<(String, u32, String)> {
@@ -323,6 +324,69 @@ fn coverage_of_an_index_no_connector_read_says_so() {
     let text = coverage(&index, Freshness::Fresh).to_string();
 
     assert!(text.starts_with("no connector read any file\n"), "{text}");
+}
+
+/// A line that the program that embeds the engine adds to the problems of the index. Core knows nothing of what such a line says, and this one sorts after the other lines of these tests.
+const EMBEDDER_LINE: &str = "the program that embeds the engine adds this line";
+
+const NO_TSCONFIG: &str = "`ts` project at `web`, open: no tsconfig";
+
+#[scenario("queries", "Coverage lists the problems of the index")]
+#[test]
+fn coverage_lists_the_problems_of_the_index() {
+    let mut index = Tree::new().imports("b.ts", "a.ts").build();
+    let quiet = coverage(&index, Freshness::Fresh);
+    assert!(!quiet.to_string().starts_with("problems ("), "{quiet}");
+    assert_eq!(to_value(&quiet).unwrap()["problems"], json!([]));
+
+    index.coverage.problems = vec![EMBEDDER_LINE.to_owned(), NO_TSCONFIG.to_owned()];
+    index.coverage.finish();
+    let answer = coverage(&index, Freshness::Fresh);
+
+    let text = answer.to_string();
+    let lines = format!("problems (2):\n  {NO_TSCONFIG}\n  {EMBEDDER_LINE}\nts: ");
+    assert!(text.starts_with(&lines), "{text}");
+    assert_eq!(
+        to_value(&answer).unwrap()["problems"],
+        json!([NO_TSCONFIG, EMBEDDER_LINE])
+    );
+}
+
+/// The problems are listed whole, though every other list of the text stops at 30 entries. The program that embeds the engine adds its own lines after the engine's, and the last of them may be the one a person has to act on.
+#[test]
+fn the_problems_are_never_cut() {
+    let mut tree = Tree::new().imports("b.ts", "a.ts");
+    for n in 0..31 {
+        tree = tree.unread(&format!("notes/file.x{n:02}"));
+    }
+    let mut index = tree.build();
+    index.coverage.problems = (0..30).map(|n| format!("problem {n:02}")).collect();
+    index.coverage.problems.push(EMBEDDER_LINE.to_owned());
+    index.coverage.finish();
+    let answer = coverage(&index, Freshness::Fresh);
+
+    // The 31 extensions of unread files show that the cut still reaches the lists that are not the problems.
+    for (entries, left_out) in [(Entries::Capped, vec!["… 1 more"]), (Entries::All, vec![])] {
+        let text = answer.text(entries);
+        let listed: Vec<&str> = text
+            .lines()
+            .skip(1)
+            .take_while(|line| line.starts_with("  "))
+            .collect();
+        assert!(text.starts_with("problems (31):\n  problem 00\n"), "{text}");
+        assert_eq!(listed.len(), 31, "{text}");
+        assert_eq!(listed.last(), Some(&format!("  {EMBEDDER_LINE}").as_str()));
+        assert!(
+            text.lines()
+                .nth(32)
+                .is_some_and(|line| line.starts_with("ts: ")),
+            "{text}"
+        );
+        let cuts: Vec<&str> = text.lines().filter(|line| line.starts_with("… ")).collect();
+        assert_eq!(cuts, left_out, "{text}");
+    }
+    let in_json = to_value(&answer).unwrap();
+    assert_eq!(in_json["problems"].as_array().map(Vec::len), Some(31));
 }
 
 #[scenario("queries", "A stale index says what moved")]

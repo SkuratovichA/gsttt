@@ -1,0 +1,12 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.column(\"tags\")"
+---
+{
+  "app/api.py": 0,
+  "app/api_test.py": 1,
+  "app/conftest.py": 1,
+  "app/test_api.py": 1,
+  "test/util.py": 1,
+  "tests/helpers.py": 1
+}

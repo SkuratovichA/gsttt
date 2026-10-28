@@ -126,8 +126,9 @@ pub fn salt_of(parts: &[&str]) -> u64 {
     hasher.digest()
 }
 
-/// Hashes `bytes` with their length in front, so two fields cannot trade bytes and keep the same hash. The one
-/// framing behind [`salt_of`] and the fact keys of the engine.
+/// Hashes `bytes` with their length in front, so two fields cannot trade bytes and keep the same hash. The one framing behind [`salt_of`] and the fact keys of the engine.
+///
+/// The length is a little-endian `u64`, which `a_salt_hashes_its_parts_with_their_lengths` pins with the value of a salt: another byte order would read the files of every project again. The trust key of the command line frames its parts in the same way with a big-endian length (`feed` in `crates/gsttt/src/trust/key.rs`, pinned by `the_key_hashes_the_framed_parts_in_order`), so the two are kept apart on purpose.
 pub(crate) fn feed(hasher: &mut Xxh3, bytes: &[u8]) {
     hasher.update(&u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_le_bytes());
     hasher.update(bytes);
@@ -510,6 +511,19 @@ mod tests {
         assert_ne!(salt_of(&[]), salt_of(&[""]));
         // Pinned, because a changed hash or byte order would read the files of every project again.
         assert_eq!(salt_of(&["a"]), 14_372_996_823_028_516_049);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn moving_the_boundary_between_parts_changes_the_salt(
+            first in "\\PC{0,12}",
+            middle in "\\PC{1,12}",
+            last in "\\PC{0,12}",
+        ) {
+            let left = format!("{first}{middle}");
+            let right = format!("{middle}{last}");
+            proptest::prop_assert_ne!(salt_of(&[&left, &last]), salt_of(&[&first, &right]));
+        }
     }
 
     fn served(key: &str, line: u32, via: &str) -> ContractFact {
