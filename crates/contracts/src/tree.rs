@@ -157,3 +157,79 @@ fn from_json(value: &ast::Value<'_>, lines: &LineIndex, depth: usize) -> Value {
         _ => Value::Other,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn lines_of(value: &Value, out: &mut Vec<Line>) {
+        match value {
+            Value::Map(entries) => {
+                for entry in entries {
+                    out.push(entry.line);
+                    lines_of(&entry.value, out);
+                }
+            }
+            Value::Seq(items) => items.iter().for_each(|item| lines_of(item, out)),
+            Value::Str(_) | Value::Other => {}
+        }
+    }
+
+    #[test]
+    fn yaml_keys_remember_their_lines() {
+        let tree = parse_yaml("paths:\n  /a:\n    get: {}\n").unwrap();
+        let paths = tree.get("paths").unwrap();
+        assert_eq!(paths.entries()[0].key, "/a");
+        assert_eq!(paths.entries()[0].line, 2);
+        assert_eq!(paths.get("/a").unwrap().entries()[0].line, 3);
+    }
+
+    #[test]
+    fn json_keys_remember_their_lines_and_comments_are_allowed() {
+        let tree = parse_json("{\n  // note\n  \"paths\": {\n    \"/a\": {},\n  }\n}").unwrap();
+        let paths = tree.get("paths").unwrap();
+        assert_eq!(paths.entries()[0].line, 4);
+    }
+
+    #[test]
+    fn deep_documents_are_cut_instead_of_walked_to_the_bottom() {
+        let depth = MAX_DEPTH * 4;
+        let text = format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
+        let mut value = parse_json(&text).unwrap();
+        let mut levels = 0;
+        while let Value::Seq(items) = value {
+            levels += 1;
+            value = items.into_iter().next().unwrap_or(Value::Other);
+        }
+        assert!(levels <= MAX_DEPTH + 1, "{levels} levels were kept");
+    }
+
+    proptest! {
+        #[test]
+        fn lines_stay_inside_the_document(
+            text in "[a-z0-9:\\-\\[\\]{}\", \n#]{0,120}",
+            json in any::<bool>(),
+        ) {
+            let count = u32::try_from(text.lines().count()).unwrap_or(u32::MAX).saturating_add(1);
+            match if json { parse_json(&text) } else { parse_yaml(&text) } {
+                Ok(tree) => {
+                    let mut lines = Vec::new();
+                    lines_of(&tree, &mut lines);
+                    prop_assert!(
+                        lines.iter().all(|line| (1..=count).contains(line)),
+                        "{lines:?} of {count}"
+                    );
+                }
+                Err(error) => prop_assert!(error.line >= 1),
+            }
+        }
+
+        #[test]
+        fn arbitrary_text_never_panics(text in "\\PC*") {
+            drop(parse_yaml(&text));
+            drop(parse_json(&text));
+        }
+    }
+}

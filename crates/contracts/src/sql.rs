@@ -209,13 +209,10 @@ fn read(
     dialect: &dyn Dialect,
     text: &str,
 ) -> Result<(Vec<ContractFact>, ParseStatus), SyntaxError> {
-    let neutral = neutralise_placeholders(text);
-    let tokens = Tokenizer::new(dialect, &neutral)
+    let tokens = Tokenizer::new(dialect, text)
         .tokenize_with_location()
         .map_err(|error| SyntaxError {
-            line: u32::try_from(error.location.line)
-                .unwrap_or(u32::MAX)
-                .max(1),
+            line: line_of(error.location.line),
             message: error.message,
         })?;
     let mut facts = Vec::new();
@@ -227,21 +224,69 @@ fn read(
         else {
             continue;
         };
-        let start = u32::try_from(first.span.start.line)
-            .unwrap_or(u32::MAX)
-            .max(1);
-        let mut parser = Parser::new(dialect).with_tokens_with_locations(group);
-        match parser.parse_statement() {
-            Ok(statement) if parser.peek_token().token == Token::EOF => {
-                read_statement(&statement, start, &mut facts);
-            }
-            _ => errors.note(start),
+        let start = line_of(first.span.start.line);
+        let base = group
+            .first()
+            .map_or(start, |token| line_of(token.span.start.line));
+        // The text is kept only for a statement that may hold a placeholder this grammar does not read.
+        let text: Option<String> = group
+            .iter()
+            .any(|token| may_start_parameter(&token.token))
+            .then(|| group.iter().map(|token| token.token.to_string()).collect());
+        let found = parse_group(dialect, group)
+            .map(|statement| {
+                let mut found = Vec::new();
+                read_statement(&statement, start, &mut found);
+                found
+            })
+            .or_else(|| read_with_parameters(dialect, text.as_deref()?, base));
+        match found {
+            Some(found) => facts.extend(found),
+            None => errors.note(start),
         }
     }
     // Source order, the same everywhere; one site per line and key.
     facts.sort_by(|a, b| a.line.cmp(&b.line).then_with(|| a.key.cmp(&b.key)));
     facts.dedup_by(|a, b| a.line == b.line && a.key == b.key && a.role == b.role);
     Ok((facts, errors.status()))
+}
+
+fn line_of(line: u64) -> Line {
+    u32::try_from(line).unwrap_or(u32::MAX).max(1)
+}
+
+/// The statement a group of tokens holds, when it holds exactly one.
+fn parse_group(dialect: &dyn Dialect, tokens: Vec<TokenWithSpan>) -> Option<Statement> {
+    let mut parser = Parser::new(dialect).with_tokens_with_locations(tokens);
+    let statement = parser.parse_statement().ok()?;
+    (parser.peek_token().token == Token::EOF).then_some(statement)
+}
+
+/// Whether a token may begin a driver placeholder that not every grammar reads: `?` and `:name` are operators or
+/// nothing at all in PostgreSQL, and `%s` is a modulo.
+fn may_start_parameter(token: &Token) -> bool {
+    matches!(
+        token,
+        Token::Mod | Token::Colon | Token::Question | Token::Placeholder(_)
+    )
+}
+
+/// The sites of a statement that parses once its driver placeholders stand for a value, which is how the grammars
+/// that do not read them are made to. Native syntax is tried first, so `data ? 'key'` stays a PostgreSQL operator
+/// whenever the statement reads that way. `base` is the line `text` starts on.
+fn read_with_parameters(
+    dialect: &dyn Dialect,
+    text: &str,
+    base: Line,
+) -> Option<Vec<ContractFact>> {
+    let neutral = neutralise_placeholders(text);
+    let tokens = Tokenizer::new(dialect, &neutral)
+        .tokenize_with_location()
+        .ok()?;
+    let statement = parse_group(dialect, tokens)?;
+    let mut facts = Vec::new();
+    read_statement(&statement, 1, &mut facts);
+    Some(shift_to_host(facts, base))
 }
 
 /// The tokens of each statement; a semicolon inside a string, a comment or a dollar-quoted body is part of one
@@ -379,15 +424,23 @@ impl Visitor for Relations {
     }
 }
 
-/// Replaces the placeholders of the common drivers, `%s`, `%(name)s` and `:name`, with `?`, which the grammar
-/// reads as a parameter, as it does `$1` and `?` themselves. Nothing else changes, newlines included, so lines
-/// stay where they are. The `::` of a cast and a colon that continues a word, as in `'10:30'`, are left alone.
+/// What a placeholder is replaced with: a value that every grammar reads wherever an operand stands, a list of
+/// one included (`IN %s`).
+const PARAMETER: &str = "(0)";
+
+/// Replaces the placeholders of the common drivers, `?`, `?1`, `%s`, `%(name)s` and `:name`, with a value.
+/// Nothing else changes, newlines included, so lines stay where they are. The `::` of a cast and a colon that
+/// continues a word, as in `'10:30'`, are left alone.
 fn neutralise_placeholders(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     let mut previous = '\n';
     while let Some(c) = chars.next() {
         let replaced = match c {
+            '?' => {
+                while chars.next_if(char::is_ascii_digit).is_some() {}
+                true
+            }
             '%' if chars.next_if_eq(&'s').is_some() => true,
             '%' if chars.peek() == Some(&'(') => {
                 // `%(name)s`: look ahead on a copy, and only consume when the whole shape is there.
@@ -422,8 +475,8 @@ fn neutralise_placeholders(text: &str) -> String {
             _ => false,
         };
         if replaced {
-            out.push('?');
-            previous = '?';
+            out.push_str(PARAMETER);
+            previous = ')';
         } else {
             out.push(c);
             previous = c;
@@ -456,15 +509,37 @@ mod tests {
     }
 
     #[test]
-    fn placeholders_become_one_marker_and_casts_stay() {
+    fn placeholders_become_a_value_and_casts_stay() {
         assert_eq!(
             neutralise_placeholders(
-                "a = %s AND b = %(user_id)s AND c = :id AND d::int AND t = '10:30'"
+                "a = %s AND b = %(user_id)s AND c = :id AND d::int AND t = '10:30' AND e = ?2"
             ),
-            "a = ? AND b = ? AND c = ? AND d::int AND t = '10:30'"
+            "a = (0) AND b = (0) AND c = (0) AND d::int AND t = '10:30' AND e = (0)"
         );
         assert_eq!(neutralise_placeholders("100%"), "100%");
         assert_eq!(neutralise_placeholders("%(x"), "%(x");
+    }
+
+    #[test]
+    fn native_syntax_is_tried_before_placeholders() {
+        // The jsonb operator `?` reads as itself in PostgreSQL; the same character is a placeholder in a statement
+        // that does not parse with it.
+        let operator = calls("postgresql", "SELECT 1 FROM docs WHERE data ? 'key';");
+        assert_eq!(operator, vec![(1, "table docs".to_owned(), Role::Calls)]);
+        let placeholder = calls("postgresql", "SELECT 1 FROM docs WHERE id = ?;");
+        assert_eq!(placeholder, vec![(1, "table docs".to_owned(), Role::Calls)]);
+    }
+
+    #[test]
+    fn a_statement_with_placeholders_keeps_its_own_line() {
+        let text = "SELECT 1 FROM a;\n\n\nSELECT 1 FROM b WHERE id = :id;\n";
+        assert_eq!(
+            calls("postgresql", text),
+            vec![
+                (1, "table a".to_owned(), Role::Calls),
+                (4, "table b".to_owned(), Role::Calls),
+            ]
+        );
     }
 
     #[test]

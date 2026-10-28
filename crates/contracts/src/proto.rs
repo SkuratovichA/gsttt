@@ -449,7 +449,7 @@ fn collect_bindings(fields: &[(String, Field)], found: &mut Vec<Binding>) {
                 found.push(Binding {
                     method: key.to_uppercase(),
                     path: path.clone(),
-                })
+                });
             }
             ("custom", Field::Message(custom)) => {
                 if let (Some(kind), Some(path)) = (text_of(custom, "kind"), text_of(custom, "path"))
