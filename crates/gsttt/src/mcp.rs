@@ -137,7 +137,10 @@ mod tests {
     use serde_json::json;
     use tokio::io::{AsyncWriteExt, DuplexStream};
 
-    use super::{FIX_THE_CONFIG, NAME_THE_FILES, RepositoryError, block_on};
+    use super::{
+        FIX_THE_CONFIG, NAME_A_BASE, NAME_A_DIRECTORY, NAME_A_FILE, NAME_THE_FILES,
+        RepositoryError, START_IN_A_PROJECT, block_on,
+    };
     use crate::error::CliError;
     use crate::root::RootError;
 
@@ -255,67 +258,118 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_failure_the_config_did_not_cause_keeps_the_sentence_of_the_command_line() {
-        let failure = RepositoryError::NoGit {
-            root: Utf8PathBuf::from("/work/project"),
-        };
-
-        assert_eq!(
-            SourceError::from(failure).message,
-            format!(
-                "`--changed` needs a git repository, and `/work/project` is in none; {NAME_THE_FILES}"
-            )
-        );
+    /// Every failure of the repository that the config did not cause and the server can meet, one for each way the command line words it, with the message a model reads for it: the sentence the command line prints and, where the command line prints a help line, the step of the server after `; `. A failure is not `Clone`, so each call builds them again.
+    fn failures() -> Vec<(RepositoryError, String)> {
+        vec![
+            (
+                RepositoryError::Root(RootError::Directory {
+                    path: Utf8PathBuf::from("no/such/directory"),
+                    problem: "does not exist".to_owned(),
+                }),
+                format!("`-C` names `no/such/directory`, which does not exist; {NAME_A_DIRECTORY}"),
+            ),
+            (
+                RepositoryError::Root(RootError::CurrentDirectory {
+                    reason: "permission denied".to_owned(),
+                }),
+                "cannot read the current directory: permission denied".to_owned(),
+            ),
+            (
+                RepositoryError::Root(RootError::Workspace(WorkspaceError::Bare {
+                    path: Utf8PathBuf::from("/work/project.git"),
+                })),
+                "`/work/project.git` belongs to a bare repository, which has no work tree to index: run gsttt in a checkout".to_owned(),
+            ),
+            (
+                RepositoryError::Root(RootError::Home {
+                    root: Utf8PathBuf::from("/home/ann"),
+                }),
+                format!("gsttt does not index the home directory (`/home/ann`); {START_IN_A_PROJECT}"),
+            ),
+            (
+                RepositoryError::Root(RootError::FilesystemRoot),
+                format!("gsttt does not index `/`, which holds every file on the machine; {START_IN_A_PROJECT}"),
+            ),
+            (
+                RepositoryError::Packs(PackError {
+                    file: "ts.toml".to_owned(),
+                    message: "ts.toml:1:1: expected a name".to_owned(),
+                }),
+                format!(
+                    "ts.toml:1:1: expected a name; this is a bug in gsttt, please report it at {}",
+                    concat!(env!("CARGO_PKG_REPOSITORY"), "/issues")
+                ),
+            ),
+            (
+                RepositoryError::Path(OutsideRoot::Leaves {
+                    argument: "../elsewhere.ts".to_owned(),
+                    root: Utf8PathBuf::from("/work/project"),
+                }),
+                format!("`../elsewhere.ts` is outside the repository `/work/project`; {NAME_A_FILE}"),
+            ),
+            (
+                RepositoryError::Path(OutsideRoot::IsRoot {
+                    argument: ".".to_owned(),
+                }),
+                format!("`.` is the root of the repository, not a path inside it; {NAME_A_FILE}"),
+            ),
+            (
+                RepositoryError::NoGit {
+                    root: Utf8PathBuf::from("/work/project"),
+                },
+                format!("`--changed` needs a git repository, and `/work/project` is in none; {NAME_THE_FILES}"),
+            ),
+            (
+                RepositoryError::Index(IndexError::Changes(ChangesError::History {
+                    root: "/work/project".to_owned(),
+                    message: "the object database is corrupt".to_owned(),
+                })),
+                "cannot read the git history of `/work/project`: the object database is corrupt".to_owned(),
+            ),
+            (
+                RepositoryError::Index(IndexError::Changes(ChangesError::Revision {
+                    revision: "no-such-branch".to_owned(),
+                    message: "unknown revision".to_owned(),
+                })),
+                format!("`no-such-branch` is not a revision of this repository: unknown revision; {NAME_A_BASE}"),
+            ),
+            (
+                RepositoryError::Index(IndexError::Changes(ChangesError::NoMergeBase {
+                    revision: "orphan".to_owned(),
+                })),
+                format!("HEAD and `orphan` have no common ancestor, so there is no base to compare with; {NAME_A_BASE}"),
+            ),
+            (
+                RepositoryError::Index(IndexError::Files(FilesError::List {
+                    root: Utf8PathBuf::from("/work/project"),
+                    message: "permission denied".to_owned(),
+                })),
+                "cannot list the files under `/work/project`: permission denied".to_owned(),
+            ),
+            (
+                RepositoryError::Index(IndexError::Workspace(WorkspaceError::NoCacheHome {
+                    path: Utf8PathBuf::from("/work/project"),
+                })),
+                "`/work/project` is not in a git repository and neither XDG_CACHE_HOME nor HOME is set, so there is nowhere to keep its state".to_owned(),
+            ),
+            (
+                RepositoryError::Index(IndexError::Connector(ConnectorError::Project {
+                    connector: "ts".to_owned(),
+                    root: "/work/project".to_owned(),
+                    message: "cannot read tsconfig.json".to_owned(),
+                })),
+                "ts project at `/work/project`: cannot read tsconfig.json".to_owned(),
+            ),
+        ]
     }
 
-    /// Every failure of the repository that the config did not cause and the server can meet, one for each way the command line words it. A failure is not `Clone`, so each call builds them again.
-    fn failures() -> Vec<RepositoryError> {
-        vec![
-            RepositoryError::Root(RootError::Directory {
-                path: Utf8PathBuf::from("no/such/directory"),
-                problem: "does not exist".to_owned(),
-            }),
-            RepositoryError::Root(RootError::CurrentDirectory {
-                reason: "permission denied".to_owned(),
-            }),
-            RepositoryError::Root(RootError::Workspace(WorkspaceError::Bare {
-                path: Utf8PathBuf::from("/work/project.git"),
-            })),
-            RepositoryError::Root(RootError::Home {
-                root: Utf8PathBuf::from("/home/ann"),
-            }),
-            RepositoryError::Root(RootError::FilesystemRoot),
-            RepositoryError::Packs(PackError {
-                file: "ts.toml".to_owned(),
-                message: "ts.toml:1:1: expected a name".to_owned(),
-            }),
-            RepositoryError::Path(OutsideRoot::Leaves {
-                argument: "../elsewhere.ts".to_owned(),
-                root: Utf8PathBuf::from("/work/project"),
-            }),
-            RepositoryError::Path(OutsideRoot::IsRoot {
-                argument: ".".to_owned(),
-            }),
-            RepositoryError::NoGit {
-                root: Utf8PathBuf::from("/work/project"),
-            },
-            RepositoryError::Index(IndexError::Changes(ChangesError::History {
-                root: "/work/project".to_owned(),
-                message: "the object database is corrupt".to_owned(),
-            })),
-            RepositoryError::Index(IndexError::Changes(ChangesError::Revision {
-                revision: "no-such-branch".to_owned(),
-                message: "unknown revision".to_owned(),
-            })),
-            RepositoryError::Index(IndexError::Changes(ChangesError::NoMergeBase {
-                revision: "orphan".to_owned(),
-            })),
-            RepositoryError::Index(IndexError::Files(FilesError::List {
-                root: Utf8PathBuf::from("/work/project"),
-                message: "permission denied".to_owned(),
-            })),
-        ]
+    /// The failures the server cannot meet in a call are in the list as well: `Directory` and `CurrentDirectory` come from the start of the command, which fails before the server serves, and `Repository::open` does not make them.
+    #[test]
+    fn a_failure_the_config_did_not_cause_keeps_the_sentence_of_the_command_line() {
+        for (failure, message) in failures() {
+            let name = format!("{failure:?}");
+            assert_eq!(SourceError::from(failure).message, message, "{name}");
+        }
     }
 
     /// The failures of the config are left out: the command line leaves them to the person at the terminal and has no help line for them, while the server tells the model to fix the config and ask again.
@@ -325,8 +379,12 @@ mod tests {
     )]
     #[test]
     fn the_server_has_a_step_where_the_command_line_has_a_help_line() {
-        let for_the_command_line = failures().into_iter().map(CliError::from);
-        let for_the_server = failures().into_iter().map(SourceError::from);
+        let for_the_command_line = failures()
+            .into_iter()
+            .map(|(failure, _)| CliError::from(failure));
+        let for_the_server = failures()
+            .into_iter()
+            .map(|(failure, _)| SourceError::from(failure));
 
         for (printed, told) in for_the_command_line.zip(for_the_server) {
             let has_a_help_line = printed.help().is_some();
