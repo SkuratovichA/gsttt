@@ -48,7 +48,7 @@ Send long output to a file and read the part you need: `cargo nextest run --work
 - **Before writing new logic, search for it.** The workspace usually already holds the helper, mapping or validator you are about to write — grep first, reuse or extend what exists, and write new code only when nothing fits. Extending an existing helper beats a parallel copy; when a parallel copy is unavoidable, say where the other one lives and pin the two against each other with a test.
 - **Determinism**: the same tree gives the same index, byte for byte. Sort before you emit; never iterate a hash map into output.
 - **Speed is a feature**: no per-file allocation you can avoid on the hot path, no disk access during resolution (resolve against `RepoView`), no `String` where a `&str` into the source lives long enough.
-- Comments say why, not what. Doc comments on every public item, in plain sentences.
+- Comments say why, not what. Doc comments on every public item, in plain sentences. A paragraph of a comment is one line however long, never wrapped: the JSON schemas keep the line breaks of a doc comment, and an editor wraps on its own.
 - **Unix only**: gsttt builds and runs on Linux and macOS only, so code and tests may use `std::os::unix` and `rustix` without a `cfg(unix)` guard. A test that proves a scenario carries no `cfg` but `test`, because the gate counts a test under another `cfg` as no proof.
 
 ## Tests
