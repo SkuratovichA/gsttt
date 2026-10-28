@@ -21,4 +21,4 @@
 ## 4. Proof
 
 - [x] 4.1 A test annotated `#[scenario("typescript", …)]` for every scenario of the `typescript` spec, on fixture trees with reviewed `insta` snapshots
-- [ ] 4.2 `cargo nextest run -p gsttt-lang-ts`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+- [x] 4.2 `cargo nextest run -p gsttt-lang-ts`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
