@@ -104,18 +104,19 @@ pub(crate) fn open_projects(
                 .flat_map(|name| named.get(name.as_str()).into_iter().flatten().copied())
                 .filter(|other| *other != index)
                 .collect();
-            let mut roots = Vec::new();
-            for dir in declared.into_iter().flat_map(|other| {
-                projects
-                    .get(other)
-                    .into_iter()
-                    .flat_map(|project| &project.source_roots)
-            }) {
-                if !project.source_roots.contains(dir) {
-                    push_unique(&mut roots, dir.clone());
-                }
-            }
-            roots
+            let own: BTreeSet<&str> = project.source_roots.iter().map(String::as_str).collect();
+            let mut seen = BTreeSet::new();
+            declared
+                .into_iter()
+                .flat_map(|other| {
+                    projects
+                        .get(other)
+                        .into_iter()
+                        .flat_map(|project| &project.source_roots)
+                })
+                .filter(|dir| !own.contains(dir.as_str()) && seen.insert(dir.as_str()))
+                .cloned()
+                .collect()
         })
         .collect();
     // What a root can be imported by is read once, however many projects declare the project it belongs to.
@@ -391,6 +392,50 @@ mod tests {
             packs_salt([3, 5].into_iter()),
             packs_salt([3, 5].into_iter())
         );
+    }
+
+    /// The `pyproject.toml` of a project called `name` that declares `dependencies` and takes its modules from `root`.
+    fn pyproject(name: &str, dependencies: &[&str], root: &str) -> String {
+        let dependencies: Vec<String> = dependencies
+            .iter()
+            .map(|dependency| format!("\"{dependency}\""))
+            .collect();
+        format!(
+            "[project]\nname = \"{name}\"\ndependencies = [{}]\n\n[tool.setuptools.package-dir]\n\"\" = \"{root}\"\n",
+            dependencies.join(", ")
+        )
+    }
+
+    #[test]
+    fn the_roots_of_the_declared_projects_are_listed_once_and_without_the_projects_own() {
+        let dir = tempfile::tempdir().unwrap();
+        // `a` and `b` take their modules from `shared`, `c` and `d` from `lib`.
+        for (name, dependencies, root) in [
+            ("a", &["b", "c", "d"][..], "../shared"),
+            ("b", &[][..], "../shared"),
+            ("c", &[][..], "../lib"),
+            ("d", &[][..], "../lib"),
+        ] {
+            let manifest = dir.path().join(name).join("pyproject.toml");
+            std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+            std::fs::write(&manifest, pyproject(name, dependencies, root)).unwrap();
+        }
+        let repo = RepoView::scan(dir.path().to_str().unwrap()).unwrap();
+        let projects = open_projects(&repo, &PythonOptions::default(), &[]).unwrap();
+        let sibling_roots = |name: &str| -> Vec<&str> {
+            projects
+                .iter()
+                .find(|project| project.root == name)
+                .unwrap()
+                .sibling_roots
+                .iter()
+                .map(String::as_str)
+                .collect()
+        };
+
+        // `shared` is a's own root, so it is no sibling's. `lib` is the root of c and of d, and is listed where c has it.
+        assert_eq!(sibling_roots("a"), ["b", "lib", "c", "d"]);
+        assert_eq!(sibling_roots("b"), Vec::<&str>::new());
     }
 
     proptest! {
