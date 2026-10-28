@@ -12,6 +12,7 @@ pub fn run(cli: Cli, io: &mut Io<'_>) -> Outcome {
     let Some(command) = command else {
         return no_command(io);
     };
+    tracing::debug!(command = command.name(), ?flags, "running the command");
     match dispatch(&flags, &command, io) {
         Ok(()) => Outcome::Answered,
         Err(error) => error.report(io),

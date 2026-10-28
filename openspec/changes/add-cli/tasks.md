@@ -1,7 +1,7 @@
 ## 1. Skeleton
 
 - [x] 1.1 Give `crates/gsttt` a library target with `run(cli, io) -> Outcome` and keep `main.rs` to parsing, the panic hook and the exit code; define every command and global flag with clap derive, `--version` from `GSTTT_VERSION` or `<package version>-dev`, and `completions <shell>` through `clap_complete`
-- [ ] 1.2 Send errors to stderr through miette, logs through `tracing-subscriber` filtered by `GSTTT_LOG`, and colour through `anstream` only on a terminal with `NO_COLOR` unset
+- [x] 1.2 Send errors to stderr through miette, logs through `tracing-subscriber` filtered by `GSTTT_LOG`, and colour through `anstream` only on a terminal with `NO_COLOR` unset
 
 ## 2. Root, paths and the repository
 

@@ -3,6 +3,9 @@
 use std::fmt;
 use std::io::{self, Write};
 
+use anstream::stream::RawStream;
+use anstream::{AutoStream, ColorChoice};
+
 use crate::error::CliError;
 
 /// How a command ended, which `main` turns into the exit code.
@@ -63,6 +66,34 @@ impl<'a> Io<'a> {
             .and_then(|()| self.stderr.flush())
             .unwrap_or_else(|error| tracing::debug!(%error, "cannot write to stderr"));
     }
+}
+
+/// The process's stdout. Styling written to it reaches a terminal and nothing else.
+pub fn stdout() -> AutoStream<io::Stdout> {
+    wrap(io::stdout())
+}
+
+/// The process's stderr, wrapped like [`stdout`].
+pub fn stderr() -> AutoStream<io::Stderr> {
+    wrap(io::stderr())
+}
+
+/// Whether styling written to `stream` is shown. The logs are written past the wrapper, so they ask this to decide
+/// whether to style themselves.
+pub fn shows_styling<S: RawStream>(stream: &AutoStream<S>) -> bool {
+    stream.current_choice() != ColorChoice::Never
+}
+
+/// Colour is for a terminal: on one, `anstream` decides from `NO_COLOR`, `CLICOLOR` and `TERM`; anywhere else the
+/// styling is stripped. `anstream` alone would let `CLICOLOR_FORCE` push escape sequences into a pipe, and a pipe is
+/// read by a program that does not expect them.
+fn wrap<S: RawStream>(stream: S) -> AutoStream<S> {
+    let choice = if stream.is_terminal() {
+        AutoStream::choice(&stream)
+    } else {
+        ColorChoice::Never
+    };
+    AutoStream::new(stream, choice)
 }
 
 /// Whether `error` says the reader of a stream went away, which is how `gsttt … | head` ends.

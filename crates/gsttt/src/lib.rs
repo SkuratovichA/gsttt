@@ -6,7 +6,8 @@
 pub mod cli;
 mod commands;
 mod error;
-mod streams;
+pub mod logging;
+pub mod streams;
 
 pub use cli::{Cli, parse};
 pub use commands::run;

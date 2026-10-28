@@ -1,15 +1,16 @@
 //! The `gsttt` binary: it reads the command line, runs the command and turns its outcome into an exit code.
 
-use std::io;
 use std::process::ExitCode;
 
-use gsttt::Io;
+use gsttt::{Io, logging, streams};
 
 fn main() -> ExitCode {
-    let (mut stdout, mut stderr) = (io::stdout().lock(), io::stderr().lock());
-    let mut streams = Io::new(&mut stdout, &mut stderr);
-    let outcome = match gsttt::parse(std::env::args_os(), &mut streams) {
-        Ok(cli) => gsttt::run(cli, &mut streams),
+    // The streams stay unlocked: a worker thread that logs must not wait for this thread to let go of stderr.
+    let (mut stdout, mut stderr) = (streams::stdout(), streams::stderr());
+    logging::init(streams::shows_styling(&stderr));
+    let mut io = Io::new(&mut stdout, &mut stderr);
+    let outcome = match gsttt::parse(std::env::args_os(), &mut io) {
+        Ok(cli) => gsttt::run(cli, &mut io),
         Err(outcome) => outcome,
     };
     ExitCode::from(outcome.code())
