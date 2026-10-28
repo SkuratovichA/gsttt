@@ -6,10 +6,12 @@
 
 It answers one question without guessing: what does this change affect?
 
+[Website](https://gsttt.arstoien.com) · [Releases](https://github.com/SkuratovichA/gsttt/releases) · [Claude Code plugin](plugin/README.md)
+
 gsttt builds a graph of the files in a repository and of the contracts between them: imports, HTTP routes and the calls that reach them, GraphQL, gRPC and tRPC operations, database tables and environment variables. It follows them across packages, languages and services. No model runs anywhere in it, so the same tree always gives the same answer, and every answer says how much of the repository it covers and how fresh the index is.
 
 <p align="center">
-  <img src="assets/impact.gif" alt="gsttt indexes a small repository and answers what a change to a FastAPI route in Python affects: the app that includes the router, the TypeScript that fetches the route, and the file that imports that TypeScript">
+  <img src="assets/impact.gif" alt="gsttt indexes a small repository and answers what a change to a FastAPI route in Python affects: the app that includes the router, the TypeScript that fetches the route, the page and the entry point that import that TypeScript, and the test of the route">
 </p>
 
 ## Install

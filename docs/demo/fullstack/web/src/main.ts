@@ -1,3 +1,3 @@
-import { listUsers } from "./api";
+import { renderUsers } from "./pages/users";
 
-listUsers().then((users) => console.log(users));
+renderUsers();
