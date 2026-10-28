@@ -5,7 +5,9 @@
 use std::env;
 use std::fmt::Write as _;
 use std::fs;
-use std::time::Duration;
+use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use gsttt_config::{External, protocol_schema};
 use gsttt_core::connector::{
@@ -312,6 +314,46 @@ fn panic_message(facts: &FileFacts) -> &str {
     message
 }
 
+/// A child of a fake process, found by the id the process wrote to `grandchild.pid` with `sleep 60 & echo $! > grandchild.pid`. It is killed when the test ends, so that a failing test does not leave a sleep behind that holds a pipe for a minute.
+struct Grandchild(String);
+
+impl Grandchild {
+    fn of(run: &Run) -> Self {
+        let id = fs::read_to_string(run.tree.root().join("grandchild.pid")).unwrap();
+        Self(id.trim().to_owned())
+    }
+
+    /// Whether it still runs. A zombie does not: nothing holds a pipe open through it any more.
+    fn runs(&self) -> bool {
+        let output = Command::new("ps")
+            .args(["-o", "stat=", "-p", &self.0])
+            .output()
+            .unwrap();
+        let state = String::from_utf8_lossy(&output.stdout);
+        !state.trim().is_empty() && !state.trim_start().starts_with('Z')
+    }
+
+    /// Whether it is gone within the few seconds a kill takes to be seen.
+    fn is_gone_soon(&self) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while self.runs() {
+            if Instant::now() > deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        true
+    }
+}
+
+impl Drop for Grandchild {
+    fn drop(&mut self) {
+        if self.runs() {
+            Command::new("kill").args(["-KILL", &self.0]).output().ok();
+        }
+    }
+}
+
 #[gsttt_scenario::scenario("config", "An unused external starts nothing")]
 #[test]
 fn an_unused_external_starts_nothing() {
@@ -490,8 +532,7 @@ fn a_hung_process_fails_its_files_and_nothing_else() {
     let tree = repository(&[
         when(&request("open"), say(&ready())),
         parses("src/A.kt", &imports(&["./B"])),
-        // `exec`, so that killing the process kills the sleep.
-        when(&parse_of("src/B.kt"), "exec sleep 60"),
+        when(&parse_of("src/B.kt"), "sleep 60"),
     ]);
     // Long enough for a loaded machine to start the shell, short enough to keep the test quick.
     let run = Run::index(tree, kotlin(Duration::from_secs(3)));
@@ -537,6 +578,51 @@ fn a_hung_process_fails_its_files_and_nothing_else() {
             .last()
             .is_some_and(|line| line.contains("src/B.kt")),
         "{requests:?}"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A killed process takes its children with it")]
+#[test]
+fn a_killed_process_takes_its_children_with_it() {
+    // A wrapper, as `npx` or `gradle` are: the sleep is a child of the process and holds the pipes it was given.
+    let tree = repository(&[
+        when(&request("open"), say(&ready())),
+        parses("src/A.kt", &FileFacts::default()),
+        when(
+            &parse_of("src/B.kt"),
+            "sleep 60 & echo $! > grandchild.pid; wait",
+        ),
+    ]);
+    let run = Run::index(tree, kotlin(Duration::from_secs(3)));
+    assert!(panic_message(run.facts("src/B.kt")).contains("no answer within"));
+    let child = Grandchild::of(&run);
+    assert!(
+        child.is_gone_soon(),
+        "the child {} of the killed process still runs",
+        child.0
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A process that leaves takes its children with it")]
+#[test]
+fn a_process_that_leaves_takes_its_children_with_it() {
+    // It leaves at once on `done`, as it should, and leaves a sleep behind.
+    let tree = repository(&[
+        when(&request("open"), say(&ready())),
+        parses("src/A.kt", &FileFacts::default()),
+        parses("src/B.kt", &FileFacts::default()),
+        parses("src/C.kt", &FileFacts::default()),
+        when(
+            &request("done"),
+            "sleep 60 & echo $! > grandchild.pid; exit 0",
+        ),
+    ]);
+    let run = Run::index(tree, kotlin(External::TIMEOUT));
+    let child = Grandchild::of(&run);
+    assert!(
+        child.is_gone_soon(),
+        "the child {} of the process that left still runs",
+        child.0
     );
 }
 

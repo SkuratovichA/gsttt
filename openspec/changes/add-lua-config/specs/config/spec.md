@@ -183,6 +183,17 @@ A process that exits, answers out of turn, sends a line that does not parse or t
 - **WHEN** an external's process does not answer the `parse` of `src/B.kt` within the timeout
 - **THEN** `src/B.kt` and every later file of that external fail as panics naming it, and the other connectors' files are indexed
 
+### Requirement: External process group
+An external's process SHALL run in a process group of its own, and whenever gsttt ends it (after a failure, a timeout, or `done`) it SHALL kill the whole group, so that a wrapper such as `sh -c`, `npx` or `gradle` leaves no child that holds its pipes or outlives gsttt.
+
+#### Scenario: A killed process takes its children with it
+- **WHEN** an external's process starts a child that holds its pipes and then does not answer a request within the timeout
+- **THEN** after the process is killed the child no longer runs
+
+#### Scenario: A process that leaves takes its children with it
+- **WHEN** an external's process starts a child and exits on `done`
+- **THEN** once the run has ended the child no longer runs
+
 ### Requirement: External schema
 The crate SHALL provide the JSON schema of the messages.
 

@@ -3,6 +3,7 @@
 use std::env;
 use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Read, Write};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
@@ -11,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use gsttt_core::connector::Provide;
 use gsttt_core::fact::{FileFacts, Import};
+use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
 use serde_json::Map;
 
 use super::protocol::{PROTOCOL, Request, Response, WireResolution};
@@ -110,6 +112,8 @@ impl Process {
             .current_dir(&launch.root)
             .env_clear()
             .envs(launch.environment())
+            // A group of its own, so that ending the process can end what it started along with it.
+            .process_group(0)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -225,7 +229,7 @@ impl Process {
 }
 
 impl Drop for Process {
-    /// Ends the run: `done`, then the pipes close, and a process that does not leave within its grace is killed.
+    /// Ends the run: `done`, then the pipes close, and a process that does not leave within its grace is killed. What it started is killed in any case.
     fn drop(&mut self) {
         if self.stopped {
             return;
@@ -237,10 +241,7 @@ impl Drop for Process {
             requests.send(Exchange { line, reply: None }).ok();
         }
         let deadline = Instant::now() + EXIT_GRACE;
-        while Instant::now() < deadline {
-            if !matches!(self.child.try_wait(), Ok(None)) {
-                return;
-            }
+        while Instant::now() < deadline && !has_exited(&self.child) {
             thread::sleep(EXIT_POLL);
         }
         stop(&mut self.child);
@@ -326,8 +327,21 @@ fn read_line(reader: &mut BufReader<ChildStdout>) -> io::Result<String> {
     }
 }
 
-/// Kills the process and collects it. Both fail only when it is gone already, which is the point.
+/// Whether the process has exited, without collecting it: a process that is collected gives up its id, and its id is the name of the group that [`stop`] signals.
+fn has_exited(child: &Child) -> bool {
+    let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+    // An error means there is nothing to wait for, which is as good as an exit.
+    !matches!(
+        waitid(WaitId::Pid(Pid::from_child(child)), options),
+        Ok(None)
+    )
+}
+
+/// Kills the process and everything it started, then collects it. The group is signalled before the process is collected, while its id is still the process's own. Every step fails only when its target is gone already, which is the point.
+///
+/// A wrapper such as `sh -c`, `npx` or `gradle` leaves a child that holds the pipes of the process: killed alone, the wrapper would leave the threads that read the pipes waiting for ever, and the child running after gsttt.
 fn stop(child: &mut Child) {
+    kill_process_group(Pid::from_child(child), Signal::KILL).ok();
     child.kill().ok();
     child.wait().ok();
 }
