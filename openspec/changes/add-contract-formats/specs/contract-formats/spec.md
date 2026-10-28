@@ -25,6 +25,13 @@ The crate SHALL provide the connectors `openapi`, `graphql`, `proto`, `prisma`, 
 - **WHEN** the file list holds `api/openapi.yaml`, which refers to `./paths/bookings.yaml`, and `api/paths/bookings.yaml`, `schema.graphql`, `proto/booking/v1/booking.proto`, `prisma/schema.prisma`, `migrations/001_init.sql`, `.env.example` and `config/app.yaml`
 - **THEN** each of the first seven belongs to the matching connector's project, and `config/app.yaml` is claimed by none of them
 
+### Requirement: Env file names
+A `.env.*` file whose extension is a programming language's, such as `.env.d.ts` or `.env.schema.ts`, SHALL NOT be claimed by `env`, because only its name begins like an env file's.
+
+#### Scenario: A source file named like an env file is not an env file
+- **WHEN** the file list holds `.env.local`, `.env.production.local`, `staging.env`, `.env.d.ts` and `types/.env.schema.ts`
+- **THEN** `env` reads the first three, and the last two belong to no project
+
 ### Requirement: Parse failures
 A file a format's parser cannot read SHALL be a syntax failure with its line, and a parser that recovers SHALL give a recovered status with the number of errors and the line of the first.
 
@@ -178,11 +185,15 @@ The connector SHALL read embedded `sql` documents the same way as it reads `sql`
 - **THEN** it returns a call to `table bookings` at line 1
 
 ### Requirement: Env files
-Each `<NAME>=` line, with or without `export`, SHALL declare `env <NAME>` at its line; comments and blank lines SHALL be skipped.
+Each `<NAME>=` line, with or without `export`, SHALL declare `env <NAME>` at its line; comments, blank lines and the lines inside a quoted value that runs over several lines SHALL be skipped. A quote that nothing closes SHALL end its value with its line.
 
 #### Scenario: Example env files declare their variables
 - **WHEN** `.env.example` has `# database`, `DATABASE_URL=postgres://localhost/app` and `export PORT=3000`
 - **THEN** it declares `env DATABASE_URL` and `env PORT`
+
+#### Scenario: A quoted value over several lines declares its name once
+- **WHEN** `.env.example` has `PRIVATE_KEY="-----BEGIN PRIVATE KEY-----`, a base64 line that ends in `=`, `-----END PRIVATE KEY-----"`, then `GREETING='hello` and `world'` on the next line, and `PORT=3000`
+- **THEN** it declares `env PRIVATE_KEY`, `env GREETING` and `env PORT` and no other variable
 
 ### Requirement: Provides
 Each connector SHALL report what it provides, with its blind spots in words.
