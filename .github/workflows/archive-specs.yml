@@ -56,7 +56,8 @@ jobs:
         if: steps.ready.outputs.any == 'true'
         run: |
           while read -r change; do
-            pnpm dlx @fission-ai/openspec@1.15.0 archive "$change" --yes
+            # The list is the loop's input, so the command must not be able to read it.
+            pnpm dlx @fission-ai/openspec@1.15.0 archive "$change" --yes < /dev/null
           done < "$RUNNER_TEMP/ready.txt"
 
       - name: Check the specs that result
