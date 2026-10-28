@@ -1,5 +1,6 @@
 //! `impact`: every file a change can break, how far away it is, and why the walk reached it.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::Serialize;
@@ -95,8 +96,10 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     let graph = &index.graph;
     let mut changed: Vec<FileId> = Vec::new();
     let mut seen = IdSet::with_universe(graph.file_count());
-    // Paths the index does not hold, each with whether the caller reported it deleted.
-    let mut absent: Vec<(String, bool)> = Vec::new();
+    // Paths the index does not hold, by the path to print, with the order each was first asked in and whether the
+    // caller reported it deleted under any spelling. A change can name thousands of files nobody indexed, so each
+    // one must cost a lookup and not a scan of the others.
+    let mut absent: BTreeMap<String, (usize, bool)> = BTreeMap::new();
     let asked = request
         .files
         .iter()
@@ -109,13 +112,14 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
                     changed.push(file);
                 }
             }
-            Err(path) => match absent.iter_mut().find(|(known, _)| *known == path) {
-                Some((_, deleted)) => *deleted |= reported_deleted,
-                None => absent.push((path, reported_deleted)),
-            },
+            Err(path) => {
+                let order = absent.len();
+                absent.entry(path).or_insert((order, false)).1 |= reported_deleted;
+            }
         }
     }
 
+    let absent = in_asked_order(absent);
     let crossing = Crossing::new(index);
     let reached = reach(graph, &crossing, &changed, request.depth);
     let mut affected = Vec::new();
@@ -180,6 +184,20 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         possible_misses: misses,
         searched: Searched::of(index),
     }
+}
+
+/// The absent paths with whether each was reported deleted, in the order they were first asked. The map holds them by
+/// path, which is the order of nothing a person typed.
+fn in_asked_order(absent: BTreeMap<String, (usize, bool)>) -> Vec<(String, bool)> {
+    let mut asked: Vec<(usize, String, bool)> = absent
+        .into_iter()
+        .map(|(path, (order, deleted))| (order, path, deleted))
+        .collect();
+    asked.sort_unstable_by_key(|&(order, ..)| order);
+    asked
+        .into_iter()
+        .map(|(_, path, deleted)| (path, deleted))
+        .collect()
 }
 
 fn reason(graph: &Graph, cause: Cause) -> Option<Reason> {

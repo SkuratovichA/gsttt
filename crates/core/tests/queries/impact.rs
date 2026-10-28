@@ -450,6 +450,31 @@ fn an_unknown_path_is_named() {
 }
 
 #[test]
+fn an_absent_path_is_listed_once_in_the_order_it_was_first_asked() {
+    let strings =
+        |paths: &[&str]| -> Vec<String> { paths.iter().map(|path| (*path).to_owned()).collect() };
+
+    let answer = impact(
+        &chain(),
+        Freshness::Fresh,
+        &ImpactRequest {
+            files: strings(&["z.md", "a.md", "./z.md", "m.md", "a.md"]),
+            deleted: strings(&["m.md", "gone.ts", "./gone.ts"]),
+            depth: None,
+        },
+    );
+
+    // `m.md` was asked as changed and then reported deleted: the report wins, and it keeps its first place.
+    assert_eq!(answer.unknown, ["z.md", "a.md"]);
+    let deleted: Vec<&str> = answer
+        .deleted
+        .iter()
+        .map(|deleted| deleted.path.as_str())
+        .collect();
+    assert_eq!(deleted, ["m.md", "gone.ts"]);
+}
+
+#[test]
 fn a_request_with_no_file_still_answers() {
     let answer = run(&chain(), &[]);
 
