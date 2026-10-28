@@ -5,6 +5,7 @@ use std::fmt;
 use gsttt_core::Setup;
 use gsttt_core::engine::packs::merge_packs;
 use gsttt_core::query::{Answer, Entries};
+use gsttt_core::setup::Reason;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -24,51 +25,14 @@ pub(in crate::commands) fn show(
     print::answer(&shown, session.flags, io)
 }
 
-/// Why a module is on or off. The config decides in this order: `disable` first, then a table of its own for the
-/// module, then `detect`, and only then what the tree holds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum Why {
-    /// The module is in `disable`.
-    Disabled,
-    /// The config has a table for the module.
-    Configured,
-    /// The config turns detection off, and has no table for the module.
-    DetectionOff,
-    /// The module finds files to read in the tree.
-    Detected,
-    /// The module finds nothing to read in the tree.
-    NotDetected,
-}
-
-impl Why {
-    /// What [`Setup::runs`] decides, with the reason: the two are pinned against each other by a test.
-    fn of(setup: &Setup, name: &str, detected: bool) -> Self {
-        if setup.disable.iter().any(|off| off == name) {
-            Self::Disabled
-        } else if setup.module(name).is_some() {
-            Self::Configured
-        } else if !setup.detect {
-            Self::DetectionOff
-        } else if detected {
-            Self::Detected
-        } else {
-            Self::NotDetected
-        }
-    }
-
-    const fn is_on(self) -> bool {
-        matches!(self, Self::Configured | Self::Detected)
-    }
-
-    const fn words(self) -> &'static str {
-        match self {
-            Self::Disabled => "disabled",
-            Self::Configured => "in the config",
-            Self::DetectionOff => "detection is off",
-            Self::Detected => "detected",
-            Self::NotDetected => "not detected",
-        }
+/// The reason of a module as the text of `config show` says it.
+const fn words(reason: Reason) -> &'static str {
+    match reason {
+        Reason::Disabled => "disabled",
+        Reason::Configured => "in the config",
+        Reason::DetectionOff => "detection is off",
+        Reason::Detected => "detected",
+        Reason::NotDetected => "not detected",
     }
 }
 
@@ -96,7 +60,7 @@ impl Origin {
 struct ModuleLine {
     name: &'static str,
     on: bool,
-    why: Why,
+    why: Reason,
     /// The options as the config wrote them; `null` when it gives none and the module runs on its defaults.
     options: Value,
 }
@@ -143,8 +107,8 @@ impl Shown {
         let mut packs = Vec::new();
         for connector in registry.connectors() {
             let name = connector.meta().name;
-            let why = Why::of(setup, name, detected.contains(&name));
-            if why.is_on() {
+            let why = setup.reason(name, || detected.contains(&name));
+            if why.runs() {
                 let received = merge_packs(registry.packs(), setup, name);
                 packs.extend(received.into_iter().map(|pack| PackLine {
                     origin: origin_of(setup, &pack.language, &pack.name),
@@ -154,7 +118,7 @@ impl Shown {
             }
             modules.push(ModuleLine {
                 name,
-                on: why.is_on(),
+                on: why.runs(),
                 why,
                 options: setup.options(name).clone(),
             });
@@ -226,7 +190,7 @@ impl ModuleLine {
     /// `  ts: on (detected)`, and after it `, options {"tsconfig":"tsconfig.base.json"}` when the config gives some.
     fn line(&self) -> String {
         let state = if self.on { "on" } else { "off" };
-        let line = format!("  {}: {state} ({})", self.name, self.why.words());
+        let line = format!("  {}: {state} ({})", self.name, words(self.why));
         let none = self.options.is_null()
             || self
                 .options
@@ -277,40 +241,7 @@ impl fmt::Display for Shown {
 
 #[cfg(test)]
 mod tests {
-    use gsttt_core::setup::ModuleSetup;
-
     use super::*;
-
-    /// `Why` is the reason for what [`Setup::runs`] decides, whichever way the four facts it depends on fall.
-    #[test]
-    fn the_reason_agrees_with_what_the_setup_decides() {
-        for bits in 0..16_u8 {
-            let [disabled, listed, detect, detected] =
-                [0, 1, 2, 3].map(|bit| bits & (1 << bit) != 0);
-            let setup = Setup {
-                detect,
-                disable: if disabled {
-                    vec!["m".to_owned()]
-                } else {
-                    Vec::new()
-                },
-                modules: if listed {
-                    vec![ModuleSetup {
-                        module: "m".to_owned(),
-                        options: Value::Null,
-                    }]
-                } else {
-                    Vec::new()
-                },
-                ..Setup::default()
-            };
-            assert_eq!(
-                Why::of(&setup, "m", detected).is_on(),
-                setup.runs("m", || detected),
-                "disabled {disabled}, listed {listed}, detect {detect}, detected {detected}"
-            );
-        }
-    }
 
     #[test]
     fn a_module_line_shows_options_only_when_the_config_gives_some() {
@@ -318,7 +249,7 @@ mod tests {
             ModuleLine {
                 name: "ts",
                 on: true,
-                why: Why::Configured,
+                why: Reason::Configured,
                 options,
             }
             .line()

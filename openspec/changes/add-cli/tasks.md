@@ -27,6 +27,7 @@
 - [x] 5.2 Write the starter files with `init`
 - [x] 5.3 Print the session-start line through `session_line(header, now)`
 - [x] 5.4 Print the external protocol's schema with `schema external`
+- [x] 5.5 Give `Setup` the reason a module runs or not, which `Setup::runs` decides by as well, and print that reason in `config show` instead of an order of the command line's own
 
 ## 6. Panics
 
