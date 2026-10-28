@@ -4,14 +4,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use gsttt_mcp::{IndexSource, serve_on};
+use gsttt_mcp::{IndexSource, ServeError, serve_on};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ServerPeerInfo, Tool, object};
 use rmcp::service::{RunningService, ServiceError};
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::Value;
+use tokio::task::JoinHandle;
 
 /// How long a test waits for the server to do something it should do at once, before it calls the server stuck.
-const PATIENCE: Duration = Duration::from_secs(20);
+pub(crate) const PATIENCE: Duration = Duration::from_secs(20);
 
 /// What a tool call came back with when it came back as a result and not as a protocol error.
 #[derive(Debug)]
@@ -37,9 +38,19 @@ impl Reply {
     }
 }
 
+/// The answer to a call that was sent, once it has come.
+pub(crate) async fn answered(call: JoinHandle<Reply>) -> Reply {
+    tokio::time::timeout(PATIENCE, call)
+        .await
+        .expect("the server answers the call")
+        .expect("the call was answered, not abandoned")
+}
+
 /// A server running over the source it was given, and a client that has said hello to it.
 pub(crate) struct Session {
     client: RunningService<RoleClient, ()>,
+    /// The task that runs `serve_on`, which ends with what `serve` would return.
+    server: JoinHandle<Result<(), ServeError>>,
 }
 
 impl Session {
@@ -47,13 +58,21 @@ impl Session {
     pub(crate) async fn start(source: impl IndexSource) -> Self {
         let (client_end, server_end) = tokio::io::duplex(1 << 16);
         let (input, output) = tokio::io::split(server_end);
-        // The task ends with the test: the runtime drops it, and the server with it.
-        tokio::spawn(serve_on(source, input, output));
+        let server = tokio::spawn(serve_on(source, input, output));
         let client = tokio::time::timeout(PATIENCE, ().serve(client_end))
             .await
             .expect("the server answers initialize")
             .expect("the session opens");
-        Self { client }
+        Self { client, server }
+    }
+
+    /// Closes the client's end, which is the server's input, and returns what `serve` returned once it had.
+    pub(crate) async fn close(self) -> Result<(), ServeError> {
+        self.client.cancel().await.expect("the client closes");
+        tokio::time::timeout(PATIENCE, self.server)
+            .await
+            .expect("serve returns once its input has closed")
+            .expect("the task that runs the server was not cut short")
     }
 
     /// What the server said on `initialize`.
@@ -81,6 +100,37 @@ impl Session {
         tokio::time::timeout(PATIENCE, self.client.call_tool(params))
             .await
             .expect("the server answers the call")
+    }
+
+    /// Sends a call of `tool` and returns at once with the task that waits for its answer, so that the test can do
+    /// something else while the server works on it.
+    pub(crate) fn send(&self, tool: &str, arguments: &Value) -> JoinHandle<Reply> {
+        let peer = self.client.peer().clone();
+        let tool = tool.to_owned();
+        let params =
+            CallToolRequestParams::new(tool.clone()).with_arguments(object(arguments.clone()));
+        tokio::spawn(async move {
+            match peer.call_tool(params).await {
+                Ok(result) => Reply::of(&result),
+                Err(error) => panic!("`{tool}` was answered with a protocol error: {error}"),
+            }
+        })
+    }
+
+    /// Sends `count` calls of `tool` with the same `arguments` without waiting for any answer in between, and
+    /// returns the answers.
+    pub(crate) async fn call_together(
+        &self,
+        tool: &str,
+        arguments: &Value,
+        count: usize,
+    ) -> Vec<Reply> {
+        let sent: Vec<_> = (0..count).map(|_| self.send(tool, arguments)).collect();
+        let mut replies = Vec::with_capacity(count);
+        for call in sent {
+            replies.push(answered(call).await);
+        }
+        replies
     }
 
     /// Calls `tool` with no `arguments` member at all, and returns the result.

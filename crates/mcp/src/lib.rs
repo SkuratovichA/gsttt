@@ -7,6 +7,7 @@
 mod arguments;
 mod ask;
 mod error;
+mod gate;
 mod handler;
 mod serve;
 mod source;

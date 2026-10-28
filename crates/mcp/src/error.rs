@@ -50,4 +50,11 @@ pub(crate) enum ToolError {
     Source(#[from] SourceError),
     #[error("contract: {0}")]
     Contract(#[from] ContractLookupError),
+    /// The work behind the call did not finish: it panicked, or the runtime was shutting down. The cause is in the
+    /// log, and the model is told to ask again.
+    #[error(
+        "{tool}: the call stopped before it could answer; ask again, or run the same question on the gsttt command \
+         line to see why"
+    )]
+    Stopped { tool: ToolName },
 }

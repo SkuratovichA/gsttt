@@ -1,14 +1,19 @@
 //! A source over a fixed index that counts what it is asked and can be told to fail.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
 
 use gsttt_core::engine::changes::{Change, ChangeKind};
 use gsttt_core::path::PathError;
 use gsttt_core::{Freshness, Index, RepoPath};
 use gsttt_mcp::{IndexSource, Loaded, SourceError, Target};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::fixture::Tree;
+
+/// How many times a slow refresh gives up its turn on the processor while it waits for another call to arrive. It is
+/// the most a passing test waits, and it is long enough for calls sent together to be inside the source together.
+const LINGERS: usize = 50_000;
 
 /// A source the tests keep a handle to, so that they can read what the server asked after it has run. Clones share
 /// one set of counters.
@@ -27,6 +32,12 @@ struct Inner {
     changes: Vec<Change>,
     /// The failure every call ends in, when the source is down.
     failure: Option<String>,
+    /// Whether a refresh stays in progress until another call arrives, so that calls that overlap are seen to.
+    slow_refresh: bool,
+    /// Whether the next refresh panics. The one after it does not.
+    breaks_once: AtomicBool,
+    /// Where the first refresh waits until the test lets it go.
+    held: Option<Held>,
 
     /// Calls of any kind, failed ones included.
     calls: AtomicUsize,
@@ -57,6 +68,9 @@ impl Fake {
             missing: Vec::new(),
             changes: Vec::new(),
             failure: None,
+            slow_refresh: false,
+            breaks_once: AtomicBool::new(false),
+            held: None,
             calls: AtomicUsize::new(0),
             refreshes: AtomicUsize::new(0),
             stored_reads: AtomicUsize::new(0),
@@ -107,6 +121,32 @@ impl Fake {
             })
             .collect();
         self
+    }
+
+    /// A source whose refresh stays in progress until another call arrives, or until it is clear that none will.
+    /// With one call at a time it never sees another, so it only costs a moment; it is how a test gives a missing
+    /// lock time to show.
+    pub(crate) fn slow_refresh(mut self) -> Self {
+        self.inner().slow_refresh = true;
+        self
+    }
+
+    /// A source whose first refresh panics, as code behind a source may. Later refreshes answer.
+    pub(crate) fn breaking_once(self) -> Self {
+        self.0.breaks_once.store(true, Ordering::SeqCst);
+        self
+    }
+
+    /// A source whose first refresh stays in progress until the returned [`Hold`] lets it go.
+    pub(crate) fn holding_first_refresh(mut self) -> (Self, Hold) {
+        let (entered_tx, entered) = unbounded_channel();
+        let (release, release_rx) = mpsc::channel();
+        self.inner().held = Some(Held {
+            entered: entered_tx,
+            release: Mutex::new(release_rx),
+            used: AtomicBool::new(false),
+        });
+        (self, Hold { entered, release })
     }
 
     fn inner(&mut self) -> &mut Inner {
@@ -162,6 +202,48 @@ impl Fake {
     }
 }
 
+/// The source's end of a refresh that is held.
+#[derive(Debug)]
+struct Held {
+    entered: UnboundedSender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+    /// Whether a refresh has been held already: only the first is.
+    used: AtomicBool,
+}
+
+impl Held {
+    /// Tells the test that a refresh is in progress, and waits there until the test lets it go.
+    fn wait(&self) {
+        if self.used.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        self.entered.send(()).ok();
+        let release = self.release.lock().unwrap_or_else(PoisonError::into_inner);
+        release.recv().ok();
+    }
+}
+
+/// The test's end of a refresh that is held.
+#[derive(Debug)]
+pub(crate) struct Hold {
+    entered: UnboundedReceiver<()>,
+    release: mpsc::Sender<()>,
+}
+
+impl Hold {
+    /// Waits until the refresh is in progress and held.
+    pub(crate) async fn entered(&mut self) {
+        self.entered.recv().await.expect("a refresh was started");
+    }
+
+    /// Lets the held refresh go on.
+    pub(crate) fn release(&self) {
+        self.release
+            .send(())
+            .expect("the held refresh is waiting to be released");
+    }
+}
+
 /// One call in progress. Dropping it ends the call.
 struct Busy<'a>(&'a Inner);
 
@@ -177,6 +259,16 @@ impl Inner {
             None => Ok(busy),
         }
     }
+
+    /// Stays inside a call until a second call is inside too, or until the wait is over.
+    fn linger(&self) {
+        for _ in 0..LINGERS {
+            if self.active.load(Ordering::SeqCst) > 1 {
+                return;
+            }
+            std::thread::yield_now();
+        }
+    }
 }
 
 impl Drop for Busy<'_> {
@@ -188,7 +280,18 @@ impl Drop for Busy<'_> {
 impl IndexSource for Fake {
     fn refreshed(&self) -> Result<Loaded, SourceError> {
         let _busy = self.0.begin()?;
+        let breaks = self.0.breaks_once.swap(false, Ordering::SeqCst);
+        assert!(
+            !breaks,
+            "the code behind the source broke while it refreshed"
+        );
+        if let Some(held) = &self.0.held {
+            held.wait();
+        }
         self.0.refreshes.fetch_add(1, Ordering::SeqCst);
+        if self.0.slow_refresh {
+            self.0.linger();
+        }
         Ok(self.0.loaded.clone())
     }
 

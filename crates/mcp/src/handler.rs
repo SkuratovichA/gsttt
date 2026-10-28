@@ -16,6 +16,8 @@ use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
 
 use crate::arguments::Call;
 use crate::ask;
+use crate::error::ToolError;
+use crate::gate::{Gate, Stopped};
 use crate::source::IndexSource;
 use crate::tools::{self, ToolName};
 
@@ -29,12 +31,15 @@ what it covered and how fresh it is; when coverage names a gap, say so instead o
 /// The server: it answers `initialize` and `tools/list` from itself, and every other question through the source.
 pub(crate) struct Server<S> {
     source: Arc<S>,
+    /// Gives each tool call its turn at the source.
+    gate: Gate,
 }
 
 impl<S: IndexSource> Server<S> {
     pub(crate) fn new(source: S) -> Self {
         Self {
             source: Arc::new(source),
+            gate: Gate::default(),
         }
     }
 }
@@ -53,13 +58,17 @@ impl<S: IndexSource> Server<S> {
 
     /// Answers a call to one of the tools. A tool the server does not offer is a protocol error; everything that goes
     /// wrong in a known tool is a result with `isError` set, so that the model reads it and corrects the call.
-    fn answer(&self, request: CallToolRequestParams) -> Result<CallToolResponse, McpError> {
+    async fn answer(&self, request: CallToolRequestParams) -> Result<CallToolResponse, McpError> {
         let Some(tool) = ToolName::from_name(&request.name) else {
             return Err(unknown_tool(&request.name));
         };
         tracing::debug!(%tool, "tool call");
-        let reply = Call::read(tool, request.arguments)
-            .and_then(|call| ask::run(self.source.as_ref(), call));
+        // The arguments are read before the call waits for its turn, so that a call that is wrong from the start is
+        // told so at once and not after the refresh in front of it.
+        let reply = match Call::read(tool, request.arguments) {
+            Ok(call) => self.call_source(tool, call).await,
+            Err(error) => Err(error),
+        };
         let result = match reply {
             Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
             Err(error) => {
@@ -68,6 +77,16 @@ impl<S: IndexSource> Server<S> {
             }
         };
         Ok(CallToolResponse::Complete(result))
+    }
+
+    /// Puts `call` to the source: on a blocking thread, and with no other call in progress. The turn is the whole tool
+    /// call, so the paths it reads and the refresh that follows are not split by another call.
+    async fn call_source(&self, tool: ToolName, call: Call) -> Result<String, ToolError> {
+        let source = Arc::clone(&self.source);
+        match self.gate.run(move || ask::run(source.as_ref(), call)).await {
+            Ok(reply) => reply,
+            Err(Stopped) => Err(ToolError::Stopped { tool }),
+        }
     }
 }
 
@@ -91,7 +110,7 @@ impl<S: IndexSource> ServerHandler for Server<S> {
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResponse, McpError>> + MaybeSendFuture + '_ {
-        std::future::ready(self.answer(request))
+        self.answer(request)
     }
 }
 
