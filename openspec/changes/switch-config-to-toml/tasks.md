@@ -43,3 +43,4 @@
 - [x] 7.3 `Provide` refuses an unknown key, so a misspelt `blind_spot` fails at the line where it is written
 - [x] 7.4 A test pins that `read_source` checks the repository before the bound
 - [x] 7.5 A file name or a path is made fit for a line in every message that holds one, so that it cannot steer the terminal
+- [x] 7.6 `cut` never returns more than its limit, and leaves the mark out when it does not fit
