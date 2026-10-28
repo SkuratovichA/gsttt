@@ -32,3 +32,4 @@
 - [x] 5.7 The wrapper also looks for `gsttt` in the install directory
 - [x] 5.8 The session-start line is a note for the user, not an instruction to the model
 - [x] 5.10 The form of `skills` and of the inline hooks was settled with `claude plugin validate` (2.1.312), which accepts both as they are
+- [x] 5.9 The plugin README says that the install line needs a public repository, gives the `gh api` line for a private one, says that adding the marketplace needs git access, and says what the checksum guards against
