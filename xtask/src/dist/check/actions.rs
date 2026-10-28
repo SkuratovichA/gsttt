@@ -2,10 +2,12 @@
 //!
 //! The parsed YAML says which `uses` are real, and a scan of the lines says where they are. A scan of lines alone misses a `uses` in a flow mapping or behind a quoted key, and reports one in the text of a `run: |` script.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context as _;
 use serde_norway::{Mapping, Value};
+
+use crate::directory::{Entry, read_directory};
 
 /// Where the workflows are, from the repository root.
 const WORKFLOWS: &str = ".github/workflows";
@@ -30,33 +32,6 @@ pub(super) fn problems(root: &Path) -> anyhow::Result<Vec<String>> {
     Ok(problems)
 }
 
-/// A file or a directory found by [`read_directory`].
-struct Entry {
-    path: PathBuf,
-    is_directory: bool,
-}
-
-/// What is in `directory`, sorted by path, or `None` when there is no such directory.
-fn read_directory(directory: &Path) -> anyhow::Result<Option<Vec<Entry>>> {
-    let reader = match std::fs::read_dir(directory) {
-        Ok(reader) => reader,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(error).with_context(|| format!("cannot read {}", directory.display()));
-        }
-    };
-    let mut entries = Vec::new();
-    for entry in reader {
-        let entry = entry?;
-        entries.push(Entry {
-            path: entry.path(),
-            is_directory: entry.file_type()?.is_dir(),
-        });
-    }
-    entries.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(Some(entries))
-}
-
 fn is_yaml(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|extension| extension.to_str()),
@@ -68,7 +43,7 @@ fn is_yaml(path: &Path) -> bool {
 fn composite_actions(directory: &Path) -> anyhow::Result<Vec<Entry>> {
     let mut found = Vec::new();
     for entry in read_directory(directory)?.unwrap_or_default() {
-        if entry.is_directory {
+        if entry.kind.is_dir() {
             found.extend(composite_actions(&entry.path)?);
         } else if matches!(
             entry.path.file_name().and_then(|name| name.to_str()),

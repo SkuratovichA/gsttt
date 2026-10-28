@@ -17,10 +17,8 @@
 //! Anywhere else it proves nothing, and the gate says where it is.
 
 use std::collections::BTreeSet;
-use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
@@ -37,6 +35,7 @@ use syn::{
 };
 
 use super::workspace::{Target, Workspace, clean};
+use crate::directory::read_directory;
 
 /// Directories that hold material for tests, not tests: the attributes in them are no proofs.
 const LEFT_OUT: [&str; 2] = ["fixtures", "snapshots"];
@@ -311,32 +310,28 @@ fn read(path: &Path) -> anyhow::Result<String> {
 /// directories of other packages, which are members of their own or not ours at all. Without those,
 /// a package at the repository root would take every copy of the tree for its own.
 fn rust_files(dir: &Path, found: &mut Vec<PathBuf>) -> anyhow::Result<()> {
-    let listing = || format!("listing {}", dir.display());
-    let mut entries = fs::read_dir(dir)
-        .with_context(listing)?
-        .collect::<io::Result<Vec<_>>>()
-        .with_context(listing)?;
-    entries.sort_by_key(fs::DirEntry::file_name);
+    let entries = read_directory(dir)?
+        .with_context(|| format!("listing {}: there is no such directory", dir.display()))?;
     for entry in entries {
-        let path = entry.path();
-        // The type of the entry itself, so that a symbolic link is never followed into a cycle.
-        let kind = entry
-            .file_type()
-            .with_context(|| format!("reading the type of {}", path.display()))?;
-        if kind.is_dir() {
-            if !left_out(&entry.file_name(), &path) {
-                rust_files(&path, found)?;
+        if entry.kind.is_dir() {
+            if !left_out(&entry.path) {
+                rust_files(&entry.path, found)?;
             }
-        } else if kind.is_file() && path.extension().is_some_and(|extension| extension == "rs") {
-            found.push(path);
+        } else if entry.kind.is_file()
+            && entry
+                .path
+                .extension()
+                .is_some_and(|extension| extension == "rs")
+        {
+            found.push(entry.path);
         }
     }
     Ok(())
 }
 
 /// Whether the subdirectory `dir` of a package is no source of it.
-fn left_out(name: &OsStr, dir: &Path) -> bool {
-    let name = name.to_string_lossy();
+fn left_out(dir: &Path) -> bool {
+    let name = dir.file_name().unwrap_or_default().to_string_lossy();
     name.starts_with('.')
         || name == "target"
         || LEFT_OUT.iter().any(|left_out| name == *left_out)
