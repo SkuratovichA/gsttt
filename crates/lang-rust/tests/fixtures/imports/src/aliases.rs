@@ -1,5 +1,5 @@
-use crate::a;
+use crate::a::c as cc;
 
 fn build() {
-    a::c::Thing::new();
+    cc::Thing::new();
 }

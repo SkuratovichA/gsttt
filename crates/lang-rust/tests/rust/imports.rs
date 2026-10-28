@@ -64,7 +64,7 @@ fn test_files_are_tagged() {
 fn aliases_resolve_through_their_use() {
     let out = index("imports");
     assert_eq!(
-        out.to("src/aliases.rs", "a::c::Thing::new"),
+        out.to("src/aliases.rs", "cc::Thing::new"),
         json!({ "file": "src/a/c.rs" })
     );
 }
