@@ -594,7 +594,7 @@ mod tests {
     use crate::connector::Erased;
     use crate::contract::ContractKey;
     use crate::engine::changes::ChangeKind;
-    use crate::engine::testing::{Counters, Graphs, Notes, git, init_repo, write};
+    use crate::engine::testing::{Counters, Graphs, Notes, add_worktree, git, init_repo, write};
     use crate::fact::UnresolvedReason;
     use crate::setup::ModuleSetup;
 
@@ -665,25 +665,6 @@ mod tests {
     fn imports_of(index: &Index, path: &str) -> usize {
         let file = index.graph.file_id(path).unwrap();
         index.record(file).unwrap().imports.len()
-    }
-
-    /// A linked work tree of the repository in `dir`, on a new branch `name`. The directory it is in goes when the
-    /// first value does.
-    fn add_worktree(dir: &Path, name: &str) -> (tempfile::TempDir, Utf8PathBuf) {
-        let holder = tempfile::tempdir().unwrap();
-        let linked = holder.path().join(name);
-        git(
-            dir,
-            &[
-                "worktree",
-                "add",
-                "-q",
-                "-b",
-                name,
-                linked.to_str().unwrap(),
-            ],
-        );
-        (holder, Utf8PathBuf::from_path_buf(linked).unwrap())
     }
 
     fn pack(name: &str, language: &str, detect: &str) -> Pack {

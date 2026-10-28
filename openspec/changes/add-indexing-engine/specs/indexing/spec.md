@@ -20,11 +20,19 @@ The engine SHALL find the work tree root, the git dir and the common dir from an
 - **AND** the state dir is `/c/gsttt/<hex hash of the root path>`
 
 ### Requirement: File set
-The engine SHALL index the tracked files present in the work tree, conflicted ones included, and the untracked files git does not ignore, SHALL leave out submodules, symbolic links, skip-worktree entries and files matching `Setup.exclude`, and SHALL number files in path order.
+The engine SHALL index the tracked files present in the work tree, conflicted ones included, and the untracked files git does not ignore, judged by the repository's own settings (every `.gitignore`, `info/exclude`, `core.excludesFile` and `core.ignorecase`), SHALL leave out submodules, symbolic links, skip-worktree entries, files matching `Setup.exclude` and untracked directories the process cannot open, and SHALL number files in path order.
 
 #### Scenario: Ignored, excluded and linked files stay out
 - **WHEN** a repository has a committed `src/a.ts`, an untracked `src/new.ts`, `dist/a.js` ignored by `.gitignore`, `vendor/b.ts` matching `exclude = ["vendor/**"]` and a symbolic link `link.ts`
 - **THEN** the index holds `src/a.ts` and `src/new.ts` and nothing else
+
+#### Scenario: Git's own ignore settings apply
+- **WHEN** a repository sets `core.excludesFile` to a file listing `*.skip` and `core.ignorecase` to true, its `.gitignore` lists `Build/`, and it has an untracked `src/b.skip` and an untracked `build/out.js`
+- **THEN** the index holds neither of them
+
+#### Scenario: An untracked directory that cannot be read is left out
+- **WHEN** an untracked directory cannot be opened by the process
+- **THEN** the index holds the other files and none of that directory's
 
 #### Scenario: A deleted tracked file is gone
 - **WHEN** a committed file is removed from the work tree without a commit

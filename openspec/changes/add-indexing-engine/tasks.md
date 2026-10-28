@@ -42,3 +42,4 @@
 - [x] 5.13 `quiet_contained_panics` installs a panic hook that is silent about the panics the engine contains, on any thread, and passes every other panic to the hook before it
 - [x] 5.14 `connector::salt_of` makes a project salt out of text in the framing of the fact keys, the project root is part of every fact key whatever the salt holds, and the `Project::salt` doc says what the salt covers on top of the key
 - [x] 5.15 The build time in the snapshot header is printed by `jiff` in place of a hand-written calendar
+- [x] 5.16 The untracked files are listed by `gix`'s directory walk, so the repository's own ignore settings (`core.excludesFile`, `core.ignorecase`, `info/exclude`) apply and the walk no longer copies the loop of `RepoView::scan`; an untracked directory that cannot be opened is left out; the unused `status` and `blob-diff` features of `gix` are gone

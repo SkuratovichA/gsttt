@@ -14,14 +14,18 @@
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs::{self, Metadata};
+use std::ops::ControlFlow;
+use std::sync::atomic::AtomicBool;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use camino::{Utf8Path, Utf8PathBuf};
+use gix::dir::entry::{Kind as DiskKind, Status as WalkStatus};
+use gix::dir::walk::{Action, Delegate, ForDeletionMode};
 use gix::index::entry::{Flags, Mode, Stat, stat};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use rayon::prelude::*;
 
-use super::workspace::{GitDirs, Workspace};
+use super::workspace::Workspace;
 use crate::path::RepoPath;
 use crate::repo::RepoView;
 
@@ -198,9 +202,10 @@ pub fn scan(
     previous: &(dyn Fn(&RepoPath) -> Option<Stamp> + Sync),
 ) -> Result<Vec<FileState>, FilesError> {
     let excluder = Excluder::new(workspace.root(), exclude)?;
-    let mut states = match workspace.git() {
-        Some(git) => scan_git(workspace.root(), git, &excluder, max_file_bytes, previous)?,
-        None => scan_plain(workspace.root(), &excluder, max_file_bytes, previous)?,
+    let mut states = if workspace.git().is_some() {
+        scan_git(workspace.root(), &excluder, max_file_bytes, previous)?
+    } else {
+        scan_plain(workspace.root(), &excluder, max_file_bytes, previous)?
     };
     states.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     Ok(states)
@@ -222,7 +227,6 @@ struct Tracked {
 
 fn scan_git(
     root: &Utf8Path,
-    git: &GitDirs,
     excluder: &Excluder,
     max_file_bytes: u64,
     previous: &(dyn Fn(&RepoPath) -> Option<Stamp> + Sync),
@@ -271,7 +275,7 @@ fn scan_git(
         known.insert(path);
     }
     candidates.extend(
-        walk_untracked(root, git, &known)
+        walk_untracked(root, &repo, &index, &known)?
             .into_iter()
             .map(|path| (path, None)),
     );
@@ -302,53 +306,79 @@ fn scan_git(
         .collect())
 }
 
-/// The files under `root` that the index does not know and git does not ignore.
-fn walk_untracked(root: &Utf8Path, git: &GitDirs, known: &HashSet<RepoPath>) -> Vec<RepoPath> {
-    let mut builder = ignore::WalkBuilder::new(root);
-    builder
-        .hidden(false)
-        .parents(false)
-        .ignore(false)
-        .git_ignore(true)
-        .git_global(true)
-        // A linked work tree has no `.git/info`, so the shared one is added by hand below.
-        .git_exclude(false)
-        .require_git(false)
-        .follow_links(false)
-        .filter_entry(|entry| entry.file_name() != ".git" && !is_nested_repo(entry));
-    // A missing exclude file is the common case, so a failure here is a debug line and not an error.
-    if let Some(error) = builder.add_ignore(git.common_dir.join("info").join("exclude")) {
-        tracing::debug!(%error, "the shared exclude file was not read");
-    }
-
-    let mut found = Vec::new();
-    for entry in builder.build() {
-        let Ok(entry) = entry else {
-            continue;
-        };
-        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-            continue;
-        }
-        let relative = entry
-            .path()
-            .strip_prefix(root.as_std_path())
-            .ok()
-            .and_then(|relative| relative.to_str());
-        let Some(path) = relative.and_then(|relative| RepoPath::normalize(relative).ok()) else {
-            continue;
-        };
-        if !known.contains(&path) {
-            found.push(path);
-        }
-    }
-    found
+/// The files under `root` that the index does not know and git does not ignore, by git's own rules: the
+/// `.gitignore` of every directory, `info/exclude` of the common directory, `core.excludesFile` and
+/// `core.ignorecase`. A directory with a `.git` of its own is a submodule or a nested repository and is not
+/// entered. A tracked directory that cannot be read fails the walk.
+fn walk_untracked(
+    root: &Utf8Path,
+    repo: &gix::Repository,
+    index: &gix::index::State,
+    known: &HashSet<RepoPath>,
+) -> Result<Vec<RepoPath>, FilesError> {
+    let list_error = |error: gix::Error| FilesError::List {
+        root: root.to_owned(),
+        message: error.to_string(),
+    };
+    let options = repo.dirwalk_options().map_err(list_error)?;
+    let mut found = Untracked {
+        root,
+        known,
+        files: Vec::new(),
+    };
+    repo.dirwalk(
+        index,
+        None::<&gix::bstr::BStr>,
+        &AtomicBool::new(false),
+        options,
+        &mut found,
+    )
+    .map_err(list_error)?;
+    Ok(found.files)
 }
 
-/// A directory with its own `.git` is a submodule or a nested repository, which are not part of this tree.
-fn is_nested_repo(entry: &ignore::DirEntry) -> bool {
-    entry.depth() > 0
-        && entry.file_type().is_some_and(|kind| kind.is_dir())
-        && entry.path().join(".git").exists()
+/// Takes the untracked files of a directory walk that are not known to the index.
+struct Untracked<'k> {
+    root: &'k Utf8Path,
+    known: &'k HashSet<RepoPath>,
+    files: Vec<RepoPath>,
+}
+
+impl Delegate for Untracked<'_> {
+    /// The directories git enters, less the untracked ones that cannot be opened: the walk stops with an error at
+    /// the first directory it cannot read, where git prints a warning and goes on.
+    fn can_recurse(
+        &mut self,
+        entry: gix::dir::EntryRef<'_>,
+        for_deletion: Option<ForDeletionMode>,
+        worktree_root_is_repository: bool,
+    ) -> bool {
+        entry.status.can_recurse(
+            entry.disk_kind,
+            entry.pathspec_match,
+            for_deletion,
+            worktree_root_is_repository,
+        ) && (entry.status != WalkStatus::Untracked
+            || std::str::from_utf8(&entry.rela_path)
+                .is_ok_and(|path| fs::read_dir(self.root.join(path)).is_ok()))
+    }
+
+    fn emit(
+        &mut self,
+        entry: gix::dir::EntryRef<'_>,
+        _collapsed_directory_status: Option<WalkStatus>,
+    ) -> Action {
+        // A symbolic link or a nested repository is not a file of this tree, and an ignored entry is never emitted.
+        if entry.status == WalkStatus::Untracked && entry.disk_kind == Some(DiskKind::File) {
+            let path = std::str::from_utf8(&entry.rela_path)
+                .ok()
+                .and_then(|text| RepoPath::normalize(text).ok());
+            if let Some(path) = path.filter(|path| !self.known.contains(path)) {
+                self.files.push(path);
+            }
+        }
+        ControlFlow::Continue(())
+    }
 }
 
 fn scan_plain(
@@ -440,7 +470,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::engine::testing::{git, init_repo, merge_with_conflict, write};
+    use crate::engine::testing::{add_worktree, git, init_repo, merge_with_conflict, write};
 
     fn scan_dir(dir: &Path, exclude: &[&str]) -> Vec<FileState> {
         scan_limited(dir, exclude, u64::MAX)
@@ -470,6 +500,88 @@ mod tests {
 
         let states = scan_dir(dir.path(), &["vendor/**"]);
 
+        assert_eq!(paths(&states), ["src/a.ts", "src/new.ts"]);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "Git's own ignore settings apply")]
+    #[test]
+    fn the_ignore_settings_of_the_repository_apply() {
+        let dir = init_repo(&[("src/a.ts", "a")]);
+        let excludes = dir.path().join(".git").join("personal-excludes");
+        fs::write(&excludes, "*.skip\n").unwrap();
+        git(
+            dir.path(),
+            &["config", "core.excludesFile", excludes.to_str().unwrap()],
+        );
+        git(dir.path(), &["config", "core.ignorecase", "true"]);
+        // Untracked, and ignoring itself so that it is not a file of the set either. The pattern differs from the
+        // directory in case.
+        write(dir.path(), ".gitignore", "Build/\n.gitignore\n");
+        write(dir.path(), "src/new.ts", "new");
+        write(dir.path(), "src/b.skip", "skipped");
+        write(dir.path(), "build/out.js", "built");
+
+        let states = scan_dir(dir.path(), &[]);
+
+        assert_eq!(paths(&states), ["src/a.ts", "src/new.ts"]);
+    }
+
+    #[test]
+    fn the_exclude_file_of_the_repository_reaches_a_linked_work_tree() {
+        let dir = init_repo(&[("src/a.ts", "a")]);
+        fs::create_dir_all(dir.path().join(".git").join("info")).unwrap();
+        fs::write(
+            dir.path().join(".git").join("info").join("exclude"),
+            "*.local\n",
+        )
+        .unwrap();
+        let (_holder, linked) = add_worktree(dir.path(), "feature");
+        write(linked.as_std_path(), "src/b.local", "local");
+        write(linked.as_std_path(), "src/c.ts", "c");
+
+        let states = scan_dir(linked.as_std_path(), &[]);
+
+        assert_eq!(paths(&states), ["src/a.ts", "src/c.ts"]);
+    }
+
+    #[test]
+    fn a_nested_repository_is_not_entered() {
+        let dir = init_repo(&[("src/a.ts", "a")]);
+        write(dir.path(), "vendor/lib/x.ts", "x");
+        git(
+            &dir.path().join("vendor").join("lib"),
+            &["init", "-q", "-b", "main"],
+        );
+        write(dir.path(), "src/new.ts", "new");
+
+        let states = scan_dir(dir.path(), &[]);
+
+        assert_eq!(paths(&states), ["src/a.ts", "src/new.ts"]);
+    }
+
+    #[cfg(unix)]
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "An untracked directory that cannot be read is left out"
+    )]
+    #[test]
+    fn an_untracked_directory_that_cannot_be_read_is_left_out() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = init_repo(&[("src/a.ts", "a")]);
+        write(dir.path(), "src/new.ts", "new");
+        write(dir.path(), "locked/b.ts", "b");
+        let locked = dir.path().join("locked");
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        // A process that can read the directory anyway cannot show that it was left out.
+        if fs::read_dir(&locked).is_ok() {
+            return;
+        }
+
+        let states = scan_dir(dir.path(), &[]);
+
+        // The directory has to be readable again for the temporary directory to be removed.
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(paths(&states), ["src/a.ts", "src/new.ts"]);
     }
 

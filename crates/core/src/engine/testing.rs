@@ -75,6 +75,25 @@ pub(crate) fn init_repo(files: &[(&str, &str)]) -> tempfile::TempDir {
     dir
 }
 
+/// A linked work tree of the repository in `dir`, on a new branch `name`. The directory it is in goes when the
+/// first value does.
+pub(crate) fn add_worktree(dir: &Path, name: &str) -> (tempfile::TempDir, Utf8PathBuf) {
+    let holder = tempfile::tempdir().unwrap();
+    let linked = holder.path().join(name);
+    git(
+        dir,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            name,
+            linked.to_str().unwrap(),
+        ],
+    );
+    (holder, Utf8PathBuf::from_path_buf(linked).unwrap())
+}
+
 /// How often the calls of a [`Notes`] connector ran.
 #[derive(Debug)]
 pub(crate) struct Counters {

@@ -12,7 +12,7 @@ publish.workspace = true
 camino = { workspace = true, features = ["serde1"] }
 fixedbitset.workspace = true
 foldhash.workspace = true
-gix = { workspace = true, features = ["sha1", "status", "dirwalk", "revision", "blob-diff", "parallel"] }
+gix = { workspace = true, features = ["sha1", "dirwalk", "revision", "parallel"] }
 globset.workspace = true
 ignore.workspace = true
 jiff.workspace = true
