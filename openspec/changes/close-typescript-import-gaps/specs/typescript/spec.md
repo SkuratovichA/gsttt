@@ -67,7 +67,7 @@ A chain rule SHALL read a chain that starts at a name bound by `const <name> = t
 - **AND** `src/consistent.ts` calls `table tenant` at line 8 and `table booking` at line 13
 
 ### Requirement: Roots by type
-A chain rule MAY list root types. A parameter, a variable or a class property declared with one of them, alone, in a union or as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, SHALL then start a chain of the rule, and a constructor parameter with a modifier SHALL start one as `this.<name>` too. A name or a property that the file also declares anywhere in it with another type, or with none, SHALL start no chain. The `prisma` pack lists `PrismaClient`, `PrismaService` and `Prisma.TransactionClient`.
+A chain rule MAY list root types. A parameter, a variable or a class property declared with one of them, alone, in a union or as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, SHALL then start a chain of the rule, and a constructor parameter with a modifier SHALL start one as `this.<name>` too. The `prisma` pack lists `PrismaClient`, `PrismaService` and `Prisma.TransactionClient`.
 
 #### Scenario: A parameter typed as a pick of the client is a root
 - **WHEN** `src/tenants.ts` has `import type { Prisma } from '@prisma/client'`, a function with the parameter `reader: Pick<Prisma.TransactionClient, 'tenant' | 'tenantBranch'>` that calls `reader.tenant.findUnique()` on line 4 and `reader.tenantBranch.findMany()` on line 5, and a function with the parameter `options: { tenant: { findFirst(): void } }` that calls `options.tenant.findFirst()`, and `src/tenants.test.ts` has `const mockPrisma = { tenant: { findFirst: vi.fn() } }` and calls `mockPrisma.tenant.findFirst()`
@@ -78,6 +78,9 @@ A chain rule MAY list root types. A parameter, a variable or a class property de
 - **WHEN** `src/invoices.ts` has a class with the property `private readonly client: PrismaClient` and the constructor `constructor(private readonly store: PrismaService, plain: PrismaService)`, whose methods call `this.store.invoice.findMany()` on line 12, `this.client.payment.findUnique()` on line 16 and `this.plain.refund.findMany()` on line 20, and a function with the parameter `client: PrismaClient | null` that calls `client.booking.count()` on line 25
 - **THEN** the file calls `table invoice` at line 12, `table payment` at line 16 and `table booking` at line 25
 - **AND** the call on `this.plain` names no table, because a constructor parameter without a modifier is no property
+
+### Requirement: A root needs every binding to agree
+A name or a property that the file also declares anywhere in it with another type, or with none, SHALL start no chain, because a root holds for the whole file and not for one scope.
 
 #### Scenario: A name declared with another type is no root
 - **WHEN** `src/names.ts` has a function with the parameter `tx2: Pick<Prisma.TransactionClient, 'tenant'>` and a function with the parameter `tx2: { tenant: { findFirst(): void } }`, and both call `tx2.tenant.findFirst()`
@@ -108,7 +111,7 @@ A `type` alias of the same file SHALL be read as the type it defines, through an
 - **AND** `src/fan-out.ts` calls no table, and the project is indexed without waiting on `Wide`
 
 ### Requirement: Local types shadow root types
-A name that the file declares itself, as a `type` alias, an `interface`, a `class` or an `enum`, SHALL be that local type and never the root type of a pack with the same name. A local `type` alias SHALL be read as the type it defines, which may be a root type, and an `interface`, a `class` or an `enum` SHALL be no root type. Only a name that the file does not declare SHALL be checked against the root types. A root type imported under another name, a root type reached through a namespace import under another name, and an intersection with a root type SHALL NOT be read as a root type.
+A name that the file declares itself, as a `type` alias, an `interface`, a `class` or an `enum`, SHALL be that local type and never the root type of a pack with the same name. A local `type` alias SHALL be read as the type it defines, which may be a root type, and an `interface`, a `class` or an `enum` SHALL be no root type. Only a name that the file does not declare SHALL be checked against the root types.
 
 #### Scenario: A local type shadows a root type
 - **WHEN** `src/alias.ts` has `type PrismaClient = { tenant: { findFirst(): void } }`, `src/interface.ts` has an `interface PrismaClient`, `src/class.ts` has a `class PrismaService`, `src/enum.ts` has an `enum PrismaClient`, and each of the four has a function with a parameter of that type that calls `.tenant.findFirst()` on it
@@ -116,18 +119,21 @@ A name that the file declares itself, as a `type` alias, an `interface`, a `clas
 - **THEN** `src/alias-of-root.ts` calls `table tenant` at line 6
 - **AND** the other four files call no table
 
+### Requirement: Renamed and combined root types are not read
+A root type imported under another name, a root type reached through a namespace import under another name, and an intersection with a root type SHALL NOT be read as a root type.
+
 #### Scenario: A renamed or combined client type is no root
 - **WHEN** `src/renamed.ts` has `import type { PrismaClient as Base } from '@prisma/client'` and a parameter `client: Base`, `src/namespaced.ts` has `import type { Prisma as P } from '@prisma/client'` and a parameter `reader: P.TransactionClient`, and `src/intersected.ts` has `import type { PrismaClient } from '@prisma/client'` and a parameter `client: PrismaClient & { extra: true }`, each of them calling `.tenant.findFirst()` on its parameter
 - **THEN** the three files call no table
 
 ### Requirement: Imported model types
-A pack MAY name a contract for each name a file takes from a package. With the `prisma` pack, a name imported or re-exported by name from `@prisma/client` SHALL call the table of that name at the line of the import, as the package exports it and not as the file renames it, except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`. A namespace import, a default import, a side-effect import and `export *` SHALL name nothing. An import type `import('@prisma/client').Tenant` SHALL be read as the import of the first name of its qualifier is, at the line of its specifier, and one without a qualifier SHALL name nothing. Only a name taken from a package that `from` lists SHALL be read, so the model types of a client generated to a custom `output` path, or of a package that re-exports the client with `export * from '@prisma/client'`, SHALL name no table. An enum imported by name SHALL be read as a table of that name, because the import does not say which names are models.
+A pack MAY name a contract for each name a file takes from a package. With the `prisma` pack, a name imported or re-exported by name from `@prisma/client` SHALL call the table of that name at the line of the import, as the package exports it and not as the file renames it, except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`. A namespace import, a default import, a side-effect import and `export *` SHALL name nothing.
 
 #### Scenario: An imported model type calls its table
 - **WHEN** `src/models.ts` has `import type { Tenant, TenantBranch as Branch, Prisma, PrismaClient } from '@prisma/client'` over lines 1 to 6 and `import { BookingStatus } from '@prisma/client'` on line 7
 - **THEN** the file calls `table tenant` and `table tenantbranch` at line 1
 - **AND** `Prisma` and `PrismaClient` name no table
-- **AND** the file calls `table bookingstatus` at line 7, because the import does not say whether a name is a model or an enum
+- **AND** the file calls `table bookingstatus` at line 7, because the import does not say whether a name is a model or an enum, so an enum reads as a table that no model declares
 
 #### Scenario: A re-exported model type calls its table
 - **WHEN** `src/models.ts` has `export type { Tenant, Prisma } from '@prisma/client'` on line 1
@@ -135,15 +141,21 @@ A pack MAY name a contract for each name a file takes from a package. With the `
 - **THEN** `src/models.ts` calls `table tenant` at line 1 and no other table
 - **AND** `src/renamed.ts` calls `table tenant` at line 1 and not `table t`, because the table is named as the package exports the model and not as the file renames it
 
+#### Scenario: A namespace import of the client names nothing
+- **WHEN** `src/client.ts` has `import * as client from '@prisma/client'`, a default import of it, `import { default as other } from '@prisma/client'`, `import '@prisma/client'`, `export * from '@prisma/client'`, `export * as models from '@prisma/client'` and `export { default as Client } from '@prisma/client'`
+- **THEN** the file calls no table
+
+### Requirement: Import types reach the import rules
+An import type `import('@prisma/client').Tenant` SHALL be read as the import of the first name of its qualifier is, at the line of its specifier, and one without a qualifier SHALL name nothing.
+
 #### Scenario: An import type reaches the import rules
 - **WHEN** `src/types.ts` has `import('@prisma/client').Tenant` on line 1, `import('@prisma/client').TenantBranch[]` on line 2, `import('@prisma/client').Prisma.TenantWhereInput`, `import('@prisma/client').PrismaClient`, `typeof import('@prisma/client')` and `import('ui-kit').Tenant`
 - **AND** `src/declared.ts` has `import type { Tenant } from '@prisma/client'` on line 1
 - **THEN** `src/types.ts` calls `table tenant` at line 1 and `table tenantbranch` at line 2 and no other table
 - **AND** `src/declared.ts` calls `table tenant` at line 1, as the import type does
 
-#### Scenario: A namespace import of the client names nothing
-- **WHEN** `src/client.ts` has `import * as client from '@prisma/client'`, a default import of it, `import { default as other } from '@prisma/client'`, `import '@prisma/client'`, `export * from '@prisma/client'`, `export * as models from '@prisma/client'` and `export { default as Client } from '@prisma/client'`
-- **THEN** the file calls no table
+### Requirement: Model types of other packages
+A name taken from a package that `from` does not list SHALL name nothing, so the model types of a client generated to a custom `output` path, or of a package that re-exports the client with `export * from '@prisma/client'`, SHALL name no table.
 
 #### Scenario: A model type taken from another package names nothing
 - **WHEN** `src/custom-output.ts` has `import type { Tenant } from '../generated/prisma'`, a client generated to `generated/prisma`, and `src/shared.ts` has `import type { Booking } from '@acme/db'`, a package that re-exports the client with `export * from '@prisma/client'`

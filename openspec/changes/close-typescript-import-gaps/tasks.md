@@ -31,3 +31,4 @@
 - [x] 3.9 The name of a class property and its key `this.<name>` are read by two helpers of `shape.rs` that the roots and the makers both use; the two collectors stay two walks, because their gates, the subtrees they skip and what they return differ
 - [x] 3.10 The first argument of `jest.setMock`, `jest.createMockFromModule` and `jest.genMockFromModule` is a dynamic import, as it is for the other mock calls
 - [x] 3.11 A name taken from a package that `from` does not list names nothing, which the tests pin with a client generated to a custom `output` path and with a package that re-exports the client
+- [x] 3.12 No requirement of the TypeScript spec has more than 500 characters of text: the consistency of a root, the root types that are not read, the import types and the model types of other packages are requirements of their own, with the scenarios they had
