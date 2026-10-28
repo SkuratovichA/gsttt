@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 gsttt-core.workspace = true
 apollo-parser.workspace = true
+globset.workspace = true
 jsonc-parser.workspace = true
 protox-parse.workspace = true
 saphyr.workspace = true
@@ -25,6 +26,7 @@ tracing.workspace = true
 gsttt-config.workspace = true
 gsttt-scenario.workspace = true
 insta.workspace = true
+proptest.workspace = true
 tempfile.workspace = true
 
 [lints]

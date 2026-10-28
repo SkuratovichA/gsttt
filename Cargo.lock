@@ -1832,11 +1832,13 @@ name = "gsttt-contracts"
 version = "0.1.0"
 dependencies = [
  "apollo-parser",
+ "globset",
  "gsttt-config",
  "gsttt-core",
  "gsttt-scenario",
  "insta",
  "jsonc-parser",
+ "proptest",
  "protox-parse",
  "saphyr",
  "schemars",
