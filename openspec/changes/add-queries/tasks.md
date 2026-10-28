@@ -33,3 +33,4 @@
 - [x] 5.6 Possible misses are ordered by path, line and specifier, and so are the unresolved imports of one file, whatever order the connector listed the imports in
 - [x] 5.7 The share of resolved imports is computed from the counts as a whole percentage rounded down, so that 29 of 100 reads `29%`, and the JSON footer carries the count behind it
 - [x] 5.8 `impact` and `path` cross a contract with one function that takes the direction, and a path hop over a `mod` declaration is named from the edge and the label the dependents use
+- [x] 5.9 The architecture document words an empty answer as the spec does
