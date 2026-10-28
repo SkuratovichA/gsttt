@@ -3,12 +3,12 @@
 ## 1. Checks
 
 - [ ] 1.1 `ci.yml` checks on Linux, actions pinned by commit, the OpenSpec CLI pinned through `pnpm dlx`
-- [ ] 1.2 `cargo xtask check`: action pins, plugin manifests and the paths they name
+- [x] 1.2 `cargo xtask check`: action pins, plugin manifests and the paths they name
 
 ## 2. Releases
 
 - [ ] 2.1 `cargo xtask version`, and the version written into the release build
-- [ ] 2.2 `cargo xtask package` and `cargo xtask notes`
+- [x] 2.2 `cargo xtask package` and `cargo xtask notes`
 - [ ] 2.3 Release jobs: four targets, packages, checksums, the GitHub release; no release from the archive workflow's pushes
 - [ ] 2.4 `install.sh` with `gh` and `curl`, checksum verification and the overrides
 
