@@ -284,22 +284,33 @@ fn read(name: &str, text: &str) -> Result<Read, SyntaxError> {
                 continue;
             };
             for (o, option) in options.uninterpreted_option.iter().enumerate() {
-                let is_http_rule = matches!(
-                    option.name.as_slice(),
-                    [part] if part.is_extension && part.name_part.trim_start_matches('.') == "google.api.http"
-                );
-                let Some(rule) = option.aggregate_value.as_deref().filter(|_| is_http_rule) else {
+                let Some((extension, field)) = option.name.split_first() else {
                     continue;
+                };
+                if !extension.is_extension
+                    || extension.name_part.trim_start_matches('.') != "google.api.http"
+                {
+                    continue;
+                }
+                let field = match field {
+                    [] => None,
+                    [one] => Some(one.name_part.as_str()),
+                    _ => continue,
                 };
                 // The option statement itself when the descriptor locates it, the rpc otherwise.
                 let line = i32::try_from(o)
                     .ok()
                     .and_then(|o| line_at(&[6, s, 2, m, 4, 999, o]))
                     .unwrap_or(rpc_line);
-                for binding in bindings(rule) {
+                let found = option_bindings(
+                    field,
+                    option.aggregate_value.as_deref(),
+                    option.string_value.as_deref(),
+                );
+                for binding in found {
                     read.facts.push(http_site(
                         &binding.method,
-                        &binding.path,
+                        &variables_as_parameters(&binding.path),
                         Role::Declares,
                         line,
                         VIA,
@@ -334,15 +345,64 @@ enum Field {
     Message(Vec<(String, Field)>),
 }
 
-/// The bindings of a rule in the text format the parser keeps it in: `get : "/v1/a" additional_bindings { post :
-/// "/v1/b" }`. Only the shapes of the `HttpRule` message are read; anything else in it is skipped.
-fn bindings(rule: &str) -> Vec<Binding> {
-    let tokens = tokenize(rule);
-    let mut at = 0;
-    let fields = read_fields(&tokens, &mut at, 0);
+/// The bindings one `option (google.api.http)` statement sets. The parser keeps `= { get: "/a" }` as the text of the
+/// rule, and `.get = "/a"`, which sets one field of the rule, as the name of the field with its value: the bytes of
+/// a string or, for a message field, its text.
+fn option_bindings(
+    field: Option<&str>,
+    message: Option<&str>,
+    text: Option<&[u8]>,
+) -> Vec<Binding> {
+    let fields = match (field, message, text) {
+        (None, Some(rule), _) => return bindings(rule),
+        (Some(name), Some(rule), _) => {
+            vec![(name.to_owned(), Field::Message(fields_of(rule)))]
+        }
+        (Some(name), None, Some(path)) => vec![(
+            name.to_owned(),
+            Field::Text(String::from_utf8_lossy(path).into_owned()),
+        )],
+        _ => return Vec::new(),
+    };
     let mut found = Vec::new();
     collect_bindings(&fields, &mut found);
     found
+}
+
+/// The bindings of a rule in the text format the parser keeps it in: `get : "/v1/a" additional_bindings { post :
+/// "/v1/b" }`. Only the shapes of the `HttpRule` message are read; anything else in it is skipped.
+fn bindings(rule: &str) -> Vec<Binding> {
+    let mut found = Vec::new();
+    collect_bindings(&fields_of(rule), &mut found);
+    found
+}
+
+fn fields_of(rule: &str) -> Vec<(String, Field)> {
+    let tokens = tokenize(rule);
+    let mut at = 0;
+    read_fields(&tokens, &mut at, 0)
+}
+
+/// A path template with each variable, `{id}` or `{name=projects/*}`, written as the `{}` of a parameter in a key. The
+/// shared normaliser reads a segment as a parameter only when it is one whole variable, and neither `{id}:cancel`
+/// nor a variable that spans several segments is.
+fn variables_as_parameters(template: &str) -> String {
+    let mut path = String::with_capacity(template.len());
+    let mut depth = 0_usize;
+    for c in template.chars() {
+        match c {
+            '{' => {
+                if depth == 0 {
+                    path.push_str("{}");
+                }
+                depth = depth.saturating_add(1);
+            }
+            '}' if depth > 0 => depth = depth.saturating_sub(1),
+            _ if depth == 0 => path.push(c),
+            _ => {}
+        }
+    }
+    path
 }
 
 fn tokenize(text: &str) -> Vec<Token> {
@@ -477,6 +537,7 @@ fn text_of<'a>(fields: &'a [(String, Field)], key: &str) -> Option<&'a str> {
 
 #[cfg(test)]
 mod tests {
+    use gsttt_core::contract::ContractKey;
     use proptest::prelude::*;
 
     use super::*;
@@ -511,6 +572,68 @@ mod tests {
         );
     }
 
+    /// The HTTP keys of the one rpc that `option` is written in.
+    fn http_keys(option: &str) -> Vec<ContractKey> {
+        let text = format!(
+            "syntax = \"proto3\";\npackage a.v1;\nservice S {{ rpc M(E) returns (E) {{ {option} }} }}\nmessage E {{}}\n"
+        );
+        read("a.proto", &text)
+            .unwrap()
+            .facts
+            .into_iter()
+            .map(|fact| fact.key)
+            .filter(|key| *key.kind() == ContractKind::Http)
+            .collect()
+    }
+
+    #[test]
+    fn a_variable_and_the_verb_after_it_are_one_parameter() {
+        // A client writes the same route as `/v1/things/${id}:cancel`.
+        assert_eq!(
+            http_keys(r#"option (google.api.http) = { post: "/v1/things/{id}:cancel" };"#),
+            vec![ContractKey::http("POST", "/v1/things/${id}:cancel")]
+        );
+    }
+
+    #[test]
+    fn a_variable_that_spans_segments_is_one_parameter() {
+        assert_eq!(
+            http_keys(
+                r#"option (google.api.http) = { get: "/v1/{parent=projects/*/locations/*}/things" };"#
+            ),
+            vec![ContractKey::http("GET", "/v1/${parent}/things")]
+        );
+    }
+
+    #[test]
+    fn a_binding_set_one_field_at_a_time_is_read() {
+        assert_eq!(
+            http_keys(
+                r#"option (google.api.http).get = "/v1/things/{id}"; option (google.api.http).body = "*";"#
+            ),
+            vec![ContractKey::http("GET", "/v1/things/${id}")]
+        );
+        assert_eq!(
+            http_keys(r#"option (google.api.http).additional_bindings = { post: "/v1/b" };"#),
+            vec![ContractKey::http("POST", "/v1/b")]
+        );
+    }
+
+    #[test]
+    fn variables_become_empty_braces() {
+        for (template, expected) in [
+            ("/v1/things/{id}", "/v1/things/{}"),
+            ("/v1/things/{id}:cancel", "/v1/things/{}:cancel"),
+            ("/v1/{name=projects/*/locations/*}/things", "/v1/{}/things"),
+            ("/v1/{thing.id=things/*}:get", "/v1/{}:get"),
+            ("/v1/things:batchGet", "/v1/things:batchGet"),
+            ("/v1/{id", "/v1/{}"),
+            ("/v1/id}", "/v1/id}"),
+        ] {
+            assert_eq!(variables_as_parameters(template), expected, "{template}");
+        }
+    }
+
     #[test]
     fn directories_above_a_file_are_tried_nearest_first() {
         let dirs: Vec<&str> = std::iter::successors(Some("a/b/c"), |dir| parent_dir(dir)).collect();
@@ -521,6 +644,17 @@ mod tests {
         #[test]
         fn arbitrary_rules_never_panic(rule in "\\PC*") {
             drop(bindings(&rule));
+        }
+
+        #[test]
+        fn a_variable_is_never_more_than_an_empty_pair_of_braces(template in "[a-z/{}=*:_.-]{0,30}") {
+            let path = variables_as_parameters(&template);
+            prop_assert!(
+                path.match_indices('{')
+                    .all(|(at, _)| path.get(at..).is_some_and(|rest| rest.starts_with("{}"))),
+                "{path}"
+            );
+            prop_assert_eq!(variables_as_parameters(&path), path);
         }
 
         #[test]

@@ -27,3 +27,4 @@
 - [x] 4.4 SQL reads the statements around one the tokenizer cannot close, and counts that one as an error
 - [x] 4.5 A SQL statement read again with its placeholders replaced keeps its lines and its strings, escaped newlines, doubled quotes and lone carriage returns included
 - [x] 4.6 SQL declares the new name of a renamed table, keeps one site per line, key and role, picks its grammar once when the project opens, and lists the scope of common table expressions and table functions among its blind spots
+- [x] 4.7 A proto path variable is a parameter wherever it stands, `{id}:cancel` and variables that span segments included, and a binding set as `option (google.api.http).get = "…"` is read

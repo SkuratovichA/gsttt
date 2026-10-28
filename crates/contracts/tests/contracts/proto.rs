@@ -24,6 +24,43 @@ fn services_and_http_bindings_are_declared() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
+#[gsttt_scenario::scenario(
+    "contract-formats",
+    "A path variable is a parameter wherever it stands"
+)]
+#[test]
+fn a_path_variable_is_a_parameter_wherever_it_stands() {
+    let run = Run::new("proto_templates", &[module(&PROTO)]);
+    assert_eq!(run.status("things.proto"), &ParseStatus::Ok);
+    assert_eq!(
+        run.sites("things.proto"),
+        vec![
+            "declares grpc things.v1.ThingService/CancelThing @6",
+            "declares http POST /v1/things/{} @7",
+            "declares grpc things.v1.ThingService/ListThings @9",
+            "declares http GET /v1/{}/things @10",
+        ]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
+#[gsttt_scenario::scenario("contract-formats", "A binding set one field at a time is declared")]
+#[test]
+fn a_binding_set_one_field_at_a_time_is_declared() {
+    let run = Run::new("proto_field_options", &[module(&PROTO)]);
+    assert_eq!(run.status("things.proto"), &ParseStatus::Ok);
+    assert_eq!(
+        run.sites("things.proto"),
+        vec![
+            "declares grpc things.v1.ThingService/GetThing @6",
+            "declares http GET /v1/things/{} @7",
+            "declares grpc things.v1.ThingService/DropThing @9",
+            "declares http DELETE /v1/things/{} @10",
+        ]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
 #[gsttt_scenario::scenario("contract-formats", "Imports resolve from the proto root")]
 #[test]
 fn imports_resolve_from_the_proto_root() {

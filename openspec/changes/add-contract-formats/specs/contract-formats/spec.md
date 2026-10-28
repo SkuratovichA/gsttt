@@ -76,11 +76,22 @@ The connector SHALL read embedded `graphql` documents the same way as it reads `
 - **THEN** it returns a call to `graphql Query.bookings` at line 1
 
 ### Requirement: Protobuf
-Each `rpc` of a `service` SHALL declare `grpc <package>.<Service>/<Method>` at its line, and a `google.api.http` option on it SHALL declare `http <METHOD> <path>` for its binding and each additional binding. An `import` SHALL resolve against the module roots of `buf.yaml` and the directories of `buf.work.yaml` when they exist, and then against each directory above the importing file; `google/protobuf/` imports SHALL resolve to builtins and any other import found nowhere to an unknown package.
+Each `rpc` of a `service` SHALL declare `grpc <package>.<Service>/<Method>` at its line, and a `google.api.http` option on it SHALL declare `http <METHOD> <path>` for its binding and each additional binding, whether the option is written as one message or one field at a time (`option (google.api.http).get = "…"`). A path variable, `{id}` or `{name=projects/*}`, SHALL be a parameter wherever it stands, `{id}:cancel` and a variable that spans several segments included.
 
 #### Scenario: Services and HTTP bindings are declared
 - **WHEN** `booking.proto` has `package booking.v1;` and `service BookingService { rpc GetBooking(GetBookingRequest) returns (Booking) { option (google.api.http) = { get: "/v1/bookings/{id}" }; } }`
 - **THEN** it declares `grpc booking.v1.BookingService/GetBooking` and `http GET /v1/bookings/{}`
+
+#### Scenario: A path variable is a parameter wherever it stands
+- **WHEN** an `rpc` has `option (google.api.http) = { post: "/v1/things/{id}:cancel" };` and another has `option (google.api.http) = { get: "/v1/{parent=projects/*/locations/*}/things" };`
+- **THEN** they declare `http POST /v1/things/{}` and `http GET /v1/{}/things`
+
+#### Scenario: A binding set one field at a time is declared
+- **WHEN** an `rpc` has `option (google.api.http).get = "/v1/things/{id}";` and another has `option (google.api.http).delete = "/v1/things/{id}";` and `option (google.api.http).body = "*";`
+- **THEN** they declare `http GET /v1/things/{}` and `http DELETE /v1/things/{}`
+
+### Requirement: Protobuf imports
+An `import` SHALL resolve against the module roots of `buf.yaml` and the directories of `buf.work.yaml` when they exist, and then against each directory above the importing file; `google/protobuf/` imports SHALL resolve to builtins and any other import found nowhere to an unknown package.
 
 #### Scenario: Imports resolve from the proto root
 - **WHEN** `proto/booking/v1/booking.proto` imports `booking/v1/types.proto`, `google/protobuf/timestamp.proto` and `google/api/annotations.proto`, and `proto/booking/v1/types.proto` exists
