@@ -579,6 +579,33 @@ mod tests {
         assert_eq!(manifest.roots, ["src"]);
     }
 
+    #[test]
+    fn setup_py_reads_no_requirement_from_the_list_of_a_later_keyword() {
+        let manifest =
+            read_setup_py("setup(install_requires=REQS, extras_require={'dev': ['pytest']})");
+        assert_eq!(deps(&manifest), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn setup_py_reads_no_source_root_from_the_dict_of_a_later_keyword() {
+        let manifest = read_setup_py("setup(package_dir=PKG_DIRS, entry_points={'': 'lib'})");
+        assert_eq!(manifest.roots, Vec::<String>::new());
+    }
+
+    #[test]
+    fn setup_py_keeps_a_quote_after_a_backslash_in_its_string() {
+        let manifest = read_setup_py("setup(install_requires=['left\\'right', 'fastapi'])");
+        assert_eq!(deps(&manifest), ["fastapi"]);
+    }
+
+    #[test]
+    fn setup_py_reads_no_list_from_a_comment() {
+        let manifest = read_setup_py(
+            "# install_requires=['old']\nsetup(\n    install_requires = ['new'],  # install_requires=['older']\n)",
+        );
+        assert_eq!(deps(&manifest), ["new"]);
+    }
+
     proptest! {
         #[test]
         fn setup_py_reads_every_requirement_whatever_its_extras(
