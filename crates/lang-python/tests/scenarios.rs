@@ -44,6 +44,11 @@ fn index_with(fixture: &str, packs: Vec<Pack>) -> Tree {
 /// A tree written to a temporary directory from `(path, text)` pairs and indexed like a fixture, for the inputs that
 /// fit in a few lines.
 fn index_files(files: &[(&str, &str)]) -> Tree {
+    index_files_with(files, builtin_packs(PACKS).unwrap())
+}
+
+/// Like [`index_files`], with `packs` in place of the built-in ones.
+fn index_files_with(files: &[(&str, &str)], packs: Vec<Pack>) -> Tree {
     let dir = tempfile::tempdir().unwrap();
     for (path, text) in files {
         let file = dir.path().join(path);
@@ -51,7 +56,7 @@ fn index_files(files: &[(&str, &str)]) -> Tree {
         std::fs::write(file, text).unwrap();
     }
     let root = dir.path().to_str().unwrap().to_owned();
-    run(root, builtin_packs(PACKS).unwrap(), Some(dir))
+    run(root, packs, Some(dir))
 }
 
 fn run(root: String, packs: Vec<Pack>, dir: Option<tempfile::TempDir>) -> Tree {
@@ -1955,4 +1960,54 @@ fn a_router_reached_in_more_than_64_ways_is_served_in_the_first_64_by_path() {
         ]);
         assert_eq!(tree.linked("app.py"), every);
     }
+}
+
+/// A call rule that serves HTTP is an entry of its module's URL list whichever pack it comes from, so a Django
+/// include of the module puts its prefix in front, as it does for `path()`. Nothing else mounts the list, so a module
+/// no urlconf includes keeps the path the call wrote.
+#[test]
+fn a_serving_call_of_a_pack_is_served_behind_the_includes_of_its_module() {
+    let pack = r#"return {
+        name = "aiohttp",
+        language = "python",
+        calls = { { callee = "web.get", kind = "http", role = "serves", key = "$arg1", method = "GET" } },
+    }"#;
+    let routes = "from aiohttp import web\n\nroutes = [web.get(\"/things\", handler)]\n";
+    let packs = || {
+        let mut packs = builtin_packs(PACKS).unwrap();
+        packs.extend(builtin_packs(&[("aiohttp.lua", pack)]).unwrap());
+        packs
+    };
+    // Nothing includes the module: the route keeps the path it was written with.
+    let alone = index_files_with(
+        &[
+            ("pyproject.toml", "[project]\nname = \"app\"\n"),
+            ("service/routes.py", routes),
+        ],
+        packs(),
+    );
+    assert_eq!(
+        alone.linked("service/routes.py"),
+        ["serves http GET /things@3"]
+    );
+    // A Django urlconf includes the module, as it does for a module of `path()` entries, so the prefix applies.
+    let included = index_files_with(
+        &[
+            (
+                "pyproject.toml",
+                "[project]\nname = \"app\"\ndependencies = [\"django>=5\"]\n",
+            ),
+            (
+                "urls.py",
+                "from django.urls import include, path\n\nurlpatterns = [path(\"api/\", include(\"service.routes\"))]\n",
+            ),
+            ("service/__init__.py", ""),
+            ("service/routes.py", routes),
+        ],
+        packs(),
+    );
+    assert_eq!(
+        included.linked("service/routes.py"),
+        ["serves http GET /api/things@3"]
+    );
 }
