@@ -164,6 +164,7 @@ impl<'a> Engine<'a> {
 
         let assigned = pipeline::assign_files(&repo, &modules, detect_problems)?;
         let claims = assigned.claims();
+        let projects = assigned.projects();
         let module_states: Vec<_> = modules
             .iter()
             .map(|module| {
@@ -175,7 +176,7 @@ impl<'a> Engine<'a> {
         for claim in &claims {
             let key = states
                 .get(claim.id.index())
-                .and_then(|state| claim_key(&module_states, claim, state.stamp.id));
+                .and_then(|state| claim_key(&module_states, &projects, claim, state.stamp.id));
             unverifiable |= key.is_none();
             if let Some(slot) = file_keys.get_mut(claim.id.index()) {
                 *slot = key;
@@ -192,7 +193,7 @@ impl<'a> Engine<'a> {
                     config,
                     &states,
                     &file_keys,
-                    &assigned.projects(),
+                    &projects,
                     head.as_deref(),
                 )
         });
@@ -211,6 +212,7 @@ impl<'a> Engine<'a> {
             modules: &ran,
             assigned,
             claims,
+            projects,
             module_states,
             states,
             file_keys,
@@ -231,6 +233,7 @@ impl<'a> Engine<'a> {
             modules,
             assigned,
             claims,
+            projects,
             module_states,
             mut states,
             mut file_keys,
@@ -256,7 +259,7 @@ impl<'a> Engine<'a> {
                 state.stamp = stamp;
             }
             if let Some(slot) = file_keys.get_mut(claim.id.index()) {
-                *slot = claim_key(&module_states, claim, stamp.id);
+                *slot = claim_key(&module_states, &projects, claim, stamp.id);
             }
         }
         let reused = output.files.iter().filter(|file| file.reused).count();
@@ -455,6 +458,8 @@ struct Rebuild<'r, 'a> {
     modules: &'r [&'r str],
     assigned: pipeline::Assigned<'a>,
     claims: Vec<Claim<'a>>,
+    /// The projects that opened, in the order [`Claim::project`] counts them.
+    projects: Vec<ProjectRun>,
     /// The part of a fact key that every file of a module shares, by module.
     module_states: Vec<Xxh3>,
     states: Vec<FileState>,
@@ -472,9 +477,16 @@ struct Rebuild<'r, 'a> {
 
 /// The key a claimed file's facts are filed under when its content has the id `id`. A file of unknown content has
 /// none, so its facts are never reused.
-fn claim_key(module_states: &[Xxh3], claim: &Claim<'_>, id: ContentId) -> Option<FactKey> {
+fn claim_key(
+    module_states: &[Xxh3],
+    projects: &[ProjectRun],
+    claim: &Claim<'_>,
+    id: ContentId,
+) -> Option<FactKey> {
     let module = module_states.get(claim.module)?;
-    (id != ContentId::UNKNOWN).then(|| keys::file_key(module, claim.salt, claim.path, id))
+    let project = projects.get(claim.project)?;
+    (id != ContentId::UNKNOWN)
+        .then(|| keys::file_key(module, &project.root, project.salt, claim.path, id))
 }
 
 /// Whether a stored index is what a run over this tree would build again: same configuration, same commit, same
@@ -691,6 +703,22 @@ mod tests {
         let second = index(&rig, &dir, &setup).unwrap();
         assert_eq!((second.parsed, second.reused), (0, 2));
         assert_eq!(rig.counters.take()[0], 0);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A file that moves to another project is parsed again")]
+    #[test]
+    fn a_file_that_moves_to_another_project_is_parsed_again() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("pkg/a.txt", ""), ("top.txt", "")]);
+        let setup = Setup::default();
+        let first = index(&rig, &dir, &setup).unwrap();
+        assert_eq!((first.parsed, first.reused), (2, 0));
+        rig.counters.take();
+        // The notes connector gives every project the salt 0, so only the root tells the two projects apart.
+        write(dir.path(), "pkg/ROOT", "");
+        let second = index(&rig, &dir, &setup).unwrap();
+        assert_eq!((second.parsed, second.reused), (1, 1));
+        assert_eq!(rig.counters.take()[0], 1);
     }
 
     #[gsttt_scenario::scenario("indexing", "Only edited files are parsed")]

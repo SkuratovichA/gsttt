@@ -156,8 +156,8 @@ pub struct Claim<'a> {
     pub path: &'a RepoPath,
     /// The index, in the modules given to [`assign_files`], of the module whose connector opened the project.
     pub module: usize,
-    /// The project's salt.
-    pub salt: u64,
+    /// The index, in [`Assigned::projects`], of the project that took the file.
+    pub project: usize,
 }
 
 /// Facts a cache already holds for a file. [`execute`] uses them in place of a parse.
@@ -196,10 +196,7 @@ impl<'a> Assigned<'a> {
                 id: file.id,
                 path: file.path,
                 module: self.module_of.get(file.project).copied().unwrap_or(0),
-                salt: self
-                    .projects
-                    .get(file.project)
-                    .map_or(0, |project| project.salt()),
+                project: file.project,
             })
             .collect()
     }

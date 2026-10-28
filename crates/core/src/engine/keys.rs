@@ -1,14 +1,15 @@
 //! Fact keys: what a file's cached facts are filed under.
 //!
 //! A key covers everything `parse` can depend on, so equal keys mean equal facts: the fact format, the
-//! connector's name and version, the module options, the packs the connector received, the project salt, the path
-//! and the content id. The part that is the same for every file of a module is hashed once and cloned per file.
+//! connector's name and version, the module options, the packs the connector received, the project's root and
+//! salt, the path and the content id. The part that is the same for every file of a module is hashed once and
+//! cloned per file.
 
 use serde_json::Value;
 use xxhash_rust::xxh3::Xxh3;
 
 use super::files::ContentId;
-use crate::connector::{DynConnector, Meta};
+use crate::connector::{DynConnector, Meta, feed};
 use crate::path::RepoPath;
 use crate::rules::Pack;
 use crate::setup::Setup;
@@ -31,9 +32,11 @@ pub fn module_state(meta: &Meta, options: &Value, packs: &[Pack]) -> Xxh3 {
     hasher
 }
 
-/// The key of one file of a project of a module.
-pub fn file_key(module: &Xxh3, salt: u64, path: &RepoPath, id: ContentId) -> FactKey {
+/// The key of one file of a project of a module. The root is part of it whatever the connector puts in the salt, so
+/// a file that moves to another project is never given the facts of the first.
+pub fn file_key(module: &Xxh3, root: &str, salt: u64, path: &RepoPath, id: ContentId) -> FactKey {
     let mut hasher = module.clone();
+    feed(&mut hasher, root.as_bytes());
     hasher.update(&salt.to_le_bytes());
     feed(&mut hasher, path.as_str().as_bytes());
     hasher.update(id.as_bytes());
@@ -101,12 +104,6 @@ fn write_canonical(value: &Value, text: &mut String) {
     }
 }
 
-/// Hashes `bytes` with their length in front, so two fields cannot trade bytes and keep the same hash.
-fn feed(hasher: &mut Xxh3, bytes: &[u8]) {
-    hasher.update(&u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_le_bytes());
-    hasher.update(bytes);
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -132,20 +129,21 @@ mod tests {
         let id = ContentId::UNKNOWN;
         let path = RepoPath::normalize("a.ts").unwrap();
         let base = module_state(&meta, &Value::Null, &[]);
-        let key = file_key(&base, 0, &path, id);
+        let key = file_key(&base, "", 0, &path, id);
 
         let other_options = module_state(&meta, &json!({ "tsconfig": "x" }), &[]);
         let other_version = module_state(&Meta { version: 2, ..meta }, &Value::Null, &[]);
         let other_path = RepoPath::normalize("b.ts").unwrap();
         let other_id = crate::engine::files::blob_id(b"x");
         let keys = [
-            file_key(&other_options, 0, &path, id),
-            file_key(&other_version, 0, &path, id),
-            file_key(&base, 1, &path, id),
-            file_key(&base, 0, &other_path, id),
-            file_key(&base, 0, &path, other_id),
+            file_key(&other_options, "", 0, &path, id),
+            file_key(&other_version, "", 0, &path, id),
+            file_key(&base, "web", 0, &path, id),
+            file_key(&base, "", 1, &path, id),
+            file_key(&base, "", 0, &other_path, id),
+            file_key(&base, "", 0, &path, other_id),
         ];
         assert!(keys.iter().all(|other| *other != key));
-        assert_eq!(key, file_key(&base, 0, &path, id));
+        assert_eq!(key, file_key(&base, "", 0, &path, id));
     }
 }

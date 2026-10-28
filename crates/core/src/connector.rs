@@ -11,6 +11,7 @@ use std::fmt;
 use schemars::{JsonSchema, Schema};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use xxhash_rust::xxh3::Xxh3;
 
 use crate::contract::{ContractKind, Role};
 use crate::fact::{ContractFact, Embedded, FileFacts, Import, Resolution, ResolvedImport};
@@ -68,8 +69,12 @@ pub trait Project: Send + Sync + 'static {
     /// Whether the project reads `path`. Asked only for files under [`Project::root`].
     fn matches(&self, path: &RepoPath) -> bool;
 
-    /// Mixed into the cache key of every file the project parses: whatever besides the file's bytes changes what
-    /// `parse` returns, such as options and the packs in force.
+    /// Mixed into the cache key of every file the project parses, on top of what the key already holds: the
+    /// connector's name and version, the module's options, every pack the connector received, the project's root,
+    /// and the file's path and content. The salt covers whatever else `parse` depends on, such as the packs this
+    /// project's manifest switched on or a setting it read from the manifest when it opened, so that a change in
+    /// it reads every file of the project again. A project whose parse depends on nothing beyond its options
+    /// returns `0`. [`salt_of`] makes a salt out of text.
     fn salt(&self) -> u64;
 
     /// The contract kinds this project finds, how, and what it cannot see, for coverage.
@@ -106,6 +111,24 @@ pub trait Project: Send + Sync + 'static {
         let _ = document;
         Vec::new()
     }
+}
+
+/// A salt for [`Project::salt`] made of text: a hash of `parts` in which each part is taken with its length, so
+/// `["ab", "c"]` and `["a", "bc"]` are two salts. The same parts give the same salt in every run and on every
+/// machine.
+pub fn salt_of(parts: &[&str]) -> u64 {
+    let mut hasher = Xxh3::new();
+    for part in parts {
+        feed(&mut hasher, part.as_bytes());
+    }
+    hasher.digest()
+}
+
+/// Hashes `bytes` with their length in front, so two fields cannot trade bytes and keep the same hash. The one
+/// framing behind [`salt_of`] and the fact keys of the engine.
+pub(crate) fn feed(hasher: &mut Xxh3, bytes: &[u8]) {
+    hasher.update(&u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(bytes);
 }
 
 /// A file handed to [`Project::parse`].
@@ -422,6 +445,23 @@ impl<P: Project> DynProject for ErasedProject<P> {
 mod tests {
     use super::*;
     use crate::fact::{ImportKind, UnresolvedReason};
+
+    #[test]
+    fn a_salt_hashes_its_parts_with_their_lengths() {
+        // The framing of the fact keys: the length of each part as a little-endian u64, then its bytes.
+        let mut hasher = Xxh3::new();
+        for part in ["ab", "c"] {
+            hasher.update(&u64::try_from(part.len()).unwrap().to_le_bytes());
+            hasher.update(part.as_bytes());
+        }
+        assert_eq!(salt_of(&["ab", "c"]), hasher.digest());
+        // Parts cannot trade bytes, and an empty part is still a part.
+        assert_ne!(salt_of(&["ab", "c"]), salt_of(&["a", "bc"]));
+        assert_ne!(salt_of(&["a"]), salt_of(&["a", ""]));
+        assert_ne!(salt_of(&[]), salt_of(&[""]));
+        // Pinned, because a changed hash or byte order would read the files of every project again.
+        assert_eq!(salt_of(&["a"]), 14_372_996_823_028_516_049);
+    }
 
     /// A connector over `.txt` files whose lines `use <path>` import other files and whose link phase reports a
     /// contract for every file with a non-empty extra.

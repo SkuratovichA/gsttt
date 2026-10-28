@@ -40,3 +40,4 @@
 - [x] 5.11 A stored size and modification time vouches for a file only when the file was written more than two seconds before the listing that took it, and a modified or untracked file in git keeps its stored id the way one outside git does
 - [x] 5.12 A snapshot is synced before it is renamed, holds an xxh3 hash of its body in its prefix that opening checks, and names its layout by a number bumped by hand beside the package version
 - [x] 5.13 `quiet_contained_panics` installs a panic hook that is silent about the panics the engine contains, on any thread, and passes every other panic to the hook before it
+- [x] 5.14 `connector::salt_of` makes a project salt out of text in the framing of the fact keys, the project root is part of every fact key whatever the salt holds, and the `Project::salt` doc says what the salt covers on top of the key

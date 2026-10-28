@@ -87,7 +87,7 @@ Each file SHALL belong to at most one project: the first connector in registry o
 - **THEN** coverage counts one unclaimed `kotlin` file
 
 ### Requirement: Fact reuse
-The engine SHALL key a file's facts by the fact format, the connector's name and version, the module options, the fingerprint of the packs the connector received, the project salt, the path and the content id. It SHALL take facts with an equal key from this worktree's snapshot, then, as the next requirement says, from the snapshots of sibling worktrees, and parse only when neither has them.
+The engine SHALL key a file's facts by the fact format, the connector's name and version, the module options, the fingerprint of the packs the connector received, the project's root and salt, the path and the content id. It SHALL take facts with an equal key from this worktree's snapshot, then, as the next requirement says, from the snapshots of sibling worktrees, and parse only when neither has them.
 
 #### Scenario: Only edited files are parsed
 - **WHEN** one of three indexed files is edited and the engine refreshes
@@ -96,6 +96,10 @@ The engine SHALL key a file's facts by the fact format, the connector's name and
 #### Scenario: Changed options parse that module's files again
 - **WHEN** the options of one module change between two runs
 - **THEN** every file of that module is parsed again and no file of another module is
+
+#### Scenario: A file that moves to another project is parsed again
+- **WHEN** a manifest appears in a directory, so that a new project takes over the files below it, and the connector gives both projects the same salt
+- **THEN** the run parses those files again and reuses the others
 
 #### Scenario: A new worktree reuses its sibling's facts
 - **WHEN** a linked worktree is indexed for the first time after the main worktree was indexed at the same commit
