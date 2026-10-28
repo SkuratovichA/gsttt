@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::coverage::ConnectorCoverage;
 use crate::ids::FileId;
 use crate::index::{Freshness, Index};
-use crate::text::{join_and, noun, short, thousands};
+use crate::text::{join_and, noun, percent, short, thousands};
 
 /// How many entries of a list the text of an answer shows unless every entry is asked for.
 pub const LIST_CAP: usize = 30;
@@ -68,7 +68,10 @@ pub struct ConnectorShare {
     pub read: u32,
     /// Imports it found.
     pub imports: u32,
-    /// The share of those imports that resolved to a file, a package or a builtin, from 0 to 1.
+    /// Those that resolved to a file, a package or a builtin.
+    pub resolved_imports: u32,
+    /// `resolved_imports` over `imports`, from 0 to 1, for scripts. The text computes its percentage from the two
+    /// counts, because a float gives 28 for 29 of 100.
     pub resolved: f64,
 }
 
@@ -79,6 +82,7 @@ impl ConnectorShare {
             files: coverage.files,
             read: read_files(coverage),
             imports: coverage.imports,
+            resolved_imports: coverage.internal.saturating_add(coverage.external),
             resolved: coverage.resolved_share(),
         }
     }
@@ -94,15 +98,13 @@ impl ConnectorShare {
         if self.imports == 0 {
             f.write_str("no imports")
         } else {
-            write!(f, "{} of imports resolved", percent(self.resolved))
+            write!(
+                f,
+                "{} of imports resolved",
+                percent(self.resolved_imports, self.imports)
+            )
         }
     }
-}
-
-/// A share from 0 to 1 as a whole percentage. It is rounded down, so that an index with one lost import never
-/// claims to resolve everything.
-pub(super) fn percent(share: f64) -> String {
-    format!("{:.0}%", (share * 100.0).floor())
 }
 
 /// The last two lines of every answer: how much of the tree the connectors read, and how fresh the index is.

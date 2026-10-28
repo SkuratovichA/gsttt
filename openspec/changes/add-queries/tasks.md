@@ -31,3 +31,4 @@
 - [x] 5.4 `dependencies` of a file that failed to parse says so with the failure, and of one read past syntax errors that imports may be missing, in place of saying that it imports nothing
 - [x] 5.5 `impact` keeps the paths the index does not hold in a map, so that thousands of unknown paths cost a lookup each
 - [x] 5.6 Possible misses are ordered by path, line and specifier, and so are the unresolved imports of one file, whatever order the connector listed the imports in
+- [x] 5.7 The share of resolved imports is computed from the counts as a whole percentage rounded down, so that 29 of 100 reads `29%`, and the JSON footer carries the count behind it

@@ -149,7 +149,7 @@ Two HTTP keys SHALL meet when their methods are equal or either is `*`, and thei
 - **THEN** the answer says that 2 files changed and 1 was added since the index was built
 
 ### Requirement: Answer text
-Every answer SHALL name files by their path from the root and sites as `path:line`, SHALL stop each list at 30 entries with a line `… N more` unless every entry is asked for, SHALL say what was searched when it finds nothing, and SHALL end with one line giving, for each connector whose files the answer involves, the files read out of the files it owns and the share of imports resolved, followed by one line of freshness.
+Every answer SHALL name files by their path from the root and sites as `path:line`, SHALL stop each list at 30 entries with a line `… N more` unless every entry is asked for, SHALL say what was searched when it finds nothing, and SHALL end with one line giving, for each connector whose files the answer involves, the files read out of the files it owns and the share of imports resolved as a whole percentage rounded down, followed by one line of freshness.
 
 #### Scenario: Long lists are cut with a count
 - **WHEN** a file has 45 dependents
@@ -165,6 +165,10 @@ Every answer SHALL name files by their path from the root and sites as `path:lin
 - **WHEN** an answer is rendered from a fresh index built at commit `a1b2c3d4e5` with 3 dirty files
 - **THEN** its last line is `fresh at a1b2c3d, 3 files dirty`
 - **AND** the line before it gives the coverage of the connectors involved
+
+#### Scenario: The resolved share is counted and rounded down
+- **WHEN** an answer is rendered from an index where a connector found 100 imports and 29 of them resolved
+- **THEN** the coverage line says `29% of imports resolved`
 
 #### Scenario: A stale footer says so
 - **WHEN** an answer is rendered from an index with freshness stale by two changed files

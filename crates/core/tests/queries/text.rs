@@ -8,7 +8,7 @@ use gsttt_core::query::{
 };
 use gsttt_scenario::scenario;
 
-use crate::fixture::{To, Tree, own, package};
+use crate::fixture::{To, Tree, own, package, resolving};
 
 /// A tree where `count` files import `src/hub.ts`.
 fn hub(count: usize) -> Index {
@@ -177,6 +177,32 @@ fn every_answer_ends_with_coverage_and_freshness() {
             "{text}"
         );
     }
+}
+
+#[scenario("queries", "The resolved share is counted and rounded down")]
+#[test]
+fn the_footer_gives_the_resolved_share_from_the_counts() {
+    // 0.29 * 100.0 is 28.999999999999996 as a float, which floors to 28.
+    let index = resolving(29, 100).build();
+
+    let text = dependencies(&index, Freshness::Fresh, "src/a.ts").to_string();
+
+    assert!(
+        text.contains("coverage: ts read 1 of 1 files, 29% of imports resolved\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn the_footer_never_rounds_a_lost_import_up_to_all_of_them() {
+    let index = resolving(999, 1_000).build();
+
+    let text = dependencies(&index, Freshness::Fresh, "src/a.ts").to_string();
+
+    assert!(
+        text.contains("coverage: ts read 1 of 1 files, 99% of imports resolved\n"),
+        "{text}"
+    );
 }
 
 #[test]

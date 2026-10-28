@@ -35,6 +35,22 @@ pub(crate) fn package(name: &str) -> To {
     To::Package(name.to_owned())
 }
 
+/// A tree where `src/a.ts` has `total` imports, the first `resolved` of them to a package and the others to nothing.
+pub(crate) fn resolving(resolved: u32, total: u32) -> Tree {
+    (0..total).fold(Tree::new(), |tree, n| {
+        let to = if n < resolved {
+            package("react")
+        } else {
+            To::Missing(UnresolvedReason::NotFound)
+        };
+        tree.import(
+            "src/a.ts",
+            Import::new(format!("./m{n}"), ImportKind::Static, n + 1),
+            to,
+        )
+    })
+}
+
 impl To {
     fn paths(&self) -> Vec<&str> {
         match self {

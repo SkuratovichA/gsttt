@@ -10,7 +10,7 @@ use gsttt_core::query::{
 use gsttt_scenario::scenario;
 use serde_json::{Value, json, to_value};
 
-use crate::fixture::{To, Tree, package};
+use crate::fixture::{To, Tree, package, resolving};
 
 fn hub(count: usize) -> Tree {
     (0..count).fold(Tree::new(), |tree, n| {
@@ -31,6 +31,18 @@ fn json_keeps_every_entry() {
     assert_eq!(files[0]["path"], "src/user00.ts");
     assert_eq!(files[44]["path"], "src/user44.ts");
     assert!(answer.to_string().contains("… 15 more"));
+}
+
+#[test]
+fn json_holds_the_counts_behind_the_share_of_resolved_imports() {
+    let index = resolving(29, 100).build();
+    let answer = dependencies(&index, Freshness::Fresh, "src/a.ts");
+
+    let value = to_value(&answer).unwrap();
+
+    let share = &value["footer"]["coverage"][0];
+    assert_eq!(share["imports"], 100);
+    assert_eq!(share["resolved_imports"], 29);
 }
 
 #[test]

@@ -10,7 +10,7 @@ use gsttt_core::query::{
 };
 use gsttt_scenario::scenario;
 
-use crate::fixture::{To, Tree};
+use crate::fixture::{To, Tree, resolving};
 
 /// The reason, the count and the first place of each entry, as a reader of the answer sees them.
 fn reasons(list: &[Reasons]) -> Vec<(String, u32, String)> {
@@ -100,6 +100,19 @@ fn coverage_counts_files_by_parse_status_and_imports_by_outcome() {
     );
     assert!(
         text.contains("ts imports: 1, 0% resolved (0 to files, 0 to packages and builtins)\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn coverage_gives_the_resolved_share_from_the_counts() {
+    // 0.29 * 100.0 is 28.999999999999996 as a float, which floors to 28.
+    let index = resolving(29, 100).build();
+
+    let text = coverage(&index, Freshness::Fresh).to_string();
+
+    assert!(
+        text.contains("ts imports: 100, 29% resolved (0 to files, 29 to packages and builtins)\n"),
         "{text}"
     );
 }

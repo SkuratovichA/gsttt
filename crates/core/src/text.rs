@@ -40,6 +40,16 @@ pub fn thousands(count: impl TryInto<u64>) -> String {
     out
 }
 
+/// `part` of `whole` as a whole percentage: `29%`. It is rounded down, so that a tree with one lost import never
+/// claims to resolve all of them, and it is computed from the counts, because a share kept as a float prints 29 of
+/// 100 as `28%`. Nothing out of nothing counts as all of it.
+pub fn percent(part: u32, whole: u32) -> String {
+    let share = (u64::from(part) * 100)
+        .checked_div(u64::from(whole))
+        .unwrap_or(100);
+    format!("{share}%")
+}
+
 /// A count and its noun, for a noun that adds an `s`: `1 file`, `3 files`.
 pub fn noun(count: u32, singular: &str) -> String {
     let plural = if count == 1 { "" } else { "s" };
@@ -118,6 +128,25 @@ mod tests {
             .map(thousands)
             .collect();
         assert_eq!(spelled, ["0", "999", "1,000", "4,213", "1,234,567"]);
+    }
+
+    #[test]
+    fn a_percentage_is_computed_from_the_counts_and_rounded_down() {
+        // 0.29 * 100.0 is 28.999999999999996 as a float, and so are 57, 58 and 69 of 100.
+        let spelled: Vec<String> = [(29, 100), (57, 100), (58, 100), (69, 100), (1, 3), (2, 3)]
+            .into_iter()
+            .map(|(part, whole)| percent(part, whole))
+            .collect();
+        assert_eq!(spelled, ["29%", "57%", "58%", "69%", "33%", "66%"]);
+        assert_eq!(percent(999, 1_000), "99%");
+        assert_eq!(percent(0, 5), "0%");
+        assert_eq!(percent(5, 5), "100%");
+    }
+
+    #[test]
+    fn a_percentage_of_nothing_is_all_of_it_and_the_largest_counts_do_not_overflow() {
+        assert_eq!(percent(0, 0), "100%");
+        assert_eq!(percent(u32::MAX, u32::MAX), "100%");
     }
 
     #[test]

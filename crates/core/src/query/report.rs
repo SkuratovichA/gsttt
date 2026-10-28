@@ -9,9 +9,9 @@ use crate::coverage::{ConnectorCoverage, FailedFile, ReasonCount};
 use crate::fact::{Line, ParseFailure, UnresolvedReason};
 use crate::graph::Graph;
 use crate::index::{Freshness, Index, Timings};
-use crate::text::{duration, join_and, noun, short, thousands};
+use crate::text::{duration, join_and, noun, percent, short, thousands};
 
-use super::render::{Answer, Entries, Footer, display_as_text, list, moved, percent};
+use super::render::{Answer, Entries, Footer, display_as_text, list, moved};
 
 /// A line of a file, written `path:line`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -63,7 +63,8 @@ pub struct ConnectorReport {
     pub internal: u32,
     /// Imports of packages and of the language's own modules.
     pub external: u32,
-    /// The share of imports that resolved to a file, a package or a builtin, from 0 to 1.
+    /// The share of imports that resolved to a file, a package or a builtin, from 0 to 1, for scripts. The text
+    /// computes its percentage from `internal`, `external` and `imports`.
     pub resolved: f64,
     /// Imports that point nowhere, by reason, most first.
     pub unresolved: Vec<Reasons>,
@@ -238,7 +239,7 @@ impl ConnectorReport {
                 f,
                 "{name} imports: {}, {} resolved ({} to files, {} to packages and builtins)",
                 thousands(self.imports),
-                percent(self.resolved),
+                percent(self.internal.saturating_add(self.external), self.imports),
                 thousands(self.internal),
                 thousands(self.external)
             )?;
