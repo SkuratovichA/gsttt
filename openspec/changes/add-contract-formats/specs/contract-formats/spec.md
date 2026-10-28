@@ -54,6 +54,13 @@ A `$ref` to another file SHALL be an import resolving relative to the referring 
 - **WHEN** `api/openapi.yaml` has `/bookings: {$ref: "./paths/bookings.yaml"}` and `api/paths/bookings.yaml` has `get` and `post` at its top level
 - **THEN** `api/paths/bookings.yaml` declares `http GET /bookings` and `http POST /bookings`
 
+### Requirement: OpenAPI documents that cannot be searched
+A document that is too large, unreadable or invalid when the connector looks for the fragments a `$ref` reaches SHALL be skipped with a logged warning that names it, and the references of the other documents SHALL still be followed.
+
+#### Scenario: A document that cannot be searched for references is logged
+- **WHEN** `openapi.yaml` has the path items `/bookings` and `/carts` as `$ref`s to `paths/bookings.yaml` and `paths/carts.yaml`, and `paths/carts.yaml` has a tab where YAML expects spaces
+- **THEN** a warning names `paths/carts.yaml` and none names `paths/bookings.yaml`, and both files belong to the project
+
 ### Requirement: GraphQL
 In a schema, each field of `Query`, `Mutation` and `Subscription`, including their `extend type` forms and the types a `schema` definition names for those roots, SHALL declare `graphql <Root>.<field>`, with a renamed root written as `Query`, `Mutation` or `Subscription`.
 

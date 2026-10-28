@@ -38,7 +38,7 @@ const METHODS: [(&str, &str); 8] = [
     ("trace", "TRACE"),
 ];
 
-/// Documents larger than this are not read when looking for the fragments a `$ref` reaches.
+/// Documents larger than this are not searched for the fragments a `$ref` reaches.
 const MAX_DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
 
 /// The connector for OpenAPI and Swagger documents.
@@ -158,7 +158,9 @@ fn build_globs(patterns: &[String]) -> Result<GlobSet, ConnectorError> {
         .map_err(|error| options_error(format!("`files` does not build: {error}")))
 }
 
-/// The YAML and JSON files that the `$ref`s of the documents reach, and those of the files they reach in turn.
+/// The YAML and JSON files that the `$ref`s of the documents reach, and those of the files they reach in turn. A
+/// document that cannot be searched is skipped and logged: the references it holds are not followed, and the engine
+/// still reads the document itself and reports why it failed.
 fn fragments_of(repo: &RepoView, documents: &[&RepoPath]) -> BTreeSet<String> {
     let mut seen: BTreeSet<String> = documents
         .iter()
@@ -167,16 +169,14 @@ fn fragments_of(repo: &RepoView, documents: &[&RepoPath]) -> BTreeSet<String> {
     let mut queue: Vec<RepoPath> = documents.iter().map(|path| (*path).clone()).collect();
     let mut fragments = BTreeSet::new();
     while let Some(path) = queue.pop() {
-        let Ok(text) = repo.read_to_string(path.as_str()) else {
-            continue;
+        let imports = match refs_of(repo, &path) {
+            Ok(imports) => imports,
+            Err(message) => {
+                tracing::warn!(file = path.as_str(), %message, "not following the references of an OpenAPI document that cannot be read");
+                continue;
+            }
         };
-        if text.len() > MAX_DOCUMENT_BYTES {
-            continue;
-        }
-        let Ok(read) = read(&path, &text) else {
-            continue;
-        };
-        for import in read.imports {
+        for import in imports {
             let Ok(target) = RepoPath::join(path.parent(), &import.spec) else {
                 continue;
             };
@@ -189,6 +189,25 @@ fn fragments_of(repo: &RepoView, documents: &[&RepoPath]) -> BTreeSet<String> {
         }
     }
     fragments
+}
+
+/// The `$ref`s of a document to other files, without reading anything else it says; why it cannot be searched
+/// when it cannot.
+fn refs_of(repo: &RepoView, path: &RepoPath) -> Result<Vec<Import>, String> {
+    let text = repo
+        .read_to_string(path.as_str())
+        .map_err(|error| error.to_string())?;
+    if text.len() > MAX_DOCUMENT_BYTES {
+        return Err(format!(
+            "it has {} bytes, and only documents up to {MAX_DOCUMENT_BYTES} are searched",
+            text.len()
+        ));
+    }
+    let root =
+        tree_of(path, &text).map_err(|error| format!("line {}: {}", error.line, error.message))?;
+    let mut imports = Vec::new();
+    collect_refs(&root, &mut imports);
+    Ok(imports)
 }
 
 impl Project for OpenApiProject {
@@ -283,12 +302,17 @@ struct Read {
     extra: OpenApiExtra,
 }
 
-fn read(path: &RepoPath, text: &str) -> Result<Read, SyntaxError> {
-    let root = if path.extension() == Some("json") {
-        parse_json(text)?
+/// A document as a tree, read as JSON or as YAML by its extension.
+fn tree_of(path: &RepoPath, text: &str) -> Result<Value, SyntaxError> {
+    if path.extension() == Some("json") {
+        parse_json(text)
     } else {
-        parse_yaml(text)?
-    };
+        parse_yaml(text)
+    }
+}
+
+fn read(path: &RepoPath, text: &str) -> Result<Read, SyntaxError> {
+    let root = tree_of(path, text)?;
     let mut read = Read::default();
     collect_refs(&root, &mut read.imports);
     if ["openapi", "swagger", "paths"]

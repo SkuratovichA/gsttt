@@ -1,10 +1,13 @@
 //! OpenAPI and Swagger documents, their references and their fragments.
 
 use gsttt_contracts::OPENAPI;
+use gsttt_core::connector::DynConnector;
 use gsttt_core::fact::ParseStatus;
-use serde_json::json;
+use gsttt_core::path::RepoPath;
+use gsttt_core::repo::RepoView;
+use serde_json::{Value, json};
 
-use crate::support::{Run, module, with_options};
+use crate::support::{Run, fixture, logged, module, with_options};
 
 #[gsttt_scenario::scenario("contract-formats", "Operations are declared under the server path")]
 #[test]
@@ -96,4 +99,37 @@ fn the_files_option_claims_documents_with_other_names() {
         vec!["declares http GET /bookings @7"]
     );
     assert_eq!(run.unclaimed(), vec!["config/app.yaml"]);
+}
+
+#[gsttt_scenario::scenario(
+    "contract-formats",
+    "A document that cannot be searched for references is logged"
+)]
+#[test]
+fn a_document_that_cannot_be_searched_for_references_is_logged() {
+    let repo = fixture("openapi_broken_fragment");
+    let log = logged(|| {
+        OPENAPI.open(&repo, &Value::Null, &[]).unwrap();
+    });
+    assert!(log.contains("paths/carts.yaml"), "{log}");
+    assert!(!log.contains("paths/bookings.yaml"), "{log}");
+    let run = Run::new("openapi_broken_fragment", &[module(&OPENAPI)]);
+    assert_eq!(run.project_of("paths/bookings.yaml"), "openapi");
+    assert_eq!(run.project_of("paths/carts.yaml"), "openapi");
+}
+
+/// The same for a document over the size the connector reads.
+#[test]
+fn a_document_over_the_size_the_connector_reads_is_logged() {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("openapi_oversized");
+    std::fs::create_dir_all(&dir).unwrap();
+    // One byte over the 8 MiB the connector reads when it looks for the fragments a document refers to.
+    std::fs::write(dir.join("openapi.yaml"), "#".repeat(8 * 1024 * 1024 + 1)).unwrap();
+    let files = vec![RepoPath::normalize("openapi.yaml").unwrap()];
+    let repo = RepoView::new(dir.to_str().unwrap(), files);
+    let log = logged(|| {
+        OPENAPI.open(&repo, &Value::Null, &[]).unwrap();
+    });
+    assert!(log.contains("openapi.yaml"), "{log}");
+    assert!(log.contains("8388609"), "{log}");
 }

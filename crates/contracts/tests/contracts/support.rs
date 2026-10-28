@@ -1,6 +1,9 @@
 //! Shared pieces of the connector tests: fixture trees, a pipeline run over one, the answers the tests read out
 //! of it, and a host connector that embeds documents the way a language connector does.
 
+use std::io;
+use std::sync::{Arc, Mutex};
+
 use gsttt_contracts::{ENV, GRAPHQL, OPENAPI, PRISMA, PROTO, SQL};
 use gsttt_core::connector::{
     Connector, ConnectorError, DynConnector, Erased, Meta, Parsed, Project, Provide, SourceFile,
@@ -55,6 +58,33 @@ pub(crate) fn fixture(name: &str) -> RepoView {
         env!("CARGO_MANIFEST_DIR")
     ))
     .unwrap()
+}
+
+/// What `run` logs, as text: connectors log what they skip instead of printing it.
+pub(crate) fn logged(run: impl FnOnce()) -> String {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&buffer);
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(move || Capture(Arc::clone(&sink)))
+        .finish();
+    tracing::subscriber::with_default(subscriber, run);
+    let bytes = buffer.lock().unwrap().clone();
+    String::from_utf8(bytes).unwrap()
+}
+
+/// A writer into the buffer that [`logged`] reads back.
+struct Capture(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Capture {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// The pipeline over a view, for a test that expects the options to be refused.

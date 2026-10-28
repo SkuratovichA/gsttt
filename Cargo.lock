@@ -1845,6 +1845,7 @@ dependencies = [
  "serde_json",
  "sqlparser",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
