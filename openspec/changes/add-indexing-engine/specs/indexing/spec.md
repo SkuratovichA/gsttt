@@ -20,18 +20,54 @@ The engine SHALL find the work tree root, the git dir and the common dir from an
 - **AND** the state dir is `/c/gsttt/<hex hash of the root path>`
 
 ### Requirement: File set
-The engine SHALL index the tracked files present in the work tree and the untracked files git does not ignore, SHALL leave out submodules, symbolic links, skip-worktree entries and files matching `Setup.exclude`, and SHALL number files in path order.
+The engine SHALL index the tracked files present in the work tree, conflicted ones included, and the untracked files git does not ignore, judged by the repository's own settings (every `.gitignore`, `info/exclude`, `core.excludesFile` and `core.ignorecase`), SHALL leave out submodules, symbolic links, skip-worktree entries, files matching `Setup.exclude` and directories the process cannot list or search (each named in the coverage problems unless excluded), and SHALL number files in path order.
 
 #### Scenario: Ignored, excluded and linked files stay out
 - **WHEN** a repository has a committed `src/a.ts`, an untracked `src/new.ts`, `dist/a.js` ignored by `.gitignore`, `vendor/b.ts` matching `exclude = ["vendor/**"]` and a symbolic link `link.ts`
 - **THEN** the index holds `src/a.ts` and `src/new.ts` and nothing else
 
+#### Scenario: Git's own ignore settings apply
+- **WHEN** a repository sets `core.excludesFile` to a file listing `*.skip` and `core.ignorecase` to true, its `.gitignore` lists `Build/`, and it has an untracked `src/b.skip` and an untracked `build/out.js`
+- **THEN** the index holds neither of them
+
+#### Scenario: An untracked directory that cannot be read is left out
+- **WHEN** an untracked directory cannot be opened by the process
+- **THEN** the index holds the other files and none of that directory's
+
+#### Scenario: A tracked directory that cannot be read does not fail the run
+- **WHEN** a tracked directory cannot be opened by the process
+- **THEN** the run succeeds, the index holds the other files and none of that directory's, the coverage names the directory as a problem, and a repeated run with nothing else changed is still a no-op
+
+#### Scenario: A directory outside git that cannot be read does not fail the run
+- **WHEN** a directory of a tree outside git cannot be opened by the process
+- **THEN** the run succeeds, the index holds the other files and none of that directory's, and the coverage names the directory as a problem
+
+#### Scenario: A directory that can be listed but not searched is reported
+- **WHEN** a directory has mode `r--`, so the process can list it but cannot look at the files in it
+- **THEN** the run succeeds, the index holds the other files and none of that directory's, and the coverage names the directory as a problem
+
 #### Scenario: A deleted tracked file is gone
 - **WHEN** a committed file is removed from the work tree without a commit
 - **THEN** the index does not hold it
 
+#### Scenario: A conflicted file stays in the set
+- **WHEN** a merge stops on a conflict in a tracked file
+- **THEN** the index holds that file with the id of the work tree file, conflict markers included
+
 ### Requirement: Content ids
-The engine SHALL identify each file's content by its git blob id, SHALL take the id of a clean tracked file from the git index without reading the file, and SHALL hash a modified or untracked file. Outside git a file whose size and modification time match the snapshot SHALL keep its stored id.
+The engine SHALL identify each file's content by its git blob id and SHALL take the id of a clean tracked file from the git index without reading the file. Any other file whose size and modification time match the snapshot SHALL keep its stored id, and the rest SHALL be hashed. A file above `max_file_bytes` is never parsed, so it SHALL NOT be read for its id: its size and modification time SHALL stand in for it, and touching such a file makes it count as modified.
+
+#### Scenario: A file above the size limit is not read for its id
+- **WHEN** a file larger than `max_file_bytes` is in the work tree and the process is not allowed to read it
+- **THEN** its content id is made of its size and modification time, whereas an unreadable file under the limit has no content id
+
+#### Scenario: A file above the size limit does not stop a no-op
+- **WHEN** a tree holds a file larger than `max_file_bytes` that the process cannot read, and it is indexed twice
+- **THEN** the second refresh is a no-op
+
+#### Scenario: An old file that did not change is not read again
+- **WHEN** a modified or untracked file with a modification time an hour old cannot be read, and the tree is indexed twice
+- **THEN** the second refresh is a no-op, in a repository and outside one
 
 #### Scenario: An edited file gets the id git would give it
 - **WHEN** a committed file is edited and the engine refreshes
@@ -40,6 +76,20 @@ The engine SHALL identify each file's content by its git blob id, SHALL take the
 #### Scenario: A clean tree is not parsed again
 - **WHEN** a committed, clean repository is indexed twice
 - **THEN** the second run parses no file and reuses the facts of every file
+
+### Requirement: A fresh stamp proves nothing
+A size and modification time kept in the snapshot SHALL NOT stand for a file whose modification time lies within two seconds of the start of the listing that took them, because a save in the same tick of the file system's clock leaves both as they were. The engine SHALL hash such a file again.
+
+#### Scenario: A same-size edit in the same clock tick is noticed
+- **WHEN** an indexed file is saved again with the same size and its old modification time put back, within two seconds
+- **THEN** the next refresh gives the file the id of its new content and parses it, in a repository and outside one
+
+### Requirement: Facts follow the bytes that were read
+A file saved between the listing and the read of a run SHALL have its facts filed under the content id of the bytes that were read, so that saving the earlier text back, or a sibling worktree holding it, never finds them under the earlier id. A file that changed while it was being read SHALL have no id, so nothing is filed under it. A file unchanged since the listing SHALL keep the id the listing gave it.
+
+#### Scenario: A file saved during a run is filed under what was read
+- **WHEN** a file is saved between the listing and the read of a run
+- **THEN** the next refresh is a no-op, and saving the earlier text back parses the file again
 
 ### Requirement: File assignment
 Each file SHALL belong to at most one project: the first connector in registry order that has a project whose `matches` accepts the file, and among that connector's projects the one with the deepest root. A file no project takes SHALL be counted as unclaimed under its language.
@@ -54,10 +104,10 @@ Each file SHALL belong to at most one project: the first connector in registry o
 
 #### Scenario: Unclaimed files are counted by language
 - **WHEN** the tree holds `Main.kt` and no project matches it
-- **THEN** coverage counts one unclaimed `kotlin` file
+- **THEN** coverage counts one unclaimed `kt` file, whose language is Kotlin
 
 ### Requirement: Fact reuse
-The engine SHALL key a file's facts by the fact format, the connector's name and version, the module options, the fingerprint of the packs the connector received, the project salt, the path and the content id. It SHALL take facts with an equal key from this worktree's snapshot, then from the snapshots of sibling worktrees, and parse only when neither has them.
+The engine SHALL key a file's facts by the fact format, the connector's name and version, the module options, the fingerprint of the packs the connector received, the project's root and salt, the path and the content id. It SHALL take facts with an equal key from this worktree's snapshot, then, as the next requirement says, from the snapshots of sibling worktrees, and parse only when neither has them.
 
 #### Scenario: Only edited files are parsed
 - **WHEN** one of three indexed files is edited and the engine refreshes
@@ -67,9 +117,24 @@ The engine SHALL key a file's facts by the fact format, the connector's name and
 - **WHEN** the options of one module change between two runs
 - **THEN** every file of that module is parsed again and no file of another module is
 
+#### Scenario: A file that moves to another project is parsed again
+- **WHEN** a manifest appears in a directory, so that a new project takes over the files below it, and the connector gives both projects the same salt
+- **THEN** the run parses those files again and reuses the others
+
 #### Scenario: A new worktree reuses its sibling's facts
 - **WHEN** a linked worktree is indexed for the first time after the main worktree was indexed at the same commit
-- **THEN** the run reuses every file's facts and parses none
+- **THEN** the run reuses every file's facts, parses none and reads one sibling snapshot
+
+### Requirement: Sibling snapshots
+The engine SHALL read the snapshots of sibling worktrees only when this worktree's snapshot is absent or lacks the facts of more than 64 files and more than a twentieth of the files a connector took. It SHALL leave a sibling snapshot written by another version unread beyond its header.
+
+#### Scenario: Siblings are read only when the own snapshot cannot answer
+- **WHEN** a worktree with a snapshot has one file edited, and then seventy files edited the way a sibling holds them
+- **THEN** the first run reads no sibling snapshot, and the second reads one and parses nothing
+
+#### Scenario: A sibling of another version is not read
+- **WHEN** the only sibling snapshot was written by another version and a new worktree is indexed
+- **THEN** the run reads no sibling snapshot and parses every file
 
 ### Requirement: Size and encoding limits
 A file larger than `Setup.max_file_bytes` SHALL be recorded as `TooLarge` and a file that is not UTF-8 as `NotUtf8`, and neither SHALL be handed to its connector.
@@ -103,6 +168,45 @@ The engine SHALL call each project's `prepare` once with every file it owns befo
 - **WHEN** a project's `link` returns a fact for one of its files
 - **THEN** the graph has that site on that file
 
+### Requirement: Linked facts replace the facts they re-key
+A linked fact MAY name the own fact of its file, line and role that it keys again, such as a route a mount serves under a prefix. Each named own fact SHALL give way to the linked sites, and an own fact that no linked fact names SHALL keep its site, whatever shares its line. A link that keys an own fact again SHALL return it under every mount, the root included. Embedded facts are never replaced, and a file whose link returned nothing or panicked keeps its own facts.
+
+#### Scenario: A linked fact replaces the own fact it re-keys
+- **WHEN** a file has the own fact `serves http GET /bookings/{}` at line 1 and its project's `link` returns `serves http GET /api/bookings/{}` at line 1 of the same file, naming `http GET /bookings/{}` as the own fact it keys again
+- **THEN** the graph has a site on that file under the linked key
+- **AND** it has no site on that file under the own key
+
+#### Scenario: An own fact on another line keeps its site
+- **WHEN** a file has the own fact `serves http GET /bookings/{}` at line 1 and the same own fact at line 2, and `link` returns a fact for line 1 that names that key
+- **THEN** the graph keeps the site of the own fact at line 2
+- **AND** it has no site under the own key at line 1
+
+#### Scenario: An own fact of another kind or role keeps its site
+- **WHEN** a linked fact names an own key at a line, and the file has on that line an own fact of the same key in another role and an own fact of another contract kind
+- **THEN** the graph keeps the sites of both
+
+#### Scenario: An own fact of another file keeps its site
+- **WHEN** a linked fact names an own key at a line of one file and another file has an own fact with that key at the same line and role
+- **THEN** the graph keeps the site of the other file's own fact
+
+#### Scenario: A declaration mounted under two prefixes has two linked sites
+- **WHEN** a file has an own fact at line 1 and `link` returns two facts for that line, one under each of two prefixes, each naming the own key
+- **THEN** the graph has two sites on that file at line 1, one under each linked key
+- **AND** it has no site under the own key
+
+#### Scenario: An own fact no linked fact names keeps its site
+- **WHEN** a file has the own facts `serves http GET /a` and `serves http GET /b` at line 1 and `link` returns `serves http GET /api/a` at line 1, naming `http GET /a`
+- **THEN** the graph has a site under `/api/a` and a site under `/b`
+- **AND** it has no site under `/a`
+
+#### Scenario: A linked fact that names no own fact replaces nothing
+- **WHEN** a file has the own fact `serves http GET /b` at line 1 and `link` returns `serves http GET /api/x` at line 1, naming no own fact
+- **THEN** the graph has a site under `/api/x` and a site under `/b`
+
+#### Scenario: An embedded fact is not replaced by a linked one
+- **WHEN** a linked fact names the key of a fact read from an embedded document, at the file, line and role of that fact
+- **THEN** the graph keeps the site of the embedded fact
+
 ### Requirement: Failure containment
 The engine SHALL catch a panic in every connector call. A panic in `parse` SHALL record the file as `Panicked` with the message, a panic in any other call SHALL become a coverage line naming the connector, the project and the call, and the run SHALL finish. Options that do not deserialise SHALL fail the run with an error naming the module and the problem.
 
@@ -117,8 +221,28 @@ The engine SHALL catch a panic in every connector call. A panic in `parse` SHALL
 - **AND** coverage names the connector, the project and `link`
 
 #### Scenario: Bad options fail the run
-- **WHEN** the setup gives a module an option its schema does not allow
+- **WHEN** the setup gives a module an option its schema does not allow, an unknown one or one of the wrong type
 - **THEN** the run fails with an error naming the module and the option
+
+### Requirement: Contained panics are not printed
+The engine SHALL offer `quiet_contained_panics`, which installs a panic hook that stays silent about a panic the engine contains, on any thread, and hands every other panic to the hook that was installed before it.
+
+#### Scenario: A contained panic is not printed
+- **WHEN** `quiet_contained_panics` is installed over a recording hook, the engine contains panics on the calling thread and on rayon workers, and then a panic escapes
+- **THEN** the recording hook sees only the one that escaped
+
+### Requirement: Failure containment of detection and matching
+A panic in `detect` SHALL mean the connector finds nothing to read, and a panic in `matches` SHALL mean the project does not take that file. Each SHALL become a coverage line naming the connector and the call, and a project whose `matches` panics SHALL add one line, not one per file.
+
+#### Scenario: A panicking detect disables its connector
+- **WHEN** a connector's `detect` panics
+- **THEN** the run finishes without that connector
+- **AND** coverage names the connector and `detect`
+
+#### Scenario: A panicking matches leaves one file unclaimed
+- **WHEN** a project's `matches` panics for two of three files
+- **THEN** those two files are unclaimed and the third keeps its project
+- **AND** coverage names the connector, the project and `matches` once
 
 ### Requirement: Determinism
 Indexing the same tree with the same setup SHALL give equal indexes apart from `IndexInfo`, whatever the number of threads.
@@ -128,27 +252,56 @@ Indexing the same tree with the same setup SHALL give equal indexes apart from `
 - **THEN** the two indexes are equal apart from `IndexInfo`
 
 ### Requirement: Snapshot
-The engine SHALL store the index, every file's key, content id, size, modification time, facts and connector extra in `<state dir>/snapshot.gsttt`, written to a temporary file and renamed. The file SHALL start with the magic `GSTTSNAP`, a format version and a JSON header, followed by a validated rkyv body. A snapshot with another magic, format or `built_by`, or one that fails validation, SHALL be treated as absent. `peek` SHALL read the header without reading the body.
+The engine SHALL store the index, every file's key, content id, size, modification time, facts and connector extra in `<state dir>/snapshot.gsttt`, written to a temporary file, synced to disk and renamed. The file SHALL start with the magic `GSTTSNAP`, a layout number, the header length and the xxh3 hash of the body, then a JSON header, then a validated rkyv body. `peek` SHALL read the header without reading the body.
 
 #### Scenario: A stored index loads back equal
 - **WHEN** an index is stored and loaded
 - **THEN** the loaded index equals the stored one
+
+#### Scenario: Peek reads only the header
+- **WHEN** `peek` runs on a snapshot whose body bytes are garbage
+- **THEN** it returns the header with `built_by`, `head`, `dirty` and `files`
+
+### Requirement: A snapshot that cannot be trusted counts as absent
+A snapshot with another magic, layout number or `built_by`, one whose body does not match the hash in its prefix, and one whose body fails validation SHALL be treated as absent. The next refresh SHALL build the index and replace it.
 
 #### Scenario: A corrupt snapshot counts as none
 - **WHEN** the snapshot's body is truncated
 - **THEN** loading returns no index
 - **AND** the next refresh rebuilds and replaces the snapshot
 
-#### Scenario: Peek reads only the header
-- **WHEN** `peek` runs on a snapshot whose body bytes are garbage
-- **THEN** it returns the header with `built_by`, `head`, `dirty` and `files`
+#### Scenario: A flipped byte in the body counts as none
+- **WHEN** one byte of the snapshot's body is changed to another value, as a disk can do
+- **THEN** loading returns no index
+
+### Requirement: Snapshot write failure
+A snapshot that cannot be written SHALL be logged and SHALL NOT fail the run.
+
+#### Scenario: A snapshot that cannot be written does not fail the run
+- **WHEN** the state directory cannot be created
+- **THEN** the refresh still returns the index it built
+- **AND** no snapshot exists afterwards
 
 ### Requirement: Unchanged trees answer from the snapshot
-A refresh whose file set, keys, setup fingerprint and gsttt version all match the snapshot SHALL return the stored index without calling `parse`, `prepare`, `resolve` or `link`.
+A refresh whose file set, content id of every file, keys, setup fingerprint, HEAD commit and gsttt version all match the snapshot SHALL return the stored index without calling `parse`, `prepare`, `resolve` or `link`. A refresh that differs in any of them, or that follows a read that failed, SHALL rebuild the index and store it.
 
 #### Scenario: A no-op refresh calls no connector work
 - **WHEN** the engine refreshes twice with nothing changed in between
 - **THEN** the second refresh calls none of `parse`, `prepare`, `resolve` and `link` and reports the index unchanged
+
+#### Scenario: An edit to an unclaimed file is not a no-op
+- **WHEN** a file no connector reads is edited after indexing and the engine refreshes
+- **THEN** the refresh rebuilds the index and parses no file
+- **AND** the index counts one dirty file and the snapshot reports the tree as fresh
+
+#### Scenario: A file that could not be read is read again
+- **WHEN** a file is gone by the time a run reads it and is back as it was before the next refresh
+- **THEN** the next refresh rebuilds the index and parses the file
+- **AND** the refresh after that is a no-op
+
+#### Scenario: A new commit is not a no-op
+- **WHEN** the dirty files are committed after indexing and the engine refreshes
+- **THEN** the refresh rebuilds the index with the new head and no dirty file
 
 ### Requirement: Freshness
 The engine SHALL report, without building an index, how many files were added, removed and changed since a given index was built.
@@ -171,6 +324,19 @@ The engine SHALL list the files of the work tree that differ from `HEAD` as modi
 #### Scenario: An unknown base is an error
 - **WHEN** the base revision is `no-such-branch`
 - **THEN** listing changed files fails with an error naming `no-such-branch`
+
+### Requirement: Unreadable history
+A HEAD or a history git cannot read SHALL NOT fail an index run. The index SHALL then record no head or no dirty count, and its coverage SHALL carry a line saying what git could not tell. A repository without commits SHALL have no head and no such line.
+
+#### Scenario: A HEAD git cannot read is a coverage line
+- **WHEN** the checked-out branch points at a commit the repository does not hold
+- **THEN** the run finishes with no head and no dirty count
+- **AND** the coverage has a line naming HEAD
+
+#### Scenario: A history git cannot read is a coverage line
+- **WHEN** the tree of the HEAD commit is missing from the repository
+- **THEN** the run finishes with the head and no dirty count
+- **AND** the coverage has a line saying the files that differ from HEAD are not counted
 
 ### Requirement: Pack merging
 The engine SHALL hand each connector the built-in packs of its language without those named in `Setup.disable_packs`, with each pack of `Setup.packs` replacing the built-in pack of the same name or adding to them when no built-in has that name.

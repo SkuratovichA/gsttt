@@ -1,0 +1,3 @@
+version: v1
+directories:
+  - libs/legacy

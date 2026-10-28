@@ -1,0 +1,11 @@
+---
+source: crates/lang-rust/tests/rust/workspace.rs
+expression: roots
+---
+[
+  ".",
+  "crates/cli",
+  "crates/core",
+  "crates/renamed",
+  "crates/web"
+]

@@ -1,0 +1,40 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"main.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "both",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "both/__init__.py"
+      }
+    },
+    {
+      "spec": "stubbed",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "files": [
+          "stubbed.py",
+          "stubbed.pyi"
+        ]
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "main.py",
+  "project": "python ."
+}

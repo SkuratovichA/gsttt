@@ -1,0 +1,53 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"app/x.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "app",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "models"
+      ],
+      "to": {
+        "file": "app/models.py"
+      }
+    },
+    {
+      "spec": "app.models",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "Booking"
+      ],
+      "to": {
+        "file": "app/models.py"
+      }
+    },
+    {
+      "spec": "app",
+      "kind": "static",
+      "line": 3,
+      "flags": 0,
+      "names": [
+        "settings"
+      ],
+      "to": {
+        "file": "app/__init__.py"
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "app/x.py",
+  "project": "python ."
+}

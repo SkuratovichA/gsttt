@@ -1,0 +1,91 @@
+# Folds the specs of finished changes into openspec/specs/ once they are on main.
+#
+# `cargo xtask spec --ready` prints the open changes that OpenSpec can archive. The OpenSpec CLI archives each of them, the spec gate runs on the result, and only a passing gate is committed and pushed. A change that cannot be archived does not stop the others: it is named and fails the job at the end.
+name: archive-specs
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# Two pushes in a row archive one after the other, never at once.
+concurrency:
+  group: archive-specs
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    # No condition on the actor is needed: the push below is made with the default token, and GitHub starts no workflow for a push made with it, so the job never runs on its own commit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Installs the toolchain that rust-toolchain.toml names, so the version lives in one place.
+      - name: Install the Rust toolchain
+        run: rustup toolchain install
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 10
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: List the changes that are ready
+        id: ready
+        run: |
+          cargo --locked xtask spec --ready > "$RUNNER_TEMP/ready.txt"
+          if [ -s "$RUNNER_TEMP/ready.txt" ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+            cat "$RUNNER_TEMP/ready.txt"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "No change is ready to archive."
+          fi
+
+      # `archive --yes` archives a change whatever its tasks say, which is why only the changes that the gate lists are passed to it. OpenSpec changes nothing for a change it refuses, so the others can still be archived; the last step fails the job for the ones it refused.
+      - name: Archive them
+        if: steps.ready.outputs.any == 'true'
+        run: |
+          : > "$RUNNER_TEMP/archived.txt"
+          : > "$RUNNER_TEMP/failed.txt"
+          while read -r change; do
+            # The list is the loop's input, so the command must not be able to read it.
+            if pnpm dlx @fission-ai/openspec@1.15.0 archive "$change" --yes < /dev/null; then
+              echo "$change" >> "$RUNNER_TEMP/archived.txt"
+            else
+              echo "$change" >> "$RUNNER_TEMP/failed.txt"
+            fi
+          done < "$RUNNER_TEMP/ready.txt"
+
+      - name: Check the specs that result
+        if: steps.ready.outputs.any == 'true'
+        run: cargo --locked xtask spec
+
+      - name: Commit and push
+        if: steps.ready.outputs.any == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add openspec
+          if git diff --cached --quiet; then
+            echo "Archiving changed nothing."
+            exit 0
+          fi
+          git commit -m "chore(openspec): archive finished changes" -m "Archived: $(paste -sd, "$RUNNER_TEMP/archived.txt")"
+          # A push that landed while this job ran has moved main on; the archive commit goes on top.
+          git pull --rebase origin main
+          git push
+
+      - name: Fail for the changes that could not be archived
+        if: ${{ !cancelled() && steps.ready.outputs.any == 'true' }}
+        run: |
+          if [ -s "$RUNNER_TEMP/failed.txt" ]; then
+            echo "OpenSpec could not archive these changes:"
+            cat "$RUNNER_TEMP/failed.txt"
+            exit 1
+          fi

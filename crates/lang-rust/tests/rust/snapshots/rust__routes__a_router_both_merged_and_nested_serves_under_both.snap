@@ -1,0 +1,30 @@
+---
+source: crates/lang-rust/tests/rust/routes.rs
+expression: "out.json()[\"linked\"]"
+---
+[
+  {
+    "file": "src/both.rs",
+    "key": "http GET /api/x",
+    "line": 7,
+    "replaces": "http GET /x",
+    "role": "serves",
+    "via": "axum"
+  },
+  {
+    "file": "src/both.rs",
+    "key": "http GET /x",
+    "line": 7,
+    "replaces": "http GET /x",
+    "role": "serves",
+    "via": "axum"
+  },
+  {
+    "file": "src/nested.rs",
+    "key": "http GET /api/x",
+    "line": 7,
+    "replaces": "http GET /x",
+    "role": "serves",
+    "via": "axum"
+  }
+]

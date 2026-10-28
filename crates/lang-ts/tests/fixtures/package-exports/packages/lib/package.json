@@ -1,0 +1,9 @@
+{
+  "name": "lib",
+  "exports": {
+    ".": { "require": "./src/cjs.ts", "import": "./src/esm.ts" },
+    "./feature/*": "./src/feature/*.ts",
+    "./internal/*": null,
+    "./hidden": null
+  }
+}

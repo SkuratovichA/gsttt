@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -10,12 +11,9 @@ use foldhash::fast::RandomState;
 use crate::ids::{FileId, Id};
 use crate::path::RepoPath;
 
-/// The files of the repository that the run indexes: tracked files and untracked ones git does not ignore. Cheap
-/// to clone, so a project keeps one to resolve imports against.
+/// The files of the repository that the run indexes: tracked files and untracked ones git does not ignore. Cheap to clone, so a project keeps one to resolve imports against.
 ///
-/// Resolution looks files up here instead of on disk. A file git ignores (a build output, `node_modules`) is not
-/// in the view, so an import of it resolves to a package or to [`UnresolvedReason::Ignored`] rather than into
-/// generated code.
+/// Resolution looks files up here instead of on disk. A file git ignores (a build output, `node_modules`) is not in the view, so an import of it resolves to a package or to [`UnresolvedReason::Ignored`] rather than into generated code.
 ///
 /// [`UnresolvedReason::Ignored`]: crate::fact::UnresolvedReason::Ignored
 #[derive(Clone, Debug)]
@@ -56,35 +54,22 @@ impl RepoView {
         }
     }
 
-    /// A view of every file under `root` that the ignore files inside `root` leave in, dotfiles included: the file
-    /// set outside git, and the file set of a fixture tree in tests. Ignore files above `root`, the global
-    /// gitignore, `.git` and symbolic links play no part, so the same tree gives the same view on every machine.
+    /// A view of every file under `root` that the ignore files inside `root` leave in, dotfiles included: the file set of a fixture tree in tests. Ignore files above `root`, the global gitignore, `.git` and symbolic links play no part, so the same tree gives the same view on every machine. A directory the walk cannot read is an error: [`RepoView::scan_reporting`] goes on without it.
     pub fn scan(root: impl Into<Utf8PathBuf>) -> io::Result<Self> {
         let root = root.into();
-        let mut files = Vec::new();
-        let walk = ignore::WalkBuilder::new(&root)
-            .hidden(false)
-            .parents(false)
-            .git_global(false)
-            .require_git(false)
-            .follow_links(false)
-            .filter_entry(|entry| entry.file_name() != ".git")
-            .build();
-        for entry in walk {
-            let entry = entry.map_err(io::Error::other)?;
-            if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-                continue;
-            }
-            let relative = entry
-                .path()
-                .strip_prefix(&root)
-                .ok()
-                .and_then(|path| path.to_str());
-            if let Some(path) = relative.and_then(|relative| RepoPath::normalize(relative).ok()) {
-                files.push(path);
-            }
+        let (files, failed) = walk(&root);
+        match failed.into_iter().next() {
+            Some((_, error)) => Err(io::Error::other(error)),
+            None => Ok(Self::new(root, files)),
         }
-        Ok(Self::new(root, files))
+    }
+
+    /// The same view as [`RepoView::scan`], for the file set outside git, with the directories the walk could not read. The walk goes on without such a directory, so the files under it may be missing from the view. Each directory comes as its path under `root`, which is `.` for `root` itself and for an error that names no path.
+    pub fn scan_reporting(root: impl Into<Utf8PathBuf>) -> (Self, Vec<String>) {
+        let root = root.into();
+        let (files, failed) = walk(&root);
+        let unreadable = failed.into_iter().map(|(directory, _)| directory).collect();
+        (Self::new(root, files), unreadable)
     }
 
     /// The absolute path of the repository root.
@@ -164,16 +149,69 @@ impl RepoView {
         self.inner.root.join(path)
     }
 
-    /// Reads a file of the working tree, in the view or not: a connector reads `tsconfig.json` or `Cargo.toml`
-    /// this way.
+    /// Reads a file of the working tree, in the view or not: a connector reads `tsconfig.json` or `Cargo.toml` this way.
     pub fn read_to_string(&self, path: &str) -> io::Result<String> {
         std::fs::read_to_string(self.absolute(path))
     }
 
-    /// Whether `path` exists in the working tree, in the view or not. It tells an import of a git-ignored file
-    /// from an import of nothing.
+    /// Whether `path` exists in the working tree, in the view or not. It tells an import of a git-ignored file from an import of nothing.
     pub fn exists_on_disk(&self, path: &str) -> bool {
         self.absolute(path).symlink_metadata().is_ok()
+    }
+}
+
+/// The files under `root` that the walk finds, and each error that kept it from reading something, with the directory it is about as a path under `root` (`.` for `root` itself).
+fn walk(root: &Utf8Path) -> (Vec<RepoPath>, Vec<(String, ignore::Error)>) {
+    let mut files = Vec::new();
+    let mut failed = Vec::new();
+    let walk = ignore::WalkBuilder::new(root)
+        .hidden(false)
+        .parents(false)
+        .git_global(false)
+        .require_git(false)
+        .follow_links(false)
+        .filter_entry(|entry| entry.file_name() != ".git")
+        .build();
+    for entry in walk {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                failed.push((failed_directory(root, &error), error));
+                continue;
+            }
+        };
+        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+            continue;
+        }
+        let relative = entry
+            .path()
+            .strip_prefix(root)
+            .ok()
+            .and_then(|path| path.to_str());
+        if let Some(path) = relative.and_then(|relative| RepoPath::normalize(relative).ok()) {
+            files.push(path);
+        }
+    }
+    (files, failed)
+}
+
+/// The directory an error of the walk is about, as a path under `root`: `.` when the error names `root` itself, a path outside it or no path at all.
+fn failed_directory(root: &Utf8Path, error: &ignore::Error) -> String {
+    named_path(error)
+        .and_then(|path| path.strip_prefix(root).ok())
+        .and_then(|relative| relative.to_str())
+        .and_then(|relative| RepoPath::normalize(relative).ok())
+        .map_or_else(|| ".".to_owned(), String::from)
+}
+
+/// The path an error of the walk names, if it names one.
+fn named_path(error: &ignore::Error) -> Option<&Path> {
+    match error {
+        ignore::Error::WithPath { path, .. } => Some(path),
+        ignore::Error::WithDepth { err, .. } | ignore::Error::WithLineNumber { err, .. } => {
+            named_path(err)
+        }
+        _ => None,
     }
 }
 

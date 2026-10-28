@@ -2,19 +2,51 @@
 
 ## 1. Connectors
 
-- [ ] 1.1 Six connectors with their projects, claimed files, options with JSON schemas and `provides`
-- [ ] 1.2 Parse status per format: syntax failures with lines, recovered counts where the parser recovers
+- [x] 1.1 Six connectors with their projects, claimed files, options with JSON schemas and `provides`
+- [x] 1.2 Parse status per format: syntax failures with lines, recovered counts where the parser recovers
 
 ## 2. Formats
 
-- [ ] 2.1 OpenAPI 3 and Swagger 2 with `saphyr` and `jsonc-parser`: operations, server paths, `$ref` imports, fragments joined in `link`
-- [ ] 2.2 GraphQL with `apollo-parser`: schema roots and renames, operations, same-document fragments, `#import`, embedded documents
-- [ ] 2.3 Protobuf with `protox-parse`: services, `google.api.http` bindings, imports through buf roots and ancestors
-- [ ] 2.4 Prisma: models, `@@map`, datasource env
-- [ ] 2.5 SQL with `sqlparser`: dialect option, DDL and DML tables, CTEs left out, placeholders, statement-level recovery, embedded documents
-- [ ] 2.6 Env files
+- [x] 2.1 OpenAPI 3 and Swagger 2 with `saphyr` and `jsonc-parser`: operations, server paths, `$ref` imports, fragments joined in `link`
+- [x] 2.2 GraphQL with `apollo-parser`: schema roots and renames, operations, same-document fragments, `#import`, embedded documents
+- [x] 2.3 Protobuf with `protox-parse`: services, `google.api.http` bindings, imports through buf roots and ancestors
+- [x] 2.4 Prisma: models, `@@map`, datasource env
+- [x] 2.5 SQL with `sqlparser`: dialect option, DDL and DML tables, CTEs left out, placeholders, statement-level recovery, embedded documents
+- [x] 2.6 Env files
 
 ## 3. Proof
 
-- [ ] 3.1 A test annotated `#[scenario("contract-formats", …)]` for every scenario of the `contract-formats` spec, with reviewed `insta` snapshots
-- [ ] 3.2 `cargo nextest run -p gsttt-contracts`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+- [x] 3.1 A test annotated `#[scenario("contract-formats", …)]` for every scenario of the `contract-formats` spec, with reviewed `insta` snapshots
+- [x] 3.2 `cargo nextest run -p gsttt-contracts`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+
+## 4. Review fixes
+
+- [x] 4.1 Drop the dependencies nothing uses (`gsttt-config`, `tempfile`, `thiserror`) and keep `serde_json` for the tests only
+- [x] 4.2 `SyntaxError` lives in `common.rs` with the other helpers the connectors share
+- [x] 4.3 Every project returns salt 0 and `salt_of` is gone, because the options are part of the fact key already
+- [x] 4.4 SQL reads the statements around one the tokenizer cannot close, and counts that one as an error
+- [x] 4.5 A SQL statement read again with its placeholders replaced keeps its lines and its strings, escaped newlines, doubled quotes and lone carriage returns included
+- [x] 4.6 SQL declares the new name of a renamed table, keeps one site per line, key and role, picks its grammar once when the project opens, and lists the scope of common table expressions and table functions among its blind spots
+- [x] 4.7 A proto path variable is a parameter wherever it stands, `{id}:cancel` and variables that span segments included, and a binding set as `option (google.api.http).get = "…"` is read
+- [x] 4.8 The proto line map borrows the location paths of the descriptor instead of cloning one vector for every location
+- [x] 4.9 A brace inside a Prisma string literal closes no block, and the scan for the closing brace shares its string logic with the one for comments
+- [x] 4.10 The GraphQL operations fixture also holds a shorthand query and a fragment spread at the root, which the operations scenario now names
+- [x] 4.11 OpenAPI reads every server, drops an origin written as `//host` or `{variable}`, and declares each operation, and each fragment reached by a `$ref`, once under each distinct server path
+- [x] 4.12 OpenAPI searches a document for its `$ref`s without reading its operations, and logs each document it skips because it is too large, unreadable or invalid
+- [x] 4.13 GraphQL lists a root type renamed in another file and the `# import <names> from "<file>"` form as blind spots, and builds its root and fragment maps only for documents that hold a type or a fragment
+- [x] 4.14 Env files: a `.env.*` file in a programming language is not claimed, and the lines inside a quoted value that runs over several lines declare nothing
+- [x] 4.15 `detect` is tested: `openapi`, `proto`, `prisma` and `env` are detected only for a file they claim, `graphql` and `sql` for any file list
+- [x] 4.16 The YAML tree resolves `<<` merge keys, which the loader leaves as entries, so an operation merged into a path item is declared; aliases were already resolved by the loader
+
+## 5. Integration fixes
+
+- [x] 5.1 A path segment that holds a `{…}` is a parameter of the key, so the custom method `{id}:cancel` of OpenAPI meets the protobuf binding of the same method
+- [x] 5.2 One counter of syntax errors in the core, `ErrorCount`, replaces the copies of the contract, Python, Rust and TypeScript connectors, and it keeps the smallest line noted, so a parser that reports out of order still names the first error of the file
+- [x] 5.3 The TypeScript connector joins directories with `RepoPath::join_dir` of the core and its own `join_dir` is gone, because the two agree for every input: a join that comes to the root is the empty directory, and an absolute path or one that leaves the repository is `None`
+- [x] 5.4 A URL has an origin only when it starts with a scheme, a letter followed by letters, digits, `+`, `-` or `.`, which `path_after_origin` of the core reads, so `/a?next=https://b/c` keeps its path `/a` in an HTTP key; the server paths of OpenAPI use it too and keep their own readings of `//host` and of a leading `{variable}`
+- [x] 5.5 A scheme written as placeholders, as in `${}://${}/x`, `{}://{}/x` and `{scheme}://{host}/x`, is part of an origin again, and so is a placeholder, `//` and a host that holds a placeholder, which is what a protocol that holds its own colon leaves; a host ends at the first `/`, `?` or `#`, and the custom method `<id>:cancel` is a parameter of the key, as `{id}:cancel` is
+- [x] 5.6 `normalize_http_path` trims each segment, so the path it returns normalises to itself, which a property test over text that reaches the edges of a path pins: `a #` gave `/a ` and `/a ` gave `/a`
+- [x] 5.7 A request target and a `$ref` have an origin when `path_after_origin` says so and not when their text only holds a `://`, so a call to `cache?next=https://b` is skipped as no URL, and the server paths of OpenAPI lose their own branch for `{scheme}://host`
+- [x] 5.8 `LineIndex::line_at` of the core takes the `usize` offset that parsers report and saturates past a `u32`, so the contract, Python and TypeScript connectors stop converting by hand and `byte_offset` is gone; an offset that does not fit a `u32` was line 1 in the TypeScript reader of JSON and is the last line now, as it was in the one of the contracts
+- [x] 5.9 One ordered reader of JSON, `gsttt_core::tree`, replaces the twins of the TypeScript and contract connectors: it keeps the order of the keys, the line of every key and the cut at a depth of 64, it tells `null` from the other scalars, and its one `SyntaxError` replaces the two error types of the connectors; the YAML reader of the contracts builds the same tree, with a YAML null as `Null`
+- [x] 5.10 The path of a server URL stops at its query string or fragment, so `https://api.example.com?key=1` keeps the empty path it had before the host of `path_after_origin` ended at a `?`, and `https://api.example.com/v1?key=1` has the path `/v1`

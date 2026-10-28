@@ -1,0 +1,48 @@
+---
+source: crates/contracts/tests/contracts/sql.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "sql",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "table bookings",
+          "role": "calls",
+          "line": 2,
+          "via": "sql"
+        },
+        {
+          "key": "table booking_items",
+          "role": "calls",
+          "line": 3,
+          "via": "sql"
+        },
+        {
+          "key": "table carts",
+          "role": "calls",
+          "line": 7,
+          "via": "sql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "queries.sql",
+      "project": "sql ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}
