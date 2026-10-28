@@ -39,7 +39,7 @@
 
 ## 7. Dogfooding and CI
 
-- [ ] 7.1 Index a `git archive` copy of this repository in a test and fail on a Rust file outside `tests/fixtures/` that does not parse
+- [x] 7.1 Index a `git archive` copy of this repository in a test and fail on a Rust file outside `tests/fixtures/` that does not parse
 - [x] 7.2 Run the packaged binary in the CI build on the two native targets, and pin the step in `xtask/tests/dist/ci.rs`
 
 ## 8. Gates
