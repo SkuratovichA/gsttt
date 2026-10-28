@@ -1,3 +1,9 @@
+# Spec Delta
+
+## Purpose
+
+The MCP server answers an agent's questions about a repository over the Model Context Protocol, on the standard streams of `gsttt mcp`. It has a tool for each question the command line answers, and answers a model in the text the command line prints, with lists cut unless it asks for all of them. Every tool but `index_status` refreshes the index first, so that an answer is never older than the question. The server takes its index from a source: the binary serves the repository around the directory it was started in, and the tests serve a fake.
+
 ## ADDED Requirements
 
 ### Requirement: Startup without the repository
