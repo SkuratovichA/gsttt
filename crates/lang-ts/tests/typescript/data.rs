@@ -247,6 +247,17 @@ fn a_namespace_import_of_the_client_names_nothing() -> Result<(), Box<dyn Error>
 }
 
 #[test]
+#[scenario("typescript", "A model type taken from another package names nothing")]
+fn a_model_type_taken_from_another_package_names_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-other-packages")?;
+    for path in ["src/custom-output.ts", "src/shared.ts"] {
+        assert_eq!(contracts(&json, path), NOTHING, "{path}");
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "ORM declarations declare tables")]
 fn orm_declarations_declare_tables() -> Result<(), Box<dyn Error>> {
     let json = run("orm-declarations")?;

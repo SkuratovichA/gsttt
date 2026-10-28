@@ -144,3 +144,7 @@ A pack MAY name a contract for each name a file takes from a package. With the `
 #### Scenario: A namespace import of the client names nothing
 - **WHEN** `src/client.ts` has `import * as client from '@prisma/client'`, a default import of it, `import { default as other } from '@prisma/client'`, `import '@prisma/client'`, `export * from '@prisma/client'`, `export * as models from '@prisma/client'` and `export { default as Client } from '@prisma/client'`
 - **THEN** the file calls no table
+
+#### Scenario: A model type taken from another package names nothing
+- **WHEN** `src/custom-output.ts` has `import type { Tenant } from '../generated/prisma'`, a client generated to `generated/prisma`, and `src/shared.ts` has `import type { Booking } from '@acme/db'`, a package that re-exports the client with `export * from '@prisma/client'`
+- **THEN** the two files call no table

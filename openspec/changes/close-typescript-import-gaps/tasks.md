@@ -30,3 +30,4 @@
 - [x] 3.8 The tests pin each wrapper of a root type and the union with null, that a pack which differs only in `imports` or only in `root_types` changes the key of a file, that `export { Tenant as T } from '@prisma/client'` names `table tenant`, and that `ui-kit?raw` resolves as `ui-kit` does
 - [x] 3.9 The name of a class property and its key `this.<name>` are read by two helpers of `shape.rs` that the roots and the makers both use; the two collectors stay two walks, because their gates, the subtrees they skip and what they return differ
 - [x] 3.10 The first argument of `jest.setMock`, `jest.createMockFromModule` and `jest.genMockFromModule` is a dynamic import, as it is for the other mock calls
+- [x] 3.11 A name taken from a package that `from` does not list names nothing, which the tests pin with a client generated to a custom `output` path and with a package that re-exports the client
