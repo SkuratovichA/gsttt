@@ -98,7 +98,7 @@ A file with `export *` SHALL be reached when the file it re-exports is affected,
 - **THEN** impact lists `mid.ts` at distance 1, `index.ts` at distance 2 with the reason `re-exports mid.ts`, and `page.ts` at distance 3 with the reason `imports foo from index.ts`
 
 ### Requirement: Unknown exports mean the whole file
-An edge into a file whose exports are unknown SHALL be followed at file level, whatever names it carries: its importer SHALL be affected in all its names when the file is affected in all of them, with the reason that it imports the file and no names, whether it imports by name, passes names on or re-exports everything. The exports of a file are unknown when its connector lists none, and when it re-exports everything from a file whose exports are unknown. A connector that lists no exports SHALL therefore give the files, distances and reasons of a walk over files.
+An edge into a file whose exports are unknown SHALL be followed at file level, whatever names it carries: its importer SHALL be affected in all its names, with the reason that it imports the file and no names, whether it imports by name, passes names on or re-exports everything. A file that re-exports everything from a file with unknown exports has unknown exports too. A connector that lists no exports SHALL therefore give the files, distances and reasons of a walk over files.
 
 #### Scenario: A named import of a file with unknown exports is followed at file level
 - **WHEN** `user.py` imports `parse` from `lib.py`, the exports of `lib.py` are unknown, and `lib.py` changes
