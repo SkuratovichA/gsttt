@@ -175,7 +175,7 @@ A spec whose `## Purpose` is empty or is the placeholder that `openspec archive`
 - **THEN** the gate exits non-zero and names the delta's file and the line of its first requirement
 
 ### Requirement: Changes on top of each other
-The gate SHALL read the open changes in the order `--ready` would archive them, applying each to what the main specs and the changes before it leave: a requirement it adds is put in, one it modifies replaces the one with that name, one it removes is taken away, one it renames has its new name. The scenarios of what is left need a proof, and no test may claim one that a change took away. Changes that cannot be placed come last, in the order of their names, and apply as far as their deltas reach.
+The gate SHALL read the open changes in the order `--ready` would archive them, a finished change first where the order leaves a choice, applying each to what the main specs and earlier changes leave: an added requirement is put in, a modified one replaces its namesake, a removed one is taken away, a renamed one has its new name. The scenarios left need a proof, and no test may claim one a change took away. Changes that nothing places come last, by name, and apply as far as their deltas reach.
 
 #### Scenario: A title that a later change keeps counts once
 - **WHEN** an open change modifies a requirement that another open change adds, and keeps one of its scenario titles
@@ -197,8 +197,12 @@ The gate SHALL read the open changes in the order `--ready` would archive them, 
 - **WHEN** an open change modifies a requirement that no spec and no other open change has
 - **THEN** its scenarios need a proof like those of any other change, and `--ready` does not print the change
 
+#### Scenario: A finished change is read before an unfinished one
+- **WHEN** an unfinished change with the first name and a finished change both modify one requirement of `openspec/specs/`, the unfinished one adds a scenario to it, and the finished one keeps the scenarios the requirement has there
+- **THEN** the gate exits zero, with the added scenario pending, and `--ready` prints the finished change
+
 ### Requirement: Modified requirements keep their scenarios
-The gate SHALL fail an open change whose modified requirement lacks a scenario title of the requirement it replaces, the one that the main specs or an earlier open change leaves, whether or not a test claims that title, because `openspec archive` refuses such a block. A title counts as often as it is written, so one held twice and written once is lacking. The failure names the change, the requirement and each missing title, and `--ready` does not list the change.
+The gate SHALL fail an open change whose modified requirement lacks a scenario of the requirement it replaces, the one the main specs or an earlier change leaves, because `openspec archive` refuses such a block; a title counts as often as it is written. The failure names the change, the requirement and each missing title, and `--ready` does not list the change. The block is not applied: the requirement it would replace stands with its scenarios, and the block's scenarios count for nothing.
 
 #### Scenario: A modified requirement that leaves out a scenario fails
 - **WHEN** an open change modifies a requirement so that it lacks a scenario of the requirement it replaces, and no test claims that scenario
@@ -214,4 +218,17 @@ The gate SHALL fail an open change whose modified requirement lacks a scenario t
 
 #### Scenario: A requirement that an earlier change adds is the one replaced
 - **WHEN** an open change modifies a requirement that another open change adds, and leaves out one of its scenarios
-- **THEN** the gate exits non-zero and names the modifying change, and `--ready` still lists the other
+- **THEN** the gate exits non-zero and names the modifying change
+- **AND** the scenario left out still needs a proof, and `--ready` lists the other change only once a test proves it
+
+#### Scenario: A title that only a refused block holds is claimed for nothing
+- **WHEN** an open change modifies a requirement so that it lacks a scenario of the requirement it replaces, and a test claims a scenario that only the new block holds
+- **THEN** the gate exits non-zero and names the test, saying that no spec or open change has the scenario
+
+### Requirement: Renames onto a name that stands
+The gate SHALL fail an open change that renames a requirement to a name that the main specs or an earlier change already give a requirement, because `openspec archive` refuses such a rename, and `--ready` SHALL NOT print the change. The failure names the change, the capability and both names. The rename is not applied: both requirements stand with their scenarios.
+
+#### Scenario: A rename onto a name that stands fails
+- **WHEN** an open change renames a requirement of `openspec/specs/` to the name of another requirement there
+- **THEN** the gate exits non-zero and names the change, the capability and both names, with the line of the rename's entry
+- **AND** both requirements keep their scenarios, and `--ready` does not print the change
