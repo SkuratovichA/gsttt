@@ -214,6 +214,15 @@ extra = []
         serde_json::to_string(setup.options("ts")).unwrap(),
         r#"{"conditions":["import","types"],"extra":[],"paths":{"@app/*":["src/*"]}}"#
     );
+
+    // Every level is sorted and not only the top one: the tables nested in this one are written out of order.
+    let nested = Tree::with_config("[ts]\nouter = { b = { z = 1, y = 2 }, a = 3 }\n")
+        .evaluate()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_string(nested.options("ts")).unwrap(),
+        r#"{"outer":{"a":3,"b":{"y":2,"z":1}}}"#
+    );
 }
 
 #[gsttt_scenario::scenario("config", "A value with no JSON form is refused")]
@@ -339,6 +348,14 @@ fn the_options_of_an_external_must_be_named() {
     let named = options(&format!("{entry}options = {{ b = 1, a = [2] }}\n"));
     assert_eq!(named, json!({ "a": [2], "b": 1 }));
     assert_eq!(serde_json::to_string(&named).unwrap(), r#"{"a":[2],"b":1}"#);
+    // At every level, not only at the top.
+    let nested = options(&format!(
+        "{entry}options = {{ outer = {{ b = {{ z = 1, y = 2 }}, a = 3 }}, c = 1 }}\n"
+    ));
+    assert_eq!(
+        serde_json::to_string(&nested).unwrap(),
+        r#"{"c":1,"outer":{"a":3,"b":{"y":2,"z":1}}}"#
+    );
 }
 
 /// Pieces of a config that make the parser, the sorting of the top level and the checks of an external go as far as they can when they are put together without care.
