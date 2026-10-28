@@ -15,6 +15,7 @@ mod tests;
 use gsttt_core::fact::{ContractFact, Embedded, UnresolvedSite};
 use gsttt_core::rules::{AssignRule, CallRule, ChainRule, DecoratorRule, EmbedRule, Outcome, Pack};
 use gsttt_core::text::LineIndex;
+use ra_ap_edition::Edition;
 use ra_ap_syntax::{SyntaxKind, SyntaxNode};
 
 use self::candidate::{Candidate, Prepared, View, apply_per_verb, lacks_keywords};
@@ -60,8 +61,13 @@ impl Sites {
 }
 
 /// Matches the sites of a file against `packs`.
-pub(crate) fn read(root: &SyntaxNode, lines: &LineIndex, packs: &[Pack]) -> Sites {
-    let reader = Reader::new(root, lines, packs);
+pub(crate) fn read(
+    root: &SyntaxNode,
+    lines: &LineIndex,
+    packs: &[Pack],
+    edition: Edition,
+) -> Sites {
+    let reader = Reader::new(root, lines, packs, edition);
     let mut sites = Sites::default();
     if reader.is_idle() {
         return sites;
@@ -88,6 +94,8 @@ struct Reader<'a> {
     axum: bool,
     /// Whether the actix pack is in force, which is what makes `scope` and `service` mount one.
     actix: bool,
+    /// The edition of the file, which the arguments of macros and attributes are parsed in.
+    edition: Edition,
 }
 
 /// What the rules produced at one site. A site that yields a contract is not also a blind spot.
@@ -119,7 +127,12 @@ impl Outcomes {
 }
 
 impl<'a> Reader<'a> {
-    fn new(root: &'a SyntaxNode, lines: &'a LineIndex, packs: &'a [Pack]) -> Self {
+    fn new(
+        root: &'a SyntaxNode,
+        lines: &'a LineIndex,
+        packs: &'a [Pack],
+        edition: Edition,
+    ) -> Self {
         Self {
             root,
             lines,
@@ -148,6 +161,7 @@ impl<'a> Reader<'a> {
                 .collect(),
             axum: packs.iter().any(|pack| pack.name == "axum"),
             actix: packs.iter().any(|pack| pack.name == "actix"),
+            edition,
         }
     }
 
@@ -202,7 +216,7 @@ impl<'a> Reader<'a> {
         if calls.is_empty() && embeds.is_empty() {
             return;
         }
-        let prepared = candidate.prepare();
+        let prepared = candidate.prepare(self.edition);
         let mut outcomes = Outcomes::default();
         for (pack, rule) in calls {
             self.apply_call(pack, rule, &candidate, &prepared, &mut outcomes);
@@ -264,7 +278,7 @@ impl<'a> Reader<'a> {
         if rules.is_empty() {
             return;
         }
-        let prepared = candidate.prepare();
+        let prepared = candidate.prepare(self.edition);
         let mut outcomes = Outcomes::default();
         for (pack, rule) in rules {
             for variant in prepared.per_method(rule.method.as_ref()) {

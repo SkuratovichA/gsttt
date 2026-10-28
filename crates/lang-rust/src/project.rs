@@ -152,7 +152,7 @@ impl Project for RustProject {
             None => ParseStatus::Ok,
         };
         let root = parse.syntax_node();
-        let sites = sites::read(&root, &lines, &self.packs);
+        let sites = sites::read(&root, &lines, &self.packs, self.edition);
         Parsed {
             facts: FileFacts {
                 status,
@@ -161,7 +161,7 @@ impl Project for RustProject {
                 } else {
                     FileTags::NONE
                 },
-                imports: imports::read(&root, &lines, self.reads_query_files()),
+                imports: imports::read(&root, &lines, self.reads_query_files(), self.edition),
                 contracts: sites.found.into_iter().map(|found| found.fact).collect(),
                 embedded: sites.embedded,
                 unresolved: sites.unresolved,
@@ -194,6 +194,7 @@ impl Project for RustProject {
             trees: &self.trees,
             registry: &self.registry,
             aliases: &self.aliases,
+            edition: self.edition,
         }
         .resolve(from, import)
     }

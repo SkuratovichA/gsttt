@@ -1,6 +1,6 @@
 //! The import reader over single files, without the engine around it.
 
-use gsttt_core::fact::Import;
+use gsttt_core::fact::{Import, ImportKind};
 use gsttt_core::text::LineIndex;
 use proptest::prelude::*;
 use ra_ap_edition::Edition;
@@ -10,7 +10,12 @@ use super::read;
 
 fn imports(source: &str) -> Vec<Import> {
     let parse = ast::SourceFile::parse(source, Edition::CURRENT);
-    read(&parse.syntax_node(), &LineIndex::new(source), true)
+    read(
+        &parse.syntax_node(),
+        &LineIndex::new(source),
+        true,
+        Edition::CURRENT,
+    )
 }
 
 /// The specs of the imports, in the order they are returned.
@@ -109,4 +114,58 @@ proptest! {
         // Reaching the end is the assertion: a panic in the reader fails the case.
         drop(imports(&source));
     }
+}
+
+#[test]
+fn a_use_path_in_2015_starts_at_the_crate_root() {
+    let source = "use a::b;\nuse self::c::d;\nuse super::e;\nuse crate::f;\nuse ::g::h;";
+    let parse = ast::SourceFile::parse(source, Edition::Edition2015);
+    let found = read(
+        &parse.syntax_node(),
+        &LineIndex::new(source),
+        true,
+        Edition::Edition2015,
+    );
+    let specs: Vec<&str> = found.iter().map(|import| import.spec.as_str()).collect();
+    assert_eq!(
+        specs,
+        ["::a::b", "self::c::d", "super::e", "crate::f", "::g::h"]
+    );
+}
+
+#[test]
+fn a_path_attribute_may_be_a_raw_string_or_sit_inside_cfg_attr() {
+    let names = |source: &str| -> Vec<Vec<String>> {
+        imports(source)
+            .into_iter()
+            .map(|import| import.names)
+            .collect()
+    };
+    assert_eq!(names("#[path = r\"raw.rs\"]\nmod a;"), [["raw.rs"]]);
+    assert_eq!(names("#[path = r#\"hash.rs\"#]\nmod a;"), [["hash.rs"]]);
+    assert_eq!(
+        names("#[cfg_attr(unix, path = \"unix.rs\")]\nmod a;"),
+        [["unix.rs"]]
+    );
+}
+
+#[test]
+fn a_derive_inside_cfg_attr_names_its_crate() {
+    assert_eq!(
+        specs("#[cfg_attr(feature = \"x\", derive(serde::Serialize, Debug))]\nstruct S;"),
+        ["serde::Serialize"]
+    );
+}
+
+#[test]
+fn modules_declared_inside_cfg_if_are_read() {
+    let found = imports(
+        "cfg_if::cfg_if! {\n    if #[cfg(unix)] {\n        mod unix;\n    } else {\n        mod win;\n    }\n}",
+    );
+    let modules: Vec<&str> = found
+        .iter()
+        .filter(|import| import.kind == ImportKind::Module)
+        .map(|import| import.spec.as_str())
+        .collect();
+    assert_eq!(modules, ["unix", "win"]);
 }

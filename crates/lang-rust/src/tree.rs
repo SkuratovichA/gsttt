@@ -14,11 +14,16 @@ use crate::manifest::{Target, TargetKind, at};
 /// loop.
 const MAX_DEPTH: usize = 64;
 
+/// How many modules one crate target holds. Declarations that fan out through `#[path]`, several modules to a file
+/// and every file declaring several more, would otherwise grow without bound. A tree that reaches it is cut, the cut
+/// is logged, and every project names it among its blind spots.
+const MAX_MODULES: usize = 10_000;
+
 /// One module of a crate.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Module {
     /// The file the module is written in: the declaring file for an inline module.
-    pub(crate) file: String,
+    pub(crate) file: RepoPath,
     /// The directory in which `mod x;` declarations inside this module look for their files.
     dir: String,
     inline: bool,
@@ -26,15 +31,14 @@ pub(crate) struct Module {
 
 impl Module {
     /// The module of a file that no `mod` declaration reaches, with its children where Cargo would look for them.
-    pub(crate) fn orphan(file: &str) -> Self {
-        let directory = dirname(file);
-        let name = file.rsplit_once('/').map_or(file, |(_, name)| name);
-        let dir = match name.strip_suffix(".rs") {
+    pub(crate) fn orphan(file: &RepoPath) -> Self {
+        let directory = file.parent();
+        let dir = match file.file_name().strip_suffix(".rs") {
             Some("mod" | "lib" | "main") | None => directory.to_owned(),
             Some(stem) => at(directory, stem),
         };
         Self {
-            file: file.to_owned(),
+            file: file.clone(),
             dir,
             inline: false,
         }
@@ -50,16 +54,11 @@ impl Module {
     }
 }
 
-/// The directory of a repository file path, `""` at the root.
-fn dirname(file: &str) -> &str {
-    file.rsplit_once('/').map_or("", |(dir, _)| dir)
-}
-
 /// A file a `mod` declaration names.
 #[derive(Debug)]
 pub(crate) struct Located {
     pub(crate) id: FileId,
-    file: String,
+    file: RepoPath,
     dir: String,
 }
 
@@ -77,21 +76,21 @@ pub(crate) fn locate(
         let base = if parent.inline {
             parent.dir.as_str()
         } else {
-            dirname(&parent.file)
+            parent.file.parent()
         };
-        let file = String::from(RepoPath::join(base, attribute).ok()?);
-        let id = repo.lookup(&file)?;
-        let dir = dirname(&file).to_owned();
+        let file = RepoPath::join(base, attribute).ok()?;
+        let id = repo.lookup(file.as_str())?;
+        let dir = file.parent().to_owned();
         return Some(Located { id, file, dir });
     }
     [format!("{name}.rs"), format!("{name}/mod.rs")]
         .into_iter()
         .map(|relative| at(&parent.dir, &relative))
-        .find_map(|file| {
-            let id = repo.lookup(&file)?;
+        .find_map(|candidate| {
+            let id = repo.lookup(&candidate)?;
             Some(Located {
                 id,
-                file,
+                file: repo.path(id)?.clone(),
                 dir: at(&parent.dir, name),
             })
         })
@@ -119,22 +118,34 @@ pub(crate) fn parent_key(key: &str) -> Option<&str> {
 pub(crate) struct CrateTree {
     kind: TargetKind,
     modules: BTreeMap<String, Module>,
+    /// Whether declarations were left out at [`MAX_MODULES`].
+    capped: bool,
 }
 
 impl CrateTree {
-    fn build(target: &Target, repo: &RepoView, facts: &HashMap<&str, &FileFacts>) -> Self {
+    /// `None` when the target's root is no repository path.
+    fn build(target: &Target, repo: &RepoView, facts: &HashMap<&str, &FileFacts>) -> Option<Self> {
+        let file = RepoPath::normalize(&target.root).ok()?;
         let root = Module {
-            file: target.root.clone(),
-            dir: dirname(&target.root).to_owned(),
+            dir: file.parent().to_owned(),
+            file: file.clone(),
             inline: false,
         };
         let mut tree = Self {
             kind: target.kind,
             modules: BTreeMap::from([(String::new(), root)]),
+            capped: false,
         };
-        let mut chain = vec![target.root.clone()];
+        let mut chain = vec![file];
         tree.expand("", repo, facts, &mut chain);
-        tree
+        if tree.capped {
+            tracing::warn!(
+                root = %target.root,
+                cap = MAX_MODULES,
+                "module tree cut at the module cap, so the modules past it are unknown"
+            );
+        }
+        Some(tree)
     }
 
     /// Adds the modules declared in the file of the module at `key`, and then theirs. `chain` holds the files
@@ -144,7 +155,7 @@ impl CrateTree {
         key: &str,
         repo: &RepoView,
         facts: &HashMap<&str, &FileFacts>,
-        chain: &mut Vec<String>,
+        chain: &mut Vec<RepoPath>,
     ) {
         let Some(module) = self.modules.get(key).cloned() else {
             return;
@@ -176,9 +187,12 @@ impl CrateTree {
             let Some(found) = locate(repo, &parent, name, attribute) else {
                 continue;
             };
-            let declared = child_key(&parent_key, name);
-            if self.modules.contains_key(&declared) {
+            let Some(declared) = self.key_for(&parent_key, name, &found.file) else {
                 continue;
+            };
+            if self.modules.len() >= MAX_MODULES {
+                self.capped = true;
+                return;
             }
             let descend = chain.len() < MAX_DEPTH && !chain.contains(&found.file);
             self.modules.insert(
@@ -195,6 +209,29 @@ impl CrateTree {
                 chain.pop();
             }
         }
+    }
+
+    /// The key for the module `name` declared in the module at `parent` and written in `file`: its own name, or
+    /// `name#2`, `name#3` and on when an earlier declaration of that name is written in another file, as one `mod`
+    /// under different `cfg`s is. A copy is no name that code can write, so a path into the module reaches the first
+    /// declaration, while the copy's file still has a module of its own to resolve `self::` and `super::` from.
+    /// `None` when the module is already there.
+    fn key_for(&self, parent: &str, name: &str, file: &RepoPath) -> Option<String> {
+        let mut key = child_key(parent, name);
+        let mut copies = 1_usize;
+        while let Some(taken) = self.modules.get(&key) {
+            if taken.file == *file {
+                return None;
+            }
+            copies += 1;
+            key = child_key(parent, &format!("{name}#{copies}"));
+        }
+        Some(key)
+    }
+
+    /// What kind of crate target the tree is of.
+    pub(crate) fn kind(&self) -> TargetKind {
+        self.kind
     }
 
     /// The module at `key`.
@@ -250,15 +287,17 @@ impl Trees {
     ) -> Self {
         let targets: Vec<CrateTree> = targets
             .iter()
-            .map(|target| CrateTree::build(target, repo, facts))
+            .filter_map(|target| CrateTree::build(target, repo, facts))
             .collect();
         let mut homes = HashMap::new();
         for (target, tree) in targets.iter().enumerate() {
             for (key, module) in tree.modules.iter().filter(|(_, module)| !module.inline) {
-                homes.entry(module.file.clone()).or_insert_with(|| Home {
-                    target,
-                    module: key.clone(),
-                });
+                homes
+                    .entry(module.file.as_str().to_owned())
+                    .or_insert_with(|| Home {
+                        target,
+                        module: key.clone(),
+                    });
             }
         }
         Self { targets, homes }

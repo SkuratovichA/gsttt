@@ -11,13 +11,13 @@ use crate::syntax::{segments, text};
 /// Stands for a part of a string that is only known at run time. The rules treat it as such.
 const COMPUTED: &str = "${}";
 
-/// The arguments of a macro call or an attribute, read the way a function call's arguments are. `delimited` is the
-/// token tree with its brackets.
-pub(crate) fn reparse_args(delimited: &str) -> Vec<ast::Expr> {
+/// The arguments of a macro call or an attribute, read the way a function call's arguments are, in the `edition` of
+/// the file they are written in. `delimited` is the token tree with its brackets.
+pub(crate) fn reparse_args(delimited: &str, edition: Edition) -> Vec<ast::Expr> {
     let mut inner: String = delimited.chars().skip(1).collect();
     inner.pop();
     let source = format!("fn _() {{ _({inner}); }}");
-    ast::SourceFile::parse(&source, Edition::CURRENT)
+    ast::SourceFile::parse(&source, edition)
         .tree()
         .syntax()
         .descendants()
@@ -28,23 +28,24 @@ pub(crate) fn reparse_args(delimited: &str) -> Vec<ast::Expr> {
 }
 
 /// The arguments of a macro call.
-pub(crate) fn macro_args(call: &ast::MacroCall) -> Vec<ast::Expr> {
+pub(crate) fn macro_args(call: &ast::MacroCall, edition: Edition) -> Vec<ast::Expr> {
     call.token_tree()
-        .map(|tree| reparse_args(&text(&tree)))
+        .map(|tree| reparse_args(&text(&tree), edition))
         .unwrap_or_default()
 }
 
 /// An expression as text: a string literal, or a template, a `concat!` or a `+` whose computed parts are written as
-/// `${}`. With `named_env`, `env!("NAME")` is written `${NAME}`. `None` for anything that is not a string.
-pub(crate) fn text_of(expr: &ast::Expr, named_env: bool) -> Option<String> {
+/// `${}`. With `named_env`, `env!("NAME")` is written `${NAME}`. `None` for anything that is not a string. `edition`
+/// is the one the file is written in, for the macros read on the way.
+pub(crate) fn text_of(expr: &ast::Expr, named_env: bool, edition: Edition) -> Option<String> {
     match expr {
         ast::Expr::Literal(literal) => match literal.kind() {
             ast::LiteralKind::String(string) => string.value().ok().map(Cow::into_owned),
             _ => None,
         },
-        ast::Expr::ParenExpr(inner) => text_of(&inner.expr()?, named_env),
-        ast::Expr::RefExpr(inner) => text_of(&inner.expr()?, named_env),
-        ast::Expr::MacroExpr(inner) => macro_text(&inner.macro_call()?, named_env),
+        ast::Expr::ParenExpr(inner) => text_of(&inner.expr()?, named_env, edition),
+        ast::Expr::RefExpr(inner) => text_of(&inner.expr()?, named_env, edition),
+        ast::Expr::MacroExpr(inner) => macro_text(&inner.macro_call()?, named_env, edition),
         ast::Expr::MethodCallExpr(call) => {
             let name = text(&call.name_ref()?);
             let keeps_text = matches!(
@@ -52,7 +53,7 @@ pub(crate) fn text_of(expr: &ast::Expr, named_env: bool) -> Option<String> {
                 "to_string" | "to_owned" | "into" | "as_str" | "clone"
             );
             keeps_text
-                .then(|| text_of(&call.receiver()?, named_env))
+                .then(|| text_of(&call.receiver()?, named_env, edition))
                 .flatten()
         }
         ast::Expr::CallExpr(call) => {
@@ -62,7 +63,7 @@ pub(crate) fn text_of(expr: &ast::Expr, named_env: bool) -> Option<String> {
             let from = segments(&path.path()?)?
                 .last()
                 .is_some_and(|name| name == "from");
-            from.then(|| text_of(&call.arg_list()?.args().next()?, named_env))
+            from.then(|| text_of(&call.arg_list()?.args().next()?, named_env, edition))
                 .flatten()
         }
         ast::Expr::BinExpr(bin) => {
@@ -70,8 +71,8 @@ pub(crate) fn text_of(expr: &ast::Expr, named_env: bool) -> Option<String> {
             if !add {
                 return None;
             }
-            let left = text_of(&bin.lhs()?, named_env);
-            let right = text_of(&bin.rhs()?, named_env);
+            let left = text_of(&bin.lhs()?, named_env, edition);
+            let right = text_of(&bin.rhs()?, named_env, edition);
             if left.is_none() && right.is_none() {
                 return None;
             }
@@ -85,14 +86,16 @@ pub(crate) fn text_of(expr: &ast::Expr, named_env: bool) -> Option<String> {
     }
 }
 
-fn macro_text(call: &ast::MacroCall, named_env: bool) -> Option<String> {
+fn macro_text(call: &ast::MacroCall, named_env: bool, edition: Edition) -> Option<String> {
     let name = segments(&call.path()?)?.pop()?;
-    let args = macro_args(call);
+    let args = macro_args(call, edition);
     match name.as_str() {
-        "format" | "format_args" => Some(template(&text_of(args.first()?, named_env)?)),
+        "format" | "format_args" => Some(template(&text_of(args.first()?, named_env, edition)?)),
         "concat" => {
-            let parts: Vec<Option<String>> =
-                args.iter().map(|arg| text_of(arg, named_env)).collect();
+            let parts: Vec<Option<String>> = args
+                .iter()
+                .map(|arg| text_of(arg, named_env, edition))
+                .collect();
             if parts.iter().all(Option::is_none) {
                 return None;
             }
@@ -103,10 +106,12 @@ fn macro_text(call: &ast::MacroCall, named_env: bool) -> Option<String> {
                     .collect(),
             )
         }
-        "env" | "option_env" => Some(match args.first().and_then(|arg| text_of(arg, false)) {
-            Some(variable) if named_env => format!("${{{variable}}}"),
-            _ => COMPUTED.to_owned(),
-        }),
+        "env" | "option_env" => Some(
+            match args.first().and_then(|arg| text_of(arg, false, edition)) {
+                Some(variable) if named_env => format!("${{{variable}}}"),
+                _ => COMPUTED.to_owned(),
+            },
+        ),
         _ => None,
     }
 }

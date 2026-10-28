@@ -17,6 +17,7 @@ use gsttt_core::contract::ContractKey;
 use gsttt_core::fact::Line;
 use gsttt_core::rules::{CallRule, Outcome, Site, ValueExpr, ValueSource};
 use gsttt_core::text::LineIndex;
+use ra_ap_edition::Edition;
 use ra_ap_syntax::ast::{self, HasArgList};
 use ra_ap_syntax::{AstNode, SyntaxKind, SyntaxNode};
 
@@ -115,7 +116,7 @@ impl Candidate {
     }
 
     /// Reads the arguments. Only done for a site a rule matched, since a macro's are parsed from tokens.
-    pub(super) fn prepare(&self) -> Prepared {
+    pub(super) fn prepare(&self, edition: Edition) -> Prepared {
         let (arguments, split) = match &self.arguments {
             Arguments::List(list) => (
                 list.iter().flat_map(ast::ArgList::args).collect::<Vec<_>>(),
@@ -123,7 +124,7 @@ impl Candidate {
             ),
             Arguments::Tree(tree) => (
                 tree.iter()
-                    .flat_map(|tree| reparse_args(&text(tree)))
+                    .flat_map(|tree| reparse_args(&text(tree), edition))
                     .collect(),
                 true,
             ),
@@ -141,6 +142,7 @@ impl Candidate {
             positional,
             keywords,
             member: self.member.clone(),
+            edition,
         }
     }
 }
@@ -223,16 +225,19 @@ pub(super) struct Prepared {
     positional: Vec<ast::Expr>,
     keywords: Vec<(String, ast::Expr)>,
     member: Option<String>,
+    /// The edition of the file the arguments were parsed in.
+    edition: Edition,
 }
 
 impl Prepared {
     /// A site that is only a name and a value, as an assignment is: the value is the first argument.
-    pub(super) fn assignment(target: String, value: ast::Expr) -> Self {
+    pub(super) fn assignment(target: String, value: ast::Expr, edition: Edition) -> Self {
         Self {
             callee: target,
             positional: vec![value],
             keywords: Vec::new(),
             member: None,
+            edition,
         }
     }
 
@@ -271,6 +276,7 @@ impl Prepared {
                     .map(|(_, pair)| pair.clone())
                     .collect(),
                 member: self.member.clone(),
+                edition: self.edition,
             })
             .collect()
     }
@@ -319,7 +325,7 @@ impl Site for View<'_> {
 
     fn arg(&self, position: NonZeroU32) -> Option<Cow<'_, str>> {
         let argument = self.site.positional.get(index(position)?)?;
-        text_of(argument, false).map(Cow::Owned)
+        text_of(argument, false, self.site.edition).map(Cow::Owned)
     }
 
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
@@ -342,7 +348,7 @@ impl Site for View<'_> {
             .keywords
             .iter()
             .find(|(keyword, _)| keyword == name)?;
-        text_of(value, false).map(Cow::Owned)
+        text_of(value, false, self.site.edition).map(Cow::Owned)
     }
 
     fn member(&self) -> Option<Cow<'_, str>> {

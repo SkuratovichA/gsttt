@@ -38,15 +38,15 @@ use crate::tree::Registry;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct RustOptions {
-    /// The edition to parse with when a package's manifest names none: `2015`, `2018`, `2021` or `2024`. Unset: the
-    /// latest.
+    /// The edition to parse with when a package's manifest names none and none is inherited from its workspace: `2015`,
+    /// `2018`, `2021` or `2024`. Unset: `2015`, which is what Cargo assumes.
     pub default_edition: Option<String>,
 }
 
 impl RustOptions {
     fn edition(&self) -> Result<Edition, ConnectorError> {
         let Some(text) = self.default_edition.as_deref() else {
-            return Ok(Edition::CURRENT);
+            return Ok(Edition::Edition2015);
         };
         Edition::from_str(text).map_err(|error| ConnectorError::Options {
             connector: "rust".to_owned(),

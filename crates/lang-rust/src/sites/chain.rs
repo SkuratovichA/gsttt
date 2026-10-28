@@ -9,6 +9,7 @@
 //! class, Rust has the trait of the enclosing `impl` block, which is what a rule's `class` is matched against.
 
 use gsttt_core::rules::{AssignRule, Pack, callee_matches};
+use ra_ap_edition::Edition;
 use ra_ap_syntax::ast::{self, HasName};
 use ra_ap_syntax::{AstNode, SyntaxKind, SyntaxNode};
 
@@ -26,7 +27,9 @@ impl Reader<'_> {
         if self.chains.is_empty() || continues(node) {
             return;
         }
-        let Some((root, rest)) = ast::Expr::cast(node.clone()).and_then(|expr| names(&expr)) else {
+        let Some((root, rest)) =
+            ast::Expr::cast(node.clone()).and_then(|expr| names(&expr, self.edition))
+        else {
             return;
         };
         let names: Vec<Option<&str>> = root
@@ -68,7 +71,7 @@ impl Reader<'_> {
             return;
         }
         let line = line_at(self.lines, node.text_range().start());
-        let site = Prepared::assignment(target.clone(), value);
+        let site = Prepared::assignment(target.clone(), value, self.edition);
         let view = View::new(&site);
         let mut outcomes = Outcomes::default();
         for (pack, rule) in rules {
@@ -116,9 +119,9 @@ fn continues(node: &SyntaxNode) -> bool {
 }
 
 /// The names of a chain: its root path and what follows.
-fn names(expr: &ast::Expr) -> Option<Names> {
+fn names(expr: &ast::Expr, edition: Edition) -> Option<Names> {
     let follow = |inner: Option<ast::Expr>, next: Option<String>| {
-        let (root, mut rest) = names(&inner?)?;
+        let (root, mut rest) = names(&inner?, edition)?;
         rest.push(next);
         Some((root, rest))
     };
@@ -128,11 +131,11 @@ fn names(expr: &ast::Expr) -> Option<Names> {
         ast::Expr::MethodCallExpr(call) => follow(call.receiver(), Some(text(&call.name_ref()?))),
         ast::Expr::IndexExpr(index) => follow(
             index.base(),
-            index.index().and_then(|key| text_of(&key, false)),
+            index.index().and_then(|key| text_of(&key, false, edition)),
         ),
-        ast::Expr::ParenExpr(inner) => names(&inner.expr()?),
-        ast::Expr::TryExpr(inner) => names(&inner.expr()?),
-        ast::Expr::AwaitExpr(inner) => names(&inner.expr()?),
+        ast::Expr::ParenExpr(inner) => names(&inner.expr()?, edition),
+        ast::Expr::TryExpr(inner) => names(&inner.expr()?, edition),
+        ast::Expr::AwaitExpr(inner) => names(&inner.expr()?, edition),
         _ => None,
     }
 }

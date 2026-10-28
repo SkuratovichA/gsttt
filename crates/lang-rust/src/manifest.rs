@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use gsttt_core::path::RepoPath;
+use gsttt_core::path::{PathError, RepoPath};
 use gsttt_core::repo::RepoView;
 use toml::{Table, Value};
 
@@ -25,26 +25,50 @@ pub(crate) struct Target {
     pub(crate) root: String,
 }
 
+/// Which targets of a package see a dependency.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Section {
+    /// `[dependencies]` and `[dev-dependencies]`: every target but the build script. A dev-dependency is visible to
+    /// all of them because `#[cfg(test)]` code in `src/` uses it and `cfg` is not evaluated.
+    Normal,
+    /// `[build-dependencies]`: the build script, and nothing else.
+    Build,
+}
+
 /// One dependency of a package.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Dependency {
-    /// The key in the manifest: the name `use` paths start with, once `-` becomes `_`.
+    /// The key in the manifest: the name `use` paths start with, once `-` becomes `_`, unless `lib_name` is set.
     pub(crate) key: String,
     /// The package the key stands for: the key itself unless the dependency renames it.
     pub(crate) package: String,
     /// The repository directory of a dependency declared with `path`.
     pub(crate) path: Option<String>,
+    /// The `[lib] name` in the manifest of a path dependency that is not renamed: code writes it instead of the key.
+    pub(crate) lib_name: Option<String>,
+    pub(crate) section: Section,
 }
 
 impl Dependency {
-    /// Whether `use` paths reach this dependency as `name`: its key, with `_` where the key has `-`.
+    /// The name code writes for the dependency: its key, or the `[lib] name` of its own manifest when it sets one.
+    fn code_name(&self) -> &str {
+        self.lib_name.as_deref().unwrap_or(&self.key)
+    }
+
+    /// Whether `use` paths reach this dependency as `name`: its code name, with `_` where that has `-`.
     pub(crate) fn is_named(&self, name: &str) -> bool {
-        self.key.len() == name.len()
-            && self
-                .key
+        let code = self.code_name();
+        code.len() == name.len()
+            && code
                 .chars()
                 .zip(name.chars())
-                .all(|(key, name)| key == name || (key == '-' && name == '_'))
+                .all(|(code, name)| code == name || (code == '-' && name == '_'))
+    }
+
+    /// Whether code of a `kind` target can name this dependency: a build script sees the build dependencies and
+    /// nothing else, and no other target sees those.
+    pub(crate) fn visible_to(&self, kind: TargetKind) -> bool {
+        (self.section == Section::Build) == (kind == TargetKind::Build)
     }
 }
 
@@ -117,17 +141,13 @@ impl Manifests {
                 .map(str::to_owned),
             _ => None,
         };
-        let lib_name = table
-            .get("lib")
-            .and_then(Value::as_table)
-            .and_then(|lib| lib.get("name"))
-            .and_then(Value::as_str)
-            .map_or_else(|| name.replace('-', "_"), str::to_owned);
+        let lib_name =
+            explicit_lib_name(table).map_or_else(|| name.replace('-', "_"), str::to_owned);
         Ok(Some(Package {
             name: name.to_owned(),
             edition,
             targets: targets(repo, dir, table, package, name, &lib_name),
-            dependencies: dependencies(table, dir, workspace),
+            dependencies: self.dependencies(table, dir, workspace),
             lib_name,
         }))
     }
@@ -164,7 +184,12 @@ fn ancestors(dir: &str) -> Vec<String> {
 
 /// `relative` from `dir`, as a repository path. `..` climbs; a path that leaves the repository is `None`.
 pub(crate) fn join_dir(dir: &str, relative: &str) -> Option<String> {
-    RepoPath::join(dir, relative).ok().map(String::from)
+    match RepoPath::join(dir, relative) {
+        Ok(path) => Some(String::from(path)),
+        // The repository root is `""` wherever a directory is a string, and `path = ".."` from `fuzz/` reaches it.
+        Err(PathError::Empty) => Some(String::new()),
+        Err(_) => None,
+    }
 }
 
 /// `rest` inside the directory `dir`, where `""` is the repository root.
@@ -177,77 +202,113 @@ pub(crate) fn at(dir: &str, rest: &str) -> String {
 }
 
 /// The dependency tables of a manifest: the three plain ones and the same three under each `[target.*]`.
-fn dependency_tables(table: &Table) -> Vec<&Table> {
-    const NAMES: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependencies"];
-    let mut found: Vec<&Table> = NAMES
-        .iter()
-        .filter_map(|name| table.get(*name)?.as_table())
-        .collect();
+fn dependency_tables(table: &Table) -> Vec<(Section, &Table)> {
+    let mut found = sections(table);
     if let Some(targets) = table.get("target").and_then(Value::as_table) {
         for target in targets.values().filter_map(Value::as_table) {
-            found.extend(
-                NAMES
-                    .iter()
-                    .filter_map(|name| target.get(*name)?.as_table()),
-            );
+            found.extend(sections(target));
         }
     }
     found
 }
 
-fn dependencies(table: &Table, dir: &str, workspace: Option<(&str, &Table)>) -> Vec<Dependency> {
-    let shared = workspace.and_then(|(ws_dir, ws)| {
-        let deps = ws
-            .get("workspace")?
-            .as_table()?
-            .get("dependencies")?
-            .as_table()?;
-        Some((ws_dir, deps))
-    });
-    let mut found: BTreeMap<String, Dependency> = BTreeMap::new();
-    for deps in dependency_tables(table) {
-        for (key, value) in deps {
-            found
-                .entry(key.clone())
-                .or_insert_with(|| dependency(key, value, dir, shared));
+/// The dependency tables that `owner`, a manifest or a `[target.*]` table, holds directly.
+fn sections(owner: &Table) -> Vec<(Section, &Table)> {
+    const NAMES: [(&str, Section); 3] = [
+        ("dependencies", Section::Normal),
+        ("dev-dependencies", Section::Normal),
+        ("build-dependencies", Section::Build),
+    ];
+    NAMES
+        .iter()
+        .filter_map(|(name, section)| Some((*section, owner.get(*name)?.as_table()?)))
+        .collect()
+}
+
+/// The `[lib] name` of a manifest, when it sets one.
+fn explicit_lib_name(table: &Table) -> Option<&str> {
+    table.get("lib")?.as_table()?.get("name")?.as_str()
+}
+
+impl Manifests {
+    fn dependencies(
+        &self,
+        table: &Table,
+        dir: &str,
+        workspace: Option<(&str, &Table)>,
+    ) -> Vec<Dependency> {
+        let shared = workspace.and_then(|(ws_dir, ws)| {
+            let deps = ws
+                .get("workspace")?
+                .as_table()?
+                .get("dependencies")?
+                .as_table()?;
+            Some((ws_dir, deps))
+        });
+        // A key in two sections is two dependencies: the build script has one and the rest of the package the other.
+        let mut found: BTreeMap<(String, Section), Dependency> = BTreeMap::new();
+        for (section, deps) in dependency_tables(table) {
+            for (key, value) in deps {
+                found
+                    .entry((key.clone(), section))
+                    .or_insert_with(|| self.dependency(key, value, section, dir, shared));
+            }
         }
+        found.into_values().collect()
     }
-    found.into_values().collect()
-}
 
-fn dependency(key: &str, value: &Value, dir: &str, shared: Option<(&str, &Table)>) -> Dependency {
-    let inherits = value
-        .as_table()
-        .and_then(|table| table.get("workspace"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    if !inherits {
-        return from_spec(key, value, dir);
+    fn dependency(
+        &self,
+        key: &str,
+        value: &Value,
+        section: Section,
+        dir: &str,
+        shared: Option<(&str, &Table)>,
+    ) -> Dependency {
+        let inherits = value
+            .as_table()
+            .and_then(|table| table.get("workspace"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !inherits {
+            return self.parse_spec(key, value, section, dir);
+        }
+        shared
+            .and_then(|(ws_dir, deps)| Some(self.parse_spec(key, deps.get(key)?, section, ws_dir)))
+            .unwrap_or_else(|| Dependency {
+                key: key.to_owned(),
+                package: key.to_owned(),
+                path: None,
+                lib_name: None,
+                section,
+            })
     }
-    shared
-        .and_then(|(ws_dir, deps)| Some(from_spec(key, deps.get(key)?, ws_dir)))
-        .unwrap_or_else(|| Dependency {
+
+    /// A dependency from its `Cargo.toml` value, with `path` taken relative to `dir`.
+    fn parse_spec(&self, key: &str, value: &Value, section: Section, dir: &str) -> Dependency {
+        let table = value.as_table();
+        let package = table
+            .and_then(|table| table.get("package"))
+            .and_then(Value::as_str)
+            .unwrap_or(key);
+        let path = table
+            .and_then(|table| table.get("path"))
+            .and_then(Value::as_str)
+            .and_then(|path| join_dir(dir, path));
+        // Code names a dependency that is not renamed by the `[lib] name` of its own manifest, which only a path shows.
+        let lib_name = path
+            .as_deref()
+            .filter(|_| package == key)
+            .and_then(|found| self.tables.get(found)?.as_ref().ok())
+            .and_then(explicit_lib_name)
+            .map(str::to_owned);
+        Dependency {
             key: key.to_owned(),
-            package: key.to_owned(),
-            path: None,
-        })
-}
-
-/// A dependency from its `Cargo.toml` value, with `path` taken relative to `dir`.
-fn from_spec(key: &str, value: &Value, dir: &str) -> Dependency {
-    let table = value.as_table();
-    let package = table
-        .and_then(|table| table.get("package"))
-        .and_then(Value::as_str)
-        .unwrap_or(key);
-    let path = table
-        .and_then(|table| table.get("path"))
-        .and_then(Value::as_str)
-        .and_then(|path| join_dir(dir, path));
-    Dependency {
-        key: key.to_owned(),
-        package: package.to_owned(),
-        path,
+            package: package.to_owned(),
+            path,
+            lib_name,
+            section,
+        }
     }
 }
 

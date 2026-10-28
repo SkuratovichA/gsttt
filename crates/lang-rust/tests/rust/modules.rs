@@ -50,3 +50,40 @@ fn paths_stop_at_the_deepest_module() {
         json!({ "file": "src/a.rs" })
     );
 }
+
+#[scenario("rust", "A module declared twice gives both files a module")]
+#[test]
+fn a_module_declared_twice_gives_both_files_a_module() {
+    let out = index("cfgmods");
+    // A path into the module reaches the first declaration in source order.
+    assert_eq!(
+        out.to("src/lib.rs", "sys::run"),
+        json!({ "file": "src/unix.rs" })
+    );
+    // Each file resolves `crate::` and `super::` from the module it is.
+    for file in ["src/unix.rs", "src/win.rs"] {
+        assert_eq!(
+            out.to(file, "crate::util::shared"),
+            json!({ "file": "src/util.rs" }),
+            "{file}"
+        );
+    }
+    assert_eq!(
+        out.to("src/win.rs", "super::util::shared"),
+        json!({ "file": "src/util.rs" })
+    );
+}
+
+#[scenario("rust", "A file no declaration reaches has no module")]
+#[test]
+fn a_file_no_declaration_reaches_has_no_module() {
+    let out = index("cfgmods");
+    assert_eq!(
+        out.to("src/orphan.rs", "crate::util::shared"),
+        unresolved("not-found")
+    );
+    assert_eq!(
+        out.to("src/orphan.rs", "serde::Serialize"),
+        json!({ "external": "serde" })
+    );
+}

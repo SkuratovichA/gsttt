@@ -27,7 +27,7 @@ impl Reader<'_> {
         let receiver = candidate.receiver.as_ref()?;
         match self.origin(receiver, &prefix.from)? {
             Origin::Call(maker) => {
-                let maker = Candidate::of_call(&maker, self.lines)?.prepare();
+                let maker = Candidate::of_call(&maker, self.lines)?.prepare(self.edition);
                 Some(prefix.read(&View::new(&maker)))
             }
             Origin::Declared => Some(String::new()),

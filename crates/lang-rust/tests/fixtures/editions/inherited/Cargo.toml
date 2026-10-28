@@ -1,0 +1,5 @@
+[workspace]
+members = ["member"]
+
+[workspace.package]
+edition = "2015"

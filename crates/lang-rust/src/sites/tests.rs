@@ -17,7 +17,12 @@ use crate::link::{Extra, Function, Group, Mount, Prefix, Target};
 fn sites(source: &str, pack: &str) -> Sites {
     let pack = eval_pack("test.lua", pack).unwrap();
     let parse = ast::SourceFile::parse(source, Edition::CURRENT);
-    read(&parse.syntax_node(), &LineIndex::new(source), &[pack])
+    read(
+        &parse.syntax_node(),
+        &LineIndex::new(source),
+        &[pack],
+        Edition::CURRENT,
+    )
 }
 
 /// The line of `needle`, counting from 1.
@@ -577,8 +582,8 @@ proptest! {
         let source = parts.join(" ");
         let lines = LineIndex::new(&source);
         let parse = ast::SourceFile::parse(&source, Edition::CURRENT);
-        let first = read(&parse.syntax_node(), &lines, &packs);
-        let second = read(&parse.syntax_node(), &lines, &packs);
+        let first = read(&parse.syntax_node(), &lines, &packs, Edition::CURRENT);
+        let second = read(&parse.syntax_node(), &lines, &packs, Edition::CURRENT);
         let last_line = u32::try_from(source.matches('\n').count()).unwrap() + 1;
         prop_assert!(first.found.iter().all(|found| (1..=last_line).contains(&found.fact.line)));
         prop_assert!(first.unresolved.iter().all(|site| (1..=last_line).contains(&site.line)));
@@ -605,7 +610,12 @@ proptest! {
         let packs = every_pack();
         let parse = ast::SourceFile::parse(&source, Edition::CURRENT);
         // Reaching the end is the assertion: a panic in the reader fails the case.
-        drop(read(&parse.syntax_node(), &LineIndex::new(&source), &packs));
+        drop(read(
+            &parse.syntax_node(),
+            &LineIndex::new(&source),
+            &packs,
+            Edition::CURRENT,
+        ));
     }
 }
 
@@ -615,6 +625,7 @@ fn no_rules_means_no_reading() {
         &ast::SourceFile::parse("fn f() { env::var(\"A\"); }", Edition::CURRENT).syntax_node(),
         &LineIndex::new("fn f() { env::var(\"A\"); }"),
         &[],
+        Edition::CURRENT,
     );
     assert!(out.found.is_empty() && out.embedded.is_empty() && out.unresolved.is_empty());
 }

@@ -183,7 +183,7 @@ impl Reader<'_> {
 
     /// A prefix written at `call`. One that is not text is a site the connector cannot read.
     fn prefix(&self, call: &SyntaxNode, written: &ast::Expr, sites: &mut Sites) -> Prefix {
-        if let Some(prefix) = text_of(written, false) {
+        if let Some(prefix) = text_of(written, false, self.edition) {
             return Prefix::Literal(prefix);
         }
         if let Some(site) = Candidate::of_call(call, self.lines) {

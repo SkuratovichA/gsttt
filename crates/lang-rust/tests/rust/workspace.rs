@@ -100,3 +100,69 @@ fn workspace_crates_resolve_to_their_modules() {
         json!({ "file": "crates/core/src/graph.rs" })
     );
 }
+
+#[scenario("rust", "A build script sees only build dependencies")]
+#[test]
+fn a_build_script_sees_only_build_dependencies() {
+    let out = index("visibility");
+    assert_eq!(out.to("build.rs", "cc::Build"), json!({ "external": "cc" }));
+    assert_eq!(
+        out.to("build.rs", "serde::Serialize"),
+        unresolved("unknown-package")
+    );
+    assert_eq!(
+        out.to("build.rs", "proptest::collection::vec"),
+        unresolved("unknown-package")
+    );
+    assert_eq!(
+        out.to("src/lib.rs", "serde::Serialize"),
+        json!({ "external": "serde" })
+    );
+    assert_eq!(
+        out.to("src/lib.rs", "cc::Build"),
+        unresolved("unknown-package")
+    );
+}
+
+#[scenario("rust", "A dev-dependency is seen by every other target")]
+#[test]
+fn a_dev_dependency_is_seen_by_every_other_target() {
+    let out = index("visibility");
+    // `#[cfg(test)]` code in `src/` uses dev-dependencies and `cfg` is not evaluated, so the library sees them too.
+    assert_eq!(
+        out.to("src/lib.rs", "proptest::prelude::Strategy"),
+        json!({ "external": "proptest" })
+    );
+    assert_eq!(
+        out.to("tests/it.rs", "proptest::collection::vec"),
+        json!({ "external": "proptest" })
+    );
+    assert_eq!(
+        out.to("tests/it.rs", "cc::Build"),
+        unresolved("unknown-package")
+    );
+}
+
+#[scenario("rust", "A library name replaces the package name")]
+#[test]
+fn a_library_name_replaces_the_package_name() {
+    let out = index("libname");
+    assert_eq!(
+        out.to("app/src/lib.rs", "helpers::text::trim"),
+        json!({ "file": "util/src/text.rs" })
+    );
+    assert_eq!(
+        out.to("app/src/lib.rs", "my_util::text::trim"),
+        unresolved("unknown-package")
+    );
+}
+
+#[scenario("rust", "A path dependency may be the repository root")]
+#[test]
+fn a_path_dependency_may_be_the_repository_root() {
+    let out = index("rootdep");
+    assert_eq!(
+        out.to("fuzz/src/main.rs", "mycrate::parser::run"),
+        json!({ "file": "src/parser.rs" })
+    );
+}

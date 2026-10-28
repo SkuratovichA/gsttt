@@ -6,8 +6,9 @@ use std::collections::{BTreeMap, HashMap};
 use gsttt_core::fact::{Import, ImportKind, Resolution, UnresolvedReason};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
+use ra_ap_edition::Edition;
 
-use crate::manifest::{Dependency, Package};
+use crate::manifest::{Dependency, Package, TargetKind};
 use crate::tree::{CrateTree, Module, Registry, Trees, locate, parent_key};
 
 /// Crates every Rust program can name without declaring them.
@@ -24,6 +25,8 @@ pub(crate) struct Resolver<'a> {
     pub(crate) trees: &'a Trees,
     pub(crate) registry: &'a Registry,
     pub(crate) aliases: &'a Aliases,
+    /// The edition of the crate, which decides where a `use` path starts.
+    pub(crate) edition: Edition,
 }
 
 fn not_found() -> Resolution {
@@ -33,14 +36,14 @@ fn not_found() -> Resolution {
 impl Resolver<'_> {
     pub(crate) fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution {
         match import.kind {
-            ImportKind::Module => self.module(from.as_str(), import),
+            ImportKind::Module => self.module(from, import),
             ImportKind::Include => self.include(from, &import.spec),
             _ => self.path(from.as_str(), &import.spec),
         }
     }
 
     /// The module a file declares with `mod`, found the way the compiler finds it.
-    fn module(&self, from: &str, import: &Import) -> Resolution {
+    fn module(&self, from: &RepoPath, import: &Import) -> Resolution {
         let mut names: Vec<&str> = import.spec.split("::").collect();
         let Some(name) = names.pop() else {
             return not_found();
@@ -55,9 +58,9 @@ impl Resolver<'_> {
     }
 
     /// The module a file is, in the tree that reaches it, or where Cargo would put it when none does.
-    fn file_module(&self, file: &str) -> Module {
+    fn file_module(&self, file: &RepoPath) -> Module {
         self.trees
-            .home(file)
+            .home(file.as_str())
             .and_then(|(tree, key)| tree.module(key))
             .cloned()
             .unwrap_or_else(|| Module::orphan(file))
@@ -105,6 +108,7 @@ impl Resolver<'_> {
         let names: Vec<&str> = segments.iter().map(String::as_str).collect();
         let home = self.trees.home(from);
         match names.first().copied() {
+            Some("") => self.rooted(home, names.get(1..).unwrap_or_default()),
             Some("crate") => home.map_or_else(not_found, |(tree, _)| {
                 self.land(tree, "", names.get(1..).unwrap_or_default())
             }),
@@ -133,6 +137,10 @@ impl Resolver<'_> {
     }
 
     /// A path whose first segment names a child module, a crate, or a module at the crate root, in that order.
+    ///
+    /// The last step is not Rust's rule, which starts a path at the module or at a crate. It stands in for the names
+    /// that `use super::*` and `use crate::…::*` bring in, which the connector does not read: a first segment that is a
+    /// module at the crate root is more likely one of those than a mistake.
     fn named(&self, home: Option<(&CrateTree, &str)>, names: &[&str]) -> Resolution {
         let Some((first, rest)) = names.split_first() else {
             return not_found();
@@ -142,7 +150,7 @@ impl Resolver<'_> {
         {
             return self.land(tree, key, names);
         }
-        if let Some(resolution) = self.krate(first, rest) {
+        if let Some(resolution) = self.krate(home, first, rest) {
             return resolution;
         }
         if let Some((tree, _)) = home
@@ -153,10 +161,34 @@ impl Resolver<'_> {
         Resolution::Unresolved(UnresolvedReason::UnknownPackage)
     }
 
-    /// A crate named by its first segment: the package's own library, a declared dependency, or a builtin.
-    fn krate(&self, name: &str, rest: &[&str]) -> Option<Resolution> {
+    /// `::name::…`: the crate root in 2015, where `use` paths start; a crate from 2018 on, so a module of this crate
+    /// is not one.
+    fn rooted(&self, home: Option<(&CrateTree, &str)>, names: &[&str]) -> Resolution {
+        let Some((first, rest)) = names.split_first() else {
+            return not_found();
+        };
+        if self.edition == Edition::Edition2015
+            && let Some((tree, _)) = home
+            && tree.has_child("", first)
+        {
+            return self.land(tree, "", names);
+        }
+        self.krate(home, first, rest)
+            .unwrap_or(Resolution::Unresolved(UnresolvedReason::UnknownPackage))
+    }
+
+    /// A crate named by its first segment: the package's own library, a declared dependency, or a builtin. A build
+    /// script sees the build dependencies and nothing else, and no other target sees those.
+    fn krate(
+        &self,
+        home: Option<(&CrateTree, &str)>,
+        name: &str,
+        rest: &[&str],
+    ) -> Option<Resolution> {
+        let kind = home.map_or(TargetKind::Lib, |(tree, _)| tree.kind());
         if let Some(package) = self.package {
-            if package.lib_name == name
+            if kind != TargetKind::Build
+                && package.lib_name == name
                 && let Some(library) = self.trees.library()
             {
                 return Some(self.land(library, "", rest));
@@ -164,7 +196,7 @@ impl Resolver<'_> {
             if let Some(dependency) = package
                 .dependencies
                 .iter()
-                .find(|dependency| dependency.is_named(name))
+                .find(|dependency| dependency.visible_to(kind) && dependency.is_named(name))
             {
                 return Some(self.dependency(dependency, rest));
             }
@@ -189,7 +221,7 @@ impl Resolver<'_> {
     /// The file of the deepest module that `names` reach from the module at `key`.
     fn land(&self, tree: &CrateTree, key: &str, names: &[&str]) -> Resolution {
         tree.walk(key, names.iter().copied())
-            .and_then(|module| self.repo.lookup(&module.file))
+            .and_then(|module| self.repo.lookup(module.file.as_str()))
             .map_or_else(not_found, |file| Resolution::File { file })
     }
 }
