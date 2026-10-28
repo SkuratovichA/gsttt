@@ -12,7 +12,8 @@ gsttt reads a repository into a graph of files and contracts and answers one fam
 | `gsttt-config` | `.gsttt/init.lua` → `Setup`, pack evaluation, LuaLS stubs, external connectors | core |
 | `gsttt-mcp` | MCP server over the queries | core |
 | `gsttt` | The binary: connector registry, CLI, hook, output | everything |
-| `gsttt-spec`, `gsttt-scenario`, `xtask` | Spec parser, `#[scenario]`, the spec gate | — |
+| `gsttt-spec`, `gsttt-scenario` | Spec parser, `#[scenario]` | — |
+| `xtask` | The spec gate (`xtask/src/spec/`), and the build and checks of a release: `cargo xtask package`, `check`, `notes`, `version` (`xtask/src/dist/`) | — |
 
 A module crate never depends on another module crate; the binary wires them. Libraries never print; they return values and log with `tracing`.
 

@@ -14,7 +14,8 @@ Read `docs/architecture.md` before changing anything in `crates/core`, and the s
 | `crates/config` | The Lua config (`.gsttt/init.lua`), evaluation of rule packs, external connectors over JSON lines. |
 | `crates/mcp` | The MCP server. |
 | `crates/gsttt` | The binary: CLI, output layer, the connector registry. The only crate that writes to the terminal. |
-| `crates/spec`, `crates/scenario`, `xtask` | OpenSpec tooling: the spec parser, `#[scenario]`, the spec gate. |
+| `crates/spec`, `crates/scenario` | OpenSpec tooling: the spec parser and `#[scenario]`. |
+| `xtask` | `cargo xtask <task>`: the spec gate (`xtask/src/spec/`), and the build and checks of a release: `package`, `check`, `notes`, `version` (`xtask/src/dist/`). |
 | `openspec/` | Specs (`specs/`) and change proposals (`changes/`). |
 | `plugin/` | The Claude Code plugin that ships the MCP server and the hook. |
 
