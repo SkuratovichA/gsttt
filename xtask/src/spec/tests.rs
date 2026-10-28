@@ -1563,6 +1563,93 @@ fn a_claim_on_a_renamed_and_removed_requirement_names_the_name_the_change_remove
     assert!(outcome.output.contains(&failure), "{}", outcome.output);
 }
 
+#[test]
+fn a_claim_on_a_scenario_of_the_second_block_of_a_doubled_add_names_the_change_that_modifies_the_name()
+ {
+    let claim = proof("queries", "R second");
+    let tree = Tree::new();
+    // The one path left to the `Modified` reason, and no scenario states it because it needs two blocks under one name. `a-adds` and `b-adds` add `R` with blocks of their own, which the archive takes only when they are the same, and `c-modifies` keeps every scenario of the first. The replacement takes the scenarios of the second away, and a block that keeps every scenario of the block it replaces puts back all the others.
+    tree.change(
+        "a-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R first"])]),
+        )],
+    )
+    .change(
+        "b-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R second"])]),
+        )],
+    )
+    .change(
+        "c-modifies",
+        TICKED,
+        &[(
+            "queries",
+            &delta("MODIFIED", &[requirement("R", &["R first"])]),
+        )],
+    )
+    .source("tests/first.rs", &proof("queries", "R first"))
+    .source("tests/second.rs", &claim);
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "crates/app/tests/second.rs:{}: `proof` claims scenario `R second` of capability `queries`, but change `c-modifies` modifies its requirement `R` and no longer has this scenario",
+        line_of(&claim, "fn proof")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+}
+
+#[test]
+fn a_claim_on_a_scenario_that_a_modification_takes_away_names_the_requirement_by_the_name_it_modifies()
+ {
+    let claim = proof("queries", "R second");
+    let tree = Tree::new();
+    // The same two blocks as above, renamed to `S` by `d-renames` before `c-modifies` replaces `S`: the failure names `S`, the name `c-modifies` writes, and not `R`, the name the blocks were written with.
+    tree.change(
+        "a-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R first"])]),
+        )],
+    )
+    .change(
+        "b-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("R", &["R second"])]),
+        )],
+    )
+    .change(
+        "c-modifies",
+        TICKED,
+        &[(
+            "queries",
+            &delta("MODIFIED", &[requirement("S", &["R first"])]),
+        )],
+    )
+    .change(
+        "d-renames",
+        TICKED,
+        &[("queries", &delta("RENAMED", &[renaming("R", "S")]))],
+    )
+    .source("tests/first.rs", &proof("queries", "R first"))
+    .source("tests/second.rs", &claim);
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "crates/app/tests/second.rs:{}: `proof` claims scenario `R second` of capability `queries`, but change `c-modifies` modifies its requirement `S` and no longer has this scenario",
+        line_of(&claim, "fn proof")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+}
+
 /// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine` with the `## Purpose` taken out of its delta.
 const PLACEHOLDER: &str =
     "TBD - created by archiving change add-indexing-engine. Update Purpose after archive.";

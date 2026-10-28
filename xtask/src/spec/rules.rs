@@ -183,7 +183,9 @@ impl Judgement {
 /// How an open change takes a requirement away from the specs and the changes archived before it.
 #[derive(Debug, Clone, Copy)]
 enum Replacement {
+    /// The change removes the requirement.
     Removed,
+    /// The change replaces the requirement with a block that lacks the scenario. A block that leaves a scenario of the one it is compared with out is refused and replaces nothing, so this happens only to the blocks of a name that more than one place writes: the replacement keeps every scenario of the first and takes the scenarios of the others away.
     Modified,
 }
 
