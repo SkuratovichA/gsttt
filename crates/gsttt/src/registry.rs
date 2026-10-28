@@ -74,24 +74,16 @@ mod tests {
             .collect()
     }
 
+    /// A connector joins the registry at its place in the design's order, whichever of them are there.
     #[test]
     fn the_connectors_come_in_the_order_of_the_design() {
         let registry = Registry::builtin().unwrap();
-        let places: Vec<usize> = names(&registry)
-            .iter()
-            .map(|name| {
-                ORDER
-                    .iter()
-                    .position(|known| known == name)
-                    .unwrap_or_else(|| panic!("`{name}` is no built-in connector of the design"))
-            })
+        let registered = names(&registry);
+        let in_design_order: Vec<&str> = ORDER
+            .into_iter()
+            .filter(|name| registered.contains(name))
             .collect();
-        assert!(!places.is_empty());
-        assert!(
-            places.is_sorted_by(|a, b| a < b),
-            "{:?} is not in the order {ORDER:?}",
-            names(&registry)
-        );
+        assert_eq!(registered, in_design_order);
     }
 
     #[test]
