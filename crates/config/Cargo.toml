@@ -28,6 +28,8 @@ insta.workspace = true
 proptest.workspace = true
 rayon.workspace = true
 tempfile.workspace = true
+# A table of toml keeps the order of the text in the tests, so that they see whether a map was sorted: without this a table comes out sorted whatever the code does. Dev-dependency features reach only builds of test targets, so the shipped build is unchanged.
+toml = { workspace = true, features = ["preserve_order"] }
 tracing-subscriber.workspace = true
 
 [lints]

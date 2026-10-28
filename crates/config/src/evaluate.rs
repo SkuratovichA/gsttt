@@ -309,7 +309,7 @@ fn check_external(
     Ok(())
 }
 
-/// `value` with the keys of every map sorted, at every depth and inside lists. The tables of toml come sorted already, but only while no crate of the build turns on its `preserve_order`, and the order a file was written in must never be part of the setup.
+/// `value` with the keys of every map sorted, at every depth and inside lists. The tables of toml come sorted already, but only while no crate of the build turns on its `preserve_order`, and the order a file was written in must never be part of the setup. The tests of this crate turn `preserve_order` on, so that they see the order of the text and fail when this function does not run.
 fn sorted(mut value: serde_json::Value) -> serde_json::Value {
     value.sort_all_objects();
     value
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn every_level_of_a_map_is_sorted() -> Result<(), serde_json::Error> {
-        // A map read from text keeps the order of the text, which a table of toml does not: only a value built like this one shows whether `sorted` reaches every level.
+        // A map read from JSON text keeps the order of the text because the workspace turns on `preserve_order` of serde_json, so this value shows whether `sorted` reaches every level and the maps inside lists with no table of toml involved.
         let written: serde_json::Value = serde_json::from_str(
             r#"{"outer":{"b":{"z":1,"y":2},"a":3},"list":[{"y":1,"x":2}],"c":1}"#,
         )?;
