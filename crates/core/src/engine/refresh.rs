@@ -10,7 +10,7 @@ use xxhash_rust::xxh3::Xxh3;
 
 use super::build::build_index;
 use super::changes::{self, Change, ChangesError, Listing};
-use super::files::{self, ContentId, Excluder, FileState, FilesError};
+use super::files::{self, ContentId, Excluder, FileState, FilesError, Scanned};
 use super::keys::{self, FactKey};
 use super::packs::merge_packs;
 use super::pipeline::{self, Claim, FileRun, Module, ProjectRun, Seed};
@@ -103,7 +103,7 @@ impl<'a> Engine<'a> {
         let Some(stored) = snapshot.stored() else {
             return Ok(None);
         };
-        let states = self.listing(Some(stored))?;
+        let states = self.listing(Some(stored))?.files;
         let (mut added, mut changed, mut kept) = (0_u32, 0_u32, 0_usize);
         for state in &states {
             match stored.file(&state.path) {
@@ -123,7 +123,9 @@ impl<'a> Engine<'a> {
     /// The files that differ from HEAD, or from the best common ancestor of HEAD and `base` when one is given.
     pub fn changed_files(&self, base: Option<&str>) -> Result<Vec<Change>, IndexError> {
         let snapshot = Snapshot::open(self.workspace.snapshot_path().as_std_path());
-        let states = self.listing(snapshot.as_ref().and_then(Snapshot::stored))?;
+        let states = self
+            .listing(snapshot.as_ref().and_then(Snapshot::stored))?
+            .files;
         self.changes_since(&states, base)
     }
 
@@ -135,7 +137,10 @@ impl<'a> Engine<'a> {
         let snapshot = Snapshot::open(snapshot_path.as_std_path());
         let previous = snapshot.as_ref().and_then(Snapshot::stored);
 
-        let mut states = self.listing(previous)?;
+        let Scanned {
+            files: mut states,
+            unreadable,
+        } = self.listing(previous)?;
         states.sort_by(|a, b| a.path.cmp(&b.path));
         let listed = started.elapsed();
         let repo = RepoView::new(
@@ -219,6 +224,7 @@ impl<'a> Engine<'a> {
             config,
             head,
             problems,
+            unreadable,
             own: previous,
             started,
             listed_at,
@@ -240,6 +246,7 @@ impl<'a> Engine<'a> {
             config,
             head,
             mut problems,
+            unreadable,
             own,
             started,
             listed_at,
@@ -283,6 +290,12 @@ impl<'a> Engine<'a> {
         let mut index = build_index(repo, &output, modules, &self.setup.http_prefixes, info);
         index.info.timings.total = micros(started.elapsed());
         index.coverage.problems.extend(problems);
+        index
+            .coverage
+            .problems
+            .extend(unreadable.iter().map(|path| {
+                format!("the directory `{path}` cannot be read: the files under it may be missing")
+            }));
         index.coverage.finish();
 
         let header = Header {
@@ -409,7 +422,7 @@ impl<'a> Engine<'a> {
 
     /// The files of the work tree, with the stamps of the previous snapshot to spare hashing what did not change.
     /// A stamp of a file written too close to the listing it was taken in is left out: the file is read again.
-    fn listing(&self, previous: Option<&ArchivedStored>) -> Result<Vec<FileState>, FilesError> {
+    fn listing(&self, previous: Option<&ArchivedStored>) -> Result<Scanned, FilesError> {
         let listed_at = previous.map(|stored| stored.listed_at.to_native());
         files::scan(
             &self.workspace,
@@ -468,6 +481,8 @@ struct Rebuild<'r, 'a> {
     head: Option<String>,
     /// Lines for the coverage about what git could not tell.
     problems: Vec<String>,
+    /// The directories the listing could not read, which get a line of the coverage each.
+    unreadable: Vec<RepoPath>,
     own: Option<&'r ArchivedStored>,
     started: Instant,
     /// The unix second at which the listing began.
@@ -594,6 +609,8 @@ mod tests {
     use crate::connector::Erased;
     use crate::contract::ContractKey;
     use crate::engine::changes::ChangeKind;
+    #[cfg(unix)]
+    use crate::engine::testing::Locked;
     use crate::engine::testing::{
         Counters, Graphs, Notes, add_worktree, git, init_repo, touch, write,
     };
@@ -1480,6 +1497,37 @@ mod tests {
                 .any(|line| line.contains("differ from HEAD")),
             "{problems:?}"
         );
+    }
+
+    #[cfg(unix)]
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A tracked directory that cannot be read does not fail the run"
+    )]
+    #[test]
+    fn a_tracked_directory_that_cannot_be_read_does_not_fail_the_run() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", ""), ("locked/b.txt", "")]);
+        write(dir.path(), "new.txt", "");
+        let Some(_locked) = Locked::new(&dir.path().join("locked")) else {
+            return;
+        };
+
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+
+        let graph = &run.index.graph;
+        assert!(graph.file_id("a.txt").is_some() && graph.file_id("new.txt").is_some());
+        assert!(graph.file_id("locked/b.txt").is_none());
+        let problems = &run.index.coverage.problems;
+        assert!(
+            problems.iter().any(|line| line.contains("`locked`")),
+            "{problems:?}"
+        );
+
+        // The stored index keeps the line, so the directory does not make every run a rebuild.
+        let again = index(&rig, &dir, &Setup::default()).unwrap();
+        assert!(again.unchanged);
+        assert_eq!(again.index.coverage.problems, *problems);
     }
 
     #[test]

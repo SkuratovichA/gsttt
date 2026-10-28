@@ -20,7 +20,7 @@ The engine SHALL find the work tree root, the git dir and the common dir from an
 - **AND** the state dir is `/c/gsttt/<hex hash of the root path>`
 
 ### Requirement: File set
-The engine SHALL index the tracked files present in the work tree, conflicted ones included, and the untracked files git does not ignore, judged by the repository's own settings (every `.gitignore`, `info/exclude`, `core.excludesFile` and `core.ignorecase`), SHALL leave out submodules, symbolic links, skip-worktree entries, files matching `Setup.exclude` and untracked directories the process cannot open, and SHALL number files in path order.
+The engine SHALL index the tracked files present in the work tree, conflicted ones included, and the untracked files git does not ignore, judged by the repository's own settings (every `.gitignore`, `info/exclude`, `core.excludesFile` and `core.ignorecase`), SHALL leave out submodules, symbolic links, skip-worktree entries, files matching `Setup.exclude` and directories the process cannot open (each named in the coverage problems unless excluded), and SHALL number files in path order.
 
 #### Scenario: Ignored, excluded and linked files stay out
 - **WHEN** a repository has a committed `src/a.ts`, an untracked `src/new.ts`, `dist/a.js` ignored by `.gitignore`, `vendor/b.ts` matching `exclude = ["vendor/**"]` and a symbolic link `link.ts`
@@ -33,6 +33,10 @@ The engine SHALL index the tracked files present in the work tree, conflicted on
 #### Scenario: An untracked directory that cannot be read is left out
 - **WHEN** an untracked directory cannot be opened by the process
 - **THEN** the index holds the other files and none of that directory's
+
+#### Scenario: A tracked directory that cannot be read does not fail the run
+- **WHEN** a tracked directory cannot be opened by the process
+- **THEN** the run succeeds, the index holds the other files and none of that directory's, the coverage names the directory as a problem, and a repeated run with nothing else changed is still a no-op
 
 #### Scenario: A deleted tracked file is gone
 - **WHEN** a committed file is removed from the work tree without a commit

@@ -185,10 +185,30 @@ impl Excluder {
 
     /// Whether a pattern leaves `path`, or a directory above it, out.
     pub fn excludes(&self, path: &RepoPath) -> bool {
+        self.matches(path, false)
+    }
+
+    /// Whether a pattern leaves the directory `path`, or one above it, out.
+    pub fn excludes_dir(&self, path: &RepoPath) -> bool {
+        self.matches(path, true)
+    }
+
+    fn matches(&self, path: &RepoPath, is_dir: bool) -> bool {
         self.0
-            .matched_path_or_any_parents(path.as_str(), false)
+            .matched_path_or_any_parents(path.as_str(), is_dir)
             .is_ignore()
     }
+}
+
+/// What a scan found.
+#[derive(Debug)]
+pub struct Scanned {
+    /// The files of the work tree in path order, each with its stamp.
+    pub files: Vec<FileState>,
+    /// The directories the process cannot read, in path order, less the ones `Setup.exclude` leaves out. The scan
+    /// goes on without them, so files under them may be missing from `files`. Outside git none is reported: the
+    /// walk there fails on the first directory it cannot read.
+    pub unreadable: Vec<RepoPath>,
 }
 
 /// The files of the work tree in path order, each with its stamp. `previous` gives the stamp a file had in the
@@ -200,15 +220,19 @@ pub fn scan(
     exclude: &[String],
     max_file_bytes: u64,
     previous: &(dyn Fn(&RepoPath) -> Option<Stamp> + Sync),
-) -> Result<Vec<FileState>, FilesError> {
+) -> Result<Scanned, FilesError> {
     let excluder = Excluder::new(workspace.root(), exclude)?;
-    let mut states = if workspace.git().is_some() {
+    let mut scanned = if workspace.git().is_some() {
         scan_git(workspace.root(), &excluder, max_file_bytes, previous)?
     } else {
-        scan_plain(workspace.root(), &excluder, max_file_bytes, previous)?
+        Scanned {
+            files: scan_plain(workspace.root(), &excluder, max_file_bytes, previous)?,
+            unreadable: Vec::new(),
+        }
     };
-    states.sort_unstable_by(|a, b| a.path.cmp(&b.path));
-    Ok(states)
+    scanned.files.sort_unstable_by(|a, b| a.path.cmp(&b.path));
+    scanned.unreadable.sort_unstable();
+    Ok(scanned)
 }
 
 /// The git blob id of `bytes`.
@@ -230,7 +254,7 @@ fn scan_git(
     excluder: &Excluder,
     max_file_bytes: u64,
     previous: &(dyn Fn(&RepoPath) -> Option<Stamp> + Sync),
-) -> Result<Vec<FileState>, FilesError> {
+) -> Result<Scanned, FilesError> {
     let index_error = |message: String| FilesError::Index {
         root: root.to_owned(),
         message,
@@ -274,12 +298,11 @@ fn scan_git(
         }
         known.insert(path);
     }
-    candidates.extend(
-        walk_untracked(root, &repo, &index, &known)?
-            .into_iter()
-            .map(|path| (path, None)),
-    );
+    let walked = walk_untracked(root, &repo, &index, &known)?;
+    candidates.extend(walked.files.into_iter().map(|path| (path, None)));
     candidates.retain(|(path, _)| !excluder.excludes(path));
+    let mut unreadable = walked.unreadable;
+    unreadable.retain(|path| !excluder.excludes_dir(path));
 
     // The id git's index gives a file that is clean, without reading it.
     let clean_oid = |path: &RepoPath, tracked: Option<&Tracked>| {
@@ -294,7 +317,7 @@ fn scan_git(
         (tracked.stat.matches(&current, options) && !tracked.stat.is_racy(timestamp, options))
             .then_some(tracked.oid)
     };
-    Ok(candidates
+    let files = candidates
         .into_par_iter()
         .filter_map(|(path, tracked)| {
             stamp_file(root, &path, max_file_bytes, |meta| {
@@ -303,19 +326,35 @@ fn scan_git(
                     .or_else(|| previous(&path)?.id_of_unchanged(meta))
             })
         })
-        .collect())
+        .collect();
+    Ok(Scanned { files, unreadable })
 }
 
 /// The files under `root` that the index does not know and git does not ignore, by git's own rules: the
 /// `.gitignore` of every directory, `info/exclude` of the common directory, `core.excludesFile` and
 /// `core.ignorecase`. A directory with a `.git` of its own is a submodule or a nested repository and is not
-/// entered. A tracked directory that cannot be read fails the walk.
-fn walk_untracked(
-    root: &Utf8Path,
+/// entered. A directory that cannot be read is not entered either: it comes back in `unreadable`.
+///
+/// The walk stops with an error at the first directory it cannot read, where git prints a warning and goes on, so
+/// the directories have to be tried before it enters them. Trying every one of them slowed the walk down by a
+/// third or more when measured, and only a tracked directory that cannot be read needs it: the untracked ones are
+/// tried on the first walk, and when it fails the walk runs again with every directory tried.
+fn walk_untracked<'k>(
+    root: &'k Utf8Path,
     repo: &gix::Repository,
     index: &gix::index::State,
-    known: &HashSet<RepoPath>,
-) -> Result<Vec<RepoPath>, FilesError> {
+    known: &'k HashSet<RepoPath>,
+) -> Result<Untracked<'k>, FilesError> {
+    walk(root, repo, index, known, false).or_else(|_| walk(root, repo, index, known, true))
+}
+
+fn walk<'k>(
+    root: &'k Utf8Path,
+    repo: &gix::Repository,
+    index: &gix::index::State,
+    known: &'k HashSet<RepoPath>,
+    try_tracked: bool,
+) -> Result<Untracked<'k>, FilesError> {
     let list_error = |error: gix::Error| FilesError::List {
         root: root.to_owned(),
         message: error.to_string(),
@@ -324,7 +363,9 @@ fn walk_untracked(
     let mut found = Untracked {
         root,
         known,
+        try_tracked,
         files: Vec::new(),
+        unreadable: Vec::new(),
     };
     repo.dirwalk(
         index,
@@ -334,33 +375,48 @@ fn walk_untracked(
         &mut found,
     )
     .map_err(list_error)?;
-    Ok(found.files)
+    Ok(found)
 }
 
-/// Takes the untracked files of a directory walk that are not known to the index.
+/// Takes the untracked files of a directory walk that are not known to the index, and the directories the walk
+/// does not enter because the process cannot read them.
 struct Untracked<'k> {
     root: &'k Utf8Path,
     known: &'k HashSet<RepoPath>,
+    /// Whether a tracked directory is tried before the walk enters it, as an untracked one always is.
+    try_tracked: bool,
     files: Vec<RepoPath>,
+    unreadable: Vec<RepoPath>,
 }
 
 impl Delegate for Untracked<'_> {
-    /// The directories git enters, less the untracked ones that cannot be opened: the walk stops with an error at
-    /// the first directory it cannot read, where git prints a warning and goes on.
+    /// The directories git enters, less the ones that cannot be opened.
     fn can_recurse(
         &mut self,
         entry: gix::dir::EntryRef<'_>,
         for_deletion: Option<ForDeletionMode>,
         worktree_root_is_repository: bool,
     ) -> bool {
-        entry.status.can_recurse(
+        if !entry.status.can_recurse(
             entry.disk_kind,
             entry.pathspec_match,
             for_deletion,
             worktree_root_is_repository,
-        ) && (entry.status != WalkStatus::Untracked
-            || std::str::from_utf8(&entry.rela_path)
-                .is_ok_and(|path| fs::read_dir(self.root.join(path)).is_ok()))
+        ) {
+            return false;
+        }
+        if entry.status != WalkStatus::Untracked && !self.try_tracked {
+            return true;
+        }
+        // A name that is not UTF-8 holds no file this tool can name.
+        let Ok(path) = std::str::from_utf8(&entry.rela_path) else {
+            return false;
+        };
+        let readable = fs::read_dir(self.root.join(path)).is_ok();
+        if !readable && let Ok(path) = RepoPath::normalize(path) {
+            self.unreadable.push(path);
+        }
+        readable
     }
 
     fn emit(
@@ -471,6 +527,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    #[cfg(unix)]
+    use crate::engine::testing::Locked;
     use crate::engine::testing::{add_worktree, git, init_repo, merge_with_conflict, touch, write};
 
     fn scan_dir(dir: &Path, exclude: &[&str]) -> Vec<FileState> {
@@ -478,6 +536,10 @@ mod tests {
     }
 
     fn scan_limited(dir: &Path, exclude: &[&str], max_file_bytes: u64) -> Vec<FileState> {
+        scanned(dir, exclude, max_file_bytes).files
+    }
+
+    fn scanned(dir: &Path, exclude: &[&str], max_file_bytes: u64) -> Scanned {
         let workspace = Workspace::locate_with(Utf8Path::from_path(dir).unwrap(), None).unwrap();
         let exclude: Vec<String> = exclude.iter().map(|&pattern| pattern.to_owned()).collect();
         scan(&workspace, &exclude, max_file_bytes, &|_| None).unwrap()
@@ -485,6 +547,11 @@ mod tests {
 
     fn paths(states: &[FileState]) -> Vec<&str> {
         states.iter().map(|state| state.path.as_str()).collect()
+    }
+
+    #[cfg(unix)]
+    fn unreadable(scanned: &Scanned) -> Vec<&str> {
+        scanned.unreadable.iter().map(RepoPath::as_str).collect()
     }
 
     #[cfg(unix)]
@@ -567,23 +634,35 @@ mod tests {
     )]
     #[test]
     fn an_untracked_directory_that_cannot_be_read_is_left_out() {
-        use std::os::unix::fs::PermissionsExt;
-
         let dir = init_repo(&[("src/a.ts", "a")]);
         write(dir.path(), "src/new.ts", "new");
         write(dir.path(), "locked/b.ts", "b");
-        let locked = dir.path().join("locked");
-        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
-        // A process that can read the directory anyway cannot show that it was left out.
-        if fs::read_dir(&locked).is_ok() {
+        let Some(_locked) = Locked::new(&dir.path().join("locked")) else {
             return;
-        }
+        };
 
-        let states = scan_dir(dir.path(), &[]);
+        let scanned = scanned(dir.path(), &[], u64::MAX);
 
-        // The directory has to be readable again for the temporary directory to be removed.
-        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(paths(&states), ["src/a.ts", "src/new.ts"]);
+        assert_eq!(paths(&scanned.files), ["src/a.ts", "src/new.ts"]);
+        assert_eq!(unreadable(&scanned), ["locked"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_tracked_directory_that_cannot_be_read_is_left_out_and_reported() {
+        let dir = init_repo(&[("src/a.ts", "a"), ("locked/b.ts", "b")]);
+        write(dir.path(), "src/new.ts", "new");
+        write(dir.path(), "vendor/c.ts", "c");
+        let Some(_locked) = Locked::new(&dir.path().join("locked")) else {
+            return;
+        };
+        // Excluded, so it is none of the engine's business that it cannot be read.
+        let _vendor = Locked::new(&dir.path().join("vendor"));
+
+        let scanned = scanned(dir.path(), &["vendor/"], u64::MAX);
+
+        assert_eq!(paths(&scanned.files), ["src/a.ts", "src/new.ts"]);
+        assert_eq!(unreadable(&scanned), ["locked"]);
     }
 
     #[gsttt_scenario::scenario("indexing", "A deleted tracked file is gone")]
@@ -642,14 +721,16 @@ mod tests {
             Some(Utf8PathBuf::from_path_buf(cache.path().to_path_buf()).unwrap()),
         )
         .unwrap();
-        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
+        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap().files;
         assert_eq!(first[0].stamp.id, blob_id(b"content"));
 
         let stored = Stamp {
             id: blob_id(b"stored"),
             ..first[0].stamp
         };
-        let second = scan(&workspace, &[], u64::MAX, &|_| Some(stored)).unwrap();
+        let second = scan(&workspace, &[], u64::MAX, &|_| Some(stored))
+            .unwrap()
+            .files;
 
         assert_eq!(second[0].stamp.id, stored.id);
     }
@@ -720,7 +801,7 @@ mod tests {
         write(dir.path(), "new.ts", "new");
         let workspace =
             Workspace::locate_with(Utf8Path::from_path(dir.path()).unwrap(), None).unwrap();
-        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
+        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap().files;
         assert_eq!(paths(&first), ["new.ts", "tracked.ts"]);
         let stored = |path: &RepoPath| {
             let stamp = first.iter().find(|state| &state.path == path)?.stamp;
@@ -730,7 +811,7 @@ mod tests {
             })
         };
 
-        let second = scan(&workspace, &[], u64::MAX, &stored).unwrap();
+        let second = scan(&workspace, &[], u64::MAX, &stored).unwrap().files;
 
         // The ids are the ones the previous run stored, not those of the contents.
         for state in &second {
@@ -756,7 +837,7 @@ mod tests {
         git(dir.path(), &["commit", "-q", "-m", "initial"]);
         let workspace =
             Workspace::locate_with(Utf8Path::from_path(dir.path()).unwrap(), None).unwrap();
-        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
+        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap().files;
         // Stored stamps that fit both files and carry an id that is not the one of the content.
         let stored = |path: &RepoPath| {
             let stamp = first.iter().find(|state| &state.path == path)?.stamp;
@@ -766,7 +847,7 @@ mod tests {
             })
         };
 
-        let second = scan(&workspace, &[], u64::MAX, &stored).unwrap();
+        let second = scan(&workspace, &[], u64::MAX, &stored).unwrap().files;
 
         let id_of = |name: &str| {
             let state = second.iter().find(|state| state.path.as_str() == name);
@@ -786,13 +867,15 @@ mod tests {
             Some(Utf8PathBuf::from_path_buf(cache.path().to_path_buf()).unwrap()),
         )
         .unwrap();
-        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap();
+        let first = scan(&workspace, &[], u64::MAX, &|_| None).unwrap().files;
         let unknown = Stamp {
             id: ContentId::UNKNOWN,
             ..first[0].stamp
         };
 
-        let second = scan(&workspace, &[], u64::MAX, &|_| Some(unknown)).unwrap();
+        let second = scan(&workspace, &[], u64::MAX, &|_| Some(unknown))
+            .unwrap()
+            .files;
 
         assert_eq!(second[0].stamp.id, blob_id(b"content"));
     }

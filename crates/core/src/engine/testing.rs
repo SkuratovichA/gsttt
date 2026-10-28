@@ -2,7 +2,7 @@
 //! connectors that count their calls.
 
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -98,6 +98,37 @@ pub(crate) fn write(dir: &Path, path: &str, text: &str) {
     let target = dir.join(path);
     std::fs::create_dir_all(target.parent().unwrap()).unwrap();
     std::fs::write(target, text).unwrap();
+}
+
+/// A directory that the process cannot open until the value is dropped, which puts the permissions back: the
+/// temporary directory it is in can be removed even when the test fails first.
+#[cfg(unix)]
+pub(crate) struct Locked(PathBuf);
+
+#[cfg(unix)]
+impl Locked {
+    /// Takes every permission off `dir`. `None` when the process can open it anyway, as one running as root can:
+    /// a test could not show that the directory was left out.
+    pub(crate) fn new(dir: &Path) -> Option<Self> {
+        use std::os::unix::fs::PermissionsExt;
+
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let locked = Self(dir.to_owned());
+        std::fs::read_dir(dir).is_err().then_some(locked)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Locked {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+
+        // A directory that stays locked only keeps the temporary directory from being removed.
+        drop(std::fs::set_permissions(
+            &self.0,
+            std::fs::Permissions::from_mode(0o755),
+        ));
+    }
 }
 
 /// A repository on the branch `main` with `files` committed.
