@@ -35,7 +35,6 @@ oxc_parser = "0.156.0"
 oxc_semantic = "0.156.0"
 oxc_span = "0.156.0"
 oxc_syntax = "0.156.0"
-oxc_resolver = "11.24.3"
 ruff_python_ast = "=0.0.20"
 ruff_python_parser = "=0.0.20"
 ruff_python_stdlib = "=0.0.20"
@@ -70,6 +69,8 @@ memchr = "2.8.3"
 papaya = "0.2.5"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 tempfile = "3.27.0"
+# Process groups and opening files without waiting. Only for unix, which gsttt is.
+rustix = "1.1.6"
 jiff = "0.2.38"
 
 # Surface: CLI, MCP, config, diagnostics.

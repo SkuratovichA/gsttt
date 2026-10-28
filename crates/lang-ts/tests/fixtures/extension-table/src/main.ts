@@ -1,0 +1,20 @@
+import { a } from './plain';
+import { b } from './tsx-only';
+import { c } from './types-only';
+import { d } from './js-only';
+import { e } from './jsx-only';
+import { f } from './module-only';
+import { g } from './common-only';
+import { h } from './esm-only';
+import { i } from './cjs-only';
+import { j } from './built.js';
+import { k } from './esm.mjs';
+import { l } from './cjs.cjs';
+import { m } from './comp.jsx';
+import { n } from './decl.d.ts';
+import { o } from './dir';
+import { p } from './dir/';
+import { q } from '.';
+import { r } from '..';
+
+export const all = [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r];

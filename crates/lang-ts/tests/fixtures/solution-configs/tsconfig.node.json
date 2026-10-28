@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "paths": { "@/*": ["./tooling/*"] } },
+  "include": ["vite.config.ts"]
+}

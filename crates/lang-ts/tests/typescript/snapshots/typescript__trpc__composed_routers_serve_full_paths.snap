@@ -1,0 +1,169 @@
+---
+source: crates/lang-ts/tests/typescript/trpc.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "publicProcedure",
+            "router"
+          ],
+          "spec": "./trpc",
+          "to": {
+            "file": "src/trpc.ts"
+          }
+        }
+      ],
+      "path": "src/booking.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "bookingRouter"
+          ],
+          "spec": "./booking",
+          "to": {
+            "file": "src/booking.ts"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "router"
+          ],
+          "spec": "./trpc",
+          "to": {
+            "file": "src/trpc.ts"
+          }
+        }
+      ],
+      "path": "src/root.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "initTRPC"
+          ],
+          "spec": "@trpc/server",
+          "to": {
+            "external": "@trpc/server"
+          }
+        }
+      ],
+      "path": "src/trpc.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [
+    {
+      "file": "src/booking.ts",
+      "key": "trpc booking.get",
+      "line": 7,
+      "role": "serves",
+      "via": "trpc"
+    }
+  ],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "routers merged or built at run time are not followed",
+            "router entries that are spread, read from a member (other.router) or built by another call are not followed"
+          ],
+          "kind": "trpc",
+          "role": "serves",
+          "via": [
+            "trpc"
+          ]
+        },
+        {
+          "blind_spots": [
+            "clients under a name other than trpc or api are not recognised"
+          ],
+          "kind": "trpc",
+          "role": "calls",
+          "via": [
+            "trpc"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

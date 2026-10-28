@@ -1,0 +1,24 @@
+-- NestJS: a controller serves its routes under its prefix, a resolver serves the fields of its root type.
+return {
+  name = "nestjs",
+  language = "ts",
+  detect = { "@nestjs/common", "@nestjs/core", "@nestjs/graphql" },
+  decorators = {
+    {
+      decorator = { "Get", "Post", "Put", "Patch", "Delete", "Options", "Head", "All" },
+      kind = "http",
+      role = "serves",
+      key = "$arg1|",
+      method = "$callee",
+      class = { from = "Controller", key = "$arg1|$arg1.path" },
+    },
+    {
+      decorator = { "Query", "Mutation", "Subscription" },
+      kind = "graphql",
+      role = "serves",
+      key = "$arg1.name|$arg2.name|$arg1|$member",
+      prefix = "$callee",
+      class = { from = "Resolver" },
+    },
+  },
+}

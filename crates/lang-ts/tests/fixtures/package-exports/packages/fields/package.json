@@ -1,0 +1,1 @@
+{ "name": "fields", "types": "./types/index.d.ts", "main": "./dist/index.js" }

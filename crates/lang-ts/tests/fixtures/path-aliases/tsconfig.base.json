@@ -1,0 +1,5 @@
+{
+  "compilerOptions": {
+    "paths": { "@db/*": ["packages/db/src/*"] }
+  }
+}
