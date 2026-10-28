@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use anyhow::{Context as _, bail};
+use anyhow::{Context as _, bail, ensure};
 use serde::Deserialize;
 use xshell::{Cmd, Shell};
 
@@ -82,23 +82,38 @@ pub(super) fn reset(dir: &Path, run: &Run) -> anyhow::Result<()> {
         .with_context(|| format!("cannot throw away the cache of {}", run.tool.name()))
 }
 
-/// The median of the one command in what hyperfine exported, in whole milliseconds.
+/// The median wall-clock time of the one command in what hyperfine exported, in whole milliseconds. The export is read as hyperfine 2 writes it (`"schema_version": 2`), which keeps the medians under `results[].summary.<metric>`, where hyperfine 1 had `results[].median`; CPU time is a metric of its own and is not what is published.
 fn median_ms(export: &str) -> anyhow::Result<u64> {
     #[derive(Deserialize)]
     struct Export {
-        results: Vec<Summary>,
+        results: Vec<Timed>,
+    }
+    #[derive(Deserialize)]
+    struct Timed {
+        summary: Summary,
     }
     #[derive(Deserialize)]
     struct Summary {
-        /// In seconds.
+        time_wall_clock: Metric,
+    }
+    #[derive(Deserialize)]
+    struct Metric {
+        unit: String,
         median: f64,
     }
 
-    let export: Export = serde_json::from_str(export).context("hyperfine's export is not JSON")?;
-    let [summary] = export.results.as_slice() else {
+    let export: Export = serde_json::from_str(export)
+        .context("hyperfine's export is not the JSON of hyperfine 2 (results[].summary.time_wall_clock.median)")?;
+    let [timed] = export.results.as_slice() else {
         bail!("hyperfine timed {} commands, not one", export.results.len())
     };
-    let median = Duration::try_from_secs_f64(summary.median)
+    let wall_clock = &timed.summary.time_wall_clock;
+    ensure!(
+        wall_clock.unit == "second",
+        "hyperfine reports the wall-clock time in {}, not in seconds",
+        wall_clock.unit
+    );
+    let median = Duration::try_from_secs_f64(wall_clock.median)
         .context("hyperfine's median is not a duration")?;
     // Rounded to the nearest millisecond, never cut.
     Ok(u64::try_from((median.as_micros() + 500) / 1000)?)
@@ -154,18 +169,36 @@ fn tail(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    /// An export in the shape of hyperfine 2 for one command, with the CPU time far from the wall-clock time so that a mix-up shows.
+    fn export(wall_clock: f64, unit: &str) -> String {
+        serde_json::json!({
+            "schema_version": 2,
+            "primary_metric": "time_wall_clock",
+            "results": [{
+                "command": "x",
+                "summary": {
+                    "time_cpu": {"unit": "second", "count": 3, "mean": 99.0, "stddev": null, "median": 99.0, "min": 99.0, "max": 99.0},
+                    "time_wall_clock": {"unit": unit, "count": 3, "mean": 1.0, "stddev": null, "median": wall_clock, "min": 0.0, "max": 2.0},
+                },
+            }],
+        })
+        .to_string()
+    }
+
     #[test]
-    fn the_median_is_rounded_to_whole_milliseconds() {
-        let export = |median: &str| {
-            format!(
-                "{{\"results\": [{{\"command\": \"x\", \"median\": {median}, \"stddev\": null}}]}}"
-            )
-        };
-        assert_eq!(median_ms(&export("0.1234")).unwrap(), 123);
-        assert_eq!(median_ms(&export("0.0005")).unwrap(), 1);
-        assert_eq!(median_ms(&export("12.0")).unwrap(), 12_000);
+    fn the_median_is_the_wall_clock_time_rounded_to_whole_milliseconds() {
+        assert_eq!(median_ms(&export(0.1234, "second")).unwrap(), 123);
+        assert_eq!(median_ms(&export(0.0005, "second")).unwrap(), 1);
+        assert_eq!(median_ms(&export(12.0, "second")).unwrap(), 12_000);
+    }
+
+    #[test]
+    fn an_export_that_is_not_one_command_in_seconds_is_refused() {
+        assert!(median_ms(&export(-1.0, "second")).is_err());
+        assert!(median_ms(&export(1.0, "millisecond")).is_err());
         assert!(median_ms("{\"results\": []}").is_err());
-        assert!(median_ms(&export("-1.0")).is_err());
+        // The export of hyperfine 1, which has the median on the result itself.
+        assert!(median_ms("{\"results\": [{\"command\": \"x\", \"median\": 0.5}]}").is_err());
     }
 
     #[test]
