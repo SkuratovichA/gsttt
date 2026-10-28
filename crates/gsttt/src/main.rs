@@ -4,6 +4,11 @@ use std::process::ExitCode;
 
 use gsttt::{Io, logging, panics, streams};
 
+/// The allocator of the whole process. The index build allocates from many worker threads at once, and mimalloc gives
+/// each thread its own heap.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> ExitCode {
     // The streams stay unlocked: a worker thread that logs must not wait for this thread to let go of stderr.
     let (mut stdout, mut stderr) = (streams::stdout(), streams::stderr());
