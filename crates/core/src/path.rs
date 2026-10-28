@@ -181,6 +181,8 @@ impl fmt::Debug for RepoPath {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     #[test]
@@ -207,6 +209,13 @@ mod tests {
         assert_eq!(RepoPath::join_dir("a", "../..").as_deref(), None);
         assert_eq!(RepoPath::join_dir("", "..").as_deref(), None);
         assert_eq!(RepoPath::join_dir("a", "/b").as_deref(), None);
+    }
+
+    proptest! {
+        #[test]
+        fn joins_never_panic(dir in "[a-z/.]{0,12}", relative in "[a-z/.]{0,12}") {
+            drop(RepoPath::join_dir(&dir, &relative));
+        }
     }
 
     #[test]

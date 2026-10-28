@@ -84,7 +84,7 @@ fn manifest_status(file: &SourceFile<'_>) -> ParseStatus {
 /// The line of the byte at `offset` in a text of `len` bytes, an offset past the end being held to the last byte.
 fn error_line(lines: &LineIndex, offset: usize, len: usize) -> Line {
     let last_byte = len.saturating_sub(1);
-    lines.line(u32::try_from(offset.min(last_byte)).unwrap_or(u32::MAX))
+    lines.line_at(offset.min(last_byte))
 }
 
 /// A name assigned a call, `router = APIRouter(prefix="/bookings")`. Rules written for a receiver read it to tell

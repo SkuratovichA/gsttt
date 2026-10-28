@@ -104,7 +104,7 @@ impl Progress {
     }
 }
 
-/// A requirement of a capability, by capability and name.
+/// A requirement or a scenario of a capability, by capability and name or title.
 type Key = (String, String);
 
 /// An open change, as far as archiving cares.
@@ -112,12 +112,12 @@ type Key = (String, String);
 struct Open {
     name: String,
     progress: Progress,
-    /// The requirements that the change modifies, removes or renames: `openspec archive` stops at
-    /// one that is missing.
+    /// The requirements that the change modifies, removes or renames: `openspec archive` stops at one that is missing.
     needs: Vec<Key>,
-    /// The requirements that the change adds or renames to, which the changes archived after it can
-    /// then modify, remove or rename.
+    /// The requirements that the change adds or renames to, which the changes archived after it can then modify, remove or rename.
     gives: Vec<Key>,
+    /// The requirements that the change removes or renames away, which the changes archived after it no longer find, each with the entry of the delta that says so.
+    takes: Vec<(Key, Site)>,
 }
 
 /// Everything the gate found out.
@@ -146,10 +146,7 @@ impl Judgement {
             .map(|open| open.progress)
     }
 
-    /// The open changes that can be archived, in an order that `openspec archive` can take them in:
-    /// every task ticked, every scenario proven, no failure that mentions them, and every
-    /// requirement they modify, remove or rename in the main specs or added by a change listed
-    /// before them. Of the changes that can go next, the one with the first name goes first.
+    /// The open changes that can be archived, in an order that `openspec archive` can take them in: every task ticked, every scenario proven, no failure that mentions them, and every requirement they modify, remove or rename in the main specs or added by a change listed before them and not taken away by one. A change that removes or renames a requirement goes after the waiting changes that need it. Of the changes that can go next, the one with the first name goes first.
     pub(super) fn ready(&self) -> Vec<&str> {
         let mut waiting: Vec<&Open> = self
             .changes
@@ -170,11 +167,18 @@ impl Judgement {
             .collect();
         let mut have: BTreeSet<&Key> = self.main.iter().collect();
         let mut listed = Vec::new();
-        while let Some(next) = waiting
-            .iter()
-            .position(|change| change.needs.iter().all(|need| have.contains(need)))
-        {
+        while let Some(next) = waiting.iter().position(|change| {
+            change.needs.iter().all(|need| have.contains(need))
+                && change.takes.iter().all(|(key, _)| {
+                    waiting
+                        .iter()
+                        .all(|other| other.name == change.name || !other.needs.contains(key))
+                })
+        }) {
             let change = waiting.remove(next);
+            for (key, _) in &change.takes {
+                have.remove(key);
+            }
             have.extend(&change.gives);
             listed.push(change.name.as_str());
         }
@@ -191,7 +195,7 @@ enum Replacement {
 
 /// The main requirements that open changes remove or modify, by capability and name, with the
 /// first change (in name order) that does.
-type Replaced = BTreeMap<(String, String), (String, Replacement)>;
+type Replaced = BTreeMap<Key, (String, Replacement)>;
 
 /// A main scenario that an open change takes away.
 #[derive(Debug)]
@@ -203,7 +207,11 @@ struct Dropped {
 
 /// Judges the scenarios of the specs against the claims found in the sources.
 pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
-    let (mut entries, dropped) = effective(openspec);
+    let Effective {
+        mut entries,
+        dropped,
+        main,
+    } = effective(openspec);
     let changes: Vec<Open> = openspec
         .changes
         .iter()
@@ -212,19 +220,11 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
             progress: Progress::of(change),
             needs: change.deltas.iter().flat_map(needs).collect(),
             gives: change.deltas.iter().flat_map(gives).collect(),
-        })
-        .collect();
-    let main: BTreeSet<Key> = openspec
-        .specs
-        .iter()
-        .flat_map(|spec| {
-            spec.requirements
-                .iter()
-                .map(|requirement| (spec.capability.clone(), requirement.name.clone()))
+            takes: change.deltas.iter().flat_map(takes).collect(),
         })
         .collect();
 
-    let mut homes: BTreeMap<(String, String), Vec<(Site, Source)>> = BTreeMap::new();
+    let mut homes: BTreeMap<Key, Vec<(Site, Source)>> = BTreeMap::new();
     for entry in &entries {
         homes
             .entry((entry.capability.clone(), entry.title.clone()))
@@ -273,6 +273,7 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
         });
     }
     failures.extend(purpose::failures(openspec));
+    failures.extend(rivals(&changes));
 
     entries.sort_by(|a, b| {
         (&a.capability, &a.source, &a.site).cmp(&(&b.capability, &b.source, &b.site))
@@ -286,14 +287,27 @@ pub(super) fn judge(openspec: &OpenSpec, marks: &Marks) -> Judgement {
     }
 }
 
-/// The scenarios that need a proof, and the main scenarios that open changes take away.
-fn effective(openspec: &OpenSpec) -> (Vec<Entry>, BTreeMap<(String, String), Dropped>) {
+/// What the main specs and the open changes make of the scenarios and the requirements.
+struct Effective {
+    /// The scenarios that need a proof.
+    entries: Vec<Entry>,
+    /// The main scenarios that open changes take away.
+    dropped: BTreeMap<Key, Dropped>,
+    /// The requirements of the main specs.
+    main: BTreeSet<Key>,
+}
+
+/// Walks the main specs once for their requirements and for the scenarios that open changes leave them, then adds the scenarios that open changes bring.
+fn effective(openspec: &OpenSpec) -> Effective {
     let replaced = replaced(&openspec.changes);
     let mut entries = Vec::new();
     let mut dropped = BTreeMap::new();
+    let mut main = BTreeSet::new();
     for spec in &openspec.specs {
         for requirement in &spec.requirements {
-            let taken = replaced.get(&(spec.capability.clone(), requirement.name.clone()));
+            let key = (spec.capability.clone(), requirement.name.clone());
+            let taken = replaced.get(&key);
+            main.insert(key);
             for scenario in &requirement.scenarios {
                 if let Some((change, how)) = taken {
                     dropped.insert(
@@ -329,7 +343,11 @@ fn effective(openspec: &OpenSpec) -> (Vec<Entry>, BTreeMap<(String, String), Dro
             }
         }
     }
-    (entries, dropped)
+    Effective {
+        entries,
+        dropped,
+        main,
+    }
 }
 
 fn replaced(changes: &[Change]) -> Replaced {
@@ -365,19 +383,34 @@ fn main_name<'a>(delta: &'a Delta, modified: &'a Requirement) -> &'a String {
         .map_or(&modified.name, |renamed| &renamed.from)
 }
 
-/// The requirements that `delta` modifies, removes or renames, under the names they have before the
-/// change is archived.
+/// The requirements that `delta` modifies, removes or renames, under the names they have before the change is archived.
 fn needs(delta: &Delta) -> impl Iterator<Item = Key> {
-    let removed = delta.removed.iter().map(|removed| &removed.name);
-    let renamed = delta.renamed.iter().map(|renamed| &renamed.from);
-    let modified = delta
-        .modified
+    let modified = delta.modified.iter().map(|requirement| {
+        (
+            delta.capability.clone(),
+            main_name(delta, requirement).clone(),
+        )
+    });
+    takes(delta).map(|(key, _)| key).chain(modified)
+}
+
+/// The requirements that `delta` removes and the names it renames requirements away from, each with the line of the entry that says so.
+fn takes(delta: &Delta) -> impl Iterator<Item = (Key, Site)> {
+    let removed = delta
+        .removed
         .iter()
-        .map(|requirement| main_name(delta, requirement));
-    removed
-        .chain(renamed)
-        .chain(modified)
-        .map(|name| (delta.capability.clone(), name.clone()))
+        .map(|removed| (&removed.name, removed.line));
+    let renamed = delta
+        .renamed
+        .iter()
+        .map(|renamed| (&renamed.from, renamed.line));
+    removed.chain(renamed).map(|(name, line)| {
+        let site = Site {
+            file: delta.file.clone(),
+            line,
+        };
+        ((delta.capability.clone(), name.clone()), site)
+    })
 }
 
 /// The requirements that `delta` adds, and the names it renames requirements to.
@@ -447,8 +480,39 @@ fn duplicate(capability: &str, title: &str, places: &[(Site, Source)]) -> Failur
     }
 }
 
+/// A failure for each requirement that more than one open change removes or renames away: whichever is archived second would not find it, and `ready` would make each of them wait for the other.
+fn rivals(changes: &[Open]) -> Vec<Failure> {
+    let mut takers: BTreeMap<&Key, BTreeMap<&str, &Site>> = BTreeMap::new();
+    for change in changes {
+        for (key, site) in &change.takes {
+            takers
+                .entry(key)
+                .or_default()
+                .entry(change.name.as_str())
+                .or_insert(site);
+        }
+    }
+    takers
+        .into_iter()
+        .filter(|(_, by_change)| by_change.len() > 1)
+        .map(|((capability, requirement), by_change)| Failure {
+            site: by_change
+                .values()
+                .next()
+                .map(|site| (*site).clone())
+                .unwrap_or_default(),
+            message: format!(
+                "requirement `{requirement}` of capability `{capability}` is removed or renamed away by changes {}, and only the first of them to be archived finds it: {}",
+                join(by_change.keys().map(|name| format!("`{name}`"))),
+                join(by_change.values().map(ToString::to_string))
+            ),
+            changes: by_change.keys().map(|name| (*name).to_owned()).collect(),
+        })
+        .collect()
+}
+
 /// A claim on a scenario the specs do not have.
-fn orphan(claim: &Claim, dropped: &BTreeMap<(String, String), Dropped>) -> Failure {
+fn orphan(claim: &Claim, dropped: &BTreeMap<Key, Dropped>) -> Failure {
     let Claim {
         capability,
         scenario,

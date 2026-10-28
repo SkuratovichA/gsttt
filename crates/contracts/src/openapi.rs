@@ -16,13 +16,12 @@ use gsttt_core::fact::{ContractFact, FileFacts, Import, ImportKind, Line, Resolu
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
+use gsttt_core::tree::{SyntaxError, Value, parse_json};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{
-    SyntaxError, any_claimed, http_site, provide, resolve_relative, syntax_failure,
-};
-use crate::tree::{Value, parse_json, parse_yaml};
+use crate::common::{any_claimed, http_site, provide, resolve_relative, syntax_failure};
+use crate::tree::parse_yaml;
 
 const VIA: &str = "openapi";
 
@@ -250,7 +249,7 @@ impl Project for OpenApiProject {
                 },
                 extra: read.extra,
             },
-            Err(error) => Parsed::new(syntax_failure(error.line, error.message)),
+            Err(error) => Parsed::new(syntax_failure(error)),
         }
     }
 
@@ -397,18 +396,16 @@ fn server_paths(root: &Value) -> Vec<&str> {
     paths
 }
 
-/// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route and is written three ways: `https://host`, which [`path_after_origin`] drops as the key normaliser does, and `//host` and `{variable}`, which the normaliser would keep as the first segment. A variable may stand for the scheme, as in `{scheme}://host/v1`, or for the whole origin, as in `{baseUrl}/v1`.
+/// The path a server URL puts in front of every route, without its trailing slash. The origin is no part of a route and is written three ways: `https://host` and `{scheme}://host`, which [`path_after_origin`] drops as the key normaliser does, and `//host` and `{baseUrl}`, a variable for the whole origin, which the normaliser would keep as the first segment. A query string or a fragment is no part of the path and goes, so `https://host?key=1` has the empty path.
 fn path_of_server(url: &str) -> &str {
-    let url = url.trim();
+    let url = url.trim().split(['?', '#']).next().unwrap_or_default();
     if let Some(path) = path_after_origin(url) {
         return path.trim_end_matches('/');
     }
     let host_and_path = if let Some(rest) = url.strip_prefix("//") {
         rest
     } else if url.starts_with('{') {
-        url.split_once("://")
-            .filter(|(variable, _)| !variable.contains('/'))
-            .map_or(url, |(_, rest)| rest)
+        url
     } else {
         return url.trim_end_matches('/');
     };
@@ -444,7 +441,7 @@ fn collect_refs(value: &Value, imports: &mut Vec<Import>) {
 /// The file a `$ref` names: the text before the `#`, nothing for a reference inside the document or to a URL.
 fn file_of_ref(reference: &str) -> Option<&str> {
     let file = reference.split('#').next()?.trim();
-    (!file.is_empty() && !file.contains("://")).then_some(file)
+    (!file.is_empty() && path_after_origin(file).is_none()).then_some(file)
 }
 
 #[cfg(test)]
@@ -484,6 +481,13 @@ mod tests {
             ("//api.example.com/v1", "/v1"),
             ("{baseUrl}/v1", "/v1"),
             ("{baseUrl}", ""),
+            ("https://api.example.com?key=1", ""),
+            ("https://api.example.com/v1?key=1#top", "/v1"),
+            ("{baseUrl}/v1?key=1", "/v1"),
+            (
+                "{baseUrl}/redirect/http://example.com",
+                "/redirect/http://example.com",
+            ),
             ("/v1/", "/v1"),
             ("/", ""),
             ("/api/{version}", "/api/{version}"),
@@ -583,7 +587,7 @@ mod tests {
         #[test]
         fn a_reference_names_no_fragment_and_no_url(reference in "\\PC*") {
             if let Some(file) = file_of_ref(&reference) {
-                prop_assert!(!file.is_empty() && !file.contains('#') && !file.contains("://"));
+                prop_assert!(!file.is_empty() && !file.contains('#') && path_after_origin(file).is_none());
             }
         }
 

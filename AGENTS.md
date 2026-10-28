@@ -47,6 +47,7 @@ Send long output to a file and read the part you need: `cargo nextest run --work
 - **Determinism**: the same tree gives the same index, byte for byte. Sort before you emit; never iterate a hash map into output.
 - **Speed is a feature**: no per-file allocation you can avoid on the hot path, no disk access during resolution (resolve against `RepoView`), no `String` where a `&str` into the source lives long enough.
 - Comments say why, not what. Doc comments on every public item, in plain sentences.
+- **Unix only**: gsttt builds and runs on Linux and macOS only, so code and tests may use `std::os::unix` and `rustix` without a `cfg(unix)` guard. A test that proves a scenario carries no `cfg` but `test`, because the gate counts a test under another `cfg` as no proof.
 
 ## Tests
 

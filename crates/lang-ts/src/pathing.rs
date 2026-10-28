@@ -125,9 +125,8 @@ mod tests {
         }
 
         #[test]
-        fn joins_never_panic(dir in "[a-z/.]{0,12}", relative in "[a-z/.]{0,12}") {
-            drop(RepoPath::join_dir(&dir, &relative));
-            let _ = strip_dir(&relative, &dir);
+        fn stripping_a_directory_never_panics(dir in "[a-z/.]{0,12}", path in "[a-z/.]{0,12}") {
+            let _ = strip_dir(&path, &dir);
         }
 
         #[test]

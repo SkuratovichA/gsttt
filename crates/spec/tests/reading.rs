@@ -590,14 +590,74 @@ fn a_purpose_is_the_prose_of_its_section_and_the_line_it_starts_on() {
         ("First line.\nSecond line.", 5)
     );
 
-    // No section, or one with no prose, is no purpose.
-    for text in [
+    // No section is no purpose.
+    let spec = parse_spec(
+        "queries",
+        Path::new("spec.md"),
         "# Spec\n\n## Requirements\n",
+    )
+    .unwrap();
+    assert_eq!(spec.purpose, None);
+}
+
+#[test]
+fn a_purpose_section_with_no_prose_is_an_empty_purpose_on_the_line_of_its_heading() {
+    // Blank lines and fenced code are no prose; the heading may be the last line of the file.
+    for text in [
         "# Spec\n\n## Purpose\n\n## Requirements\n",
+        "# Spec\n\n## Purpose\n```\nnot prose\n```\n\n## Requirements\n",
+        "# Spec\n\n## Purpose\n",
     ] {
-        let spec = parse_spec("queries", Path::new("spec.md"), text).unwrap();
-        assert_eq!(spec.purpose, None);
+        let purpose = parse_spec("queries", Path::new("spec.md"), text)
+            .unwrap()
+            .purpose
+            .unwrap();
+        assert_eq!((purpose.text.as_str(), purpose.line), ("", 3), "{text:?}");
     }
+    let delta = "# Spec Delta\n\n## Purpose\n\n## ADDED Requirements\n";
+    let purpose = parse_delta("queries", Path::new("delta.md"), delta)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("", 3));
+}
+
+#[test]
+fn a_purpose_heading_with_trailing_spaces_still_starts_the_purpose() {
+    let spec = "# Spec\n\n## Purpose  \t\n\nImpact queries.\n\n## Requirements\n";
+    let purpose = parse_spec("queries", Path::new("spec.md"), spec)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!(
+        (purpose.text.as_str(), purpose.line),
+        ("Impact queries.", 5)
+    );
+    let delta = "# Spec Delta\n\n## Purpose  \t\n\nChanges.\n\n## ADDED Requirements\n";
+    let purpose = parse_delta("queries", Path::new("delta.md"), delta)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("Changes.", 5));
+}
+
+#[test]
+fn a_spec_with_windows_line_endings_has_the_same_purpose_and_line() {
+    let spec = SPEC.replace('\n', "\r\n");
+    let purpose = parse_spec("queries", Path::new("spec.md"), &spec)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!(
+        (purpose.text.as_str(), purpose.line),
+        ("Impact queries.", 4)
+    );
+    let delta = DELTA.replace('\n', "\r\n");
+    let purpose = parse_delta("queries", Path::new("delta.md"), &delta)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("Changes.", 4));
 }
 
 #[test]

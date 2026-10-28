@@ -25,12 +25,12 @@ pub struct Requirement {
     pub scenarios: Vec<Scenario>,
 }
 
-/// The prose of a `## Purpose` section: what a capability is for.
+/// A `## Purpose` section: the prose that says what a capability is for, which is empty when the section has none.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Purpose {
-    /// The lines of the section that are not blank and not fenced code, trimmed and joined with `\n`.
+    /// The lines of the section that are not blank and not fenced code, trimmed and joined with `\n`; empty when there are none.
     pub text: String,
-    /// The line of the first of them, counted from 1.
+    /// The line of the first of them, or of the `## Purpose` heading when there are none, counted from 1.
     pub line: usize,
 }
 
@@ -41,7 +41,7 @@ pub struct Spec {
     pub capability: String,
     /// The file, relative to the repository root, as it appears in messages.
     pub file: PathBuf,
-    /// The `## Purpose` section; `None` when the spec has none or it holds no prose.
+    /// The `## Purpose` section; `None` when the spec has no such heading, and an empty [`Purpose`] when the section holds no prose.
     pub purpose: Option<Purpose>,
     /// The requirements in the order they are written.
     pub requirements: Vec<Requirement>,
@@ -74,8 +74,7 @@ pub struct Delta {
     pub capability: String,
     /// The file, relative to the repository root, as it appears in messages.
     pub file: PathBuf,
-    /// The `## Purpose` section, which OpenSpec reads only when the delta creates the capability; `None`
-    /// when the delta has none or it holds no prose.
+    /// The `## Purpose` section, which OpenSpec reads only when the delta creates the capability; `None` when the delta has no such heading, and an empty [`Purpose`] when the section holds no prose.
     pub purpose: Option<Purpose>,
     /// The requirements of the `ADDED` section.
     pub added: Vec<Requirement>,
@@ -278,6 +277,9 @@ impl<'a> Parser<'a> {
                 self.section = self.kind.section(title);
                 self.saw_section |= self.kind == Kind::Delta
                     && !matches!(self.section, Section::Other | Section::Purpose);
+                if self.section == Section::Purpose {
+                    self.purpose_at(line);
+                }
                 Ok(())
             }
             3 => self.requirement_heading(title, line),
@@ -382,24 +384,27 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// The purpose being read, started with no prose at `line` when neither the heading nor an earlier line has started it.
+    fn purpose_at(&mut self, line: usize) -> &mut Purpose {
+        self.purpose.get_or_insert_with(|| Purpose {
+            text: String::new(),
+            line,
+        })
+    }
+
     /// Adds a line of the `## Purpose` section to the prose; a blank line is no prose.
     fn purpose_line(&mut self, text: &str, line: usize) {
         let text = text.trim();
         if text.is_empty() {
             return;
         }
-        match &mut self.purpose {
-            Some(purpose) => {
-                purpose.text.push('\n');
-                purpose.text.push_str(text);
-            }
-            None => {
-                self.purpose = Some(Purpose {
-                    text: text.to_owned(),
-                    line,
-                });
-            }
+        let purpose = self.purpose_at(line);
+        if purpose.text.is_empty() {
+            purpose.line = line;
+        } else {
+            purpose.text.push('\n');
         }
+        purpose.text.push_str(text);
     }
 
     /// Reads a `- FROM: ``### Requirement: Old`` ` or `- TO: …` entry and pairs them in order.
