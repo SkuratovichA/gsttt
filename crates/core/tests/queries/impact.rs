@@ -9,6 +9,7 @@ use gsttt_core::query::{Affected, Answer, Entries, Impact, ImpactRequest, impact
 use gsttt_core::testing::{To, Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
+use serde_json::{json, to_value};
 
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];
@@ -706,4 +707,301 @@ proptest! {
             .collect();
         prop_assert_eq!(actual, expected);
     }
+}
+
+/// A row of `rows`, with the reason written out.
+fn row<'a>(path: &'a str, distance: u32, reason: &str) -> (&'a str, u32, String) {
+    (path, distance, reason.to_owned())
+}
+
+#[scenario("queries", "A changed barrel reaches every importer")]
+#[test]
+fn a_changed_barrel_reaches_every_importer() {
+    let index = Tree::new()
+        .exports("index.ts", &["own"])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("a.ts", &["fromA"])
+        .imports_names("form.ts", "index.ts", &["fromA"])
+        .imports_names("page.ts", "index.ts", &["own"])
+        .build();
+
+    let answer = run(&index, &["index.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("form.ts", 1, "imports fromA from index.ts"),
+            row("page.ts", 1, "imports own from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A file that uses an affected name is affected in all its names"
+)]
+#[test]
+fn a_file_that_uses_an_affected_name_is_affected_in_all_its_names() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .re_exports_all("index.ts", "b.ts")
+        .exports("a.ts", &["fromA"])
+        .exports("b.ts", &["fromB"])
+        .imports_names("b.ts", "a.ts", &["fromA"])
+        .imports_names("page.ts", "index.ts", &["fromB"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("b.ts", 1, "imports fromA from a.ts"),
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("page.ts", 3, "imports fromB from index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "A name the barrel does not export is affected")]
+#[test]
+fn a_name_the_barrel_does_not_export_is_affected() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("a.ts", &["kept"])
+        .imports_names("old.ts", "index.ts", &["gone"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports kept from a.ts"),
+            row("old.ts", 2, "imports gone from index.ts"),
+        ]
+    );
+}
+
+/// A barrel of `fromA` and `fromB`, and a page for each name.
+fn two_sources() -> Tree {
+    Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .re_exports_all("index.ts", "b.ts")
+        .exports("a.ts", &["fromA"])
+        .exports("b.ts", &["fromB"])
+        .imports_names("form.ts", "index.ts", &["fromA"])
+        .imports_names("page.ts", "index.ts", &["fromB"])
+}
+
+#[scenario("queries", "A barrel passes on only what it re-exports")]
+#[test]
+fn a_barrel_passes_on_only_what_it_re_exports() {
+    let answer = run(&two_sources().build(), &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("form.ts", 2, "imports fromA from index.ts"),
+        ]
+    );
+    assert!(!paths(&answer.affected).contains(&"page.ts"));
+}
+
+#[scenario("queries", "A named re-export passes on its alias")]
+#[test]
+fn a_named_re_export_passes_on_its_alias() {
+    let index = Tree::new()
+        .exports("index.ts", &["other", "useBar"])
+        .re_exports("index.ts", "foo.ts", &[("useBar", "useFoo")])
+        .re_exports("index.ts", "other.ts", &[("other", "other")])
+        .imports_names("x.ts", "index.ts", &["useBar"])
+        .imports_names("y.ts", "index.ts", &["other"])
+        .build();
+
+    let answer = run(&index, &["foo.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports useBar from foo.ts"),
+            row("x.ts", 2, "imports useBar from index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "Chained barrels pass names on")]
+#[test]
+fn chained_barrels_pass_names_on() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "inner.ts")
+        .exports("inner.ts", &[])
+        .re_exports_all("inner.ts", "a.ts")
+        .re_exports_all("inner.ts", "b.ts")
+        .exports("a.ts", &["fromA"])
+        .exports("b.ts", &["fromB"])
+        .imports_names("app.ts", "index.ts", &["fromA"])
+        .imports_names("other.ts", "index.ts", &["fromB"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("inner.ts", 1, "re-exports fromA from a.ts"),
+            row("index.ts", 2, "re-exports fromA from inner.ts"),
+            row("app.ts", 3, "imports fromA from index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "A namespace import takes every name")]
+#[test]
+fn a_namespace_import_takes_every_name() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("a.ts", &["fromA"])
+        .imports_namespace("all.ts", "index.ts")
+        .imports_for_effect("side.ts", "index.ts")
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("all.ts", 2, "imports index.ts"),
+            row("side.ts", 2, "imports index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "Unknown exports keep every importer")]
+#[test]
+fn unknown_exports_keep_every_importer() {
+    let index = Tree::new()
+        .re_exports_all("index.ts", "legacy.js")
+        .imports_names("page.ts", "index.ts", &["thing"])
+        .build();
+
+    let answer = run(&index, &["legacy.js"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports legacy.js"),
+            row("page.ts", 2, "imports thing from index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "A barrel reached for some names crosses no contract")]
+#[test]
+fn a_barrel_reached_for_some_names_crosses_no_contract() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("a.ts", &["fromA"])
+        .serves("index.ts", "http GET /health")
+        .calls("client.ts", "http GET /health")
+        .build();
+
+    let by_name = run(&index, &["a.ts"]);
+    let whole = run(&index, &["index.ts"]);
+
+    assert_eq!(paths(&by_name.affected), ["index.ts"]);
+    assert_eq!(paths(&whole.affected), ["client.ts"]);
+}
+
+#[scenario("queries", "Names are cut after three")]
+#[test]
+fn names_are_cut_after_three() {
+    let index = Tree::new()
+        .imports_names("x.ts", "a.ts", &["one", "two", "three", "four"])
+        .imports_names("y.ts", "a.ts", &["one"])
+        .build();
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("x.ts", 1, "imports four, one, three and 1 more from a.ts"),
+            row("y.ts", 1, "imports one from a.ts"),
+        ]
+    );
+    assert!(
+        answer
+            .text(Entries::All)
+            .contains("x.ts  distance 1  imports four, one, three, two from a.ts")
+    );
+    assert_eq!(
+        to_value(&answer.affected[0].reason).unwrap(),
+        json!({"via": "imports", "file": "a.ts", "names": ["four", "one", "three", "two"]})
+    );
+}
+
+#[test]
+fn a_re_export_is_written_as_re_exports_in_json() {
+    let answer = run(&two_sources().build(), &["a.ts"]);
+
+    assert_eq!(
+        to_value(&answer.affected[0].reason).unwrap(),
+        json!({"via": "re-exports", "file": "a.ts", "names": ["fromA"]})
+    );
+}
+
+#[test]
+fn a_cycle_of_star_exports_ends_and_knows_the_names_of_every_member() {
+    let index = Tree::new()
+        .exports("s.ts", &["fromS"])
+        .exports("p.ts", &["ownP"])
+        .exports("q.ts", &["ownQ"])
+        .re_exports_all("p.ts", "s.ts")
+        .re_exports_all("p.ts", "q.ts")
+        .re_exports_all("q.ts", "p.ts")
+        .imports_names("x.ts", "q.ts", &["fromS"])
+        .imports_names("y.ts", "q.ts", &["ownP"])
+        .imports_names("z.ts", "q.ts", &["missing"])
+        .build();
+
+    let answer = run(&index, &["s.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("p.ts", 1, "re-exports fromS from s.ts"),
+            row("q.ts", 2, "re-exports fromS from p.ts"),
+            row("x.ts", 3, "imports fromS from q.ts"),
+            row("z.ts", 3, "imports missing from q.ts"),
+        ]
+    );
+}
+
+#[test]
+fn a_barrel_whose_names_grow_over_two_layers_passes_each_gain_on_once() {
+    let index = two_sources()
+        .imports_names("b.ts", "a.ts", &["fromA"])
+        .imports_names("both.ts", "index.ts", &["fromA", "fromB"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("b.ts", 1, "imports fromA from a.ts"),
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("both.ts", 2, "imports fromA from index.ts"),
+            row("form.ts", 2, "imports fromA from index.ts"),
+            row("page.ts", 3, "imports fromB from index.ts"),
+        ]
+    );
 }

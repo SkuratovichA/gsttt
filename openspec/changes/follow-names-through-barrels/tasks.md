@@ -22,4 +22,4 @@
 
 ## 5. Proof
 
-- [ ] 5.1 A test for each scenario of this change
+- [x] 5.1 A test for each scenario of this change
