@@ -1782,7 +1782,6 @@ dependencies = [
  "gsttt-core",
  "gsttt-scenario",
  "insta",
- "jsonc-parser",
  "proptest",
  "protox-parse",
  "saphyr",
@@ -1807,6 +1806,7 @@ dependencies = [
  "ignore",
  "insta",
  "jiff",
+ "jsonc-parser",
  "memchr",
  "proptest",
  "rayon",
@@ -1873,7 +1873,6 @@ dependencies = [
  "gsttt-core",
  "gsttt-scenario",
  "insta",
- "jsonc-parser",
  "oxc_allocator",
  "oxc_ast",
  "oxc_ast_visit",
@@ -1885,7 +1884,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
  "tracing",
 ]
 

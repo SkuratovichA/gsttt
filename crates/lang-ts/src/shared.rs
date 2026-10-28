@@ -4,10 +4,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use gsttt_core::tree::{self, Value};
 use gsttt_core::{RepoPath, RepoView};
 
 use crate::config::{ConfigFile, Cover, Effective};
-use crate::json::{self, Json};
 use crate::manifest::Manifest;
 use crate::options::TypeScriptOptions;
 use crate::pathing::{
@@ -298,7 +298,7 @@ impl Shared {
 
 /// A JSON file of the repository, or `None` when it cannot be read or is not JSON; the file reports its own failure when
 /// it is parsed.
-fn read_json(repo: &RepoView, path: &str) -> Option<Json> {
+fn read_json(repo: &RepoView, path: &str) -> Option<Value> {
     let text = match repo.read_to_string(path) {
         Ok(text) => text,
         Err(error) => {
@@ -306,7 +306,7 @@ fn read_json(repo: &RepoView, path: &str) -> Option<Json> {
             return None;
         }
     };
-    match json::parse(&text) {
+    match tree::parse_json(&text) {
         Ok(json) => Some(json),
         Err(error) => {
             tracing::debug!(path, line = error.line, message = %error.message, "file is not valid JSON");

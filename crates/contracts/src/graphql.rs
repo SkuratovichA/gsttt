@@ -27,7 +27,7 @@ use gsttt_core::text::LineIndex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{byte_offset, line_number, provide, resolve_relative, site};
+use crate::common::{line_number, provide, resolve_relative, site};
 
 const VIA: &str = "graphql";
 
@@ -128,7 +128,7 @@ impl Project for GraphqlProject {
             let lines = LineIndex::new(file.text);
             let tree = Parser::new(file.text).parse();
             for error in tree.errors() {
-                errors.note(lines.line(byte_offset(error.index())));
+                errors.note(lines.line_at(error.index()));
             }
             contracts = read_document(&tree.document(), &lines);
         }

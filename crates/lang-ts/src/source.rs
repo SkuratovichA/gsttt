@@ -34,7 +34,7 @@ pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtr
         SourceType::from_path(file.path.as_str()).unwrap_or_else(|_| SourceType::ts());
     let index = LineIndex::new(file.text);
     let mut text = Cow::Borrowed(file.text);
-    let mut blanked = ErrorCount::default();
+    let mut error_lines = ErrorCount::default();
     let mut failure: Option<(Line, String)> = None;
     for _ in 0..MAX_ATTEMPTS {
         let allocator = Allocator::default();
@@ -58,9 +58,9 @@ pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtr
             let analysis = analyze::analyze(&parsed.program, &text, &index, packs);
             // The lines blanked by the earlier attempts are errors of the file, and so are the ones this parse still reports.
             for (line, _) in &errors {
-                blanked.note(*line);
+                error_lines.note(*line);
             }
-            return assemble(&text, analysis, blanked.status());
+            return assemble(&text, analysis, error_lines.status());
         }
         let line = errors.first().map_or(1, |(line, _)| *line);
         if failure.is_none() {
@@ -73,7 +73,7 @@ pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtr
         let Some(next) = blank_line(&text, line) else {
             break;
         };
-        blanked.note(line);
+        error_lines.note(line);
         text = Cow::Owned(next);
     }
     let (line, message) = failure.unwrap_or_else(|| (1, "the file could not be parsed".to_owned()));
