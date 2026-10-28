@@ -1,6 +1,6 @@
 # What `cargo xtask bench` measures: public repositories pinned at a release tag and the full commit the tag points at, and the tools pinned at a version. Resolved on 28.10.2026, with `git ls-remote --tags` for the repositories (the commit of an annotated tag is the peeled one) and the release pages for the tools. gsttt is not pinned: it is the binary the task is given.
 
-# vite, a TypeScript monorepo; it has no tsconfig.json at its root, so the one of its main package is named. madge follows the `.vue` and `.svelte` files that vite's TypeScript files import, and without a tsconfig it reads a whole single-file component as JavaScript and stops with a syntax error (its `--exclude` is applied after the traversal, so it does not help).
+# vite, a TypeScript monorepo; it has no tsconfig.json at its root, so the tsconfig of its main package is named. Without a tsconfig madge follows the imports of vite's TypeScript files into `.vue` and `.svelte` files and stops on a syntax error (its `--exclude` is applied after the traversal and does not help); with one it finishes. dependency-cruiser is not given it: it resolves a tsconfig below the root against the wrong directory, and it reads vite without one.
 [[repository]]
 name = "vite"
 url = "https://github.com/vitejs/vite"

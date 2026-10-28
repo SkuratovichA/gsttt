@@ -141,13 +141,17 @@ pub(super) fn plan(repository: &Repository, programs: &Programs) -> Vec<Run> {
         .collect()
 }
 
+/// The `--ts-config` option for the tsconfig the repository pins, and nothing when it pins none. dependency-cruiser resolves the `extends` and the `include` of a tsconfig below the root of the checkout against the wrong directory (TS5083 and TS18003 on vite), so it is given a tsconfig only from the root; madge takes one from anywhere.
+fn ts_config(tool: Tool, repository: &Repository) -> Vec<String> {
+    repository
+        .tsconfig
+        .iter()
+        .filter(|file| tool != Tool::DependencyCruiser || !file.contains('/'))
+        .flat_map(|file| ["--ts-config".to_owned(), file.clone()])
+        .collect()
+}
+
 fn command(tool: Tool, repository: &Repository, programs: &Programs) -> Command {
-    let ts_config = || {
-        repository
-            .tsconfig
-            .iter()
-            .flat_map(|file| ["--ts-config".to_owned(), file.clone()])
-    };
     let mut env = Vec::new();
     let args = match tool {
         Tool::Gsttt => strings(&["index"]),
@@ -161,14 +165,14 @@ fn command(tool: Tool, repository: &Repository, programs: &Programs) -> Command 
                 "--cache",
                 DEPENDENCY_CRUISER_CACHE,
             ]);
-            args.extend(ts_config());
+            args.extend(ts_config(tool, repository));
             args
         }
         Tool::Madge => {
             let mut args = strings(&["--json", "--extensions"]);
             args.push(Language::Typescript.extensions().join(","));
             args.push(".".to_owned());
-            args.extend(ts_config());
+            args.extend(ts_config(tool, repository));
             args
         }
         Tool::Grimp => {
@@ -287,6 +291,24 @@ mod tests {
 
     fn programs(home: &Path) -> Programs {
         Programs::new(&home.join("bench/tools"), &home.join("gsttt"))
+    }
+
+    #[test]
+    fn dependency_cruiser_is_given_a_tsconfig_only_from_the_root() {
+        let home = tempfile::tempdir().unwrap();
+        let programs = programs(home.path());
+        // dependency-cruiser first, then madge.
+        let given = |tsconfig: Option<&str>| {
+            let repository = repository("app", Language::Typescript, tsconfig, &[]);
+            plan(&repository, &programs)
+                .iter()
+                .filter(|run| matches!(run.tool, Tool::DependencyCruiser | Tool::Madge))
+                .map(|run| run.command.args.iter().any(|arg| arg == "--ts-config"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(given(Some("tsconfig.json")), [true, true]);
+        assert_eq!(given(Some("packages/app/tsconfig.json")), [false, true]);
+        assert_eq!(given(None), [false, false]);
     }
 
     #[gsttt_scenario::scenario(
