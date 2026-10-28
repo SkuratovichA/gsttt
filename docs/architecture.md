@@ -127,12 +127,12 @@ g.ts { tsconfig = "tsconfig.base.json" }  -- turn a module on, with options
 g.disable "openapi"
 g.pack(require("packs.billing"))          -- .gsttt/lua/packs/billing.lua
 g.disable_pack "axios"
-g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" }, version = "1" }
+g.external { name = "kotlin", cmd = { "gsttt-kotlin" }, files = { "**/*.kt" }, version = "1", env = {}, provides = {…}, options = {} }  -- env: variables it may read; provides: what it finds and cannot see; options: sent in "open"
 ```
 
 - `g.<module>` exists for every module in the registry; an unknown name fails with the list of known ones. Options are checked against the module's schema when the engine opens it.
 - `require` loads only from `.gsttt/lua/`. The sandbox has `table`, `string`, `math` and `utf8`, no `io`, `os`, `package`, `debug`, `load`, `loadfile` or `dofile`, a memory limit and an instruction limit; `print` goes to the log. Evaluation is deterministic.
-- `gsttt init` writes `.gsttt/init.lua`, LuaLS annotations generated from the module schemas (`.gsttt/types/gsttt.lua`) and `.gsttt/.luarc.json`, so an editor completes and checks the config.
+- `gsttt init` writes `.gsttt/init.lua`, LuaLS annotations generated from the module schemas (`.gsttt/types/gsttt.lua`) and `.gsttt/.luarc.json`, so an editor completes and checks the config. `.gsttt/` is the editor workspace: LuaLS reads `.luarc.json` only from the root of the folder it is opened in, so the config is edited with `.gsttt/` opened as the folder, and the paths in `.luarc.json` are relative to it.
 
 Pack merging is the engine's: built-in packs, minus `disable_packs`, with user packs replacing built-ins of the same name, grouped by `language`.
 
@@ -140,9 +140,9 @@ Pack merging is the engine's: built-in packs, minus `disable_packs`, with user p
 
 ```
 → {"type":"open","protocol":1,"root":"","options":{}}
-← {"type":"ready","name":"kotlin","version":"0.1.0","provides":[…]}
+← {"type":"ready","name":"kotlin","version":"0.1.0"}
 → {"type":"parse","path":"src/A.kt","text":"…"}                      ← {"type":"facts","path":"src/A.kt","facts":{…FileFacts…}}
-→ {"type":"resolve","from":"src/A.kt","import":{…Import…}}            ← {"type":"resolution","resolution":{…}}
+→ {"type":"resolve","from":"src/A.kt","import":{…Import…}}            ← {"type":"resolution","from":"src/A.kt","import":{…Import…},"resolution":{…}}
 → {"type":"done"}
 ```
 

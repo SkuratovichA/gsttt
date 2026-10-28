@@ -38,3 +38,4 @@
 - [x] 5.14 The paths in `.luarc.json` are relative to `.gsttt/`, the folder LuaLS reads it in, and the starter `init.lua` says to open that folder as the workspace
 - [x] 5.15 The proposal names what the fixes reached beyond the crate: `ExternalSetup` in core, and the `rustix` and `memchr` dependencies that make the crate unix-only
 - [x] 5.16 The library calls whose native loop the script sizes are bounded before they run: `table.move`, `table.concat`, `table.insert`, `table.remove` and `table.sort` refuse a range or a length past a million elements and a `__len`, `string.rep` of nothing returns at once, and `setmetatable` refuses `__mode` as it refuses `__gc`
+- [x] 5.17 The architecture document shows the external connector as it is configured and spoken (`env`, `provides` and `options` in `g.external`, a `ready` without `provides`, a `resolution` that echoes `from` and `import`) and names `.gsttt/` as the editor workspace
