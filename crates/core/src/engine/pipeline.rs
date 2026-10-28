@@ -9,6 +9,7 @@ use std::cmp::Reverse;
 use std::fmt;
 use std::io;
 use std::panic::{self, AssertUnwindSafe};
+use std::time::{Duration, Instant};
 
 use rayon::prelude::*;
 use serde::Serialize;
@@ -73,6 +74,8 @@ pub struct FileRun {
     pub imports: Vec<ResolvedImport>,
     /// The embedded documents of `facts`, in their order, as the project that reads their language read them.
     pub embedded: Vec<EmbeddedRun>,
+    /// Whether `facts` came from a cache instead of a parse.
+    pub reused: bool,
 }
 
 /// An embedded document after the embedded phase.
@@ -81,6 +84,8 @@ pub struct EmbeddedRun {
     /// The connector that read it; `None` when no project reads its language, which coverage reports as a blind
     /// spot.
     pub read_by: Option<&'static str>,
+    /// What the reader found, with lines counted in the host file: a fact on the second line of a document that
+    /// starts on line 10 is on line 11.
     pub facts: Vec<ContractFact>,
 }
 
@@ -133,19 +138,101 @@ struct Owned<'a> {
     project: usize,
 }
 
-/// Runs the middle of a run over every file of `repo`, with `modules` in registry order. Only a bad option stops
-/// it; anything else a connector gets wrong, a panic included, ends up in the output.
-pub fn run(
-    repo: &RepoView,
+/// A file a project took, with what besides its content decides its cached facts.
+#[derive(Clone, Copy, Debug)]
+pub struct Claim<'a> {
+    pub id: FileId,
+    pub path: &'a RepoPath,
+    /// The index, in the modules given to [`assign_files`], of the module whose connector opened the project.
+    pub module: usize,
+    /// The project's salt.
+    pub salt: u64,
+}
+
+/// Facts a cache already holds for a file. [`execute`] uses them in place of a parse.
+#[derive(Debug)]
+pub struct Seed {
+    pub facts: FileFacts,
+    /// The project's link data for the file, as the cache stores it.
+    pub extra: Vec<u8>,
+}
+
+/// The projects that opened and the files they took: everything a run knows before it parses.
+pub struct Assigned<'a> {
+    projects: Vec<Box<dyn DynProject>>,
+    module_of: Vec<usize>,
+    owned: Vec<Owned<'a>>,
+    unclaimed: Vec<FileId>,
+    problems: Vec<Problem>,
+}
+
+impl fmt::Debug for Assigned<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Assigned")
+            .field("projects", &self.projects.len())
+            .field("claimed", &self.owned.len())
+            .field("unclaimed", &self.unclaimed.len())
+            .finish()
+    }
+}
+
+impl<'a> Assigned<'a> {
+    /// The files projects took, in id order.
+    pub fn claims(&self) -> Vec<Claim<'a>> {
+        self.owned
+            .iter()
+            .map(|file| Claim {
+                id: file.id,
+                path: file.path,
+                module: self.module_of.get(file.project).copied().unwrap_or(0),
+                salt: self
+                    .projects
+                    .get(file.project)
+                    .map_or(0, |project| project.salt()),
+            })
+            .collect()
+    }
+
+    /// The files no project took, in id order.
+    pub fn unclaimed(&self) -> &[FileId] {
+        &self.unclaimed
+    }
+
+    /// The projects that opened, in order.
+    pub fn projects(&self) -> Vec<ProjectRun> {
+        project_runs(&self.projects)
+    }
+}
+
+/// How long the phases of [`execute`] took.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Phases {
+    /// Reading and parsing files, or taking their facts from the seeds.
+    pub parse: Duration,
+    /// Preparing the projects, resolving imports and reading embedded documents.
+    pub resolve: Duration,
+    /// The link phase.
+    pub link: Duration,
+}
+
+/// What the parse phase made of a file.
+struct Made {
+    facts: FileFacts,
+    extra: Vec<u8>,
+    reused: bool,
+}
+
+/// Opens every module and gives every file of `repo` to a project. Only a bad option fails; a connector that
+/// cannot open becomes a problem in the output of [`execute`].
+pub fn assign_files<'a>(
+    repo: &'a RepoView,
     modules: &[Module<'_>],
-    max_file_bytes: u64,
-) -> Result<Output, ConnectorError> {
+) -> Result<Assigned<'a>, ConnectorError> {
     let mut problems = Vec::new();
     let Opened {
-        mut projects,
+        projects,
         module_of,
     } = open(repo, modules, &mut problems)?;
-
     let mut unclaimed = Vec::new();
     let mut owned = Vec::new();
     for (id, path) in repo.files() {
@@ -154,6 +241,42 @@ pub fn run(
             None => unclaimed.push(id),
         }
     }
+    Ok(Assigned {
+        projects,
+        module_of,
+        owned,
+        unclaimed,
+        problems,
+    })
+}
+
+/// Runs the middle of a run over every file of `repo`, with `modules` in registry order. Only a bad option stops
+/// it; anything else a connector gets wrong, a panic included, ends up in the output.
+pub fn run(
+    repo: &RepoView,
+    modules: &[Module<'_>],
+    max_file_bytes: u64,
+) -> Result<Output, ConnectorError> {
+    let assigned = assign_files(repo, modules)?;
+    Ok(execute(assigned, repo, max_file_bytes, Vec::new()).0)
+}
+
+/// Parses, prepares, resolves, reads the embedded documents and links the files `assigned` holds. `seeds` has one
+/// entry per claimed file, in [`Assigned::claims`] order; a file with a seed is not read or parsed.
+pub fn execute(
+    assigned: Assigned<'_>,
+    repo: &RepoView,
+    max_file_bytes: u64,
+    mut seeds: Vec<Option<Seed>>,
+) -> (Output, Phases) {
+    let Assigned {
+        mut projects,
+        owned,
+        unclaimed,
+        mut problems,
+        ..
+    } = assigned;
+    seeds.resize_with(owned.len(), || None);
     let mut members = vec![Vec::new(); projects.len()];
     for (index, file) in owned.iter().enumerate() {
         if let Some(list) = members.get_mut(file.project) {
@@ -161,14 +284,32 @@ pub fn run(
         }
     }
 
-    let parsed: Vec<(FileFacts, Vec<u8>)> = owned
+    let started = Instant::now();
+    let parsed: Vec<Made> = owned
         .par_iter()
-        .map(|file| match projects.get(file.project) {
-            Some(project) => parse(repo, project.as_ref(), file, max_file_bytes),
-            None => (FileFacts::default(), Vec::new()),
+        .zip(seeds)
+        .map(|(file, seed)| {
+            if let Some(Seed { facts, extra }) = seed {
+                return Made {
+                    facts,
+                    extra,
+                    reused: true,
+                };
+            }
+            let (facts, extra) = match projects.get(file.project) {
+                Some(project) => parse(repo, project.as_ref(), file, max_file_bytes),
+                None => (FileFacts::default(), Vec::new()),
+            };
+            Made {
+                facts,
+                extra,
+                reused: false,
+            }
         })
         .collect();
+    let parse_time = started.elapsed();
 
+    let started = Instant::now();
     let prepared: Vec<Option<Problem>> = projects
         .par_iter_mut()
         .zip(members.par_iter())
@@ -177,11 +318,11 @@ pub fn run(
                 .iter()
                 .filter_map(|&index| {
                     let file = owned.get(index)?;
-                    let (facts, _) = parsed.get(index)?;
+                    let made = parsed.get(index)?;
                     Some(PrepareFile {
                         id: file.id,
                         path: file.path,
-                        facts,
+                        facts: &made.facts,
                     })
                 })
                 .collect();
@@ -195,17 +336,19 @@ pub fn run(
     let resolved: Vec<(Vec<ResolvedImport>, Vec<Problem>)> = owned
         .par_iter()
         .zip(parsed.par_iter())
-        .map(|(file, (facts, _))| match projects.get(file.project) {
-            Some(project) => resolve(project.as_ref(), file, facts),
+        .map(|(file, made)| match projects.get(file.project) {
+            Some(project) => resolve(project.as_ref(), file, &made.facts),
             None => (Vec::new(), Vec::new()),
         })
         .collect();
 
     let embedded: Vec<(Vec<EmbeddedRun>, Vec<Problem>)> = parsed
         .par_iter()
-        .map(|(facts, _)| read_embedded(&projects, facts))
+        .map(|made| read_embedded(&projects, &made.facts))
         .collect();
+    let resolve_time = started.elapsed();
 
+    let started = Instant::now();
     let linked: Vec<(Vec<LinkedFact>, Option<Problem>)> = projects
         .par_iter()
         .zip(members.par_iter())
@@ -214,14 +357,14 @@ pub fn run(
                 .iter()
                 .filter_map(|&index| {
                     let file = owned.get(index)?;
-                    let (facts, extra) = parsed.get(index)?;
+                    let made = parsed.get(index)?;
                     let (imports, _) = resolved.get(index)?;
                     Some(LinkFile {
                         id: file.id,
                         path: file.path,
-                        facts,
+                        facts: &made.facts,
                         imports: imports.as_slice(),
-                        extra: extra.as_slice(),
+                        extra: made.extra.as_slice(),
                     })
                 })
                 .collect();
@@ -239,9 +382,10 @@ pub fn run(
             }
         })
         .collect();
+    let link_time = started.elapsed();
 
     let mut files = Vec::with_capacity(owned.len());
-    for (((file, (facts, extra)), (imports, resolve_problems)), (embedded, embedded_problems)) in
+    for (((file, made), (imports, resolve_problems)), (embedded, embedded_problems)) in
         owned.iter().zip(parsed).zip(resolved).zip(embedded)
     {
         problems.extend(resolve_problems);
@@ -249,10 +393,11 @@ pub fn run(
         files.push(FileRun {
             id: file.id,
             project: ProjectId::from_index(file.project),
-            facts,
-            extra,
+            facts: made.facts,
+            extra: made.extra,
             imports,
             embedded,
+            reused: made.reused,
         });
     }
     let mut linked_facts = Vec::new();
@@ -262,21 +407,31 @@ pub fn run(
     }
     linked_facts.sort_by_key(|fact| fact.file);
 
-    Ok(Output {
-        projects: projects
-            .iter()
-            .map(|project| ProjectRun {
-                connector: project.connector(),
-                root: project.root().to_owned(),
-                salt: project.salt(),
-                provides: project.provides(),
-            })
-            .collect(),
+    let output = Output {
+        projects: project_runs(&projects),
         files,
         unclaimed,
         linked: linked_facts,
         problems,
-    })
+    };
+    let phases = Phases {
+        parse: parse_time,
+        resolve: resolve_time,
+        link: link_time,
+    };
+    (output, phases)
+}
+
+fn project_runs(projects: &[Box<dyn DynProject>]) -> Vec<ProjectRun> {
+    projects
+        .iter()
+        .map(|project| ProjectRun {
+            connector: project.connector(),
+            root: project.root().to_owned(),
+            salt: project.salt(),
+            provides: project.provides(),
+        })
+        .collect()
 }
 
 /// The projects that opened, in module order, each with the index of its module.
@@ -443,6 +598,14 @@ fn read_embedded(
                 problems.push(problem(reader.as_ref(), Call::ParseEmbedded, message));
                 Vec::new()
             });
+            // A reader counts lines from the first line of its document, the host file from its own.
+            let facts = facts
+                .into_iter()
+                .map(|mut fact| {
+                    fact.line = document.line.saturating_add(fact.line).saturating_sub(1);
+                    fact
+                })
+                .collect();
             EmbeddedRun {
                 read_by: Some(reader.connector().name),
                 facts,
@@ -472,7 +635,7 @@ fn contain<T>(call: impl FnOnce() -> T) -> Result<T, String> {
     })
 }
 
-fn display_root(root: &str) -> &str {
+pub(super) fn display_root(root: &str) -> &str {
     if root.is_empty() { "." } else { root }
 }
 
@@ -599,292 +762,12 @@ fn object(value: &impl Serialize) -> Map<String, Value> {
 
 #[cfg(test)]
 mod tests {
-    use camino::Utf8PathBuf;
-    use schemars::JsonSchema;
-    use serde::Deserialize;
     use serde_json::json;
 
     use super::*;
-    use crate::connector::{Connector, Erased, Parsed, Project};
-    use crate::contract::{ContractKey, Role};
-    use crate::fact::{Embedded, Import, ImportKind, ParseStatus};
-
-    #[derive(Default, Serialize, Deserialize, JsonSchema)]
-    struct Options {
-        #[serde(default)]
-        tag: String,
-    }
-
-    /// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `embed <lang> <text>`
-    /// carries a document, and `boom` panics in `parse`. A project sits at the root and in every directory with a
-    /// `ROOT` file; `link` reports a site for every file with a resolved import.
-    struct Notes;
-
-    struct NotesProject {
-        repo: RepoView,
-        root: String,
-    }
-
-    impl Connector for Notes {
-        type Options = Options;
-        type Project = NotesProject;
-
-        fn meta(&self) -> Meta {
-            Meta {
-                name: "notes",
-                version: 1,
-                summary: "test",
-                extensions: &["txt"],
-            }
-        }
-
-        fn detect(&self, _: &RepoView) -> bool {
-            true
-        }
-
-        fn open(
-            &self,
-            repo: &RepoView,
-            _: &Options,
-            _: &[Pack],
-        ) -> Result<Vec<NotesProject>, ConnectorError> {
-            let roots = repo
-                .files()
-                .filter(|(_, path)| path.file_name() == "ROOT")
-                .map(|(_, path)| path.parent().to_owned());
-            Ok(std::iter::once(String::new())
-                .chain(roots)
-                .map(|root| NotesProject {
-                    repo: repo.clone(),
-                    root,
-                })
-                .collect())
-        }
-    }
-
-    impl Project for NotesProject {
-        type Extra = ();
-
-        fn root(&self) -> &str {
-            &self.root
-        }
-
-        fn matches(&self, path: &RepoPath) -> bool {
-            path.extension() == Some("txt")
-        }
-
-        fn salt(&self) -> u64 {
-            0
-        }
-
-        fn provides(&self) -> Vec<Provide> {
-            Vec::new()
-        }
-
-        fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
-            let mut facts = FileFacts::default();
-            for (index, line) in file.text.lines().enumerate() {
-                let number = u32::try_from(index + 1).unwrap();
-                if line == "boom" {
-                    panic!("boom in parse");
-                } else if let Some(spec) = line.strip_prefix("use ") {
-                    facts
-                        .imports
-                        .push(Import::new(spec, ImportKind::Static, number));
-                } else if let Some((lang, text)) = line
-                    .strip_prefix("embed ")
-                    .and_then(|rest| rest.split_once(' '))
-                {
-                    facts.embedded.push(Embedded {
-                        lang: lang.to_owned(),
-                        line: number,
-                        text: text.to_owned(),
-                        via: "notes".to_owned(),
-                    });
-                }
-            }
-            Parsed::new(facts)
-        }
-
-        fn resolve(&self, _: &RepoPath, import: &Import) -> Resolution {
-            assert!(import.spec != "boom", "boom in resolve");
-            match self.repo.lookup(&import.spec) {
-                Some(file) => Resolution::File { file },
-                None => Resolution::Unresolved(UnresolvedReason::NotFound),
-            }
-        }
-
-        fn link(&self, input: &LinkInput<'_, ()>) -> Vec<LinkedFact> {
-            input
-                .files()
-                .iter()
-                .filter(|file| {
-                    file.imports
-                        .iter()
-                        .any(|import| !import.to.files().is_empty())
-                })
-                .map(|file| LinkedFact {
-                    file: file.id,
-                    fact: fact("queue linked"),
-                })
-                .collect()
-        }
-    }
-
-    /// Reads `.graphql` files as nothing and embedded GraphQL as one site per document.
-    struct Graphs;
-
-    struct GraphsProject;
-
-    impl Connector for Graphs {
-        type Options = Options;
-        type Project = GraphsProject;
-
-        fn meta(&self) -> Meta {
-            Meta {
-                name: "graphs",
-                version: 1,
-                summary: "test",
-                extensions: &["graphql"],
-            }
-        }
-
-        fn detect(&self, _: &RepoView) -> bool {
-            true
-        }
-
-        fn open(
-            &self,
-            _: &RepoView,
-            _: &Options,
-            _: &[Pack],
-        ) -> Result<Vec<GraphsProject>, ConnectorError> {
-            Ok(vec![GraphsProject])
-        }
-    }
-
-    impl Project for GraphsProject {
-        type Extra = ();
-
-        fn root(&self) -> &'static str {
-            ""
-        }
-
-        fn matches(&self, path: &RepoPath) -> bool {
-            path.extension() == Some("graphql")
-        }
-
-        fn salt(&self) -> u64 {
-            0
-        }
-
-        fn provides(&self) -> Vec<Provide> {
-            Vec::new()
-        }
-
-        fn parse(&self, _: &SourceFile<'_>) -> Parsed<()> {
-            Parsed::default()
-        }
-
-        fn resolve(&self, _: &RepoPath, _: &Import) -> Resolution {
-            Resolution::Builtin
-        }
-
-        fn embeds(&self) -> &[&str] {
-            &["graphql"]
-        }
-
-        fn parse_embedded(&self, document: &Embedded) -> Vec<ContractFact> {
-            vec![fact(&format!("queue {}", document.text.replace(' ', "-")))]
-        }
-    }
-
-    /// Never opens.
-    struct Broken;
-
-    impl Connector for Broken {
-        type Options = Options;
-        type Project = GraphsProject;
-
-        fn meta(&self) -> Meta {
-            Meta {
-                name: "broken",
-                version: 1,
-                summary: "test",
-                extensions: &[],
-            }
-        }
-
-        fn detect(&self, _: &RepoView) -> bool {
-            true
-        }
-
-        fn open(
-            &self,
-            _: &RepoView,
-            _: &Options,
-            _: &[Pack],
-        ) -> Result<Vec<GraphsProject>, ConnectorError> {
-            Err(ConnectorError::Project {
-                connector: "broken".to_owned(),
-                root: "x".to_owned(),
-                message: "unreadable manifest".to_owned(),
-            })
-        }
-    }
-
-    static NOTES: Erased<Notes> = Erased(Notes);
-    static GRAPHS: Erased<Graphs> = Erased(Graphs);
-    static BROKEN: Erased<Broken> = Erased(Broken);
-
-    const LIMIT: u64 = 1024;
-
-    fn fact(key: &str) -> ContractFact {
-        ContractFact {
-            key: ContractKey::parse(key).unwrap(),
-            role: Role::Calls,
-            line: 1,
-            via: "test".to_owned(),
-        }
-    }
-
-    fn modules() -> Vec<Module<'static>> {
-        [&NOTES as &dyn DynConnector, &GRAPHS, &BROKEN]
-            .into_iter()
-            .map(|connector| Module {
-                connector,
-                options: Value::Null,
-                packs: Vec::new(),
-            })
-            .collect()
-    }
-
-    fn fixture() -> (tempfile::TempDir, RepoView) {
-        let dir = tempfile::tempdir().unwrap();
-        let big = "x".repeat(2000);
-        let files: [(&str, &[u8]); 9] = [
-            (
-                "a.txt",
-                b"use b.txt\nuse missing.txt\nuse boom\nembed graphql query Q\nembed sql select 1\n",
-            ),
-            ("b.txt", b""),
-            ("bad.txt", b"boom\n"),
-            ("big.txt", big.as_bytes()),
-            ("latin.txt", b"caf\xe9\n"),
-            ("q.graphql", b"type Query { a: Int }\n"),
-            ("README.md", b"# fixture\n"),
-            ("pkg/ROOT", b""),
-            ("pkg/c.txt", b"use a.txt\n"),
-        ];
-        for (path, bytes) in files {
-            let path = dir.path().join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, bytes).unwrap();
-        }
-        let root = Utf8PathBuf::from_path_buf(dir.path().to_path_buf()).unwrap();
-        let repo = RepoView::scan(root).unwrap();
-        (dir, repo)
-    }
+    use crate::connector::Erased;
+    use crate::engine::testing::{Counters, Graphs, LIMIT, NOTES, fact, fixture, modules};
+    use crate::fact::ParseStatus;
 
     fn file<'a>(output: &'a Output, repo: &RepoView, path: &str) -> &'a FileRun {
         output
@@ -894,6 +777,7 @@ mod tests {
             .unwrap()
     }
 
+    #[gsttt_scenario::scenario("indexing", "The deepest root wins")]
     #[test]
     fn files_go_to_the_deepest_project_of_the_first_module_that_takes_them() {
         let (_dir, repo) = fixture();
@@ -922,6 +806,31 @@ mod tests {
         assert_eq!(owner("pkg/c.txt"), "notes pkg");
         assert_eq!(owner("q.graphql"), "graphs .");
         assert_eq!(json["unclaimed"], json!(["README.md", "pkg/ROOT"]));
+    }
+
+    #[gsttt_scenario::scenario("indexing", "Registry order decides between connectors")]
+    #[test]
+    fn the_first_registered_connector_takes_a_file_two_connectors_match() {
+        let (_dir, repo) = fixture();
+        let first = Erased(Graphs {
+            counters: Counters::leak(),
+            name: "first",
+        });
+        let second = Erased(Graphs {
+            counters: Counters::leak(),
+            name: "second",
+        });
+        let modules: Vec<Module<'_>> = [&first as &dyn DynConnector, &second]
+            .into_iter()
+            .map(|connector| Module {
+                connector,
+                options: Value::Null,
+                packs: Vec::new(),
+            })
+            .collect();
+        let output = run(&repo, &modules, LIMIT).unwrap();
+        let owner = file(&output, &repo, "q.graphql").project;
+        assert_eq!(output.projects[owner.index()].connector.name, "first");
     }
 
     #[test]
@@ -982,7 +891,14 @@ mod tests {
         let a = file(&output, &repo, "a.txt");
         let readers: Vec<_> = a.embedded.iter().map(|run| run.read_by).collect();
         assert_eq!(readers, [Some("graphs"), None]);
-        assert_eq!(a.embedded.first().unwrap().facts, [fact("queue query-Q")]);
+        // The document starts on line 4 of the file, and the reader puts its fact on the document's first line.
+        assert_eq!(
+            a.embedded.first().unwrap().facts,
+            [ContractFact {
+                line: 4,
+                ..fact("queue query-Q")
+            }]
+        );
     }
 
     #[test]

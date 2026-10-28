@@ -300,6 +300,7 @@ fn is_param(segment: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[gsttt_scenario::scenario("indexing", "Paths from every framework meet")]
     #[test]
     fn http_paths_from_every_framework_meet() {
         let spellings = [

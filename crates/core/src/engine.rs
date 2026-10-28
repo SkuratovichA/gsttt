@@ -5,4 +5,14 @@
 //! resolves every import, routes embedded documents to the connector that reads their language, runs the link
 //! phase, and builds the graph and the coverage.
 
+pub mod build;
+pub mod changes;
+pub mod files;
+pub mod keys;
+pub mod packs;
 pub mod pipeline;
+pub mod refresh;
+pub mod snapshot;
+#[cfg(test)]
+mod testing;
+pub mod workspace;
