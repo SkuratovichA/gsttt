@@ -82,7 +82,7 @@ The root SHALL be found from the current directory, or from the directory `-C` n
 
 ### Requirement: Path arguments
 
-A path argument SHALL be read relative to the current directory after `-C`, normalised by its text alone, with `.` removed and `..` folded, so that a deleted file can still be named, and SHALL then be turned into a path from the root. An absolute path inside the root SHALL be accepted. A path that leaves the root SHALL exit 2. The rule SHALL be one function in `gsttt-core`, so that the CLI and the MCP server read paths the same way.
+A path argument SHALL be read relative to the current directory after `-C`, normalised by its text alone, with `.` removed and `..` folded, so that a deleted file can still be named, and SHALL then be turned into a path from the root. An absolute path inside the root SHALL be accepted. A path that still leaves the root once its links are resolved SHALL exit 2. The rule SHALL be one function in `gsttt-core`, so that the CLI and the MCP server read paths the same way.
 
 #### Scenario: A path is read from the current directory
 - **WHEN** `gsttt dependents ../lib/util.ts` runs from `<repo>/app`
@@ -95,6 +95,14 @@ A path argument SHALL be read relative to the current directory after `-C`, norm
 #### Scenario: A path outside the root exits 2
 - **WHEN** `gsttt dependents ../../elsewhere.ts` runs from `<repo>/app`
 - **THEN** stderr says the path is outside the repository and the exit code is 2
+
+### Requirement: Paths through a link
+
+A path argument whose text leaves the root SHALL be read again with its longest existing prefix resolved through the filesystem and the rest kept as text, so that a path spelled through a link to a directory of the repository, as `/tmp` is on macOS, is accepted. A link that leads outside the repository SHALL NOT make a path outside it count as inside.
+
+#### Scenario: A path spelled through a linked directory is accepted
+- **WHEN** a link names the repository and `gsttt dependents <link>/lib/util.ts` runs, with `-C <link>` or from inside the repository
+- **THEN** the answer is about `lib/util.ts`
 
 ### Requirement: Refresh before answering
 

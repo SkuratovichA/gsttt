@@ -168,6 +168,53 @@ fn an_argument_that_leaves_the_repository_is_refused_with_a_sentence() {
 }
 
 #[test]
+#[cfg(unix)]
+fn an_argument_spelled_through_a_link_is_read_inside_the_root() {
+    let project = Project::new();
+    let repository = project.open();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let elsewhere = Utf8PathBuf::from_path_buf(elsewhere.path().canonicalize().unwrap()).unwrap();
+    let link = elsewhere.join("link");
+    std::os::unix::fs::symlink(&project.root, &link).unwrap();
+    let app = project.root.join("app");
+
+    let there = repository
+        .argument(&app, link.join("lib/util.ts").as_str())
+        .unwrap();
+    assert_eq!(there.path.as_str(), "lib/util.ts");
+    assert!(there.on_disk);
+
+    let gone = repository
+        .argument(&app, link.join("lib/gone.ts").as_str())
+        .unwrap();
+    assert_eq!(gone.path.as_str(), "lib/gone.ts");
+    assert!(!gone.on_disk);
+
+    let root = repository.argument(&app, link.as_str()).unwrap_err();
+    assert!(
+        matches!(&root, RepositoryError::Path(OutsideRoot::IsRoot { argument }) if argument == link.as_str()),
+        "{root:?}"
+    );
+
+    // `..` after the link leads to the directory the link is in, which is outside the repository, and the error
+    // names the argument as it was given and not the path it was resolved to.
+    let above = link.join("../x.ts");
+    let error = repository.argument(&app, above.as_str()).unwrap_err();
+    assert!(
+        matches!(&error, RepositoryError::Path(OutsideRoot::Leaves { .. })),
+        "{error:?}"
+    );
+    let said = error.to_string();
+    assert!(
+        said.starts_with(&format!(
+            "`{above}` is outside the repository `{}`",
+            project.root
+        )),
+        "{said}"
+    );
+}
+
+#[test]
 fn the_changed_files_are_the_difference_from_head_untracked_files_included() {
     let project = Project::new();
     let repository = project.open();

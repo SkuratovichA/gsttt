@@ -174,13 +174,36 @@ impl Repository {
     ///
     /// When the argument is not a path inside the repository.
     pub fn argument(&self, base: &Utf8Path, argument: &str) -> Result<Target, RepositoryError> {
-        let path = RepoPath::from_argument(self.root(), base, argument)?;
+        let path = match RepoPath::from_argument(self.root(), base, argument) {
+            Err(OutsideRoot::Leaves { .. }) => self.through_links(base, argument)?,
+            read => read?,
+        };
         // Only a path the disk says is not there counts as gone: one it cannot be asked about is still a file.
         let on_disk = match std::fs::symlink_metadata(self.root().join(path.as_str())) {
             Ok(_) => true,
             Err(error) => error.kind() != io::ErrorKind::NotFound,
         };
         Ok(Target { path, on_disk })
+    }
+
+    /// `argument` read a second time with the links in its path resolved. The root is a canonical path, so a path
+    /// spelled through a link to a directory of the repository, as everything under `/tmp` is on macOS, leaves it by
+    /// its text and still names a file inside it.
+    fn through_links(&self, base: &Utf8Path, argument: &str) -> Result<RepoPath, OutsideRoot> {
+        let leaves = || OutsideRoot::Leaves {
+            argument: argument.to_owned(),
+            root: self.root().to_owned(),
+        };
+        // Read against `/`, the text rule only folds the path into an absolute one and judges nothing.
+        let top = Utf8Path::new("/");
+        let folded = RepoPath::from_argument(top, base, argument).map_err(|_| leaves())?;
+        let resolved = resolve_existing(&top.join(folded.as_str())).ok_or_else(leaves)?;
+        RepoPath::from_argument(self.root(), base, resolved.as_str()).map_err(|error| match error {
+            OutsideRoot::IsRoot { .. } => OutsideRoot::IsRoot {
+                argument: argument.to_owned(),
+            },
+            OutsideRoot::Leaves { .. } => leaves(),
+        })
     }
 
     /// The files that differ from `HEAD`, or from the best common ancestor of `HEAD` and `base`.
@@ -211,6 +234,15 @@ impl Repository {
         );
         Ok(ask(&engine)?)
     }
+}
+
+/// `path` with its longest prefix that exists resolved through the filesystem and the rest kept as text, so that a
+/// file that is gone can still be named through a link.
+fn resolve_existing(path: &Utf8Path) -> Option<Utf8PathBuf> {
+    path.ancestors().find_map(|ancestor| {
+        let resolved = ancestor.canonicalize_utf8().ok()?;
+        Some(resolved.join(path.strip_prefix(ancestor).ok()?))
+    })
 }
 
 #[cfg(test)]

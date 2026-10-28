@@ -83,6 +83,52 @@ fn a_path_is_read_from_the_directory_c_names() {
     assert_usage_error(&outside, "is outside the repository");
 }
 
+/// The root is a canonical path, and a path spelled through a link to a directory of the repository names a file in
+/// it all the same: `/tmp` is a link on macOS, and so is the directory the tests are built in.
+#[scenario("cli", "A path spelled through a linked directory is accepted")]
+#[test]
+#[cfg(unix)]
+fn a_path_spelled_through_a_linked_directory_is_accepted() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    let link = sandbox.home.path().join("link");
+    std::os::unix::fs::symlink(&repo, &link).unwrap();
+    let through = |path: &str| format!("{}/{path}", link.display());
+
+    // The directory `-C` names is read through the link, and so is the file named in full.
+    let with_c = sandbox.run(&[
+        "-C",
+        link.to_str().unwrap(),
+        "--json",
+        "dependents",
+        &through("lib/util.ts"),
+    ]);
+    assert_eq!(subject(&with_c), "lib/util.ts");
+
+    let absolute = sandbox.run_in(
+        &repo.join("app"),
+        &["--json", "dependents", &through("lib/util.ts")],
+    );
+    assert_eq!(subject(&absolute), "lib/util.ts");
+
+    // A file that is gone is still named by the part of its path that is there.
+    let gone = sandbox.run_in(&repo, &["--json", "impact", &through("lib/gone.ts")]);
+    let answer: Value = serde_json::from_str(&gone.stdout).unwrap();
+    assert_eq!(answer["deleted"][0]["path"], "lib/gone.ts", "{gone:?}");
+
+    // A link to a directory outside the repository does not lead inside it.
+    let elsewhere = sandbox.home.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    let out = sandbox.home.path().join("out");
+    std::os::unix::fs::symlink(&elsewhere, &out).unwrap();
+    let outside = sandbox.run_in(&repo, &["dependents", &format!("{}/x.ts", out.display())]);
+    assert_usage_error(&outside, "is outside the repository");
+
+    // Nor does the link itself, which is the root and no file in it.
+    let root = sandbox.run_in(&repo, &["dependents", link.to_str().unwrap()]);
+    assert_usage_error(&root, "is the root of the repository");
+}
+
 #[test]
 fn the_root_itself_is_no_path() {
     let sandbox = Sandbox::new();

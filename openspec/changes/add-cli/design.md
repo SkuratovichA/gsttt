@@ -47,7 +47,8 @@ pub trait Terminal {
 - `Workspace::locate` finds the root after `-C`.
 - The CLI refuses a root equal to `$HOME` or `/`, comparing canonical paths.
 - A path argument is joined to its base and normalised by its text. The base is the current directory for the CLI and the root for the MCP server. Normalising removes `.` and folds `..` without touching the disk, so a deleted file can still be named.
-- A result that leaves the root is an error the caller maps to exit 2.
+- A result that still leaves the root is an error the caller maps to exit 2.
+- The root is a canonical path, so a path spelled through a link, as everything under `/tmp` is on macOS, leaves it by its text. `Repository::argument` reads such a path again, and the text-only helper stays as it is: it folds the path against `/`, resolves the longest prefix that exists through the filesystem, appends the rest as text and reads the result against the root. A path that still leaves the root is the error above, and the root itself keeps its own error.
 - The helper lives beside `RepoPath::join` in core, so both surfaces use it:
 
 ```rust
