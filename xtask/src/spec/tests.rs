@@ -1075,12 +1075,10 @@ fn changes_that_nothing_places_apply_in_the_order_of_their_names() {
 #[gsttt_scenario::scenario("spec-gate", "A modified requirement that leaves out a scenario fails")]
 #[test]
 fn a_modified_requirement_that_leaves_out_a_scenario_fails() {
+    let main = main_spec(&[requirement("Matching", &["Exact match", "Prefix match"])]);
     let tree = Tree::new();
-    tree.spec(
-        "queries",
-        &main_spec(&[requirement("Matching", &["Exact match", "Prefix match"])]),
-    );
-    // `reword` retitles `Prefix match`, so the block it writes lacks a scenario of the block it replaces. No test claims `Prefix match` and every scenario that stands is proven: the refusal alone fails the gate and keeps the change from `--ready`.
+    tree.spec("queries", &main);
+    // `reword` retitles `Prefix match`, so the block it writes lacks a scenario of the block it replaces. `openspec archive` refuses that block, so it does not land: `Prefix match` stays with the main spec and still needs the proof that no test gives it.
     let modified = delta(
         "MODIFIED",
         &[requirement(
@@ -1089,11 +1087,7 @@ fn a_modified_requirement_that_leaves_out_a_scenario_fails() {
         )],
     );
     tree.change("reword", TICKED, &[("queries", &modified)])
-        .source("tests/exact.rs", &proof("queries", "Exact match"))
-        .source(
-            "tests/reworded.rs",
-            &proof("queries", "Prefix match reworded"),
-        );
+        .source("tests/exact.rs", &proof("queries", "Exact match"));
     let outcome = tree.gate();
     assert!(!outcome.passed, "{}", outcome.output);
     let failure = format!(
@@ -1101,7 +1095,63 @@ fn a_modified_requirement_that_leaves_out_a_scenario_fails() {
         line_of(&modified, "Requirement: Matching")
     );
     assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    let unproven = format!(
+        "openspec/specs/queries/spec.md:{}: scenario `Prefix match` of capability `queries` has no proof; mark a test with #[scenario(\"queries\", \"Prefix match\")]",
+        line_of(&main, "Scenario: Prefix match")
+    );
+    assert!(outcome.output.contains(&unproven), "{}", outcome.output);
+    assert!(
+        outcome
+            .output
+            .contains("queries: 1 proven, 0 pending, 1 failing"),
+        "the refused block adds no scenario of its own: {}",
+        outcome.output
+    );
     assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+}
+
+#[gsttt_scenario::scenario(
+    "spec-gate",
+    "A title that only a refused block holds is claimed for nothing"
+)]
+#[test]
+fn a_title_that_only_a_refused_block_holds_is_claimed_for_nothing() {
+    let claim = proof("queries", "Prefix match reworded");
+    let tree = Tree::new();
+    // The `reword` of the test above, with a proof for every scenario of the main spec, so that the refusal and the claim on the title that only the refused block holds are all that fails. The claim is read like any claim on a title that no spec has, and not like one on a title that `reword` took away, because the refused block takes nothing away.
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["Exact match", "Prefix match"])]),
+    )
+    .change(
+        "reword",
+        TICKED,
+        &[(
+            "queries",
+            &delta(
+                "MODIFIED",
+                &[requirement(
+                    "Matching",
+                    &["Exact match", "Prefix match reworded"],
+                )],
+            ),
+        )],
+    )
+    .source("tests/exact.rs", &proof("queries", "Exact match"))
+    .source("tests/prefix.rs", &proof("queries", "Prefix match"))
+    .source("tests/reworded.rs", &claim);
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let orphan = format!(
+        "crates/app/tests/reworded.rs:{}: `proof` claims scenario `Prefix match reworded` of capability `queries`, but no spec or open change has it",
+        line_of(&claim, "fn proof")
+    );
+    assert!(outcome.output.contains(&orphan), "{}", outcome.output);
+    assert!(
+        outcome.output.contains("spec gate failed with 2 problems"),
+        "the refusal and the claim are all that fails: {}",
+        outcome.output
+    );
 }
 
 #[gsttt_scenario::scenario("spec-gate", "A modified requirement that keeps every scenario passes")]
@@ -1158,18 +1208,12 @@ fn a_title_held_twice_and_written_once_fails() {
 #[test]
 fn a_requirement_that_an_earlier_change_adds_is_the_one_replaced() {
     let tree = Tree::new();
-    // `a-trims` sorts first but is archived after `b-adds`, and replaces the `R` that `b-adds` adds: the main specs have no `R` to compare with.
+    // `a-trims` sorts first but is archived after `b-adds`, and would replace the `R` that `b-adds` adds: the main specs have no `R` to compare with. The archive refuses the block, so `R` stands as `b-adds` writes it, with `R holds`.
+    let adds = delta("ADDED", &[requirement("R", &["R works", "R holds"])]);
     let trims = delta("MODIFIED", &[requirement("R", &["R works"])]);
-    tree.change(
-        "b-adds",
-        TICKED,
-        &[(
-            "queries",
-            &delta("ADDED", &[requirement("R", &["R works", "R holds"])]),
-        )],
-    )
-    .change("a-trims", TICKED, &[("queries", &trims)])
-    .source("tests/works.rs", &proof("queries", "R works"));
+    tree.change("b-adds", TICKED, &[("queries", &adds)])
+        .change("a-trims", TICKED, &[("queries", &trims)])
+        .source("tests/works.rs", &proof("queries", "R works"));
     let outcome = tree.gate();
     assert!(!outcome.passed, "{}", outcome.output);
     let failure = format!(
@@ -1177,7 +1221,21 @@ fn a_requirement_that_an_earlier_change_adds_is_the_one_replaced() {
         line_of(&trims, "Requirement: R")
     );
     assert!(outcome.output.contains(&failure), "{}", outcome.output);
-    // Only the change with the refused block waits; `b-adds` has nothing of its own left to prove.
+    let unproven = "scenario `R holds` of capability `queries` has no proof, and every task of change `b-adds` is ticked";
+    assert!(outcome.output.contains(unproven), "{}", outcome.output);
+    // Neither change is listed: `a-trims` for its refusal, `b-adds` for the scenario that has no proof.
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+
+    // The refusal fails the gate until `a-trims` keeps `R holds`, but it names `a-trims` alone, so `b-adds` is listed as soon as a test proves its scenario.
+    tree.source("tests/holds.rs", &proof("queries", "R holds"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    let kept = format!(
+        "proven   R holds  (openspec/changes/b-adds/specs/queries/spec.md:{})",
+        line_of(&adds, "Scenario: R holds")
+    );
+    assert!(outcome.output.contains(&kept), "{}", outcome.output);
     assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "b-adds\n");
 }
 
@@ -1444,33 +1502,6 @@ fn a_modified_requirement_replaces_the_main_one() {
         "the scenario counts once: {}",
         outcome.output
     );
-}
-
-// `openspec archive` refuses a modified requirement that lacks a scenario, so no scenario of the spec promises this: the test pins what the gate says of a test that still claims the scenario such a block leaves out.
-#[test]
-fn a_claim_on_a_scenario_that_a_modified_requirement_leaves_out_names_the_change() {
-    let claim = proof("queries", "Old title");
-    let tree = Tree::new();
-    tree.spec(
-        "queries",
-        &main_spec(&[requirement("Matching", &["Old title"])]),
-    )
-    .change(
-        "retitle",
-        OPEN,
-        &[(
-            "queries",
-            &delta("MODIFIED", &[requirement("Matching", &["New title"])]),
-        )],
-    )
-    .source("tests/matching.rs", &claim);
-    let outcome = tree.gate();
-    assert!(!outcome.passed, "{}", outcome.output);
-    let failure = format!(
-        "crates/app/tests/matching.rs:{}: `proof` claims scenario `Old title` of capability `queries`, but change `retitle` modifies its requirement `Matching` and no longer has this scenario",
-        line_of(&claim, "fn proof")
-    );
-    assert!(outcome.output.contains(&failure), "{}", outcome.output);
 }
 
 #[test]

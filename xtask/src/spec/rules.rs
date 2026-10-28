@@ -1,6 +1,6 @@
 //! The rules of the gate.
 //!
-//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming it. The fold also shows what `openspec archive` would refuse: a modified requirement replaces the whole block, and the archive stops at one that lacks a scenario of the block it replaces, so the gate fails that change before the archive does.
+//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming it. The fold also shows what `openspec archive` would refuse: a modified requirement replaces the whole block, and the archive stops at one that lacks a scenario of the block it replaces, so the gate fails that change before the archive does and leaves its block out of the fold, where the requirement it would replace stands.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -318,17 +318,22 @@ impl<'a> Fold<'a> {
             self.take_away(gone, capability, &change.name, Replacement::Removed);
         }
         for requirement in &delta.modified {
+            // Two places that add one name hold one block for the archive, or it stops at the second, so the first stands for them.
+            let missing = self
+                .standing
+                .get(&key(&requirement.name))
+                .and_then(|group| group.first())
+                .map(|replaced| missing_titles(replaced.requirement, requirement))
+                .unwrap_or_default();
+            // The archive stops at a block that leaves a scenario out, so the block replaces nothing: what stands keeps standing with its scenarios and the change that wrote them, and the scenarios of the block count for nothing.
+            if !missing.is_empty() {
+                self.refusals
+                    .push(refusal(change, delta, requirement, &missing));
+                continue;
+            }
             let gone = self
                 .standing
                 .insert(key(&requirement.name), vec![written(requirement)]);
-            // Two places that add one name hold one block for the archive, or it stops at the second, so the first stands for them.
-            if let Some(replaced) = gone.as_ref().and_then(|group| group.first()) {
-                let missing = missing_titles(replaced.requirement, requirement);
-                if !missing.is_empty() {
-                    self.refusals
-                        .push(refusal(change, delta, requirement, &missing));
-                }
-            }
             self.take_away(gone, capability, &change.name, Replacement::Modified);
         }
         for requirement in &delta.added {

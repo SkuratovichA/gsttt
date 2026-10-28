@@ -198,7 +198,7 @@ The gate SHALL read the open changes in the order `--ready` would archive them, 
 - **THEN** its scenarios need a proof like those of any other change, and `--ready` does not print the change
 
 ### Requirement: Modified requirements keep their scenarios
-The gate SHALL fail an open change whose modified requirement lacks a scenario title of the requirement it replaces, the one that the main specs or an earlier open change leaves, whether or not a test claims that title, because `openspec archive` refuses such a block. A title counts as often as it is written, so one held twice and written once is lacking. The failure names the change, the requirement and each missing title, and `--ready` does not list the change.
+The gate SHALL fail an open change whose modified requirement lacks a scenario of the requirement it replaces, the one the main specs or an earlier change leaves, because `openspec archive` refuses such a block; a title counts as often as it is written. The failure names the change, the requirement and each missing title, and `--ready` does not list the change. The block is not applied: the requirement it would replace stands with its scenarios, and the block's scenarios count for nothing.
 
 #### Scenario: A modified requirement that leaves out a scenario fails
 - **WHEN** an open change modifies a requirement so that it lacks a scenario of the requirement it replaces, and no test claims that scenario
@@ -214,4 +214,9 @@ The gate SHALL fail an open change whose modified requirement lacks a scenario t
 
 #### Scenario: A requirement that an earlier change adds is the one replaced
 - **WHEN** an open change modifies a requirement that another open change adds, and leaves out one of its scenarios
-- **THEN** the gate exits non-zero and names the modifying change, and `--ready` still lists the other
+- **THEN** the gate exits non-zero and names the modifying change
+- **AND** the scenario left out still needs a proof, and `--ready` lists the other change only once a test proves it
+
+#### Scenario: A title that only a refused block holds is claimed for nothing
+- **WHEN** an open change modifies a requirement so that it lacks a scenario of the requirement it replaces, and a test claims a scenario that only the new block holds
+- **THEN** the gate exits non-zero and names the test, saying that no spec or open change has the scenario
