@@ -21,6 +21,8 @@ pub(crate) enum Json {
     Array(Vec<Json>),
     Object(Vec<Entry>),
     /// Numbers, booleans, `null` and anything too deeply nested.
+    /// The keyword `null`, which an `exports` map uses to close a path.
+    Null,
     Other,
 }
 
@@ -78,6 +80,7 @@ fn convert(value: &Value<'_>, lines: &LineIndex, depth: usize) -> Json {
                 })
                 .collect(),
         ),
+        Value::NullKeyword(_) => Json::Null,
         _ => Json::Other,
     }
 }

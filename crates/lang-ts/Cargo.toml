@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+globset.workspace = true
 gsttt-core.workspace = true
 jsonc-parser.workspace = true
 oxc_allocator.workspace = true

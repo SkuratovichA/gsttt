@@ -19,7 +19,7 @@ use crate::source::{is_code, parse_code};
 use crate::{link, provides, resolve};
 
 /// Changes whenever the facts this reader produces for the same text and packs could change.
-const READER_VERSION: u32 = 1;
+const READER_VERSION: u32 = 2;
 
 /// A TypeScript project and the rule packs active in it.
 #[derive(Debug)]
@@ -42,9 +42,8 @@ impl TsProject {
             .roots
             .iter()
             .map(|root| {
-                let dependencies: BTreeSet<&str> = [root.as_str(), ""]
-                    .into_iter()
-                    .filter_map(|dir| shared.manifests.get(dir))
+                let dependencies: BTreeSet<&str> = shared
+                    .manifests_above(root)
                     .flat_map(|manifest| manifest.dependencies.iter().map(String::as_str))
                     .collect();
                 let active: Vec<Pack> = packs

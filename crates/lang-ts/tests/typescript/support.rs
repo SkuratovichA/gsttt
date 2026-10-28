@@ -237,3 +237,13 @@ fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
 fn number(value: &Value, key: &str) -> u64 {
     value.get(key).and_then(Value::as_u64).unwrap_or(0)
 }
+
+/// Where the import of `spec` in the file at `path` leads, worded as `imports` words it after the arrow.
+pub(crate) fn leads(json: &Value, path: &str, spec: &str) -> String {
+    let wanted = format!("{spec} ");
+    imports(json, path)
+        .into_iter()
+        .find(|line| line.starts_with(&wanted))
+        .and_then(|line| line.split_once("-> ").map(|(_, to)| to.to_owned()))
+        .unwrap_or_else(|| "no such import".to_owned())
+}

@@ -1900,6 +1900,7 @@ dependencies = [
 name = "gsttt-lang-ts"
 version = "0.1.0"
 dependencies = [
+ "globset",
  "gsttt-config",
  "gsttt-core",
  "gsttt-scenario",

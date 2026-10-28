@@ -62,9 +62,10 @@ pub(crate) fn is_json(name: &str) -> bool {
         .is_some_and(|(_, extension)| extension == "json")
 }
 
-/// Whether a file name is a tsconfig: `tsconfig.json`, `tsconfig.base.json`, `tsconfig.build.json`.
+/// Whether a file name is a config of the compiler: `tsconfig.json`, `tsconfig.base.json`, `tsconfig.build.json`, or the
+/// `jsconfig.json` of a JavaScript project.
 pub(crate) fn is_config_name(name: &str) -> bool {
-    name.starts_with("tsconfig") && is_json(name)
+    (name.starts_with("tsconfig") || name.starts_with("jsconfig")) && is_json(name)
 }
 
 /// Splits a bare specifier into the package name and the subpath: `@acme/ui/button` is `("@acme/ui", "button")`
@@ -103,6 +104,13 @@ mod tests {
         assert_eq!(join_dir("a", "../..").as_deref(), None);
         assert_eq!(strip_dir("dist/a.js", "dist"), Some("a.js"));
         assert_eq!(strip_dir("distant/a.js", "dist"), None);
+    }
+
+    #[test]
+    fn configs_are_tsconfigs_and_jsconfigs() {
+        assert!(is_config_name("tsconfig.json") && is_config_name("tsconfig.app.json"));
+        assert!(is_config_name("jsconfig.json"));
+        assert!(!is_config_name("package.json") && !is_config_name("tsconfig.txt"));
     }
 
     #[test]
