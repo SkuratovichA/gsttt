@@ -5,11 +5,10 @@ use std::sync::{Arc, Mutex, PoisonError, mpsc};
 
 use gsttt_core::engine::changes::{Change, ChangeKind};
 use gsttt_core::path::PathError;
+use gsttt_core::testing::Tree;
 use gsttt_core::{Freshness, Index, Loaded, RepoPath, Target};
 use gsttt_mcp::{IndexSource, SourceError};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-
-use crate::fixture::Tree;
 
 /// How many times a slow refresh gives up its turn on the processor while it waits for another call to arrive. It is
 /// the most a passing test waits, and it is long enough for calls sent together to be inside the source together.
@@ -53,7 +52,12 @@ struct Inner {
 impl Fake {
     /// A source over the smallest tree there is to ask about: `src/a.ts` imports `lib/util.ts`.
     pub(crate) fn small() -> Self {
-        Self::over(Tree::new().imports("src/a.ts", "lib/util.ts").build())
+        Self::over(
+            Tree::new()
+                .imports("src/a.ts", "lib/util.ts")
+                .commit("a1b2c3d", 0)
+                .build(),
+        )
     }
 
     /// A source that holds `index`, fresh, as both its stored and its refreshed index.

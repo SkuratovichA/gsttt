@@ -1768,6 +1768,7 @@ dependencies = [
  "foldhash",
  "gix",
  "globset",
+ "gsttt-core",
  "gsttt-scenario",
  "ignore",
  "insta",

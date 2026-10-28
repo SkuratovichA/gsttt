@@ -6,10 +6,9 @@ use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{Affected, Answer, Entries, Impact, ImpactRequest, impact};
+use gsttt_core::testing::{To, Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
-
-use crate::fixture::{To, Tree, file};
 
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];

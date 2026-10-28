@@ -3,11 +3,11 @@
 use gsttt_core::Freshness;
 use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::query::{self, Answer, Entries, ImpactRequest};
+use gsttt_core::testing::Tree;
 use gsttt_scenario::scenario;
 use serde_json::json;
 
 use crate::fake::Fake;
-use crate::fixture::Tree;
 use crate::session::Session;
 
 /// A tree in which `count` files import `lib/util.ts`.

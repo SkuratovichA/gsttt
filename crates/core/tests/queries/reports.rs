@@ -7,9 +7,8 @@ use gsttt_core::index::{Freshness, Index, Timings};
 use gsttt_core::query::{
     Failure, Reasons, UnclaimedExtension, UnclaimedLanguage, coverage, status,
 };
+use gsttt_core::testing::{To, Tree, resolving};
 use gsttt_scenario::scenario;
-
-use crate::fixture::{To, Tree, resolving};
 
 /// The reason, the count and the first place of each entry, as a reader of the answer sees them.
 fn reasons(list: &[Reasons]) -> Vec<(String, u32, String)> {

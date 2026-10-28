@@ -20,6 +20,7 @@ tokio = { workspace = true, features = ["rt", "sync"] }
 tracing.workspace = true
 
 [dev-dependencies]
+gsttt-core = { workspace = true, features = ["testing"] }
 gsttt-scenario.workspace = true
 insta.workspace = true
 proptest.workspace = true

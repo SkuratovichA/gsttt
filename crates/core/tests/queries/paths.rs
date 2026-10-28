@@ -6,10 +6,9 @@ use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind};
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{Answer, Link, Route, path};
+use gsttt_core::testing::{Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
-
-use crate::fixture::{Tree, file};
 
 fn route(index: &Index, from: &str, to: &str) -> Route {
     path(index, Freshness::Fresh, from, to)

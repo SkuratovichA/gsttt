@@ -7,6 +7,7 @@
 //! - [`setup`]: what a config asks for.
 //! - [`engine`], [`graph`], [`index`], [`coverage`]: what a run builds.
 //! - [`query`]: what an answer asks.
+//! - `testing`, behind the feature of that name: indexes written as lists of facts, for the tests of this crate and of those that put questions to an index.
 
 pub mod connector;
 pub mod contract;
@@ -21,6 +22,8 @@ pub mod query;
 pub mod repo;
 pub mod rules;
 pub mod setup;
+#[cfg(feature = "testing")]
+pub mod testing;
 pub mod text;
 
 pub use connector::{

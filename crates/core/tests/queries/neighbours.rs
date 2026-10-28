@@ -3,9 +3,8 @@
 use gsttt_core::fact::{Import, ImportFlags, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::Freshness;
 use gsttt_core::query::{Answer, External, Neighbour, dependencies, dependents};
+use gsttt_core::testing::{To, Tree, file, package};
 use gsttt_scenario::scenario;
-
-use crate::fixture::{To, Tree, file, package};
 
 fn neighbour(path: &str, kinds: &[ImportKind], type_only: bool) -> Neighbour {
     Neighbour {
