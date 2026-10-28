@@ -15,6 +15,7 @@ foldhash.workspace = true
 gix = { workspace = true, features = ["sha1", "status", "dirwalk", "revision", "blob-diff", "parallel"] }
 globset.workspace = true
 ignore.workspace = true
+jiff.workspace = true
 memchr.workspace = true
 rayon.workspace = true
 rkyv.workspace = true

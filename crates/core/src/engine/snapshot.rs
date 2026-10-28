@@ -10,6 +10,7 @@ use std::fs;
 use std::io::{Read, Seek, Write};
 use std::path::Path;
 
+use jiff::Timestamp;
 use rkyv::rancor::Error as RkyvError;
 use rkyv::util::AlignedVec;
 use serde::{Deserialize, Serialize};
@@ -253,41 +254,11 @@ fn parse_header(json: &[u8]) -> Option<Header> {
     (header.built_by == VERSION).then_some(header)
 }
 
-/// The current time as RFC 3339 in UTC.
+/// The current time as RFC 3339 in UTC, to the second.
 pub fn now() -> String {
-    rfc3339(u64::try_from(files::unix_now()).unwrap_or(0))
-}
-
-/// Seconds since the Unix epoch as `YYYY-MM-DDTHH:MM:SSZ`. Written out here because a calendar crate would be a
-/// dependency for this one line of the header.
-pub fn rfc3339(secs: u64) -> String {
-    let (year, month, day) = civil_from_days(secs / 86_400);
-    let rest = secs % 86_400;
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
-        rest / 3_600,
-        rest % 3_600 / 60,
-        rest % 60
-    )
-}
-
-/// The date `days` after 1970-01-01 (Howard Hinnant's `civil_from_days`).
-fn civil_from_days(days: u64) -> (u64, u64, u64) {
-    let shifted = days + 719_468;
-    let era = shifted / 146_097;
-    let day_of_era = shifted % 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_index = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
-    let month = if month_index < 10 {
-        month_index + 3
-    } else {
-        month_index - 9
-    };
-    let year = year_of_era + era * 400 + u64::from(month <= 2);
-    (year, month, day)
+    Timestamp::from_second(files::unix_now())
+        .unwrap_or(Timestamp::UNIX_EPOCH)
+        .to_string()
 }
 
 #[cfg(test)]
@@ -348,10 +319,12 @@ mod tests {
     }
 
     #[test]
-    fn a_time_prints_as_rfc3339() {
-        assert_eq!(rfc3339(0), "1970-01-01T00:00:00Z");
-        assert_eq!(rfc3339(1_000_000_000), "2001-09-09T01:46:40Z");
-        assert_eq!(rfc3339(1_709_164_800), "2024-02-29T00:00:00Z");
+    fn the_time_of_a_build_is_rfc3339_in_utc_to_the_second() {
+        let built_at = now();
+        let time: Timestamp = built_at.parse().unwrap();
+        assert_eq!(time.to_string(), built_at);
+        assert_eq!(built_at.len(), "1970-01-01T00:00:00Z".len(), "{built_at}");
+        assert!(built_at.ends_with('Z'), "{built_at}");
     }
 
     #[test]
