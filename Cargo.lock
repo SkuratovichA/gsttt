@@ -4679,8 +4679,12 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gsttt-scenario",
  "gsttt-spec",
+ "proc-macro2",
  "serde_json",
+ "syn 3.0.9",
+ "tempfile",
  "xshell",
 ]
 

@@ -7,9 +7,9 @@
 
 ## 2. The gate
 
-- [ ] 2.1 Finding proofs with `syn`, `proptest!` bodies included, fixtures and snapshots left out, test attributes required
-- [ ] 2.2 The rules, pending scenarios, the report and the exit code
-- [ ] 2.3 `--ready`
+- [x] 2.1 Finding proofs with `syn`, `proptest!` bodies included, fixtures and snapshots left out, test attributes required
+- [x] 2.2 The rules, pending scenarios, the report and the exit code
+- [x] 2.3 `--ready`
 
 ## 3. Workflow
 
@@ -17,5 +17,5 @@
 
 ## 4. Proof
 
-- [ ] 4.1 A test annotated `#[scenario("spec-gate", …)]` for every scenario of the `spec-gate` spec, on fixture trees
+- [x] 4.1 A test annotated `#[scenario("spec-gate", …)]` for every scenario of the `spec-gate` spec, on fixture trees
 - [ ] 4.2 `cargo xtask spec` passes on this repository, and `cargo nextest run -p gsttt-spec -p gsttt-scenario -p xtask`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
