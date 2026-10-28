@@ -135,15 +135,15 @@ fn compose<'a>(input: &LinkInput<'a, PyExtra>, module_file: ModuleFile<'_>) -> C
                 .entry(router)
                 .or_insert_with(|| mounts.prefixes(router, &mut cuts));
             for prefix in prefixes.iter() {
-                facts.push(LinkedFact {
-                    file: file.id,
-                    fact: ContractFact {
+                facts.push(LinkedFact::found(
+                    file.id,
+                    ContractFact {
                         key: contract_key(&ContractKind::Http, Some(prefix), path, Some(method)),
                         role: route.fact.role,
                         line: route.fact.line,
                         via: route.fact.via.clone(),
                     },
-                });
+                ));
             }
         }
     }
