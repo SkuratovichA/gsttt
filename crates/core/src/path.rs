@@ -55,6 +55,15 @@ pub enum OutsideRoot {
     },
 }
 
+/// A path argument, read against a directory inside the repository: the directory the command ran in for the command line, the root itself for the MCP server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Target {
+    /// The path from the root.
+    pub path: RepoPath,
+    /// Whether anything is at that path. A path with nothing there is asked about as deleted, so that an answer can still list what used to import it.
+    pub on_disk: bool,
+}
+
 /// What [`fold`] made of some segments.
 struct Folded<'a> {
     /// The segments left, none of them empty, `.` or `..`.

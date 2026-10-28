@@ -244,6 +244,10 @@ impl<'a> Chase<'a> {
 }
 
 impl Answer for Route {
+    fn held(&self) -> bool {
+        self.unknown.is_empty()
+    }
+
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         if !self.unknown.is_empty() {
             for path in &self.unknown {

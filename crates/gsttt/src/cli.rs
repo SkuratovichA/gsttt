@@ -67,6 +67,8 @@ pub enum Command {
     Coverage,
     /// Report how the stored index stands against the tree, without refreshing it
     Status,
+    /// Answer an agent's questions over the Model Context Protocol, on stdin and stdout
+    Mcp,
     /// Commands for the hooks of an editor or an agent
     #[command(subcommand, flatten_help = true)]
     Hook(HookCommand),
@@ -180,6 +182,7 @@ impl Command {
             Self::Contract(_) => "contract",
             Self::Coverage => "coverage",
             Self::Status => "status",
+            Self::Mcp => "mcp",
             Self::Hook(HookCommand::SessionStart) => "hook session-start",
             Self::Init => "init",
             Self::Config(ConfigCommand::Check) => "config check",

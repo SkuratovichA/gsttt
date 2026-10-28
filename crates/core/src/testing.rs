@@ -1,16 +1,23 @@
 //! A tree written as a list of facts, turned into the `Index` the engine would build from it.
+//!
+//! This is support for tests, behind the `testing` feature: the tests of this crate and of the crates that put questions to an index turn the feature on in their dev-dependencies, and nothing that ships does. A tree that cannot be built is a mistake in the test that wrote it, so the builders panic on it instead of returning an error.
+#![expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "a tree that cannot be built is a mistake in the test that wrote it, and a test fails on a panic"
+)]
 
 use std::collections::BTreeMap;
 
-use gsttt_core::contract::{ContractKey, Role};
-use gsttt_core::coverage::{ConnectorCoverage, Coverage, FailedFile};
-use gsttt_core::fact::{
+use crate::contract::{ContractKey, Role};
+use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
+use crate::fact::{
     FileTags, Import, ImportKind, ParseFailure, ParseStatus, Resolution, ResolvedImport,
     UnresolvedReason, UnresolvedSite,
 };
-use gsttt_core::graph::{ContractSite, Edge, GraphBuilder};
-use gsttt_core::index::{FileRecord, Index, IndexInfo, ProjectInfo};
-use gsttt_core::{FileId, ProjectId, RepoPath};
+use crate::graph::{ContractSite, Edge, GraphBuilder};
+use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
+use crate::{FileId, ProjectId, RepoPath};
 
 /// The connector that reads a file unless a test says otherwise.
 const DEFAULT_CONNECTOR: &str = "ts";
@@ -28,26 +35,31 @@ fn via(role: Role) -> &'static str {
 
 /// Where an import of a test tree points.
 #[derive(Clone, Debug)]
-pub(crate) enum To {
+pub enum To {
+    /// The file at this path.
     File(String),
+    /// Every one of these files, which is where an import that several files answer to resolves.
     Files(Vec<String>),
+    /// A third-party package of this name.
     Package(String),
+    /// A module of the language's own library.
     Builtin,
+    /// Nothing, for this reason.
     Missing(UnresolvedReason),
 }
 
 /// An import that resolved to the file at `path`.
-pub(crate) fn file(path: &str) -> To {
+pub fn file(path: &str) -> To {
     To::File(path.to_owned())
 }
 
 /// An import that resolved to a third-party package.
-pub(crate) fn package(name: &str) -> To {
+pub fn package(name: &str) -> To {
     To::Package(name.to_owned())
 }
 
 /// A tree where `src/a.ts` has `total` imports, the first `resolved` of them to a package and the others to nothing.
-pub(crate) fn resolving(resolved: u32, total: u32) -> Tree {
+pub fn resolving(resolved: u32, total: u32) -> Tree {
     (0..total).fold(Tree::new(), |tree, n| {
         let to = if n < resolved {
             package("react")
@@ -114,7 +126,8 @@ impl Entry {
 /// a connector: a file keeps its imports in the order they were given, which is the order of its facts and not a sorted
 /// one, a file the engine puts aside is owned and counted apart, and a project is named `.` at the repository root.
 #[derive(Debug, Default)]
-pub(crate) struct Tree {
+#[must_use = "a tree is nothing until it is built"]
+pub struct Tree {
     files: BTreeMap<String, Entry>,
     /// Connector names in the order they were first used, which stands for the registry order.
     connectors: Vec<String>,
@@ -124,7 +137,8 @@ pub(crate) struct Tree {
 }
 
 impl Tree {
-    pub(crate) fn new() -> Self {
+    /// A tree with no files.
+    pub fn new() -> Self {
         Self::default()
     }
 
@@ -145,21 +159,21 @@ impl Tree {
     }
 
     /// A file that `connector` read.
-    pub(crate) fn read_by(mut self, connector: &str, path: &str) -> Self {
+    pub fn read_by(mut self, connector: &str, path: &str) -> Self {
         self.register(connector);
         self.entry(path).connector = Some(connector.to_owned());
         self
     }
 
     /// A file of the tree that no connector read.
-    pub(crate) fn unread(mut self, path: &str) -> Self {
+    pub fn unread(mut self, path: &str) -> Self {
         self.entry(path).connector = None;
         self
     }
 
     /// Adds files that `connector` read until it owns `total` of them, so that a test can put the few files it looks
     /// at in a tree of the size of a real one.
-    pub(crate) fn padded(mut self, connector: &str, total: usize) -> Self {
+    pub fn padded(mut self, connector: &str, total: usize) -> Self {
         self.register(connector);
         let owned = self
             .files
@@ -175,18 +189,19 @@ impl Tree {
         self
     }
 
-    pub(crate) fn tag(mut self, path: &str, tags: FileTags) -> Self {
+    /// Tags `path` as its connector would, as a test file or a generated one.
+    pub fn tag(mut self, path: &str, tags: FileTags) -> Self {
         self.entry(path).tags = tags;
         self
     }
 
     /// `from` imports the file `to` with a static import on line 1.
-    pub(crate) fn imports(self, from: &str, to: &str) -> Self {
+    pub fn imports(self, from: &str, to: &str) -> Self {
         self.import(from, Import::new(to, ImportKind::Static, 1), file(to))
     }
 
     /// `from` has `import`, which points at `to`.
-    pub(crate) fn import(mut self, from: &str, import: Import, to: To) -> Self {
+    pub fn import(mut self, from: &str, import: Import, to: To) -> Self {
         for target in to.paths() {
             self.entry(target);
         }
@@ -194,34 +209,38 @@ impl Tree {
         self
     }
 
-    pub(crate) fn site(mut self, path: &str, key: &str, role: Role, line: u32) -> Self {
+    /// A site of the contract `key`, which reads like `http GET /bookings/{}`, in `path` on `line`, in `role`.
+    pub fn site(mut self, path: &str, key: &str, role: Role, line: u32) -> Self {
         let key = ContractKey::parse(key).unwrap();
         self.entry(path).sites.push((key, role, line));
         self
     }
 
-    pub(crate) fn declares(self, path: &str, key: &str) -> Self {
+    /// `path` declares the contract `key`, as a document of the contract does.
+    pub fn declares(self, path: &str, key: &str) -> Self {
         self.site(path, key, Role::Declares, 1)
     }
 
-    pub(crate) fn serves(self, path: &str, key: &str) -> Self {
+    /// `path` serves the contract `key`.
+    pub fn serves(self, path: &str, key: &str) -> Self {
         self.site(path, key, Role::Serves, 1)
     }
 
-    pub(crate) fn calls(self, path: &str, key: &str) -> Self {
+    /// `path` calls the contract `key`.
+    pub fn calls(self, path: &str, key: &str) -> Self {
         self.site(path, key, Role::Calls, 1)
     }
 
     /// A file its connector could not read at all. A file over the size limit, not UTF-8 or unreadable is the engine's
     /// to put aside: it is owned, counted in the files of its connector and listed as skipped, and it is not a failure
     /// of the connector.
-    pub(crate) fn failed(mut self, path: &str, failure: ParseFailure) -> Self {
+    pub fn failed(mut self, path: &str, failure: ParseFailure) -> Self {
         self.entry(path).status = ParseStatus::Failed(failure);
         self
     }
 
     /// A file its connector read past `errors` syntax errors, the first on `line`.
-    pub(crate) fn recovered(mut self, path: &str, errors: u32, line: u32) -> Self {
+    pub fn recovered(mut self, path: &str, errors: u32, line: u32) -> Self {
         self.entry(path).status = ParseStatus::Recovered {
             errors,
             first_error_line: line,
@@ -229,14 +248,17 @@ impl Tree {
         self
     }
 
+    /// `count` files that were left out before any connector read them, named `assets/skipped00.bin` and on. Each is owned, counted among the files of the default connector and listed as skipped.
+    pub fn skipped(mut self, count: usize) -> Self {
+        for number in 0..count {
+            let path = format!("assets/skipped{number:02}.bin");
+            self = self.failed(&path, ParseFailure::NotUtf8);
+        }
+        self
+    }
+
     /// A site in `path` that its connector saw and could not read.
-    pub(crate) fn blind(
-        mut self,
-        path: &str,
-        line: u32,
-        reason: UnresolvedReason,
-        detail: &str,
-    ) -> Self {
+    pub fn blind(mut self, path: &str, line: u32, reason: UnresolvedReason, detail: &str) -> Self {
         self.entry(path).blind.push(UnresolvedSite {
             line,
             reason,
@@ -245,19 +267,21 @@ impl Tree {
         self
     }
 
-    pub(crate) fn prefixes(mut self, prefixes: &[&str]) -> Self {
+    /// The HTTP prefixes the index records, which a query that answers from it matches HTTP paths against.
+    pub fn prefixes(mut self, prefixes: &[&str]) -> Self {
         self.prefixes = prefixes.iter().map(|prefix| (*prefix).to_owned()).collect();
         self
     }
 
     /// The commit the index was built at and how many files differed from it.
-    pub(crate) fn commit(mut self, head: &str, dirty: u32) -> Self {
+    pub fn commit(mut self, head: &str, dirty: u32) -> Self {
         self.head = Some(head.to_owned());
         self.dirty = dirty;
         self
     }
 
-    pub(crate) fn build(self) -> Index {
+    /// The index the engine would build from the facts of the tree.
+    pub fn build(self) -> Index {
         let ids: BTreeMap<String, FileId> = self
             .files
             .keys()

@@ -5,10 +5,9 @@ use std::collections::BTreeSet;
 use gsttt_core::ContractKey;
 use gsttt_core::index::Freshness;
 use gsttt_core::query::{Found, HttpMatcher, contract};
+use gsttt_core::testing::Tree;
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
-
-use crate::fixture::Tree;
 
 fn key(text: &str) -> ContractKey {
     ContractKey::parse(text).unwrap()

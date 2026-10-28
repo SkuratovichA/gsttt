@@ -6,6 +6,7 @@ use camino::Utf8PathBuf;
 use gsttt_core::engine::changes::ChangesError;
 use gsttt_core::engine::refresh::IndexError;
 use gsttt_core::path::OutsideRoot;
+use gsttt_mcp::ServeError;
 use miette::{Diagnostic, GraphicalReportHandler, GraphicalTheme, Report};
 
 use crate::repository::RepositoryError;
@@ -77,6 +78,12 @@ pub(crate) enum CliError {
         source: io::Error,
     },
 
+    #[error(transparent)]
+    Serve(#[from] ServeError),
+
+    #[error("cannot start the runtime of the MCP server: {source}")]
+    Runtime { source: io::Error },
+
     #[error("the contract query is empty")]
     #[diagnostic(help(
         "ask for a contract key such as `http GET /bookings/{{id}}`, or for part of one"
@@ -92,6 +99,14 @@ pub(crate) enum CliError {
     #[error("`index` always refreshes the index, so it cannot run with `--no-refresh`")]
     #[diagnostic(help("drop `--no-refresh`"))]
     NoRefreshWithIndex,
+
+    #[error(
+        "`gsttt mcp` takes none of `--json`, `--all` and `--no-refresh`, and `{flag}` was given"
+    )]
+    #[diagnostic(help(
+        "drop `{flag}`: the server answers in protocol messages, a tool that lists entries takes `all` as an argument, and every call refreshes the index first"
+    ))]
+    McpTakesNoFlag { flag: &'static str },
 }
 
 impl From<RepositoryError> for CliError {
@@ -120,6 +135,8 @@ impl CliError {
             | Self::Key(_)
             | Self::Store(_)
             | Self::Init { .. }
+            | Self::Serve(_)
+            | Self::Runtime { .. }
             | Self::Root(RootError::Workspace(_) | RootError::CurrentDirectory { .. }) => {
                 Outcome::Failed
             }
@@ -130,7 +147,8 @@ impl CliError {
             | Self::EmptyQuery
             | Self::BaseNeedsChanged
             | Self::NoRefreshWithIndex
-            | Self::TrustNeedsTerminal => Outcome::Usage,
+            | Self::TrustNeedsTerminal
+            | Self::McpTakesNoFlag { .. } => Outcome::Usage,
         }
     }
 

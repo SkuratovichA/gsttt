@@ -39,6 +39,11 @@ pub trait Answer: fmt::Display + Serialize {
     /// Writes the text of the answer, showing `entries` of each list.
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result;
 
+    /// Whether the index holds the files the question named. An answer that says one is not in the index returns `false`, and a caller that fails on a missing file, as the command line and the MCP server both do, reads it here, so that the two cannot disagree about which questions those are. Every other answer holds.
+    fn held(&self) -> bool {
+        true
+    }
+
     /// The text of the answer, showing `entries` of each list.
     fn text(&self, entries: Entries) -> String {
         struct Text<'a, A: ?Sized>(&'a A, Entries);

@@ -1,12 +1,12 @@
 //! `gsttt impact`: what a change affects, for the files named on the command line or the files git lists as changed.
 
+use gsttt_core::Loaded;
 use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::query::{self, ImpactRequest};
 
 use super::{Session, print};
 use crate::cli::ImpactArgs;
 use crate::error::CliError;
-use crate::repository::Loaded;
 use crate::streams::{Io, Outcome};
 
 /// `gsttt impact <path>...` and `gsttt impact --changed`.

@@ -32,15 +32,14 @@ pub(super) fn indented(document: &Value) -> String {
     format!("{document:#}\n")
 }
 
-/// Prints `answer` when `held` says the index holds the subject it was asked about. When it does not, the question
-/// has no answer: its text goes to stderr, stdout stays empty even under `--json`, and the run fails.
+/// Prints `answered` when the index holds the subject it was asked about ([`Answer::held`]). When it does not, the
+/// question has no answer: its text goes to stderr, stdout stays empty even under `--json`, and the run fails.
 pub(super) fn answer_if<A: Answer>(
-    held: bool,
     answered: &A,
     flags: &Flags,
     io: &mut Io<'_>,
 ) -> Result<Outcome, CliError> {
-    if held {
+    if answered.held() {
         return answer(answered, flags, io);
     }
     let mut text = answered.text(Entries::Capped);

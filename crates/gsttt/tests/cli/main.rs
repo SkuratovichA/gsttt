@@ -9,6 +9,7 @@ mod impact;
 mod index;
 mod init;
 mod logs;
+mod mcp;
 mod panics;
 mod paths;
 mod questions;

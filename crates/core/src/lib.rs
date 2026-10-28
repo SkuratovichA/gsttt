@@ -12,6 +12,7 @@
 //! - [`query`]: what an answer asks.
 //! - [`text`]: text helpers shared by the connectors and by the words of answers: line numbers from byte offsets, counts, names and times.
 //! - [`atomic`]: replacing a file as a whole, so that a reader never sees half of it.
+//! - `testing`, behind the feature of that name: indexes written as lists of facts, for the tests of this crate and of those that put questions to an index.
 
 pub mod atomic;
 pub mod connector;
@@ -27,6 +28,8 @@ pub mod query;
 pub mod repo;
 pub mod rules;
 pub mod setup;
+#[cfg(feature = "testing")]
+pub mod testing;
 pub mod text;
 pub mod tree;
 
@@ -36,7 +39,7 @@ pub use connector::{
 pub use contract::{ContractKey, ContractKind, Role};
 pub use graph::Graph;
 pub use ids::{ContractId, FileId, Id, ProjectId};
-pub use index::{Freshness, Index};
-pub use path::RepoPath;
+pub use index::{Freshness, Index, Loaded};
+pub use path::{RepoPath, Target};
 pub use repo::RepoView;
 pub use setup::Setup;

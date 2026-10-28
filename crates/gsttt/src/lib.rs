@@ -8,6 +8,7 @@ mod commands;
 mod error;
 pub mod hook;
 pub mod logging;
+mod mcp;
 pub mod panics;
 pub mod registry;
 pub mod repository;
