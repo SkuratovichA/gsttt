@@ -13,9 +13,6 @@ use oxc_ast_visit::{Visit, walk};
 
 use crate::shape::property_name;
 
-/// How many aliases deep a type is followed, so that `type A = B; type B = A` ends.
-const ALIAS_DEPTH: usize = 8;
-
 /// The generic types that keep the members of their first type argument: `Pick<PrismaClient, 'tenant'>` is a client with fewer models.
 const WRAPPERS: [&str; 6] = [
     "Pick",
@@ -120,9 +117,11 @@ impl<'a> Collector<'_, 'a> {
 impl<'p> Collector<'p, '_> {
     fn finish(self) -> Roots<'p> {
         let mut typed: BTreeMap<String, Vec<&'p str>> = BTreeMap::new();
+        let mut seen = Vec::new();
         for (name, head) in &self.declared {
+            seen.clear();
             let mut found = Vec::new();
-            self.root_types(head, ALIAS_DEPTH, &mut found);
+            self.root_types(head, &mut seen, &mut found);
             if !found.is_empty() {
                 typed
                     .entry(name.clone().into_owned())
@@ -136,14 +135,18 @@ impl<'p> Collector<'p, '_> {
         }
     }
 
-    /// Adds to `found` the root types that `head` is, or stands for through the aliases of the file. A name the file declares is the type it says it is, which only a `type` alias can make a root type; a name the file does not declare is a root type when a pack lists it.
-    fn root_types(&self, head: &str, depth: usize, found: &mut Vec<&'p str>) {
+    /// Adds to `found` the root types that `head` is, or stands for through the aliases of the file. A name the file declares is the type it says it is, which only a `type` alias can make a root type; a name the file does not declare is a root type when a pack lists it. `seen` holds the names already followed for this question and is never emptied during it, so that a chain of any length is followed, a cycle ends, and a union that names its own alias many times is read once.
+    fn root_types<'s>(&'s self, head: &'s str, seen: &mut Vec<&'s str>, found: &mut Vec<&'p str>) {
+        if seen.contains(&head) {
+            return;
+        }
+        seen.push(head);
         if !self.locals.contains(&head) {
             found.extend(self.wanted.iter().copied().find(|wanted| *wanted == head));
-        } else if let Some(depth) = depth.checked_sub(1) {
-            for (_, next) in self.aliases.iter().filter(|(alias, _)| *alias == head) {
-                self.root_types(next, depth, found);
-            }
+            return;
+        }
+        for (_, next) in self.aliases.iter().filter(|(alias, _)| *alias == head) {
+            self.root_types(next, seen, found);
         }
     }
 }

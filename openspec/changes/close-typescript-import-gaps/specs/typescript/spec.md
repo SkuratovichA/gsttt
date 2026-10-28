@@ -70,11 +70,18 @@ A chain rule MAY list root types. A parameter, a variable or a class property de
 - **AND** the call on `this.plain` names no table, because a constructor parameter without a modifier is no property
 
 ### Requirement: Type aliases of root types
-A `type` alias of the same file SHALL be read as the type it defines, through any number of aliases, when a declaration is checked for a root type. An alias that is defined by itself, directly or through other aliases, SHALL define no root type.
+A `type` alias of the same file SHALL be read as the type it defines, through any number of aliases, when a declaration is checked for a root type. An alias that is defined by itself, directly or through other aliases, SHALL define no root type, and no alias SHALL be followed more than once for a declaration, so that a type that names itself many times is read as fast as one that names itself once.
 
 #### Scenario: A local type alias of a client type is a root
 - **WHEN** `src/readers.ts` has `type Client = Prisma.TransactionClient` on line 3, `type Reader = Pick<Client, 'tenant'>` on line 4, `type Options = { tenant: { findFirst(): void } }` on line 5, and `type Loop = Again` and `type Again = Loop` on lines 6 and 7, and functions that take `reader: Reader`, `options: Options` and `loop: Loop` and call `reader.tenant.findUnique()` on line 10, `options.tenant.findFirst()` on line 14 and `loop.tenant.findMany()` on line 18
 - **THEN** the file calls `table tenant` at line 10 and no other table
+
+#### Scenario: A long chain of type aliases is followed to its end
+- **WHEN** `src/chain.ts` has the nine aliases `Chain1` to `Chain9`, where `Chain1` is `PrismaClient` and each of the others is the one before it, and a function with the parameter `client: Chain9` that calls `client.tenant.findFirst()` on line 14
+- **AND** `src/cycle.ts` has `type Ping = Pong` and `type Pong = Ping` and a function with the parameter `ring: Ping` that calls `ring.tenant.findMany()`, and `type Back = Forth | PrismaClient` and `type Forth = Back` and a function with the parameter `value: Forth` that calls `value.booking.count()` on line 13
+- **AND** `src/fan-out.ts` has `type Wide = Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide | Wide` and a function with the parameter `value: Wide` that calls `value.tenant.findFirst()`
+- **THEN** `src/chain.ts` calls `table tenant` at line 14 and `src/cycle.ts` calls `table booking` at line 13, and no other table
+- **AND** `src/fan-out.ts` calls no table, and the project is indexed without waiting on `Wide`
 
 ### Requirement: Local types shadow root types
 A name that the file declares itself, as a `type` alias, an `interface`, a `class` or an `enum`, SHALL be that local type and never the root type of a pack with the same name. A local `type` alias SHALL be read as the type it defines, which may be a root type, and an `interface`, a `class` or an `enum` SHALL be no root type. Only a name that the file does not declare SHALL be checked against the root types. A root type imported under another name, a root type reached through a namespace import under another name, and an intersection with a root type SHALL NOT be read as a root type.

@@ -1,10 +1,26 @@
 //! Tables and environment variables.
 
 use std::error::Error;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use gsttt_scenario::scenario;
+use serde_json::Value;
 
 use crate::support::{NOTHING, contracts, run};
+
+/// Runs `fixture` on another thread and gives up after `limit`, so that a walk that does not end fails its test instead of hanging the run.
+fn run_within(fixture: &'static str, limit: Duration) -> Result<Value, Box<dyn Error>> {
+    let (sender, receiver) = mpsc::channel();
+    // The receiver is gone when the test gave up, and then there is nobody to tell.
+    thread::spawn(move || {
+        sender
+            .send(run(fixture).map_err(|error| error.to_string()))
+            .ok()
+    });
+    Ok(receiver.recv_timeout(limit)??)
+}
 
 #[test]
 #[scenario("typescript", "A Prisma call names its table")]
@@ -51,6 +67,20 @@ fn a_local_type_alias_of_a_client_type_is_a_root() -> Result<(), Box<dyn Error>>
         contracts(&json, "src/readers.ts"),
         ["calls table tenant @10"]
     );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A long chain of type aliases is followed to its end")]
+fn a_long_chain_of_type_aliases_is_followed_to_its_end() -> Result<(), Box<dyn Error>> {
+    let json = run_within("prisma-alias-walk", Duration::from_secs(20))?;
+    assert_eq!(contracts(&json, "src/chain.ts"), ["calls table tenant @14"]);
+    assert_eq!(
+        contracts(&json, "src/cycle.ts"),
+        ["calls table booking @13"]
+    );
+    assert_eq!(contracts(&json, "src/fan-out.ts"), NOTHING);
     insta::assert_json_snapshot!(json);
     Ok(())
 }

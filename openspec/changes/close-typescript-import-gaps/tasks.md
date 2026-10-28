@@ -21,3 +21,4 @@
 ## 3. Review fixes
 
 - [x] 3.1 A name the file declares as a `type` alias, an `interface`, a `class` or an `enum` is that local type and never a root type of the pack, and a root type imported under another name, reached through a renamed namespace import or intersected with another type stays unread
+- [x] 3.2 The walk through the type aliases of a file keeps a list of the names it has followed instead of a depth limit, so that a chain of any length is followed, a cycle ends, and a type that names itself many times is followed once
