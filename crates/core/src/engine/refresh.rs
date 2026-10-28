@@ -4,18 +4,17 @@
 //! sibling work tree of the same repository), runs the pipeline over the rest and writes the snapshot back. When
 //! nothing that shapes the index changed, it stops after opening the connectors and computing the fact keys.
 
-use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use xxhash_rust::xxh3::Xxh3;
 
 use super::build::build_index;
 use super::changes::{self, Change, ChangesError, Listing};
-use super::files::{self, ContentId, Excluder, FileState, FilesError, Stamp};
+use super::files::{self, ContentId, Excluder, FileState, FilesError};
 use super::keys::{self, FactKey};
 use super::packs::merge_packs;
 use super::pipeline::{self, Claim, FileRun, Module, ProjectRun, Seed};
-use super::snapshot::{self, Header, Stored, StoredFile};
+use super::snapshot::{self, ArchivedStored, Header, Snapshot, Stored, StoredFile};
 use super::workspace::{Workspace, WorkspaceError};
 use crate::connector::{ConnectorError, DynConnector};
 use crate::coverage::Coverage;
@@ -87,7 +86,8 @@ impl<'a> Engine<'a> {
 
     /// The stored index, whether or not the tree has moved on since. `None` when there is no readable snapshot.
     pub fn load(&self) -> Option<Index> {
-        snapshot::read(self.workspace.snapshot_path().as_std_path()).map(|(_, stored)| stored.index)
+        let snapshot = Snapshot::open(self.workspace.snapshot_path().as_std_path())?;
+        snapshot.stored()?.to_index()
     }
 
     /// The header of the stored snapshot, read without its body.
@@ -97,22 +97,20 @@ impl<'a> Engine<'a> {
 
     /// How the stored index stands against the tree, `None` when there is no snapshot.
     pub fn freshness(&self) -> Result<Option<Freshness>, IndexError> {
-        let Some((_, stored)) = snapshot::read(self.workspace.snapshot_path().as_std_path()) else {
+        let Some(snapshot) = Snapshot::open(self.workspace.snapshot_path().as_std_path()) else {
             return Ok(None);
         };
-        let states = self.listing(Some(&stored))?;
-        let before: HashMap<&RepoPath, ContentId> = stored
-            .files
-            .iter()
-            .map(|file| (&file.path, file.stamp.id))
-            .collect();
+        let Some(stored) = snapshot.stored() else {
+            return Ok(None);
+        };
+        let states = self.listing(Some(stored))?;
         let (mut added, mut changed, mut kept) = (0_u32, 0_u32, 0_usize);
         for state in &states {
-            match before.get(&state.path) {
+            match stored.file(&state.path) {
                 None => added += 1,
-                Some(id) => {
+                Some(old) => {
                     kept += 1;
-                    if *id != state.stamp.id {
+                    if old.stamp.id != state.stamp.id {
                         changed += 1;
                     }
                 }
@@ -124,9 +122,8 @@ impl<'a> Engine<'a> {
 
     /// The files that differ from HEAD, or from the best common ancestor of HEAD and `base` when one is given.
     pub fn changed_files(&self, base: Option<&str>) -> Result<Vec<Change>, IndexError> {
-        let previous =
-            snapshot::read(self.workspace.snapshot_path().as_std_path()).map(|(_, stored)| stored);
-        let states = self.listing(previous.as_ref())?;
+        let snapshot = Snapshot::open(self.workspace.snapshot_path().as_std_path());
+        let states = self.listing(snapshot.as_ref().and_then(Snapshot::stored))?;
         self.changes_since(&states, base)
     }
 
@@ -134,9 +131,10 @@ impl<'a> Engine<'a> {
     pub fn refresh(&self) -> Result<Refresh, IndexError> {
         let started = Instant::now();
         let snapshot_path = self.workspace.snapshot_path();
-        let previous = snapshot::read(snapshot_path.as_std_path()).map(|(_, stored)| stored);
+        let snapshot = Snapshot::open(snapshot_path.as_std_path());
+        let previous = snapshot.as_ref().and_then(Snapshot::stored);
 
-        let mut states = self.listing(previous.as_ref())?;
+        let mut states = self.listing(previous)?;
         states.sort_by(|a, b| a.path.cmp(&b.path));
         let listed = started.elapsed();
         let repo = RepoView::new(
@@ -185,43 +183,43 @@ impl<'a> Engine<'a> {
         let config = keys::config_fingerprint(self.setup, self.connectors, self.builtin_packs);
         let (head, problems) = self.head();
 
-        match previous {
-            Some(stored)
-                if !unverifiable
-                    && problems.is_empty()
-                    && is_current(
-                        &stored,
-                        config,
-                        &states,
-                        &file_keys,
-                        &assigned.projects(),
-                        head.as_deref(),
-                    ) =>
-            {
-                Ok(Refresh {
-                    reused: to_u32(claims.len()),
-                    index: stored.index,
-                    unchanged: true,
-                    parsed: 0,
-                    siblings: 0,
-                })
-            }
-            own => Ok(self.rebuild(Rebuild {
-                repo: &repo,
-                modules: &ran,
-                assigned,
-                claims,
-                module_states,
-                states,
-                file_keys,
-                config,
-                head,
-                problems,
-                own,
-                started,
-                listed,
-            })),
+        let current = previous.filter(|stored| {
+            !unverifiable
+                && problems.is_empty()
+                && is_current(
+                    stored,
+                    config,
+                    &states,
+                    &file_keys,
+                    &assigned.projects(),
+                    head.as_deref(),
+                )
+        });
+        // Only the index is copied out of the snapshot; the entries of the files are not needed.
+        if let Some(index) = current.and_then(ArchivedStored::to_index) {
+            return Ok(Refresh {
+                reused: to_u32(claims.len()),
+                index,
+                unchanged: true,
+                parsed: 0,
+                siblings: 0,
+            });
         }
+        Ok(self.rebuild(Rebuild {
+            repo: &repo,
+            modules: &ran,
+            assigned,
+            claims,
+            module_states,
+            states,
+            file_keys,
+            config,
+            head,
+            problems,
+            own: previous,
+            started,
+            listed,
+        }))
     }
 
     /// Runs the pipeline over the files that have no facts yet and writes the snapshot.
@@ -242,7 +240,7 @@ impl<'a> Engine<'a> {
             listed,
         } = run;
         let max = self.setup.max_file_bytes;
-        let (seeds, siblings) = self.seeds(&claims, &states, &file_keys, own.as_ref());
+        let (seeds, siblings) = self.seeds(&claims, &states, &file_keys, own);
 
         let (output, phases) = pipeline::execute(assigned, repo, max, &states, seeds);
         // A file saved between the listing and the read is filed under the bytes that were read, not under the
@@ -319,57 +317,57 @@ impl<'a> Engine<'a> {
         claims: &[Claim<'_>],
         states: &[FileState],
         file_keys: &[Option<FactKey>],
-        own: Option<&Stored>,
+        own: Option<&ArchivedStored>,
     ) -> (Vec<Option<Seed>>, u32) {
         let max = self.setup.max_file_bytes;
-        let wanted_key = |claim: &Claim<'_>| -> Option<FactKey> {
-            let state = states.get(claim.id.index())?;
-            if state.stamp.size > max {
-                return None;
-            }
-            file_keys.get(claim.id.index()).copied().flatten()
-        };
-        let own_is_absent = own.is_none();
-        let own: HashMap<FactKey, &StoredFile> = own
-            .into_iter()
-            .flat_map(|stored| stored.files.iter())
-            .filter(|file| snapshot::is_reusable(&file.facts))
-            .filter_map(|file| Some((file.key?, file)))
-            .collect();
-        let mut missing: HashSet<FactKey> = claims
+        // The path and the key each claimed file's facts are filed under; a file over the size limit has none.
+        let wanted: Vec<Option<(&RepoPath, FactKey)>> = claims
             .iter()
-            .filter_map(wanted_key)
-            .filter(|key| !own.contains_key(key))
+            .map(|claim| {
+                let state = states
+                    .get(claim.id.index())
+                    .filter(|state| state.stamp.size <= max)?;
+                let key = file_keys.get(claim.id.index()).copied().flatten()?;
+                Some((&state.path, key))
+            })
             .collect();
-        let mut siblings: HashMap<FactKey, StoredFile> = HashMap::new();
+        let take = |stored: &ArchivedStored, want: Option<(&RepoPath, FactKey)>| {
+            let (path, key) = want?;
+            let (facts, extra) = stored.reusable(path, key)?;
+            Some(Seed { facts, extra })
+        };
+        let mut seeds: Vec<Option<Seed>> = wanted
+            .iter()
+            .map(|&want| own.and_then(|stored| take(stored, want)))
+            .collect();
+        let missing = |seeds: &[Option<Seed>]| {
+            seeds
+                .iter()
+                .zip(&wanted)
+                .filter(|(seed, want)| seed.is_none() && want.is_some())
+                .count()
+        };
         let mut read = 0_u32;
-        if own_is_absent || siblings_pay(missing.len(), claims.len()) {
+        if own.is_none() || siblings_pay(missing(&seeds), claims.len()) {
             for path in self.workspace.sibling_snapshots() {
-                if missing.is_empty() {
+                if missing(&seeds) == 0 {
                     break;
                 }
-                // The header is enough to tell a snapshot of another version, whose body is not worth reading.
-                if snapshot::peek(path.as_std_path()).is_none() {
+                // A snapshot of another version is rejected by its header, before its body is read.
+                let Some(snapshot) = Snapshot::open(path.as_std_path()) else {
                     continue;
-                }
+                };
                 read += 1;
-                for (key, file) in snapshot::reusable_facts(path.as_std_path(), &missing) {
-                    missing.remove(&key);
-                    siblings.insert(key, file);
+                let Some(sibling) = snapshot.stored() else {
+                    continue;
+                };
+                for (seed, &want) in seeds.iter_mut().zip(&wanted) {
+                    if seed.is_none() {
+                        *seed = take(sibling, want);
+                    }
                 }
             }
         }
-        let seeds = claims
-            .iter()
-            .map(|claim| {
-                let key = wanted_key(claim)?;
-                let stored = own.get(&key).copied().or_else(|| siblings.get(&key))?;
-                Some(Seed {
-                    facts: stored.facts.clone(),
-                    extra: stored.extra.clone(),
-                })
-            })
-            .collect();
         (seeds, read)
     }
 
@@ -403,14 +401,9 @@ impl<'a> Engine<'a> {
     }
 
     /// The files of the work tree, with the stamps of the previous snapshot to spare hashing what did not change.
-    fn listing(&self, previous: Option<&Stored>) -> Result<Vec<FileState>, FilesError> {
-        let stamps: HashMap<&RepoPath, Stamp> = previous
-            .into_iter()
-            .flat_map(|stored| stored.files.iter())
-            .map(|file| (&file.path, file.stamp))
-            .collect();
+    fn listing(&self, previous: Option<&ArchivedStored>) -> Result<Vec<FileState>, FilesError> {
         files::scan(&self.workspace, &self.setup.exclude, &|path| {
-            stamps.get(path).copied()
+            previous?.stamp_of(path)
         })
     }
 
@@ -457,7 +450,7 @@ struct Rebuild<'r, 'a> {
     head: Option<String>,
     /// Lines for the coverage about what git could not tell.
     problems: Vec<String>,
-    own: Option<Stored>,
+    own: Option<&'r ArchivedStored>,
     started: Instant,
     listed: Duration,
 }
@@ -474,14 +467,14 @@ fn claim_key(module_states: &[Xxh3], claim: &Claim<'_>, id: ContentId) -> Option
 /// not only for those a project took, because the dirty count and the freshness of the snapshot depend on all of
 /// them.
 fn is_current(
-    stored: &Stored,
+    stored: &ArchivedStored,
     config: u128,
     states: &[FileState],
     file_keys: &[Option<FactKey>],
     projects: &[ProjectRun],
     head: Option<&str>,
 ) -> bool {
-    stored.config == config
+    stored.config.to_native() == config
         && stored.index.info.head.as_deref() == head
         && stored.index.projects.len() == projects.len()
         && stored
@@ -497,14 +490,9 @@ fn is_current(
             .zip(states)
             .zip(file_keys)
             .all(|((old, new), key)| {
-                old.path == new.path
+                old.path.as_str() == new.path.as_str()
                     && old.stamp.id == new.stamp.id
                     && old.key == *key
-                    // A failed read says nothing about the content, so it is tried again.
-                    && !matches!(
-                        old.facts.status,
-                        ParseStatus::Failed(ParseFailure::Unreadable { .. })
-                    )
             })
 }
 
@@ -529,6 +517,14 @@ fn stored_files(
                 || (FileFacts::default(), Vec::new()),
                 |run| (run.facts, run.extra),
             );
+            // A failed read says nothing about the content, so the file is tried again: no key stands for it, and
+            // the next run finds the stored key different from the one it computes.
+            let key = key.filter(|_| {
+                !matches!(
+                    facts.status,
+                    ParseStatus::Failed(ParseFailure::Unreadable { .. })
+                )
+            });
             StoredFile {
                 path: state.path,
                 key,
@@ -1162,6 +1158,32 @@ mod tests {
         assert!(!third.unchanged);
         assert_eq!((third.parsed, third.reused), (1, 1));
         assert_eq!(imports_of(&third.index, "a.txt"), 1);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A file that could not be read is read again")]
+    #[test]
+    fn a_file_that_could_not_be_read_is_read_again() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "use b.txt\n"), ("b.txt", "")]);
+        let setup = Setup::default();
+        let connectors = rig.connectors();
+        let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
+        // The run lists the file, and then it is gone by the time the run reads it.
+        rig.counters.remove_on_next_open("a.txt");
+        let first = engine.refresh().unwrap();
+        let file = first.index.graph.file_id("a.txt").unwrap();
+        assert!(matches!(
+            first.index.record(file).unwrap().status,
+            ParseStatus::Failed(ParseFailure::Unreadable { .. })
+        ));
+
+        // The file is back as it was committed, so its content id and its key are the ones the first run listed.
+        write(dir.path(), "a.txt", "use b.txt\n");
+        let second = engine.refresh().unwrap();
+        assert!(!second.unchanged);
+        assert_eq!((second.parsed, second.reused), (1, 1));
+        assert_eq!(imports_of(&second.index, "a.txt"), 1);
+        assert!(engine.refresh().unwrap().unchanged);
     }
 
     #[gsttt_scenario::scenario("indexing", "A new commit is not a no-op")]

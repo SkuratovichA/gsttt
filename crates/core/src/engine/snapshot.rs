@@ -5,7 +5,6 @@
 //! header says what the index is without touching the body. The body is rkyv, validated before anything reads it,
 //! so a truncated or corrupted file counts as no snapshot instead of taking the process down.
 
-use std::collections::HashSet;
 use std::fs;
 use std::io::{Read, Seek, Write};
 use std::path::Path;
@@ -138,38 +137,63 @@ fn read_header(file: &mut fs::File) -> Option<(Header, usize)> {
     Some((parse_header(&json)?, PREFIX + length))
 }
 
-/// The snapshot at `path` whole. `None` when the file is missing, from another version, truncated or fails
-/// validation: the caller builds the index again.
-pub fn read(path: &Path) -> Option<(Header, Stored)> {
-    let (header, body) = load(path)?;
-    let stored = rkyv::from_bytes::<Stored, RkyvError>(&body).ok()?;
-    Some((header, stored))
+/// A snapshot read into memory, aligned for rkyv, so that its body is looked into where it lies instead of being
+/// copied out whole.
+#[derive(Debug)]
+pub struct Snapshot {
+    body: AlignedVec<ALIGN>,
 }
 
-/// The files of the snapshot at `path` whose keys are in `wanted` and whose facts another run may take. The rest
-/// of the body is validated but never turned into owned values.
-pub fn reusable_facts<S: std::hash::BuildHasher>(
-    path: &Path,
-    wanted: &HashSet<FactKey, S>,
-) -> Vec<(FactKey, StoredFile)> {
-    let Some((_, body)) = load(path) else {
-        return Vec::new();
-    };
-    let Ok(archived) = rkyv::access::<ArchivedStored, RkyvError>(&body) else {
-        return Vec::new();
-    };
-    archived
-        .files
-        .iter()
-        .filter_map(|file| {
-            let key = file.key.as_ref()?.to_native();
-            if !wanted.contains(&key) {
-                return None;
-            }
-            let stored = rkyv::deserialize::<StoredFile, RkyvError>(file).ok()?;
-            is_reusable(&stored.facts).then_some((key, stored))
-        })
-        .collect()
+impl Snapshot {
+    /// The snapshot at `path`. `None` when the file is missing or is not a snapshot of this version: the body of
+    /// such a file is not read.
+    pub fn open(path: &Path) -> Option<Self> {
+        let mut file = fs::File::open(path).ok()?;
+        let (_, header_end) = read_header(&mut file)?;
+        let padding = header_end.next_multiple_of(ALIGN) - header_end;
+        file.seek_relative(i64::try_from(padding).ok()?).ok()?;
+        let mut body = AlignedVec::<ALIGN>::new();
+        body.extend_from_reader(&mut file).ok()?;
+        Some(Self { body })
+    }
+
+    /// The body as rkyv archived it. Validating it walks all of it, so a caller asks once and keeps the answer.
+    /// `None` when the body is truncated or damaged: the caller builds the index again.
+    pub fn stored(&self) -> Option<&ArchivedStored> {
+        rkyv::access::<ArchivedStored, RkyvError>(&self.body).ok()
+    }
+}
+
+impl ArchivedStored {
+    /// The index, copied out of the archive. The entries of the files stay where they are.
+    pub fn to_index(&self) -> Option<Index> {
+        rkyv::deserialize::<Index, RkyvError>(&self.index).ok()
+    }
+
+    /// The entry of `path`. The entries are in path order, so a binary search finds it.
+    pub fn file(&self, path: &RepoPath) -> Option<&ArchivedStoredFile> {
+        let at = self
+            .files
+            .binary_search_by(|file| file.path.as_str().cmp(path.as_str()))
+            .ok()?;
+        self.files.get(at)
+    }
+
+    /// The stamp `path` had when the snapshot was written.
+    pub fn stamp_of(&self, path: &RepoPath) -> Option<Stamp> {
+        rkyv::deserialize::<Stamp, RkyvError>(&self.file(path)?.stamp).ok()
+    }
+
+    /// The facts and the link data filed for `path` under `key`, when another run may take them in place of a
+    /// parse. The key holds the path, so an entry under the same key is the same file with the same content.
+    pub fn reusable(&self, path: &RepoPath, key: FactKey) -> Option<(FileFacts, Vec<u8>)> {
+        let file = self.file(path)?;
+        if file.key != Some(key) {
+            return None;
+        }
+        let facts = rkyv::deserialize::<FileFacts, RkyvError>(&file.facts).ok()?;
+        is_reusable(&facts).then(|| (facts, file.extra.to_vec()))
+    }
 }
 
 /// Whether facts may be copied from one run to another. A parse that panicked or could not read the file says
@@ -183,18 +207,6 @@ pub fn is_reusable(facts: &FileFacts) -> bool {
                 | ParseFailure::Unreadable { .. }
         )
     )
-}
-
-/// The header and the body of the snapshot at `path`. The body is read straight to where rkyv can use it, and
-/// nothing is read of a file whose header is not this version's.
-fn load(path: &Path) -> Option<(Header, AlignedVec<ALIGN>)> {
-    let mut file = fs::File::open(path).ok()?;
-    let (header, header_end) = read_header(&mut file)?;
-    let padding = header_end.next_multiple_of(ALIGN) - header_end;
-    file.seek_relative(i64::try_from(padding).ok()?).ok()?;
-    let mut body = AlignedVec::<ALIGN>::new();
-    body.extend_from_reader(&mut file).ok()?;
-    Some((header, body))
 }
 
 /// The length of the header when `bytes` start like a snapshot of this format.
@@ -257,6 +269,50 @@ fn civil_from_days(days: u64) -> (u64, u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::files::blob_id;
+    use crate::fact::{Import, ImportKind};
+
+    fn entry(path: &str, key: Option<FactKey>, facts: FileFacts) -> StoredFile {
+        StoredFile {
+            path: RepoPath::normalize(path).unwrap(),
+            key,
+            stamp: Stamp {
+                id: blob_id(path.as_bytes()),
+                size: 7,
+                mtime_secs: 1_700_000_000,
+                mtime_nanos: 5,
+            },
+            facts,
+            extra: path.as_bytes().to_vec(),
+        }
+    }
+
+    /// `files`, which have to be in path order, written to a snapshot of their own and opened again. The directory
+    /// is returned so that it lasts as long as the test does.
+    fn stored_in(files: Vec<StoredFile>) -> (tempfile::TempDir, Snapshot) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snapshot.gsttt");
+        let header = Header {
+            built_by: VERSION.to_owned(),
+            built_at: now(),
+            head: None,
+            dirty: 0,
+            files: 0,
+            connectors: Vec::new(),
+            coverage: String::new(),
+        };
+        let stored = Stored {
+            index: Index::default(),
+            config: 9,
+            files,
+        };
+        write(&path, &header, &stored).unwrap();
+        (dir, Snapshot::open(&path).unwrap())
+    }
+
+    fn path(text: &str) -> RepoPath {
+        RepoPath::normalize(text).unwrap()
+    }
 
     fn prefix(magic: &[u8], format: u32, length: u32) -> Vec<u8> {
         let mut bytes = magic.to_vec();
@@ -270,6 +326,70 @@ mod tests {
         assert_eq!(rfc3339(0), "1970-01-01T00:00:00Z");
         assert_eq!(rfc3339(1_000_000_000), "2001-09-09T01:46:40Z");
         assert_eq!(rfc3339(1_709_164_800), "2024-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn an_entry_is_found_by_its_path() {
+        let facts = FileFacts::default;
+        let (_dir, snapshot) = stored_in(vec![
+            entry("a.txt", None, facts()),
+            entry("b/c.txt", None, facts()),
+            entry("z.txt", None, facts()),
+        ]);
+        let stored = snapshot.stored().unwrap();
+
+        for found in ["a.txt", "b/c.txt", "z.txt"] {
+            let entry = stored.file(&path(found)).unwrap();
+            assert_eq!(entry.path.as_str(), found);
+        }
+        for absent in ["a", "a.txt0", "b", "b/c", "zz.txt", "0.txt"] {
+            assert!(stored.file(&path(absent)).is_none(), "{absent}");
+        }
+        let expected = Stamp {
+            id: blob_id(b"b/c.txt"),
+            size: 7,
+            mtime_secs: 1_700_000_000,
+            mtime_nanos: 5,
+        };
+        assert_eq!(stored.stamp_of(&path("b/c.txt")), Some(expected));
+        assert_eq!(stored.stamp_of(&path("c.txt")), None);
+    }
+
+    #[test]
+    fn facts_are_taken_under_their_key_and_only_when_a_run_may_reuse_them() {
+        let mut parsed = FileFacts::default();
+        parsed.imports.push(Import::new("x", ImportKind::Static, 1));
+        let panicked = FileFacts::failed(ParseFailure::Panicked {
+            message: "boom".to_owned(),
+        });
+        let (_dir, snapshot) = stored_in(vec![
+            entry("a.txt", Some(1), parsed.clone()),
+            entry("b.txt", Some(2), panicked),
+            entry("c.txt", None, parsed.clone()),
+        ]);
+        let stored = snapshot.stored().unwrap();
+
+        let (facts, extra) = stored.reusable(&path("a.txt"), 1).unwrap();
+        assert_eq!((facts, extra), (parsed, b"a.txt".to_vec()));
+        // The key of another file, a failure that belongs to its run, and a file stored without a key.
+        assert!(stored.reusable(&path("a.txt"), 2).is_none());
+        assert!(stored.reusable(&path("b.txt"), 2).is_none());
+        assert!(stored.reusable(&path("c.txt"), 3).is_none());
+        assert!(stored.reusable(&path("d.txt"), 1).is_none());
+    }
+
+    #[test]
+    fn a_body_that_fails_validation_has_no_stored_view() {
+        let (dir, _) = stored_in(vec![entry("a.txt", None, FileFacts::default())]);
+        let file = dir.path().join("snapshot.gsttt");
+        let mut bytes = fs::read(&file).unwrap();
+        let end = bytes.len();
+        bytes.truncate(end - 24);
+        fs::write(&file, bytes).unwrap();
+
+        let snapshot = Snapshot::open(&file).unwrap();
+
+        assert!(snapshot.stored().is_none());
     }
 
     #[test]

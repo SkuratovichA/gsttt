@@ -136,6 +136,13 @@ impl From<RepoPath> for String {
     }
 }
 
+impl ArchivedRepoPath {
+    /// The path as text, read in place from an archive.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 impl Borrow<str> for RepoPath {
     fn borrow(&self) -> &str {
         &self.0

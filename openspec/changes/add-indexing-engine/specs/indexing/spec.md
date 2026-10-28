@@ -187,7 +187,7 @@ A snapshot that cannot be written SHALL be logged and SHALL NOT fail the run.
 - **AND** no snapshot exists afterwards
 
 ### Requirement: Unchanged trees answer from the snapshot
-A refresh whose file set, content id of every file, keys, setup fingerprint, HEAD commit and gsttt version all match the snapshot SHALL return the stored index without calling `parse`, `prepare`, `resolve` or `link`. A refresh that differs in any of them SHALL rebuild the index and store it.
+A refresh whose file set, content id of every file, keys, setup fingerprint, HEAD commit and gsttt version all match the snapshot SHALL return the stored index without calling `parse`, `prepare`, `resolve` or `link`. A refresh that differs in any of them, or that follows a read that failed, SHALL rebuild the index and store it.
 
 #### Scenario: A no-op refresh calls no connector work
 - **WHEN** the engine refreshes twice with nothing changed in between
@@ -197,6 +197,11 @@ A refresh whose file set, content id of every file, keys, setup fingerprint, HEA
 - **WHEN** a file no connector reads is edited after indexing and the engine refreshes
 - **THEN** the refresh rebuilds the index and parses no file
 - **AND** the index counts one dirty file and the snapshot reports the tree as fresh
+
+#### Scenario: A file that could not be read is read again
+- **WHEN** a file is gone by the time a run reads it and is back as it was before the next refresh
+- **THEN** the next refresh rebuilds the index and parses the file
+- **AND** the refresh after that is a no-op
 
 #### Scenario: A new commit is not a no-op
 - **WHEN** the dirty files are committed after indexing and the engine refreshes

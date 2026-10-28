@@ -88,8 +88,8 @@ pub(crate) struct Counters {
     resolved_before_prepare: AtomicUsize,
     /// The project root and the file paths of every `prepare` call.
     prepared: Mutex<Vec<(String, Vec<String>)>>,
-    /// A file, as `(path, text)`, that the next `open` saves again.
-    rewrite_on_open: Mutex<Option<(String, String)>>,
+    /// A file, as `(path, text)`, that the next `open` saves again, or removes when there is no text.
+    rewrite_on_open: Mutex<Option<(String, Option<String>)>>,
 }
 
 impl Counters {
@@ -125,7 +125,12 @@ impl Counters {
     /// Makes the next `open` of a [`Notes`] connector save `text` to `path`: an editor saving after a run listed
     /// the files and before it reads them.
     pub(crate) fn rewrite_on_next_open(&self, path: &str, text: &str) {
-        *self.rewrite_on_open.lock().unwrap() = Some((path.to_owned(), text.to_owned()));
+        *self.rewrite_on_open.lock().unwrap() = Some((path.to_owned(), Some(text.to_owned())));
+    }
+
+    /// Makes the next `open` of a [`Notes`] connector remove `path`: a file that is gone by the time it is read.
+    pub(crate) fn remove_on_next_open(&self, path: &str) {
+        *self.rewrite_on_open.lock().unwrap() = Some((path.to_owned(), None));
     }
 
     /// The `prepare` calls as `(project root, file paths)`, sorted.
@@ -157,7 +162,7 @@ pub(crate) struct Options {
 /// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. A file called `explode.txt` makes
 /// `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in
 /// every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves
-/// the file [`Counters::rewrite_on_next_open`] names.
+/// the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names.
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -194,7 +199,10 @@ impl Connector for Notes {
     ) -> Result<Vec<NotesProject>, ConnectorError> {
         let rewrite = self.counters.rewrite_on_open.lock().unwrap().take();
         if let Some((path, text)) = rewrite {
-            std::fs::write(repo.absolute(&path), text).unwrap();
+            match text {
+                Some(text) => std::fs::write(repo.absolute(&path), text).unwrap(),
+                None => std::fs::remove_file(repo.absolute(&path)).unwrap(),
+            }
         }
         let roots = repo
             .files()

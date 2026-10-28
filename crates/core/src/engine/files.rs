@@ -26,6 +26,7 @@ const HASH_LIMIT: u64 = 256 * 1024 * 1024;
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
+#[rkyv(compare(PartialEq))]
 pub struct ContentId([u8; 20]);
 
 impl ContentId {
@@ -55,6 +56,7 @@ impl ContentId {
 /// What the engine knows about a file's content without parsing it: the id, and the size and modification time
 /// that let a later run skip hashing outside git.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(compare(PartialEq))]
 pub struct Stamp {
     pub id: ContentId,
     pub size: u64,
