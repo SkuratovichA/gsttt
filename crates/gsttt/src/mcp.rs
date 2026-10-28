@@ -3,14 +3,15 @@
 use std::future::Future;
 
 use camino::Utf8PathBuf;
-use gsttt_core::engine::changes::Change;
+use gsttt_core::engine::changes::{Change, ChangesError};
+use gsttt_core::engine::refresh::IndexError;
 use gsttt_core::{Loaded, Target};
 use gsttt_mcp::{IndexSource, ServeError, SourceError};
 
 use crate::cli::Flags;
 use crate::error::CliError;
 use crate::repository::{Repository, RepositoryError};
-use crate::root;
+use crate::root::{self, RootError};
 use crate::streams::Outcome;
 
 /// Serves the repository around the directory the command started in, until the client closes its input.
@@ -62,8 +63,49 @@ impl IndexSource for Source {
 /// What a model can do about a config that does not read, which the command line leaves to the person at the terminal. The repository is opened again on every call, so a fix takes effect on the next one.
 const FIX_THE_CONFIG: &str = "Fix the config and ask again: the server reads it again on every call, so it needs no restart.";
 
+/// The root is one gsttt refuses, and the server keeps the root it was started in, so the step goes to the person who starts it.
+const START_IN_A_PROJECT: &str = "the server cannot leave the directory it was started in, so ask the person to start `gsttt mcp` inside a project, or to name one with `-C <dir>`";
+
+/// `-C` names no directory, which the server cannot change after it has started.
+const NAME_A_DIRECTORY: &str = "the server cannot change what `-C` names, so ask the person to start `gsttt mcp` with `-C` naming a directory";
+
+/// A path is read from the root of the repository, because the server has no directory a model could mean.
+const NAME_A_FILE: &str = "a path is read from the root of the repository and has to name a file inside it, for example `src/a.ts`";
+
+/// There is no history to take the changed files from, so a model names the files itself.
+const NAME_THE_FILES: &str = "name the files to ask about in `paths` and leave `changed` out";
+
+/// A `base` the history of the repository does not have, or does not share with HEAD.
+const NAME_A_BASE: &str = "`base` takes a branch, a tag or a commit of this repository that shares history with HEAD, so name one, or leave `base` out to compare with HEAD";
+
+/// What a model can do about `error`, worded for a model: it passes arguments, and it cannot change the root the server was started in. The command line prints a help line for these failures, and `None` is a failure it prints none for. No arm is a wildcard, so a new failure of the repository has to be sorted here.
+fn next_step(error: &RepositoryError) -> Option<&'static str> {
+    match error {
+        RepositoryError::Root(RootError::Directory { .. }) => Some(NAME_A_DIRECTORY),
+        RepositoryError::Root(RootError::Home { .. } | RootError::FilesystemRoot) => {
+            Some(START_IN_A_PROJECT)
+        }
+        RepositoryError::Path(_) => Some(NAME_A_FILE),
+        RepositoryError::NoGit { .. } => Some(NAME_THE_FILES),
+        RepositoryError::Index(IndexError::Changes(
+            ChangesError::Revision { .. } | ChangesError::NoMergeBase { .. },
+        )) => Some(NAME_A_BASE),
+        RepositoryError::Root(RootError::CurrentDirectory { .. } | RootError::Workspace(_))
+        | RepositoryError::Packs(_)
+        | RepositoryError::Index(
+            IndexError::Changes(ChangesError::History { .. })
+            | IndexError::Workspace(_)
+            | IndexError::Files(_)
+            | IndexError::Connector(_),
+        )
+        | RepositoryError::Config(_)
+        | RepositoryError::External(_)
+        | RepositoryError::Options(_) => None,
+    }
+}
+
 impl From<RepositoryError> for SourceError {
-    /// The failure as the sentence the command line prints, which the model reads as it is, and after a failure of the config the line that says what to do about it. No arm is a wildcard, so a new failure of the repository has to be sorted here.
+    /// The failure as the sentence the command line prints, which the model reads as it is, and after it the step to take, where the command line prints a help line for it. After a failure of the config, which the command line leaves to the person at the terminal, comes the line that says what to do about it.
     fn from(error: RepositoryError) -> Self {
         match error {
             RepositoryError::Config(_)
@@ -73,7 +115,14 @@ impl From<RepositoryError> for SourceError {
             | RepositoryError::Packs(_)
             | RepositoryError::Path(_)
             | RepositoryError::NoGit { .. }
-            | RepositoryError::Index(_) => Self::new(error.to_string()),
+            | RepositoryError::Index(_) => {
+                let step = next_step(&error);
+                let sentence = CliError::from(error).to_string();
+                Self::new(match step {
+                    Some(step) => format!("{sentence}; {step}"),
+                    None => sentence,
+                })
+            }
         }
     }
 }
@@ -85,15 +134,22 @@ mod tests {
     use std::time::Duration;
 
     use camino::Utf8PathBuf;
-    use gsttt_config::ConfigError;
+    use gsttt_config::{ConfigError, PackError};
     use gsttt_core::connector::ConnectorError;
-    use gsttt_core::engine::changes::Change;
+    use gsttt_core::engine::changes::{Change, ChangesError};
+    use gsttt_core::engine::files::FilesError;
+    use gsttt_core::engine::refresh::IndexError;
+    use gsttt_core::engine::workspace::WorkspaceError;
+    use gsttt_core::path::OutsideRoot;
     use gsttt_core::{Loaded, Target};
     use gsttt_mcp::{IndexSource, SourceError, serve_on};
+    use miette::Diagnostic;
     use serde_json::json;
     use tokio::io::{AsyncWriteExt, DuplexStream};
 
-    use super::{RepositoryError, block_on};
+    use super::{NAME_THE_FILES, RepositoryError, block_on};
+    use crate::error::CliError;
+    use crate::root::RootError;
 
     /// How long the session may take to end once its input has closed. The server gives the calls in progress a few seconds to answer, and the refresh below would take thirty.
     const ENDS_WITHIN: Duration = Duration::from_secs(10);
@@ -217,8 +273,82 @@ mod tests {
         let failure = RepositoryError::NoGit {
             root: Utf8PathBuf::from("/work/project"),
         };
-        let printed = failure.to_string();
 
-        assert_eq!(SourceError::from(failure).message, printed);
+        assert_eq!(
+            SourceError::from(failure).message,
+            format!(
+                "`--changed` needs a git repository, and `/work/project` is in none; {NAME_THE_FILES}"
+            )
+        );
+    }
+
+    /// Every failure of the repository that the config did not cause and the server can meet, one for each way the command line words it. A failure is not `Clone`, so each call builds them again.
+    fn failures() -> Vec<RepositoryError> {
+        vec![
+            RepositoryError::Root(RootError::Directory {
+                path: Utf8PathBuf::from("no/such/directory"),
+                problem: "does not exist".to_owned(),
+            }),
+            RepositoryError::Root(RootError::CurrentDirectory {
+                reason: "permission denied".to_owned(),
+            }),
+            RepositoryError::Root(RootError::Workspace(WorkspaceError::Bare {
+                path: Utf8PathBuf::from("/work/project.git"),
+            })),
+            RepositoryError::Root(RootError::Home {
+                root: Utf8PathBuf::from("/home/ann"),
+            }),
+            RepositoryError::Root(RootError::FilesystemRoot),
+            RepositoryError::Packs(PackError {
+                file: "ts.toml".to_owned(),
+                message: "ts.toml:1:1: expected a name".to_owned(),
+            }),
+            RepositoryError::Path(OutsideRoot::Leaves {
+                argument: "../elsewhere.ts".to_owned(),
+                root: Utf8PathBuf::from("/work/project"),
+            }),
+            RepositoryError::Path(OutsideRoot::IsRoot {
+                argument: ".".to_owned(),
+            }),
+            RepositoryError::NoGit {
+                root: Utf8PathBuf::from("/work/project"),
+            },
+            RepositoryError::Index(IndexError::Changes(ChangesError::History {
+                root: "/work/project".to_owned(),
+                message: "the object database is corrupt".to_owned(),
+            })),
+            RepositoryError::Index(IndexError::Changes(ChangesError::Revision {
+                revision: "no-such-branch".to_owned(),
+                message: "unknown revision".to_owned(),
+            })),
+            RepositoryError::Index(IndexError::Changes(ChangesError::NoMergeBase {
+                revision: "orphan".to_owned(),
+            })),
+            RepositoryError::Index(IndexError::Files(FilesError::List {
+                root: Utf8PathBuf::from("/work/project"),
+                message: "permission denied".to_owned(),
+            })),
+        ]
+    }
+
+    /// The failures of the config are left out: the command line leaves them to the person at the terminal and has no help line for them, while the server tells the model to fix the config and ask again.
+    #[gsttt_scenario::scenario(
+        "mcp",
+        "The server has a step wherever the command line has a help line"
+    )]
+    #[test]
+    fn the_server_has_a_step_where_the_command_line_has_a_help_line() {
+        let for_the_command_line = failures().into_iter().map(CliError::from);
+        let for_the_server = failures().into_iter().map(SourceError::from);
+
+        for (printed, told) in for_the_command_line.zip(for_the_server) {
+            let has_a_help_line = printed.help().is_some();
+            let has_a_step = told.message != printed.to_string();
+            assert_eq!(
+                has_a_help_line, has_a_step,
+                "{printed:?} is told as {:?}",
+                told.message
+            );
+        }
     }
 }

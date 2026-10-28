@@ -163,6 +163,14 @@ impl Server {
         }
     }
 
+    /// Calls `tool` with `arguments` and returns the text of its result, which fails the test unless the result has
+    /// `isError` set.
+    fn fail(&mut self, tool: &str, arguments: &Value) -> String {
+        let reply = self.call(tool, arguments);
+        assert!(reply.is_error, "{reply:?}");
+        reply.text
+    }
+
     /// Closes the server's input, waits for it to end, and returns what it wrote.
     fn finish(&mut self) -> Ended {
         drop(self.stdin.take());
@@ -245,6 +253,60 @@ fn a_refused_root_fails_the_call_not_the_server() {
     for written in [&sandbox.home, &sandbox.cache, &sandbox.state] {
         assert!(is_empty(written.path()), "{:?} was written", written.path());
     }
+}
+
+#[scenario(
+    "mcp",
+    "A failure the command line gives a help line for ends in a step for the model"
+)]
+#[test]
+fn a_failure_the_command_line_has_a_help_line_for_ends_in_a_step_for_the_model() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    let plain = sandbox.work.path().join("plain");
+    std::fs::create_dir(&plain).unwrap();
+
+    // A root that the server refuses and cannot leave, so the step asks the person.
+    let mut server = Server::start(mcp_in(&sandbox, sandbox.home.path()));
+    server.hello();
+    let refused = server.fail("coverage", &json!({}));
+    assert!(
+        refused.contains("does not index the home directory"),
+        "{refused}"
+    );
+    assert!(
+        refused.ends_with("or to name one with `-C <dir>`"),
+        "{refused}"
+    );
+    assert_eq!(server.finish().code, Some(0));
+
+    // Questions that a model can ask differently.
+    let mut server = Server::start(mcp_in(&sandbox, &repo));
+    server.hello();
+    let outside = server.fail("dependents", &json!({"path": "../elsewhere.ts"}));
+    assert!(outside.contains("is outside the repository"), "{outside}");
+    assert!(outside.ends_with("for example `src/a.ts`"), "{outside}");
+    let base = server.fail(
+        "impact",
+        &json!({"changed": true, "base": "no-such-branch"}),
+    );
+    assert!(
+        base.contains("`no-such-branch` is not a revision"),
+        "{base}"
+    );
+    assert!(
+        base.ends_with("or leave `base` out to compare with HEAD"),
+        "{base}"
+    );
+    assert_eq!(server.finish().code, Some(0));
+
+    // A directory outside git has no history to take the changed files from.
+    let mut server = Server::start(mcp_in(&sandbox, &plain));
+    server.hello();
+    let no_git = server.fail("impact", &json!({"changed": true}));
+    assert!(no_git.contains("needs a git repository"), "{no_git}");
+    assert!(no_git.ends_with("and leave `changed` out"), "{no_git}");
+    assert_eq!(server.finish().code, Some(0));
 }
 
 /// Serves a repository whose config is `broken` and calls `coverage`, which fails the call and not the server: `initialize` has succeeded before it, `tools/list` still answers after it, and the next call reads the config again, so that it answers once the config is `fixed`. Returns the failed call.

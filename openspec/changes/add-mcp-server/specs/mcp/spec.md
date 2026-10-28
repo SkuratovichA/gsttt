@@ -134,6 +134,18 @@ stdout SHALL carry only protocol messages, with logs on stderr. The server SHALL
 - **WHEN** `gsttt mcp` runs with `--json`, with `--all` or with `--no-refresh`
 - **THEN** it exits 2, stdout is empty, and stderr names the flag
 
+### Requirement: A failed call ends in a step for the model
+
+The text of a call that fails because of the repository SHALL be the sentence the CLI prints for the failure. Where the CLI prints a help line for the failure, the text SHALL end, after `; `, in a step worded for a model: it passes arguments, and it cannot change the root the server was started in.
+
+#### Scenario: A failure the command line gives a help line for ends in a step for the model
+- **WHEN** `gsttt mcp` is started in the home directory and `coverage` is called, and in a repository `dependents` is called with a path outside it and `impact` with `changed` set to true and a `base` that is no revision, and outside git `impact` is called with `changed` set to true
+- **THEN** each result has `isError` set and its text is the sentence of the command line for the failure, `; ` and a step: to ask the person to start the server elsewhere, or the argument to pass instead
+
+#### Scenario: The server has a step wherever the command line has a help line
+- **WHEN** the repository fails in a way the config did not cause
+- **THEN** the text of the result carries a step after the sentence of the command line exactly when the command line prints a help line for that failure
+
 ### Requirement: Trust stays with the person
 
 The server SHALL NOT grant trust to an `[[external]]` connector of the config, and SHALL NOT ask for it. An external that the person has not trusted in the repository SHALL NOT run when the server refreshes, and the server SHALL go on answering without it.

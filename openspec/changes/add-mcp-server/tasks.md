@@ -20,6 +20,7 @@
 - [x] 2.5 Merge the CLI change at `3fddb7d` into this change, so that the source of the server opens the `Repository` as that merge leaves it
 - [x] 2.6 Tell the model to fix a config that does not read and ask again, and keep an `[[external]]` connector that no one trusted from starting when the server refreshes
 - [x] 2.7 List `mcp` among the commands of the `cli` capability, in a delta of the requirement `Commands`
+- [x] 2.8 End the text of a tool error in a step for a model wherever the command line prints a help line for the failure, and keep the two in step with a test
 
 ## 3. Gates
 
