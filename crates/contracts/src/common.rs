@@ -123,19 +123,3 @@ impl Errors {
         }
     }
 }
-
-/// A hash of the strings that changes when any of them does, for the salt of a project whose output depends on its
-/// options. FNV-1a, because the standard hasher is free to change between releases and a salt is stored.
-pub(crate) fn salt_of(parts: &[&str]) -> u64 {
-    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    let mut hash = OFFSET;
-    for part in parts {
-        // 0xff cannot occur in UTF-8, so `["ab", "c"]` and `["a", "bc"]` differ.
-        for byte in part.bytes().chain(std::iter::once(0xff)) {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(PRIME);
-        }
-    }
-    hash
-}

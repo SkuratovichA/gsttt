@@ -1,7 +1,9 @@
 //! Which files each connector claims, and what a broken document does to the run.
 
+use gsttt_contracts::{OPENAPI, SQL};
+use gsttt_core::connector::DynConnector;
 use gsttt_core::fact::{ParseFailure, ParseStatus};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::support::{Run, all_modules, connectors, fixture};
 
@@ -97,4 +99,24 @@ fn a_broken_document_fails_alone() {
         vec!["declares env DATABASE_URL @1"]
     );
     insta::assert_json_snapshot!(run.snapshot());
+}
+
+/// The options a project is opened with are already part of the key of its facts, so no project adds a salt for
+/// them: a second hash of the same options would only be one more thing to keep in step.
+#[test]
+fn no_project_adds_a_salt_to_the_fact_key() {
+    let repo = fixture("all_formats");
+    let configured: [(&'static dyn DynConnector, Value); 2] = [
+        (&OPENAPI, json!({ "files": ["config/*.yaml"] })),
+        (&SQL, json!({ "dialect": "mysql" })),
+    ];
+    let salts: Vec<u64> = connectors()
+        .map(|connector| (connector, Value::Null))
+        .into_iter()
+        .chain(configured)
+        .flat_map(|(connector, options)| connector.open(&repo, &options, &[]).unwrap())
+        .map(|project| project.salt())
+        .collect();
+    assert!(salts.len() >= 8, "{salts:?}");
+    assert!(salts.iter().all(|salt| *salt == 0), "{salts:?}");
 }

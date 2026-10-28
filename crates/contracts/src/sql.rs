@@ -28,7 +28,7 @@ use sqlparser::dialect::{Dialect, PostgreSqlDialect, dialect_from_str};
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
-use crate::common::{Errors, SyntaxError, provide, salt_of, site, syntax_failure};
+use crate::common::{Errors, SyntaxError, provide, site, syntax_failure};
 
 const VIA: &str = "sql";
 
@@ -146,7 +146,8 @@ impl Project for SqlProject {
     }
 
     fn salt(&self) -> u64 {
-        salt_of(&[&self.dialect])
+        // The dialect is an option, and the options are part of the key of every fact.
+        0
     }
 
     fn provides(&self) -> Vec<Provide> {

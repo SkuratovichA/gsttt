@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::common::{
-    SyntaxError, any_claimed, http_site, provide, resolve_relative, salt_of, syntax_failure,
+    SyntaxError, any_claimed, http_site, provide, resolve_relative, syntax_failure,
 };
 use crate::tree::{Value, parse_json, parse_yaml};
 
@@ -64,7 +64,6 @@ pub struct OpenApiProject {
     globs: GlobSet,
     /// The files that `$ref`s of the documents reach, transitively.
     fragments: BTreeSet<String>,
-    salt: u64,
 }
 
 /// What a file hands to the link step.
@@ -132,12 +131,10 @@ impl Connector for OpenApi {
         if documents.is_empty() {
             return Ok(Vec::new());
         }
-        let patterns: Vec<&str> = options.files.iter().map(String::as_str).collect();
         Ok(vec![OpenApiProject {
             repo: repo.clone(),
             globs,
             fragments: fragments_of(repo, &documents),
-            salt: salt_of(&patterns),
         }])
     }
 }
@@ -208,7 +205,8 @@ impl Project for OpenApiProject {
     }
 
     fn salt(&self) -> u64 {
-        self.salt
+        // The `files` patterns are an option, and the options are part of the key of every fact.
+        0
     }
 
     fn provides(&self) -> Vec<Provide> {

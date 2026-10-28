@@ -23,3 +23,4 @@
 
 - [x] 4.1 Drop the dependencies nothing uses (`gsttt-config`, `tempfile`, `thiserror`) and keep `serde_json` for the tests only
 - [x] 4.2 `SyntaxError` lives in `common.rs` with the other helpers the connectors share
+- [x] 4.3 Every project returns salt 0 and `salt_of` is gone, because the options are part of the fact key already
