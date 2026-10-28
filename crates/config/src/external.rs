@@ -24,6 +24,7 @@ use serde_json::{Map, Value, json};
 use xxhash_rust::xxh3::Xxh3;
 
 use crate::fingerprint::canonical;
+use crate::text::cut;
 use process::{Failure, Launch, Process};
 pub use protocol::PROTOCOL;
 use protocol::WireResolution;
@@ -46,8 +47,12 @@ impl External {
     /// How long the process gets to answer one request.
     pub const TIMEOUT: Duration = Duration::from_secs(10);
 
-    /// The connector for `setup`. An empty command, a glob that does not parse, a name that is not an environment variable or options that are not a table of named values is an error that names the connector.
+    /// The connector for `setup`. A name that is not a name, an empty command, a glob that does not parse, a name in `env` that is not an environment variable or options that are not a table of named values is an error that names the connector.
     pub fn new(setup: &ExternalSetup) -> Result<Self, ConnectorError> {
+        check_name(&setup.name).map_err(|error| ConnectorError::Options {
+            connector: error.shown().to_owned(),
+            message: format!("the name {error}"),
+        })?;
         let invalid = |message: String| ConnectorError::Options {
             connector: setup.name.clone(),
             message,
@@ -271,6 +276,42 @@ pub(crate) fn glob_set(patterns: &[String]) -> Result<GlobSet, GlobError> {
         set.add(Glob::new(pattern).map_err(GlobError::new)?);
     }
     set.build().map_err(GlobError::new)
+}
+
+/// The longest name an external may have. The name is kept for the life of the process (see [`intern`]), so its length is bounded.
+const MAX_NAME: usize = 64;
+
+/// A name that an external cannot have.
+#[derive(Debug, thiserror::Error)]
+#[error("must be 1 to {} letters, digits, `-` or `_`", MAX_NAME)]
+pub(crate) struct NameError {
+    shown: String,
+}
+
+impl NameError {
+    /// The name as far as a message shows it: the start of it, without the characters that move a terminal, because it can be as long as the config likes.
+    pub(crate) fn shown(&self) -> &str {
+        &self.shown
+    }
+}
+
+/// The name of an external is 1 to [`MAX_NAME`] letters, digits, `-` and `_`: usable as the name of a module of the config and as the name of a connector in the log. The one check for the config that declares it and for the code that builds the connector.
+pub(crate) fn check_name(name: &str) -> Result<(), NameError> {
+    let usable = (1..=MAX_NAME).contains(&name.len())
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    if usable {
+        return Ok(());
+    }
+    let start = name
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(MAX_NAME + 1)
+        .collect();
+    Err(NameError {
+        shown: cut(start, MAX_NAME),
+    })
 }
 
 /// A name in `env` that no environment variable can have.

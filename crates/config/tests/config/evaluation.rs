@@ -361,7 +361,15 @@ fn an_external_is_checked_when_it_is_declared() {
         ))
     };
     let named = declare("name = \"bad name\", cmd = { \"x\" }, files = { \"*.x\" }");
-    assert!(named.contains("must be letters, digits"), "{named}");
+    assert!(
+        named.contains("the name `bad name` must be 1 to 64 letters, digits"),
+        "{named}"
+    );
+    let long = declare(&format!(
+        "name = \"{}\", cmd = {{ \"x\" }}, files = {{ \"*.x\" }}",
+        "x".repeat(65)
+    ));
+    assert!(long.contains("must be 1 to 64 letters, digits"), "{long}");
     let module = declare("name = \"ts\", cmd = { \"x\" }, files = { \"*.x\" }");
     assert!(module.contains("already a module of gsttt"), "{module}");
     let command = declare("name = \"k\", cmd = {}, files = { \"*.x\" }");

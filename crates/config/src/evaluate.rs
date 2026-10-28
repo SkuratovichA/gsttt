@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::ConfigError;
-use crate::external::{check_env, glob_set, options_object};
+use crate::external::{check_env, check_name, glob_set, options_object};
 use crate::sandbox::{Sandbox, raise, text_chunk};
 use crate::source::read_source;
 use crate::value::to_json;
@@ -321,16 +321,8 @@ fn external(lua: &Lua, state: &Evaluation, table: &Value) -> mlua::Result<()> {
 
 /// What serde cannot check: the name is usable as a module name, the command, the globs, the environment names and the options make sense. The options are left as the object they mean: a table without keys is read as an empty list, and the setup of an external without options must not depend on how the config wrote it.
 fn check_external(state: &Evaluation, external: &mut ExternalSetup) -> Result<(), String> {
+    check_name(&external.name).map_err(|error| format!("the name `{}` {error}", error.shown()))?;
     let name = &external.name;
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|letter| letter.is_ascii_alphanumeric() || letter == '-' || letter == '_')
-    {
-        return Err(format!(
-            "the name `{name}` must be letters, digits, `-` and `_`"
-        ));
-    }
     if state.modules.contains(name) {
         return Err(format!("the name `{name}` is already a module of gsttt"));
     }

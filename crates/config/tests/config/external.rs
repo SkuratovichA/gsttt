@@ -884,6 +884,48 @@ fn an_environment_name_must_be_the_name_of_a_variable() {
     }
 }
 
+#[gsttt_scenario::scenario("config", "A name is bounded")]
+#[test]
+fn a_name_is_one_to_sixty_four_letters_digits_dashes_and_underscores() {
+    let named = |name: &str| ExternalSetup {
+        name: name.to_owned(),
+        ..setup(&["x"])
+    };
+    for name in ["k", "a-b_C9", &"x".repeat(64)] {
+        External::new(&named(name)).unwrap_or_else(|error| panic!("{name}: {error}"));
+    }
+    for name in [
+        "",
+        "bad name",
+        "dotted.name",
+        "naïve",
+        "tab\t",
+        &"x".repeat(65),
+    ] {
+        let error = External::new(&named(name)).unwrap_err().to_string();
+        assert!(
+            error.starts_with("options of `")
+                && error.contains("the name must be 1 to 64 letters, digits, `-` or `_`"),
+            "{name:?}: {error}"
+        );
+    }
+    // A name can be as long as the config likes, and the message holds only the start of it.
+    let error = External::new(&named(&"x\u{1b}".repeat(500_000)))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.len() < 200 && !error.contains('\u{1b}'),
+        "{} bytes: {error:?}",
+        error.len()
+    );
+}
+
+#[test]
+fn a_name_is_kept_once_however_often_the_connector_is_built() {
+    let name = || Erased(External::new(&setup(&["x"])).unwrap()).meta().name;
+    assert!(std::ptr::eq(name(), name()));
+}
+
 #[test]
 fn options_must_be_a_table_of_named_values() {
     for options in [json!([1, 2]), json!("x"), json!(3), json!(true)] {

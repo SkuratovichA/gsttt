@@ -174,6 +174,13 @@ A `g.external` SHALL take `provides`, the contract kinds the connector finds wit
 - **WHEN** the command, the version, the listed variables, the provides or the options of an external change
 - **THEN** the cache key of its files changes, and it does not change when only the order of the keys of the options does
 
+### Requirement: External name
+The name of an external SHALL be 1 to 64 letters, digits, `-` and `_`. A config that declares an external and a caller that builds its connector SHALL both be refused a name that is not, with a message that holds at most the start of the name.
+
+#### Scenario: A name is bounded
+- **WHEN** an external is given a name that is empty, longer than 64 characters or holds anything but letters, digits, `-` and `_`
+- **THEN** it is refused with a message that names the external and the rule, and is short however long the name was
+
 ### Requirement: External environment
 An external's process SHALL get only the variables `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE` and `TMPDIR` of gsttt's own environment, when gsttt has them, and the ones named in the `env` of its declaration; the rest of the environment, where secrets live, SHALL stay out of its reach.
 
