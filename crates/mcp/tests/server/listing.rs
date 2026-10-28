@@ -1,7 +1,8 @@
 //! The tools the server lists.
 
+use gsttt_core::testing::json::descriptions;
 use gsttt_scenario::scenario;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::fake::Fake;
 use crate::session::Session;
@@ -39,21 +40,6 @@ async fn tools_list_names_the_seven_tools_each_with_a_description_and_a_schema()
             "`{}` has no input schema",
             tool.name
         );
-    }
-}
-
-/// Every text under `value` that is a description.
-fn descriptions(value: &Value) -> Vec<&str> {
-    match value {
-        Value::Object(members) => members
-            .iter()
-            .flat_map(|(name, member)| match member {
-                Value::String(text) if name == "description" => vec![text.as_str()],
-                _ => descriptions(member),
-            })
-            .collect(),
-        Value::Array(items) => items.iter().flat_map(descriptions).collect(),
-        _ => Vec::new(),
     }
 }
 

@@ -19,6 +19,8 @@ use crate::graph::{ContractSite, Edge, GraphBuilder};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
 use crate::{FileId, ProjectId, RepoPath};
 
+pub mod json;
+
 /// The connector that reads a file unless a test says otherwise.
 const DEFAULT_CONNECTOR: &str = "ts";
 

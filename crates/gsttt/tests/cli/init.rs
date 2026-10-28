@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use gsttt_core::testing::json::descriptions;
 use gsttt_scenario::scenario;
 use serde_json::Value;
 
@@ -159,21 +160,6 @@ fn no_description_in_the_schemas_breaks_inside_a_paragraph() {
         broken.len(),
         broken.join("\n")
     );
-}
-
-/// Every text under `value` that is a description. The walk of `crates/mcp/tests/server/listing.rs` is the same, and a test of another crate cannot import it.
-fn descriptions(value: &Value) -> Vec<&str> {
-    match value {
-        Value::Object(members) => members
-            .iter()
-            .flat_map(|(name, member)| match member {
-                Value::String(text) if name == "description" => vec![text.as_str()],
-                _ => descriptions(member),
-            })
-            .collect(),
-        Value::Array(items) => items.iter().flat_map(descriptions).collect(),
-        _ => Vec::new(),
-    }
 }
 
 /// Whether a line of text sits right under another one, outside a code fence, and opens no list item, heading, table row, quote or fence: the paragraph above it goes on in a new line.
