@@ -59,10 +59,22 @@ impl IndexSource for Source {
     }
 }
 
+/// What a model can do about a config that does not read, which the command line leaves to the person at the terminal. The repository is opened again on every call, so a fix takes effect on the next one.
+const FIX_THE_CONFIG: &str = "Fix the config and ask again: the server reads it again on every call, so it needs no restart.";
+
 impl From<RepositoryError> for SourceError {
-    /// The failure as the sentence the command line prints, which the model reads as it is.
+    /// The failure as the sentence the command line prints, which the model reads as it is, and after a failure of the config the line that says what to do about it. No arm is a wildcard, so a new failure of the repository has to be sorted here.
     fn from(error: RepositoryError) -> Self {
-        Self::new(error.to_string())
+        match error {
+            RepositoryError::Config(_)
+            | RepositoryError::External(_)
+            | RepositoryError::Options(_) => Self::new(format!("{error}\n{FIX_THE_CONFIG}")),
+            RepositoryError::Root(_)
+            | RepositoryError::Packs(_)
+            | RepositoryError::Path(_)
+            | RepositoryError::NoGit { .. }
+            | RepositoryError::Index(_) => Self::new(error.to_string()),
+        }
     }
 }
 
@@ -72,13 +84,16 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    use camino::Utf8PathBuf;
+    use gsttt_config::ConfigError;
+    use gsttt_core::connector::ConnectorError;
     use gsttt_core::engine::changes::Change;
     use gsttt_core::{Loaded, Target};
     use gsttt_mcp::{IndexSource, SourceError, serve_on};
     use serde_json::json;
     use tokio::io::{AsyncWriteExt, DuplexStream};
 
-    use super::block_on;
+    use super::{RepositoryError, block_on};
 
     /// How long the session may take to end once its input has closed. The server gives the calls in progress a few seconds to answer, and the refresh below would take thirty.
     const ENDS_WITHIN: Duration = Duration::from_secs(10);
@@ -166,5 +181,44 @@ mod tests {
             .expect("the input closed while the refresh was running");
         let result = result.expect("the session ended within ten seconds of its input closing");
         assert!(result.is_ok(), "{result:?}");
+    }
+
+    /// What a model reads after a failure of the config, which the command line leaves to the person at the terminal.
+    const FIX_THE_CONFIG: &str = "Fix the config and ask again: the server reads it again on every call, so it needs no restart.";
+
+    /// A module that cannot read an option of its own.
+    fn unreadable_option() -> ConnectorError {
+        ConnectorError::Options {
+            connector: "ts".to_owned(),
+            message: "`no_such_option`: unknown field `no_such_option`".to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_failure_of_the_config_ends_in_what_to_do() {
+        // The evaluation of the config checks an `[[external]]` the way `External::new` does, so no file provokes the third failure and it is built here.
+        let failures = [
+            RepositoryError::Config(ConfigError::Invalid(
+                ".gsttt/config.toml:3:4: unclosed table, expected `]`".to_owned(),
+            )),
+            RepositoryError::Options(vec![unreadable_option()]),
+            RepositoryError::External(unreadable_option()),
+        ];
+
+        for failure in failures {
+            let printed = failure.to_string();
+            let message = SourceError::from(failure).message;
+            assert_eq!(message, format!("{printed}\n{FIX_THE_CONFIG}"));
+        }
+    }
+
+    #[test]
+    fn a_failure_the_config_did_not_cause_keeps_the_sentence_of_the_command_line() {
+        let failure = RepositoryError::NoGit {
+            root: Utf8PathBuf::from("/work/project"),
+        };
+        let printed = failure.to_string();
+
+        assert_eq!(SourceError::from(failure).message, printed);
     }
 }

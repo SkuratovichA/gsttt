@@ -70,7 +70,7 @@ async fn every_tool_that_takes_a_path_refuses_one_outside_the_root() {
 #[scenario("mcp", "A failed refresh is a tool error")]
 #[tokio::test]
 async fn a_failed_refresh_is_a_tool_error_that_holds_the_message() {
-    let message = "the index could not be built: `.gsttt/init.lua` line 3 does not parse; fix it and ask again";
+    let message = "the index could not be built: `.gsttt/config.toml` line 3 does not parse; fix it and ask again";
     let source = Fake::small().failing(message);
     let session = Session::start(source.clone()).await;
 

@@ -112,7 +112,7 @@ stdout SHALL carry only protocol messages, with logs on stderr. The server SHALL
 
 ### Requirement: The binary serves its repository
 
-`gsttt mcp` SHALL serve the repository found from the directory it was started in, as the CLI finds it, opening it again on every call, so that edits to the config and the trust store take effect without a restart. A directory the CLI refuses SHALL fail the call, not the server. `gsttt mcp` SHALL refuse `--json`, `--all` and `--no-refresh` as a usage error.
+`gsttt mcp` SHALL serve the repository found from the directory it was started in, as the CLI finds it, opening it again on every call, so that edits to the config and the trust store take effect without a restart. A directory or a config the CLI refuses SHALL fail the call, not the server, and the text of a refused config SHALL say to fix it and ask again. `gsttt mcp` SHALL refuse `--json`, `--all` and `--no-refresh` as a usage error.
 
 #### Scenario: gsttt mcp answers about its repository
 - **WHEN** `gsttt mcp` is started in a repository and `dependents` is called for a file that another file imports
@@ -122,6 +122,22 @@ stdout SHALL carry only protocol messages, with logs on stderr. The server SHALL
 - **WHEN** `gsttt mcp` is started in the home directory and `coverage` is called
 - **THEN** `initialize` succeeded, the result has `isError` set and says gsttt does not index the home directory, and the server keeps running
 
+#### Scenario: A config that does not read fails the call, not the server
+- **WHEN** `gsttt mcp` is started in a repository whose `.gsttt/config.toml` has a syntax error on line 3, `coverage` is called, the file is fixed, and `coverage` is called again
+- **THEN** `initialize` succeeded, the first result has `isError` set and its text names `.gsttt/config.toml:3` and says to fix the config and ask again, `tools/list` still answers, and the second result is the coverage report
+
+#### Scenario: Options a module cannot read fail the call, not the server
+- **WHEN** `gsttt mcp` is started in a repository whose `.gsttt/config.toml` gives `ts` an option it does not have, `coverage` is called, the file is fixed, and `coverage` is called again
+- **THEN** the first result has `isError` set and its text names `ts` and the option and says to fix the config and ask again, and the second result is the coverage report
+
 #### Scenario: gsttt mcp refuses the flags of the command line
 - **WHEN** `gsttt mcp` runs with `--json`, with `--all` or with `--no-refresh`
 - **THEN** it exits 2, stdout is empty, and stderr names the flag
+
+### Requirement: Trust stays with the person
+
+The server SHALL NOT grant trust to an `[[external]]` connector of the config, and SHALL NOT ask for it. An external that the person has not trusted in the repository SHALL NOT run when the server refreshes, and the server SHALL go on answering without it.
+
+#### Scenario: An untrusted external is not started by the server
+- **WHEN** `gsttt mcp` serves a repository that declares an external connector no one has trusted, and `dependents` is called for a file that another file imports
+- **THEN** the result is not an error and lists the importing file, the connector's program did not run, and nothing was written to the trust store

@@ -7,10 +7,11 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use gsttt_config::CONFIG_PATH;
 use gsttt_scenario::scenario;
 use serde_json::{Value, json};
 
-use super::support::{Sandbox, is_empty};
+use super::support::{Sandbox, is_empty, write};
 
 /// How long a test waits for the server to say or do something it should do at once, before it calls the server
 /// stuck. Every read is bounded by it, so that a hung server fails the test and does not hang the run.
@@ -242,6 +243,62 @@ fn a_refused_root_fails_the_call_not_the_server() {
     }
 }
 
+/// Serves a repository whose config is `broken` and calls `coverage`, which fails the call and not the server: `initialize` has succeeded before it, `tools/list` still answers after it, and the next call reads the config again, so that it answers once the config is `fixed`. Returns the failed call.
+fn fails_until_fixed(broken: &str, fixed: &str) -> Reply {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(&repo, CONFIG_PATH, broken);
+    let mut server = Server::start(mcp_in(&sandbox, &repo));
+    let hello = server.hello();
+    assert!(
+        hello.get("result").is_some(),
+        "initialize succeeded: {hello}"
+    );
+
+    let failed = server.call("coverage", &json!({}));
+
+    assert!(failed.is_error, "{failed:?}");
+    assert!(
+        failed.text.contains("Fix the config and ask again"),
+        "{}",
+        failed.text
+    );
+    let listed = server.request("tools/list", &json!({}));
+    assert!(listed["result"]["tools"].is_array(), "{listed}");
+    write(&repo, CONFIG_PATH, fixed);
+    let answered = server.call("coverage", &json!({}));
+    assert!(!answered.is_error, "{answered:?}");
+    assert!(
+        answered.text.contains("ts read 3 of 3 files"),
+        "{}",
+        answered.text
+    );
+    let ended = server.finish();
+    assert_eq!(ended.code, Some(0), "{ended:?}");
+    failed
+}
+
+#[scenario("mcp", "A config that does not read fails the call, not the server")]
+#[test]
+fn a_config_that_does_not_read_fails_the_call_not_the_server() {
+    let failed = fails_until_fixed("detect = true\n\n[ts\n", "detect = true\n\n[ts]\n");
+
+    assert!(
+        failed.text.contains(".gsttt/config.toml:3:"),
+        "{}",
+        failed.text
+    );
+}
+
+#[scenario("mcp", "Options a module cannot read fail the call, not the server")]
+#[test]
+fn options_a_module_cannot_read_fail_the_call_not_the_server() {
+    let failed = fails_until_fixed("[ts]\nno_such_option = true\n", "[ts]\n");
+
+    assert!(failed.text.contains("`ts`"), "{}", failed.text);
+    assert!(failed.text.contains("no_such_option"), "{}", failed.text);
+}
+
 #[scenario("mcp", "stdout carries only the protocol")]
 #[test]
 fn stdout_carries_only_the_protocol() {
@@ -295,4 +352,53 @@ fn gsttt_mcp_exits_0_when_its_input_closes() {
     let ended = server.finish();
 
     assert_eq!(ended.code, Some(0), "{ended:?}");
+}
+
+#[scenario("mcp", "An untrusted external is not started by the server")]
+#[test]
+fn an_untrusted_external_is_not_started_by_the_server() {
+    let sandbox = Sandbox::new();
+    let fake = sandbox.fake_external("repo");
+    let mut server = Server::start(mcp_in(&sandbox, &fake.root));
+    server.hello();
+
+    let reply = server.call("dependents", &json!({"path": "lib/util.ts"}));
+
+    assert!(!reply.is_error, "{reply:?}");
+    assert!(reply.text.contains("app/a.ts"), "{}", reply.text);
+    assert!(!fake.marker.exists(), "the server started the connector");
+    assert!(
+        is_empty(sandbox.state.path()),
+        "the trust store was written"
+    );
+    // The server goes on answering, with the files of the connector among those no connector read, and it never asked.
+    let coverage = server.call("coverage", &json!({}));
+    assert!(!coverage.is_error, "{coverage:?}");
+    assert!(coverage.text.contains(".fake  1 file"), "{}", coverage.text);
+    let ended = server.finish();
+    assert_eq!(ended.code, Some(0), "{ended:?}");
+    assert!(!ended.stderr.contains("[y/N]"), "{}", ended.stderr);
+}
+
+/// The control of the scenario above. A marker that never appears says nothing when the connector cannot start at all, so the same repository is trusted at a terminal while the server runs, and the next call starts the connector.
+#[test]
+fn trust_given_at_a_terminal_reaches_a_running_server() {
+    let sandbox = Sandbox::new();
+    let fake = sandbox.fake_external("repo");
+    let mut server = Server::start(mcp_in(&sandbox, &fake.root));
+    server.hello();
+    let before = server.call("coverage", &json!({}));
+    assert!(!before.is_error, "{before:?}");
+    assert!(!fake.marker.exists(), "the server started the connector");
+
+    let granted = sandbox.run_typing(&fake.root, &["config", "trust"], "y\n");
+    assert_eq!(granted.code, Some(0), "{granted:?}");
+    let after = server.call("coverage", &json!({}));
+
+    assert!(!after.is_error, "{after:?}");
+    assert!(
+        fake.marker.exists(),
+        "the trusted connector was not started"
+    );
+    assert_eq!(server.finish().code, Some(0));
 }
