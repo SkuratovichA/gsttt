@@ -1467,6 +1467,69 @@ fn a_title_that_the_replaced_block_holds_twice_is_named_once() {
     assert!(outcome.output.contains(&failure), "{}", outcome.output);
 }
 
+#[gsttt_scenario::scenario("spec-gate", "A rename onto a name that stands fails")]
+#[test]
+fn a_rename_onto_a_name_that_stands_fails() {
+    let tree = Tree::new();
+    // `openspec archive` stops at `RENAMED failed ... target already exists`, so the rename is not applied: both requirements stand with their scenarios and the change waits.
+    let renames = delta("RENAMED", &[renaming("Matching", "Lookup")]);
+    tree.spec(
+        "queries",
+        &main_spec(&[
+            requirement("Matching", &["Exact match"]),
+            requirement("Lookup", &["Prefix match"]),
+        ]),
+    )
+    .change("rename", TICKED, &[("queries", &renames)])
+    .source("tests/exact.rs", &proof("queries", "Exact match"))
+    .source("tests/prefix.rs", &proof("queries", "Prefix match"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/rename/specs/queries/spec.md:{}: change `rename` renames requirement `Matching` of capability `queries` to `Lookup`, which already stands, and `openspec archive` refuses such a rename",
+        line_of(&renames, "FROM:")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    assert!(
+        outcome
+            .output
+            .contains("queries: 2 proven, 0 pending, 0 failing"),
+        "both requirements keep their scenarios: {}",
+        outcome.output
+    );
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "");
+}
+
+#[test]
+fn a_rename_onto_a_name_that_an_earlier_change_adds_fails() {
+    let tree = Tree::new();
+    // `a-adds` is archived first, so `Lookup` stands when `b-renames` renames `Matching` to it. Only the renamer is held back.
+    let renames = delta("RENAMED", &[renaming("Matching", "Lookup")]);
+    tree.spec(
+        "queries",
+        &main_spec(&[requirement("Matching", &["Exact match"])]),
+    )
+    .change(
+        "a-adds",
+        TICKED,
+        &[(
+            "queries",
+            &delta("ADDED", &[requirement("Lookup", &["Prefix match"])]),
+        )],
+    )
+    .change("b-renames", TICKED, &[("queries", &renames)])
+    .source("tests/exact.rs", &proof("queries", "Exact match"))
+    .source("tests/prefix.rs", &proof("queries", "Prefix match"));
+    let outcome = tree.gate();
+    assert!(!outcome.passed, "{}", outcome.output);
+    let failure = format!(
+        "openspec/changes/b-renames/specs/queries/spec.md:{}: change `b-renames` renames requirement `Matching` of capability `queries` to `Lookup`, which already stands, and `openspec archive` refuses such a rename",
+        line_of(&renames, "FROM:")
+    );
+    assert!(outcome.output.contains(&failure), "{}", outcome.output);
+    assert_eq!(tree.try_run(Mode::Ready).unwrap().output, "a-adds\n");
+}
+
 /// What `openspec archive` wrote as the purpose of `indexing` when it archived `add-indexing-engine` with the `## Purpose` taken out of its delta.
 const PLACEHOLDER: &str =
     "TBD - created by archiving change add-indexing-engine. Update Purpose after archive.";

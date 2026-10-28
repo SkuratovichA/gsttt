@@ -1,11 +1,11 @@
 //! The rules of the gate.
 //!
-//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them, a finished change before an unfinished one where that order leaves a choice, and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming it. The fold also shows what `openspec archive` would refuse: a modified requirement replaces the whole block, and the archive stops at one that lacks a scenario of the block it replaces, so the gate fails that change before the archive does and leaves its block out of the fold, where the requirement it would replace stands.
+//! A scenario needs a proof when the specs will have it once the open changes are archived. The gate finds those scenarios by folding: it starts from the requirements of the main specs and applies the deltas of the open changes to them, the changes in the order that `--ready` would archive them, a finished change before an unfinished one where that order leaves a choice, and each delta the way `openspec archive` applies it. Reading the specs that way keeps a modified scenario from counting twice, and makes the tests follow a change as it lands: once a change removes a scenario, whether the main specs or an open change archived before it wrote the scenario, no test may keep claiming it. The fold also shows what `openspec archive` would refuse: a modified requirement replaces the whole block, and the archive stops at one that lacks a scenario of the block it replaces, so the gate fails that change before the archive does and leaves its block out of the fold, where the requirement it would replace stands. A rename onto a name that stands is refused the same way and not applied.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use gsttt_spec::{Change, Delta, OpenSpec, Requirement, Scenario};
+use gsttt_spec::{Change, Delta, OpenSpec, Renamed, Requirement, Scenario};
 
 use super::proofs::{Claim, Marks, Site};
 use super::purpose;
@@ -275,7 +275,7 @@ struct Effective {
     entries: Vec<Entry>,
     /// The scenarios that open changes take away, each with the last change that does.
     dropped: BTreeMap<Key, Dropped>,
-    /// The modified requirements that `openspec archive` would refuse, because they lack a scenario of the requirement they replace.
+    /// The modified requirements that lack a scenario of the requirement they replace and the renames onto a name that stands, which `openspec archive` would refuse.
     refusals: Vec<Failure>,
     /// The requirements of the main specs.
     main: BTreeSet<Key>,
@@ -306,11 +306,15 @@ impl<'a> Fold<'a> {
             requirement,
         };
         for renamed in &delta.renamed {
-            if let Some(moved) = self.standing.remove(&key(&renamed.from)) {
-                self.standing
-                    .entry(key(&renamed.to))
-                    .or_default()
-                    .extend(moved);
+            let (from, to) = (key(&renamed.from), key(&renamed.to));
+            if !self.standing.contains_key(&from) {
+                continue;
+            }
+            // The archive stops at a rename onto a name that stands, so the rename is not applied and both requirements stay as they are.
+            if self.standing.contains_key(&to) {
+                self.refusals.push(rename_refusal(change, delta, renamed));
+            } else if let Some(moved) = self.standing.remove(&from) {
+                self.standing.insert(to, moved);
             }
         }
         for removed in &delta.removed {
@@ -621,6 +625,21 @@ fn refusal(change: &Change, delta: &Delta, modified: &Requirement, missing: &[&s
         message: format!(
             "change `{}` modifies requirement `{}` of capability `{}` and leaves out {noun} {titles} of the requirement it replaces, and `openspec archive` refuses such a block",
             change.name, modified.name, delta.capability
+        ),
+        changes: vec![change.name.clone()],
+    }
+}
+
+/// A rename onto a name that stands, which `openspec archive` refuses: the change waits until it renames to a name that nothing has.
+fn rename_refusal(change: &Change, delta: &Delta, renamed: &Renamed) -> Failure {
+    Failure {
+        site: Site {
+            file: delta.file.clone(),
+            line: renamed.line,
+        },
+        message: format!(
+            "change `{}` renames requirement `{}` of capability `{}` to `{}`, which already stands, and `openspec archive` refuses such a rename",
+            change.name, renamed.from, delta.capability, renamed.to
         ),
         changes: vec![change.name.clone()],
     }

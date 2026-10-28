@@ -224,3 +224,11 @@ The gate SHALL fail an open change whose modified requirement lacks a scenario o
 #### Scenario: A title that only a refused block holds is claimed for nothing
 - **WHEN** an open change modifies a requirement so that it lacks a scenario of the requirement it replaces, and a test claims a scenario that only the new block holds
 - **THEN** the gate exits non-zero and names the test, saying that no spec or open change has the scenario
+
+### Requirement: Renames onto a name that stands
+The gate SHALL fail an open change that renames a requirement to a name that the main specs or an earlier change already give a requirement, because `openspec archive` refuses such a rename, and `--ready` SHALL NOT print the change. The failure names the change, the capability and both names. The rename is not applied: both requirements stand with their scenarios.
+
+#### Scenario: A rename onto a name that stands fails
+- **WHEN** an open change renames a requirement of `openspec/specs/` to the name of another requirement there
+- **THEN** the gate exits non-zero and names the change, the capability and both names, with the line of the rename's entry
+- **AND** both requirements keep their scenarios, and `--ready` does not print the change
