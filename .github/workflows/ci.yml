@@ -77,19 +77,24 @@ jobs:
     strategy:
       matrix:
         include:
+          # `native` says whether the runner can execute the target (an x86_64 Linux runner, an arm64 macOS runner), which is where the package is run.
           # The Linux builds are static (musl) and cross-compiled with zig as the C compiler, so one runner type builds both.
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             build: zigbuild
+            native: true
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             build: zigbuild
+            native: false
           - target: x86_64-apple-darwin
             os: macos-latest
             build: build
+            native: false
           - target: aarch64-apple-darwin
             os: macos-latest
             build: build
+            native: true
     steps:
       # The whole history, because the version of a release counts its commits.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,6 +127,21 @@ jobs:
         run: cargo ${{ matrix.build }} --locked --profile dist --target ${{ matrix.target }} --package gsttt
       - name: Package
         run: cargo xtask package --target ${{ matrix.target }}
+      # The package is run as a user runs it: unpacked away from the build, on this checkout. The archive is named after the version of the Version step, so a package of another version is not found, and a binary that says another version fails the step.
+      - name: Run the packaged binary
+        if: ${{ matrix.native }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          unpacked="${RUNNER_TEMP}/gsttt-package"
+          mkdir "$unpacked"
+          tar -xzf "target/packages/gsttt-${VERSION}-${TARGET}.tar.gz" -C "$unpacked"
+          version="$("${unpacked}/gsttt" --version)"
+          echo "$version"
+          test "$version" = "gsttt ${VERSION}"
+          "${unpacked}/gsttt" index
+          "${unpacked}/gsttt" impact crates/core/src/lib.rs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-${{ matrix.target }}

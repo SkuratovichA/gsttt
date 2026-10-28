@@ -7,7 +7,7 @@
 //! truncated or damaged file counts as no snapshot instead of taking the process down or answering wrongly.
 
 use std::fs;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek};
 use std::path::Path;
 use std::time::Duration;
 
@@ -19,6 +19,7 @@ use xxhash_rust::xxh3::xxh3_64;
 
 use super::files::{self, Stamp};
 use super::keys::FactKey;
+use crate::atomic;
 use crate::fact::{FileFacts, ParseFailure, ParseStatus};
 use crate::index::Index;
 use crate::path::RepoPath;
@@ -94,23 +95,16 @@ pub enum SnapshotError {
     Write { path: String, message: String },
 }
 
-/// The name of the temporary file of a write is this prefix, random letters and this suffix, so that nothing else
-/// in the directory is taken for one.
+/// The name of the temporary file of a write starts with this prefix, so that [`atomic::is_temporary`] takes nothing else in the directory for one.
 const TEMP_PREFIX: &str = "snapshot-";
-const TEMP_SUFFIX: &str = ".tmp";
 
 /// How long a temporary file has to lie untouched before the next write takes it for the leftover of a process that
 /// died between creating it and renaming it. A write takes a moment, and nothing locks the directory against two
 /// processes that write at once, so a younger file may well belong to one that is still running.
 const STALE: Duration = Duration::from_hours(1);
 
-/// Writes the snapshot through a temporary file in the same directory, so a reader sees the old file or the new
-/// one and never half of either. Temporary files that earlier writes left behind are removed first.
+/// Writes the snapshot with [`atomic::write`], so a reader sees the old file or the new one and never half of either. Temporary files that earlier writes left behind are removed first.
 pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), SnapshotError> {
-    let failed_to_write = |message: String| SnapshotError::Write {
-        path: path.display().to_string(),
-        message,
-    };
     let encode = |message: String| SnapshotError::Encode {
         path: path.display().to_string(),
         message,
@@ -128,27 +122,14 @@ pub fn write(path: &Path, header: &Header, stored: &Stored) -> Result<(), Snapsh
     bytes.resize(bytes.len().next_multiple_of(ALIGN), 0);
     bytes.extend_from_slice(&body);
 
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(dir).map_err(|error| failed_to_write(error.to_string()))?;
-    remove_stale(dir);
-    let mut file = tempfile::Builder::new()
-        .prefix(TEMP_PREFIX)
-        .suffix(TEMP_SUFFIX)
-        .tempfile_in(dir)
-        .map_err(|error| failed_to_write(error.to_string()))?;
-    file.write_all(&bytes)
-        .map_err(|error| failed_to_write(error.to_string()))?;
-    // The rename below makes the new file the snapshot at once; without this, a crash after it can leave a file
-    // whose blocks never reached the disk.
-    file.as_file()
-        .sync_all()
-        .map_err(|error| failed_to_write(error.to_string()))?;
-    file.persist(path)
-        .map_err(|error| failed_to_write(error.to_string()))?;
-    Ok(())
+    remove_stale(path.parent().unwrap_or_else(|| Path::new(".")));
+    atomic::write(path, TEMP_PREFIX, &bytes).map_err(|error| SnapshotError::Write {
+        path: path.display().to_string(),
+        message: error.to_string(),
+    })
 }
 
-/// Removes the temporary files of [`write`] in `dir` that nobody has touched for [`STALE`].
+/// Removes the temporary files of [`write()`] in `dir` that nobody has touched for [`STALE`].
 fn remove_stale(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -157,7 +138,7 @@ fn remove_stale(dir: &Path) {
         let is_temporary = entry
             .file_name()
             .to_str()
-            .is_some_and(|name| name.starts_with(TEMP_PREFIX) && name.ends_with(TEMP_SUFFIX));
+            .is_some_and(|name| atomic::is_temporary(name, TEMP_PREFIX));
         let age = entry
             .metadata()
             .and_then(|meta| meta.modified())

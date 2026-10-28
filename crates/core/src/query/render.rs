@@ -12,14 +12,23 @@ use crate::text::{join_and, noun, percent, short, thousands};
 /// How many entries of a list the text of an answer shows unless every entry is asked for.
 pub const LIST_CAP: usize = 30;
 
-/// How many entries of each list the text of an answer shows.
+/// How many entries of each list the text of an answer shows. The one list that is never cut is the problems of a coverage answer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Entries {
-    /// The first [`LIST_CAP`] entries of each list, then a line with the count of the rest.
+    /// The first [`LIST_CAP`] entries of each list that can be cut, then a line with the count of the rest.
     #[default]
     Capped,
     /// Every entry.
     All,
+}
+
+impl Entries {
+    /// [`Entries::All`] when the caller asked for every entry (`--all` on the command line, `all` in a tool call),
+    /// and [`Entries::Capped`] otherwise. Both surfaces map their flag through this one function, so a list is cut
+    /// in the same way wherever it is asked for.
+    pub const fn from_flag(all: bool) -> Self {
+        if all { Self::All } else { Self::Capped }
+    }
 }
 
 /// An answer to a question over an index: text for people and agents, and JSON for scripts.
@@ -110,8 +119,7 @@ impl ConnectorShare {
 /// The last two lines of every answer: how much of the tree the connectors read, and how fresh the index is.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Footer {
-    /// The connectors whose files the answer involves, in the order the engine ran them. An answer that names no
-    /// file a connector read lists every connector, so that it still says what the index covers.
+    /// The connectors whose files the answer involves, in the order the engine ran them. An answer that names no file a connector read lists the connectors that own a file instead, so that it still says what the index covers, and leaves out a connector that owns none.
     pub coverage: Vec<ConnectorShare>,
     pub freshness: Freshness,
     /// The commit the index was built at.
@@ -121,7 +129,7 @@ pub struct Footer {
 }
 
 impl Footer {
-    /// The footer of an answer that involves `files`.
+    /// The footer of an answer that involves `files`. An answer that involves no file a connector owns lists the connectors that own a file, and leaves out one that owns none, which is involved in no answer: `graphql` and `sql` detect a project in every tree, so a tree without their documents has them with no file of their own.
     pub(super) fn new(
         index: &Index,
         freshness: Freshness,
@@ -143,7 +151,13 @@ impl Footer {
             .map(share)
             .collect();
         if coverage.is_empty() {
-            coverage = index.coverage.connectors.iter().map(share).collect();
+            coverage = index
+                .coverage
+                .connectors
+                .iter()
+                .filter(|connector| connector.files > 0)
+                .map(share)
+                .collect();
         }
         Self {
             coverage,
@@ -304,5 +318,17 @@ pub(super) fn rows<T>(
     match items.len().saturating_sub(shown) {
         0 => Ok(()),
         rest => writeln!(f, "… {} more", thousands(rest)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_all_flag_asks_for_every_entry() {
+        assert_eq!(Entries::from_flag(true), Entries::All);
+        assert_eq!(Entries::from_flag(false), Entries::Capped);
+        assert_eq!(Entries::from_flag(false), Entries::default());
     }
 }

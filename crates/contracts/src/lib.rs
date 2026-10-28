@@ -9,7 +9,7 @@
 //! - [`proto`]: protobuf services and their `google.api.http` bindings.
 //! - [`prisma`]: Prisma models and the environment variables of the datasource.
 //! - [`sql`]: migrations and queries, and the SQL other connectors find embedded in code.
-//! - [`env`]: `.env` files.
+//! - [`env`](mod@env): `.env` files.
 
 mod common;
 mod tree;

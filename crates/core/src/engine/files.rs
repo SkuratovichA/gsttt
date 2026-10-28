@@ -12,7 +12,6 @@
 //! anything ([`Stamp::is_settled`]).
 
 use std::collections::HashSet;
-use std::fmt::Write as _;
 use std::fs::{self, Metadata};
 use std::io::ErrorKind;
 use std::ops::ControlFlow;
@@ -69,12 +68,7 @@ impl ContentId {
 
     /// The id as 40 lower-case hex digits.
     pub fn to_hex(self) -> String {
-        let mut hex = String::with_capacity(40);
-        for byte in self.0 {
-            // Writing to a String cannot fail.
-            let _ = write!(hex, "{byte:02x}");
-        }
-        hex
+        faster_hex::hex_string(&self.0)
     }
 }
 

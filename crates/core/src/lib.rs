@@ -5,10 +5,15 @@
 //! - [`fact`], [`contract`], [`path`]: what a connector says about one file.
 //! - [`rules`]: framework rule packs, read the same way by every language connector.
 //! - [`setup`]: what a config asks for.
+//! - [`repo`]: the file set of one run, as connectors see it.
 //! - [`tree`]: the ordered tree a JSON or YAML document is read into, with the line of every key.
 //! - [`engine`], [`graph`], [`index`], [`coverage`]: what a run builds.
+//! - [`ids`]: the dense ids that files and contracts get at index time, and the vectors and sets keyed by them.
 //! - [`query`]: what an answer asks.
+//! - [`text`]: text helpers shared by the connectors and by the words of answers: line numbers from byte offsets, counts, names and times.
+//! - [`atomic`]: replacing a file as a whole, so that a reader never sees half of it.
 
+pub mod atomic;
 pub mod connector;
 pub mod contract;
 pub mod coverage;

@@ -89,15 +89,52 @@ fn no_options() -> serde_json::Value {
     serde_json::Value::Object(serde_json::Map::new())
 }
 
+/// Why a module runs or does not. The setup decides in this order: `disable` first, then a table of the module's own, then `detect`, and only then what the tree holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reason {
+    /// The module is in `disable`.
+    Disabled,
+    /// The config has a table for the module.
+    Configured,
+    /// The config turns detection off, and has no table for the module.
+    DetectionOff,
+    /// The module finds files to read in the tree.
+    Detected,
+    /// The module finds nothing to read in the tree.
+    NotDetected,
+}
+
+impl Reason {
+    /// Whether a module runs for this reason.
+    pub const fn runs(self) -> bool {
+        matches!(self, Self::Configured | Self::Detected)
+    }
+}
+
 impl Setup {
     pub fn module(&self, name: &str) -> Option<&ModuleSetup> {
         self.modules.iter().find(|module| module.module == name)
     }
 
-    /// Whether the module `name` runs. `detected` runs the module's own detection, and only when it decides.
+    /// Why the module `name` runs or does not, in the order of [`Reason`]. `detected` runs the module's own detection, and only when the order reaches it.
+    pub fn reason(&self, name: &str, detected: impl FnOnce() -> bool) -> Reason {
+        if self.disable.iter().any(|off| off == name) {
+            Reason::Disabled
+        } else if self.module(name).is_some() {
+            Reason::Configured
+        } else if !self.detect {
+            Reason::DetectionOff
+        } else if detected() {
+            Reason::Detected
+        } else {
+            Reason::NotDetected
+        }
+    }
+
+    /// Whether the module `name` runs: what [`Setup::reason`] decides. `detected` runs the module's own detection, and only when the order reaches it.
     pub fn runs(&self, name: &str, detected: impl FnOnce() -> bool) -> bool {
-        !self.disable.iter().any(|off| off == name)
-            && (self.module(name).is_some() || (self.detect && detected()))
+        self.reason(name, detected).runs()
     }
 
     /// The options of the module `name`; `null`, the defaults, when the config gives none.
@@ -125,5 +162,67 @@ mod tests {
         assert_eq!(setup.options("ts")["tsconfig"], "tsconfig.base.json");
         assert!(setup.options("python").is_null());
         assert!(serde_json::from_value::<Setup>(serde_json::json!({ "modulez": [] })).is_err());
+    }
+
+    /// The reason follows the order of the setup, whichever way the four facts it rests on fall; `runs` agrees with it; and the detection of the module is run only when the order reaches it.
+    #[test]
+    fn the_reason_follows_the_order_of_the_setup_and_runs_agrees() {
+        for bits in 0..16_u8 {
+            let [disabled, listed, detect, detected] =
+                [0, 1, 2, 3].map(|bit| bits & (1 << bit) != 0);
+            let setup = Setup {
+                detect,
+                disable: if disabled {
+                    vec!["m".to_owned()]
+                } else {
+                    Vec::new()
+                },
+                modules: if listed {
+                    vec![ModuleSetup {
+                        module: "m".to_owned(),
+                        options: serde_json::Value::Null,
+                    }]
+                } else {
+                    Vec::new()
+                },
+                ..Setup::default()
+            };
+            let asked = std::cell::Cell::new(false);
+
+            let reason = setup.reason("m", || {
+                asked.set(true);
+                detected
+            });
+
+            let expected = match (disabled, listed, detect, detected) {
+                (true, ..) => Reason::Disabled,
+                (false, true, ..) => Reason::Configured,
+                (false, false, false, _) => Reason::DetectionOff,
+                (false, false, true, true) => Reason::Detected,
+                (false, false, true, false) => Reason::NotDetected,
+            };
+            let facts = format!(
+                "disabled {disabled}, listed {listed}, detect {detect}, detected {detected}"
+            );
+            assert_eq!(reason, expected, "{facts}");
+            assert_eq!(setup.runs("m", || detected), reason.runs(), "{facts}");
+            assert_eq!(asked.get(), !disabled && !listed && detect, "{facts}");
+        }
+    }
+
+    /// `config show --json` prints the reason under these names.
+    #[test]
+    fn the_reasons_are_named_in_snake_case() {
+        let all = [
+            Reason::Disabled,
+            Reason::Configured,
+            Reason::DetectionOff,
+            Reason::Detected,
+            Reason::NotDetected,
+        ];
+        assert_eq!(
+            serde_json::to_string(&all).unwrap(),
+            r#"["disabled","configured","detection_off","detected","not_detected"]"#
+        );
     }
 }

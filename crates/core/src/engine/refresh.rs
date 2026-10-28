@@ -120,6 +120,24 @@ impl<'a> Engine<'a> {
         Ok(Some(Freshness::since(added, removed, changed)))
     }
 
+    /// The connectors that find themselves in the tree, in registry order, whatever the setup says about them: the
+    /// ones `detect` alone would turn on. A connector whose `detect` panics is left out.
+    pub fn detected(&self) -> Result<Vec<&'static str>, IndexError> {
+        let snapshot = Snapshot::open(self.workspace.snapshot_path().as_std_path());
+        let mut states = self
+            .listing(snapshot.as_ref().and_then(Snapshot::stored))?
+            .files;
+        let repo = self.view_of(&mut states);
+        let mut problems = Vec::new();
+        let mut detected = Vec::new();
+        for &connector in self.connectors {
+            if pipeline::detect(connector, &repo, &mut problems) {
+                detected.push(connector.meta().name);
+            }
+        }
+        Ok(detected)
+    }
+
     /// The files that differ from HEAD, or from the best common ancestor of HEAD and `base` when one is given.
     pub fn changed_files(&self, base: Option<&str>) -> Result<Vec<Change>, IndexError> {
         let snapshot = Snapshot::open(self.workspace.snapshot_path().as_std_path());
@@ -141,12 +159,8 @@ impl<'a> Engine<'a> {
             files: mut states,
             unreadable,
         } = self.listing(previous)?;
-        states.sort_by(|a, b| a.path.cmp(&b.path));
+        let repo = self.view_of(&mut states);
         let listed = started.elapsed();
-        let repo = RepoView::new(
-            self.workspace.root().to_owned(),
-            states.iter().map(|state| state.path.clone()).collect(),
-        );
 
         let mut modules = Vec::new();
         let mut detect_problems = Vec::new();
@@ -418,6 +432,15 @@ impl<'a> Engine<'a> {
                 0
             }
         }
+    }
+
+    /// Puts `states` in path order, which is the order of the file ids, and the view the connectors detect against.
+    fn view_of(&self, states: &mut [FileState]) -> RepoView {
+        states.sort_by(|a, b| a.path.cmp(&b.path));
+        RepoView::new(
+            self.workspace.root().to_owned(),
+            states.iter().map(|state| state.path.clone()).collect(),
+        )
     }
 
     /// The files of the work tree, with the stamps of the previous snapshot to spare hashing what did not change.
@@ -1585,6 +1608,25 @@ mod tests {
                 ("d.txt".to_owned(), ChangeKind::Added),
             ]
         );
+    }
+
+    #[test]
+    fn detected_lists_the_connectors_that_find_themselves_whatever_the_setup_says() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "one\n")]);
+        let setup = Setup {
+            detect: false,
+            disable: vec!["graphs".to_owned()],
+            ..Setup::default()
+        };
+        let connectors = rig.connectors();
+        let engine = Engine::new(workspace(&dir), &connectors, &[], &setup);
+
+        assert_eq!(engine.detected().unwrap(), ["notes", "graphs"]);
+
+        // A connector whose `detect` panics finds nothing, and the others are still asked.
+        write(dir.path(), "DETECT_BOOM", "");
+        assert_eq!(engine.detected().unwrap(), ["graphs"]);
     }
 
     #[gsttt_scenario::scenario("indexing", "A HEAD git cannot read is a coverage line")]
