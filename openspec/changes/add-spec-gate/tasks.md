@@ -26,3 +26,4 @@
 - [x] 5.2 Leave `target`, hidden directories, directories with a `Cargo.toml` of their own and symbolic links out of the walk over a package, and name the failing entry in an I/O error
 - [x] 5.3 Report a `proptest!` attribute that does not parse instead of dropping it
 - [x] 5.4 Test the workspace listing and the mapping from the verdict to the exit code
+- [x] 5.5 Test the compile errors of `#[scenario]` through the attribute itself with `trybuild`
