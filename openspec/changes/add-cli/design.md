@@ -2,7 +2,7 @@
 
 ## Context
 
-The binary is the only crate that writes to the terminal (`docs/architecture.md`, Surfaces). The engine hands it an `Index` and a `Freshness`. The queries turn those into answers that implement `Answer`, which is `Display` and `Serialize`, with `text(Entries)` for cut or full lists. The config crate evaluates `.gsttt/init.lua` into a `Setup` and generates the editor files. The CLI glues these together and adds three things of its own: path rules, exit codes and trust.
+The binary is the only crate that writes to the terminal (`docs/architecture.md`, Surfaces). The engine hands it an `Index` and a `Freshness`. The queries turn those into answers that implement `Answer`, which is `Display` and `Serialize`, with `text(Entries)` for cut or full lists. The config crate reads `.gsttt/config.toml` and the packs beside it into a `Setup`, and generates the JSON schemas that editors read. The CLI glues these together and adds three things of its own: path rules, exit codes and trust.
 
 ## Decisions
 
@@ -97,30 +97,31 @@ impl Repository {
 
 ### Checking options
 
-`DynConnector` gains a provided method that the blanket implementation for `Connector` overrides. An external connector keeps the default, because its options are free-form JSON that only the process reads:
+`DynConnector` gains a provided method that the blanket implementation for `Connector` overrides. The override runs the very same deserialization as `open`, one private function that both call, so the check cannot accept what `open` refuses. `TypeScriptOptions` has `deny_unknown_fields`, so an option the module does not declare fails there, with the module and the option named. An external keeps the default, because its options are free-form JSON that only the process reads:
 
 ```rust
 // crates/core/src/connector.rs
-fn check_options(&self, options: &serde_json::Value) -> Result<(), OptionsError> { Ok(()) }
+fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorError> { Ok(()) }
 
-// in the blanket impl: keys outside the schema's `properties` first, then the types
-fn check_options(&self, options: &serde_json::Value) -> Result<(), OptionsError> {
-    unknown_keys(&schemars::schema_for!(C::Options), options)?;
-    serde_json::from_value::<C::Options>(options.clone()).map(drop).map_err(OptionsError::from)
+// in the blanket impl, over the function `open` calls
+fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorError> {
+    read_options::<C::Options>(self.meta().name, options).map(drop)
 }
 ```
+
+- `Repository::open` checks every module of the setup against its connector in the registry, collects every failure, sorted by module, and fails with one error that lists each on its own line. So every command that opens a repository exits 1 on a bad option, and `config check` has nothing more to check than what `open` does.
 
 ### Registry
 
 - The order is `ts`, `python`, `rust`, `openapi`, `graphql`, `proto`, `prisma`, `sql`, `env`, then the externals in declaration order.
-- Each connector crate exposes its pack sources. The registry evaluates them once with `gsttt_config::builtin_packs` and passes them to `Engine::new`.
-- An external enters the registry only when it is trusted.
+- Each connector crate exposes its pack sources. The registry reads them once with `gsttt_config::builtin_packs` and passes them to `Engine::new`.
+- An external enters the registry only when it is trusted, after the built-ins and in declaration order, as `Erased(External::new(setup)?)`.
 
 ### Trust
 
 - The key is SHA-256, as hex, over:
   - the canonical JSON of the external's setup: name, cmd, files, version, env, options and provides;
-  - for every element of `cmd` that names a regular file inside the root, read against the root, its path from the root and its bytes. A `git pull` can change such a file without touching `init.lua`. Covering every element, not only `cmd[0]`, also covers `python3 tools/connector.py`.
+  - for every element of `cmd` that names a regular file inside the root, read against the root, its path from the root and its bytes. A `git pull` can change such a file without touching `.gsttt/config.toml`. Covering every element, not only `cmd[0]`, also covers `python3 tools/connector.py`.
 - The key is computed on every run that builds the registry. A connector binary of tens of megabytes costs a few tens of milliseconds to hash, and nothing caches the result, because a cache would be one more thing a pull could get out of step.
 - The store is `$XDG_STATE_HOME/gsttt/trust`, or `~/.local/state/gsttt/trust` when that is unset. It holds one line per trusted external, `<key> <canonical root>`, sorted, and is written through a temporary file and a rename.
 - `config trust`:
@@ -168,9 +169,10 @@ pub fn session_line(header: &Header, now: jiff::Timestamp) -> Option<String>;
 
 ### Init
 
-- `init` opens every connector over the tree to learn which ones find a project, and passes their names to `gsttt_config::starter`.
-- It writes `init.lua` and `.luarc.json` only when they are missing.
-- It always rewrites `types/gsttt.lua`, whose first line says `gsttt init` generated it.
+- `init` finds the root like the other commands and does not read the config, so it works beside a config that does not parse.
+- It learns which connectors find a project from one `Engine` method over the same listing a refresh uses, and passes their names to `gsttt_config::starter`.
+- It writes `.gsttt/config.toml` only when it is missing. The first line of the starter names the config schema.
+- It always writes `.gsttt/schema/config.json` and `.gsttt/schema/pack.json`, the schemas generated from the registry. Each holds a top-level `$comment` that says `gsttt init` generated the file and that edits to it are lost.
 
 ## Risks
 

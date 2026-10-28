@@ -2,7 +2,7 @@
 
 ## Why
 
-The index answers nothing until something asks it. People ask from a terminal and scripts ask from CI, and both need the same things: the repository found from wherever they stand, a fresh index without a separate step, an answer they can read or parse, and an exit code they can branch on. The configuration needs a way in as well: a starter `init.lua`, a check that says what is wrong and on which line, and a gate in front of external connectors. Those are programs that a repository's `init.lua` names and gsttt starts, so without the gate cloning a repository and asking a question about it would run a stranger's program.
+The index answers nothing until something asks it. People ask from a terminal and scripts ask from CI, and both need the same things: the repository found from wherever they stand, a fresh index without a separate step, an answer they can read or parse, and an exit code they can branch on. The configuration needs a way in as well: a starter `.gsttt/config.toml`, a check that says what is wrong and on which line, and a gate in front of external connectors. Those are programs that a repository's `.gsttt/config.toml` names and gsttt starts, so without the gate cloning a repository and asking a question about it would run a stranger's program.
 
 ## What Changes
 
