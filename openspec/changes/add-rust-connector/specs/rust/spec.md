@@ -95,6 +95,14 @@ The connector SHALL read `use` declarations, one import per leaf of a use tree, 
 - **WHEN** a file has `assert_eq!(crate::a::helper(), 1)` and no `use` of `crate::a`
 - **THEN** its facts hold an import of `crate::a::helper` at that line
 
+### Requirement: Macros re-exported by name
+A one-segment `use name;`, public or not, SHALL read no import when the module that holds it declares `macro_rules! name` before it, because the line makes the macro addressable by a path and reaches no other file. The same `use` in a module that declares no such macro, or declares it later, SHALL be read as any other import.
+
+#### Scenario: A use of a macro declared in the file reads no import
+- **WHEN** `src/render.rs` has `macro_rules! shout { () => {}; }` followed by `pub(crate) use shout;`
+- **THEN** its facts hold no import for that `use`
+- **AND** a `use shout;` in a module that declares no such macro before it is read as an import of `shout`
+
 ### Requirement: Derives
 A `#[derive(…)]`, also inside `#[cfg_attr(…)]`, SHALL be read for the crates that its paths name.
 

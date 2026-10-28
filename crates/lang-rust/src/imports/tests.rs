@@ -172,3 +172,22 @@ fn modules_declared_inside_cfg_if_are_read() {
         .collect();
     assert_eq!(modules, ["unix", "win"]);
 }
+
+#[gsttt_scenario::scenario("rust", "A use of a macro declared in the file reads no import")]
+#[test]
+fn a_use_of_a_macro_declared_in_the_file_reads_no_import() {
+    assert_eq!(
+        specs("macro_rules! shout { () => {}; }\npub(crate) use shout;\nuse other;"),
+        ["other"]
+    );
+    // Declared in an inner module, the macro is not the one the outer `use` names, and declared after it, it is not
+    // in scope yet.
+    assert_eq!(
+        specs("mod inner { macro_rules! shout { () => {}; } }\nuse shout;"),
+        ["shout"]
+    );
+    assert_eq!(
+        specs("use shout;\nmacro_rules! shout { () => {}; }"),
+        ["shout"]
+    );
+}

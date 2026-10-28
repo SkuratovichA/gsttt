@@ -9,7 +9,9 @@ use gsttt_core::fact::{Import, ImportFlags, ImportKind, Line};
 use gsttt_core::text::LineIndex;
 use ra_ap_edition::Edition;
 use ra_ap_syntax::ast::{HasAttrs, HasName, HasVisibility};
-use ra_ap_syntax::{AstNode, AstToken, NodeOrToken, SyntaxKind, SyntaxNode, SyntaxToken, ast};
+use ra_ap_syntax::{
+    AstNode, AstToken, Direction, NodeOrToken, SyntaxKind, SyntaxNode, SyntaxToken, ast,
+};
 
 use crate::eval::{macro_args, text_of};
 use crate::syntax::{cfg_flags, file_path, inline_path, line_at, segments, text};
@@ -95,6 +97,19 @@ pub(crate) fn bindings(imports: &[Import]) -> impl Iterator<Item = (&str, &str)>
         })
 }
 
+/// Whether the module that holds the `use` of `leaf` declares `macro_rules! name` before it. A `macro_rules!` macro is
+/// in scope only after its declaration, so the declaration cannot come later.
+fn declares_macro(leaf: &SyntaxNode, name: &str) -> bool {
+    leaf.ancestors()
+        .find_map(ast::Use::cast)
+        .is_some_and(|item| {
+            item.syntax()
+                .siblings(Direction::Prev)
+                .filter_map(ast::MacroRules::cast)
+                .any(|rules| rules.name().is_some_and(|declared| text(&declared) == name))
+        })
+}
+
 struct Reader<'a> {
     lines: &'a LineIndex,
     query_files: bool,
@@ -167,6 +182,12 @@ impl Reader<'_> {
             path.pop();
         }
         if path.is_empty() {
+            return;
+        }
+        // `pub(crate) use name;` under `macro_rules! name` makes a macro addressable by a path, and reaches no file.
+        if let [name] = path.as_slice()
+            && declares_macro(tree.syntax(), name)
+        {
             return;
         }
         let glob = tree.star_token().is_some();

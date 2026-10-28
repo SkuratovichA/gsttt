@@ -41,3 +41,7 @@
 - [x] 5.13 `RepoPath::parent` in the module tree in place of a copy of it
 - [x] 5.14 Requirements and scenarios for what the fixes add or change
 - [x] 5.15 The known gaps in the proposal
+
+## 6. Integration fixes
+
+- [x] 6.1 A `use` of a macro declared in the same module reads no import, so gsttt reads its own repository, where `crates/core/src/query/render.rs` re-exports `display_as_text` that way, with no unexplained unresolved import
