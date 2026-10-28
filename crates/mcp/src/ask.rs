@@ -35,15 +35,15 @@ pub(crate) fn run<S: IndexSource>(source: &S, call: Call) -> Result<String, Tool
             let to = source.path(&to)?;
             let Loaded { index, freshness } = source.refreshed()?;
             let route = query::path(&index, freshness, from.path.as_str(), to.path.as_str());
-            text_if_held(&route, shown(all))
+            text_if_held(&route, Entries::from_flag(all))
         }
         Call::Contract(ContractArguments { query: wanted, all }) => {
             let Loaded { index, freshness } = source.refreshed()?;
-            Ok(query::contract(&index, freshness, &wanted)?.text(shown(all)))
+            Ok(query::contract(&index, freshness, &wanted)?.text(Entries::from_flag(all)))
         }
         Call::Coverage(CoverageArguments { all }) => {
             let Loaded { index, freshness } = source.refreshed()?;
-            Ok(query::coverage(&index, freshness).text(shown(all)))
+            Ok(query::coverage(&index, freshness).text(Entries::from_flag(all)))
         }
         Call::IndexStatus => status(source),
     }
@@ -59,7 +59,7 @@ fn about_a_file<S: IndexSource, A: Answer>(
     let Loaded { index, freshness } = source.refreshed()?;
     text_if_held(
         &ask(&index, freshness, target.path.as_str()),
-        shown(arguments.all),
+        Entries::from_flag(arguments.all),
     )
 }
 
@@ -70,11 +70,6 @@ fn text_if_held<A: Answer>(answer: &A, entries: Entries) -> Result<String, ToolE
     } else {
         Err(ToolError::NotInIndex(answer.text(Entries::Capped)))
     }
-}
-
-/// The lists of an answer the caller asked for: every entry with `all`, else the first of each.
-const fn shown(all: bool) -> Entries {
-    if all { Entries::All } else { Entries::Capped }
 }
 
 /// The files `impact` is asked about, then the answer. A path with no file on disk is asked about as deleted, so that
@@ -112,7 +107,7 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
         }
     }
     let Loaded { index, freshness } = source.refreshed()?;
-    Ok(query::impact(&index, freshness, &request).text(shown(all)))
+    Ok(query::impact(&index, freshness, &request).text(Entries::from_flag(all)))
 }
 
 /// How the stored index was built and how it stands against the tree. This is the one tool that does not refresh.
