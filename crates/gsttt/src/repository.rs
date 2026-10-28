@@ -16,7 +16,7 @@ use gsttt_core::engine::changes::Change;
 use gsttt_core::engine::refresh::{Engine, IndexError};
 use gsttt_core::engine::workspace::Workspace;
 use gsttt_core::path::OutsideRoot;
-use gsttt_core::{Freshness, Loaded, RepoPath, Setup, Target};
+use gsttt_core::{Freshness, Index, Loaded, RepoPath, Setup, Target};
 
 use crate::registry::Registry;
 use crate::root::{self, RootError};
