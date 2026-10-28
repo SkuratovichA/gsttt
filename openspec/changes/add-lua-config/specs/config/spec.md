@@ -150,8 +150,8 @@ A library call whose native loop is as long as the config says SHALL be refused,
 - **WHEN** the config inserts, removes, sorts, moves and concatenates in lists of a few elements and repeats a text with a separator
 - **THEN** each call gives the result Lua gives, and a call with a wrong argument gives the error Lua gives, with the position of the call
 
-### Requirement: The collector does no work for the config
-`setmetatable` SHALL refuse a metatable with `__gc` or `__mode`, with an error that names the field, because Lua runs finalizers and clears weak tables with the instruction hook off, so a config could keep the collector busy for as long as it likes.
+### Requirement: A metatable cannot hand work to the collector
+`setmetatable` SHALL refuse a metatable with `__gc` or `__mode`, with an error that names the field, because Lua runs finalizers and clears weak tables with the instruction hook off, so a config could keep the collector busy for as long as it likes. The check is made when `setmetatable` runs: a `__mode` written into the metatable afterwards is not seen.
 
 #### Scenario: A finalizer or a weak mode is refused
 - **WHEN** the config attaches a metatable with `__gc`, or with `__mode`, to a table
