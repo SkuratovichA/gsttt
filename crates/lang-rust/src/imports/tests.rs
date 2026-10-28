@@ -133,6 +133,7 @@ fn a_use_path_in_2015_starts_at_the_crate_root() {
     );
 }
 
+#[gsttt_scenario::scenario("rust", "A path attribute may be a raw string or sit in cfg_attr")]
 #[test]
 fn a_path_attribute_may_be_a_raw_string_or_sit_inside_cfg_attr() {
     let names = |source: &str| -> Vec<Vec<String>> {
@@ -149,6 +150,7 @@ fn a_path_attribute_may_be_a_raw_string_or_sit_inside_cfg_attr() {
     );
 }
 
+#[gsttt_scenario::scenario("rust", "A derive inside cfg_attr names its crate")]
 #[test]
 fn a_derive_inside_cfg_attr_names_its_crate() {
     assert_eq!(
@@ -157,6 +159,7 @@ fn a_derive_inside_cfg_attr_names_its_crate() {
     );
 }
 
+#[gsttt_scenario::scenario("rust", "A module declared inside cfg_if is read")]
 #[test]
 fn modules_declared_inside_cfg_if_are_read() {
     let found = imports(
