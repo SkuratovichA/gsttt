@@ -218,6 +218,11 @@ Following nested routers SHALL give every router that nothing mounts a budget of
 - **THEN** the walk is cut and reported with the router it started from and the cap, depth or visits
 - **AND** a walk within both caps is not reported
 
+#### Scenario: A tree that the module cap cuts keeps the modules before it
+- **WHEN** `src/lib.rs` declares `mod user;` and then `src/a.rs` under 22 names with `#[path]`, `src/a.rs` declares `src/b.rs` under 22 names, `src/b.rs` declares `src/c.rs` under 22 names, and `src/user.rs` has `use crate::a0::b0::c0::item;` and `use crate::a21::b21::c21::item;`
+- **THEN** the first path resolves to `src/c.rs`
+- **AND** the second stops at the deepest module before the cut and resolves to `src/lib.rs`
+
 #### Scenario: A cap is named among the blind spots
 - **WHEN** the coverage of a Rust project is read, with or without packs
 - **THEN** its http serves blind spots name routers nested more than 64 deep and entered more than 50000 times

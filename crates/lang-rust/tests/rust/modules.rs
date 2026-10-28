@@ -1,10 +1,12 @@
 //! The module tree, on the `modules` fixture.
 
+use std::fs;
+
 use gsttt_scenario::scenario;
 use insta::assert_json_snapshot;
 use serde_json::json;
 
-use crate::support::{index, unresolved};
+use crate::support::{index, index_at, unresolved};
 
 #[scenario("rust", "Module declarations find their files")]
 #[test]
@@ -91,5 +93,48 @@ fn a_file_no_declaration_reaches_has_no_module() {
     assert_eq!(
         out.to("src/orphan.rs", "serde::Serialize"),
         json!({ "external": "serde" })
+    );
+}
+
+#[scenario("rust", "A tree that the module cap cuts keeps the modules before it")]
+#[test]
+fn a_tree_that_the_module_cap_cuts_keeps_the_modules_before_it() {
+    // Each of three files declares the next one under 22 names through `#[path]`, so that a few lines of declarations
+    // grow into 22 * 22 * 22 modules at the bottom, more than the 10000 the cap lets in.
+    let fan = |name: &str| -> String {
+        (0..22)
+            .map(|number| format!("#[path = \"{name}.rs\"] mod {name}{number};\n"))
+            .collect()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let files = [
+        (
+            "Cargo.toml",
+            "[package]\nname = \"wide\"\nversion = \"0.1.0\"\nedition = \"2021\"\n".to_owned(),
+        ),
+        ("src/lib.rs", format!("mod user;\n{}", fan("a"))),
+        ("src/a.rs", fan("b")),
+        ("src/b.rs", fan("c")),
+        ("src/c.rs", "pub fn item() {}\n".to_owned()),
+        (
+            "src/user.rs",
+            "use crate::a0::b0::c0::item;\nuse crate::a21::b21::c21::item as late;\n".to_owned(),
+        ),
+    ];
+    for (name, text) in files {
+        let file = dir.path().join(name);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, text).unwrap();
+    }
+    let out = index_at(dir.path().to_str().unwrap());
+    // The first modules are in the tree.
+    assert_eq!(
+        out.to("src/user.rs", "crate::a0::b0::c0::item"),
+        json!({ "file": "src/c.rs" })
+    );
+    // The last are cut, so the path stops at the root, the deepest module it reaches.
+    assert_eq!(
+        out.to("src/user.rs", "crate::a21::b21::c21::item"),
+        json!({ "file": "src/lib.rs" })
     );
 }
