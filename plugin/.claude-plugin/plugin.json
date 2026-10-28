@@ -12,7 +12,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/gsttt.sh\" hook session-start"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/gsttt.sh\" hook session-start",
+            "timeout": 5
           }
         ]
       }

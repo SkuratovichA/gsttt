@@ -28,3 +28,7 @@
 - [x] 5.3 The release token is given to the commands that publish and to no step that compiles code
 - [x] 5.4 Clippy, the tests and the release build run with `--locked`
 - [x] 5.5 The spec promises only what this change builds: the release build is given the version as `GSTTT_VERSION`, and `gsttt --version` is left to the CLI
+- [x] 5.6 The wrapper ends every hook with status 0 and nothing on stderr, the session-start hook is cut off after 5 seconds, and a server without `gsttt` stops with one line on stderr and status 1
+- [x] 5.7 The wrapper also looks for `gsttt` in the install directory
+- [x] 5.8 The session-start line is a note for the user, not an instruction to the model
+- [x] 5.10 The form of `skills` and of the inline hooks was settled with `claude plugin validate` (2.1.312), which accepts both as they are

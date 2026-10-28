@@ -95,12 +95,34 @@ The repository SHALL be a Claude Code plugin marketplace: `.claude-plugin/market
 - **WHEN** the plugin manifest names `skills/gone/SKILL.md` and that file does not exist
 - **THEN** `cargo xtask check` exits non-zero and names the manifest and the path
 
+### Requirement: Finding the binary
+The plugin's commands SHALL run through a wrapper that looks for `gsttt` on `PATH` and then in the directory `install.sh` installs into, `GSTTT_INSTALL_DIR` or `~/.local/bin`, so that Claude Code started without that directory on its `PATH` still finds it.
+
+#### Scenario: The binary in the install directory is found
+- **WHEN** `gsttt` is not on `PATH` and is in the install directory
+- **THEN** the wrapper runs it with the arguments it was given
+
 ### Requirement: Missing binary
-The plugin's commands SHALL run through a wrapper that, when `gsttt` is not on `PATH`, prints one line naming the install command on session start and does nothing on any other event.
+When the wrapper finds no `gsttt`, a session start SHALL print one line that names the install command and is written as a note for the user, every other hook event SHALL do nothing and exit zero, and the MCP server SHALL print one line on stderr and exit with status 1.
 
 #### Scenario: A missing binary is one line
-- **WHEN** the session-start hook runs with no `gsttt` on `PATH`
-- **THEN** it prints one line naming the install command and exits zero
+- **WHEN** the session-start hook runs with no `gsttt` on `PATH` or in the install directory
+- **THEN** it prints one line that names the install command, as a note for the user, and exits zero
+
+#### Scenario: A missing binary stops the server with one line
+- **WHEN** the server starts with no `gsttt` on `PATH` or in the install directory
+- **THEN** it prints one line naming the install command on stderr and exits with status 1
+
+### Requirement: Safe hooks
+A hook of the plugin SHALL NOT fail or hang a session. The wrapper SHALL end every hook with exit status zero and nothing on stderr, whatever `gsttt` does, and the manifest SHALL give every hook command a timeout of 5 seconds.
+
+#### Scenario: A failing hook is silent
+- **WHEN** the session-start hook runs with a `gsttt` that exits with status 2 and complains on stderr
+- **THEN** the hook exits zero and prints nothing
+
+#### Scenario: A hook is cut off after five seconds
+- **WHEN** the plugin manifest is parsed
+- **THEN** its session-start hook has a timeout of 5 seconds
 
 ### Requirement: Supply chain
 `deny.toml` SHALL allow only licenses that can be distributed with an Apache-2.0 binary, deny crates with security advisories, and allow crates from crates.io only.
