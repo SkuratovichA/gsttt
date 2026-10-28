@@ -28,7 +28,7 @@ All of them run from the repository root.
 | --- | --- |
 | `cargo check --workspace --all-targets` | It compiles. |
 | `cargo nextest run --workspace` | Tests pass. Use `-p <crate>` for one crate. The `xtask` tests run `cargo deny`, so `cargo-deny` must be installed. |
-| `cargo clippy --workspace --all-targets -- -D warnings` | Lints are clean. CI runs exactly this. |
+| `cargo clippy --locked --workspace --all-targets -- -D warnings` | Lints are clean. CI runs exactly this. |
 | `cargo fmt --all --check` | Formatting. Run `cargo fmt --all` to fix. |
 | `cargo insta review` | Review changed snapshots; never accept a snapshot you have not read. |
 | `cargo xtask spec` | Every OpenSpec scenario has a test that names it with `#[scenario]`, and every `#[scenario]` names a real scenario. |
