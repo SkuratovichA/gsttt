@@ -9,7 +9,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use gsttt_config::{ConfigError, PackError};
+use gsttt_config::{CONFIG_PATH, ConfigError, External, PackError};
+use gsttt_core::connector::ConnectorError;
 use gsttt_core::engine::changes::Change;
 use gsttt_core::engine::refresh::{Engine, IndexError};
 use gsttt_core::engine::workspace::Workspace;
@@ -18,6 +19,7 @@ use gsttt_core::{Freshness, Index, RepoPath, Setup};
 
 use crate::registry::Registry;
 use crate::root::{self, RootError};
+use crate::trust::{self, Declared, Store};
 
 /// Why a repository cannot be opened or read.
 ///
@@ -39,6 +41,10 @@ pub enum RepositoryError {
     /// `.gsttt/config.toml`, or a pack beside it, does not read into a setup.
     #[error(transparent)]
     Config(#[from] ConfigError),
+
+    /// An `[[external]]` of the config cannot become a connector, though the user trusts it.
+    #[error("an `[[external]]` of {CONFIG_PATH} is not valid: {0}")]
+    External(#[source] ConnectorError),
 
     /// A path argument is not a path inside the repository.
     #[error("{0}; name a file inside the repository")]
@@ -98,24 +104,57 @@ pub struct Repository {
     workspace: Workspace,
     registry: Registry,
     setup: Setup,
+    /// The `[[external]]` entries of the config in its order, with whether the user trusts each here.
+    externals: Vec<Declared>,
 }
 
 impl Repository {
     /// The repository around `start`, which should be a canonical directory: finds the root, refuses the home
-    /// directory and `/`, builds the registry and reads `.gsttt/config.toml`.
+    /// directory and `/`, builds the registry and reads `.gsttt/config.toml`. The external connectors of the config
+    /// that the user trusts in this root join the registry after the built-in ones, in the order of the config.
     ///
     /// # Errors
     ///
-    /// When there is no root, the root is refused, a built-in pack does not read or the config does not.
+    /// When there is no root, the root is refused, a built-in pack does not read, the config does not or a trusted
+    /// external does not become a connector.
     pub fn open(start: &Utf8Path) -> Result<Self, RepositoryError> {
         let workspace = root::locate(start)?;
         let registry = Registry::builtin()?;
         let setup = gsttt_config::evaluate(workspace.root().as_std_path(), &registry.connectors())?;
+        let store = Store::locate()
+            .inspect_err(|error| tracing::debug!(%error, "no trust store"))
+            .ok();
+        let externals = trust::declare(workspace.root(), &setup.externals, store.as_ref());
+        let trusted = externals
+            .iter()
+            .filter(|external| external.trusted())
+            .map(|external| External::new(external.setup()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(RepositoryError::External)?;
         Ok(Self {
             workspace,
-            registry,
+            registry: registry.with_externals(trusted),
             setup,
+            externals,
         })
+    }
+
+    /// The `[[external]]` entries of the config in its order, each with whether the user trusts it in this root.
+    pub fn externals(&self) -> &[Declared] {
+        &self.externals
+    }
+
+    /// `index` as every answer reads it: with a line in its coverage problems for each external that is not
+    /// trusted, so that a person who sees no file of it knows why and what to run.
+    fn answered(&self, mut index: Index) -> Arc<Index> {
+        let waiting = self
+            .externals
+            .iter()
+            .filter(|external| !external.trusted())
+            .map(Declared::problem);
+        index.coverage.problems.extend(waiting);
+        index.coverage.finish();
+        Arc::new(index)
     }
 
     /// The top directory of the work tree, by its canonical path.
@@ -137,7 +176,7 @@ impl Repository {
         })?;
         Ok(Refreshed {
             loaded: Loaded {
-                index: Arc::new(refresh.index),
+                index: self.answered(refresh.index),
                 freshness: Freshness::Fresh,
             },
             unchanged: refresh.unchanged,
@@ -161,7 +200,7 @@ impl Repository {
                 return Ok(None);
             };
             Ok(Some(Loaded {
-                index: Arc::new(index),
+                index: self.answered(index),
                 freshness,
             }))
         })

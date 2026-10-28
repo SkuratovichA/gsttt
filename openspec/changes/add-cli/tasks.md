@@ -18,7 +18,7 @@
 ## 4. Registry and trust
 
 - [x] 4.1 Build the registry in its fixed order, evaluating the built-in packs once
-- [ ] 4.2 Key, store and check trust for externals; leave untrusted externals out with a coverage problem; add `config trust` behind the terminal check and `config untrust`
+- [x] 4.2 Key, store and check trust for externals; leave untrusted externals out with a coverage problem; add `config trust` behind the terminal check and `config untrust`
 
 ## 5. Config, init, hook and schema
 

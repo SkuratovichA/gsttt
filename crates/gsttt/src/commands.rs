@@ -3,12 +3,13 @@
 use camino::Utf8PathBuf;
 use clap::CommandFactory;
 
-use crate::cli::{Cli, Command, ContractArgs, Flags, HookCommand, ImpactArgs};
+use crate::cli::{Cli, Command, ConfigCommand, ContractArgs, Flags, HookCommand, ImpactArgs};
 use crate::error::CliError;
 use crate::repository::{Loaded, Repository, Target};
 use crate::streams::{Io, Outcome};
 use crate::{hook, root};
 
+mod config;
 mod impact;
 mod index;
 mod print;
@@ -48,7 +49,9 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
             Ok(Outcome::Answered)
         }
         Command::Schema(_) => Err(not_built(command)),
-        Command::Init | Command::Config(_) => {
+        Command::Config(ConfigCommand::Trust) => config::trust(flags, io),
+        Command::Config(ConfigCommand::Untrust) => config::untrust(flags, io),
+        Command::Init | Command::Config(ConfigCommand::Check | ConfigCommand::Show) => {
             root::locate(&root::start(flags.directory.as_deref())?)?;
             Err(not_built(command))
         }

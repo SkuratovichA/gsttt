@@ -11,6 +11,7 @@ use miette::{Diagnostic, GraphicalReportHandler, GraphicalTheme, Report};
 use crate::repository::RepositoryError;
 use crate::root::RootError;
 use crate::streams::{Io, Outcome, reader_left};
+use crate::trust::StoreError;
 
 /// Why a command did not answer. The message names what was expected, and the `help:` line, where there is one,
 /// says what the user can do.
@@ -54,6 +55,21 @@ pub(crate) enum CliError {
     #[error("`gsttt {command}` is not built yet")]
     NotBuilt { command: &'static str },
 
+    #[error(
+        "trusting an external connector needs a terminal, and stdin and stderr are not both one"
+    )]
+    #[diagnostic(help(
+        "run `gsttt config trust` yourself in a terminal: a program that drives gsttt cannot trust on your behalf"
+    ))]
+    TrustNeedsTerminal,
+
+    /// The key of an external cannot be made, which the person has to fix before there is anything to trust.
+    #[error("{0}")]
+    Key(String),
+
+    #[error(transparent)]
+    Store(#[from] StoreError),
+
     #[error("the contract query is empty")]
     #[diagnostic(help(
         "ask for a contract key such as `http GET /bookings/{{id}}`, or for part of one"
@@ -95,6 +111,8 @@ impl CliError {
             | Self::Repository(_)
             | Self::NoIndex { .. }
             | Self::NotBuilt { .. }
+            | Self::Key(_)
+            | Self::Store(_)
             | Self::Root(RootError::Workspace(_) | RootError::CurrentDirectory { .. }) => {
                 Outcome::Failed
             }
@@ -104,7 +122,8 @@ impl CliError {
             | Self::Base(_)
             | Self::EmptyQuery
             | Self::BaseNeedsChanged
-            | Self::NoRefreshWithIndex => Outcome::Usage,
+            | Self::NoRefreshWithIndex
+            | Self::TrustNeedsTerminal => Outcome::Usage,
         }
     }
 

@@ -1,8 +1,8 @@
 //! The connectors the binary ships, in the order the engine offers a file to them, and their rule packs.
 
-use gsttt_config::{PackError, builtin_packs};
-use gsttt_core::DynConnector;
+use gsttt_config::{External, PackError, builtin_packs};
 use gsttt_core::rules::Pack;
+use gsttt_core::{DynConnector, Erased};
 
 /// A connector and the sources of the rule packs written for it, as `(name, TOML source)` pairs.
 struct Builtin {
@@ -46,6 +46,18 @@ impl Registry {
         })
     }
 
+    /// The registry with `externals` after the connectors it has, in the order given: the trusted externals of a
+    /// config, which the registry cannot know before the config is read.
+    #[must_use]
+    pub fn with_externals(mut self, externals: impl IntoIterator<Item = External>) -> Self {
+        self.connectors.extend(
+            externals
+                .into_iter()
+                .map(|external| Box::new(Erased(external)) as Box<dyn DynConnector>),
+        );
+        self
+    }
+
     /// The connectors in registry order, in the form the engine takes.
     pub fn connectors(&self) -> Vec<&dyn DynConnector> {
         self.connectors.iter().map(AsRef::as_ref).collect()
@@ -59,6 +71,8 @@ impl Registry {
 
 #[cfg(test)]
 mod tests {
+    use gsttt_core::setup::ExternalSetup;
+
     use super::*;
 
     /// The order of the design, which a connector's place in the registry has to follow.
@@ -84,6 +98,30 @@ mod tests {
             .filter(|name| registered.contains(name))
             .collect();
         assert_eq!(registered, in_design_order);
+    }
+
+    /// An external enters the registry after the built-ins, and the externals keep the order they came in.
+    #[test]
+    fn externals_come_after_the_builtins_in_the_order_given() {
+        let external = |name: &str| {
+            let setup = ExternalSetup {
+                name: name.to_owned(),
+                cmd: vec!["x".to_owned()],
+                files: vec!["*.x".to_owned()],
+                version: String::new(),
+                env: Vec::new(),
+                provides: Vec::new(),
+                options: serde_json::json!({}),
+            };
+            External::new(&setup).unwrap()
+        };
+        let registry = Registry::builtin()
+            .unwrap()
+            .with_externals([external("zeta"), external("alpha")]);
+        let names = names(&registry);
+        let builtin = names.len() - 2;
+        assert_eq!(names.get(builtin..), Some(&["zeta", "alpha"][..]));
+        assert_eq!(names.first(), Some(&"ts"));
     }
 
     #[test]

@@ -50,8 +50,7 @@ impl Workspace {
     /// Finds the workspace around `start`: the work tree it is in, or `start` itself when no repository encloses
     /// it, in which case the state goes under `$XDG_CACHE_HOME` (`~/.cache` when unset).
     pub fn locate(start: &Utf8Path) -> Result<Self, WorkspaceError> {
-        let cache_home = cache_home(env::var_os("XDG_CACHE_HOME"), env::var_os("HOME"));
-        Self::locate_with(start, cache_home)
+        Self::locate_with(start, UserDir::Cache.locate())
     }
 
     /// [`Workspace::locate`] with the cache home given instead of read from the environment.
@@ -157,14 +156,37 @@ fn canonical(path: &Path) -> Result<Utf8PathBuf, WorkspaceError> {
     Utf8PathBuf::from_path_buf(resolved).map_err(|_| fail("the path is not valid UTF-8".to_owned()))
 }
 
-/// `$XDG_CACHE_HOME`, or `$HOME/.cache` when it is unset or empty.
-fn cache_home(xdg: Option<OsString>, home: Option<OsString>) -> Option<Utf8PathBuf> {
+/// A folder of the user's home where a program keeps what it writes, by the XDG base directory rules.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UserDir {
+    /// What can be made again, such as the state of a directory outside git: `$XDG_CACHE_HOME`, or `$HOME/.cache`
+    /// when that is unset or empty.
+    Cache,
+    /// What a person decided and the program must not lose, such as the trust in a connector:
+    /// `$XDG_STATE_HOME`, or `$HOME/.local/state` when that is unset or empty.
+    State,
+}
+
+impl UserDir {
+    /// The folder as the environment of this process names it, `None` when neither its variable nor `HOME` is
+    /// set to a path.
+    pub fn locate(self) -> Option<Utf8PathBuf> {
+        let (variable, from_home) = match self {
+            Self::Cache => ("XDG_CACHE_HOME", ".cache"),
+            Self::State => ("XDG_STATE_HOME", ".local/state"),
+        };
+        user_dir(env::var_os(variable), env::var_os("HOME"), from_home)
+    }
+}
+
+/// `xdg`, or `home` joined with `from_home` when `xdg` is unset or empty.
+fn user_dir(xdg: Option<OsString>, home: Option<OsString>, from_home: &str) -> Option<Utf8PathBuf> {
     let usable = |value: Option<OsString>| {
         value
             .filter(|value| !value.is_empty())
             .and_then(|value| Utf8PathBuf::from_path_buf(PathBuf::from(value)).ok())
     };
-    usable(xdg).or_else(|| usable(home).map(|home| home.join(".cache")))
+    usable(xdg).or_else(|| usable(home).map(|home| home.join(from_home)))
 }
 
 #[cfg(test)]
@@ -299,12 +321,15 @@ mod tests {
     }
 
     #[test]
-    fn the_cache_home_falls_back_to_home_when_the_variable_is_unset_or_empty() {
+    fn a_user_folder_falls_back_to_home_when_the_variable_is_unset_or_empty() {
         let os = |text: &str| Some(OsString::from(text));
-        assert_eq!(cache_home(os("/x"), os("/h")), Some("/x".into()));
-        assert_eq!(cache_home(None, os("/h")), Some("/h/.cache".into()));
-        assert_eq!(cache_home(os(""), os("/h")), Some("/h/.cache".into()));
-        assert_eq!(cache_home(None, None), None);
+        for (from_home, fallback) in [(".cache", "/h/.cache"), (".local/state", "/h/.local/state")]
+        {
+            assert_eq!(user_dir(os("/x"), os("/h"), from_home), Some("/x".into()));
+            assert_eq!(user_dir(None, os("/h"), from_home), Some(fallback.into()));
+            assert_eq!(user_dir(os(""), os("/h"), from_home), Some(fallback.into()));
+            assert_eq!(user_dir(None, None, from_home), None);
+        }
     }
 
     #[test]

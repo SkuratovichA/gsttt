@@ -26,6 +26,9 @@ miette = { workspace = true, features = ["fancy"] }
 mimalloc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+shlex.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -34,7 +37,8 @@ tracing-subscriber.workspace = true
 gsttt-scenario.workspace = true
 insta.workspace = true
 proptest.workspace = true
-tempfile.workspace = true
+# A pseudo-terminal, so that the tests can answer the prompt of `config trust` the way a person does.
+rustix = { workspace = true, features = ["fs", "pty"] }
 
 [lints]
 workspace = true

@@ -12,4 +12,5 @@ mod questions;
 mod repository;
 mod root;
 mod support;
+mod trust;
 mod usage;

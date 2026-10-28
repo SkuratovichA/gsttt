@@ -202,8 +202,8 @@ fn index_cannot_run_without_a_refresh() {
     assert!(ran.stderr.contains("--no-refresh"), "{}", ran.stderr);
 }
 
-/// The commands of the third run are not built yet: `init`, `config` and `schema`. They find their root first, as
-/// the built ones do, so a refused root is told as such.
+/// The commands of the third run that are not built yet: `init`, `config check`, `config show` and `schema`. They find
+/// their root first, as the built ones do, so a refused root is told as such.
 #[test]
 fn a_command_that_is_not_built_yet_says_so_and_exits_1() {
     let sandbox = Sandbox::new();
@@ -211,8 +211,6 @@ fn a_command_that_is_not_built_yet_says_so_and_exits_1() {
         &["init"][..],
         &["config", "check"][..],
         &["config", "show"][..],
-        &["config", "trust"][..],
-        &["config", "untrust"][..],
         &["--json", "schema", "external"][..],
     ] {
         let ran = sandbox.run(args);

@@ -15,19 +15,14 @@ The binary is the only crate that writes to the terminal (`docs/architecture.md`
 pub enum Outcome { Answered, Failed, Usage }
 pub fn run(cli: Cli, io: &mut Io) -> Outcome;
 
-/// The process's streams and terminal, replaced by buffers and a scripted terminal in tests.
+/// The process's output streams, replaced by buffers in tests.
 pub struct Io<'a> {
     pub stdout: &'a mut dyn Write,
     pub stderr: &'a mut dyn Write,
-    pub terminal: &'a mut dyn Terminal,
-}
-pub trait Terminal {
-    /// Whether stdin and stderr are both terminals, which `config trust` requires.
-    fn interactive(&self) -> bool;
-    fn read_line(&mut self) -> io::Result<String>;
 }
 ```
 
+- `config trust` is the one command that reads the terminal. It asks `std::io::IsTerminal` of the process's own stdin and stderr, and reads its answer from stdin. There is no stand-in for the terminal in `Io`: the reading of the answer is a function over a `BufRead`, unit-tested with bytes, and the scenarios run the real binary on a pseudo-terminal.
 - `Outcome` covers the exit codes 0 (`Answered`), 1 (`Failed`) and 2 (`Usage`). The exit code 101 is no `Outcome`: `panics::guard` runs the command and returns the exit code itself, 101 when a panic reached it.
 - `completions <shell>` is `clap_complete::generate` over the same `Cli`, for the shells `clap_complete::Shell` lists.
 - Numbers in text are grouped by thousands with `query::render::thousands` (`crates/core/src/query/render.rs:300` on the queries branch), made public for this. The CLI does not get a second formatter.
@@ -70,7 +65,10 @@ impl RepoPath {
 One type holds what every command after argument parsing needs. The MCP server change implements its `IndexSource` trait over this type, so the type has the shape that trait needs and keeps no state between calls other than the evaluated setup. A caller that must see an edit to the config opens it again, as the server does for every call.
 
 ```rust
-pub struct Repository { workspace: Workspace, registry: Registry, setup: Setup }
+pub struct Repository { workspace: Workspace, registry: Registry, setup: Setup, externals: Vec<Declared> }
+
+/// An `[[external]]` of the config, the key its trust is recorded under, and whether the user trusts it in this root.
+pub struct Declared { /* private */ }
 
 /// An index and how the tree stands against it.
 pub struct Loaded { pub index: Arc<Index>, pub freshness: Freshness }
@@ -82,9 +80,11 @@ pub struct Refreshed { pub loaded: Loaded, pub unchanged: bool, pub parsed: u32,
 pub struct Target { pub path: RepoPath, pub on_disk: bool }
 
 impl Repository {
-    /// Locates the root from `start`, refuses `$HOME` and `/`, builds the registry and evaluates the config.
+    /// Locates the root from `start`, refuses `$HOME` and `/`, builds the registry, evaluates the config and adds the externals that are trusted.
     pub fn open(start: &Utf8Path) -> Result<Self, RepositoryError>;
     pub fn root(&self) -> &Utf8Path;
+    /// The externals of the config in its order, each with whether it is trusted here.
+    pub fn externals(&self) -> &[Declared];
     pub fn refreshed(&self) -> Result<Refreshed, RepositoryError>;
     pub fn stored(&self) -> Result<Option<Loaded>, RepositoryError>;
     pub fn argument(&self, base: &Utf8Path, argument: &str) -> Result<Target, RepositoryError>;
@@ -119,22 +119,41 @@ fn check_options(&self, options: &serde_json::Value) -> Result<(), ConnectorErro
 
 ### Trust
 
-- The key is SHA-256, as hex, over:
-  - the canonical JSON of the external's setup: name, cmd, files, version, env, options and provides;
-  - for every element of `cmd` that names a regular file inside the root, read against the root, its path from the root and its bytes. A `git pull` can change such a file without touching `.gsttt/config.toml`. Covering every element, not only `cmd[0]`, also covers `python3 tools/connector.py`.
+- The key is the SHA-256, as 64 lowercase hex digits, of the parts below, in this order. Every part is written as its length in bytes, as eight bytes in big-endian order, and then the part itself, so that no two lists of parts make the same input:
+  - the canonical JSON of the external's setup, made by `keys::canonical_json`, the function the config's own fingerprint uses: name, cmd, files, version, env, options and provides;
+  - then, for each element of `cmd`, in order, that names a regular file inside the root, read against the root with links resolved: the path of that file from the root, and its bytes. A `git pull` can change such a file without touching `.gsttt/config.toml`. Covering every element, not only `cmd[0]`, also covers `python3 tools/connector.py`. An element that names nothing, a directory or a file outside the root adds no part: it is a program found in `PATH`, a flag or the value of one.
+- A file that the command names, that exists and cannot be read, makes the key fail. The external stays untrusted and `config trust` names the file, because a key that left it out would not change when the file did.
+
+```rust
+// crates/gsttt/src/trust/key.rs
+let mut hasher = Sha256::new();
+feed(&mut hasher, canonical_json(&setup).as_bytes());
+for argument in &external.cmd {
+    if let Some((from_root, resolved)) = file_in(root, argument) {
+        feed(&mut hasher, from_root.as_str().as_bytes());
+        feed(&mut hasher, &fs::read(&resolved)?);
+    }
+}
+// feed: hasher.update(length.to_be_bytes()); hasher.update(part);
+```
+
 - The key is computed on every run that builds the registry. A connector binary of tens of megabytes costs a few tens of milliseconds to hash, and nothing caches the result, because a cache would be one more thing a pull could get out of step.
-- The store is `$XDG_STATE_HOME/gsttt/trust`, or `~/.local/state/gsttt/trust` when that is unset. It holds one line per trusted external, `<key> <canonical root>`, sorted, and is written through a temporary file and a rename.
+- The store is `$XDG_STATE_HOME/gsttt/trust`, or `$HOME/.local/state/gsttt/trust` when that is unset or empty. `UserDir::State` in `crates/core/src/engine/workspace.rs` picks it, by the same function that picks the cache folder. It holds one line per trusted external, `<key> <canonical root>`, sorted and without duplicates, and is written through a temporary file in the same folder and a rename. A missing file is an empty store. A store that cannot be read trusts nothing and logs why.
+- `Repository::open` makes the key of each external of the config and looks it up for this root. A trusted external joins the registry after the built-ins, in the order of the config, as `Erased(External::new(setup)?)`, and a failure of `External::new` is an error of the config. An untrusted one stays out, so no connector claims its files and coverage counts them as unclaimed.
 - `config trust`:
-  - refuses unless both stdin and stderr are terminals;
-  - prints each untrusted external's name and its full command, quoted;
-  - asks once, `Run these commands whenever gsttt indexes <root>? [y/N]`.
-- A process with no terminal cannot answer. The point is that an agent cannot trust on the user's behalf.
-- `config untrust` removes this root's lines.
-- An untrusted external is left out of the registry, so no connector claims its files and coverage counts them as unclaimed. On top of that, the binary adds one coverage problem to every index it answers from:
+  - refuses unless both stdin and stderr are terminals. It checks before it reads anything, says that trusting needs a terminal, trusts nothing and exits 2. No variable and no flag skips the check: a process with no terminal cannot answer, and the point is that an agent cannot trust on the user's behalf;
+  - prints on stderr each untrusted external's name and its full command, shell-quoted with `shlex` so that an argument with a space reads as one argument;
+  - asks once, `Run these commands whenever gsttt indexes <root>? [y/N] `, and reads one line. After trimming, `y` or `yes` in lower case trusts every external it listed. Any other answer, an empty line and the end of input included, trusts nothing and exits 0;
+  - with nothing to trust it says so, asks nothing and exits 0. The whole conversation is on stderr and stdout stays empty.
+- `config untrust` finds the root, does not read the config, and removes this root's lines.
+- On top of leaving it out, `Repository::refreshed` and `Repository::stored` add one coverage problem for each untrusted external to the index before it goes into its `Arc`, and sort the problems again with `Coverage::finish`, with the command quoted as `config trust` shows it:
 
 ```text
 the external connector `kotlin` (gsttt-kotlin --stdio) is not trusted in this repository; run `gsttt config trust` in a terminal to allow it
 ```
+
+- The queries of core do not list `Coverage.problems` yet, so `gsttt coverage` prints them itself, above its report as `problems (N):` and under `--json` as a `problems` array (`commands/questions.rs`). The test `the_coverage_document_holds_problems_once` fails when core adds the same key, which is the reminder to delete the wrapper.
+- The scenarios that answer the prompt run the real binary on a pseudo-terminal opened with the `pty` module of `rustix`, a dev-dependency that adds no crate to the lock file, with the sandbox's environment and so with the sandbox's store.
 
 ### Panics
 
@@ -178,3 +197,4 @@ pub fn session_line(header: &Header, now: jiff::Timestamp) -> Option<String>;
 
 - **A terminal check is a speed bump, not a sandbox.** A user who types `y` without reading still runs the command. The prompt prints the full command so there is something to read.
 - **A trusted program can still load code that its command line does not name.** The key covers each file the command names, but not the modules a script imports or the files a binary reads. A pull that changes only those runs without a new prompt. This is listed as a known gap in the README.
+- **A link inside the root that leads out of it is not covered.** The key follows the link and leaves out a target outside the root, so a pull that points the link elsewhere needs no new prompt.

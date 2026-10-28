@@ -1,8 +1,12 @@
 //! What the tests that run the binary share: a sandbox for its environment, and what a run left behind.
 
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
+use rustix::fs::{Mode, OFlags};
+use rustix::pty::OpenptFlags;
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -49,6 +53,84 @@ impl Sandbox {
         ran(self.gsttt().current_dir(dir).args(args))
     }
 
+    /// Runs the binary with `args` in `dir`, with `input` on its stdin, which is a pipe.
+    pub(crate) fn run_piped(&self, dir: &Path, args: &[&str], input: &str) -> Ran {
+        let mut child = self
+            .gsttt()
+            .current_dir(dir)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // A run that does not read its stdin may end first, and the pipe is then closed.
+        child.stdin.take().unwrap().write_all(input.as_bytes()).ok();
+        let output = child.wait_with_output().unwrap();
+        Ran::of(output)
+    }
+
+    /// Runs the binary with `args` in `dir`, with stdin and stderr on one pseudo-terminal where `typed` was typed
+    /// before the run began to read. `stderr` of the result is what the terminal showed, the echo of `typed`
+    /// included, with its line ends read as `\n`.
+    pub(crate) fn run_typing(&self, dir: &Path, args: &[&str], typed: &str) -> Ran {
+        let master = rustix::pty::openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
+        rustix::pty::grantpt(&master).unwrap();
+        rustix::pty::unlockpt(&master).unwrap();
+        let name = rustix::pty::ptsname(&master, Vec::new()).unwrap();
+        let slave = rustix::fs::open(
+            name.as_c_str(),
+            OFlags::RDWR | OFlags::NOCTTY,
+            Mode::empty(),
+        )
+        .unwrap();
+        let mut keyboard = File::from(master.try_clone().unwrap());
+        let mut screen = File::from(master);
+        keyboard.write_all(typed.as_bytes()).unwrap();
+        // The screen is read while the run writes to it, and not afterwards: some systems drop what a terminal
+        // holds when its last user closes it.
+        let seen = std::thread::spawn(move || {
+            let mut shown = Vec::new();
+            // The read ends with an error on some systems when the run has closed the terminal.
+            screen.read_to_end(&mut shown).ok();
+            shown
+        });
+        let mut command = self.gsttt();
+        command
+            .current_dir(dir)
+            .args(args)
+            .stdin(slave.try_clone().unwrap())
+            .stderr(slave);
+        let output = command.output().unwrap();
+        // The terminal ends, and the screen with it, when nothing here holds its slave side any more.
+        drop(command);
+        let shown = seen.join().unwrap();
+        drop(keyboard);
+        let mut run = Ran::of(output);
+        run.stderr = String::from_utf8(shown).unwrap().replace("\r\n", "\n");
+        run
+    }
+
+    /// A git repository `name` in the work directory whose config declares the external connector `fake`: the
+    /// command `/bin/sh fake.sh` over the files `*.fake`. The script creates [`Fake::marker`] and ends, so a run
+    /// that started the connector leaves the marker behind. Every repository made by one sandbox has the same
+    /// script, and so the same marker.
+    pub(crate) fn fake_external(&self, name: &str) -> Fake {
+        let root = self.work.path().join(name);
+        std::fs::create_dir_all(&root).unwrap();
+        init_repo(&root);
+        typescript_project(&root);
+        let marker = self.work.path().join("started");
+        write(&root, "thing.fake", "a file that `fake` claims\n");
+        write(&root, "fake.sh", &format!(": > '{}'\n", marker.display()));
+        write(&root, FAKE_CONFIG_PATH, FAKE_CONFIG);
+        commit_all(&root);
+        Fake {
+            root: root.canonicalize().unwrap(),
+            marker,
+        }
+    }
+
     /// A git repository `repo` in the work directory, holding the project of [`typescript_project`] in a first
     /// commit. Returns the canonical path of its root.
     pub(crate) fn repository(&self) -> PathBuf {
@@ -61,6 +143,23 @@ impl Sandbox {
     }
 }
 
+/// Where the config of a repository made by [`Sandbox::fake_external`] is.
+pub(crate) const FAKE_CONFIG_PATH: &str = ".gsttt/config.toml";
+
+/// The config of a repository made by [`Sandbox::fake_external`].
+pub(crate) const FAKE_CONFIG: &str =
+    "[[external]]\nname = \"fake\"\ncmd = [\"/bin/sh\", \"fake.sh\"]\nfiles = [\"**/*.fake\"]\n";
+
+/// A repository with an external connector whose program only marks that it started.
+#[derive(Debug)]
+pub(crate) struct Fake {
+    /// The canonical path of the root.
+    pub(crate) root: PathBuf,
+    /// The file the program creates. It is outside the repository, and a run that did not start the connector
+    /// leaves it out.
+    pub(crate) marker: PathBuf,
+}
+
 /// What a run printed and how it ended.
 #[derive(Debug)]
 pub(crate) struct Ran {
@@ -68,6 +167,16 @@ pub(crate) struct Ran {
     pub(crate) code: Option<i32>,
     pub(crate) stdout: String,
     pub(crate) stderr: String,
+}
+
+impl Ran {
+    fn of(output: std::process::Output) -> Self {
+        Self {
+            code: output.status.code(),
+            stdout: String::from_utf8(output.stdout).unwrap(),
+            stderr: String::from_utf8(output.stderr).unwrap(),
+        }
+    }
 }
 
 /// The JSON document a run that succeeded printed alone on stdout.
@@ -79,12 +188,7 @@ pub(crate) fn json(run: &Ran) -> Value {
 
 /// Runs `command` to its end with its stdin closed.
 pub(crate) fn ran(command: &mut Command) -> Ran {
-    let output = command.output().unwrap();
-    Ran {
-        code: output.status.code(),
-        stdout: String::from_utf8(output.stdout).unwrap(),
-        stderr: String::from_utf8(output.stderr).unwrap(),
-    }
+    Ran::of(command.output().unwrap())
 }
 
 /// Whether anything was written under `dir`.
