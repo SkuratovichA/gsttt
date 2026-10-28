@@ -1,0 +1,77 @@
+# Folds the specs of finished changes into openspec/specs/ once they are on main.
+#
+# `cargo xtask spec --ready` prints the open changes whose tasks are all ticked and whose scenarios
+# are all proven. The OpenSpec CLI archives each of them, the spec gate runs on the result, and
+# only a passing gate is committed and pushed.
+name: archive-specs
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# Two pushes in a row archive one after the other, never at once.
+concurrency:
+  group: archive-specs
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    # The push below is made with the default token, and GitHub starts no workflow for a push made
+    # with it. This condition also keeps a push by the bot account from running the job again.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Installs the toolchain that rust-toolchain.toml names, so the version lives in one place.
+      - name: Install the Rust toolchain
+        run: rustup toolchain install
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 10
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: List the changes that are ready
+        id: ready
+        run: |
+          cargo xtask spec --ready > "$RUNNER_TEMP/ready.txt"
+          if [ -s "$RUNNER_TEMP/ready.txt" ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+            cat "$RUNNER_TEMP/ready.txt"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "No change is ready to archive."
+          fi
+
+      # `archive --yes` archives a change whatever its tasks say, which is why only the changes
+      # that the gate lists are passed to it.
+      - name: Archive them
+        if: steps.ready.outputs.any == 'true'
+        run: |
+          while read -r change; do
+            pnpm dlx @fission-ai/openspec@1.15.0 archive "$change" --yes
+          done < "$RUNNER_TEMP/ready.txt"
+
+      - name: Check the specs that result
+        if: steps.ready.outputs.any == 'true'
+        run: cargo xtask spec
+
+      - name: Commit and push
+        if: steps.ready.outputs.any == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add openspec
+          if git diff --cached --quiet; then
+            echo "Archiving changed nothing."
+            exit 0
+          fi
+          git commit -m "chore(openspec): archive finished changes" -m "Archived: $(paste -sd, "$RUNNER_TEMP/ready.txt")"
+          git push

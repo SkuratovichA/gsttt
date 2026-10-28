@@ -13,7 +13,7 @@
 
 ## 3. Workflow
 
-- [ ] 3.1 `archive-specs.yml` with the OpenSpec CLI pinned and run through `pnpm dlx`, actions pinned by commit
+- [x] 3.1 `archive-specs.yml` with the OpenSpec CLI pinned and run through `pnpm dlx`, actions pinned by commit
 
 ## 4. Proof
 
