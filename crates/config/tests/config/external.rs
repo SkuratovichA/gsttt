@@ -435,6 +435,11 @@ fn a_well_behaved_process_indexes_its_files() {
 #[gsttt_scenario::scenario("config", "A hung process fails its files and nothing else")]
 #[test]
 fn a_hung_process_fails_its_files_and_nothing_else() {
+    assert_eq!(
+        External::TIMEOUT,
+        Duration::from_secs(10),
+        "the timeout of the spec"
+    );
     let tree = repository(&[
         when(&request("open"), say(&ready())),
         parses("src/A.kt", &imports(&["./B"])),

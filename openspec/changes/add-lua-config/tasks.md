@@ -17,5 +17,5 @@
 
 ## 4. Proof
 
-- [ ] 4.1 A test annotated `#[scenario("config", …)]` for every scenario of the `config` spec, the external ones against a scripted fake process
-- [ ] 4.2 `cargo nextest run -p gsttt-config`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+- [x] 4.1 A test annotated `#[scenario("config", …)]` for every scenario of the `config` spec, the external ones against a scripted fake process
+- [x] 4.2 `cargo nextest run -p gsttt-config`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
