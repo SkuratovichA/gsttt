@@ -263,7 +263,8 @@ pub(crate) struct Options {
 /// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link`
 /// panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a
 /// contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link`
-/// returns for it, the way a mount keys a route again. A file called `explode.txt` makes `matches` panic, and a file
+/// returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount
+/// keys a route; without `replaces` it names none. A file called `explode.txt` makes `matches` panic, and a file
 /// called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a
 /// `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file
 /// [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps
@@ -330,8 +331,8 @@ impl Connector for Notes {
 }
 
 impl Project for NotesProject {
-    /// The facts `link` returns for the file, which are the `linked` lines of its text.
-    type Extra = Vec<ContractFact>;
+    /// The facts `link` returns for the file, each with the key it replaces: the `linked` lines of its text.
+    type Extra = Vec<(ContractFact, Option<ContractKey>)>;
 
     fn root(&self) -> &str {
         self.counters.roots.fetch_add(1, Ordering::Relaxed);
@@ -351,7 +352,7 @@ impl Project for NotesProject {
         Vec::new()
     }
 
-    fn parse(&self, file: &SourceFile<'_>) -> Parsed<Vec<ContractFact>> {
+    fn parse(&self, file: &SourceFile<'_>) -> Parsed<Self::Extra> {
         self.counters.parse.fetch_add(1, Ordering::Relaxed);
         let mut facts = FileFacts::default();
         let mut linked = Vec::new();
@@ -376,7 +377,7 @@ impl Project for NotesProject {
             } else if let Some(text) = line.strip_prefix("fact ") {
                 facts.contracts.push(declared_fact(text));
             } else if let Some(text) = line.strip_prefix("linked ") {
-                linked.push(declared_fact(text));
+                linked.push(linked_line(text));
             }
         }
         Parsed {
@@ -411,7 +412,7 @@ impl Project for NotesProject {
         }
     }
 
-    fn link(&self, input: &LinkInput<'_, Vec<ContractFact>>) -> Vec<LinkedFact> {
+    fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Vec<LinkedFact> {
         self.counters.link.fetch_add(1, Ordering::Relaxed);
         assert!(
             !input.files().iter().any(|file| file
@@ -429,17 +430,27 @@ impl Project for NotesProject {
                     .iter()
                     .any(|import| !import.to.files().is_empty())
             })
-            .map(|file| LinkedFact {
-                file: file.id,
-                fact: fact("queue linked"),
-            });
+            .map(|file| LinkedFact::found(file.id, fact("queue linked")));
         let keyed_again = input.files().iter().flat_map(|file| {
-            file.extra.iter().map(|declared| LinkedFact {
+            file.extra.iter().map(|(declared, replaces)| LinkedFact {
                 file: file.id,
                 fact: declared.clone(),
+                replaces: replaces.clone(),
             })
         });
         imported.chain(keyed_again).collect()
+    }
+}
+
+/// The fact that `<line> <role> <contract key>` spells and the key after ` replaces `, when there is one:
+/// `1 serves http GET /api/bookings/{} replaces http GET /bookings/{}`.
+fn linked_line(text: &str) -> (ContractFact, Option<ContractKey>) {
+    match text.split_once(" replaces ") {
+        Some((declared, replaced)) => (
+            declared_fact(declared),
+            Some(ContractKey::parse(replaced).unwrap()),
+        ),
+        None => (declared_fact(text), None),
     }
 }
 

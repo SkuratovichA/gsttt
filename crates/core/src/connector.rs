@@ -13,7 +13,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::Xxh3;
 
-use crate::contract::{ContractKind, Role};
+use crate::contract::{ContractKey, ContractKind, Role};
 use crate::fact::{ContractFact, Embedded, FileFacts, Import, Resolution, ResolvedImport};
 use crate::ids::FileId;
 use crate::path::RepoPath;
@@ -95,7 +95,8 @@ pub trait Project: Send + Sync + 'static {
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution;
 
     /// Contract sites that only show across files: route prefixes mounted in another file, tRPC routers merged
-    /// into an app router.
+    /// into an app router. A fact that keys an own fact of the project again is made by [`LinkedFact::rekeyed`], and
+    /// the engine drops the site of that own fact and of no other.
     fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Vec<LinkedFact> {
         let _ = input;
         Vec::new()
@@ -210,6 +211,35 @@ impl<'a, X: ?Sized> LinkInput<'a, X> {
 pub struct LinkedFact {
     pub file: FileId,
     pub fact: ContractFact,
+    /// The key of the own fact of `file`, at the line and role of `fact`, that this fact keys again, such as a route
+    /// declared on a router and served behind the router's mount. That own fact loses its site and no other does.
+    pub replaces: Option<ContractKey>,
+}
+
+impl LinkedFact {
+    /// A fact the link finds on its own, which replaces no own fact.
+    pub fn found(file: FileId, fact: ContractFact) -> Self {
+        Self {
+            file,
+            fact,
+            replaces: None,
+        }
+    }
+
+    /// `own` keyed again as `key`, at the line, role and `via` of `own`, in place of `own`. A link calls it once for
+    /// every key a declaration has, such as once per mount of a router.
+    pub fn rekeyed(file: FileId, own: &ContractFact, key: ContractKey) -> Self {
+        Self {
+            file,
+            fact: ContractFact {
+                key,
+                role: own.role,
+                line: own.line,
+                via: own.via.clone(),
+            },
+            replaces: Some(own.key.clone()),
+        }
+    }
 }
 
 /// One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run
@@ -463,6 +493,34 @@ mod tests {
         assert_eq!(salt_of(&["a"]), 14_372_996_823_028_516_049);
     }
 
+    fn served(key: &str, line: u32, via: &str) -> ContractFact {
+        ContractFact {
+            key: ContractKey::parse(key).unwrap(),
+            role: Role::Serves,
+            line,
+            via: via.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_found_fact_replaces_no_own_fact() {
+        let fact = served("http GET /api/a", 3, "express");
+        let linked = LinkedFact::found(FileId::from_raw(7), fact.clone());
+        assert_eq!(linked.file, FileId::from_raw(7));
+        assert_eq!(linked.fact, fact);
+        assert_eq!(linked.replaces, None);
+    }
+
+    #[test]
+    fn a_rekeyed_fact_takes_the_place_of_its_own_fact_and_names_its_key() {
+        let own = served("http GET /a", 3, "axum");
+        let key = ContractKey::parse("http GET /api/a").unwrap();
+        let linked = LinkedFact::rekeyed(FileId::from_raw(7), &own, key.clone());
+        assert_eq!(linked.file, FileId::from_raw(7));
+        assert_eq!(linked.fact, served("http GET /api/a", 3, "axum"));
+        assert_eq!(linked.replaces, Some(own.key));
+    }
+
     /// A connector over `.txt` files whose lines `use <path>` import other files and whose link phase reports a
     /// contract for every file with a non-empty extra.
     struct Lines;
@@ -556,15 +614,16 @@ mod tests {
                 .files()
                 .iter()
                 .filter(|file| !file.extra.is_empty())
-                .map(|file| LinkedFact {
-                    file: file.id,
-                    fact: ContractFact {
-                        key: crate::contract::ContractKey::parse(&format!("queue {}", file.extra))
-                            .unwrap(),
-                        role: Role::Calls,
-                        line: 1,
-                        via: "lines".into(),
-                    },
+                .map(|file| {
+                    LinkedFact::found(
+                        file.id,
+                        ContractFact {
+                            key: ContractKey::parse(&format!("queue {}", file.extra)).unwrap(),
+                            role: Role::Calls,
+                            line: 1,
+                            via: "lines".into(),
+                        },
+                    )
                 })
                 .collect()
         }
