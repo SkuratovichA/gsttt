@@ -1,0 +1,14 @@
+-- fetch: a request to a URL. The method is the `method` option, any method when it is missing.
+return {
+  name = "fetch",
+  language = "ts",
+  calls = {
+    {
+      callee = { "fetch", "window.fetch", "globalThis.fetch" },
+      kind = "http",
+      role = "calls",
+      key = "$arg1",
+      method = "$arg2.method",
+    },
+  },
+}
