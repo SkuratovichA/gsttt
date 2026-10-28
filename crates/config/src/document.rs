@@ -38,12 +38,11 @@ impl Located {
         let file = log_line(file);
         let line = match &self.span {
             Some(span) => {
-                let offset = u32::try_from(span.start).unwrap_or(u32::MAX);
                 let index = LineIndex::new(text);
                 format!(
                     "{file}:{}:{}: {message}",
-                    index.line(offset),
-                    index.column(text, offset)
+                    index.line_at(span.start),
+                    index.column(text, span.start)
                 )
             }
             None => format!("{file}: {message}"),

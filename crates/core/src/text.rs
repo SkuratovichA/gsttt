@@ -31,14 +31,14 @@ impl LineIndex {
         self.line(u32::try_from(offset).unwrap_or(u32::MAX))
     }
 
-    /// The 1-based column of the byte at `offset` on its line, counted in characters, so that it is the column an editor shows. `text` is the text the index was built from. An offset inside a character is the column of that character, and one past the end of the text is the column after the last character.
-    pub fn column(&self, text: &str, offset: u32) -> u32 {
-        let start = usize::try_from(self.line(offset))
+    /// The 1-based column of the byte at `offset` on its line, counted in characters, so that it is the column an editor shows. `text` is the text the index was built from. An offset inside a character is the column of that character, and one past the end of the text is the column after the last character. It takes the `usize` offset that parsers report, as [`Self::line_at`] does.
+    pub fn column(&self, text: &str, offset: usize) -> u32 {
+        let start = usize::try_from(self.line_at(offset))
             .ok()
             .and_then(|line| line.checked_sub(1))
             .and_then(|index| self.starts.get(index))
             .map_or(0, |&start| usize::try_from(start).unwrap_or(usize::MAX));
-        let mut end = usize::try_from(offset).map_or(text.len(), |offset| offset.min(text.len()));
+        let mut end = offset.min(text.len());
         // Offset 0 is always a boundary, so this ends.
         while !text.is_char_boundary(end) {
             end = end.saturating_sub(1);
