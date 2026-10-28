@@ -27,7 +27,7 @@ use crate::imports::{Imports, Name, absolute_name, specifier};
 use crate::manifest::{ManifestError, read_pyproject};
 use crate::project::PythonProject;
 use crate::site::{
-    AssignSite, CallSite, EmbedSite, dict_prop, dotted, is_string_shaped, join_prefixes,
+    AssignSite, COMPUTED, CallSite, EmbedSite, dict_value, dotted, is_string_shaped, join_prefixes,
     literal_of, text_of,
 };
 
@@ -933,8 +933,9 @@ fn dynamic_spec(call: &ExprCall, imported: &str, name: &str) -> Option<String> {
     }
 }
 
-/// The literal `env_prefix` a settings class declares, in `model_config = SettingsConfigDict(env_prefix="APP_")`,
-/// in a `model_config` dict or in an inner `class Config`. Empty when there is none.
+/// The `env_prefix` a settings class declares, in `model_config = SettingsConfigDict(env_prefix="APP_")`, in a
+/// `model_config` dict or in an inner `class Config`. Empty when there is none, and the computed text when it is held
+/// in a variable, so that the name of a field built on it is an unread site.
 fn env_prefix(body: &[Stmt]) -> String {
     body.iter()
         .find_map(|stmt| match stmt {
@@ -949,7 +950,7 @@ fn env_prefix(body: &[Stmt]) -> String {
                     Stmt::Assign(assign)
                         if assign.targets.iter().any(|t| is_name(t, "env_prefix")) =>
                     {
-                        literal_of(&assign.value).map(Cow::into_owned)
+                        Some(prefix_text(&assign.value))
                     }
                     _ => None,
                 })
@@ -960,15 +961,15 @@ fn env_prefix(body: &[Stmt]) -> String {
 }
 
 fn config_prefix(config: &Expr) -> Option<String> {
-    match config {
-        Expr::Call(call) => call
-            .arguments
-            .find_keyword("env_prefix")
-            .and_then(|keyword| literal_of(&keyword.value))
-            .map(Cow::into_owned),
-        Expr::Dict(_) => dict_prop(config, "env_prefix")
-            .filter(|prefix| !prefix.contains("${"))
-            .map(Cow::into_owned),
-        _ => None,
-    }
+    let prefix = match config {
+        Expr::Call(call) => &call.arguments.find_keyword("env_prefix")?.value,
+        Expr::Dict(_) => dict_value(config, "env_prefix")?,
+        _ => return None,
+    };
+    Some(prefix_text(prefix))
+}
+
+/// The text of an `env_prefix`, or the computed text when it is not a literal.
+fn prefix_text(prefix: &Expr) -> String {
+    literal_of(prefix).map_or_else(|| COMPUTED.to_owned(), Cow::into_owned)
 }

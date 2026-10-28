@@ -1735,3 +1735,25 @@ fn an_attribute_assignment_declares_no_table() {
     // and `*.Meta.db_table`, are not about: they name the classes around a plain assignment.
     assert_eq!(tree.contracts("models.py"), ["declares table bookings@9"]);
 }
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A settings prefix that is not a literal leaves its fields unread"
+)]
+#[test]
+fn a_settings_prefix_that_is_not_a_literal_leaves_its_fields_unread() {
+    let tree = index_files(&[(
+        "settings.py",
+        "from pydantic_settings import BaseSettings, SettingsConfigDict\n\nPREFIX = \"APP_\"\n\n\nclass Call(BaseSettings):\n    model_config = SettingsConfigDict(env_prefix=PREFIX)\n\n    port: int\n    token: str = Field(alias=\"API_TOKEN\")\n\n\nclass Table(BaseSettings):\n    model_config = {\"env_prefix\": f\"{PREFIX}X_\"}\n\n    host: str\n\n\nclass Inner(BaseSettings):\n    class Config:\n        env_prefix = PREFIX\n\n    region: str\n\n\nclass Literal(BaseSettings):\n    model_config = SettingsConfigDict(env_prefix=\"LIT_\")\n\n    mode: str\n",
+    )]);
+    // The prefix is part of the name of each field that has no alias, so a field cannot be named when the prefix is
+    // computed; an alias is never prefixed and stays read.
+    assert_eq!(
+        tree.contracts("settings.py"),
+        ["calls env API_TOKEN@10", "calls env LIT_MODE@29"]
+    );
+    assert_eq!(
+        tree.unread("settings.py"),
+        ["L9 port", "L16 host", "L23 region"]
+    );
+}

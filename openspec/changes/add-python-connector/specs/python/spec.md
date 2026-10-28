@@ -339,7 +339,7 @@ With the `dbapi` pack, `execute` and `executemany` called on a receiver of more 
 - **AND** the provides of the project name `execute` and `executemany` calls on a receiver of more than three segments as a blind spot
 
 ### Requirement: Environment variables
-With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.environ.setdefault("<NAME>", …)`, `os.getenv("<NAME>")` and each field of a class deriving from `BaseSettings` SHALL call `env <NAME>`, a field's name prefixed with the literal `env_prefix` of the class's `model_config` or inner `Config` when it has one.
+With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.environ.setdefault("<NAME>", …)`, `os.getenv("<NAME>")` and each field of a class deriving from `BaseSettings` SHALL call `env <NAME>`, a field's name prefixed with the literal `env_prefix` of the class's `model_config` or inner `Config` when it has one. A field whose name would be prefixed with an `env_prefix` that is not a literal SHALL leave an unread site and no `env` call.
 
 #### Scenario: Every way of reading the environment is seen
 - **WHEN** a file reads `os.environ["A"]`, `os.environ.get("B")`, `os.getenv("C")` and declares `class Settings(BaseSettings): database_url: str`
@@ -348,6 +348,11 @@ With the `env` pack, `os.environ["<NAME>"]`, `os.environ.get("<NAME>")`, `os.env
 #### Scenario: A settings prefix is applied
 - **WHEN** a class deriving from `BaseSettings` has `model_config = SettingsConfigDict(env_prefix="APP_")` and a field `port: int`
 - **THEN** the file calls `env APP_PORT`
+
+#### Scenario: A settings prefix that is not a literal leaves its fields unread
+- **WHEN** classes deriving from `BaseSettings` have an `env_prefix` held in a variable, in a `SettingsConfigDict` call, in a `model_config` dict and in an inner `Config`, and one of them has the field `token: str = Field(alias="API_TOKEN")`
+- **AND** another class has the literal `env_prefix="LIT_"` and a field `mode`
+- **THEN** each field without an alias under a prefix held in a variable leaves an unread site and no `env` call, and the file calls `env API_TOKEN` and `env LIT_MODE`
 
 #### Scenario: Setting a default for an environment variable reads it
 - **WHEN** a file calls `os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")`, `environ.setdefault("PORT", "8000")` after `from os import environ`, and `os.environ.setdefault(NAME, "x")`

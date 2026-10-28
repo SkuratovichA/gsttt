@@ -17,7 +17,7 @@ use ruff_python_ast::{
 use ruff_text_size::{TextRange, TextSize};
 
 /// The text a computed part of a template is written as, the way every connector hands it to the rules.
-const COMPUTED: &str = "${}";
+pub(crate) const COMPUTED: &str = "${}";
 
 /// A text and the part of the source its literals fill, from the start of the first to the end of the last.
 struct Text<'a> {
@@ -198,7 +198,7 @@ pub(crate) fn dict_prop<'a>(expr: &'a Expr, prop: &str) -> Option<Cow<'a, str>> 
 }
 
 /// The value of the property `prop` of a dict literal.
-fn dict_value<'a>(expr: &'a Expr, prop: &str) -> Option<&'a Expr> {
+pub(crate) fn dict_value<'a>(expr: &'a Expr, prop: &str) -> Option<&'a Expr> {
     let Expr::Dict(dict) = expr else {
         return None;
     };
