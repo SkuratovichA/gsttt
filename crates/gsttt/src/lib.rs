@@ -9,6 +9,7 @@ mod error;
 pub mod hook;
 pub mod logging;
 pub mod panics;
+pub mod registry;
 pub mod root;
 pub mod streams;
 
