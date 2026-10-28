@@ -1,6 +1,6 @@
 //! What the tests that run the binary share: a sandbox for its environment, and what a run left behind.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tempfile::TempDir;
@@ -41,6 +41,22 @@ impl Sandbox {
     /// Runs the binary with `args` in the work directory.
     pub(crate) fn run(&self, args: &[&str]) -> Ran {
         ran(self.gsttt().args(args))
+    }
+
+    /// Runs the binary with `args` in `dir`.
+    pub(crate) fn run_in(&self, dir: &Path, args: &[&str]) -> Ran {
+        ran(self.gsttt().current_dir(dir).args(args))
+    }
+
+    /// A git repository `repo` in the work directory, holding the project of [`typescript_project`] in a first
+    /// commit. Returns the canonical path of its root.
+    pub(crate) fn repository(&self) -> PathBuf {
+        let repo = self.work.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        typescript_project(&repo);
+        commit_all(&repo);
+        repo.canonicalize().unwrap()
     }
 }
 

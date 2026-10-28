@@ -1,4 +1,4 @@
-//! How an answer reaches stdout.
+//! How an answer reaches stdout, and how one that is not an answer reaches stderr.
 
 use gsttt_core::query::{Answer, Entries};
 
@@ -22,4 +22,21 @@ pub(super) fn answer<A: Answer>(
     text.push('\n');
     io.answer(text.as_bytes())?;
     Ok(Outcome::Answered)
+}
+
+/// Prints `answer` when `held` says the index holds the subject it was asked about. When it does not, the question
+/// has no answer: its text goes to stderr, stdout stays empty even under `--json`, and the run fails.
+pub(super) fn answer_if<A: Answer>(
+    held: bool,
+    answered: &A,
+    flags: &Flags,
+    io: &mut Io<'_>,
+) -> Result<Outcome, CliError> {
+    if held {
+        return answer(answered, flags, io);
+    }
+    let mut text = answered.text(Entries::Capped);
+    text.push('\n');
+    io.complain(text.as_bytes());
+    Ok(Outcome::Failed)
 }

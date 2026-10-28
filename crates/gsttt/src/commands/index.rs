@@ -8,31 +8,26 @@ use gsttt_core::text::{duration, noun, short, thousands};
 use gsttt_core::{Freshness, Index};
 use serde::{Serialize, Serializer};
 
-use super::{print, stored};
-use crate::cli::Flags;
+use super::{Session, print};
 use crate::error::CliError;
-use crate::repository::{Refreshed, Repository};
+use crate::repository::Refreshed;
 use crate::streams::{Io, Outcome};
 
 /// `gsttt index`: brings the index up to date and prints a summary of the run.
-pub(super) fn index(
-    repository: &Repository,
-    flags: &Flags,
-    io: &mut Io<'_>,
-) -> Result<Outcome, CliError> {
-    let refreshed = repository.refreshed()?;
-    print::answer(&Summary::of(&refreshed), flags, io)
+pub(super) fn index(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, CliError> {
+    let refreshed = session.repository.refreshed()?;
+    print::answer(&Summary::of(&refreshed), session.flags, io)
 }
 
 /// `gsttt status`: how the stored index stands against the tree. It never refreshes, so that asking changes
 /// nothing about the answer to the next question.
-pub(super) fn status(
-    repository: &Repository,
-    flags: &Flags,
-    io: &mut Io<'_>,
-) -> Result<Outcome, CliError> {
-    let loaded = stored(repository)?;
-    print::answer(&query::status(&loaded.index, loaded.freshness), flags, io)
+pub(super) fn status(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, CliError> {
+    let loaded = session.stored()?;
+    print::answer(
+        &query::status(&loaded.index, loaded.freshness),
+        session.flags,
+        io,
+    )
 }
 
 /// What `index` reports of a run.

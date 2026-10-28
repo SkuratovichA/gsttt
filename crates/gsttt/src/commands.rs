@@ -1,19 +1,17 @@
 //! The commands: what each one checks, and what it ends with.
 
-use camino::Utf8Path;
+use camino::Utf8PathBuf;
 use clap::CommandFactory;
-use gsttt_core::RepoPath;
-use gsttt_core::engine::snapshot;
-use gsttt_core::engine::workspace::Workspace;
 
 use crate::cli::{Cli, Command, ContractArgs, Flags, HookCommand, ImpactArgs};
 use crate::error::CliError;
-use crate::repository::{Loaded, Repository};
+use crate::repository::{Loaded, Repository, Target};
 use crate::streams::{Io, Outcome};
 use crate::{hook, root};
 
 mod index;
 mod print;
+mod questions;
 
 /// Runs the command `cli` names, writing the answer to `io.stdout` and the failure, if any, to `io.stderr`.
 pub fn run(cli: Cli, io: &mut Io<'_>) -> Outcome {
@@ -36,6 +34,7 @@ fn no_command(io: &mut Io<'_>) -> Outcome {
 }
 
 fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome, CliError> {
+    check_arguments(flags, command)?;
     match command {
         Command::Completions { shell } => {
             let mut script = Vec::new();
@@ -47,72 +46,71 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
             hook::session_start(flags, io);
             Ok(Outcome::Answered)
         }
-        Command::Index | Command::Status => {
-            check_arguments(flags, command)?;
-            let (_, repository) = open(flags)?;
-            if matches!(command, Command::Index) {
-                index::index(&repository, flags, io)
-            } else {
-                index::status(&repository, flags, io)
-            }
+        Command::Schema(_) => Err(not_built(command)),
+        Command::Init | Command::Config(_) => {
+            root::locate(&root::start(flags.directory.as_deref())?)?;
+            Err(not_built(command))
         }
-        command => {
-            check_arguments(flags, command)?;
-            if command.needs_root() {
-                let start = root::start(flags.directory.as_deref())?;
-                let workspace = root::locate(&start)?;
-                tracing::debug!(root = %workspace.root(), "found the root");
-                read_paths(command, workspace.root(), &start)?;
-                if answers_from_the_stored_index(flags, command) {
-                    require_index(&workspace)?;
-                }
+        Command::Impact(ImpactArgs { paths, .. }) => {
+            let session = Session::open(flags)?;
+            for argument in paths {
+                session.argument(argument)?;
+            }
+            if flags.no_refresh {
+                session.stored()?;
             }
             Err(not_built(command))
         }
+        Command::Index => index::index(&Session::open(flags)?, io),
+        Command::Status => index::status(&Session::open(flags)?, io),
+        Command::Dependents(args) => questions::dependents(&Session::open(flags)?, args, io),
+        Command::Dependencies(args) => questions::dependencies(&Session::open(flags)?, args, io),
+        Command::Path(args) => questions::path(&Session::open(flags)?, args, io),
+        Command::Contract(args) => questions::contract(&Session::open(flags)?, args, io),
+        Command::Coverage => questions::coverage(&Session::open(flags)?, io),
     }
 }
 
-/// The directory the run starts in and the repository around it.
-fn open(flags: &Flags) -> Result<(camino::Utf8PathBuf, Repository), CliError> {
-    let start = root::start(flags.directory.as_deref())?;
-    let repository = Repository::open(&start)?;
-    tracing::debug!(root = %repository.root(), "found the root");
-    Ok((start, repository))
+/// The repository a run works on, and the options of the run.
+struct Session<'a> {
+    flags: &'a Flags,
+    /// The directory the run started in, which path arguments are read against.
+    start: Utf8PathBuf,
+    repository: Repository,
 }
 
-/// The stored index as it is, for the commands that never refresh it.
-fn stored(repository: &Repository) -> Result<Loaded, CliError> {
-    repository.stored()?.ok_or_else(|| CliError::NoIndex {
-        root: repository.root().to_owned(),
-    })
-}
+impl<'a> Session<'a> {
+    /// Finds the root from the directory the run starts in and opens the repository there.
+    fn open(flags: &'a Flags) -> Result<Self, CliError> {
+        let start = root::start(flags.directory.as_deref())?;
+        let repository = Repository::open(&start)?;
+        tracing::debug!(root = %repository.root(), "found the root");
+        Ok(Self {
+            flags,
+            start,
+            repository,
+        })
+    }
 
-/// Reads every path argument of `command` against `base`, the directory the run started in, as a path from `root`.
-/// A usage error is told before anything reads the index, so the answer does not depend on it.
-fn read_paths(
-    command: &Command,
-    root: &Utf8Path,
-    base: &Utf8Path,
-) -> Result<Vec<RepoPath>, CliError> {
-    command
-        .path_arguments()
-        .into_iter()
-        .map(|argument| Ok(RepoPath::from_argument(root, base, argument)?))
-        .collect()
-}
+    /// A path argument, as a path from the root.
+    fn argument(&self, argument: &str) -> Result<Target, CliError> {
+        Ok(self.repository.argument(&self.start, argument)?)
+    }
 
-/// Whether the command reads the index as it was stored, without refreshing it first.
-fn answers_from_the_stored_index(flags: &Flags, command: &Command) -> bool {
-    flags.no_refresh && command.is_question()
-}
+    /// The stored index as it is, for the commands that never refresh it.
+    fn stored(&self) -> Result<Loaded, CliError> {
+        self.repository.stored()?.ok_or_else(|| CliError::NoIndex {
+            root: self.repository.root().to_owned(),
+        })
+    }
 
-/// Fails when the workspace has no index to read.
-fn require_index(workspace: &Workspace) -> Result<(), CliError> {
-    match snapshot::peek(workspace.snapshot_path().as_std_path()) {
-        Some(_) => Ok(()),
-        None => Err(CliError::NoIndex {
-            root: workspace.root().to_owned(),
-        }),
+    /// The index a question answers from: the one a refresh leaves, or the stored one under `--no-refresh`.
+    fn loaded(&self) -> Result<Loaded, CliError> {
+        if self.flags.no_refresh {
+            self.stored()
+        } else {
+            Ok(self.repository.refreshed()?.loaded)
+        }
     }
 }
 
@@ -134,7 +132,7 @@ fn is_blank(query: &ContractArgs) -> bool {
     query.text().trim().is_empty()
 }
 
-/// Every command whose answer needs the config, a connector or the index fails here until it is built.
+/// Every command whose answer needs the config or a connector fails here until it is built.
 fn not_built(command: &Command) -> CliError {
     CliError::NotBuilt {
         command: command.name(),

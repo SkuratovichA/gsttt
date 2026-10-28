@@ -7,6 +7,7 @@ mod index;
 mod logs;
 mod panics;
 mod paths;
+mod questions;
 mod repository;
 mod root;
 mod support;

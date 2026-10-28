@@ -169,50 +169,6 @@ pub enum SchemaCommand {
 }
 
 impl Command {
-    /// Whether the command answers a question from the index: `impact`, `dependents`, `dependencies`, `path`,
-    /// `contract` and `coverage`.
-    pub const fn is_question(&self) -> bool {
-        matches!(
-            self,
-            Self::Impact(_)
-                | Self::Dependents(_)
-                | Self::Dependencies(_)
-                | Self::Path(_)
-                | Self::Contract(_)
-                | Self::Coverage
-        )
-    }
-
-    /// Whether the command works on a repository, which every command does except those about gsttt itself and
-    /// the hook, which finds its own root without failing.
-    pub const fn needs_root(&self) -> bool {
-        !matches!(
-            self,
-            Self::Completions { .. } | Self::Schema(_) | Self::Hook(_)
-        )
-    }
-
-    /// The arguments that name files, in the order they are typed: the paths of `impact`, the file of
-    /// `dependents` and `dependencies`, and both ends of `path`.
-    pub fn path_arguments(&self) -> Vec<&str> {
-        match self {
-            Self::Impact(ImpactArgs { paths, .. }) => paths.iter().map(String::as_str).collect(),
-            Self::Dependents(FileArgs { path }) | Self::Dependencies(FileArgs { path }) => {
-                vec![path]
-            }
-            Self::Path(PathArgs { from, to }) => vec![from, to],
-            Self::Index
-            | Self::Contract(_)
-            | Self::Coverage
-            | Self::Status
-            | Self::Hook(_)
-            | Self::Init
-            | Self::Config(_)
-            | Self::Schema(_)
-            | Self::Completions { .. } => Vec::new(),
-        }
-    }
-
     /// The command as it is typed, for messages: `impact`, `config check`.
     pub const fn name(&self) -> &'static str {
         match self {
