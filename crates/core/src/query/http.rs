@@ -6,9 +6,10 @@ use crate::contract::{ContractKey, normalize_http_path};
 /// Decides whether two contract keys meet, under the path prefixes a gateway or proxy puts in front of routes.
 ///
 /// Two HTTP keys meet when their methods are equal or either is `*`, and their paths have the same number of
-/// segments, each pair equal or `{}` on either side, once any prefix has been taken off the start of either path.
-/// Taking a prefix off is optional: a path meets another both as written and with each of its prefixes removed, so
-/// adding a prefix never breaks a match. Any other two keys meet when they are equal.
+/// segments, each pair equal or `{}` on either side. A prefix may be taken off the start of one of the paths, never
+/// of both: `/api/users` meets `/users`, but not `/v1/users`, which is another route behind another gateway. Taking
+/// a prefix off is optional, so adding a prefix never breaks a match, and it must leave a path: `/api` is a prefix,
+/// not a route, and does not meet `/`. Any other two keys meet when they are equal.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HttpMatcher {
     /// The prefixes in the form key paths take: `/api/v1`, never `api/v1/`. The root is not a prefix.
@@ -38,18 +39,25 @@ impl HttpMatcher {
         }
     }
 
-    fn paths_meet(&self, a: &str, b: &str) -> bool {
-        self.forms(a)
-            .any(|a| self.forms(b).any(|b| segments_meet(a, b)))
+    /// How many segments `path` has as written and with each prefix taken off, which are the lengths at which it can
+    /// meet another path.
+    pub(super) fn lengths<'a>(&'a self, path: &'a str) -> impl Iterator<Item = usize> {
+        std::iter::once(path)
+            .chain(self.stripped(path))
+            .map(|form| segments(form).count())
     }
 
-    /// `path` as written, then with each prefix taken off its start.
-    fn forms<'a>(&'a self, path: &'a str) -> impl Iterator<Item = &'a str> {
-        std::iter::once(path).chain(
-            self.prefixes
-                .iter()
-                .filter_map(move |prefix| strip_segments(path, prefix)),
-        )
+    fn paths_meet(&self, a: &str, b: &str) -> bool {
+        segments_meet(a, b)
+            || self.stripped(a).any(|a| segments_meet(a, b))
+            || self.stripped(b).any(|b| segments_meet(a, b))
+    }
+
+    /// `path` with each prefix taken off its start.
+    fn stripped<'a>(&'a self, path: &'a str) -> impl Iterator<Item = &'a str> {
+        self.prefixes
+            .iter()
+            .filter_map(move |prefix| strip_segments(path, prefix))
     }
 }
 
@@ -57,10 +65,11 @@ fn methods_meet(a: &str, b: &str) -> bool {
     a == b || a == "*" || b == "*"
 }
 
-/// `path` without `prefix`, when `prefix` is made of whole leading segments of it.
+/// `path` without `prefix`, when `prefix` is made of whole leading segments of it and something is left. A path
+/// always starts with `/`, so what is left starts with one exactly when it holds a segment.
 fn strip_segments<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
     path.strip_prefix(prefix)
-        .filter(|rest| rest.is_empty() || rest.starts_with('/'))
+        .filter(|rest| rest.starts_with('/'))
 }
 
 fn segments(path: &str) -> impl Iterator<Item = &str> {

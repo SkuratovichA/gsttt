@@ -22,3 +22,9 @@
 
 - [x] 4.1 A test annotated `#[scenario("queries", …)]` for every scenario of the `queries` spec
 - [x] 4.2 `cargo nextest run -p gsttt-core`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+
+## 5. Review fixes
+
+- [x] 5.1 An HTTP prefix is removed from one path only, and a path that is only a prefix is no path
+- [x] 5.2 A lookup compares an HTTP key with the routes that have a segment count it can meet, not with every route of the index
+- [x] 5.3 The properties of HTTP matching draw their prefixes from the vocabulary of the keys and draw more cases

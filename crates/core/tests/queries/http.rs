@@ -1,9 +1,14 @@
 //! HTTP matching: when a call and a route are about the same contract.
 
+use std::collections::BTreeSet;
+
 use gsttt_core::ContractKey;
-use gsttt_core::query::HttpMatcher;
+use gsttt_core::index::Freshness;
+use gsttt_core::query::{Found, HttpMatcher, contract};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
+
+use crate::fixture::Tree;
 
 fn key(text: &str) -> ContractKey {
     ContractKey::parse(text).unwrap()
@@ -36,6 +41,32 @@ fn prefixes_are_read_as_the_config_spells_them() {
     assert!(!matcher(&["/api"]).meets(&call, &route));
     assert!(!matcher(&["/ap"]).meets(&key("http GET /api/bookings"), &route));
     assert!(!matcher(&["", "/"]).meets(&call, &route));
+}
+
+#[scenario("queries", "A prefix is removed from one path only")]
+#[test]
+fn a_prefix_is_removed_from_one_path_only() {
+    let matcher = matcher(&["/api", "/v1"]);
+    let api = key("http GET /api/users");
+    let v1 = key("http GET /v1/users");
+    let bare = key("http GET /users");
+
+    assert!(!matcher.meets(&api, &v1));
+    assert!(!matcher.meets(&v1, &api));
+    assert!(matcher.meets(&api, &bare));
+    assert!(matcher.meets(&v1, &bare));
+}
+
+#[scenario("queries", "A prefix alone is no path")]
+#[test]
+fn a_prefix_alone_is_no_path() {
+    let matcher = matcher(&["/api"]);
+    let prefix = key("http GET /api");
+    let root = key("http GET /");
+
+    assert!(!matcher.meets(&prefix, &root));
+    assert!(!matcher.meets(&root, &prefix));
+    assert!(matcher.meets(&prefix, &prefix));
 }
 
 #[scenario("queries", "Methods must agree")]
@@ -98,12 +129,28 @@ fn http_key() -> impl Strategy<Value = ContractKey> {
         })
 }
 
-/// Prefixes as a config could spell them, including shapes that are no sensible prefix at all.
+/// Prefixes of the vocabulary the keys are made of, so that taking one off a path is something that happens, in the
+/// spellings a config could use, with the two that are no prefix at all.
 fn prefixes() -> impl Strategy<Value = Vec<String>> {
-    prop::collection::vec("[a-z/{}]{0,12}", 0..4)
+    prop::collection::vec(
+        prop::sample::select(vec![
+            "/api",
+            "/v1",
+            "/api/v1",
+            "/bookings",
+            "api/v1/",
+            "",
+            "/",
+        ])
+        .prop_map(String::from),
+        0..4,
+    )
 }
 
 proptest! {
+    // A prefix changes the answer in about one draw in two hundred, so the default 256 draws would often miss it.
+    #![proptest_config(ProptestConfig::with_cases(1024))]
+
     #[scenario("queries", "Meeting is symmetric")]
     #[test]
     fn meeting_is_symmetric(a in http_key(), b in http_key(), prefixes in prefixes()) {
@@ -120,6 +167,40 @@ proptest! {
     fn prefixes_only_add_matches(a in http_key(), b in http_key(), prefixes in prefixes()) {
         if HttpMatcher::default().meets(&a, &b) {
             prop_assert!(HttpMatcher::new(&prefixes).meets(&a, &b));
+        }
+    }
+}
+
+proptest! {
+    /// Looking a key up finds the sites of exactly the routes `HttpMatcher` says meet it, whichever way the index
+    /// narrows the routes it compares.
+    #[test]
+    fn a_lookup_finds_exactly_the_routes_that_meet(
+        asked in http_key(),
+        routes in prop::collection::vec(http_key(), 0..12),
+        prefixes in prefixes(),
+    ) {
+        let spelled: Vec<&str> = prefixes.iter().map(String::as_str).collect();
+        let index = routes
+            .iter()
+            .enumerate()
+            .fold(Tree::new().prefixes(&spelled), |tree, (position, route)| {
+                tree.serves(&format!("route{position}.ts"), &route.to_string())
+            })
+            .build();
+        let matcher = HttpMatcher::new(&prefixes);
+        let expected: BTreeSet<String> = routes
+            .iter()
+            .filter(|route| matcher.meets(&asked, route))
+            .map(ToString::to_string)
+            .collect();
+
+        match contract(&index, Freshness::Fresh, &asked.to_string()).found {
+            Found::Key { serves, .. } => {
+                let found: BTreeSet<String> = serves.into_iter().map(|site| site.key).collect();
+                prop_assert_eq!(found, expected);
+            }
+            Found::Search { .. } => prop_assert!(expected.is_empty()),
         }
     }
 }
