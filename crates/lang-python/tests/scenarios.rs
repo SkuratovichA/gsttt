@@ -803,6 +803,28 @@ fn a_fastapi_router_included_with_a_prefix() {
     );
 }
 
+#[gsttt_scenario::scenario("python", "A FastAPI route with the TRACE method")]
+#[test]
+fn a_fastapi_route_with_the_trace_method() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"probe\"\ndependencies = [\"fastapi\"]\n",
+        ),
+        (
+            "app.py",
+            "from fastapi import APIRouter, FastAPI\n\nrouter = APIRouter()\napp = FastAPI()\n\n\n@router.trace(\"/probe\")\ndef probe():\n    return \"ok\"\n\n\n@app.trace(\"/echo\")\ndef echo():\n    return \"ok\"\n",
+        ),
+    ]);
+    // The router is mounted nowhere, so the link serves its route at its own path.
+    assert_eq!(tree.linked("app.py"), ["serves http TRACE /probe@7"]);
+    assert_eq!(tree.contracts("app.py"), ["serves http TRACE /echo@12"]);
+    insta::assert_json_snapshot!(
+        "a_fastapi_route_with_the_trace_method",
+        json!({ "app": tree.file_json("app.py"), "linked": tree.json["linked"] })
+    );
+}
+
 #[gsttt_scenario::scenario("python", "A Flask blueprint serves under its prefix")]
 #[test]
 fn a_flask_blueprint_serves_under_its_prefix() {

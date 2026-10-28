@@ -216,12 +216,16 @@ A standard library module SHALL resolve to a builtin, a module of a declared dep
 - **THEN** `json` resolves to a builtin, `yaml` to the package `pyyaml`, `fastapi.routing` to the package `fastapi`, `requests` to an unknown package and `app.missing` to not found
 
 ### Requirement: HTTP routes
-With the `fastapi` pack, `get`, `post`, `put`, `patch`, `delete`, `options`, `head` and `api_route` decorators on a receiver made by `FastAPI()` or `APIRouter()` SHALL serve the path, and `include_router(router, prefix=…)` SHALL serve the included router's routes under the prefix, across files.
+With the `fastapi` pack, `get`, `post`, `put`, `patch`, `delete`, `options`, `head`, `trace` and `api_route` decorators on a receiver made by `FastAPI()` or `APIRouter()` SHALL serve the path, and `include_router(router, prefix=…)` SHALL serve the included router's routes under the prefix, across files.
 
 #### Scenario: A FastAPI router included with a prefix
 - **WHEN** `app/api/bookings.py` has `router = APIRouter(prefix="/bookings")` and `@router.get("/{booking_id}")`, and `app/main.py` has `app.include_router(bookings.router, prefix="/api")`
 - **THEN** `app/api/bookings.py` serves `http GET /api/bookings/{}` at the line of the decorator
 - **AND** it serves no other path
+
+#### Scenario: A FastAPI route with the TRACE method
+- **WHEN** `app.py` has `router = APIRouter()`, `app = FastAPI()`, `@router.trace("/probe")` and `@app.trace("/echo")`
+- **THEN** `app.py` serves `http TRACE /probe` at the line of the first decorator and `http TRACE /echo` at the line of the second
 
 ### Requirement: FastAPI router chains
 A route on an `APIRouter` SHALL be served once for each chain of `include_router(router, prefix=…)` calls that reaches the router, at the path made by joining, from the outermost router inwards, the `prefix` of each call and then the `prefix` of the router it includes, and last the path of the route. A router that no call includes SHALL serve its own `prefix` joined with the path.

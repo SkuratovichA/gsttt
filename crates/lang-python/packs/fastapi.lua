@@ -11,7 +11,7 @@ return {
   detect = { "fastapi" },
   decorators = {
     {
-      decorator = { "*.get", "*.post", "*.put", "*.patch", "*.delete", "*.options", "*.head" },
+      decorator = { "*.get", "*.post", "*.put", "*.patch", "*.delete", "*.options", "*.head", "*.trace" },
       kind = "http",
       role = "serves",
       key = "$arg1|$path",
