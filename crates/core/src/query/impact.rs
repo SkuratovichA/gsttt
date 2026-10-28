@@ -71,7 +71,7 @@ pub enum Reason {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         names: Vec<String>,
     },
-    /// The file re-exports `names` of `file`, which the walk had reached, in byte order. They are left out when it passes none on, because `file` has nothing left to export through a star.
+    /// The file re-exports `names` of `file`, which the walk had reached, in byte order of the name `file` has for each, which is followed by ` as <alias>` when the file exports it under another name. They are left out when it passes none on, because `file` has nothing left to export through a star.
     ReExports {
         file: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -82,7 +82,7 @@ pub enum Reason {
 }
 
 impl Reason {
-    /// `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `imports src/a.ts`, `calls http GET /bookings/{}`. Names are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    /// `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `re-exports useFoo as useBar from src/a.ts`, `imports src/a.ts`, `calls http GET /bookings/{}`. Names are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
     fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         let (verb, file, names) = match self {
             Self::Imports { file, names } => ("imports", file, names),
@@ -225,7 +225,7 @@ fn reason(graph: &Graph, cause: &Cause) -> Option<Reason> {
         }),
         Cause::ReExports { file, names } => Some(Reason::ReExports {
             file: graph.path(*file)?.to_string(),
-            names: spell(graph, names)?,
+            names: spell_re_exports(graph, names)?,
         }),
         Cause::Contract { role, contract } => Some(Reason::Contract {
             role: *role,
@@ -238,6 +238,21 @@ fn reason(graph: &Graph, cause: &Cause) -> Option<Reason> {
 fn spell(graph: &Graph, ids: &[NameId]) -> Option<Vec<String>> {
     ids.iter()
         .map(|&id| graph.name(id).map(str::to_owned))
+        .collect()
+}
+
+/// The names a file re-exports, each as `name` or, when the file exports it under another name, `name as alias`.
+fn spell_re_exports(graph: &Graph, names: &[(NameId, NameId)]) -> Option<Vec<String>> {
+    names
+        .iter()
+        .map(|&(source, exported_as)| {
+            let source_name = graph.name(source)?;
+            if source == exported_as {
+                Some(source_name.to_owned())
+            } else {
+                Some(format!("{source_name} as {}", graph.name(exported_as)?))
+            }
+        })
         .collect()
 }
 

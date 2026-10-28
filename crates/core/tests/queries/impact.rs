@@ -829,9 +829,14 @@ fn a_named_re_export_passes_on_its_alias() {
     assert_eq!(
         rows(&answer.affected),
         [
-            row("index.ts", 1, "re-exports useBar from foo.ts"),
+            row("index.ts", 1, "re-exports useFoo as useBar from foo.ts"),
             row("x.ts", 2, "imports useBar from index.ts"),
         ]
+    );
+    // The JSON spells it the same way, so a search of foo.ts for what is named finds it.
+    assert_eq!(
+        to_value(&answer.affected[0].reason).unwrap(),
+        json!({"via": "re-exports", "file": "foo.ts", "names": ["useFoo as useBar"]})
     );
 }
 

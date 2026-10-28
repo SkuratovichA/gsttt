@@ -18,8 +18,11 @@ use super::cross::{Crossed, Crossing, Direction};
 pub(super) enum Cause {
     /// The file imports the file the walk came from. `names` are the names it imports that the change can reach, sorted, and none when it takes every name.
     Imports { file: FileId, names: Vec<NameId> },
-    /// The file re-exports `names` of the file the walk came from, sorted. There are no names when it passes none on, because the file it came from has nothing left to export through a star.
-    ReExports { file: FileId, names: Vec<NameId> },
+    /// The file re-exports `names` of the file the walk came from, each as the name it has there and the name this file exports it as, sorted by the first. There are no names when it passes none on, because the file it came from has nothing left to export through a star.
+    ReExports {
+        file: FileId,
+        names: Vec<(NameId, NameId)>,
+    },
     /// The file has a site with `role` in `contract`, which joins a contract of the file the walk came from.
     Contract { role: Role, contract: ContractId },
 }
@@ -202,15 +205,15 @@ impl Walk<'_> {
             return;
         }
 
-        // The names it passes on, which affect it only in those names.
-        let mut passed = Vec::new();
+        // The names it passes on, which affect it only in those names, each with the name it has in `file`.
+        let mut passed: Vec<(NameId, NameId)> = Vec::new();
         for &(exported_as, taken) in binding.passes {
             let reached = match delta {
                 Delta::All => true,
                 Delta::Names(fresh) => Some(taken) == self.star || holds(fresh, taken),
             };
             if reached {
-                passed.push(exported_as);
+                passed.push((taken, exported_as));
             }
         }
         if binding.star {
@@ -218,7 +221,8 @@ impl Walk<'_> {
                 gained
                     .iter()
                     .copied()
-                    .filter(|&name| Some(name) != self.default),
+                    .filter(|&name| Some(name) != self.default)
+                    .map(|name| (name, name)),
             );
         }
         passed.sort_unstable();
@@ -241,9 +245,9 @@ impl Walk<'_> {
         let first = self.seen.insert(importer);
         let held = self.held.entry(importer).or_default();
         let before = held.growth.len();
-        for &name in &passed {
-            if held.names.insert(name) {
-                held.growth.push(name);
+        for &(_, exported_as) in &passed {
+            if held.names.insert(exported_as) {
+                held.growth.push(exported_as);
             }
         }
         let grew = held.growth.len() > before;

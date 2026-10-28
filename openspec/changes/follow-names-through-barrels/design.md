@@ -37,7 +37,7 @@ X(T), all the names of T, is the own exports of T together with X(U) without `de
 
 ## Reasons
 
-`Reason::Imports { file, names }` and a new `Reason::ReExports { file, names }`, written `via: "re-exports"` in JSON, with the names that carried the change, sorted, and none when the edge uses all, when the file it comes from has unknown exports, or when a star passes none. Text: `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, and `imports src/a.ts` with no names; the first three names and then `and N more`, unless every entry is asked for.
+`Reason::Imports { file, names }` and a new `Reason::ReExports { file, names }`, written `via: "re-exports"` in JSON, with the names that carried the change, sorted, and none when the edge uses all, when the file it comes from has unknown exports, or when a star passes none. The names of a re-export are those of the file it comes from, so that a search of it finds them, each followed by `as` and the name the barrel exports it as when that is another, in the text and in the JSON alike. Text: `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `re-exports useFoo as useBar from src/a.ts`, and `imports src/a.ts` with no names; the first three names and then `and N more`, unless every entry is asked for.
 
 ## Decisions
 

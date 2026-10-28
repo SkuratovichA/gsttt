@@ -55,7 +55,7 @@ Where the import edges name what the importer takes, `impact` SHALL carry a chan
 - **THEN** impact lists `old.ts` with the reason `imports gone from index.ts`
 
 ### Requirement: Names through re-exports
-A named re-export SHALL affect the names it exports affected names as, and `export *` every affected name but `default`, where all the names of a file are those it exports itself and through its own `export *`. A file affected in some of its names only SHALL be listed with the reason that it re-exports them.
+A named re-export SHALL affect the names it exports affected names as, and `export *` every affected name but `default`, where all the names of a file are those it exports itself and through its own `export *`. A file affected in some of its names only SHALL be listed with the reason that it re-exports them, each by the name the file it re-exports has for it, followed by `as` and the name it is exported as when that is another, so that a search of the file for what the reason names finds it.
 
 #### Scenario: A barrel passes on only what it re-exports
 - **WHEN** `index.ts` has `export * from './a'` and `export * from './b'`, `a.ts` exports `fromA`, `b.ts` exports `fromB`, `form.ts` imports `fromA` from `index.ts`, `page.ts` imports `fromB` from it, and `a.ts` changes
@@ -64,7 +64,7 @@ A named re-export SHALL affect the names it exports affected names as, and `expo
 
 #### Scenario: A named re-export passes on its alias
 - **WHEN** `index.ts` has `export { useFoo as useBar } from './foo'` and `export { other } from './other'`, `x.ts` imports `useBar` from `index.ts`, `y.ts` imports `other` from it, and `foo.ts` changes
-- **THEN** impact lists `index.ts` with the reason `re-exports useBar from foo.ts` and `x.ts` with the reason `imports useBar from index.ts`
+- **THEN** impact lists `index.ts` with the reason `re-exports useFoo as useBar from foo.ts` and `x.ts` with the reason `imports useBar from index.ts`
 - **AND** it does not list `y.ts`
 
 #### Scenario: Chained barrels pass names on
