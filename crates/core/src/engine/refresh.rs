@@ -1065,8 +1065,7 @@ mod tests {
     #[test]
     fn a_linked_fact_replaces_the_own_fact_it_re_keys() {
         let rig = Rig::new();
-        let text =
-            "fact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /api/bookings/{}\n";
+        let text = "fact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /api/bookings/{} replaces http GET /bookings/{}\n";
         let dir = init_repo(&[("a.txt", text)]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         assert_eq!(
@@ -1081,23 +1080,25 @@ mod tests {
     #[test]
     fn an_own_fact_on_another_line_keeps_its_site() {
         let rig = Rig::new();
-        let text = "fact 1 serves http GET /bookings/{}\nfact 2 serves http GET /health\nlinked 1 serves http GET /api/bookings/{}\n";
+        // Line 2 has the key that the linked fact names, so only the line tells the two own facts apart.
+        let text = "fact 1 serves http GET /bookings/{}\nfact 2 serves http GET /bookings/{}\nlinked 1 serves http GET /api/bookings/{} replaces http GET /bookings/{}\n";
         let dir = init_repo(&[("a.txt", text)]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         assert_eq!(
             sites_of(&run.index, "http GET /api/bookings/{}"),
             ["a.txt:1 serves"]
         );
-        assert_eq!(sites_of(&run.index, "http GET /health"), ["a.txt:2 serves"]);
-        let own = sites_of(&run.index, "http GET /bookings/{}");
-        assert!(own.is_empty(), "{own:?}");
+        assert_eq!(
+            sites_of(&run.index, "http GET /bookings/{}"),
+            ["a.txt:2 serves"]
+        );
     }
 
     #[gsttt_scenario::scenario("indexing", "An own fact of another kind or role keeps its site")]
     #[test]
     fn an_own_fact_of_another_kind_or_role_keeps_its_site() {
         let rig = Rig::new();
-        let text = "fact 1 serves http GET /bookings/{}\nfact 1 calls http GET /bookings/{}\nfact 1 serves queue bookings\nlinked 1 serves http GET /api/bookings/{}\n";
+        let text = "fact 1 serves http GET /bookings/{}\nfact 1 calls http GET /bookings/{}\nfact 1 serves queue bookings\nlinked 1 serves http GET /api/bookings/{} replaces http GET /bookings/{}\n";
         let dir = init_repo(&[("a.txt", text)]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         assert_eq!(
@@ -1116,7 +1117,9 @@ mod tests {
     fn an_own_fact_of_another_file_keeps_its_site() {
         let rig = Rig::new();
         let declared = "fact 1 serves http GET /bookings/{}\n";
-        let mounted = format!("{declared}linked 1 serves http GET /api/bookings/{{}}\n");
+        let mounted = format!(
+            "{declared}linked 1 serves http GET /api/bookings/{{}} replaces http GET /bookings/{{}}\n"
+        );
         let dir = init_repo(&[("a.txt", mounted.as_str()), ("b.txt", declared)]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         assert_eq!(
@@ -1136,7 +1139,7 @@ mod tests {
     #[test]
     fn a_declaration_mounted_under_two_prefixes_has_two_linked_sites() {
         let rig = Rig::new();
-        let text = "fact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /v1/bookings/{}\nlinked 1 serves http GET /v2/bookings/{}\n";
+        let text = "fact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /v1/bookings/{} replaces http GET /bookings/{}\nlinked 1 serves http GET /v2/bookings/{} replaces http GET /bookings/{}\n";
         let dir = init_repo(&[("a.txt", text)]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         for prefix in ["v1", "v2"] {
@@ -1149,35 +1152,39 @@ mod tests {
         assert!(own.is_empty(), "{own:?}");
     }
 
-    #[gsttt_scenario::scenario(
-        "indexing",
-        "An own fact the link leaves out of a re-keyed line loses its site"
-    )]
+    #[gsttt_scenario::scenario("indexing", "An own fact no linked fact names keeps its site")]
     #[test]
-    fn an_own_fact_the_link_leaves_out_of_a_re_keyed_line_loses_its_site() {
+    fn an_own_fact_no_linked_fact_names_keeps_its_site() {
         let rig = Rig::new();
-        // The place holds no key, so the engine cannot tell which own fact the linked one re-keys.
-        let text = "fact 1 serves http GET /a\nfact 1 serves http GET /b\nlinked 1 serves http GET /api/a\n";
+        let text = "fact 1 serves http GET /a\nfact 1 serves http GET /b\nlinked 1 serves http GET /api/a replaces http GET /a\n";
         let dir = init_repo(&[("a.txt", text)]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         assert_eq!(sites_of(&run.index, "http GET /api/a"), ["a.txt:1 serves"]);
-        for own in ["http GET /a", "http GET /b"] {
-            let sites = sites_of(&run.index, own);
-            assert!(sites.is_empty(), "{own}: {sites:?}");
-        }
+        assert_eq!(sites_of(&run.index, "http GET /b"), ["a.txt:1 serves"]);
+        let own = sites_of(&run.index, "http GET /a");
+        assert!(own.is_empty(), "{own:?}");
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A linked fact that names no own fact replaces nothing")]
+    #[test]
+    fn a_linked_fact_that_names_no_own_fact_replaces_nothing() {
+        let rig = Rig::new();
+        let text = "fact 1 serves http GET /b\nlinked 1 serves http GET /api/x\n";
+        let dir = init_repo(&[("a.txt", text)]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(sites_of(&run.index, "http GET /api/x"), ["a.txt:1 serves"]);
+        assert_eq!(sites_of(&run.index, "http GET /b"), ["a.txt:1 serves"]);
     }
 
     #[gsttt_scenario::scenario("indexing", "An embedded fact is not replaced by a linked one")]
     #[test]
     fn an_embedded_fact_is_not_replaced_by_a_linked_one() {
         let rig = Rig::new();
-        let text = "embed graphql query Q\nfact 1 calls queue own\nlinked 1 calls queue other\n";
+        let text = "embed graphql query Q\nlinked 1 calls queue other replaces queue query-Q\n";
         let dir = init_repo(&[("a.txt", text)]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         assert_eq!(sites_of(&run.index, "queue other"), ["a.txt:1 calls"]);
         assert_eq!(sites_of(&run.index, "queue query-Q"), ["a.txt:1 calls"]);
-        let own = sites_of(&run.index, "queue own");
-        assert!(own.is_empty(), "{own:?}");
     }
 
     #[gsttt_scenario::scenario("indexing", "A panicking parse fails one file")]
@@ -1207,7 +1214,7 @@ mod tests {
     #[test]
     fn a_panicking_link_loses_only_linked_facts() {
         let rig = Rig::new();
-        let text = "use b.txt\nuse linkboom\nfact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /api/bookings/{}\n";
+        let text = "use b.txt\nuse linkboom\nfact 1 serves http GET /bookings/{}\nlinked 1 serves http GET /api/bookings/{} replaces http GET /bookings/{}\n";
         let dir = init_repo(&[("a.txt", text), ("b.txt", "")]);
         let run = index(&rig, &dir, &Setup::default()).unwrap();
         let graph = &run.index.graph;
