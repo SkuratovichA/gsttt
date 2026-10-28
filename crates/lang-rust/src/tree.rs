@@ -17,7 +17,7 @@ const MAX_DEPTH: usize = 64;
 /// How many modules one crate target holds. Declarations that fan out through `#[path]`, several modules to a file
 /// and every file declaring several more, would otherwise grow without bound. A tree that reaches it is cut, the cut
 /// is logged, and every project names it among its blind spots.
-const MAX_MODULES: usize = 10_000;
+pub(crate) const MAX_MODULES: usize = 10_000;
 
 /// One module of a crate.
 #[derive(Clone, Debug, PartialEq, Eq)]

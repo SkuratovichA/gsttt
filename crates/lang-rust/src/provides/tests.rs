@@ -5,6 +5,8 @@ use gsttt_core::connector::Provide;
 
 use super::provides;
 use crate::PACKS;
+use crate::link::{MAX_DEPTH, MAX_VISITS};
+use crate::tree::MAX_MODULES;
 
 /// What one entry says before its blind spots: `<kind> <role> via <packs>`.
 fn headline(entry: &Provide) -> String {
@@ -84,4 +86,32 @@ fn the_report_is_the_same_whatever_order_the_packs_come_in() {
     let forward = provides(&packs);
     packs.reverse();
     assert_eq!(provides(&packs), forward);
+}
+
+#[gsttt_scenario::scenario("rust", "A cap is named among the blind spots")]
+#[test]
+fn a_cap_is_named_among_the_blind_spots() {
+    // Without packs too: a project says what it cannot follow whether or not it can find routes.
+    let report = provides(&[]);
+    let serving = report
+        .iter()
+        .find(|entry| headline(entry).starts_with("http serves"))
+        .unwrap();
+    for cap in [
+        format!("more than {MAX_DEPTH} deep"),
+        format!("more than {MAX_VISITS} times"),
+    ] {
+        assert!(
+            serving.blind_spots.iter().any(|spot| spot.contains(&cap)),
+            "the router caps are not named: `{cap}`"
+        );
+    }
+    let modules = format!("more than {MAX_MODULES} modules");
+    for entry in &report {
+        assert!(
+            entry.blind_spots.iter().any(|spot| spot.contains(&modules)),
+            "{} does not name the module cap",
+            headline(entry)
+        );
+    }
 }
