@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package shop.v1;
+
+import "common/v1/ids.proto";
+import "legacy/v1/old.proto";
+import "missing/v1/none.proto";
+
+message Order {
+  string id = 1;
+}

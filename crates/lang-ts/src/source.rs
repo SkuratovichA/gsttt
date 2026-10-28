@@ -3,7 +3,9 @@
 use std::borrow::Cow;
 
 use gsttt_core::connector::{Parsed, SourceFile};
-use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, Line, ParseFailure, ParseStatus};
+use gsttt_core::fact::{
+    ErrorCount, FileFacts, FileTags, Import, ImportKind, Line, ParseFailure, ParseStatus,
+};
 use gsttt_core::rules::Pack;
 use gsttt_core::text::LineIndex;
 use oxc_allocator::Allocator;
@@ -25,16 +27,14 @@ pub(crate) fn is_code(path: &str) -> bool {
         .is_some_and(|(_, extension)| CODE_EXTENSIONS.contains(&extension))
 }
 
-/// Parses `file`. A file whose parse cannot go on has the line of its first error blanked and is parsed again, so the
-/// imports above and below one bad line survive; only a file that still fails after that is reported as failed.
+/// Parses `file`. A file whose parse cannot go on has the line of its first error blanked and is parsed again, so the imports above and below one bad line survive; only a file that still fails after that is reported as failed.
 pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtra> {
     let source_type =
         SourceType::from_path(file.path.as_str()).unwrap_or_else(|_| SourceType::ts());
     let index = LineIndex::new(file.text);
     let mut text = Cow::Borrowed(file.text);
-    let mut blanked = 0_u32;
+    let mut error_lines = ErrorCount::default();
     let mut failure: Option<(Line, String)> = None;
-    let mut first_error: Option<Line> = None;
     for _ in 0..MAX_ATTEMPTS {
         let allocator = Allocator::default();
         let options = ParseOptions {
@@ -55,17 +55,11 @@ pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtr
             .collect();
         if !parsed.fatal_error {
             let analysis = analyze::analyze(&parsed.program, &text, &index, packs);
-            let remaining = u32::try_from(errors.len()).unwrap_or(u32::MAX);
-            let first = errors
-                .iter()
-                .map(|(line, _)| *line)
-                .chain(first_error)
-                .min();
-            let status = first.map_or(ParseStatus::Ok, |first_error_line| ParseStatus::Recovered {
-                errors: blanked.saturating_add(remaining),
-                first_error_line,
-            });
-            return assemble(&text, analysis, status);
+            // The lines blanked by the earlier attempts are errors of the file, and so are the ones this parse still reports.
+            for (line, _) in &errors {
+                error_lines.note(*line);
+            }
+            return assemble(&text, analysis, error_lines.status());
         }
         let line = errors.first().map_or(1, |(line, _)| *line);
         if failure.is_none() {
@@ -75,12 +69,11 @@ pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtr
             );
             failure = Some((line, message));
         }
-        first_error = Some(first_error.map_or(line, |seen| seen.min(line)));
         let Some(next) = blank_line(&text, line) else {
             break;
         };
+        error_lines.note(line);
         text = Cow::Owned(next);
-        blanked = blanked.saturating_add(1);
     }
     let (line, message) = failure.unwrap_or_else(|| (1, "the file could not be parsed".to_owned()));
     Parsed::new(FileFacts::failed(ParseFailure::Syntax { line, message }))
@@ -105,8 +98,7 @@ fn assemble(text: &str, analysis: Analysis, status: ParseStatus) -> Parsed<TsExt
     }
 }
 
-/// The text with the non-blank characters of `line` (1-based) replaced by spaces of the same byte length, so every
-/// offset and line number stays the same. `None` when the line has nothing left to blank.
+/// The text with the non-blank characters of `line` (1-based) replaced by spaces of the same byte length, so every offset and line number stays the same. `None` when the line has nothing left to blank.
 fn blank_line(text: &str, line: Line) -> Option<String> {
     let wanted = usize::try_from(line).ok()?.checked_sub(1)?;
     let mut changed = false;

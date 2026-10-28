@@ -1,18 +1,17 @@
-//! What every project of one run shares: the manifests, the workspace packages and the tsconfig chains, all read once
-//! when the projects open.
+//! What every project of one run shares: the manifests, the workspace packages and the tsconfig chains, all read once when the projects open.
 
 use std::collections::BTreeMap;
 use std::fmt;
 
+use gsttt_core::tree::{self, Value};
 use gsttt_core::{RepoPath, RepoView};
 
 use crate::config::{ConfigFile, Cover, Effective};
-use crate::json::{self, Json};
 use crate::manifest::Manifest;
 use crate::options::TypeScriptOptions;
 use crate::pathing::{
-    ancestors, file_dir, has_segment, is_config_name, is_relative, join_dir, join_file,
-    split_package, strip_dir,
+    ancestors, file_dir, has_segment, is_config_name, is_relative, join_file, split_package,
+    strip_dir,
 };
 use crate::source::is_code;
 
@@ -90,8 +89,7 @@ impl Shared {
             }
         }
 
-        // A `package.json` opens a project when it is at the repository root or declares a package of its own. A marker
-        // such as `{"type": "module"}` only sets the module type of the directory it lies in.
+        // A `package.json` opens a project when it is at the repository root or declares a package of its own. A marker such as `{"type": "module"}` only sets the module type of the directory it lies in.
         let mut roots: Vec<String> = manifests
             .iter()
             .filter(|(dir, manifest)| dir.is_empty() || manifest.declares_project)
@@ -123,12 +121,11 @@ impl Shared {
             fallback: options
                 .tsconfig
                 .as_deref()
-                .and_then(|path| join_dir("", path)),
+                .and_then(|path| RepoPath::join_dir("", path)),
             solutions: BTreeMap::new(),
             covers: BTreeMap::new(),
         };
-        // A config reached by `extends` or `references` may have any name, such as `base.json` in a package of shared
-        // configs, so those files are read although no config name matches them.
+        // A config reached by `extends` or `references` may have any name, such as `base.json` in a package of shared configs, so those files are read although no config name matches them.
         let mut pending: Vec<String> = raw.keys().cloned().collect();
         while let Some(path) = pending.pop() {
             let targets: Vec<String> = raw
@@ -191,8 +188,7 @@ impl Shared {
             .map(String::as_str)
     }
 
-    /// The manifests of the project rooted at `root` and of the projects around it, nearest first and the repository
-    /// root last: the places a bare import and the `detect` list of a pack look for a dependency.
+    /// The manifests of the project rooted at `root` and of the projects around it, nearest first and the repository root last: the places a bare import and the `detect` list of a pack look for a dependency.
     pub(crate) fn manifests_above<'a>(
         &'a self,
         root: &'a str,
@@ -205,8 +201,7 @@ impl Shared {
         })
     }
 
-    /// The path of the config nearest above `dir`: in each directory `tsconfig.json`, else `jsconfig.json`; the
-    /// configured one when there is none.
+    /// The path of the config nearest above `dir`: in each directory `tsconfig.json`, else `jsconfig.json`; the configured one when there is none.
     fn nearest(&self, dir: &str) -> Option<&str> {
         ancestors(dir)
             .find_map(|dir| {
@@ -229,8 +224,7 @@ impl Shared {
         self.nearest(dir).and_then(|key| self.configs.get(key))
     }
 
-    /// The options that govern the file at `path`. A nearest config that only refers to others (a solution) hands the
-    /// file to the first config it lists, in listed order, that covers the file; otherwise the nearest config governs.
+    /// The options that govern the file at `path`. A nearest config that only refers to others (a solution) hands the file to the first config it lists, in listed order, that covers the file; otherwise the nearest config governs.
     pub(crate) fn config_of(&self, path: &str) -> Option<&Effective> {
         let key = self.nearest(file_dir(path))?;
         let listed = self
@@ -249,14 +243,14 @@ impl Shared {
     /// The tsconfig an `extends` (or a reference) written in `from` stands for, when it is in the repository.
     pub(crate) fn extends_target(&self, from: &str, spec: &str) -> Option<String> {
         let base = if is_relative(spec) {
-            join_dir(file_dir(from), spec)?
+            RepoPath::join_dir(file_dir(from), spec)?
         } else {
             let (name, subpath) = split_package(spec)?;
             let package = self.packages.get(name)?;
             if subpath.is_empty() {
                 package.clone()
             } else {
-                join_dir(package, subpath)?
+                RepoPath::join_dir(package, subpath)?
             }
         };
         [
@@ -268,8 +262,7 @@ impl Shared {
         .find(|candidate| self.repo.lookup(candidate).is_some())
     }
 
-    /// The options of the config at `path` with everything it extends folded in; `None` for a config that did not read
-    /// or a chain that loops.
+    /// The options of the config at `path` with everything it extends folded in; `None` for a config that did not read or a chain that loops.
     fn fold(
         &self,
         path: &str,
@@ -296,9 +289,8 @@ impl Shared {
     }
 }
 
-/// A JSON file of the repository, or `None` when it cannot be read or is not JSON; the file reports its own failure when
-/// it is parsed.
-fn read_json(repo: &RepoView, path: &str) -> Option<Json> {
+/// A JSON file of the repository, or `None` when it cannot be read or is not JSON; the file reports its own failure when it is parsed.
+fn read_json(repo: &RepoView, path: &str) -> Option<Value> {
     let text = match repo.read_to_string(path) {
         Ok(text) => text,
         Err(error) => {
@@ -306,7 +298,7 @@ fn read_json(repo: &RepoView, path: &str) -> Option<Json> {
             return None;
         }
     };
-    match json::parse(&text) {
+    match tree::parse_json(&text) {
         Ok(json) => Some(json),
         Err(error) => {
             tracing::debug!(path, line = error.line, message = %error.message, "file is not valid JSON");

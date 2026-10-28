@@ -1,0 +1,41 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"app/api/routes.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "..db",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [
+        "session"
+      ],
+      "to": {
+        "file": "app/db/session.py"
+      }
+    },
+    {
+      "spec": ".",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [
+        "deps"
+      ],
+      "to": {
+        "file": "app/api/deps.py"
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "app/api/routes.py",
+  "project": "python ."
+}

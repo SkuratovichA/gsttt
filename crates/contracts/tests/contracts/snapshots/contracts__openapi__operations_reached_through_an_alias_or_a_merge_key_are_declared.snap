@@ -1,0 +1,48 @@
+---
+source: crates/contracts/tests/contracts/openapi.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "openapi",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "http GET /bookings",
+          "role": "declares",
+          "line": 5,
+          "via": "openapi"
+        },
+        {
+          "key": "http POST /carts",
+          "role": "declares",
+          "line": 12,
+          "via": "openapi"
+        },
+        {
+          "key": "http GET /carts",
+          "role": "declares",
+          "line": 5,
+          "via": "openapi"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "openapi.yaml",
+      "project": "openapi ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

@@ -23,6 +23,7 @@ tracing.workspace = true
 gsttt-config.workspace = true
 gsttt-scenario.workspace = true
 insta.workspace = true
+proptest.workspace = true
 tempfile.workspace = true
 
 [lints]

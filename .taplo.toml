@@ -1,5 +1,5 @@
 include = ["**/*.toml"]
-exclude = ["target/**", "tests/fixtures/**", "crates/*/tests/fixtures/**"]
+exclude = ["target/**", "tests/fixtures/**", "crates/*/tests/fixtures/**", "bench/repos/**", "bench/tools/**"]
 
 [formatting]
 align_entries = false

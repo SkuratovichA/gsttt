@@ -1,0 +1,88 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bookings\":\n    tree.file_json(\"bookings/urls.py\"), \"linked\": tree.json[\"linked\"],\n})"
+---
+{
+  "project": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "django.urls",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [
+          "include",
+          "path"
+        ],
+        "to": {
+          "external": "django"
+        }
+      },
+      {
+        "spec": "bookings.urls",
+        "kind": "dynamic",
+        "line": 4,
+        "flags": 0,
+        "names": [],
+        "to": {
+          "file": "bookings/urls.py"
+        }
+      }
+    ],
+    "contracts": [],
+    "embedded": [],
+    "unresolved": [],
+    "path": "project/urls.py",
+    "project": "python ."
+  },
+  "bookings": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "django.urls",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [
+          "path"
+        ],
+        "to": {
+          "external": "django"
+        }
+      },
+      {
+        "spec": ".",
+        "kind": "static",
+        "line": 3,
+        "flags": 0,
+        "names": [
+          "views"
+        ],
+        "to": {
+          "file": "bookings/views.py"
+        }
+      }
+    ],
+    "contracts": [],
+    "embedded": [],
+    "unresolved": [],
+    "path": "bookings/urls.py",
+    "project": "python ."
+  },
+  "linked": [
+    {
+      "key": "http * /api/bookings/{}",
+      "role": "serves",
+      "line": 6,
+      "via": "django",
+      "file": "bookings/urls.py"
+    }
+  ]
+}

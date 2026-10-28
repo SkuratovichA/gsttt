@@ -1,0 +1,54 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"built.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [],
+  "contracts": [],
+  "embedded": [
+    {
+      "lang": "sql",
+      "line": 6,
+      "text": "SELECT id FROM bookings",
+      "via": "dbapi",
+      "read_by": null,
+      "contracts": []
+    }
+  ],
+  "unresolved": [
+    {
+      "line": 2,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "cursor.execute"
+    },
+    {
+      "line": 3,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "cursor.execute"
+    },
+    {
+      "line": 4,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "cursor.execute"
+    },
+    {
+      "line": 5,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "cursor.execute"
+    }
+  ],
+  "path": "built.py",
+  "project": "python ."
+}

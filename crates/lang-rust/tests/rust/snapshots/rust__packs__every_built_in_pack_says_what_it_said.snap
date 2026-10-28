@@ -1,0 +1,303 @@
+---
+source: crates/lang-rust/tests/rust/packs.rs
+expression: packs
+---
+[
+  {
+    "name": "axum",
+    "language": "rust",
+    "detect": [
+      "axum"
+    ],
+    "calls": [
+      {
+        "callee": "*.route",
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1",
+        "method": "$arg2.method",
+        "receiver": {
+          "from": [
+            "axum.Router.new",
+            "Router.new",
+            "axum.Router.default",
+            "Router.default"
+          ],
+          "key": null
+        }
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "actix",
+    "language": "rust",
+    "detect": [
+      "actix-web",
+      "actix_web"
+    ],
+    "calls": [
+      {
+        "callee": "*.route",
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1",
+        "method": "$arg2.method",
+        "receiver": null
+      },
+      {
+        "callee": "*.route",
+        "kind": "http",
+        "role": "serves",
+        "key": "",
+        "method": "$arg1.method",
+        "receiver": {
+          "from": [
+            "web.resource",
+            "actix_web.web.resource"
+          ],
+          "key": "$arg1"
+        }
+      }
+    ],
+    "decorators": [
+      {
+        "decorator": [
+          "get",
+          "post",
+          "put",
+          "patch",
+          "delete",
+          "head",
+          "actix_web.get",
+          "actix_web.post",
+          "actix_web.put",
+          "actix_web.patch",
+          "actix_web.delete",
+          "actix_web.head"
+        ],
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1",
+        "method": "$callee",
+        "class": null,
+        "receiver": null,
+        "prefix": null
+      },
+      {
+        "decorator": [
+          "route",
+          "actix_web.route"
+        ],
+        "kind": "http",
+        "role": "serves",
+        "key": "$arg1",
+        "method": "$method",
+        "class": null,
+        "receiver": null,
+        "prefix": null
+      }
+    ],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "reqwest",
+    "language": "rust",
+    "detect": [
+      "reqwest"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "reqwest.get",
+          "reqwest.blocking.get"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1",
+        "method": "GET",
+        "receiver": null
+      },
+      {
+        "callee": [
+          "*.get",
+          "*.post",
+          "*.put",
+          "*.patch",
+          "*.delete",
+          "*.head"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1",
+        "method": "$callee",
+        "receiver": {
+          "from": [
+            "reqwest.Client.new",
+            "reqwest.Client.builder",
+            "Client.new",
+            "Client.builder",
+            "reqwest.blocking.Client.new",
+            "reqwest.blocking.Client.builder",
+            "blocking.Client.new",
+            "blocking.Client.builder",
+            "reqwest.ClientBuilder.new",
+            "ClientBuilder.new",
+            "reqwest.blocking.ClientBuilder.new",
+            "blocking.ClientBuilder.new"
+          ],
+          "key": null
+        }
+      },
+      {
+        "callee": "*.request",
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg2",
+        "method": "$arg1.last",
+        "receiver": {
+          "from": [
+            "reqwest.Client.new",
+            "reqwest.Client.builder",
+            "Client.new",
+            "Client.builder",
+            "reqwest.blocking.Client.new",
+            "reqwest.blocking.Client.builder",
+            "blocking.Client.new",
+            "blocking.Client.builder",
+            "reqwest.ClientBuilder.new",
+            "ClientBuilder.new",
+            "reqwest.blocking.ClientBuilder.new",
+            "blocking.ClientBuilder.new"
+          ],
+          "key": null
+        }
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "sqlx",
+    "language": "rust",
+    "detect": [
+      "sqlx"
+    ],
+    "calls": [],
+    "decorators": [],
+    "chains": [],
+    "embeds": [
+      {
+        "callee": [
+          "query!",
+          "query_unchecked!",
+          "query_scalar!",
+          "query_scalar_unchecked!",
+          "sqlx.query!",
+          "sqlx.query_unchecked!",
+          "sqlx.query_scalar!",
+          "sqlx.query_scalar_unchecked!"
+        ],
+        "lang": "sql",
+        "text": "$arg1"
+      },
+      {
+        "callee": [
+          "query_as!",
+          "query_as_unchecked!",
+          "sqlx.query_as!",
+          "sqlx.query_as_unchecked!"
+        ],
+        "lang": "sql",
+        "text": "$arg2"
+      },
+      {
+        "callee": [
+          "query",
+          "query_scalar",
+          "query_as",
+          "sqlx.query",
+          "sqlx.query_scalar",
+          "sqlx.query_as"
+        ],
+        "lang": "sql",
+        "text": "$arg1"
+      }
+    ],
+    "assigns": []
+  },
+  {
+    "name": "sea_orm",
+    "language": "rust",
+    "detect": [
+      "sea-orm",
+      "sea_orm"
+    ],
+    "calls": [],
+    "decorators": [
+      {
+        "decorator": "sea_orm",
+        "kind": "table",
+        "role": "declares",
+        "key": "$table_name",
+        "method": null,
+        "class": null,
+        "receiver": null,
+        "prefix": null
+      }
+    ],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
+    "name": "env",
+    "language": "rust",
+    "detect": [],
+    "calls": [
+      {
+        "callee": [
+          "env.var",
+          "env.var_os",
+          "std.env.var",
+          "std.env.var_os",
+          "dotenvy.var",
+          "env!",
+          "std.env!",
+          "option_env!",
+          "std.option_env!"
+        ],
+        "kind": "env",
+        "role": "calls",
+        "key": "$arg1",
+        "method": null,
+        "receiver": null
+      }
+    ],
+    "decorators": [
+      {
+        "decorator": [
+          "arg",
+          "clap"
+        ],
+        "kind": "env",
+        "role": "calls",
+        "key": "$env",
+        "method": null,
+        "class": null,
+        "receiver": null,
+        "prefix": null
+      }
+    ],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  }
+]

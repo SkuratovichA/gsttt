@@ -1,155 +1,111 @@
-//! Editor support: the `LuaLS` annotations, the language server settings and the starter config.
+//! Editor support: the first line of the starter config, and the starter read as a config.
 
 use std::path::{Path, PathBuf};
 
-use gsttt_config::{ANNOTATIONS_PATH, LUARC_PATH, annotations, luarc, starter};
+use gsttt_config::{CONFIG_PATH, CONFIG_SCHEMA_PATH, PACK_SCHEMA_PATH, PACKS_PATH, starter};
 use gsttt_core::Setup;
-use gsttt_core::connector::{DynConnector, Erased};
-use mlua::{Lua, Table, Value};
+use gsttt_core::setup::ModuleSetup;
+use serde_json::Value;
 
-use crate::fakes::{Fake, NoOptions, Registry};
 use crate::tree::Tree;
 
-fn standard_annotations() -> String {
-    let registry = Registry::standard();
-    annotations(&registry.connectors())
-}
-
-#[gsttt_scenario::scenario("config", "Options become annotated classes")]
-#[test]
-fn options_become_annotated_classes() {
-    let text = standard_annotations();
-    let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines.first(), Some(&"---@meta gsttt"));
-    for expected in [
-        "---@class gsttt.TsOptions",
-        "---@field tsconfig? string The tsconfig the project reads, relative to the repository root.",
-        "---@field conditions? string[] Export conditions to follow, in order.",
-        "---@param options? gsttt.TsOptions",
-        "function gsttt.ts(options) end",
-    ] {
-        assert!(lines.contains(&expected), "missing {expected:?} in\n{text}");
+/// The path a `#:schema` directive names, as the folder of the file that holds it resolves it.
+fn schema_named_by(first_line: &str, folder: &Path) -> PathBuf {
+    let directive = first_line.strip_prefix("#:schema ").unwrap();
+    // `.` and `..` are resolved by hand, which is what the editor does and what `canonicalize` does not do for a file that is not there.
+    let mut resolved = folder.to_path_buf();
+    for part in directive.split('/') {
+        match part {
+            "." => {}
+            ".." => assert!(resolved.pop(), "{directive} leaves the repository"),
+            name => resolved.push(name),
+        }
     }
-    assert!(
-        text.contains("---@param options? gsttt.TsOptions\nfunction gsttt.ts(options) end"),
-        "the function must take the class right where it is declared"
-    );
-}
-
-#[test]
-fn the_whole_annotation_file_is_pinned() {
-    insta::assert_snapshot!(standard_annotations());
-}
-
-#[test]
-fn the_annotation_file_is_lua_that_declares_every_function() {
-    let text = standard_annotations();
-    let lua = Lua::new();
-    let module: Table = lua.load(text.as_str()).eval().unwrap();
-    for name in [
-        "ts",
-        "python",
-        "rust",
-        "openapi",
-        "setup",
-        "disable",
-        "pack",
-        "disable_pack",
-        "external",
-    ] {
-        let function = module.get::<Value>(name).unwrap();
-        assert!(
-            matches!(function, Value::Function(_)),
-            "gsttt.{name} is not declared"
-        );
-    }
-}
-
-#[test]
-fn the_output_does_not_depend_on_the_order_of_the_registry() {
-    let forward = Registry::standard();
-    let mut backward = forward.connectors();
-    backward.reverse();
-    assert_eq!(annotations(&forward.connectors()), annotations(&backward));
-}
-
-#[test]
-fn a_module_that_is_not_a_lua_identifier_gets_no_function() {
-    let odd: Box<dyn DynConnector> = Box::new(Erased(Fake::<NoOptions>::new("lang-ts")));
-    let text = annotations(&[odd.as_ref()]);
-    assert!(!text.contains("lang-ts"), "{text}");
-    let lua = Lua::new();
-    lua.load(text.as_str()).exec().unwrap();
+    resolved
 }
 
 #[gsttt_scenario::scenario("config", "The editor settings are relative to the config folder")]
 #[test]
 fn the_editor_settings_are_relative_to_the_config_folder() {
-    // The language server reads the settings from the root of the folder it is opened in, which is the folder they are written to.
-    assert_eq!(LUARC_PATH, ".gsttt/.luarc.json");
-    let workspace = Path::new(LUARC_PATH).parent().unwrap();
-    let settings: serde_json::Value = serde_json::from_str(&luarc()).unwrap();
-    assert_eq!(settings["runtime.version"], "Lua 5.4");
-
-    // The library is the folder of the annotations ...
-    let library: Vec<String> =
-        serde_json::from_value(settings["workspace.library"].clone()).unwrap();
-    let folders: Vec<PathBuf> = library
-        .iter()
-        .map(|folder| workspace.join(folder))
-        .collect();
-    let annotations_folder = Path::new(ANNOTATIONS_PATH).parent().unwrap();
-    assert_eq!(folders, vec![annotations_folder.to_path_buf()]);
-
-    // ... and the patterns find the files `require` reads, which it does read: the config loads both modules.
-    let tree = Tree::with_init("require('shared')\nrequire('deep.folder')\n");
-    tree.write(".gsttt/lua/shared.lua", "return {}");
-    tree.write(".gsttt/lua/deep/folder/init.lua", "return {}");
-    tree.evaluate().unwrap();
-    let patterns: Vec<String> = serde_json::from_value(settings["runtime.path"].clone()).unwrap();
-    let found = |module: &str| -> Vec<PathBuf> {
-        let relative = module.replace('.', "/");
-        patterns
-            .iter()
-            .map(|pattern| workspace.join(pattern.replace('?', &relative)))
-            .filter(|candidate| tree.root().join(candidate).is_file())
-            .collect()
-    };
-    assert_eq!(
-        found("shared"),
-        vec![PathBuf::from(".gsttt/lua/shared.lua")]
-    );
-    assert_eq!(
-        found("deep.folder"),
-        vec![PathBuf::from(".gsttt/lua/deep/folder/init.lua")]
-    );
-
-    // The settings cannot say where to open the editor, so the first line of the starter does.
-    let note = format!("open the {} folder as the workspace", workspace.display());
     for detected in [&[][..], &["ts"][..]] {
         let text = starter(detected);
         let first = text.lines().next().unwrap();
-        assert!(first.starts_with("--") && first.contains(&note), "{first}");
+        assert_eq!(first, "#:schema ./schema/config.json");
+        // The editor resolves the path against the folder of the file, and that is where the schema is written.
+        let folder = Path::new(CONFIG_PATH).parent().unwrap();
+        assert_eq!(
+            schema_named_by(first, folder),
+            Path::new(CONFIG_SCHEMA_PATH)
+        );
     }
 }
 
 #[test]
-fn the_starter_lists_the_detected_modules_as_comments_and_changes_nothing() {
+fn the_starter_tells_where_a_pack_finds_its_schema() {
+    let text = starter(&[]);
+    let directive = "#:schema ../schema/pack.json";
+    assert!(text.contains(&format!("`{directive}`")), "{text}");
+    // The packs sit one folder deeper than the config, so their directive goes up once.
+    assert_eq!(
+        schema_named_by(directive, Path::new(PACKS_PATH)),
+        Path::new(PACK_SCHEMA_PATH)
+    );
+}
+
+#[gsttt_scenario::scenario("config", "The starter is a valid config")]
+#[test]
+fn the_starter_is_a_valid_config() {
+    let text = starter(&["ts", "python"]);
+    // As it is, it changes nothing: a detected module runs with its defaults without a line.
+    assert_eq!(
+        Tree::with_config(&text).evaluate().unwrap(),
+        Setup::default()
+    );
+
+    // With the `# ` taken off its two tables, it turns the two modules on, with no options.
+    let uncommented: String = text
+        .lines()
+        .map(|line| match line.strip_prefix("# [") {
+            Some(rest) => format!("[{rest}\n"),
+            None => format!("{line}\n"),
+        })
+        .collect();
+    assert!(uncommented.contains("\n[ts]\n"), "{uncommented}");
+    assert!(uncommented.contains("\n[python]\n"), "{uncommented}");
+    let on = |module: &str| ModuleSetup {
+        module: module.to_owned(),
+        options: Value::Null,
+    };
+    assert_eq!(
+        Tree::with_config(&uncommented).evaluate().unwrap(),
+        Setup {
+            modules: vec![on("ts"), on("python")],
+            ..Setup::default()
+        }
+    );
+}
+
+#[test]
+fn the_starter_lists_the_detected_modules_once_and_in_order() {
     let text = starter(&["ts", "rust", "ts"]);
     let lines: Vec<&str> = text.lines().collect();
-    assert!(lines.contains(&"local g = require(\"gsttt\")"));
-    assert_eq!(
-        lines.iter().filter(|line| **line == "-- g.ts {}").count(),
-        1
-    );
-    assert!(lines.contains(&"-- g.rust {}"));
+    assert_eq!(lines.iter().filter(|line| **line == "# [ts]").count(), 1);
+    assert!(lines.contains(&"# [rust]"));
     assert!(!text.contains("python"));
-    assert_eq!(Tree::with_init(&text).evaluate().unwrap(), Setup::default());
+    let position = |table: &str| lines.iter().position(|line| *line == table).unwrap();
+    assert!(position("# [rust]") < position("# [ts]"), "{text}");
+    assert_eq!(
+        Tree::with_config(&text).evaluate().unwrap(),
+        Setup::default()
+    );
 }
 
 #[test]
 fn the_starter_says_when_nothing_was_detected() {
     let text = starter(&[]);
     assert!(text.contains("No module was detected"), "{text}");
-    assert_eq!(Tree::with_init(&text).evaluate().unwrap(), Setup::default());
+    assert_eq!(
+        Tree::with_config(&text).evaluate().unwrap(),
+        Setup::default()
+    );
 }
