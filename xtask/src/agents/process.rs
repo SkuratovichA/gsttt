@@ -1,12 +1,16 @@
-//! Running programs for the agent benchmarks: finding one on a PATH and ending a whole process group.
+//! Running programs for the agent benchmarks: finding one on a PATH, ending a whole process group, and how often a running one is looked at.
 
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
 use anyhow::Context as _;
+
+/// How often a running process is looked at while it is waited for.
+pub(super) const POLL: Duration = Duration::from_millis(50);
 
 /// The first executable file called `program` in the directories of `path`.
 pub(super) fn which(program: &str, path: &OsStr) -> Option<PathBuf> {

@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use super::draw::{BROKEN, Verdict};
 use super::functions::Candidate;
-use super::process::kill_group;
+use super::process::{POLL, kill_group};
 use crate::dist::git::git;
 
 /// The wall-clock limit of each of the two runs without a throw.
@@ -23,9 +23,6 @@ const MIN_LIMIT: Duration = Duration::from_mins(1);
 
 /// How many times the slower run without a throw a run with a throw may take: a function that makes a test wait for something that never comes is not worth the wait.
 const SLACK: u32 = 3;
-
-/// How often a running test command is looked at.
-const POLL: Duration = Duration::from_millis(50);
 
 const NO_REPORT: &str = "a run wrote no report";
 const NO_TEST_BREAKS: &str = "no test file breaks";

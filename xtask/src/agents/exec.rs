@@ -11,11 +11,8 @@ use anyhow::{Context as _, ensure};
 use serde_json::Value;
 
 use super::init::{self, Init};
-use super::process::kill_group;
+use super::process::{POLL, kill_group};
 use super::setups::Invocation;
-
-/// How often a running process is looked at.
-const POLL: Duration = Duration::from_millis(50);
 
 /// What a process is started with.
 #[derive(Debug)]
