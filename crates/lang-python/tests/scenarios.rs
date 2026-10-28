@@ -1062,12 +1062,16 @@ fn a_table_name_outside_a_model_declares_nothing() {
 )]
 #[test]
 fn a_target_of_one_segment_matches_wherever_the_name_is_assigned() {
-    let pack = r#"return {
-        name = "anywhere",
-        language = "python",
-        assigns = { { target = "db_table", kind = "table", role = "declares", key = "$arg1" } },
-    }"#;
-    let packs = builtin_packs(&[("anywhere.lua", pack)]).unwrap();
+    let pack = r#"name = "anywhere"
+language = "python"
+
+[[assigns]]
+target = "db_table"
+kind = "table"
+role = "declares"
+key = "$arg1"
+"#;
+    let packs = builtin_packs(&[("anywhere", pack)]).unwrap();
     let tree = index_with("model_scopes", packs);
     assert_eq!(
         tree.contracts("models.py"),
@@ -1814,9 +1818,9 @@ fn a_repository_without_a_manifest_gets_a_root_project() {
 fn the_built_in_packs_are_python_packs_named_after_their_files() {
     let packs = builtin_packs(PACKS).unwrap();
     assert_eq!(packs.len(), PACKS.len());
-    for (pack, (file, _)) in packs.iter().zip(PACKS) {
+    for (pack, (name, _)) in packs.iter().zip(PACKS) {
         assert_eq!(pack.language, "python");
-        assert_eq!(format!("{}.lua", pack.name), *file);
+        assert_eq!(pack.name, *name);
     }
 }
 
@@ -2351,15 +2355,20 @@ fn a_router_reached_in_more_than_64_ways_is_served_in_the_first_64_by_path() {
 /// no urlconf includes keeps the path the call wrote.
 #[test]
 fn a_serving_call_of_a_pack_is_served_behind_the_includes_of_its_module() {
-    let pack = r#"return {
-        name = "aiohttp",
-        language = "python",
-        calls = { { callee = "web.get", kind = "http", role = "serves", key = "$arg1", method = "GET" } },
-    }"#;
+    let pack = r#"name = "aiohttp"
+language = "python"
+
+[[calls]]
+callee = "web.get"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "GET"
+"#;
     let routes = "from aiohttp import web\n\nroutes = [web.get(\"/things\", handler)]\n";
     let packs = || {
         let mut packs = builtin_packs(PACKS).unwrap();
-        packs.extend(builtin_packs(&[("aiohttp.lua", pack)]).unwrap());
+        packs.extend(builtin_packs(&[("aiohttp", pack)]).unwrap());
         packs
     };
     // Nothing includes the module: the route keeps the path it was written with.

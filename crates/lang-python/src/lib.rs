@@ -23,23 +23,23 @@ use serde::{Deserialize, Serialize};
 pub use extra::PyExtra;
 pub use project::PythonProject;
 
-/// The Lua sources of the built-in packs, `(file name, source)`.
+/// The rule packs shipped with the connector, as `(name, TOML source)` pairs. The name is the file name without `.toml`, which is also the `name` the pack declares.
 pub const PACKS: &[(&str, &str)] = &[
-    ("alembic.lua", include_str!("../packs/alembic.lua")),
-    ("dbapi.lua", include_str!("../packs/dbapi.lua")),
-    ("django.lua", include_str!("../packs/django.lua")),
-    ("env.lua", include_str!("../packs/env.lua")),
-    ("fastapi.lua", include_str!("../packs/fastapi.lua")),
-    ("flask.lua", include_str!("../packs/flask.lua")),
-    ("httpx.lua", include_str!("../packs/httpx.lua")),
-    ("requests.lua", include_str!("../packs/requests.lua")),
-    ("sqlalchemy.lua", include_str!("../packs/sqlalchemy.lua")),
+    ("alembic", include_str!("../packs/alembic.toml")),
+    ("dbapi", include_str!("../packs/dbapi.toml")),
+    ("django", include_str!("../packs/django.toml")),
+    ("env", include_str!("../packs/env.toml")),
+    ("fastapi", include_str!("../packs/fastapi.toml")),
+    ("flask", include_str!("../packs/flask.toml")),
+    ("httpx", include_str!("../packs/httpx.toml")),
+    ("requests", include_str!("../packs/requests.toml")),
+    ("sqlalchemy", include_str!("../packs/sqlalchemy.toml")),
 ];
 
 /// The Python connector, ready for the registry.
 pub static PYTHON: Erased<Python> = Erased(Python);
 
-/// The options of `g.python{ … }`.
+/// What the `[python]` table of the configuration accepts.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct PythonOptions {
