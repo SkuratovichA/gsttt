@@ -17,14 +17,14 @@
 
 ## 4. The runs
 
-- [ ] 4.1 The checkout of the runs: the check for a CLAUDE.md above it, the clone, the install and the two indexes
-- [ ] 4.2 The four setups: their commands, the plugin of the language server, the MCP config of codebase-memory-mcp and the PATH
-- [ ] 4.3 One run: the init check, the limits, the answer, the scores, the status of the checkout and the transcript
-- [ ] 4.4 The results file, resuming, and `cargo xtask agents table`
+- [x] 4.1 The checkout of the runs: the check for a CLAUDE.md above it, the clone, the install and the two indexes
+- [x] 4.2 The four setups: their commands, the plugin of the language server, the MCP config of codebase-memory-mcp and the PATH
+- [x] 4.3 One run: the init check, the limits, the answer, the scores, the status of the checkout and the transcript
+- [x] 4.4 The results file, resuming, and `cargo xtask agents table`
 
 ## 5. Proof
 
-- [ ] 5.1 A test annotated `#[scenario("agent-benchmarks", …)]` for every scenario of the `agent-benchmarks` spec
+- [x] 5.1 A test annotated `#[scenario("agent-benchmarks", …)]` for every scenario of the `agent-benchmarks` spec
 - [ ] 5.2 The smoke run: one question of each kind in the four setups, once, exits 0 and leaves nothing to commit
 - [ ] 5.3 `cargo fmt --all --check`, `taplo fmt --check`, `cargo clippy`, `cargo nextest run -p xtask`, `cargo xtask spec`, `openspec validate add-agent-benchmarks --strict` and `typos` pass
 

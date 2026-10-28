@@ -65,7 +65,7 @@ A run SHALL load none of the settings, hooks, memory, plugins, MCP servers or CL
 - **THEN** none of its directories holds a program named `gsttt`
 
 ### Requirement: The checkout of the runs
-Each repository SHALL have one checkout for the runs, prepared once: cloned at its commit, installed with its install command, and indexed by gsttt and by codebase-memory-mcp. Every run SHALL leave `git status --porcelain --ignored` of the checkout as it was after the preparation; a run that changed it SHALL be marked, and the checkout restored before the next run.
+Each repository SHALL have one checkout for the runs, prepared once: cloned at its commit, installed with its install command, not built, and indexed by gsttt and by codebase-memory-mcp. Every run SHALL leave `git status --porcelain --ignored` of the checkout as it was after the preparation; a run that changed it SHALL be marked, and the checkout restored before the next run.
 
 #### Scenario: A run that writes into the checkout is marked and undone
 - **WHEN** a run leaves a new file in the checkout
@@ -102,7 +102,7 @@ The runs SHALL go one at a time, by repeat, then by question, then by setup. A r
 - **THEN** the task fails, and the results hold the runs before it and not that one
 
 ### Requirement: The results of the runs
-`cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run the question, the setup, the repeat, the outcome, the answer, precision, recall, F1, the input, output, cache-read and cache-write tokens, the cost in USD, the turns and the duration. It SHALL hold no path or user name of the machine.
+`cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run the question and its kind, the setup, the repeat, the outcome, the answer, precision, recall, F1, the four token counts, the cost in USD, the turns, the duration and whether it changed the checkout. It SHALL hold no path or user name of the machine.
 
 #### Scenario: The agent results have the published shape
 - **WHEN** agent results are written
@@ -113,7 +113,7 @@ The runs SHALL go one at a time, by repeat, then by question, then by setup. A r
 - **THEN** the run counts it as wrong, and the results hold neither that path nor the user name
 
 ### Requirement: Resuming the runs
-A task started over SHALL skip the runs whose question, setup and repeat the results already hold, and SHALL refuse to add to results written with another model, another Claude Code version or other questions.
+A task started over SHALL skip the runs whose question, setup and repeat the results already hold, and SHALL refuse to add to results written with another model, another Claude Code version, other questions or other versions of the tools.
 
 #### Scenario: Finished runs are skipped
 - **WHEN** the results hold the first run and the task starts over
