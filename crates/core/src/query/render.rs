@@ -23,9 +23,7 @@ pub enum Entries {
 }
 
 impl Entries {
-    /// [`Entries::All`] when the caller asked for every entry (`--all` on the command line, `all` in a tool call),
-    /// and [`Entries::Capped`] otherwise. Both surfaces map their flag through this one function, so a list is cut
-    /// in the same way wherever it is asked for.
+    /// [`Entries::All`] when the caller asked for every entry (`--all` on the command line, `all` in a tool call), and [`Entries::Capped`] otherwise. Both surfaces map their flag through this one function, so a list is cut in the same way wherever it is asked for.
     pub const fn from_flag(all: bool) -> Self {
         if all { Self::All } else { Self::Capped }
     }
@@ -33,8 +31,7 @@ impl Entries {
 
 /// An answer to a question over an index: text for people and agents, and JSON for scripts.
 ///
-/// [`Display`](fmt::Display) gives the text with lists cut at [`LIST_CAP`] entries; [`Answer::text`] gives it with
-/// the cut the caller asks for. [`Serialize`] always holds every entry.
+/// [`Display`](fmt::Display) gives the text with lists cut at [`LIST_CAP`] entries; [`Answer::text`] gives it with the cut the caller asks for. [`Serialize`] always holds every entry.
 pub trait Answer: fmt::Display + Serialize {
     /// Writes the text of the answer, showing `entries` of each list.
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result;
@@ -84,8 +81,7 @@ pub struct ConnectorShare {
     pub imports: u32,
     /// Those that resolved to a file, a package or a builtin.
     pub resolved_imports: u32,
-    /// `resolved_imports` over `imports`, from 0 to 1, for scripts. The text computes its percentage from the two
-    /// counts, because a float gives 28 for 29 of 100.
+    /// `resolved_imports` over `imports`, from 0 to 1, for scripts. The text computes its percentage from the two counts, because a float gives 28 for 29 of 100.
     pub resolved: f64,
 }
 
@@ -206,9 +202,7 @@ impl Footer {
     }
 }
 
-/// The files `coverage`'s connector owns and left out before it read them: over the size limit, not UTF-8,
-/// unreadable. The engine counts them in `files` and lists them in `Coverage::skipped`, which holds the files of every
-/// connector, so the owner of each is looked up.
+/// The files `coverage`'s connector owns and left out before it read them: over the size limit, not UTF-8, unreadable. The engine counts them in `files` and lists them in `Coverage::skipped`, which holds the files of every connector, so the owner of each is looked up.
 pub(super) fn skipped_files(index: &Index, coverage: &ConnectorCoverage) -> u32 {
     let owned = index.coverage.skipped.iter().filter(|skipped| {
         index
@@ -218,8 +212,7 @@ pub(super) fn skipped_files(index: &Index, coverage: &ConnectorCoverage) -> u32 
     u32::try_from(owned.count()).unwrap_or(u32::MAX)
 }
 
-/// The files a connector owns and read: a file it could not read at all, or never saw, holds no imports to search. The
-/// engine puts a file in `failed` or in `skipped` and never in both, so the two are taken off the count once each.
+/// The files a connector owns and read: a file it could not read at all, or never saw, holds no imports to search. The engine puts a file in `failed` or in `skipped` and never in both, so the two are taken off the count once each.
 pub(super) fn read_files(index: &Index, coverage: &ConnectorCoverage) -> u32 {
     let failed = u32::try_from(coverage.failed.len()).unwrap_or(u32::MAX);
     coverage
@@ -289,8 +282,7 @@ pub(super) fn moved(added: u32, removed: u32, changed: u32) -> String {
     join_and(&parts)
 }
 
-/// Writes `heading` with the count of `items`, then one line per item as `each` writes it, then `… N more` for the
-/// items `entries` leaves out. An empty list writes nothing.
+/// Writes `heading` with the count of `items`, then one line per item as `each` writes it, then `… N more` for the items `entries` leaves out. An empty list writes nothing.
 pub(super) fn list<T>(
     f: &mut fmt::Formatter<'_>,
     heading: &str,

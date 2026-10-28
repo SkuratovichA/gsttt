@@ -46,8 +46,7 @@ fn deep_nesting_is_refused_with_the_place_where_the_limit_is_passed() {
     );
     assert!(message.contains("limit of 64"), "{message}");
 
-    // Eighty inline tables whose keys have eighty dotted parts each: within the limits of the parser one by one, and
-    // 6400 levels together.
+    // Eighty inline tables whose keys have eighty dotted parts each: within the limits of the parser one by one, and 6400 levels together.
     let key = vec!["a"; 80].join(".");
     let open = format!("{{ {key} = ");
     let tables = format!("[ts]\nx = {}1{}\n", open.repeat(80), " }".repeat(80));
@@ -81,8 +80,7 @@ fn arrays_of_tables_count_twice() {
     }
     assert_eq!(headers.lines().last().unwrap().matches('.').count(), 39);
 
-    // ... but `ts` is one level and each name after it is an array of tables, which is two: the header of 32 names
-    // passes 64, on the 32nd line.
+    // ... but `ts` is one level and each name after it is an array of tables, which is two: the header of 32 names passes 64, on the 32nd line.
     let message = refusal(&headers);
     assert!(message.starts_with(".gsttt/config.toml:32:"), "{message}");
     assert!(message.contains("limit of 64"), "{message}");

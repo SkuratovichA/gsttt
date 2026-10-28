@@ -148,8 +148,7 @@ impl fmt::Display for ToolName {
 
 /// Joins the lines of each argument's description into one.
 ///
-/// The doc comments that become the descriptions are wrapped for the people who read the source, and schemars keeps
-/// their line breaks, which would reach the model as a stray `\n` in the middle of a sentence.
+/// The doc comments that become the descriptions are wrapped for the people who read the source, and schemars keeps their line breaks, which would reach the model as a stray `\n` in the middle of a sentence.
 fn join_description_lines(schema: &mut JsonObject) {
     let Some(Value::Object(properties)) = schema.get_mut("properties") else {
         return;

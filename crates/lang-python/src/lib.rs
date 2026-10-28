@@ -1,6 +1,4 @@
-//! Python for gsttt: one project per manifest directory, imports read with the ruff parser and resolved against
-//! source roots, `__init__.py` packages, namespace packages and relative imports, and the contracts of FastAPI,
-//! Flask, Django, requests, httpx, SQLAlchemy, Alembic and the environment found by rule packs.
+//! Python for gsttt: one project per manifest directory, imports read with the ruff parser and resolved against source roots, `__init__.py` packages, namespace packages and relative imports, and the contracts of FastAPI, Flask, Django, requests, httpx, SQLAlchemy, Alembic and the environment found by rule packs.
 
 mod extra;
 mod files;
@@ -43,8 +41,7 @@ pub static PYTHON: Erased<Python> = Erased(Python);
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct PythonOptions {
-    /// Directories modules are imported from, relative to each project's directory. They come on top of the
-    /// project's own directory, `src` when it exists and the directories its package settings name.
+    /// Directories modules are imported from, relative to each project's directory. They come on top of the project's own directory, `src` when it exists and the directories its package settings name.
     pub source_roots: Vec<String>,
 }
 

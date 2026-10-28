@@ -10,12 +10,10 @@ use gsttt_core::{Freshness, Index, Loaded, RepoPath, Target};
 use gsttt_mcp::{IndexSource, SourceError};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-/// How many times a slow refresh gives up its turn on the processor while it waits for another call to arrive. It is
-/// the most a passing test waits, and it is long enough for calls sent together to be inside the source together.
+/// How many times a slow refresh gives up its turn on the processor while it waits for another call to arrive. It is the most a passing test waits, and it is long enough for calls sent together to be inside the source together.
 const LINGERS: usize = 50_000;
 
-/// A source the tests keep a handle to, so that they can read what the server asked after it has run. Clones share
-/// one set of counters.
+/// A source the tests keep a handle to, so that they can read what the server asked after it has run. Clones share one set of counters.
 #[derive(Clone, Debug)]
 pub(crate) struct Fake(Arc<Inner>);
 
@@ -127,9 +125,7 @@ impl Fake {
         self
     }
 
-    /// A source whose refresh stays in progress until another call arrives, or until it is clear that none will.
-    /// With one call at a time it never sees another, so it only costs a moment; it is how a test gives a missing
-    /// lock time to show.
+    /// A source whose refresh stays in progress until another call arrives, or until it is clear that none will. With one call at a time it never sees another, so it only costs a moment; it is how a test gives a missing lock time to show.
     pub(crate) fn slow_refresh(mut self) -> Self {
         self.inner().slow_refresh = true;
         self

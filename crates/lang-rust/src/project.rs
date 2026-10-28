@@ -43,8 +43,7 @@ pub struct RustProject {
     salt: u64,
 }
 
-/// The salt of a project: what besides the file text decides what `parse` returns. The edition decides the syntax and
-/// the packs decide the contracts, so a change in either reads every file again.
+/// The salt of a project: what besides the file text decides what `parse` returns. The edition decides the syntax and the packs decide the contracts, so a change in either reads every file again.
 fn salt_for(edition: Edition, packs: &[Pack]) -> u64 {
     let packs_json = serde_json::to_string(packs).unwrap_or_default();
     salt_of(&[&edition.to_string(), &packs_json])
@@ -102,8 +101,7 @@ impl RustProject {
         self.packs.iter().any(|pack| pack.name == "sqlx")
     }
 
-    /// Whether `path` is a test file by its place in the package: under a `tests` directory, or named `tests`, `test`,
-    /// `*_test` or `*_tests`.
+    /// Whether `path` is a test file by its place in the package: under a `tests` directory, or named `tests`, `test`, `*_test` or `*_tests`.
     fn is_test(&self, path: &RepoPath) -> bool {
         let relative = path
             .as_str()
@@ -207,8 +205,7 @@ impl Project for RustProject {
     }
 }
 
-/// The names each file brings in with `use` or `extern crate`, each with the path it stands for. The first `use` of
-/// a name wins.
+/// The names each file brings in with `use` or `extern crate`, each with the path it stands for. The first `use` of a name wins.
 fn aliases(files: &[PrepareFile<'_>]) -> Aliases {
     files
         .iter()

@@ -1,3 +1,2 @@
-# Several agents build in this tree at once. A check on every save would hold cargo's build lock between their
-# test runs; lints come from `cargo clippy` instead.
+# Several agents build in this tree at once. A check on every save would hold cargo's build lock between their test runs; lints come from `cargo clippy` instead.
 checkOnSave = false

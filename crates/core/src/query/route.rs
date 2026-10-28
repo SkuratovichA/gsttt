@@ -26,8 +26,7 @@ pub enum Link {
         /// Whether the only import is a `mod` declaration, which owns the next file instead of using it.
         structural: bool,
     },
-    /// The next file has a site with `role` in a contract that the file has a site in, and `key` is the key of that
-    /// site.
+    /// The next file has a site with `role` in a contract that the file has a site in, and `key` is the key of that site.
     Contract { role: Role, key: String },
 }
 
@@ -70,10 +69,7 @@ pub struct Route {
 
 /// A shortest chain from `from` to `to`, through imports and contracts.
 ///
-/// A hop is an import, a hop from a file that calls a contract to a file that serves or declares it, or a hop from a
-/// file that serves a contract to a file that declares it. HTTP hops go to the sites of every key that meets the
-/// key. Of several shortest chains the answer reaches each file from the file with the smallest path among those one
-/// hop nearer; from that file an import comes before a contract, and contracts go in key order.
+/// A hop is an import, a hop from a file that calls a contract to a file that serves or declares it, or a hop from a file that serves a contract to a file that declares it. HTTP hops go to the sites of every key that meets the key. Of several shortest chains the answer reaches each file from the file with the smallest path among those one hop nearer; from that file an import comes before a contract, and contracts go in key order.
 pub fn path(index: &Index, freshness: Freshness, from: &str, to: &str) -> Route {
     let (from_name, start) = locate(index, from);
     let (to_name, goal) = locate(index, to);
@@ -160,9 +156,7 @@ impl Hop {
     }
 }
 
-/// A breadth-first search from one file along imports and contract hops, level by level so that the first hop to a
-/// file is on a shortest chain, and each level in path order so that a file is reached from the smallest path one hop
-/// nearer, which is the same on every run.
+/// A breadth-first search from one file along imports and contract hops, level by level so that the first hop to a file is on a shortest chain, and each level in path order so that a file is reached from the smallest path one hop nearer, which is the same on every run.
 struct Chase<'a> {
     graph: &'a Graph,
     crossing: Crossing<'a>,
@@ -224,8 +218,7 @@ impl<'a> Chase<'a> {
         self.next.push(file);
     }
 
-    /// The files from `start` to `goal` with the hop that reached each, `start` first; `None` when the search
-    /// never reached `goal`.
+    /// The files from `start` to `goal` with the hop that reached each, `start` first; `None` when the search never reached `goal`.
     fn chain(&self, start: FileId, goal: FileId) -> Option<Vec<(FileId, Option<Hop>)>> {
         if !self.seen.contains(goal) {
             return None;

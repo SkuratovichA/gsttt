@@ -149,8 +149,7 @@ fn of_equally_short_chains_the_one_through_the_smallest_path_wins() {
 
 #[test]
 fn a_smaller_path_comes_before_an_import_from_a_larger_one() {
-    // `z.ts` is found by an import and `a.ts` by a contract, both from `start.ts`, so `z.ts` is found first. The
-    // chain still goes through `a.ts`, because the files one hop from the start are visited in path order.
+    // `z.ts` is found by an import and `a.ts` by a contract, both from `start.ts`, so `z.ts` is found first. The chain still goes through `a.ts`, because the files one hop from the start are visited in path order.
     let index = Tree::new()
         .imports("start.ts", "z.ts")
         .calls("start.ts", "http GET /x")
@@ -206,8 +205,7 @@ fn from_one_file_contracts_come_in_key_order() {
 
 #[test]
 fn a_file_that_calls_a_contract_after_a_server_reached_it_still_reaches_the_other_servers() {
-    // `server.ts` crosses the contract first, as a server, and reaches only its declarers. `caller.ts` is one hop
-    // farther, so it crosses the same contract again, as a caller, and reaches the other server.
+    // `server.ts` crosses the contract first, as a server, and reaches only its declarers. `caller.ts` is one hop farther, so it crosses the same contract again, as a caller, and reaches the other server.
     let index = Tree::new()
         .imports("start.ts", "server.ts")
         .serves("server.ts", "http GET /x")

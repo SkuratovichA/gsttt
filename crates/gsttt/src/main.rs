@@ -4,8 +4,7 @@ use std::process::ExitCode;
 
 use gsttt::{Io, logging, panics, streams};
 
-/// The allocator of the whole process. The index build allocates from many worker threads at once, and mimalloc gives
-/// each thread its own heap.
+/// The allocator of the whole process. The index build allocates from many worker threads at once, and mimalloc gives each thread its own heap.
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

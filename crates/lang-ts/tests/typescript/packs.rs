@@ -1,5 +1,4 @@
-//! The built-in packs as the connector ships them. The snapshot holds every rule of every pack, so a change to the
-//! way packs are written cannot change what they say without a reviewer seeing it.
+//! The built-in packs as the connector ships them. The snapshot holds every rule of every pack, so a change to the way packs are written cannot change what they say without a reviewer seeing it.
 
 use std::error::Error;
 

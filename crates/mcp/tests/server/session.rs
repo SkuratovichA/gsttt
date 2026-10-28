@@ -1,5 +1,4 @@
-//! A server and a real MCP client, joined by an in-memory pipe, so that the tests speak the protocol the way an agent
-//! does and see what an agent would see.
+//! A server and a real MCP client, joined by an in-memory pipe, so that the tests speak the protocol the way an agent does and see what an agent would see.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -105,8 +104,7 @@ impl Session {
             .expect("the server answers the call")
     }
 
-    /// Sends a call of `tool` and returns at once with the task that waits for its answer, so that the test can do
-    /// something else while the server works on it.
+    /// Sends a call of `tool` and returns at once with the task that waits for its answer, so that the test can do something else while the server works on it.
     pub(crate) fn send(&self, tool: &str, arguments: &Value) -> JoinHandle<Reply> {
         let peer = self.client.peer().clone();
         let tool = tool.to_owned();
@@ -120,8 +118,7 @@ impl Session {
         })
     }
 
-    /// Sends `count` calls of `tool` with the same `arguments` without waiting for any answer in between, and
-    /// returns the answers.
+    /// Sends `count` calls of `tool` with the same `arguments` without waiting for any answer in between, and returns the answers.
     pub(crate) async fn call_together(
         &self,
         tool: &str,
@@ -148,8 +145,7 @@ impl Session {
         }
     }
 
-    /// Calls `tool` with `arguments` and returns the result, which fails the test when the server answered with a
-    /// protocol error instead.
+    /// Calls `tool` with `arguments` and returns the result, which fails the test when the server answered with a protocol error instead.
     pub(crate) async fn call(&self, tool: &str, arguments: Value) -> Reply {
         match self.try_call(tool, arguments).await {
             Ok(result) => Reply::of(&result),
@@ -158,8 +154,7 @@ impl Session {
     }
 }
 
-/// A server joined to a client that is no more than a pair of streams, so that a test can send what the typed client
-/// cannot, such as a request whose parameters are not the shape the protocol gives them.
+/// A server joined to a client that is no more than a pair of streams, so that a test can send what the typed client cannot, such as a request whose parameters are not the shape the protocol gives them.
 pub(crate) struct Wire {
     lines: Lines<BufReader<ReadHalf<DuplexStream>>>,
     writer: WriteHalf<DuplexStream>,
@@ -191,8 +186,7 @@ impl Wire {
         wire
     }
 
-    /// Sends a call of `tool` whose `arguments` are whatever `arguments` is, an object or not, and returns the
-    /// response to it, a result or a JSON-RPC error.
+    /// Sends a call of `tool` whose `arguments` are whatever `arguments` is, an object or not, and returns the response to it, a result or a JSON-RPC error.
     pub(crate) async fn call(&mut self, tool: &str, arguments: &Value) -> Value {
         let params = json!({ "name": tool, "arguments": arguments });
         self.exchange("tools/call", &params).await
@@ -217,8 +211,7 @@ impl Wire {
             .expect("the server reads its input");
     }
 
-    /// The next message the server writes, which fails the test when the server says nothing for [`PATIENCE`] or
-    /// ends its output.
+    /// The next message the server writes, which fails the test when the server says nothing for [`PATIENCE`] or ends its output.
     async fn read(&mut self) -> Value {
         let line = tokio::time::timeout(PATIENCE, self.lines.next_line())
             .await

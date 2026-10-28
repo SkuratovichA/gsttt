@@ -28,8 +28,7 @@ pub(crate) struct Target {
 /// Which targets of a package see a dependency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Section {
-    /// `[dependencies]` and `[dev-dependencies]`: every target but the build script. A dev-dependency is visible to
-    /// all of them because `#[cfg(test)]` code in `src/` uses it and `cfg` is not evaluated.
+    /// `[dependencies]` and `[dev-dependencies]`: every target but the build script. A dev-dependency is visible to all of them because `#[cfg(test)]` code in `src/` uses it and `cfg` is not evaluated.
     Normal,
     /// `[build-dependencies]`: the build script, and nothing else.
     Build,
@@ -65,8 +64,7 @@ impl Dependency {
                 .all(|(code, name)| code == name || (code == '-' && name == '_'))
     }
 
-    /// Whether code of a `kind` target can name this dependency: a build script sees the build dependencies and
-    /// nothing else, and no other target sees those.
+    /// Whether code of a `kind` target can name this dependency: a build script sees the build dependencies and nothing else, and no other target sees those.
     pub(crate) fn visible_to(&self, kind: TargetKind) -> bool {
         (self.section == Section::Build) == (kind == TargetKind::Build)
     }
@@ -118,8 +116,7 @@ impl Manifests {
         self.tables.keys().map(String::as_str)
     }
 
-    /// The package of the manifest in `dir`: `None` for a virtual workspace manifest, an error when the manifest
-    /// does not read.
+    /// The package of the manifest in `dir`: `None` for a virtual workspace manifest, an error when the manifest does not read.
     pub(crate) fn package(&self, repo: &RepoView, dir: &str) -> Result<Option<Package>, String> {
         let table = match self.tables.get(dir) {
             Some(Ok(table)) => table,
@@ -152,8 +149,7 @@ impl Manifests {
         }))
     }
 
-    /// The workspace root a package inherits from: the manifest `workspace = "<dir>"` names, else the nearest
-    /// manifest at or above the package that has a `[workspace]` table.
+    /// The workspace root a package inherits from: the manifest `workspace = "<dir>"` names, else the nearest manifest at or above the package that has a `[workspace]` table.
     fn workspace_of(&self, dir: &str, package: &Table) -> Option<(&str, &Table)> {
         let explicit = package
             .get("workspace")
@@ -182,8 +178,7 @@ fn ancestors(dir: &str) -> Vec<String> {
     found
 }
 
-/// `rest` inside the directory `dir`, where `""` is the repository root. It joins names that the connector wrote or
-/// read as one segment and does not normalize them, so a path from a manifest goes through [`RepoPath::join_dir`].
+/// `rest` inside the directory `dir`, where `""` is the repository root. It joins names that the connector wrote or read as one segment and does not normalize them, so a path from a manifest goes through [`RepoPath::join_dir`].
 pub(crate) fn at(dir: &str, rest: &str) -> String {
     if dir.is_empty() {
         rest.to_owned()
@@ -323,8 +318,7 @@ fn explicit(table: &Table, key: &str) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
-/// The crate targets of a package: the ones Cargo finds by convention and the ones the manifest names with a
-/// `path`, each once, library first.
+/// The crate targets of a package: the ones Cargo finds by convention and the ones the manifest names with a `path`, each once, library first.
 fn targets(
     repo: &RepoView,
     dir: &str,

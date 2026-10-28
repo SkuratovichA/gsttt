@@ -133,8 +133,7 @@ fn the_config_schema_describes_the_options_of_the_modules() {
     assert!(schema.contains("tsconfig"), "{schema}");
 }
 
-/// A schema file that is a link is replaced by a file, and what the link led to stays as it was: a repository
-/// cannot make `init` overwrite a file elsewhere.
+/// A schema file that is a link is replaced by a file, and what the link led to stays as it was: a repository cannot make `init` overwrite a file elsewhere.
 #[cfg(unix)]
 #[test]
 fn init_replaces_a_linked_schema_and_does_not_write_through_it() {

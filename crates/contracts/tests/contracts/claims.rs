@@ -41,8 +41,7 @@ fn a_connector_opens_a_project_only_for_files_it_claims() {
     );
 }
 
-/// What the engine asks before it runs a connector nobody configured: whether the file list holds anything for it. The
-/// list alone answers, so one built in memory is enough.
+/// What the engine asks before it runs a connector nobody configured: whether the file list holds anything for it. The list alone answers, so one built in memory is enough.
 #[test]
 fn a_connector_is_detected_only_when_the_file_list_holds_a_file_it_claims() {
     let listing = |paths: &[&str]| {
@@ -147,8 +146,7 @@ fn a_broken_document_fails_alone() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
-/// The options a project is opened with are already part of the key of its facts, so no project adds a salt for
-/// them: a second hash of the same options would only be one more thing to keep in step.
+/// The options a project is opened with are already part of the key of its facts, so no project adds a salt for them: a second hash of the same options would only be one more thing to keep in step.
 #[test]
 fn no_project_adds_a_salt_to_the_fact_key() {
     let repo = fixture("all_formats");

@@ -1,15 +1,10 @@
 //! The file set of a work tree and the content id of each file.
 //!
-//! In git the set is the tracked files that are present plus the untracked files git does not ignore, minus
-//! submodules, symbolic links and skip-worktree entries. Outside git it is every file the ignore files inside the
-//! root leave in. `Setup.exclude` comes off either way.
+//! In git the set is the tracked files that are present plus the untracked files git does not ignore, minus submodules, symbolic links and skip-worktree entries. Outside git it is every file the ignore files inside the root leave in. `Setup.exclude` comes off either way.
 //!
-//! A file is identified by the git blob id of its content. One above `Setup.max_file_bytes` is never parsed, so it
-//! is not read for its id either: its size and modification time stand in for it.
+//! A file is identified by the git blob id of its content. One above `Setup.max_file_bytes` is never parsed, so it is not read for its id either: its size and modification time stand in for it.
 //!
-//! A file that is not clean in the git index keeps the id of the last run when its size and modification time are
-//! still the ones that run saw, unless it was written too close to that run's listing for the pair to prove
-//! anything ([`Stamp::is_settled`]).
+//! A file that is not clean in the git index keeps the id of the last run when its size and modification time are still the ones that run saw, unless it was written too close to that run's listing for the pair to prove anything ([`Stamp::is_settled`]).
 
 use std::collections::HashSet;
 use std::fs::{self, Metadata};
@@ -41,9 +36,7 @@ impl ContentId {
     /// The id of a file that could not be read. It is never a real blob id.
     pub const UNKNOWN: Self = Self([0; 20]);
 
-    /// The id of a file that is not read, made of its size, the seconds of its modification time and their
-    /// nanoseconds, each little-endian: 8, 8 and 4 bytes. It changes whenever the file is saved, and never equals
-    /// the blob id git gives the file, so a touched file above the size limit shows as modified against git.
+    /// The id of a file that is not read, made of its size, the seconds of its modification time and their nanoseconds, each little-endian: 8, 8 and 4 bytes. It changes whenever the file is saved, and never equals the blob id git gives the file, so a touched file above the size limit shows as modified against git.
     pub fn from_stat(size: u64, mtime_secs: i64, mtime_nanos: u32) -> Self {
         let mut id = [0_u8; 20];
         let parts = size
@@ -75,8 +68,7 @@ impl ContentId {
 /// The coarsest resolution of a modification time among the file systems a work tree lives on: FAT's two seconds.
 const RACY_SECONDS: i64 = 2;
 
-/// What the engine knows about a file's content without parsing it: the id, and the size and modification time
-/// that let a later run skip hashing outside git.
+/// What the engine knows about a file's content without parsing it: the id, and the size and modification time that let a later run skip hashing outside git.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[rkyv(compare(PartialEq))]
 pub struct Stamp {
@@ -98,16 +90,12 @@ impl Stamp {
         }
     }
 
-    /// The id of the file `meta` belongs to, when the file still has the size and the modification time it was
-    /// stamped with and the stamp knows its id. It is what lets a run skip hashing.
+    /// The id of the file `meta` belongs to, when the file still has the size and the modification time it was stamped with and the stamp knows its id. It is what lets a run skip hashing.
     pub fn id_of_unchanged(&self, meta: &Metadata) -> Option<ContentId> {
         (self.id != ContentId::UNKNOWN && self.describes(meta)).then_some(self.id)
     }
 
-    /// The stamp of `bytes`, which were read from `path` after the file was stamped as `self`; `None` while the file
-    /// is still as stamped. `before` is the file's metadata from just before the read. A file that changed since
-    /// the stamp gets the id of the bytes read. One that changed while it was being read has no id, because the
-    /// bytes may be a mix of two saves: nothing is filed under it and the next listing hashes the file again.
+    /// The stamp of `bytes`, which were read from `path` after the file was stamped as `self`; `None` while the file is still as stamped. `before` is the file's metadata from just before the read. A file that changed since the stamp gets the id of the bytes read. One that changed while it was being read has no id, because the bytes may be a mix of two saves: nothing is filed under it and the next listing hashes the file again.
     pub fn restamp(&self, path: &Utf8Path, before: &Metadata, bytes: &[u8]) -> Option<Self> {
         let Ok(after) = fs::metadata(path) else {
             return Some(Self::of(ContentId::UNKNOWN, before));
@@ -124,10 +112,7 @@ impl Stamp {
         Some(Self::of(id, &after))
     }
 
-    /// Whether the stamp can tell this file from a later save. File systems keep a modification time to one second
-    /// (HFS+, ext3) or two (FAT) at best, so a file written within that of `listed_at`, the unix second at which
-    /// the listing began, can be saved again with the same size and the same time. The stamp of such a file proves
-    /// nothing: it is git's "racy" rule applied to the engine's own stamps.
+    /// Whether the stamp can tell this file from a later save. File systems keep a modification time to one second (HFS+, ext3) or two (FAT) at best, so a file written within that of `listed_at`, the unix second at which the listing began, can be saved again with the same size and the same time. The stamp of such a file proves nothing: it is git's "racy" rule applied to the engine's own stamps.
     pub fn is_settled(&self, listed_at: i64) -> bool {
         self.mtime_secs < listed_at.saturating_sub(RACY_SECONDS)
     }
@@ -201,16 +186,11 @@ impl Excluder {
 pub struct Scanned {
     /// The files of the work tree in path order, each with its stamp.
     pub files: Vec<FileState>,
-    /// The directories the process cannot read, in path order, less the ones `Setup.exclude` leaves out: `.` is the
-    /// root. The scan goes on without them, so files under them may be missing from `files`. A directory that can
-    /// be listed but not searched is one of them, once a file under it cannot be looked at.
+    /// The directories the process cannot read, in path order, less the ones `Setup.exclude` leaves out: `.` is the root. The scan goes on without them, so files under them may be missing from `files`. A directory that can be listed but not searched is one of them, once a file under it cannot be looked at.
     pub unreadable: Vec<String>,
 }
 
-/// The files of the work tree in path order, each with its stamp. `previous` gives the stamp a file had in the
-/// last snapshot, when that stamp can be trusted ([`Stamp::is_settled`]); a file whose size and modification time
-/// still match it keeps its id unread, unless the git index vouches for the file. A file above `max_file_bytes` is
-/// not read: its id is made of its size and modification time ([`ContentId::from_stat`]).
+/// The files of the work tree in path order, each with its stamp. `previous` gives the stamp a file had in the last snapshot, when that stamp can be trusted ([`Stamp::is_settled`]); a file whose size and modification time still match it keeps its id unread, unless the git index vouches for the file. A file above `max_file_bytes` is not read: its id is made of its size and modification time ([`ContentId::from_stat`]).
 pub fn scan(
     workspace: &Workspace,
     exclude: &[String],
@@ -260,8 +240,7 @@ fn scan_git(
     let timestamp = index.timestamp();
     let options = stat::Options::default();
 
-    // Every path of the index is known, so the walk below does not list a symbolic link, a skip-worktree entry or
-    // a conflicted file as untracked.
+    // Every path of the index is known, so the walk below does not list a symbolic link, a skip-worktree entry or a conflicted file as untracked.
     let mut known: HashSet<RepoPath> = HashSet::with_capacity(index.entries().len());
     let mut candidates: Vec<(RepoPath, Option<Tracked>)> =
         Vec::with_capacity(index.entries().len());
@@ -277,8 +256,7 @@ fn scan_git(
             || entry.mode == Mode::DIR
             || entry.flags.contains(Flags::SKIP_WORKTREE);
         if !left_out {
-            // A conflicted path has up to three entries, none of them the file as it is now: it is listed once and
-            // hashed, so it stays in the index while the conflict is resolved.
+            // A conflicted path has up to three entries, none of them the file as it is now: it is listed once and hashed, so it stays in the index while the conflict is resolved.
             let staged = entry.stage_raw() == 0;
             if staged || !known.contains(&path) {
                 let tracked = ContentId::from_slice(entry.id.as_slice())
@@ -310,8 +288,7 @@ fn scan_git(
             gix::index::fs::Metadata::from_path_no_follow(root.join(path.as_str()).as_std_path())
                 .ok()?;
         let current = Stat::from_fs(&metadata).ok()?;
-        // A stat that matches is only proof of a clean file when the index was written well after the file was:
-        // git's "racy" rule.
+        // A stat that matches is only proof of a clean file when the index was written well after the file was: git's "racy" rule.
         (tracked.stat.matches(&current, options) && !tracked.stat.is_racy(timestamp, options))
             .then_some(tracked.oid)
     };
@@ -331,15 +308,9 @@ fn scan_git(
     Ok(Scanned { files, unreadable })
 }
 
-/// The files under `root` that the index does not know and git does not ignore, by git's own rules: the
-/// `.gitignore` of every directory, `info/exclude` of the common directory, `core.excludesFile` and
-/// `core.ignorecase`. A directory with a `.git` of its own is a submodule or a nested repository and is not
-/// entered. A directory that cannot be read is not entered either: it comes back in `unreadable`.
+/// The files under `root` that the index does not know and git does not ignore, by git's own rules: the `.gitignore` of every directory, `info/exclude` of the common directory, `core.excludesFile` and `core.ignorecase`. A directory with a `.git` of its own is a submodule or a nested repository and is not entered. A directory that cannot be read is not entered either: it comes back in `unreadable`.
 ///
-/// The walk stops with an error at the first directory it cannot read, where git prints a warning and goes on, so
-/// the directories have to be tried before it enters them. Trying every one of them slowed the walk down by a
-/// third or more when measured, and only a tracked directory that cannot be read needs it: the untracked ones are
-/// tried on the first walk, and when it fails the walk runs again with every directory tried.
+/// The walk stops with an error at the first directory it cannot read, where git prints a warning and goes on, so the directories have to be tried before it enters them. Trying every one of them slowed the walk down by a third or more when measured, and only a tracked directory that cannot be read needs it: the untracked ones are tried on the first walk, and when it fails the walk runs again with every directory tried.
 fn walk_untracked<'k>(
     root: &'k Utf8Path,
     repo: &gix::Repository,
@@ -379,8 +350,7 @@ fn walk<'k>(
     Ok(found)
 }
 
-/// Takes the untracked files of a directory walk that are not known to the index, and the directories the walk
-/// does not enter because the process cannot read them.
+/// Takes the untracked files of a directory walk that are not known to the index, and the directories the walk does not enter because the process cannot read them.
 struct Untracked<'k> {
     root: &'k Utf8Path,
     known: &'k HashSet<RepoPath>,
@@ -438,8 +408,7 @@ impl Delegate for Untracked<'_> {
     }
 }
 
-/// Whether the process can list `directory` and look at the files in it. A directory with mode `r--` can be listed
-/// but not searched: git fails on it when it looks for the `.gitignore` inside.
+/// Whether the process can list `directory` and look at the files in it. A directory with mode `r--` can be listed but not searched: git fails on it when it looks for the `.gitignore` inside.
 fn is_readable(directory: &Utf8Path) -> bool {
     fs::read_dir(directory).is_ok() && fs::metadata(directory.join(".")).is_ok()
 }
@@ -474,10 +443,7 @@ fn scan_plain(
     Scanned { files, unreadable }
 }
 
-/// Stamps a present regular file. `known` gives its id from what is already known, without reading it; when it
-/// cannot, the file is hashed, unless it is above `max_file_bytes` and so never parsed. A file that is gone or is
-/// not a regular file gives `Ok(None)`. A file that cannot be looked at, because a directory above it cannot be
-/// searched, gives the directory that holds it (`.` for the root) as the error.
+/// Stamps a present regular file. `known` gives its id from what is already known, without reading it; when it cannot, the file is hashed, unless it is above `max_file_bytes` and so never parsed. A file that is gone or is not a regular file gives `Ok(None)`. A file that cannot be looked at, because a directory above it cannot be searched, gives the directory that holds it (`.` for the root) as the error.
 fn stamp_file(
     root: &Utf8Path,
     path: &RepoPath,
@@ -599,8 +565,7 @@ mod tests {
             &["config", "core.excludesFile", excludes.to_str().unwrap()],
         );
         git(dir.path(), &["config", "core.ignorecase", "true"]);
-        // Untracked, and ignoring itself so that it is not a file of the set either. The pattern differs from the
-        // directory in case.
+        // Untracked, and ignoring itself so that it is not a file of the set either. The pattern differs from the directory in case.
         write(dir.path(), ".gitignore", "Build/\n.gitignore\n");
         write(dir.path(), "src/new.ts", "new");
         write(dir.path(), "src/b.skip", "skipped");
@@ -913,8 +878,7 @@ mod tests {
         git(dir.path(), &["init", "-q", "-b", "main"]);
         write(dir.path(), "old.ts", "old");
         write(dir.path(), "future.ts", "future");
-        // The index can tell a file from its stat only when the file is older than the index: one written in the
-        // second `git add` runs in, or after it, may have been saved again within that second.
+        // The index can tell a file from its stat only when the file is older than the index: one written in the second `git add` runs in, or after it, may have been saved again within that second.
         let now = SystemTime::now();
         touch(&dir.path().join("old.ts"), now - Duration::from_secs(3_600));
         touch(

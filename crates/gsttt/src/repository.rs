@@ -1,8 +1,6 @@
 //! The repository a command works on: its root, its config and its connectors, and what is read from them.
 //!
-//! The command line and the MCP server read a repository the same way, so both go through [`Repository`]. It keeps
-//! nothing between calls but the evaluated config, and a caller that outlives edits to the config, the trust store
-//! or the checked-out branch opens it again for every call.
+//! The command line and the MCP server read a repository the same way, so both go through [`Repository`]. It keeps nothing between calls but the evaluated config, and a caller that outlives edits to the config, the trust store or the checked-out branch opens it again for every call.
 
 use std::fmt::Write as _;
 use std::io;
@@ -24,8 +22,7 @@ use crate::trust::{self, Declared, Store};
 
 /// Why a repository cannot be opened or read.
 ///
-/// The message names what failed and, where the caller can do something about it, what to do, so that a caller
-/// without a terminal can pass it on as it is.
+/// The message names what failed and, where the caller can do something about it, what to do, so that a caller without a terminal can pass it on as it is.
 #[derive(Debug, thiserror::Error)]
 pub enum RepositoryError {
     /// There is no root to work on, or it is one gsttt refuses.
@@ -47,8 +44,7 @@ pub enum RepositoryError {
     #[error("an `[[external]]` of {CONFIG_PATH} is not valid: {0}")]
     External(#[source] ConnectorError),
 
-    /// Options of the config that the module they are for cannot read: one error for each module, in the order of
-    /// the config.
+    /// Options of the config that the module they are for cannot read: one error for each module, in the order of the config.
     #[error("the options in {CONFIG_PATH} are not valid:{}", lines(.0))]
     Options(Vec<ConnectorError>),
 
@@ -96,14 +92,11 @@ pub struct Repository {
 }
 
 impl Repository {
-    /// The repository around `start`, which should be a canonical directory: finds the root, refuses the home
-    /// directory and `/`, builds the registry and reads `.gsttt/config.toml`. The external connectors of the config
-    /// that the user trusts in this root join the registry after the built-in ones, in the order of the config.
+    /// The repository around `start`, which should be a canonical directory: finds the root, refuses the home directory and `/`, builds the registry and reads `.gsttt/config.toml`. The external connectors of the config that the user trusts in this root join the registry after the built-in ones, in the order of the config.
     ///
     /// # Errors
     ///
-    /// When there is no root, the root is refused, a built-in pack does not read, the config does not, a module
-    /// cannot read its options or a trusted external does not become a connector.
+    /// When there is no root, the root is refused, a built-in pack does not read, the config does not, a module cannot read its options or a trusted external does not become a connector.
     pub fn open(start: &Utf8Path) -> Result<Self, RepositoryError> {
         let workspace = root::locate(start)?;
         let registry = Registry::builtin()?;
@@ -136,8 +129,7 @@ impl Repository {
         &self.setup
     }
 
-    /// The connectors in registry order, and the built-in rule packs: the built-in connectors, then the
-    /// externals the user trusts in this root.
+    /// The connectors in registry order, and the built-in rule packs: the built-in connectors, then the externals the user trusts in this root.
     pub const fn registry(&self) -> &Registry {
         &self.registry
     }
@@ -160,8 +152,7 @@ impl Repository {
         &self.externals
     }
 
-    /// `index` as every answer reads it: with a line in its coverage problems for each external that is not
-    /// trusted, so that a person who sees no file of it knows why and what to run.
+    /// `index` as every answer reads it: with a line in its coverage problems for each external that is not trusted, so that a person who sees no file of it knows why and what to run.
     fn answered(&self, mut index: Index) -> Arc<Index> {
         let waiting = self
             .externals
@@ -178,8 +169,7 @@ impl Repository {
         self.workspace.root()
     }
 
-    /// Brings the stored index up to date with the tree and returns it. This is the call that can take minutes
-    /// on the first index of a large repository.
+    /// Brings the stored index up to date with the tree and returns it. This is the call that can take minutes on the first index of a large repository.
     ///
     /// # Errors
     ///
@@ -222,8 +212,7 @@ impl Repository {
         })
     }
 
-    /// `argument` read against `base`, a directory inside the root: the current directory after `-C` for the
-    /// command line, the root itself for the server.
+    /// `argument` read against `base`, a directory inside the root: the current directory after `-C` for the command line, the root itself for the server.
     ///
     /// # Errors
     ///
@@ -241,9 +230,7 @@ impl Repository {
         Ok(Target { path, on_disk })
     }
 
-    /// `argument` read a second time with the links in its path resolved. The root is a canonical path, so a path
-    /// spelled through a link to a directory of the repository, as everything under `/tmp` is on macOS, leaves it by
-    /// its text and still names a file inside it.
+    /// `argument` read a second time with the links in its path resolved. The root is a canonical path, so a path spelled through a link to a directory of the repository, as everything under `/tmp` is on macOS, leaves it by its text and still names a file inside it.
     fn through_links(&self, base: &Utf8Path, argument: &str) -> Result<RepoPath, OutsideRoot> {
         let leaves = || OutsideRoot::Leaves {
             argument: argument.to_owned(),
@@ -291,8 +278,7 @@ impl Repository {
     }
 }
 
-/// The modules of `setup` whose options the connector of that name cannot read, in the order of the config. A module
-/// that no connector is named after has nothing to read its options.
+/// The modules of `setup` whose options the connector of that name cannot read, in the order of the config. A module that no connector is named after has nothing to read its options.
 fn unreadable_options(setup: &Setup, registry: &Registry) -> Vec<ConnectorError> {
     let connectors = registry.connectors();
     setup
@@ -317,8 +303,7 @@ fn lines(errors: &[ConnectorError]) -> String {
     })
 }
 
-/// `path` with its longest prefix that exists resolved through the filesystem and the rest kept as text, so that a
-/// file that is gone can still be named through a link.
+/// `path` with its longest prefix that exists resolved through the filesystem and the rest kept as text, so that a file that is gone can still be named through a link.
 fn resolve_existing(path: &Utf8Path) -> Option<Utf8PathBuf> {
     path.ancestors().find_map(|ancestor| {
         let resolved = ancestor.canonicalize_utf8().ok()?;

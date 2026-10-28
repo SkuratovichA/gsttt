@@ -1,5 +1,4 @@
-//! The language-independent half of gsttt: the graph of files and contracts, the connector contract every
-//! language and contract-format module implements, the engine that builds an index, and the queries over it.
+//! The language-independent half of gsttt: the graph of files and contracts, the connector contract every language and contract-format module implements, the engine that builds an index, and the queries over it.
 //!
 //! - [`connector`]: what a module implements.
 //! - [`fact`], [`contract`], [`path`]: what a connector says about one file.

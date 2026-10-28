@@ -1,7 +1,6 @@
 //! Python call, decorator and assignment sites as the rule engine reads them, and the text of a Python value.
 //!
-//! The rules of `gsttt_core::rules` are written against [`Site`]; this file is the whole of what Python adds to
-//! it: which expressions count as text, and how a dotted name is written.
+//! The rules of `gsttt_core::rules` are written against [`Site`]; this file is the whole of what Python adds to it: which expressions count as text, and how a dotted name is written.
 
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -21,12 +20,10 @@ use ruff_text_size::{TextRange, TextSize};
 /// The text a computed part of a template is written as, the way every connector hands it to the rules.
 pub(crate) const COMPUTED: &str = "${}";
 
-/// Stands in a document for a line break an escape made until the whole document is known, which is when [`settled`]
-/// writes it as a space. A noncharacter, so that no text holds it.
+/// Stands in a document for a line break an escape made until the whole document is known, which is when [`settled`] writes it as a space. A noncharacter, so that no text holds it.
 const ESCAPED_BREAK: char = '\u{FFFE}';
 
-/// A file's text and where its lines start, with what a comment that runs to the end of the line starts with in the
-/// language of the document: what reading a document out of the file needs beside the expression.
+/// A file's text and where its lines start, with what a comment that runs to the end of the line starts with in the language of the document: what reading a document out of the file needs beside the expression.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Source<'a> {
     text: &'a str,
@@ -35,8 +32,7 @@ pub(crate) struct Source<'a> {
 }
 
 impl<'a> Source<'a> {
-    /// The file `text`, whose lines `lines` index, for a document in the language `lang` of an embed rule. A language
-    /// whose comments are not known has none, and a break an escape made is never in the way of one.
+    /// The file `text`, whose lines `lines` index, for a document in the language `lang` of an embed rule. A language whose comments are not known has none, and a break an escape made is never in the way of one.
     pub(crate) fn new(text: &'a str, lines: &'a LineIndex, lang: &str) -> Self {
         let comment = match lang {
             "sql" => Some("--"),
@@ -61,29 +57,21 @@ struct Text<'a> {
     range: TextRange,
 }
 
-/// The text of a Python value, when it has any: a string literal, an f-string or a `+` concatenation with each
-/// computed part written as `${}`, a `"…".format(…)` call as its template with each replacement field written the
-/// same way, and a list, tuple or set as its first element that has text.
+/// The text of a Python value, when it has any: a string literal, an f-string or a `+` concatenation with each computed part written as `${}`, a `"…".format(…)` call as its template with each replacement field written the same way, and a list, tuple or set as its first element that has text.
 pub(crate) fn text_of(expr: &Expr) -> Option<Cow<'_, str>> {
     text_in(expr, None).map(|found| found.text)
 }
 
-/// Like [`text_of`], for a document that is read line by line: the text keeps the lines of the source, and the
-/// line its first literal starts on comes with it.
+/// Like [`text_of`], for a document that is read line by line: the text keeps the lines of the source, and the line its first literal starts on comes with it.
 ///
-/// A literal joined from several parts, by implicit concatenation or by `+`, has each part on the line it is on in
-/// the source, which the plain text does not. A line break an escape such as `\n` makes is a line the source does
-/// not have, so it is written as a space and the part stays on its line. That runs a comment of the language of the
-/// document on into what follows it, so a document with a comment before such a break is not read.
+/// A literal joined from several parts, by implicit concatenation or by `+`, has each part on the line it is on in the source, which the plain text does not. A line break an escape such as `\n` makes is a line the source does not have, so it is written as a space and the part stays on its line. That runs a comment of the language of the document on into what follows it, so a document with a comment before such a break is not read.
 pub(crate) fn document_of<'a>(expr: &'a Expr, source: Source<'_>) -> Option<(Cow<'a, str>, Line)> {
     let found = text_in(expr, Some(source))?;
     let text = settled(found.text, source.comment)?;
     Some((text, source.line_of(found.range.start())))
 }
 
-/// `text` with each break an escape made written as a space, which keeps the document on the lines of the source.
-/// `None` when a comment, which ends where its line does, comes before such a break on its line: the space would run
-/// it on into the text after it. A call whose document lost a statement that way is better an unread site.
+/// `text` with each break an escape made written as a space, which keeps the document on the lines of the source. `None` when a comment, which ends where its line does, comes before such a break on its line: the space would run it on into the text after it. A call whose document lost a statement that way is better an unread site.
 fn settled<'a>(text: Cow<'a, str>, comment: Option<&str>) -> Option<Cow<'a, str>> {
     if !text.contains(ESCAPED_BREAK) {
         return Some(text);
@@ -138,8 +126,7 @@ fn text_in<'a>(expr: &'a Expr, source: Option<Source<'_>>) -> Option<Text<'a>> {
     }
 }
 
-/// Whether a value is written as a string: a literal, an f-string, `+` with a string on either side, `%` on a string or
-/// `.format` on a string. A name, a subscript or a call is not, whatever it holds when the program runs.
+/// Whether a value is written as a string: a literal, an f-string, `+` with a string on either side, `%` on a string or `.format` on a string. A name, a subscript or a call is not, whatever it holds when the program runs.
 pub(crate) fn is_string_shaped(expr: &Expr) -> bool {
     match expr {
         Expr::StringLiteral(_) | Expr::FString(_) => true,
@@ -161,8 +148,7 @@ fn first_text<'a>(elements: &'a [Expr], source: Option<Source<'_>>) -> Option<Te
     elements.iter().find_map(|element| text_in(element, source))
 }
 
-/// `left` followed by `right`, a side with no text being a computed part. With a `source`, `right` starts on the
-/// line it is on in the source.
+/// `left` followed by `right`, a side with no text being a computed part. With a `source`, `right` starts on the line it is on in the source.
 fn concat(
     left: Option<&Text<'_>>,
     right: Option<&Text<'_>>,
@@ -193,9 +179,7 @@ fn concat(
 
 /// The parts of a string literal, each on the line it starts on in the source.
 ///
-/// A part keeps the line breaks the source has. One an escape makes is [`ESCAPED_BREAK`], and a backslash that ends a
-/// line leaves its break out of the value, which the next break of the source puts back so that what follows stays on
-/// its line. `None` when the value has a break the source does not account for, as `\x0a` writes one.
+/// A part keeps the line breaks the source has. One an escape makes is [`ESCAPED_BREAK`], and a backslash that ends a line leaves its break out of the value, which the next break of the source puts back so that what follows stays on its line. `None` when the value has a break the source does not account for, as `\x0a` writes one.
 fn literal_in<'a>(string: &'a ExprStringLiteral, source: Source<'_>) -> Option<Text<'a>> {
     let first = source.line_of(string.range.start());
     let mut text = String::new();
@@ -244,8 +228,7 @@ enum Break {
     Continuation,
 }
 
-/// The line breaks of `content`, the source between the quotes of a literal, in the order they come. A raw string has
-/// no escapes, so its backslashes are text.
+/// The line breaks of `content`, the source between the quotes of a literal, in the order they come. A raw string has no escapes, so its backslashes are text.
 fn breaks_in(content: &str, raw: bool) -> impl Iterator<Item = Break> + '_ {
     let mut bytes = content.bytes().peekable();
     iter::from_fn(move || {
@@ -259,8 +242,7 @@ fn breaks_in(content: &str, raw: bool) -> impl Iterator<Item = Break> + '_ {
                     b'\r' if bytes.next_if_eq(&b'\n').is_some() => {
                         return Some(Break::Continuation);
                     }
-                    // Any other escape is one character that is no line break, or none; taking the byte after the
-                    // backslash is what keeps `\\` from beginning one.
+                    // Any other escape is one character that is no line break, or none; taking the byte after the backslash is what keeps `\\` from beginning one.
                     _ => {}
                 },
                 _ => {}
@@ -269,8 +251,7 @@ fn breaks_in(content: &str, raw: bool) -> impl Iterator<Item = Break> + '_ {
     })
 }
 
-/// Adds the line breaks that put what comes next on the line `next`, when `text`, which starts on the line
-/// `first`, ends on an earlier one.
+/// Adds the line breaks that put what comes next on the line `next`, when `text`, which starts on the line `first`, ends on an earlier one.
 fn pad_to_line(text: &mut String, first: Line, next: Line) {
     let reached = first.saturating_add(newlines(text));
     for _ in reached..next {
@@ -282,9 +263,7 @@ fn newlines(text: &str) -> Line {
     Line::try_from(text.bytes().filter(|byte| *byte == b'\n').count()).unwrap_or(Line::MAX)
 }
 
-/// A `str.format` template with each replacement field written as [`COMPUTED`] and each doubled brace as the brace it
-/// stands for, which is how Python reads it. `None` for a template Python refuses: a brace that closes nothing or is
-/// never closed.
+/// A `str.format` template with each replacement field written as [`COMPUTED`] and each doubled brace as the brace it stands for, which is how Python reads it. `None` for a template Python refuses: a brace that closes nothing or is never closed.
 fn format_template(template: Cow<'_, str>) -> Option<Cow<'_, str>> {
     if !template.contains(['{', '}']) {
         return Some(template);
@@ -311,8 +290,7 @@ fn format_template(template: Cow<'_, str>) -> Option<Cow<'_, str>> {
     Some(Cow::Owned(text))
 }
 
-/// Consumes the rest of a replacement field, up to the brace that closes it, past the fields its format spec nests.
-/// `None` when it is never closed.
+/// Consumes the rest of a replacement field, up to the brace that closes it, past the fields its format spec nests. `None` when it is never closed.
 fn skip_field(chars: impl Iterator<Item = char>) -> Option<()> {
     let mut open = 1_usize;
     for c in chars {
@@ -364,16 +342,13 @@ pub(crate) fn dict_value<'a>(expr: &'a Expr, prop: &str) -> Option<&'a Expr> {
     })
 }
 
-/// The dotted name of a `Name` or an attribute chain: `os.environ`, `self.router`. A chain that starts at
-/// something else, such as a call or a subscript, has `?` for that segment so that `*` patterns still match:
-/// `Session().execute` is `?.execute`. `None` when the expression is not a name at all.
+/// The dotted name of a `Name` or an attribute chain: `os.environ`, `self.router`. A chain that starts at something else, such as a call or a subscript, has `?` for that segment so that `*` patterns still match: `Session().execute` is `?.execute`. `None` when the expression is not a name at all.
 pub(crate) fn dotted(expr: &Expr) -> Option<String> {
     let mut name = String::new();
     write_dotted(expr, &mut name).then_some(name)
 }
 
-/// Appends the dotted name of `expr` to `out`, as [`dotted`] reads it, and tells whether `expr` is one. The calls of
-/// a file are many, so they are read into one buffer instead of a `String` each.
+/// Appends the dotted name of `expr` to `out`, as [`dotted`] reads it, and tells whether `expr` is one. The calls of a file are many, so they are read into one buffer instead of a `String` each.
 pub(crate) fn write_dotted(expr: &Expr, out: &mut String) -> bool {
     match expr {
         Expr::Name(name) => out.push_str(name.id.as_str()),
@@ -391,8 +366,7 @@ pub(crate) fn write_dotted(expr: &Expr, out: &mut String) -> bool {
 
 /// `outer` and `inner` as one prefix, with `/` between them for HTTP and `.` otherwise; an empty side is left out.
 ///
-/// `gsttt_core::rules` joins the class and receiver prefixes of a decorator rule the same way before it reads the
-/// rule's own `prefix`; its `join` is private, so this is the copy, and `joins_match_the_rule_engine` pins it.
+/// `gsttt_core::rules` joins the class and receiver prefixes of a decorator rule the same way before it reads the rule's own `prefix`; its `join` is private, so this is the copy, and `joins_match_the_rule_engine` pins it.
 pub(crate) fn join_prefixes(kind: &ContractKind, outer: &str, inner: &str) -> String {
     match (outer.is_empty(), inner.is_empty()) {
         (true, _) => inner.to_owned(),
@@ -448,8 +422,7 @@ impl Site for CallSite<'_> {
     }
 }
 
-/// A call as the rules that embed documents read it: the same site, with text that keeps the lines of the source.
-/// It remembers the line the last text it handed out starts on, which is the line of the document the rule makes.
+/// A call as the rules that embed documents read it: the same site, with text that keeps the lines of the source. It remembers the line the last text it handed out starts on, which is the line of the document the rule makes.
 #[derive(Debug)]
 pub(crate) struct EmbedSite<'a> {
     call: CallSite<'a>,
@@ -532,9 +505,7 @@ impl Site for AssignSite<'_> {
 
     /// The keyword `name` of the call the value is, as in `url: str = Field(alias="DB_URL")`.
     ///
-    /// A keyword that is there but not a literal names something the rule cannot read, so it comes back as a computed
-    /// text and the rule records an unread site: left out, the rule would go on to the next alternative and name a
-    /// variable the field does not read. `None` is what a keyword defaults to, so it is left out all the same.
+    /// A keyword that is there but not a literal names something the rule cannot read, so it comes back as a computed text and the rule records an unread site: left out, the rule would go on to the next alternative and name a variable the field does not read. `None` is what a keyword defaults to, so it is left out all the same.
     fn keyword(&self, name: &str) -> Option<Cow<'_, str>> {
         let Expr::Call(call) = self.value? else {
             return None;
@@ -792,8 +763,7 @@ mod tests {
 
     #[test]
     fn a_literal_the_parser_could_not_close_is_read_without_a_panic() {
-        // The parser keeps the statements it could read out of a broken file, and a string it recovered from may be
-        // shorter than its own quotes.
+        // The parser keeps the statements it could read out of a broken file, and a string it recovered from may be shorter than its own quotes.
         let sources = [
             "'",
             "\"",
@@ -830,8 +800,7 @@ mod tests {
         }
     }
 
-    /// One part of a joined literal, whose content starts with `marker`; the last kind has a second marker, `marker`
-    /// with `b` before its closing `@`, after the line continuation and the line break that follows it.
+    /// One part of a joined literal, whose content starts with `marker`; the last kind has a second marker, `marker` with `b` before its closing `@`, after the line continuation and the line break that follows it.
     fn part_of_kind(kind: u8, marker: &str) -> String {
         match kind {
             0 => format!("\"{marker} x\""),

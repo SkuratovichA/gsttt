@@ -43,8 +43,7 @@ pub enum RootError {
     FilesystemRoot,
 }
 
-/// The directory a run starts in, by its canonical path, so that a path argument can be read against it and
-/// compared with the root: the directory `-C` names, or the current directory when there is no `-C`.
+/// The directory a run starts in, by its canonical path, so that a path argument can be read against it and compared with the root: the directory `-C` names, or the current directory when there is no `-C`.
 ///
 /// # Errors
 ///
@@ -68,9 +67,7 @@ pub fn start(directory: Option<&Utf8Path>) -> Result<Utf8PathBuf, RootError> {
     })
 }
 
-/// The workspace around `start`, unless its root is a directory gsttt must not index: the home directory, whose
-/// files belong to the user, or `/`. Both are compared by canonical path, so a link to the home directory is the
-/// home directory.
+/// The workspace around `start`, unless its root is a directory gsttt must not index: the home directory, whose files belong to the user, or `/`. Both are compared by canonical path, so a link to the home directory is the home directory.
 ///
 /// # Errors
 ///

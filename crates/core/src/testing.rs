@@ -22,9 +22,7 @@ use crate::{FileId, ProjectId, RepoPath};
 /// The connector that reads a file unless a test says otherwise.
 const DEFAULT_CONNECTOR: &str = "ts";
 
-/// The rule that found a site of `role`, as a connector names it: an OpenAPI document declares a route, a NestJS
-/// controller serves it and a `fetch` calls it. Each role has its own rule, so that a test sees an answer that takes
-/// the rule from another site.
+/// The rule that found a site of `role`, as a connector names it: an OpenAPI document declares a route, a NestJS controller serves it and a `fetch` calls it. Each role has its own rule, so that a test sees an answer that takes the rule from another site.
 fn via(role: Role) -> &'static str {
     match role {
         Role::Declares => "openapi",
@@ -122,9 +120,7 @@ impl Entry {
     }
 }
 
-/// A tree of files, their imports and their contract sites, built the way the engine builds an index from the facts of
-/// a connector: a file keeps its imports in the order they were given, which is the order of its facts and not a sorted
-/// one, a file the engine puts aside is owned and counted apart, and a project is named `.` at the repository root.
+/// A tree of files, their imports and their contract sites, built the way the engine builds an index from the facts of a connector: a file keeps its imports in the order they were given, which is the order of its facts and not a sorted one, a file the engine puts aside is owned and counted apart, and a project is named `.` at the repository root.
 #[derive(Debug, Default)]
 #[must_use = "a tree is nothing until it is built"]
 pub struct Tree {
@@ -171,8 +167,7 @@ impl Tree {
         self
     }
 
-    /// Adds files that `connector` read until it owns `total` of them, so that a test can put the few files it looks
-    /// at in a tree of the size of a real one.
+    /// Adds files that `connector` read until it owns `total` of them, so that a test can put the few files it looks at in a tree of the size of a real one.
     pub fn padded(mut self, connector: &str, total: usize) -> Self {
         self.register(connector);
         let owned = self
@@ -231,9 +226,7 @@ impl Tree {
         self.site(path, key, Role::Calls, 1)
     }
 
-    /// A file its connector could not read at all. A file over the size limit, not UTF-8 or unreadable is the engine's
-    /// to put aside: it is owned, counted in the files of its connector and listed as skipped, and it is not a failure
-    /// of the connector.
+    /// A file its connector could not read at all. A file over the size limit, not UTF-8 or unreadable is the engine's to put aside: it is owned, counted in the files of its connector and listed as skipped, and it is not a failure of the connector.
     pub fn failed(mut self, path: &str, failure: ParseFailure) -> Self {
         self.entry(path).status = ParseStatus::Failed(failure);
         self

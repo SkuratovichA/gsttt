@@ -16,8 +16,7 @@ const DEPENDENCY_SECTIONS: [&str; 4] = [
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Manifest {
     pub name: Option<String>,
-    /// Whether the file opens a project of its own: it names a package, declares dependencies or lists workspaces. A file
-    /// with none of those, such as `{"type": "module"}`, only marks the directory it lies in.
+    /// Whether the file opens a project of its own: it names a package, declares dependencies or lists workspaces. A file with none of those, such as `{"type": "module"}`, only marks the directory it lies in.
     pub declares_project: bool,
     /// Every package named in any dependency section.
     pub dependencies: BTreeSet<String>,

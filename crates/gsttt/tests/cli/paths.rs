@@ -1,5 +1,4 @@
-//! A path argument is read from the directory the run starts in, and one that leaves the repository is a usage
-//! error told before anything reads the index.
+//! A path argument is read from the directory the run starts in, and one that leaves the repository is a usage error told before anything reads the index.
 
 use gsttt_scenario::scenario;
 use serde_json::Value;
@@ -83,8 +82,7 @@ fn a_path_is_read_from_the_directory_c_names() {
     assert_usage_error(&outside, "is outside the repository");
 }
 
-/// The root is a canonical path, and a path spelled through a link to a directory of the repository names a file in
-/// it all the same: `/tmp` is a link on macOS, and so is the directory the tests are built in.
+/// The root is a canonical path, and a path spelled through a link to a directory of the repository names a file in it all the same: `/tmp` is a link on macOS, and so is the directory the tests are built in.
 #[scenario("cli", "A path spelled through a linked directory is accepted")]
 #[test]
 fn a_path_spelled_through_a_linked_directory_is_accepted() {

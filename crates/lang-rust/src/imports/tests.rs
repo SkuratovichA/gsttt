@@ -218,8 +218,7 @@ fn a_use_of_a_macro_declared_in_the_file_reads_no_import() {
         specs("macro_rules! shout { () => {}; }\npub(crate) use shout;\nuse other;"),
         ["other"]
     );
-    // Declared in an inner module, the macro is not the one the outer `use` names, and declared after it, it is not
-    // in scope yet.
+    // Declared in an inner module, the macro is not the one the outer `use` names, and declared after it, it is not in scope yet.
     assert_eq!(
         specs("mod inner { macro_rules! shout { () => {}; } }\nuse shout;"),
         ["shout"]

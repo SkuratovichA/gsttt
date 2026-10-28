@@ -1,8 +1,6 @@
 //! The arguments of each tool, and the reading of a call's arguments into them.
 //!
-//! A struct here is the whole contract of a tool's arguments: its fields and their doc comments become the input
-//! schema the model reads, and the same struct reads the call. A call that does not fit is an error the model can
-//! correct, so the reading names the argument and what it expects instead of passing serde's wording on.
+//! A struct here is the whole contract of a tool's arguments: its fields and their doc comments become the input schema the model reads, and the same struct reads the call. A call that does not fit is an error the model can correct, so the reading names the argument and what it expects instead of passing serde's wording on.
 
 use gsttt_core::text::join_and;
 use rmcp::model::JsonObject;
@@ -57,17 +55,13 @@ pub(crate) trait Arguments: DeserializeOwned + JsonSchema + 'static {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ImpactArguments {
-    /// The files to ask about, as paths from the repository root, such as `src/a.ts`. A path with no file on disk is
-    /// asked about as deleted, so that the answer can still list what used to import it. Leave it out when `changed`
-    /// is true.
+    /// The files to ask about, as paths from the repository root, such as `src/a.ts`. A path with no file on disk is asked about as deleted, so that the answer can still list what used to import it. Leave it out when `changed` is true.
     #[serde(default)]
     pub(crate) paths: Vec<String>,
-    /// Ask about the files that differ from HEAD instead of naming paths: the modified, added and untracked files,
-    /// and the deleted ones as deleted. Use it before finishing a task.
+    /// Ask about the files that differ from HEAD instead of naming paths: the modified, added and untracked files, and the deleted ones as deleted. Use it before finishing a task.
     #[serde(default)]
     pub(crate) changed: bool,
-    /// With `changed`: compare against the best common ancestor of HEAD and this git revision, such as a branch
-    /// name, instead of against HEAD.
+    /// With `changed`: compare against the best common ancestor of HEAD and this git revision, such as a branch name, instead of against HEAD.
     pub(crate) base: Option<String>,
     /// Stop the walk after this many hops from a changed file. Leave it out to follow every hop.
     pub(crate) depth: Option<u32>,
@@ -126,8 +120,7 @@ impl Arguments for RouteArguments {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ContractArguments {
-    /// A contract key such as "http GET /bookings/{}", or part of one, such as "/bookings", which lists the keys that
-    /// contain it.
+    /// A contract key such as "http GET /bookings/{}", or part of one, such as "/bookings", which lists the keys that contain it.
     pub(crate) query: String,
     /// Show every entry of each list. Without it a long list is cut, with a line that counts the rest.
     #[serde(default)]
@@ -226,8 +219,7 @@ impl Call {
     ///
     /// # Errors
     ///
-    /// The argument that is unknown, missing, of the wrong type, or in conflict with another, as a sentence that names
-    /// it.
+    /// The argument that is unknown, missing, of the wrong type, or in conflict with another, as a sentence that names it.
     pub(crate) fn read(tool: ToolName, arguments: Option<JsonObject>) -> Result<Self, ToolError> {
         Ok(match tool {
             ToolName::Impact => Self::Impact(read::<ImpactArguments>(tool, arguments)?.try_into()?),
@@ -246,8 +238,7 @@ impl Call {
 
 /// Reads the arguments of a call into `A`.
 ///
-/// The names are checked before serde reads the values, because serde's errors about a name or a missing field carry
-/// no path, and the model needs to be told which argument to correct.
+/// The names are checked before serde reads the values, because serde's errors about a name or a missing field carry no path, and the model needs to be told which argument to correct.
 fn read<A: Arguments>(tool: ToolName, arguments: Option<JsonObject>) -> Result<A, ToolError> {
     let object = arguments.unwrap_or_default();
     if let Some(unknown) = object

@@ -1,5 +1,4 @@
-//! Requests that are not what the protocol gives a call, which the typed client cannot make and so are written to the
-//! wire as lines of JSON.
+//! Requests that are not what the protocol gives a call, which the typed client cannot make and so are written to the wire as lines of JSON.
 
 use gsttt_scenario::scenario;
 use rmcp::model::{ErrorCode, ErrorData};

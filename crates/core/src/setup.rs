@@ -10,8 +10,7 @@ use crate::rules::Pack;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Setup {
-    /// Turns on every module whose `detect` finds something in the repository. A module in `modules` runs either
-    /// way.
+    /// Turns on every module whose `detect` finds something in the repository. A module in `modules` runs either way.
     pub detect: bool,
     /// Modules turned on with options, in the order the config lists them.
     pub modules: Vec<ModuleSetup>,
@@ -27,8 +26,7 @@ pub struct Setup {
     pub max_file_bytes: u64,
     /// Connectors that run as a command speaking JSON lines, for languages gsttt does not ship.
     pub externals: Vec<ExternalSetup>,
-    /// Path prefixes a gateway or proxy puts in front of routes, like `/api`: with it, a call to `/api/bookings`
-    /// meets the route `/bookings`.
+    /// Path prefixes a gateway or proxy puts in front of routes, like `/api`: with it, a call to `/api/bookings` meets the route `/bookings`.
     pub http_prefixes: Vec<String>,
 }
 

@@ -93,7 +93,7 @@ expression: pack_schema()
           "type": "string"
         },
         "receiver": {
-          "description": "A prefix taken from the call that made the receiver: `router = APIRouter(prefix=\"/x\")` before\n`router.get(\"/y\")`.",
+          "description": "A prefix taken from the call that made the receiver: `router = APIRouter(prefix=\"/x\")` before `router.get(\"/y\")`.",
           "allOf": [
             {
               "$ref": "#/definitions/Prefix"
@@ -127,7 +127,7 @@ expression: pack_schema()
       "description": "What a site does with a contract.",
       "oneOf": [
         {
-          "description": "A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration,\n`.env.example`.",
+          "description": "A schema or spec defines it: an OpenAPI document, a `.proto`, a GraphQL SDL, a Prisma model, a migration, `.env.example`.",
           "type": "string",
           "const": "declares"
         },
@@ -144,7 +144,7 @@ expression: pack_schema()
       ]
     },
     "Prefix": {
-      "description": "Where a key prefix comes from: the decorator or call named by `from`, and the value `key` reads there.\n\nEvery connector reads it the same way. For `class`, the innermost enclosing class must carry a decorator matching\n`from`, or the rule does not apply. For `receiver`, the site's receiver must be a name bound in the same file to a\ncall matching `from` (`router = APIRouter(prefix=\"/x\")`, `const app = express()`), or the rule does not apply;\na receiver imported from another file is left to the connector's `link` step, which sees both files. So\n`receiver` is also how a rule stays off `cache.get(\"/x\")`.",
+      "description": "Where a key prefix comes from: the decorator or call named by `from`, and the value `key` reads there.\n\nEvery connector reads it the same way. For `class`, the innermost enclosing class must carry a decorator matching `from`, or the rule does not apply. For `receiver`, the site's receiver must be a name bound in the same file to a call matching `from` (`router = APIRouter(prefix=\"/x\")`, `const app = express()`), or the rule does not apply; a receiver imported from another file is left to the connector's `link` step, which sees both files. So `receiver` is also how a rule stays off `cache.get(\"/x\")`.",
       "type": "object",
       "properties": {
         "from": {
@@ -198,7 +198,7 @@ expression: pack_schema()
           ]
         },
         "receiver": {
-          "description": "A prefix taken from the call that made the decorator's receiver: FastAPI `APIRouter(prefix=…)`, Flask\n`Blueprint(url_prefix=…)`.",
+          "description": "A prefix taken from the call that made the decorator's receiver: FastAPI `APIRouter(prefix=…)`, Flask `Blueprint(url_prefix=…)`.",
           "allOf": [
             {
               "$ref": "#/definitions/Prefix"
@@ -206,7 +206,7 @@ expression: pack_schema()
           ]
         },
         "prefix": {
-          "description": "A prefix read at the decorator itself, joined after the class and receiver prefixes: with `$callee`,\nNestJS `@Query() bookings()` serves `graphql Query.bookings`.",
+          "description": "A prefix read at the decorator itself, joined after the class and receiver prefixes: with `$callee`, NestJS `@Query() bookings()` serves `graphql Query.bookings`.",
           "type": "string"
         }
       },
@@ -219,7 +219,7 @@ expression: pack_schema()
       ]
     },
     "ChainRule": {
-      "description": "A member chain that names a contract: `process.env.API_URL`, `prisma.booking.findMany()`,\n`trpc.booking.get.useQuery()`.",
+      "description": "A member chain that names a contract: `process.env.API_URL`, `prisma.booking.findMany()`, `trpc.booking.get.useQuery()`.",
       "type": "object",
       "properties": {
         "root": {
@@ -237,7 +237,7 @@ expression: pack_schema()
           "$ref": "#/definitions/Role"
         },
         "segments": {
-          "description": "How many segments after the root make the key. Unset: every segment up to a terminal or the end of the\nchain.",
+          "description": "How many segments after the root make the key. Unset: every segment up to a terminal or the end of the chain.",
           "type": "integer",
           "format": "uint32",
           "minimum": 1
@@ -277,7 +277,7 @@ expression: pack_schema()
       ]
     },
     "EmbedRule": {
-      "description": "A document in another language inside code: a GraphQL query in a `gql` tagged template, SQL in\n`cursor.execute(\"…\")`.",
+      "description": "A document in another language inside code: a GraphQL query in a `gql` tagged template, SQL in `cursor.execute(\"…\")`.",
       "type": "object",
       "properties": {
         "callee": {
@@ -316,7 +316,7 @@ expression: pack_schema()
           ]
         },
         "class": {
-          "description": "Base-class patterns, matched like callees, one of which the innermost enclosing class must list: `Base`,\n`*.Model`. Unset: the assignment counts wherever it is.",
+          "description": "Base-class patterns, matched like callees, one of which the innermost enclosing class must list: `Base`, `*.Model`. Unset: the assignment counts wherever it is.",
           "allOf": [
             {
               "$ref": "#/definitions/OneOrMany"

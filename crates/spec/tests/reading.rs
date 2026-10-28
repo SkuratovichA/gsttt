@@ -132,8 +132,7 @@ fn repository_specs_read_cleanly() {
     let open = read(&root).unwrap();
     let mut total = 0;
     for (file, found) in found_in_files(&open) {
-        // A plain scan of the file, so that a mistake in the reader cannot hide behind itself. It
-        // assumes no spec shows a scenario heading inside a code fence or under a removed requirement.
+        // A plain scan of the file, so that a mistake in the reader cannot hide behind itself. It assumes no spec shows a scenario heading inside a code fence or under a removed requirement.
         let source = fs::read_to_string(root.join(&file)).unwrap();
         let expected: Vec<(usize, String)> = source
             .lines()
@@ -196,8 +195,7 @@ fn an_unclosed_code_fence_is_named() {
         // A fence of four is not closed by a line of three.
         ("a shorter closing line", spec("````\n```"), 10),
         ("a delta", delta, 10),
-        // The fence hides the `THEN` step of the scenario above it: the fence is the problem, not
-        // the missing step.
+        // The fence hides the `THEN` step of the scenario above it: the fence is the problem, not the missing step.
         (
             "a fence over a step",
             "## Requirements\n\n### Requirement: R\nSHALL.\n\n#### Scenario: S\n- **WHEN** a\n```text\n- **THEN** b\n".to_owned(),
@@ -496,8 +494,7 @@ fn a_tree_without_openspec_is_an_error() {
     );
 }
 
-/// Not annotated: a test marked `#[cfg(unix)]` cannot carry `#[scenario]`, because the gate takes any
-/// condition but `test` for a proof that may not run.
+/// Not annotated: a test marked `#[cfg(unix)]` cannot carry `#[scenario]`, because the gate takes any condition but `test` for a proof that may not run.
 #[cfg(unix)]
 mod unix {
     use std::os::unix::fs::{PermissionsExt as _, symlink};

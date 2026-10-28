@@ -33,8 +33,7 @@ pub async fn serve<S: IndexSource>(source: S) -> Result<(), ServeError> {
 
 /// Serves the protocol over `input` and `output` until `input` ends, and returns then.
 ///
-/// Nothing but protocol messages is written to `output`. The binary passes the standard streams through [`serve`];
-/// the tests pass the two ends of a pipe.
+/// Nothing but protocol messages is written to `output`. The binary passes the standard streams through [`serve`]; the tests pass the two ends of a pipe.
 ///
 /// # Errors
 ///

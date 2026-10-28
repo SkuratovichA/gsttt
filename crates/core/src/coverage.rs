@@ -1,8 +1,6 @@
 //! What a run could see, and what it could not.
 //!
-//! Every answer carries its coverage, because "nothing imports this file" means something only next to "41
-//! dynamic imports are computed at run time". A file a connector could not read, a file no connector reads, an
-//! import that points nowhere: each becomes a count here instead of a silent hole.
+//! Every answer carries its coverage, because "nothing imports this file" means something only next to "41 dynamic imports are computed at run time". A file a connector could not read, a file no connector reads, an import that points nowhere: each becomes a count here instead of a silent hole.
 
 use serde::{Deserialize, Serialize};
 
@@ -67,8 +65,7 @@ pub struct ConnectorCoverage {
     pub external: u32,
     /// Imports that point nowhere, by reason, most first.
     pub unresolved: Vec<ReasonCount>,
-    /// Sites it saw but could not read, by reason, most first: an import computed at run time, a URL built from
-    /// variables.
+    /// Sites it saw but could not read, by reason, most first: an import computed at run time, a URL built from variables.
     pub blind: Vec<ReasonCount>,
     pub provides: Vec<Provide>,
 }
@@ -155,8 +152,7 @@ impl Unclaimed {
     }
 }
 
-/// Programming languages by extension, sorted by extension, so coverage can name the code nothing read:
-/// "Kotlin: 120 files, no connector".
+/// Programming languages by extension, sorted by extension, so coverage can name the code nothing read: "Kotlin: 120 files, no connector".
 const LANGUAGES: &[(&str, &str)] = &[
     ("c", "C"),
     ("cc", "C++"),

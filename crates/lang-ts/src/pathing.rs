@@ -9,9 +9,7 @@ pub(crate) fn join_file(dir: &str, name: &str) -> String {
     }
 }
 
-/// The directory part of a path kept as text: the parent of a directory too, which reaches the root `""` that a
-/// [`RepoPath`] cannot name. For a path that is a `RepoPath`, `RepoPath::parent` is the same function, and a test pins
-/// the two together.
+/// The directory part of a path kept as text: the parent of a directory too, which reaches the root `""` that a [`RepoPath`] cannot name. For a path that is a `RepoPath`, `RepoPath::parent` is the same function, and a test pins the two together.
 pub(crate) fn file_dir(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(dir, _)| dir)
 }
@@ -51,14 +49,12 @@ pub(crate) fn is_json(name: &str) -> bool {
         .is_some_and(|(_, extension)| extension == "json")
 }
 
-/// Whether a file name is a config of the compiler: `tsconfig.json`, `tsconfig.base.json`, `tsconfig.build.json`, or the
-/// `jsconfig.json` of a JavaScript project.
+/// Whether a file name is a config of the compiler: `tsconfig.json`, `tsconfig.base.json`, `tsconfig.build.json`, or the `jsconfig.json` of a JavaScript project.
 pub(crate) fn is_config_name(name: &str) -> bool {
     (name.starts_with("tsconfig") || name.starts_with("jsconfig")) && is_json(name)
 }
 
-/// Splits a bare specifier into the package name and the subpath: `@acme/ui/button` is `("@acme/ui", "button")`
-/// and `react` is `("react", "")`. A scope with no package, and the empty specifier, name nothing.
+/// Splits a bare specifier into the package name and the subpath: `@acme/ui/button` is `("@acme/ui", "button")` and `react` is `("react", "")`. A scope with no package, and the empty specifier, name nothing.
 pub(crate) fn split_package(spec: &str) -> Option<(&str, &str)> {
     let from = if spec.starts_with('@') {
         spec.find('/')? + 1

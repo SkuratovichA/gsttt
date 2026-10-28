@@ -1,14 +1,8 @@
 //! A site in the syntax tree and how the rules read it.
 //!
-//! The rules read dotted callees, so every site gets a dotted name. A call is its path (`web::scope(..)` is
-//! `web.scope`), a macro is its path with a `!` (`std::env!` is `std.env!`), an attribute is its path, and a method
-//! call is the last name of its receiver and the method: `self.http.get(..)` is `http.get`. A receiver that has no
-//! name, such as another call, is `_`, which a `*` pattern still matches.
+//! The rules read dotted callees, so every site gets a dotted name. A call is its path (`web::scope(..)` is `web.scope`), a macro is its path with a `!` (`std::env!` is `std.env!`), an attribute is its path, and a method call is the last name of its receiver and the method: `self.http.get(..)` is `http.get`. A receiver that has no name, such as another call, is `_`, which a `*` pattern still matches.
 //!
-//! Rust has no keyword arguments or object literals, so the value expressions of a rule read them like this:
-//! `$keyword` is a `name = value` among the arguments of an attribute or a macro, `$argN.method` is the HTTP verbs of
-//! the method router passed as argument `N` (`get(show).delete(destroy)` has GET and DELETE, `web::get().to(show)`
-//! has GET), and `$argN.last` is the last segment of the path passed as argument `N` (`Method::POST` is `POST`).
+//! Rust has no keyword arguments or object literals, so the value expressions of a rule read them like this: `$keyword` is a `name = value` among the arguments of an attribute or a macro, `$argN.method` is the HTTP verbs of the method router passed as argument `N` (`get(show).delete(destroy)` has GET and DELETE, `web::get().to(show)` has GET), and `$argN.last` is the last segment of the path passed as argument `N` (`Method::POST` is `POST`).
 
 use std::borrow::Cow;
 use std::num::NonZeroU32;
@@ -236,8 +230,7 @@ impl Prepared {
         }
     }
 
-    /// The site once for each value of the keyword its HTTP method is read from, when the keyword is given more than
-    /// once: actix's `#[route("/", method = "GET", method = "POST")]`.
+    /// The site once for each value of the keyword its HTTP method is read from, when the keyword is given more than once: actix's `#[route("/", method = "GET", method = "POST")]`.
     pub(super) fn per_method(&self, method: Option<&ValueExpr>) -> Vec<Self> {
         let keyword = method.and_then(|method| {
             method.sources().iter().find_map(|source| match source {
@@ -343,8 +336,7 @@ impl Site for View<'_> {
     }
 }
 
-/// Whether `key` reads keywords only and `site` gives none of them. `#[sea_orm(primary_key)]` has no `table_name`,
-/// which makes it another attribute, where `#[sea_orm(table_name = TABLE)]` is a table whose name is not read.
+/// Whether `key` reads keywords only and `site` gives none of them. `#[sea_orm(primary_key)]` has no `table_name`, which makes it another attribute, where `#[sea_orm(table_name = TABLE)]` is a table whose name is not read.
 pub(super) fn lacks_keywords(key: &ValueExpr, site: &Prepared) -> bool {
     let sources = key.sources();
     !sources.is_empty()
@@ -360,8 +352,7 @@ struct Verb {
     name: String,
 }
 
-/// Applies `rule` to a call once for each verb of the method router it reads its HTTP method from, or once when it
-/// reads none.
+/// Applies `rule` to a call once for each verb of the method router it reads its HTTP method from, or once when it reads none.
 pub(super) fn apply_per_verb(
     rule: &CallRule,
     site: &Prepared,
@@ -398,8 +389,7 @@ fn method_position(method: &ValueExpr) -> Option<NonZeroU32> {
     })
 }
 
-/// The HTTP verbs a method router names, upper case, `*` for `any`: `get(show).delete(destroy)` has GET and DELETE,
-/// `web::get().to(show)` has GET.
+/// The HTTP verbs a method router names, upper case, `*` for `any`: `get(show).delete(destroy)` has GET and DELETE, `web::get().to(show)` has GET.
 fn verbs(router: &ast::Expr) -> Vec<String> {
     let mut found = Vec::new();
     let mut current = Some(router.clone());

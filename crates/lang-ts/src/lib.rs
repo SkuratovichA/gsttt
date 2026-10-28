@@ -1,5 +1,4 @@
-//! TypeScript and JavaScript for gsttt: one project per package, imports of every form, resolution over the
-//! repository's own file list, and rule packs for the frameworks whose code carries contracts.
+//! TypeScript and JavaScript for gsttt: one project per package, imports of every form, resolution over the repository's own file list, and rule packs for the frameworks whose code carries contracts.
 
 mod analyze;
 mod builtins;

@@ -1,9 +1,6 @@
-//! Rust for gsttt: a project per `Cargo.toml`, the module tree of every crate target, `use` paths followed through
-//! modules, dependencies and workspace crates, and the contracts that Rust frameworks name.
+//! Rust for gsttt: a project per `Cargo.toml`, the module tree of every crate target, `use` paths followed through modules, dependencies and workspace crates, and the contracts that Rust frameworks name.
 //!
-//! Syntax comes from rust-analyzer's parser, which never fails: a file with errors still yields its items. Nothing
-//! here expands a macro or runs the compiler, so what a macro generates is a blind spot that [`Project::provides`]
-//! names.
+//! Syntax comes from rust-analyzer's parser, which never fails: a file with errors still yields its items. Nothing here expands a macro or runs the compiler, so what a macro generates is a blind spot that [`Project::provides`] names.
 //!
 //! [`Project::provides`]: gsttt_core::connector::Project::provides
 
@@ -38,8 +35,7 @@ use crate::tree::Registry;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct RustOptions {
-    /// The edition to parse with when a package's manifest names none and none is inherited from its workspace: `2015`,
-    /// `2018`, `2021` or `2024`. Unset: `2015`, which is what Cargo assumes.
+    /// The edition to parse with when a package's manifest names none and none is inherited from its workspace: `2015`, `2018`, `2021` or `2024`. Unset: `2015`, which is what Cargo assumes.
     pub default_edition: Option<String>,
 }
 

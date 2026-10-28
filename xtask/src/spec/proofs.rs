@@ -1,18 +1,12 @@
-//! Finding the tests that claim scenarios: every `#[scenario]` attribute in the sources that the
-//! test targets of the workspace compile.
+//! Finding the tests that claim scenarios: every `#[scenario]` attribute in the sources that the test targets of the workspace compile.
 //!
-//! The walk starts at the crate root of each library, binary and test target that cargo runs tests
-//! for and follows the `mod` declarations from there, `#[path]` attributes and `#[cfg(test)]`
-//! modules included. A `.rs` file that no `mod` reaches is compiled by nothing and an example or a
-//! benchmark is no test target, so a test in either never runs. `include!` is not followed.
+//! The walk starts at the crate root of each library, binary and test target that cargo runs tests for and follows the `mod` declarations from there, `#[path]` attributes and `#[cfg(test)]` modules included. A `.rs` file that no `mod` reaches is compiled by nothing and an example or a benchmark is no test target, so a test in either never runs. `include!` is not followed.
 //!
 //! The attribute is a proof on a function that
 //!
-//! - carries a `test` attribute (any path ending in `test`, such as `tokio::test`) or sits inside a
-//!   `proptest!` block, whose functions become tests,
+//! - carries a `test` attribute (any path ending in `test`, such as `tokio::test`) or sits inside a `proptest!` block, whose functions become tests,
 //! - is not `#[ignore]`d, and
-//! - is compiled under `cfg(test)` alone: no other `cfg` guards the function, a module around it,
-//!   its file, or its target (`required-features`).
+//! - is compiled under `cfg(test)` alone: no other `cfg` guards the function, a module around it, its file, or its target (`required-features`).
 //!
 //! Anywhere else it proves nothing, and the gate says where it is.
 
@@ -87,9 +81,7 @@ pub(super) struct Marks {
     pub(super) misuses: Vec<Misuse>,
 }
 
-/// Reads the sources that the test targets of `workspace` compile, and the `.rs` files of its
-/// members that no target reaches, except those below directories named `fixtures` or
-/// `snapshots`.
+/// Reads the sources that the test targets of `workspace` compile, and the `.rs` files of its members that no target reaches, except those below directories named `fixtures` or `snapshots`.
 pub(super) fn find(workspace: &Workspace) -> anyhow::Result<Marks> {
     let roots = workspace
         .packages
@@ -173,8 +165,7 @@ struct Walk<'a> {
 impl Walk<'_> {
     /// Reads the files of `roots` and, in the order of their declarations, the files they declare.
     ///
-    /// A file that one target declares under a `cfg` and another declares plainly is compiled for
-    /// sure, so the files reached with no doubt are all read before the first one with a doubt.
+    /// A file that one target declares under a `cfg` and another declares plainly is compiled for sure, so the files reached with no doubt are all read before the first one with a doubt.
     fn follow(&mut self, roots: Vec<Entry>) -> anyhow::Result<()> {
         // Stacks: the last pushed is read first, so the first declared goes on last.
         let (mut sure, mut doubtful): (Vec<Entry>, Vec<Entry>) = roots
@@ -249,8 +240,7 @@ impl Walk<'_> {
         Ok(scanner.declared)
     }
 
-    /// The file of a module that `declaring` declares with `mod name;`. A module that cannot be
-    /// found is an error, unless a `cfg` or a target's features may keep the compiler from looking.
+    /// The file of a module that `declaring` declares with `mod name;`. A module that cannot be found is an error, unless a `cfg` or a target's features may keep the compiler from looking.
     fn locate(&self, declaring: &Path, module: Declared) -> anyhow::Result<Option<Entry>> {
         let Declared {
             name,
@@ -304,10 +294,7 @@ fn read(path: &Path) -> anyhow::Result<String> {
     fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
 }
 
-/// The `.rs` files below `dir`, sorted, leaving out what is not a source of the package: build
-/// output, hidden directories such as `.git` and `.claude/worktrees`, material for tests, and the
-/// directories of other packages, which are members of their own or not ours at all. Without those,
-/// a package at the repository root would take every copy of the tree for its own.
+/// The `.rs` files below `dir`, sorted, leaving out what is not a source of the package: build output, hidden directories such as `.git` and `.claude/worktrees`, material for tests, and the directories of other packages, which are members of their own or not ours at all. Without those, a package at the repository root would take every copy of the tree for its own.
 fn rust_files(dir: &Path, found: &mut Vec<PathBuf>) -> anyhow::Result<()> {
     let entries = read_directory(dir)
         .context("listing the sources of a package")?
@@ -341,8 +328,7 @@ fn left_out(dir: &Path) -> bool {
 struct Scanner<'a> {
     file: &'a Path,
     marks: &'a mut Marks,
-    /// The attributes judged on a function, by line and column. Any other `#[scenario]` marks
-    /// something that is not a function.
+    /// The attributes judged on a function, by line and column. Any other `#[scenario]` marks something that is not a function.
     handled: BTreeSet<(usize, usize)>,
     /// Why a proof in the module being read is none, when it is.
     doubt: Option<String>,
@@ -411,8 +397,7 @@ impl Scanner<'_> {
         }
     }
 
-    /// The functions of a `proptest!` block, with the attributes in front of them. The block is not
-    /// Rust syntax (`name in strategy` parameters), so it is read as tokens.
+    /// The functions of a `proptest!` block, with the attributes in front of them. The block is not Rust syntax (`name in strategy` parameters), so it is read as tokens.
     fn proptest(&mut self, body: TokenStream) {
         let mut attrs: Vec<Attribute> = Vec::new();
         let mut tokens = body.into_iter().peekable();
@@ -448,8 +433,7 @@ impl Scanner<'_> {
         }
     }
 
-    /// Adds the doubt that the attributes of an item bring to the one in force. Returns the one to
-    /// put back once the item is read.
+    /// Adds the doubt that the attributes of an item bring to the one in force. Returns the one to put back once the item is read.
     fn enter(&mut self, attrs: &[Attribute]) -> Option<String> {
         let doubt = self.doubt.clone().or_else(|| doubts(attrs));
         std::mem::replace(&mut self.doubt, doubt)
@@ -458,8 +442,7 @@ impl Scanner<'_> {
     /// Notes a `mod name;` declaration for the walk to follow.
     fn declare(&mut self, node: &ItemMod, name: String) {
         let explicit = path_attribute(&node.attrs).map(|relative| {
-            // Inside inline modules the path starts at the directory of the module; outside them,
-            // at the directory of the file.
+            // Inside inline modules the path starts at the directory of the module; outside them, at the directory of the file.
             let base = if self.inline > 0 {
                 &self.modules
             } else {
@@ -569,9 +552,7 @@ fn spelled(tokens: &TokenStream) -> String {
         .replace(" )", ")")
 }
 
-/// Why an item with these attributes is no proof, when it is: it is ignored, or compiled only
-/// under a `cfg` other than `test`. A `cfg_attr` that ignores the item under some `cfg` counts as an
-/// `#[ignore]`: the gate cannot tell that the test runs.
+/// Why an item with these attributes is no proof, when it is: it is ignored, or compiled only under a `cfg` other than `test`. A `cfg_attr` that ignores the item under some `cfg` counts as an `#[ignore]`: the gate cannot tell that the test runs.
 fn doubts(attrs: &[Attribute]) -> Option<String> {
     attrs.iter().find_map(|attr| {
         let path = attr.path();
@@ -618,8 +599,7 @@ fn path_attribute(attrs: &[Attribute]) -> Option<String> {
     })
 }
 
-/// The capability and the scenario of a `#[scenario]` attribute, read by the rule the attribute
-/// itself applies, or the line of the problem and what is wrong.
+/// The capability and the scenario of a `#[scenario]` attribute, read by the rule the attribute itself applies, or the line of the problem and what is wrong.
 fn arguments(attr: &Attribute) -> Result<(String, String), (usize, String)> {
     let tokens = list_tokens(attr);
     let empty = tokens.is_empty();

@@ -128,8 +128,7 @@ fn http_key() -> impl Strategy<Value = ContractKey> {
         })
 }
 
-/// Prefixes of the vocabulary the keys are made of, so that taking one off a path is something that happens, in the
-/// spellings a config could use, with the two that are no prefix at all.
+/// Prefixes of the vocabulary the keys are made of, so that taking one off a path is something that happens, in the spellings a config could use, with the two that are no prefix at all.
 fn prefixes() -> impl Strategy<Value = Vec<String>> {
     prop::collection::vec(
         prop::sample::select(vec![
@@ -171,8 +170,7 @@ proptest! {
 }
 
 proptest! {
-    /// Looking a key up finds the sites of exactly the routes `HttpMatcher` says meet it, whichever way the index
-    /// narrows the routes it compares.
+    /// Looking a key up finds the sites of exactly the routes `HttpMatcher` says meet it, whichever way the index narrows the routes it compares.
     #[test]
     fn a_lookup_finds_exactly_the_routes_that_meet(
         asked in http_key(),

@@ -1,7 +1,6 @@
 //! `Repository`: the one way the command line and the MCP server read a repository.
 //!
-//! Every test works in a git repository of its own, because outside git the state goes to the cache directory
-//! the process environment names, and a test in this process must not touch the cache of whoever runs it.
+//! Every test works in a git repository of its own, because outside git the state goes to the cache directory the process environment names, and a test in this process must not touch the cache of whoever runs it.
 
 use std::fs;
 
@@ -196,8 +195,7 @@ fn an_argument_spelled_through_a_link_is_read_inside_the_root() {
         "{root:?}"
     );
 
-    // `..` after the link leads to the directory the link is in, which is outside the repository, and the error
-    // names the argument as it was given and not the path it was resolved to.
+    // `..` after the link leads to the directory the link is in, which is outside the repository, and the error names the argument as it was given and not the path it was resolved to.
     let above = link.join("../x.ts");
     let error = repository.argument(&app, above.as_str()).unwrap_err();
     assert!(
