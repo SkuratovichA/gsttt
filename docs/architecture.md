@@ -67,6 +67,8 @@ A contract is a seam between files that imports do not show. Its key is `<kind> 
 | `env` | `env DATABASE_URL` | upper case: pydantic settings read `database_url` from `DATABASE_URL`, and no project tells two variables apart by case alone |
 | other | `<kind> <key>` | kinds a pack or an external connector introduces; trimmed |
 
+An origin, which `path_after_origin` reads in one place, may be written with placeholders: a placeholder scheme and host as in `${}://${}/v1/x`, or a placeholder, `//` and a host that holds a placeholder as in `${}//${}/v1/x`, which is what a protocol that holds its own colon leaves. Every segment of an HTTP path is trimmed of whitespace, so `/bookings /{id}` and `/bookings/{id}` are one key.
+
 Every site has a role. `declares`: a schema or spec defines it (OpenAPI, `.proto`, GraphQL SDL, a Prisma model, a migration, `.env.example`). `serves`: code implements it (a controller, a resolver). `calls`: code uses it (a fetch, a query, an env read). A Prisma model declares both its model name and its mapped table, so `prisma.bookingItem` and `FROM booking_items` meet at the schema.
 
 Keys meet by equality, except HTTP: a call and a route meet when the methods are equal or either is `*`, and the paths, after `Setup.http_prefixes` is stripped from either side, have the same number of segments, each equal or `{}` on either side. `GET /api/bookings/me` meets `GET /bookings/{}` under the prefix `/api`.
