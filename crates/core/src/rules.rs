@@ -782,7 +782,13 @@ mod tests {
             key(apply(&call("api.get", &[Some("${}/bookings")]))),
             "http GET /bookings"
         );
-        for computed in [None, Some("${}"), Some("https://${}")] {
+        for computed in [
+            None,
+            Some("${}"),
+            Some("https://${}"),
+            Some("${}://${}"),
+            Some("${}//${}"),
+        ] {
             let Outcome::Blind(site) = apply(&call("api.get", &[computed])) else {
                 panic!("{computed:?} is a blind spot")
             };

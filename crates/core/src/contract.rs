@@ -253,28 +253,45 @@ impl fmt::Display for ContractKey {
     }
 }
 
-/// What follows the scheme and host of `url`: `https://api.example.com/v1/x` gives `/v1/x`, and `http://h` gives the empty string. `None` when `url` does not start with a scheme, which is a letter followed by letters, digits, `+`, `-` or `.` (RFC 3986 section 3.1), so the `://` of a query string or of a deeper path segment, as in `/a?next=https://b/c`, is no origin.
+/// What follows the scheme and host of `url`: `https://api.example.com/v1/x` gives `/v1/x`, `http://h` gives the empty string and `http://h?next=/a` gives `?next=/a`, because a host ends at the first `/`, `?` or `#`. `None` when `url` has no origin.
+///
+/// An origin is a scheme, `://` and a host at the start of the text. A scheme is a letter followed by letters, digits, `+`, `-` or `.` (RFC 3986 section 3.1). It may also be written as placeholders, because the connectors write a computed part as `${}` and OpenAPI writes a server variable as `{name}`: it may start with `$` or `{` and hold `$`, `{` and `}` as well. It never holds `/`, so the `://` of a query string or of a deeper path segment, as in `/a?next=https://b/c`, is no origin.
+///
+/// A protocol that holds its own colon, as in the template `${location.protocol}//${location.host}/api/x`, leaves `${}//${}/api/x`, which is an origin too: a placeholder, `//` and a host that holds a placeholder. `${}//api/x` is not, because that is a base URL with a trailing slash.
 pub fn path_after_origin(url: &str) -> Option<&str> {
-    let (scheme, rest) = url.split_once("://")?;
-    let mut characters = scheme.chars();
-    let is_scheme = characters
+    if let Some((scheme, rest)) = url.split_once("://")
+        && is_scheme(scheme)
+    {
+        return Some(split_host(rest).1);
+    }
+    let (scheme, rest) = url.split_once("//")?;
+    let (host, path) = split_host(rest);
+    (is_scheme(scheme) && is_placeholder(scheme) && is_placeholder(host)).then_some(path)
+}
+
+/// Whether `text` can be the scheme of a URL, see [`path_after_origin`].
+fn is_scheme(text: &str) -> bool {
+    let mut characters = text.chars();
+    characters
         .next()
-        .is_some_and(|first| first.is_ascii_alphabetic())
+        .is_some_and(|first| first.is_ascii_alphabetic() || matches!(first, '$' | '{'))
         && characters.all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
-        });
-    is_scheme.then(|| {
-        rest.find('/')
-            .and_then(|slash| rest.get(slash..))
-            .unwrap_or_default()
-    })
+            character.is_ascii_alphanumeric()
+                || matches!(character, '+' | '-' | '.' | '$' | '{' | '}')
+        })
+}
+
+/// Splits the text that follows `//` into the host, which ends at the first `/`, `?` or `#`, and the rest.
+fn split_host(rest: &str) -> (&str, &str) {
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    rest.split_at_checked(end).unwrap_or_default()
 }
 
 /// Puts an HTTP path in the form servers and clients are matched on.
 ///
-/// - A scheme and host go: `https://api.example.com/v1/x` becomes `/v1/x`. Only text that starts with a scheme has a host, see [`path_after_origin`]: in `/a?next=https://b/c` the path `/a` stays.
+/// - A scheme and host go: `https://api.example.com/v1/x` becomes `/v1/x`, and so does `${}://${}/v1/x` with a scheme and host written as placeholders. Only text that starts with an origin has a host, see [`path_after_origin`]: in `/a?next=https://b/c` the path `/a` stays, and the host of `http://h?next=/a` ends at the `?`, so that path is `/`.
 /// - The query string and fragment go.
-/// - Parameter segments become `{}`: `:id`, `{id}`, `{id:int}`, `<id>`, `<int:id>`, any segment that holds a `{` followed later by a `}`, such as the custom method `{id}:cancel`, and any segment holding a `${…}` or `{}` placeholder from a template string or a concatenation.
+/// - Parameter segments become `{}`: `:id`, `{id}`, `{id:int}`, `<id>`, `<int:id>`, any segment that holds a `{` followed later by a `}` or a `<` followed later by a `>`, such as the custom methods `{id}:cancel` and `<id>:cancel`, and any segment holding a `${…}` or `{}` placeholder from a template string or a concatenation.
 /// - A placeholder before the first `/` is a base URL and goes: `${API}/bookings` becomes `/bookings`.
 /// - Repeated and trailing slashes go; the result starts with `/`.
 pub fn normalize_http_path(raw: &str) -> String {
@@ -301,13 +318,18 @@ fn is_placeholder(segment: &str) -> bool {
 }
 
 fn is_param(segment: &str) -> bool {
-    // A `{…}` anywhere in a segment makes it a parameter here and not in `is_placeholder`, which also decides that a placeholder before the first `/` is a base URL that goes, while `{tenant}/x` keeps its first segment as a parameter.
+    // A `{…}` or `<…>` anywhere in a segment makes it a parameter here and not in `is_placeholder`, which also decides that a placeholder before the first `/` is a base URL that goes, while `{tenant}/x` keeps its first segment as a parameter.
     is_placeholder(segment)
         || segment.starts_with(':')
-        || segment
-            .split_once('{')
-            .is_some_and(|(_, after)| after.contains('}'))
-        || (segment.starts_with('<') && segment.ends_with('>'))
+        || holds_pair(segment, '{', '}')
+        || holds_pair(segment, '<', '>')
+}
+
+/// Whether `segment` holds `open` and, later, `close`.
+fn holds_pair(segment: &str, open: char, close: char) -> bool {
+    segment
+        .split_once(open)
+        .is_some_and(|(_, after)| after.contains(close))
 }
 
 #[cfg(test)]
@@ -333,12 +355,22 @@ mod tests {
         assert_eq!(normalize_http_path(""), "/");
         assert_eq!(normalize_http_path("/${tenant}/x"), "/{}/x");
         assert_eq!(normalize_http_path("{tenant}/x"), "/{}/x");
-        assert_eq!(
-            normalize_http_path("/v1/things/{id}:cancel"),
-            "/v1/things/{}"
-        );
-        // A `://` inside a query string is no origin: the path before it stays.
-        assert_eq!(normalize_http_path("/a?next=https://b/c"), "/a");
+        // A bracket that is never closed, or that closes before it opens, makes no parameter.
+        assert_eq!(normalize_http_path("/a/}x{"), "/a/}x{");
+        assert_eq!(normalize_http_path("/a/b{c"), "/a/b{c");
+        assert_eq!(normalize_http_path("/a/b<c"), "/a/b<c");
+        assert_eq!(normalize_http_path("/a/>b<"), "/a/>b<");
+    }
+
+    #[test]
+    fn a_parameter_with_a_custom_method_is_still_a_parameter() {
+        for path in [
+            "/v1/things/{id}:cancel",
+            "/v1/things/<id>:cancel",
+            "/v1/things/<int:id>:cancel",
+        ] {
+            assert_eq!(normalize_http_path(path), "/v1/things/{}", "{path}");
+        }
     }
 
     #[test]
@@ -349,9 +381,48 @@ mod tests {
         );
         assert_eq!(path_after_origin("http://h"), Some(""));
         assert_eq!(path_after_origin("ftp://h/a/b"), Some("/a/b"));
+        assert_eq!(path_after_origin("git+ssh://h/a"), Some("/a"));
+        assert_eq!(path_after_origin("a.b-c://h"), Some(""));
+        assert_eq!(path_after_origin("/v1/x"), None);
+        // A scheme starts with a letter, and a text with nothing before the `://` has none.
+        assert_eq!(path_after_origin("1x://h/a"), None);
+        assert_eq!(path_after_origin("://h/x"), None);
+    }
+
+    #[test]
+    fn a_scheme_and_host_written_as_placeholders_are_an_origin() {
+        for (url, after_origin, path) in [
+            ("${}://${}/bookings/{}", "/bookings/{}", "/bookings/{}"),
+            ("{}://{}/bookings/{}", "/bookings/{}", "/bookings/{}"),
+            ("http${}://h/bookings/{}", "/bookings/{}", "/bookings/{}"),
+            ("{scheme}://{host}:{port}/v1", "/v1", "/v1"),
+            ("${}://${}", "", "/"),
+            // The protocol of `${location.protocol}//${location.host}/api/x` holds its own colon.
+            ("${}//${}/api/x", "/api/x", "/api/x"),
+        ] {
+            assert_eq!(path_after_origin(url), Some(after_origin), "{url}");
+            assert_eq!(normalize_http_path(url), path, "{url}");
+        }
+        // A placeholder, `//` and a literal is a base URL with a trailing slash, and a base URL and a parameter are no origin.
+        assert_eq!(path_after_origin("${}//api/x"), None);
+        assert_eq!(normalize_http_path("${}//api/x"), "/api/x");
+        assert_eq!(path_after_origin("${}/${}/x"), None);
+        assert_eq!(normalize_http_path("${}/${}/x"), "/{}/x");
+    }
+
+    #[test]
+    fn a_url_in_a_query_string_is_no_origin() {
         assert_eq!(path_after_origin("/a?next=https://b/c"), None);
         assert_eq!(path_after_origin("a?next=https://b/c"), None);
-        assert_eq!(path_after_origin("/v1/x"), None);
+        assert_eq!(normalize_http_path("/a?next=https://b/c"), "/a");
+    }
+
+    #[test]
+    fn the_host_ends_at_a_query_string_or_a_fragment() {
+        assert_eq!(path_after_origin("http://h?next=/a"), Some("?next=/a"));
+        assert_eq!(path_after_origin("http://h#/a"), Some("#/a"));
+        assert_eq!(normalize_http_path("http://h?next=/a"), "/");
+        assert_eq!(normalize_http_path("http://h#/a"), "/");
     }
 
     #[test]
