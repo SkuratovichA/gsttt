@@ -623,6 +623,44 @@ fn a_purpose_section_with_no_prose_is_an_empty_purpose_on_the_line_of_its_headin
 }
 
 #[test]
+fn a_purpose_heading_with_trailing_spaces_still_starts_the_purpose() {
+    let spec = "# Spec\n\n## Purpose  \t\n\nImpact queries.\n\n## Requirements\n";
+    let purpose = parse_spec("queries", Path::new("spec.md"), spec)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!(
+        (purpose.text.as_str(), purpose.line),
+        ("Impact queries.", 5)
+    );
+    let delta = "# Spec Delta\n\n## Purpose  \t\n\nChanges.\n\n## ADDED Requirements\n";
+    let purpose = parse_delta("queries", Path::new("delta.md"), delta)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("Changes.", 5));
+}
+
+#[test]
+fn a_spec_with_windows_line_endings_has_the_same_purpose_and_line() {
+    let spec = SPEC.replace('\n', "\r\n");
+    let purpose = parse_spec("queries", Path::new("spec.md"), &spec)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!(
+        (purpose.text.as_str(), purpose.line),
+        ("Impact queries.", 4)
+    );
+    let delta = DELTA.replace('\n', "\r\n");
+    let purpose = parse_delta("queries", Path::new("delta.md"), &delta)
+        .unwrap()
+        .purpose
+        .unwrap();
+    assert_eq!((purpose.text.as_str(), purpose.line), ("Changes.", 4));
+}
+
+#[test]
 fn a_delta_with_a_purpose_and_no_section_is_still_an_error() {
     let text = "# Spec Delta\n\n## Purpose\nChanges.\n";
     let error = parse_delta("queries", Path::new("delta.md"), text).unwrap_err();
