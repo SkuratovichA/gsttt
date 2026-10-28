@@ -57,7 +57,7 @@ pub(super) fn contract(
     print::answer(&lookup, session.flags, io)
 }
 
-/// `gsttt coverage`: what the connectors read and what they could not, after the problems of the index. One of them is an external connector that waits for trust, which is the only place the command line tells a person to run `gsttt config trust`.
+/// `gsttt coverage`: the problems of the index, every one of them, then what the connectors read and what they could not.
 pub(super) fn coverage(session: &Session<'_>, io: &mut Io<'_>) -> Result<Outcome, CliError> {
     let Loaded { index, freshness } = session.loaded()?;
     print::answer(&query::coverage(&index, freshness), session.flags, io)
