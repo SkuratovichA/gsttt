@@ -70,9 +70,11 @@ fn describe(entry: &Entry, judgement: &Judgement) -> String {
         Status::Proven => format!("proven   {title}  ({site})  proof: {proofs}"),
         Status::Pending => {
             let change = entry.change().unwrap_or_default();
+            // A scenario is pending only while its change is not finished, so the last arm is the
+            // one that applies whenever the change has tasks.
             let state = match judgement.progress(change) {
                 Some(Progress::NoTasks) => "has no tasks",
-                _ => "still has unticked tasks",
+                Some(Progress::Unticked | Progress::Finished) | None => "still has unticked tasks",
             };
             format!("pending  {title}  ({site})  change `{change}` {state}")
         }
