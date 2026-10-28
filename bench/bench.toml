@@ -1,12 +1,13 @@
 # What `cargo xtask bench` measures: public repositories pinned at a release tag and the full commit the tag points at, and the tools pinned at a version. Resolved on 28.10.2026, with `git ls-remote --tags` for the repositories (the commit of an annotated tag is the peeled one) and the release pages for the tools. gsttt is not pinned: it is the binary the task is given.
 
-# vite, a TypeScript monorepo; it has no tsconfig.json at its root.
+# vite, a TypeScript monorepo; it has no tsconfig.json at its root, so the one of its main package is named. madge follows the `.vue` and `.svelte` files that vite's TypeScript files import, and without a tsconfig it reads a whole single-file component as JavaScript and stops with a syntax error (its `--exclude` is applied after the traversal, so it does not help).
 [[repository]]
 name = "vite"
 url = "https://github.com/vitejs/vite"
 tag = "v8.3.5"
 commit = "981f07fa4580fb88b333c4450431e4715d2a0b82"
 language = "typescript"
+tsconfig = "packages/vite/tsconfig.json"
 
 # excalidraw, a TypeScript application with a tsconfig.json at its root.
 [[repository]]
