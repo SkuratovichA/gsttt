@@ -146,11 +146,50 @@ fn each_type_is_described_once_under_definitions() {
     );
 }
 
+/// The JSON pointer to the first place `schema` offers `null` at: a `null` value, `"type": "null"`, or a `"type"` list that holds `"null"`. `pointer` is where `schema` itself sits.
+fn null_at(schema: &Value, pointer: &str) -> Option<String> {
+    match schema {
+        Value::Null => Some(pointer.to_owned()),
+        Value::Array(items) => items
+            .iter()
+            .enumerate()
+            .find_map(|(index, item)| null_at(item, &format!("{pointer}/{index}"))),
+        Value::Object(map) => {
+            let offers_null = match map.get("type") {
+                Some(Value::String(name)) => name == "null",
+                Some(Value::Array(names)) => names.iter().any(|name| name == "null"),
+                _ => false,
+            };
+            if offers_null {
+                return Some(format!("{pointer}/type"));
+            }
+            map.iter().find_map(|(key, item)| {
+                // RFC 6901 escapes `~` and `/` in a key.
+                let key = key.replace('~', "~0").replace('/', "~1");
+                null_at(item, &format!("{pointer}/{key}"))
+            })
+        }
+        Value::Bool(_) | Value::Number(_) | Value::String(_) => None,
+    }
+}
+
 #[test]
 fn no_schema_offers_null() {
-    // TOML has no null, so an editor must not complete one.
-    assert!(!config().to_string().contains(r#""null""#));
-    assert!(!pack_schema().to_value().to_string().contains(r#""null""#));
+    // TOML has no null, so an editor must not complete one. The registry holds a module without options and one with optional options, which are `null` in the schema of their types.
+    let registry = Registry::with_null_options();
+    let config = config_schema(&registry.connectors()).to_value();
+    assert_eq!(null_at(&config, ""), None, "the config schema offers null");
+    assert_eq!(
+        null_at(&pack_schema().to_value(), ""),
+        None,
+        "the pack schema offers null"
+    );
+
+    // A module without options is turned on with an empty table, which the reader gives as `null`, the value of `()`.
+    assert_eq!(
+        config["properties"]["unit"],
+        json!({ "type": "object", "additionalProperties": false })
+    );
 }
 
 #[test]

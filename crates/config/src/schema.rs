@@ -5,7 +5,7 @@
 use gsttt_core::connector::DynConnector;
 use gsttt_core::rules::Pack;
 use schemars::generate::SchemaSettings;
-use schemars::transform::RecursiveTransform;
+use schemars::transform::{RecursiveTransform, Transform};
 use schemars::{Schema, SchemaGenerator};
 use serde_json::{Value, json};
 
@@ -59,6 +59,15 @@ fn without_null(schema: &mut Schema) {
     }
 }
 
+/// The table of a module. A module without options is turned on with an empty table, which the reader gives as `null`, the value of `()`, so its options, `{"type": "null"}` once `null` is out, become a table that takes no key. Only a module as a whole gets this: a `()` nested in the options is given no such table.
+fn module_table(schema: Schema) -> Value {
+    let value = Value::from(schema);
+    if value.get("type").is_some_and(|name| name == "null") {
+        return json!({ "type": "object", "additionalProperties": false });
+    }
+    value
+}
+
 /// The JSON Schema of `.gsttt/config.toml` for the modules of `registry`: the keys of the config, the `[[external]]` entries, and a table for each module, which holds the options of the module.
 ///
 /// Every table the reader checks for unknown keys has `additionalProperties` false, so that an editor flags a misspelt key as the reader does. Each type is described once, under `definitions`, and referenced from where it is used.
@@ -69,10 +78,10 @@ pub fn config_schema(registry: &[&dyn DynConnector]) -> Schema {
     let modules: Vec<(String, Value)> = registry
         .iter()
         .map(|connector| {
-            (
-                connector.meta().name.to_owned(),
-                connector.options_schema(&mut generator).into(),
-            )
+            let mut schema = connector.options_schema(&mut generator);
+            // The generator transforms the root and its definitions, not a schema written inline here.
+            RecursiveTransform(without_null).transform(&mut schema);
+            (connector.meta().name.to_owned(), module_table(schema))
         })
         .collect();
 

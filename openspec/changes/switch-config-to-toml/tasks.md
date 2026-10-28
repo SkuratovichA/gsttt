@@ -39,3 +39,4 @@
 ## 7. Review fixes
 
 - [x] 7.1 A pack that is a link to nothing fails, where a config that is one stays no config
+- [x] 7.2 No module schema offers `null`: `without_null` runs over the schema of each module, and a module without options gets an empty closed table
