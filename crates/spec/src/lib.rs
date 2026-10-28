@@ -1,1 +1,18 @@
-//! OpenSpec for gsttt.
+//! Reads OpenSpec files: specs, change deltas and task lists, each item with its file and line.
+//!
+//! The spec gate (`cargo xtask spec`) builds on this crate. The reader follows OpenSpec's own
+//! line-and-fence reading (`dist/core/parsers` in the 1.15 CLI) so that the gate and the CLI that
+//! archives the specs see the same headings.
+
+mod capability;
+mod error;
+mod markdown;
+mod tasks;
+mod tree;
+
+pub use capability::{
+    Delta, Removed, Renamed, Requirement, Scenario, Spec, parse_delta, parse_spec,
+};
+pub use error::{Error, Problem};
+pub use tasks::{Task, parse_tasks};
+pub use tree::{Change, OpenSpec, read};

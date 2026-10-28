@@ -2,7 +2,7 @@
 
 ## 1. Reading
 
-- [ ] 1.1 `gsttt-spec`: specs, deltas with their four sections, task lists, errors with file and line
+- [x] 1.1 `gsttt-spec`: specs, deltas with their four sections, task lists, errors with file and line
 - [ ] 1.2 `gsttt-scenario`: argument checking with compile errors at the arguments
 
 ## 2. The gate
