@@ -3,10 +3,6 @@
 //! A struct here is the whole contract of a tool's arguments: its fields and their doc comments become the input
 //! schema the model reads, and the same struct reads the call. A call that does not fit is an error the model can
 //! correct, so the reading names the argument and what it expects instead of passing serde's wording on.
-#![expect(
-    dead_code,
-    reason = "the tools read the arguments in the commit that answers them"
-)]
 
 use gsttt_core::text::join_and;
 use rmcp::model::JsonObject;

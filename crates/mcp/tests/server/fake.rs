@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use gsttt_core::engine::changes::Change;
+use gsttt_core::engine::changes::{Change, ChangeKind};
 use gsttt_core::path::PathError;
 use gsttt_core::{Freshness, Index, RepoPath};
 use gsttt_mcp::{IndexSource, Loaded, SourceError, Target};
@@ -17,9 +17,14 @@ pub(crate) struct Fake(Arc<Inner>);
 
 #[derive(Debug)]
 struct Inner {
+    /// What a refresh returns.
     loaded: Loaded,
+    /// What a read of the stored index returns: `None` before the first index.
+    stored: Option<Loaded>,
     /// Paths with no file on disk.
     missing: Vec<String>,
+    /// The files that differ from `HEAD`, whatever the base.
+    changes: Vec<Change>,
     /// The failure every call ends in, when the source is down.
     failure: Option<String>,
 
@@ -28,6 +33,7 @@ struct Inner {
     refreshes: AtomicUsize,
     stored_reads: AtomicUsize,
     paths: Mutex<Vec<String>>,
+    bases: Mutex<Vec<Option<String>>>,
     /// Calls in progress now, and the most there ever were.
     active: AtomicUsize,
     peak: AtomicUsize,
@@ -41,17 +47,21 @@ impl Fake {
 
     /// A source that holds `index`, fresh, as both its stored and its refreshed index.
     pub(crate) fn over(index: Index) -> Self {
+        let loaded = Loaded {
+            index: Arc::new(index),
+            freshness: Freshness::Fresh,
+        };
         Self(Arc::new(Inner {
-            loaded: Loaded {
-                index: Arc::new(index),
-                freshness: Freshness::Fresh,
-            },
+            stored: Some(loaded.clone()),
+            loaded,
             missing: Vec::new(),
+            changes: Vec::new(),
             failure: None,
             calls: AtomicUsize::new(0),
             refreshes: AtomicUsize::new(0),
             stored_reads: AtomicUsize::new(0),
             paths: Mutex::new(Vec::new()),
+            bases: Mutex::new(Vec::new()),
             active: AtomicUsize::new(0),
             peak: AtomicUsize::new(0),
         }))
@@ -60,6 +70,42 @@ impl Fake {
     /// A source that fails every call with `message`.
     pub(crate) fn failing(mut self, message: &str) -> Self {
         self.inner().failure = Some(message.to_owned());
+        self
+    }
+
+    /// A source that has not built an index yet: it has none stored.
+    pub(crate) fn without_stored_index(mut self) -> Self {
+        self.inner().stored = None;
+        self
+    }
+
+    /// A source whose stored index is behind a tree that has moved on.
+    pub(crate) fn stored_stale(mut self, added: u32, removed: u32, changed: u32) -> Self {
+        if let Some(stored) = &mut self.inner().stored {
+            stored.freshness = Freshness::Stale {
+                added,
+                removed,
+                changed,
+            };
+        }
+        self
+    }
+
+    /// A source in which `path` has no file on disk.
+    pub(crate) fn not_on_disk(mut self, path: &str) -> Self {
+        self.inner().missing.push(path.to_owned());
+        self
+    }
+
+    /// A source whose tree differs from `HEAD` by `changes`, whatever the base.
+    pub(crate) fn changes(mut self, changes: &[(&str, ChangeKind)]) -> Self {
+        self.inner().changes = changes
+            .iter()
+            .map(|&(path, kind)| Change {
+                path: RepoPath::normalize(path).expect("a path from the root"),
+                kind,
+            })
+            .collect();
         self
     }
 
@@ -89,6 +135,25 @@ impl Fake {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    /// The bases `changed` was asked to compare against, in order.
+    pub(crate) fn bases_read(&self) -> Vec<Option<String>> {
+        self.0
+            .bases
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// The index that a refresh returns, to work out what the command line prints for it.
+    pub(crate) fn index(&self) -> Arc<Index> {
+        Arc::clone(&self.0.loaded.index)
+    }
+
+    /// The index that a read of the stored index returns, with how it stands against the tree.
+    pub(crate) fn stored_index(&self) -> Option<Loaded> {
+        self.0.stored.clone()
     }
 
     /// The most calls that were ever in progress at once.
@@ -130,7 +195,7 @@ impl IndexSource for Fake {
     fn stored(&self) -> Result<Option<Loaded>, SourceError> {
         let _busy = self.0.begin()?;
         self.0.stored_reads.fetch_add(1, Ordering::SeqCst);
-        Ok(Some(self.0.loaded.clone()))
+        Ok(self.0.stored.clone())
     }
 
     fn path(&self, argument: &str) -> Result<Target, SourceError> {
@@ -154,8 +219,13 @@ impl IndexSource for Fake {
         Ok(Target { path, on_disk })
     }
 
-    fn changed(&self, _base: Option<&str>) -> Result<Vec<Change>, SourceError> {
+    fn changed(&self, base: Option<&str>) -> Result<Vec<Change>, SourceError> {
         let _busy = self.0.begin()?;
-        Ok(Vec::new())
+        self.0
+            .bases
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(base.map(str::to_owned));
+        Ok(self.0.changes.clone())
     }
 }
