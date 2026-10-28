@@ -44,4 +44,4 @@
 
 ## 8. Gates
 
-- [ ] 8.1 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `cargo xtask spec` and `openspec validate add-cli --strict --no-interactive` all pass
+- [x] 8.1 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `cargo xtask spec` and `openspec validate add-cli --strict --no-interactive` all pass
