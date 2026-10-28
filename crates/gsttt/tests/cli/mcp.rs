@@ -420,6 +420,17 @@ fn gsttt_mcp_exits_0_when_its_input_closes() {
 fn an_untrusted_external_is_not_started_by_the_server() {
     let sandbox = Sandbox::new();
     let fake = sandbox.fake_external("repo");
+    // Checked once more when the server is gone, because a connector that a later call or the shutdown started would leave its marks after the first check.
+    let nothing_ran = |by: &str| {
+        assert!(
+            !fake.marker.exists(),
+            "the server started the connector by {by}"
+        );
+        assert!(
+            is_empty(sandbox.state.path()),
+            "the trust store was written by {by}"
+        );
+    };
     let mut server = Server::start(mcp_in(&sandbox, &fake.root));
     server.hello();
 
@@ -427,11 +438,7 @@ fn an_untrusted_external_is_not_started_by_the_server() {
 
     assert!(!reply.is_error, "{reply:?}");
     assert!(reply.text.contains("app/a.ts"), "{}", reply.text);
-    assert!(!fake.marker.exists(), "the server started the connector");
-    assert!(
-        is_empty(sandbox.state.path()),
-        "the trust store was written"
-    );
+    nothing_ran("the first answer");
     // The server goes on answering, with the files of the connector among those no connector read, and it never asked.
     let coverage = server.call("coverage", &json!({}));
     assert!(!coverage.is_error, "{coverage:?}");
@@ -439,6 +446,7 @@ fn an_untrusted_external_is_not_started_by_the_server() {
     let ended = server.finish();
     assert_eq!(ended.code, Some(0), "{ended:?}");
     assert!(!ended.stderr.contains("[y/N]"), "{}", ended.stderr);
+    nothing_ran("the end of the session");
 }
 
 /// The control of the scenario above. A marker that never appears says nothing when the connector cannot start at all, so the same repository is trusted at a terminal while the server runs, and the next call starts the connector.

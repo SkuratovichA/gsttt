@@ -23,6 +23,7 @@
 - [x] 2.8 End the text of a tool error in a step for a model wherever the command line prints a help line for the failure, and keep the two in step with a test
 - [x] 2.9 Put the step after a config that does not read after `; ` like the others, and keep one copy of its sentence for the code and its tests
 - [x] 2.10 Test the whole message of each failure of the repository that the config did not cause, in the unit tests of the source
+- [x] 2.11 Check the marker of the untrusted external and the trust store again after the server has ended
 
 ## 3. Gates
 
