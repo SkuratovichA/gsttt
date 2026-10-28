@@ -42,12 +42,12 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy
         if: ${{ !cancelled() }}
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Tests
         if: ${{ !cancelled() }}
         env:
           NEXTEST_PROFILE: ci
-        run: cargo nextest run --workspace
+        run: cargo nextest run --locked --workspace
       - name: Spec gate
         if: ${{ !cancelled() }}
         run: cargo xtask spec
@@ -116,7 +116,7 @@ jobs:
       - name: Build
         env:
           GSTTT_VERSION: ${{ steps.version.outputs.version }}
-        run: cargo ${{ matrix.build }} --profile dist --target ${{ matrix.target }} --package gsttt
+        run: cargo ${{ matrix.build }} --locked --profile dist --target ${{ matrix.target }} --package gsttt
       - name: Package
         run: cargo xtask package --target ${{ matrix.target }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -130,9 +130,14 @@ jobs:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # One release at a time, and one that has started always finishes. A run that is still waiting when a newer one arrives is dropped, and the newer release lists the commits of both.
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
+      # The whole history and every tag: the notes start at the previous release, and a release is named after a tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -145,15 +150,31 @@ jobs:
           pattern: package-*
           merge-multiple: true
           path: packages
-      # A rerun finds the release of its commit and only refreshes its files.
+      # This step compiles xtask and every crate it depends on, build scripts included, so it runs without the token.
+      - name: Version and notes
+        id: version
+        run: |
+          version="$(cargo xtask version)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          cargo xtask notes > notes.md
+      # A tag names the commit its release was made from, and gh publishes a release only once all its files are uploaded, so a tag is a finished release. The same commit again has nothing left to do. Another commit under the same version is an error: its files must never replace the ones people have downloaded.
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          version="$(cargo xtask version)"
-          cargo xtask notes > notes.md
-          if gh release view "v${version}" > /dev/null 2>&1; then
-            gh release upload "v${version}" packages/* --clobber
-          else
-            gh release create "v${version}" packages/* --title "v${version}" --notes-file notes.md --target "${GITHUB_SHA}"
+          tag="v${VERSION}"
+          tagged="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}" || true)"
+          if [ -n "$tagged" ]; then
+            if [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "::error::${tag} is released from ${tagged}"
+              exit 1
+            fi
+            echo "${tag} is already released"
+            exit 0
           fi
+          # Only the highest version is the latest release: a release that finishes after a newer one must not take the mark from it.
+          latest=false
+          highest="$({ echo "$tag"; git tag --list 'v[0-9]*'; } | sort -V | tail -n 1)"
+          if [ "$highest" = "$tag" ]; then latest=true; fi
+          gh release create "$tag" packages/* --title "$tag" --notes-file notes.md --target "$GITHUB_SHA" --latest="$latest"

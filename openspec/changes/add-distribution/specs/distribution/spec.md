@@ -7,11 +7,18 @@ Distribution is how gsttt gets from a green commit to a working binary on someon
 ## ADDED Requirements
 
 ### Requirement: Checks
-The `ci` workflow SHALL run on every pull request and every push to `main`, on Linux with the toolchain of `rust-toolchain.toml`: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `cargo xtask spec`, `cargo xtask check`, `openspec validate --all --strict` with a pinned OpenSpec CLI run through `pnpm dlx`, `cargo deny check` and `typos`.
+The `ci` workflow SHALL run on every pull request and every push to `main`, on Linux with the toolchain of `rust-toolchain.toml`: `cargo fmt --all --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo nextest run --locked --workspace`, `cargo xtask spec`, `cargo xtask check`, `openspec validate --all --strict` with a pinned OpenSpec CLI run through `pnpm dlx`, `cargo deny check` and `typos`.
 
 #### Scenario: Every check runs in CI
 - **WHEN** `.github/workflows/ci.yml` is parsed
 - **THEN** it runs on pull requests and on pushes to `main`, on Linux, and runs each of the eight checks
+
+### Requirement: Locked dependencies
+Clippy, the tests and the release build SHALL run with `--locked`, so a `Cargo.lock` that is out of date fails the run instead of changing what is checked and shipped.
+
+#### Scenario: Cargo.lock is used as it is
+- **WHEN** `.github/workflows/ci.yml` is parsed
+- **THEN** the clippy and test commands and the release build command pass `--locked`
 
 ### Requirement: Pinned actions
 Every action in every workflow SHALL be pinned by a full commit id, and `cargo xtask check` SHALL fail naming the workflow and line of any action that is not.
@@ -33,6 +40,24 @@ When the checks pass on a push to `main`, a release SHALL be built for `x86_64-u
 #### Scenario: Releases follow green pushes to main
 - **WHEN** `.github/workflows/ci.yml` is parsed
 - **THEN** its release jobs need the checks, run only on pushes to `main` and build the four targets, and no job that runs on a pull request runs on macOS
+
+### Requirement: One release per version
+Releases SHALL be made one at a time. A version SHALL be released from one commit only: a run for a version whose tag points at another commit SHALL fail and upload nothing, and a run for the commit the tag points at SHALL change nothing. Only the highest version SHALL be marked as the latest release.
+
+#### Scenario: A version is released from one commit only
+- **WHEN** the release step runs for a version whose tag points at another commit
+- **THEN** it fails naming that commit and runs no `gh` command
+
+#### Scenario: Only the highest version is the latest release
+- **WHEN** the release step runs for a version below an existing release
+- **THEN** it creates the release with `--latest=false`
+
+### Requirement: Release token
+The token that can write releases SHALL be given to the commands that publish and to no step that compiles code.
+
+#### Scenario: The release token reaches no compiler
+- **WHEN** `.github/workflows/ci.yml` is parsed
+- **THEN** no step that runs `cargo` is given a token, and the step that publishes is
 
 ### Requirement: Packages
 `cargo xtask package --target <target>` SHALL pack the release build for that target as `gsttt-<version>-<target>.tar.gz` holding `gsttt`, `LICENSE` and `README.md`, beside a `.sha256` file.

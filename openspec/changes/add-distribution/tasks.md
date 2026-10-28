@@ -20,3 +20,10 @@
 
 - [x] 4.1 A test annotated `#[scenario("distribution", …)]` for every scenario of the `distribution` spec, the installer ones against a local directory
 - [x] 4.2 `cargo xtask check` passes on this repository, and `cargo nextest run -p xtask`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check` pass
+
+## 5. Review fixes
+
+- [x] 5.1 Tasks find the repository with `git rev-parse --show-toplevel` from any directory of it, and `flate2`, `sha2` and `tar` are workspace dependencies
+- [x] 5.2 A version is released from one commit only, only the highest version is the latest release, and releases run one at a time
+- [x] 5.3 The release token is given to the commands that publish and to no step that compiles code
+- [x] 5.4 Clippy, the tests and the release build run with `--locked`

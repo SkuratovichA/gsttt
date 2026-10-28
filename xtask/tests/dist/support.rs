@@ -1,5 +1,6 @@
 //! Helpers shared by the tests: repositories made in a temporary directory and the `xtask` binary run on them.
 
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -25,7 +26,7 @@ pub(crate) fn workspace_root() -> PathBuf {
 }
 
 /// Makes `command` ignore the git configuration of the machine and commit as a fixed author.
-fn isolate_git(command: &mut Command) -> &mut Command {
+pub(crate) fn isolate_git(command: &mut Command) -> &mut Command {
     command
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null")
@@ -115,6 +116,12 @@ pub(crate) fn write(root: &Path, relative: &str, content: &str) {
     let path = root.join(relative);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, content).unwrap();
+}
+
+/// Like [`write`], with the permissions of a program: `rwxr-xr-x`.
+pub(crate) fn write_executable(root: &Path, relative: &str, content: &str) {
+    write(root, relative, content);
+    std::fs::set_permissions(root.join(relative), std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 /// Everything `output` printed: standard output, then standard error.
