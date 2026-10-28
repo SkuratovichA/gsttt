@@ -161,6 +161,13 @@ The engine SHALL catch a panic in every connector call. A panic in `parse` SHALL
 - **WHEN** the setup gives a module an option its schema does not allow, an unknown one or one of the wrong type
 - **THEN** the run fails with an error naming the module and the option
 
+### Requirement: Contained panics are not printed
+The engine SHALL offer `quiet_contained_panics`, which installs a panic hook that stays silent about a panic the engine contains, on any thread, and hands every other panic to the hook that was installed before it.
+
+#### Scenario: A contained panic is not printed
+- **WHEN** `quiet_contained_panics` is installed over a recording hook, the engine contains panics on the calling thread and on rayon workers, and then a panic escapes
+- **THEN** the recording hook sees only the one that escaped
+
 ### Requirement: Failure containment of detection and matching
 A panic in `detect` SHALL mean the connector finds nothing to read, and a panic in `matches` SHALL mean the project does not take that file. Each SHALL become a coverage line naming the connector and the call, and a project whose `matches` panics SHALL add one line, not one per file.
 

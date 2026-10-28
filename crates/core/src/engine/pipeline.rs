@@ -5,6 +5,7 @@
 //! repository. The engine puts the file listing, the content ids, the fact cache, the graph and the snapshot
 //! around it; a connector's tests call [`run`] on a fixture tree and snapshot [`Output::to_json`].
 
+use std::cell::Cell;
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fmt;
@@ -732,8 +733,45 @@ fn problem(project: &dyn DynProject, call: Call, message: String) -> Problem {
     }
 }
 
+thread_local! {
+    /// How many contained calls are running on this thread. The panic hook of [`quiet_contained_panics`] reads it
+    /// on the thread that panics, which is the thread of the call, a rayon worker as often as not.
+    static DEPTH: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Marks the thread as inside a contained call for as long as it lives, however the call ends.
+struct Containing;
+
+impl Containing {
+    fn enter() -> Self {
+        // A thread that is being torn down has no counter; there is nothing to mute then.
+        let _ = DEPTH.try_with(|depth| depth.set(depth.get().saturating_add(1)));
+        Self
+    }
+}
+
+impl Drop for Containing {
+    fn drop(&mut self) {
+        let _ = DEPTH.try_with(|depth| depth.set(depth.get().saturating_sub(1)));
+    }
+}
+
+/// Makes the panic hook stay silent about the panics the engine catches in connector calls, which are reported as
+/// coverage lines, and leaves every other panic to the hook that was installed before. A binary calls it once, at
+/// the start of `main`: without it the default hook prints each caught panic to stderr before the engine can
+/// contain it.
+pub fn quiet_contained_panics() {
+    let previous = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        if DEPTH.try_with(Cell::get).unwrap_or(0) == 0 {
+            previous(info);
+        }
+    }));
+}
+
 /// Runs a connector call and turns a panic into its message, so one bad file or project never ends a run.
 fn contain<T>(call: impl FnOnce() -> T) -> Result<T, String> {
+    let _containing = Containing::enter();
     panic::catch_unwind(AssertUnwindSafe(call)).map_err(|payload| {
         payload
             .downcast_ref::<&str>()
@@ -1123,6 +1161,39 @@ mod tests {
         };
         assert_eq!(connector, "notes");
         assert!(message.contains("`tag`"), "{message}");
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A contained panic is not printed")]
+    #[test]
+    fn a_contained_panic_is_muted_and_another_one_is_not() {
+        use std::sync::{Arc, Mutex};
+
+        // The recorder stands in for the default hook, so the test can see what reaches it. The test runs alone in
+        // its process under nextest; the hook it replaces is put back before it asserts anything.
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let recorder = Arc::clone(&seen);
+        let before = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            recorder.lock().unwrap().push(info.to_string());
+        }));
+        quiet_contained_panics();
+
+        let contained = contain(|| panic!("contained"));
+        let nested = contain(|| contain(|| panic!("nested")));
+        (0..16).into_par_iter().for_each(|_| {
+            drop(contain(|| panic!("on a worker")));
+        });
+        // The same thread again, after the contained calls have ended.
+        let escaped = panic::catch_unwind(|| panic!("uncontained"));
+
+        drop(panic::take_hook());
+        panic::set_hook(before);
+        assert_eq!(contained, Err("contained".to_owned()));
+        assert_eq!(nested, Ok(Err("nested".to_owned())));
+        assert!(escaped.is_err());
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert!(seen[0].contains("uncontained"), "{seen:?}");
     }
 
     #[test]
