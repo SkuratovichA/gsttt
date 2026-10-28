@@ -158,7 +158,7 @@ fn scan_git(
     let options = stat::Options::default();
 
     // Every path of the index is known, so the walk below does not list a symbolic link, a skip-worktree entry or
-    // a conflicted file a second time as untracked.
+    // a conflicted file as untracked.
     let mut known: HashSet<RepoPath> = HashSet::with_capacity(index.entries().len());
     let mut candidates: Vec<(RepoPath, Option<Tracked>)> =
         Vec::with_capacity(index.entries().len());
@@ -173,12 +173,19 @@ fn scan_git(
             || entry.mode == Mode::COMMIT
             || entry.mode == Mode::DIR
             || entry.flags.contains(Flags::SKIP_WORKTREE);
-        if !left_out && entry.stage_raw() == 0 {
-            let tracked = ContentId::from_slice(entry.id.as_slice()).map(|oid| Tracked {
-                oid,
-                stat: entry.stat,
-            });
-            candidates.push((path.clone(), tracked));
+        if !left_out {
+            // A conflicted path has up to three entries, none of them the file as it is now: it is listed once and
+            // hashed, so it stays in the index while the conflict is resolved.
+            let staged = entry.stage_raw() == 0;
+            if staged || !known.contains(&path) {
+                let tracked = ContentId::from_slice(entry.id.as_slice())
+                    .filter(|_| staged)
+                    .map(|oid| Tracked {
+                        oid,
+                        stat: entry.stat,
+                    });
+                candidates.push((path.clone(), tracked));
+            }
         }
         known.insert(path);
     }
@@ -338,7 +345,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::engine::testing::{git, init_repo, write};
+    use crate::engine::testing::{git, init_repo, merge_with_conflict, write};
 
     fn scan_dir(dir: &Path, exclude: &[&str]) -> Vec<FileState> {
         let workspace = Workspace::locate_with(Utf8Path::from_path(dir).unwrap(), None).unwrap();
@@ -376,6 +383,25 @@ mod tests {
         let states = scan_dir(dir.path(), &[]);
 
         assert_eq!(paths(&states), ["a.ts"]);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A conflicted file stays in the set")]
+    #[test]
+    fn a_conflicted_file_stays_in_the_set() {
+        let dir = init_repo(&[("a.ts", "base\n"), ("b.ts", "b\n")]);
+        git(dir.path(), &["checkout", "-q", "-b", "topic"]);
+        write(dir.path(), "a.ts", "topic\n");
+        git(dir.path(), &["commit", "-q", "-am", "topic"]);
+        git(dir.path(), &["checkout", "-q", "main"]);
+        write(dir.path(), "a.ts", "main\n");
+        git(dir.path(), &["commit", "-q", "-am", "main"]);
+        merge_with_conflict(dir.path(), "topic");
+
+        let states = scan_dir(dir.path(), &[]);
+
+        assert_eq!(paths(&states), ["a.ts", "b.ts"]);
+        let expected = git(dir.path(), &["hash-object", "a.ts"]);
+        assert_eq!(states[0].stamp.id.to_hex(), expected.trim());
     }
 
     #[gsttt_scenario::scenario("indexing", "An edited file gets the id git would give it")]

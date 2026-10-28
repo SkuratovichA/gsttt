@@ -2,7 +2,7 @@
 //! connectors that count their calls.
 
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -24,22 +24,36 @@ use crate::path::RepoPath;
 use crate::repo::RepoView;
 use crate::rules::Pack;
 
-/// Runs `git` in `dir` and returns what it printed. A failing command fails the test.
-pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
+/// Runs `git` in `dir` with a fixed identity and no filters, whatever the command's outcome.
+fn run_git(dir: &Path, args: &[&str]) -> Output {
+    Command::new("git")
         .arg("-C")
         .arg(dir)
         .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
         .args(["-c", "commit.gpgsign=false", "-c", "core.autocrlf=false"])
         .args(args)
         .output()
-        .unwrap();
+        .unwrap()
+}
+
+/// Runs `git` in `dir` and returns what it printed. A failing command fails the test.
+pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
+    let output = run_git(dir, args);
     assert!(
         output.status.success(),
         "git {args:?} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8(output.stdout).unwrap()
+}
+
+/// Merges `branch` into the checked-out branch, which has to stop on a conflict and leave the index conflicted.
+pub(crate) fn merge_with_conflict(dir: &Path, branch: &str) {
+    let output = run_git(dir, &["merge", "-q", branch]);
+    assert!(
+        !output.status.success(),
+        "merging {branch} was meant to conflict"
+    );
 }
 
 /// Writes `text` to `path` under `dir`, creating the directories above it.

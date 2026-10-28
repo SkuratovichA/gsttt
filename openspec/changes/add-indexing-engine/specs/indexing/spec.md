@@ -20,7 +20,7 @@ The engine SHALL find the work tree root, the git dir and the common dir from an
 - **AND** the state dir is `/c/gsttt/<hex hash of the root path>`
 
 ### Requirement: File set
-The engine SHALL index the tracked files present in the work tree and the untracked files git does not ignore, SHALL leave out submodules, symbolic links, skip-worktree entries and files matching `Setup.exclude`, and SHALL number files in path order.
+The engine SHALL index the tracked files present in the work tree, conflicted ones included, and the untracked files git does not ignore, SHALL leave out submodules, symbolic links, skip-worktree entries and files matching `Setup.exclude`, and SHALL number files in path order.
 
 #### Scenario: Ignored, excluded and linked files stay out
 - **WHEN** a repository has a committed `src/a.ts`, an untracked `src/new.ts`, `dist/a.js` ignored by `.gitignore`, `vendor/b.ts` matching `exclude = ["vendor/**"]` and a symbolic link `link.ts`
@@ -29,6 +29,10 @@ The engine SHALL index the tracked files present in the work tree and the untrac
 #### Scenario: A deleted tracked file is gone
 - **WHEN** a committed file is removed from the work tree without a commit
 - **THEN** the index does not hold it
+
+#### Scenario: A conflicted file stays in the set
+- **WHEN** a merge stops on a conflict in a tracked file
+- **THEN** the index holds that file with the id of the work tree file, conflict markers included
 
 ### Requirement: Content ids
 The engine SHALL identify each file's content by its git blob id, SHALL take the id of a clean tracked file from the git index without reading the file, and SHALL hash a modified or untracked file. Outside git a file whose size and modification time match the snapshot SHALL keep its stored id.
