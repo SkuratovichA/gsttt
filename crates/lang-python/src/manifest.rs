@@ -223,12 +223,36 @@ pub(crate) fn read_setup_py(text: &str) -> Manifest {
     manifest
 }
 
-/// The lines of a requirements file that say something: a comment cut off the end of a line, blank and comment lines
-/// dropped.
-fn requirement_lines(text: &str) -> impl Iterator<Item = &str> {
-    text.lines()
-        .map(|line| without_comment(line).trim())
-        .filter(|line| !line.is_empty())
+/// Calls `each` with the lines of a requirements file that say something, read as pip reads them: a line that ends in
+/// a backslash continues on the next one, then a comment is cut off the end of a line, and blank and comment lines are
+/// dropped. A comment line never continues, so the line after one is read on its own; a joined line is built only when
+/// there is something to join.
+fn each_requirement_line(text: &str, mut each: impl FnMut(&str)) {
+    let mut say = |line: &str| {
+        let line = without_comment(line).trim();
+        if !line.is_empty() {
+            each(line);
+        }
+    };
+    let mut open = String::new();
+    for line in text.lines() {
+        let comment = line.trim_start().starts_with('#');
+        match line.strip_suffix('\\') {
+            Some(head) if !comment => open.push_str(head),
+            _ if open.is_empty() => say(line),
+            _ => {
+                if comment {
+                    // The comment has to stay apart from the text it follows, which has no space of its own.
+                    open.push(' ');
+                }
+                open.push_str(line);
+                say(&open);
+                open.clear();
+            }
+        }
+    }
+    // A last line that ends in a backslash continues into nothing.
+    say(&open);
 }
 
 /// `line` up to its comment, which starts at a `#` that begins the line or follows whitespace, as pip reads it: the
@@ -249,15 +273,18 @@ fn without_comment(line: &str) -> &str {
 /// Reads a `requirements*.txt`: one requirement per line, options and comments skipped.
 pub(crate) fn read_requirements(text: &str) -> Manifest {
     let mut manifest = Manifest::default();
-    for line in requirement_lines(text) {
-        manifest.require(line);
-    }
+    each_requirement_line(text, |line| manifest.require(line));
     manifest
 }
 
-/// The files a requirements file includes, as it writes them: relative to the file that includes them.
-pub(crate) fn requirement_includes(text: &str) -> impl Iterator<Item = &str> {
-    requirement_lines(text).filter_map(include_of)
+/// The files a requirements file includes, as it writes them: relative to the file that includes them. They are owned
+/// because an include on a continued line is not a slice of the text.
+pub(crate) fn requirement_includes(text: &str) -> Vec<String> {
+    let mut includes = Vec::new();
+    each_requirement_line(text, |line| {
+        includes.extend(include_of(line).map(str::to_owned));
+    });
+    includes
 }
 
 /// The file an include line names: `-r base.txt`, `-rbase.txt`, `--requirement base.txt` or `--requirement=base.txt`.
@@ -589,24 +616,61 @@ mod tests {
 
     #[test]
     fn includes_are_named_by_r_and_requirement_and_not_by_constraints() {
-        let includes: Vec<&str> = requirement_includes(
+        let includes = requirement_includes(
             "# base\n-r a.txt\n-rb.txt\n-r  c.txt  # shared\n--requirement d.txt\n--requirement=e.txt\n\
              -c constraints.txt\n--constraint f.txt\n--require-hashes\n--requirements g.txt\n-r\nflask\n-e .\n",
-        )
-        .collect();
+        );
         assert_eq!(includes, ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
     }
 
     #[test]
     fn a_comment_starts_at_a_hash_that_follows_whitespace_of_any_kind() {
-        let includes: Vec<&str> =
-            requirement_includes("-r base.txt\t# shared\n-r  dev.txt \t #dev\n#-r off.txt\n")
-                .collect();
+        let includes =
+            requirement_includes("-r base.txt\t# shared\n-r  dev.txt \t #dev\n#-r off.txt\n");
         assert_eq!(includes, ["base.txt", "dev.txt"]);
         let manifest = read_requirements(
             "flask==3.0\t# web\nPyYAML\t#\ngit+https://example.com/x.git#egg=other\n",
         );
         assert_eq!(deps(&manifest), ["flask", "pyyaml"]);
+    }
+
+    #[test]
+    fn a_line_ending_in_a_backslash_continues_on_the_next_line() {
+        let text = "-r \\\n    base.txt\nflask \\\n    >=3.0 \\\n    ; python_version >= \"3.9\"\nPyYAML\n";
+        assert_eq!(requirement_includes(text), ["base.txt"]);
+        assert_eq!(deps(&read_requirements(text)), ["flask", "pyyaml"]);
+        // A file written on Windows ends its lines with `\r\n`.
+        let text = "-r \\\r\n    base.txt\r\nflask\r\n";
+        assert_eq!(requirement_includes(text), ["base.txt"]);
+        assert_eq!(deps(&read_requirements(text)), ["flask"]);
+    }
+
+    #[test]
+    fn a_comment_line_does_not_continue_and_one_inside_a_continued_line_ends_it() {
+        let text = "# a note \\\nflask\n  # another \\\n-r base.txt\n";
+        assert_eq!(requirement_includes(text), ["base.txt"]);
+        assert_eq!(deps(&read_requirements(text)), ["flask"]);
+        // The comment closes the joined line; `>=3.0` after it is a line of its own and names nothing.
+        let text = "flask \\\n# kept \\\n>=3.0\nPyYAML\n";
+        assert_eq!(deps(&read_requirements(text)), ["flask", "pyyaml"]);
+    }
+
+    #[test]
+    fn a_comment_ends_a_line_only_after_the_lines_are_joined() {
+        // As pip reads it, `# note \` is a comment on a line that continues, so `>=3.0` is inside the comment.
+        let text = "flask # note \\\n>=3.0\nPyYAML\n";
+        assert_eq!(deps(&read_requirements(text)), ["flask", "pyyaml"]);
+        // Cut first, ` other.txt` would be a requirement of its own.
+        let text = "-r base.txt # shared \\\n other.txt\n";
+        assert_eq!(requirement_includes(text), ["base.txt"]);
+        assert_eq!(deps(&read_requirements(text)), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn a_last_line_ending_in_a_backslash_continues_into_nothing() {
+        assert_eq!(requirement_includes("flask\n-r base.txt \\"), ["base.txt"]);
+        assert_eq!(requirement_includes("-r base.txt \\\n"), ["base.txt"]);
+        assert_eq!(deps(&read_requirements("flask \\\n")), ["flask"]);
     }
 
     proptest! {
@@ -624,6 +688,18 @@ mod tests {
         }
 
         #[test]
+        fn a_backslash_break_changes_nothing_a_line_says(
+            name in "[a-z][a-z0-9_.-]{0,11}",
+            version in "[0-9][0-9.]{0,7}",
+            indent in "[ \t]{0,4}",
+        ) {
+            let whole = format!("{name}=={version}\n-r {name}.txt\n");
+            let split = format!("{name} \\\n{indent}=={version}\n-r \\\n{indent}{name}.txt\n");
+            prop_assert_eq!(read_requirements(&split), read_requirements(&whole));
+            prop_assert_eq!(requirement_includes(&split), requirement_includes(&whole));
+        }
+
+        #[test]
         fn every_spelling_of_an_include_names_the_same_file(target in "[a-z][a-z0-9_./-]{0,19}") {
             for line in [
                 format!("-r {target}"),
@@ -632,8 +708,7 @@ mod tests {
                 format!("--requirement {target}"),
                 format!("--requirement={target}"),
             ] {
-                let includes: Vec<&str> = requirement_includes(&line).collect();
-                prop_assert_eq!(includes, [target.as_str()], "{}", line);
+                prop_assert_eq!(requirement_includes(&line), [target.as_str()], "{}", line);
             }
         }
     }

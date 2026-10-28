@@ -456,6 +456,13 @@ A requirements file SHALL be read together with the files it includes with `-r` 
 - **WHEN** a project has `requirements.txt`, `requirements/base.txt` and `requirements/dev.txt`
 - **THEN** the project claims all three and tags each as a manifest
 
+### Requirement: Continued lines of a requirements file
+A line of a requirements file that ends with a backslash SHALL be read together with the line after it, as pip joins them, before a comment is cut off or an include is found: `-r \` followed by `base.txt` includes `base.txt`. A comment line SHALL NOT continue, whatever it ends with, so the line after it is read on its own.
+
+#### Scenario: A requirement continues on the next line
+- **WHEN** `requirements.txt` has `-r \` followed by an indented `base.txt` that declares `fastapi`, then a comment line ending with a backslash followed by `sqlalchemy`, then `flask \` followed by an indented `>=3.0`
+- **THEN** the `fastapi`, `sqlalchemy` and `flask` packs are in force
+
 ### Requirement: Keywords of a setup.py
 The `install_requires` list and the `package_dir` dict of a `setup.py` SHALL be read only when a bracket of the right kind follows the keyword's `=` directly. A keyword whose value is a name or a call, and a bracket that belongs to a later keyword such as `extras_require` or `entry_points`, SHALL give nothing. A backslash in a string SHALL make the character after it part of the string.
 

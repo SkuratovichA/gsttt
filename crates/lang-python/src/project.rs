@@ -302,7 +302,7 @@ fn read_requirement_files(repo: &RepoView, files: &[&RepoPath], manifest: &mut M
         };
         manifest.absorb(read_requirements(&text));
         for include in requirement_includes(&text) {
-            match RepoPath::join(file.parent(), include) {
+            match RepoPath::join(file.parent(), &include) {
                 Ok(included) if repo.lookup(included.as_str()).is_some() => pending.push(included),
                 _ => tracing::warn!(
                     file = file.as_str(),

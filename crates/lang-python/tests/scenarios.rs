@@ -261,6 +261,37 @@ fn requirements_files_include_each_other() {
     assert!(!tree.claims("common/shared.txt"));
 }
 
+#[gsttt_scenario::scenario("python", "A requirement continues on the next line")]
+#[test]
+fn a_requirement_continues_on_the_next_line() {
+    // `base.txt` is named by an include whose file name is on the next line and declares `fastapi`. The comment line
+    // ends with a backslash and does not continue, so `sqlalchemy` after it is a requirement of its own; `flask` is
+    // split from its specifier. Each pack is told by a file of its own.
+    let tree = index_files(&[
+        ("pyproject.toml", "[project]\nname = \"svc\"\n"),
+        (
+            "requirements.txt",
+            "-r \\\n    base.txt\n# kept apart \\\nsqlalchemy\nflask \\\n    >=3.0\n",
+        ),
+        ("base.txt", "fastapi\n"),
+        (
+            "app.py",
+            "from fastapi import FastAPI\n\napp = FastAPI()\n\n\n@app.get(\"/ping\")\ndef ping():\n    return \"pong\"\n",
+        ),
+        (
+            "views.py",
+            "from flask import Flask\n\napp = Flask(__name__)\n\n\n@app.route(\"/health\")\ndef health():\n    return \"ok\"\n",
+        ),
+        (
+            "models.py",
+            "from sqlalchemy.orm import DeclarativeBase\n\n\nclass Booking(DeclarativeBase):\n    __tablename__ = \"bookings\"\n",
+        ),
+    ]);
+    assert_eq!(tree.contracts("app.py"), ["serves http GET /ping@6"]);
+    assert_eq!(tree.contracts("views.py"), ["serves http GET /health@6"]);
+    assert_eq!(tree.contracts("models.py"), ["declares table bookings@5"]);
+}
+
 #[gsttt_scenario::scenario("python", "A requirements directory holds manifests")]
 #[test]
 fn a_requirements_directory_holds_manifests() {

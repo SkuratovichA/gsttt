@@ -71,3 +71,4 @@
 - [x] 6.18 The provides name three forms no rule reads as blind spots: table names given by a `declared_attr` or inherited from a mixin, SQL built by a function call, and names a star import brings in
 - [x] 6.19 A settings field is read under the literal `env=` of pydantic 1 before its `validation_alias` and `alias`, and a keyword written as `None` counts as not written instead of leaving the field an unread site
 - [x] 6.20 The alembic pack names `alembic.op` beside `op`, so a migration that imports `op` under another name or one of its functions by name still declares its tables
+- [x] 6.21 A line of a requirements file that ends with a backslash is read together with the next one before a comment is cut off, so a continued include is followed and a name split from its specifier is read, and a comment line never continues
