@@ -1,0 +1,574 @@
+//! The scenarios of the `python` capability. Each test indexes one fixture tree from `tests/fixtures/` through the
+//! whole pipeline, checks what its scenario claims and snapshots the facts it is about, for review.
+//!
+//! `cfg(test)` on the whole file tells clippy that the helpers below are test code, where `clippy.toml` lets them panic.
+
+#![cfg(test)]
+
+use gsttt_config::pack::builtin_packs;
+use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
+use gsttt_core::fact::{ContractFact, FileTags, ImportFlags, ParseStatus, Resolution};
+use gsttt_core::ids::FileId;
+use gsttt_core::repo::RepoView;
+use gsttt_lang_python::{PACKS, PYTHON};
+use serde_json::{Value, json};
+
+/// Larger than any fixture file.
+const MAX_FILE_BYTES: u64 = 1 << 20;
+
+/// A fixture tree after the pipeline ran on it, with the output as JSON for the snapshots.
+struct Tree {
+    repo: RepoView,
+    output: Output,
+    json: Value,
+}
+
+fn index(fixture: &str) -> Tree {
+    let root = format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"));
+    let repo = RepoView::scan(root).unwrap();
+    let modules = [Module {
+        connector: &PYTHON,
+        options: Value::Null,
+        packs: builtin_packs(PACKS).unwrap(),
+    }];
+    let output = pipeline::run(&repo, &modules, MAX_FILE_BYTES).unwrap();
+    let json = output.to_json(&repo);
+    Tree { repo, output, json }
+}
+
+/// A contract fact as `<role> <key>@<line>`, the key carrying its kind.
+fn show(fact: &ContractFact) -> String {
+    format!("{} {}@{}", fact.role, fact.key, fact.line)
+}
+
+impl Tree {
+    fn path_of(&self, id: FileId) -> &str {
+        self.repo
+            .path(id)
+            .expect("the id names a file of the tree")
+            .as_str()
+    }
+
+    fn file(&self, path: &str) -> &FileRun {
+        self.output
+            .files
+            .iter()
+            .find(|file| self.path_of(file.id) == path)
+            .expect("the fixture holds the file")
+    }
+
+    /// The JSON of one file, the form its snapshot takes.
+    fn file_json(&self, path: &str) -> &Value {
+        self.json["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["path"] == path)
+            .expect("the output holds the file")
+    }
+
+    /// One field of every file, by path.
+    fn column(&self, field: &str) -> Value {
+        Value::Object(
+            self.json["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|file| {
+                    (
+                        file["path"].as_str().unwrap().to_owned(),
+                        file[field].clone(),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    fn roots(&self) -> Vec<&str> {
+        self.output
+            .projects
+            .iter()
+            .map(|project| project.root.as_str())
+            .collect()
+    }
+
+    /// Where the import of `spec` with `names` in the file at `path` points, in words.
+    fn target(&self, path: &str, spec: &str, names: &[&str]) -> String {
+        let resolved = self
+            .file(path)
+            .imports
+            .iter()
+            .find(|resolved| resolved.import.spec == spec && resolved.import.names == names)
+            .expect("the file has the import");
+        match &resolved.to {
+            Resolution::File { file } => self.path_of(*file).to_owned(),
+            Resolution::Files { files } => files
+                .iter()
+                .map(|file| self.path_of(*file))
+                .collect::<Vec<_>>()
+                .join(" + "),
+            Resolution::External { package } => format!("package {package}"),
+            Resolution::Builtin => "builtin".to_owned(),
+            Resolution::Unresolved(reason) => format!("unresolved {reason:?}"),
+        }
+    }
+
+    /// The contract facts of a file, in its order.
+    fn contracts(&self, path: &str) -> Vec<String> {
+        self.file(path).facts.contracts.iter().map(show).collect()
+    }
+
+    /// The facts `link` added to a file.
+    fn linked(&self, path: &str) -> Vec<String> {
+        self.output
+            .linked
+            .iter()
+            .filter(|linked| self.path_of(linked.file) == path)
+            .map(|linked| show(&linked.fact))
+            .collect()
+    }
+
+    /// Everything the first project says about what it cannot see.
+    fn blind_spots(&self) -> Vec<&str> {
+        self.output
+            .projects
+            .first()
+            .expect("the tree opened a project")
+            .provides
+            .iter()
+            .flat_map(|provide| provide.blind_spots.iter().map(String::as_str))
+            .collect()
+    }
+}
+
+#[gsttt_scenario::scenario("python", "Each pyproject is a project")]
+#[test]
+fn each_pyproject_is_a_project() {
+    let tree = index("workspace");
+    let roots = tree.roots();
+    assert!(roots.contains(&"services/api"), "{roots:?}");
+    assert!(roots.contains(&"services/worker"), "{roots:?}");
+    assert_eq!(
+        tree.file_json("services/api/app/main.py")["project"],
+        "python services/api"
+    );
+    assert_eq!(
+        tree.file_json("services/worker/worker/main.py")["project"],
+        "python services/worker"
+    );
+    insta::assert_json_snapshot!(
+        "each_pyproject_is_a_project",
+        json!({ "roots": roots, "project_of": tree.column("project") })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A src layout is a source root")]
+#[test]
+fn a_src_layout_is_a_source_root() {
+    let tree = index("src_layout");
+    assert_eq!(
+        tree.target("tests/test_api.py", "booking.api", &[]),
+        "src/booking/api.py"
+    );
+    assert_eq!(
+        tree.target("tests/test_api.py", "booking.api", &["handler"]),
+        "src/booking/api.py"
+    );
+    insta::assert_json_snapshot!(
+        "a_src_layout_is_a_source_root",
+        tree.file_json("tests/test_api.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Every import form is read")]
+#[test]
+fn every_import_form_is_read() {
+    let tree = index("imports");
+    let forms = tree.file("pkg/sub/forms.py");
+    let imports: Vec<String> = forms
+        .facts
+        .imports
+        .iter()
+        .map(|import| {
+            format!(
+                "{} {:?} L{} {:?}",
+                import.spec, import.kind, import.line, import.names
+            )
+        })
+        .collect();
+    assert_eq!(
+        imports,
+        [
+            "importlib Static L1 []",
+            "pkg.parent Static L2 []",
+            "pkg.parent Static L3 []",
+            "pkg.parent Static L4 [\"VALUE\"]",
+            "pkg.parent Static L5 [\"VALUE\", \"VALUE\"]",
+            ". Static L6 [\"sibling\"]",
+            ".. Static L7 [\"parent\"]",
+            "...far Static L8 [\"thing\"]",
+            "pkg ReExportAll L9 [\"*\"]",
+            "plugins.csv Dynamic L11 []",
+            "plugins.json Dynamic L12 []",
+        ]
+    );
+    let unresolved: Vec<u32> = forms
+        .facts
+        .unresolved
+        .iter()
+        .map(|site| site.line)
+        .collect();
+    assert_eq!(unresolved, [13]);
+    insta::assert_json_snapshot!(
+        "every_import_form_is_read",
+        tree.file_json("pkg/sub/forms.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Guarded imports are flagged")]
+#[test]
+fn guarded_imports_are_flagged() {
+    let tree = index("imports");
+    let guarded = tree.file("guarded.py");
+    let flags = |spec: &str| {
+        guarded
+            .facts
+            .imports
+            .iter()
+            .find(|import| import.spec == spec)
+            .expect("the file imports it")
+            .flags
+    };
+    assert!(flags("a").contains(ImportFlags::TYPE_CHECKING));
+    assert!(!flags("a").contains(ImportFlags::OPTIONAL));
+    assert!(flags("b").contains(ImportFlags::OPTIONAL));
+    assert!(!flags("b").contains(ImportFlags::TYPE_CHECKING));
+    assert!(flags("typing").is_empty());
+    insta::assert_json_snapshot!("guarded_imports_are_flagged", tree.file_json("guarded.py"));
+}
+
+#[gsttt_scenario::scenario("python", "A recoverable error keeps the imports")]
+#[test]
+fn a_recoverable_error_keeps_the_imports() {
+    let tree = index("imports");
+    let broken = tree.file("broken.py");
+    assert!(
+        matches!(broken.facts.status, ParseStatus::Recovered { errors, .. } if errors > 0),
+        "{:?}",
+        broken.facts.status
+    );
+    let specs: Vec<&str> = broken
+        .facts
+        .imports
+        .iter()
+        .map(|import| import.spec.as_str())
+        .collect();
+    assert_eq!(specs, ["os", "app.db"]);
+    insta::assert_json_snapshot!(
+        "a_recoverable_error_keeps_the_imports",
+        tree.file_json("broken.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Test files are tagged")]
+#[test]
+fn test_files_are_tagged() {
+    let tree = index("test_tags");
+    for path in [
+        "tests/helpers.py",
+        "app/test_api.py",
+        "app/conftest.py",
+        "app/api_test.py",
+        "test/util.py",
+    ] {
+        assert!(
+            tree.file(path).facts.tags.contains(FileTags::TEST),
+            "{path} is a test"
+        );
+    }
+    assert!(!tree.file("app/api.py").facts.tags.contains(FileTags::TEST));
+    insta::assert_json_snapshot!("test_files_are_tagged", tree.column("tags"));
+}
+
+#[gsttt_scenario::scenario("python", "Submodules and names are told apart")]
+#[test]
+fn submodules_and_names_are_told_apart() {
+    let tree = index("resolution");
+    assert_eq!(tree.target("app/x.py", "app", &["models"]), "app/models.py");
+    assert_eq!(
+        tree.target("app/x.py", "app.models", &["Booking"]),
+        "app/models.py"
+    );
+    assert_eq!(
+        tree.target("app/x.py", "app", &["settings"]),
+        "app/__init__.py"
+    );
+    insta::assert_json_snapshot!(
+        "submodules_and_names_are_told_apart",
+        tree.file_json("app/x.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Relative imports climb packages")]
+#[test]
+fn relative_imports_climb_packages() {
+    let tree = index("resolution");
+    assert_eq!(
+        tree.target("app/api/routes.py", "..db", &["session"]),
+        "app/db/session.py"
+    );
+    assert_eq!(
+        tree.target("app/api/routes.py", ".", &["deps"]),
+        "app/api/deps.py"
+    );
+    // The same imports where `db` is a module and not a package.
+    let flat = index("relative_flat");
+    assert_eq!(
+        flat.target("app/api/routes.py", "..db", &["session"]),
+        "app/db.py"
+    );
+    assert_eq!(
+        flat.target("app/api/routes.py", ".", &["deps"]),
+        "app/api/deps.py"
+    );
+    insta::assert_json_snapshot!(
+        "relative_imports_climb_packages",
+        tree.file_json("app/api/routes.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Standard library, dependencies and unknown modules")]
+#[test]
+fn standard_library_dependencies_and_unknown_modules() {
+    let tree = index("resolution");
+    assert_eq!(tree.target("app/main.py", "json", &[]), "builtin");
+    assert_eq!(tree.target("app/main.py", "yaml", &[]), "package pyyaml");
+    assert_eq!(
+        tree.target("app/main.py", "fastapi.routing", &[]),
+        "package fastapi"
+    );
+    assert_eq!(
+        tree.target("app/main.py", "requests", &[]),
+        "unresolved UnknownPackage"
+    );
+    assert_eq!(
+        tree.target("app/main.py", "app.missing", &[]),
+        "unresolved NotFound"
+    );
+    insta::assert_json_snapshot!(
+        "standard_library_dependencies_and_unknown_modules",
+        tree.file_json("app/main.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A FastAPI router included with a prefix")]
+#[test]
+fn a_fastapi_router_included_with_a_prefix() {
+    let tree = index("fastapi_router");
+    assert_eq!(
+        tree.linked("app/api/bookings.py"),
+        ["serves http GET /api/bookings/{}@6"]
+    );
+    // The route's own fact stays, behind the router's prefix alone.
+    assert_eq!(
+        tree.contracts("app/api/bookings.py"),
+        ["serves http GET /bookings/{}@6"]
+    );
+    insta::assert_json_snapshot!(
+        "a_fastapi_router_included_with_a_prefix",
+        json!({ "bookings": tree.file_json("app/api/bookings.py"), "linked": tree.json["linked"] })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A Flask blueprint serves under its prefix")]
+#[test]
+fn a_flask_blueprint_serves_under_its_prefix() {
+    let tree = index("flask_blueprint");
+    assert_eq!(
+        tree.contracts("app.py"),
+        ["serves http DELETE /bookings/{}@6"]
+    );
+    insta::assert_json_snapshot!(
+        "a_flask_blueprint_serves_under_its_prefix",
+        tree.file_json("app.py")
+    );
+}
+
+#[test]
+fn a_blueprint_registered_under_a_prefix_serves_under_it() {
+    let tree = index("flask_register");
+    assert_eq!(
+        tree.contracts("app/bookings.py"),
+        ["serves http GET /bookings/{}@6"]
+    );
+    assert_eq!(
+        tree.linked("app/bookings.py"),
+        ["serves http GET /api/bookings/{}@6"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Django includes compose")]
+#[test]
+fn django_includes_compose() {
+    let tree = index("django_includes");
+    assert_eq!(
+        tree.linked("bookings/urls.py"),
+        ["serves http * /api/bookings/{}@6"]
+    );
+    assert_eq!(
+        tree.contracts("bookings/urls.py"),
+        ["serves http * /bookings/{}@6"]
+    );
+    // The including `path` is a mount and no route of its own.
+    assert_eq!(tree.contracts("project/urls.py"), Vec::<String>::new());
+    insta::assert_json_snapshot!(
+        "django_includes_compose",
+        json!({
+            "project": tree.file_json("project/urls.py"),
+            "bookings": tree.file_json("bookings/urls.py"),
+            "linked": tree.json["linked"],
+        })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Requests become calls")]
+#[test]
+fn requests_become_calls() {
+    let tree = index("requests_calls");
+    assert_eq!(
+        tree.contracts("client.py"),
+        ["calls http POST /bookings/{}/cancel@8"]
+    );
+    let unresolved: Vec<u32> = tree
+        .file("client.py")
+        .facts
+        .unresolved
+        .iter()
+        .map(|site| site.line)
+        .collect();
+    assert_eq!(unresolved, [12]);
+    insta::assert_json_snapshot!("requests_become_calls", tree.file_json("client.py"));
+}
+
+#[gsttt_scenario::scenario("python", "Model tables are declared")]
+#[test]
+fn model_tables_are_declared() {
+    let tree = index("model_tables");
+    assert_eq!(tree.contracts("models.py"), ["declares table bookings@9"]);
+    assert_eq!(
+        tree.contracts("items/models.py"),
+        ["declares table booking_items@8"]
+    );
+    insta::assert_json_snapshot!(
+        "model_tables_are_declared",
+        json!({
+            "sqlalchemy": tree.file_json("models.py"),
+            "django": tree.file_json("items/models.py"),
+        })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A migration declares its tables")]
+#[test]
+fn a_migration_declares_its_tables() {
+    let tree = index("migration");
+    let path = "migrations/versions/0001_bookings.py";
+    assert_eq!(
+        tree.contracts(path),
+        [
+            "declares table bookings@6",
+            "declares table booking_items@7"
+        ]
+    );
+    insta::assert_json_snapshot!("a_migration_declares_its_tables", tree.file_json(path));
+}
+
+#[gsttt_scenario::scenario("python", "Raw SQL is embedded")]
+#[test]
+fn raw_sql_is_embedded() {
+    let tree = index("raw_sql");
+    let embedded = &tree.file("db.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded[0].lang, "sql");
+    assert_eq!(embedded[0].line, 7);
+    assert_eq!(embedded[0].text, "SELECT id FROM bookings WHERE id = %s");
+    insta::assert_json_snapshot!("raw_sql_is_embedded", tree.file_json("db.py"));
+}
+
+#[gsttt_scenario::scenario("python", "Every way of reading the environment is seen")]
+#[test]
+fn every_way_of_reading_the_environment_is_seen() {
+    let tree = index("environment");
+    assert_eq!(
+        tree.contracts("config.py"),
+        [
+            "calls env A@5",
+            "calls env B@6",
+            "calls env C@7",
+            "calls env DATABASE_URL@11",
+        ]
+    );
+    insta::assert_json_snapshot!(
+        "every_way_of_reading_the_environment_is_seen",
+        tree.file_json("config.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A settings prefix is applied")]
+#[test]
+fn a_settings_prefix_is_applied() {
+    let tree = index("settings_prefix");
+    assert_eq!(tree.contracts("settings.py"), ["calls env APP_PORT@7"]);
+    insta::assert_json_snapshot!(
+        "a_settings_prefix_is_applied",
+        tree.file_json("settings.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "Packs follow the manifest")]
+#[test]
+fn packs_follow_the_manifest() {
+    let tree = index("packs_follow_manifest");
+    // The Flask route is a site; the FastAPI decorator, whose pack the manifest does not switch on, is not.
+    assert_eq!(tree.contracts("app.py"), ["serves http GET /flask@8"]);
+    let via: Vec<&str> = tree.output.projects[0]
+        .provides
+        .iter()
+        .flat_map(|provide| provide.via.iter().map(String::as_str))
+        .collect();
+    assert!(via.contains(&"flask"), "{via:?}");
+    assert!(!via.contains(&"fastapi"), "{via:?}");
+    insta::assert_json_snapshot!("packs_follow_the_manifest", tree.file_json("app.py"));
+}
+
+#[gsttt_scenario::scenario("python", "Blind spots are reported")]
+#[test]
+fn blind_spots_are_reported() {
+    let tree = index("blind_spots");
+    let blind_spots = tree.blind_spots();
+    for words in [
+        "Flask routes with several methods beyond the first",
+        "prefixes held in variables",
+        "Django default table names",
+    ] {
+        assert!(blind_spots.contains(&words), "{words}: {blind_spots:?}");
+    }
+    insta::assert_json_snapshot!("blind_spots_are_reported", tree.json["projects"]);
+}
+
+#[test]
+fn a_repository_without_a_manifest_gets_a_root_project() {
+    let tree = index("raw_sql");
+    assert_eq!(tree.output.projects.len(), 1);
+    assert_eq!(tree.file_json("db.py")["project"], "python .");
+}
+
+#[test]
+fn the_built_in_packs_are_python_packs_named_after_their_files() {
+    let packs = builtin_packs(PACKS).unwrap();
+    assert_eq!(packs.len(), PACKS.len());
+    for (pack, (file, _)) in packs.iter().zip(PACKS) {
+        assert_eq!(pack.language, "python");
+        assert_eq!(format!("{}.lua", pack.name), *file);
+    }
+}

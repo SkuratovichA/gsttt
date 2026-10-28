@@ -1,0 +1,152 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"pkg/sub/forms.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "importlib",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": "builtin"
+    },
+    {
+      "spec": "pkg.parent",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "pkg/parent.py"
+      }
+    },
+    {
+      "spec": "pkg.parent",
+      "kind": "static",
+      "line": 3,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "file": "pkg/parent.py"
+      }
+    },
+    {
+      "spec": "pkg.parent",
+      "kind": "static",
+      "line": 4,
+      "flags": 0,
+      "names": [
+        "VALUE"
+      ],
+      "to": {
+        "file": "pkg/parent.py"
+      }
+    },
+    {
+      "spec": "pkg.parent",
+      "kind": "static",
+      "line": 5,
+      "flags": 0,
+      "names": [
+        "VALUE",
+        "VALUE"
+      ],
+      "to": {
+        "file": "pkg/parent.py"
+      }
+    },
+    {
+      "spec": ".",
+      "kind": "static",
+      "line": 6,
+      "flags": 0,
+      "names": [
+        "sibling"
+      ],
+      "to": {
+        "file": "pkg/sub/sibling.py"
+      }
+    },
+    {
+      "spec": "..",
+      "kind": "static",
+      "line": 7,
+      "flags": 0,
+      "names": [
+        "parent"
+      ],
+      "to": {
+        "file": "pkg/parent.py"
+      }
+    },
+    {
+      "spec": "...far",
+      "kind": "static",
+      "line": 8,
+      "flags": 0,
+      "names": [
+        "thing"
+      ],
+      "to": {
+        "unresolved": {
+          "reason": "not-found"
+        }
+      }
+    },
+    {
+      "spec": "pkg",
+      "kind": "re-export-all",
+      "line": 9,
+      "flags": 0,
+      "names": [
+        "*"
+      ],
+      "to": {
+        "file": "pkg/__init__.py"
+      }
+    },
+    {
+      "spec": "plugins.csv",
+      "kind": "dynamic",
+      "line": 11,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    },
+    {
+      "spec": "plugins.json",
+      "kind": "dynamic",
+      "line": 12,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [
+    {
+      "line": 13,
+      "reason": {
+        "reason": "non-literal"
+      },
+      "detail": "importlib.import_module"
+    }
+  ],
+  "path": "pkg/sub/forms.py",
+  "project": "python ."
+}

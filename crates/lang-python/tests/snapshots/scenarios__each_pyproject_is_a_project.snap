@@ -1,0 +1,19 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "json!({ \"roots\": roots, \"project_of\": tree.column(\"project\") })"
+---
+{
+  "roots": [
+    "",
+    "services/api",
+    "services/worker"
+  ],
+  "project_of": {
+    "services/api/app/__init__.py": "python services/api",
+    "services/api/app/main.py": "python services/api",
+    "services/api/pyproject.toml": "python services/api",
+    "services/worker/pyproject.toml": "python services/worker",
+    "services/worker/worker/__init__.py": "python services/worker",
+    "services/worker/worker/main.py": "python services/worker"
+  }
+}

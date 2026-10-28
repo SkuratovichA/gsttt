@@ -1,0 +1,68 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.json[\"projects\"]"
+---
+[
+  {
+    "connector": "python",
+    "root": ".",
+    "provides": [
+      {
+        "kind": "http",
+        "role": "serves",
+        "via": [
+          "django",
+          "flask"
+        ],
+        "blind_spots": [
+          "Flask routes with several methods beyond the first",
+          "blueprints registered under a url_prefix are read with it added to their own",
+          "prefixes held in variables",
+          "re_path and regex routes",
+          "routers and blueprints created in another module than the one that declares their routes",
+          "routes made by Django REST framework routers",
+          "routes registered by calls to add_url_rule and class-based views"
+        ]
+      },
+      {
+        "kind": "graphql",
+        "role": "serves",
+        "via": [],
+        "blind_spots": [
+          "GraphQL servers (Strawberry, Graphene) are not read"
+        ]
+      },
+      {
+        "kind": "table",
+        "role": "declares",
+        "via": [
+          "django",
+          "sqlalchemy"
+        ],
+        "blind_spots": [
+          "Django default table names",
+          "table names held in variables"
+        ]
+      },
+      {
+        "kind": "queue",
+        "role": "serves",
+        "via": [],
+        "blind_spots": [
+          "task queues (Celery, RQ, Dramatiq) are not read"
+        ]
+      },
+      {
+        "kind": "env",
+        "role": "calls",
+        "via": [
+          "env"
+        ],
+        "blind_spots": [
+          "settings read by environs, django-environ or python-decouple",
+          "variable names held in variables"
+        ]
+      }
+    ]
+  }
+]

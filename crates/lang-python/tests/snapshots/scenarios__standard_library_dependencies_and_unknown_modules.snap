@@ -1,0 +1,69 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "tree.file_json(\"app/main.py\")"
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [
+    {
+      "spec": "json",
+      "kind": "static",
+      "line": 1,
+      "flags": 0,
+      "names": [],
+      "to": "builtin"
+    },
+    {
+      "spec": "yaml",
+      "kind": "static",
+      "line": 2,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "external": "pyyaml"
+      }
+    },
+    {
+      "spec": "fastapi.routing",
+      "kind": "static",
+      "line": 3,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "external": "fastapi"
+      }
+    },
+    {
+      "spec": "requests",
+      "kind": "static",
+      "line": 4,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "unresolved": {
+          "reason": "unknown-package"
+        }
+      }
+    },
+    {
+      "spec": "app.missing",
+      "kind": "static",
+      "line": 5,
+      "flags": 0,
+      "names": [],
+      "to": {
+        "unresolved": {
+          "reason": "not-found"
+        }
+      }
+    }
+  ],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "path": "app/main.py",
+  "project": "python ."
+}

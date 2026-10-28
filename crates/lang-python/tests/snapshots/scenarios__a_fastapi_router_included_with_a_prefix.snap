@@ -1,0 +1,47 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: "json!({\n    \"bookings\": tree.file_json(\"app/api/bookings.py\"), \"linked\":\n    tree.json[\"linked\"]\n})"
+---
+{
+  "bookings": {
+    "status": {
+      "status": "ok"
+    },
+    "tags": 0,
+    "imports": [
+      {
+        "spec": "fastapi",
+        "kind": "static",
+        "line": 1,
+        "flags": 0,
+        "names": [
+          "APIRouter"
+        ],
+        "to": {
+          "external": "fastapi"
+        }
+      }
+    ],
+    "contracts": [
+      {
+        "key": "http GET /bookings/{}",
+        "role": "serves",
+        "line": 6,
+        "via": "fastapi"
+      }
+    ],
+    "embedded": [],
+    "unresolved": [],
+    "path": "app/api/bookings.py",
+    "project": "python ."
+  },
+  "linked": [
+    {
+      "key": "http GET /api/bookings/{}",
+      "role": "serves",
+      "line": 6,
+      "via": "fastapi",
+      "file": "app/api/bookings.py"
+    }
+  ]
+}
