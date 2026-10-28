@@ -95,7 +95,7 @@ pub enum SnapshotError {
     Write { path: String, message: String },
 }
 
-/// The name of the temporary file of a write is this prefix, random letters and [`atomic::TEMP_SUFFIX`], so that nothing else in the directory is taken for one.
+/// The name of the temporary file of a write starts with this prefix, so that [`atomic::is_temporary`] takes nothing else in the directory for one.
 const TEMP_PREFIX: &str = "snapshot-";
 
 /// How long a temporary file has to lie untouched before the next write takes it for the leftover of a process that
@@ -135,9 +135,10 @@ fn remove_stale(dir: &Path) {
         return;
     };
     for entry in entries.flatten() {
-        let is_temporary = entry.file_name().to_str().is_some_and(|name| {
-            name.starts_with(TEMP_PREFIX) && name.ends_with(atomic::TEMP_SUFFIX)
-        });
+        let is_temporary = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| atomic::is_temporary(name, TEMP_PREFIX));
         let age = entry
             .metadata()
             .and_then(|meta| meta.modified())
