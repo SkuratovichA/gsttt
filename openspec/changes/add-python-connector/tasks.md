@@ -73,3 +73,4 @@
 - [x] 6.20 The alembic pack names `alembic.op` beside `op`, so a migration that imports `op` under another name or one of its functions by name still declares its tables
 - [x] 6.21 A line of a requirements file that ends with a backslash is read together with the next one before a comment is cut off, so a continued include is followed and a name split from its specifier is read, and a comment line never continues
 - [x] 6.22 A manifest or an included requirements file that is not a regular file, such as a symbolic link a file set made from git lists, is skipped instead of followed out of the repository
+- [x] 6.23 A call is read as `importlib.import_module` only when the file's imports make it that one, so a function named `import_module` that the file defines is no import, and a dynamic import of the empty name imports nothing and leaves no site

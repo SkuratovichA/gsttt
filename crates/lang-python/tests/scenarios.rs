@@ -496,6 +496,39 @@ fn a_dynamic_import_with_a_package_that_cannot_be_read_is_an_unread_site() {
     );
 }
 
+#[gsttt_scenario::scenario(
+    "python",
+    "A function named import_module that is not importlib's is not an import"
+)]
+#[test]
+fn a_function_named_import_module_that_is_not_importlibs_is_not_an_import() {
+    let tree = index_files(&[
+        (
+            "local.py",
+            "def import_module(path):\n    return path\n\n\nimport_module(\"plugins.csv\")\n",
+        ),
+        (
+            "elsewhere.py",
+            "from loader import import_module\n\nimport_module(\"plugins.json\")\n",
+        ),
+    ]);
+    for path in ["local.py", "elsewhere.py"] {
+        assert_eq!(dynamic_imports(&tree, path), Vec::<String>::new(), "{path}");
+        assert_eq!(tree.unresolved_lines(path), Vec::<Line>::new(), "{path}");
+    }
+}
+
+#[gsttt_scenario::scenario("python", "A dynamic import of the empty name imports nothing")]
+#[test]
+fn a_dynamic_import_of_the_empty_name_imports_nothing() {
+    let tree = index_files(&[(
+        "empty.py",
+        "import importlib\n\nimportlib.import_module(\"\")\n__import__(\"\")\n",
+    )]);
+    assert_eq!(dynamic_imports(&tree, "empty.py"), Vec::<String>::new());
+    assert_eq!(tree.unresolved_lines("empty.py"), Vec::<Line>::new());
+}
+
 #[gsttt_scenario::scenario("python", "Guarded imports are flagged")]
 #[test]
 fn guarded_imports_are_flagged() {

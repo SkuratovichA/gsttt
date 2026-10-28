@@ -504,16 +504,17 @@ impl<'a> Collector<'a> {
         }
     }
 
-    /// `importlib.import_module("a.b")` and `__import__("a.b")`. Returns whether the call was one.
+    /// `importlib.import_module("a.b")` and `__import__("a.b")`. Returns whether the call was one. A bare
+    /// `import_module` is a function the file defines or gets from elsewhere, not importlib's, whose import the file
+    /// would have spelled out.
     fn dynamic_import(&mut self, call: &ExprCall, callee: &Name, line: Line) -> bool {
         let imported = callee.imported();
-        if !matches!(
-            imported,
-            "importlib.import_module" | "import_module" | "__import__"
-        ) {
+        if !matches!(imported, "importlib.import_module" | "__import__") {
             return false;
         }
         match call.arguments.find_argument_value("name", 0) {
+            // `importlib` rejects the empty name, so nothing is imported.
+            Some(Expr::StringLiteral(name)) if name.value.to_str().is_empty() => {}
             Some(Expr::StringLiteral(name)) => {
                 match dynamic_spec(call, imported, name.value.to_str()) {
                     Some(spec) => self.push_import(Import::new(spec, ImportKind::Dynamic, line)),

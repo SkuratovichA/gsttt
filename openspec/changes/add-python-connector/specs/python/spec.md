@@ -171,6 +171,17 @@ An import SHALL reach the `__init__` file of every package it passes through as 
 - **WHEN** `pkg/sub/sibling.py` has `import pkg.sub.leaf`, `from .leaf import value` and `from . import leaf`
 - **THEN** each resolves to `pkg/sub/leaf.py` only
 
+### Requirement: Calls that import by name
+A call SHALL be read as `importlib.import_module` only when the file's imports make its function that one, whatever it is called there, so a function named `import_module` that the file defines or takes from another module SHALL NOT be read as an import. `importlib.import_module` and `__import__` called with the empty string SHALL import nothing and leave no site, since `importlib` rejects the name.
+
+#### Scenario: A function named import_module that is not importlib's is not an import
+- **WHEN** a file defines `import_module(path)` and calls `import_module("plugins.csv")`, and another file has `from loader import import_module` and calls `import_module("plugins.json")`
+- **THEN** neither call is an import or an unread site
+
+#### Scenario: A dynamic import of the empty name imports nothing
+- **WHEN** a file calls `importlib.import_module("")` and `__import__("")`
+- **THEN** neither call is an import or an unread site
+
 ### Requirement: Dynamic imports with a package
 `importlib.import_module` with a relative literal name SHALL import the name taken from its literal `package`, given as the second argument or as a keyword, one component less out of the package than the name has dots. With no package, or with `__package__`, a relative name SHALL be taken from the package of the importing file. A package that is not a literal, or that the name climbs out of, SHALL make the call an unread site.
 
