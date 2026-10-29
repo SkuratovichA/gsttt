@@ -23,6 +23,7 @@ mod setups;
 mod stream;
 mod table;
 
+use std::fs::{File, TryLockError};
 use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
@@ -58,13 +59,34 @@ fn say(text: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Runs `cargo xtask agents <task>`.
+/// Runs `cargo xtask agents <task>`. `questions` and `run` hold the lock of [`one_task`] to their end; `table` only reads and takes none.
 pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     match args.split_first() {
-        Some((task, rest)) if task == "questions" => draw(rest),
-        Some((task, rest)) if task == "run" => runs::run(rest),
+        Some((task, rest)) if task == "questions" => {
+            let _held = one_task(&std::env::temp_dir())?;
+            draw(rest)
+        }
+        Some((task, rest)) if task == "run" => {
+            let _held = one_task(&std::env::temp_dir())?;
+            runs::run(rest)
+        }
         Some((task, rest)) if task == "table" => table::run(rest),
         _ => bail!("{USAGE}"),
+    }
+}
+
+/// Lets one `questions` or `run` task at a time use the fixed directories under the system's temporary directory, which a second task would empty under the first and sweep for processes; the system frees the lock when the process ends, however it ends.
+fn one_task(dir: &Path) -> anyhow::Result<File> {
+    let path = dir.join("gsttt-agents.lock");
+    let file = File::create(&path).with_context(|| format!("cannot create {}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(TryLockError::WouldBlock) => {
+            bail!("another `cargo xtask agents` task holds {}", path.display())
+        }
+        Err(TryLockError::Error(error)) => {
+            Err(error).with_context(|| format!("cannot lock {}", path.display()))
+        }
     }
 }
 
@@ -196,4 +218,27 @@ fn questions_of(
         },
     )?);
     Ok(questions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::one_task;
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A second task is refused while one holds the lock"
+    )]
+    #[test]
+    fn a_second_task_is_refused_while_one_holds_the_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("gsttt-agents.lock");
+        let first = one_task(dir.path()).unwrap();
+
+        let error = one_task(dir.path()).unwrap_err().to_string();
+        assert!(error.contains(&lock.display().to_string()), "{error}");
+        assert!(error.contains("another"), "{error}");
+
+        drop(first);
+        one_task(dir.path()).unwrap();
+    }
 }
