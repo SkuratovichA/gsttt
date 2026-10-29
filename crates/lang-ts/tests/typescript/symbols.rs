@@ -5,7 +5,8 @@ use std::error::Error;
 use gsttt_scenario::scenario;
 
 use crate::support::{
-    NOTHING, declared, edges, import_line, local_exports, local_names, on_load, run, status, uses,
+    NOTHING, declared, edges, import_line, imports, local_exports, local_names, on_load, run,
+    status, uses,
 };
 
 #[test]
@@ -414,5 +415,45 @@ fn every_form_that_runs_as_the_file_loads_is_recorded() -> Result<(), Box<dyn Er
             "Service.constructor -> Dep, Inject, n",
         ]
     );
+    Ok(())
+}
+
+#[test]
+fn an_import_type_binds_no_name() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-import-type")?;
+    let path = "src/types.ts";
+    assert_eq!(declared(&json, path), ["Row @1", "Whole @2", "make @3"]);
+    assert_eq!(edges(&json, path), ["make -> Row"]);
+    assert_eq!(
+        imports(&json, path),
+        [
+            "./lib static @1 type-only [Row] -> file src/lib.ts",
+            "./lib static @2 type-only [*] -> file src/lib.ts",
+        ],
+        "the import types are static imports of the file, as before"
+    );
+    assert_eq!(
+        local_names(&json, path),
+        NOTHING,
+        "an import type binds no local name, so the walk cannot follow it by name"
+    );
+    Ok(())
+}
+
+#[test]
+fn ambient_blocks_and_import_aliases_are_recorded_conservatively() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-ambient")?;
+    let path = "src/ambient.ts";
+    assert_eq!(
+        declared(&json, path),
+        ["Outer @13-15", "Alias @17", "read @19-21"]
+    );
+    assert_eq!(edges(&json, path), ["Alias -> Outer", "read -> Alias"]);
+    assert_eq!(
+        on_load(&json, path),
+        Some(vec!["use"]),
+        "what `declare module` and `declare global` refer to counts as used at load, as a block that is not a declaration of the file"
+    );
+    assert_eq!(local_names(&json, path), ["./lib use"]);
     Ok(())
 }

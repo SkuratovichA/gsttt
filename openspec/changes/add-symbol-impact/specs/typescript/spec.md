@@ -10,8 +10,9 @@ The connector SHALL record the declarations of a file, each with the lines it sp
 - **THEN** its declarations are `C`, `C.#p`, `C.constructor`, `C.m`, `C.s`, `C.v`, `E`, `I`, `N`, `T`, `a`, `c`, `default`, `f` and `g`, each with its lines, matching the reviewed snapshot
 
 #### Scenario: A file read past errors records no declarations
-- **WHEN** a file declares `foo` and has a syntax error
+- **WHEN** a file declares `foo`, imports `dep` and has a syntax error
 - **THEN** it records no declarations
+- **AND** its static imports record no local names
 
 ### Requirement: What a declaration uses
 A declaration SHALL record, once each, the names it refers to that the file declares or binds by import: identifiers, JSX tags, type references and `typeof`, `Class.member` for `this.member` inside the class, and both `C.s` and `C` for `C.s`. An export specifier SHALL NOT count, nor a use of the declaration itself. Shadowing SHALL be ignored.
@@ -36,7 +37,7 @@ The connector SHALL record what a file refers to as it loads: everything in a to
 - **AND** `b` uses `g`, and `C.m` uses `n`
 
 ### Requirement: Local names of imports and exports
-A static import SHALL record the local name of each name it takes, in the same order: `React` for `import React from 'react'`, `ns` for `import * as ns`, `b` for `import { a as b }`, `a` for `import { a }`, type-only imports included. An export of a local under another name SHALL record the local: `a` for `export { a as b }`, `f` for `export default f`.
+A static import SHALL record the local name of each name it takes, in the same order: `React` for `import React from 'react'`, `ns` for `import * as ns`, `b` for `import { a as b }`, `a` for `import { a }`, type-only imports included. An import type, `import('x').T`, binds no name and SHALL record none. An export of a local under another name SHALL record the local: `a` for `export { a as b }`, `f` for `export default f`. A file read past syntax errors SHALL record no local names.
 
 #### Scenario: Imports and exports record their local names
 - **WHEN** a file has `import React from 'react'`, `import * as ns from './ns'`, `import { a as b, c } from './x'`, `import type { T } from './t'`, `const f = 1`, `export { f as g }` and `export default f`
