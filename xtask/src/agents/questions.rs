@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context as _, ensure};
+use anyhow::{Context as _, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 /// What a question asks.
@@ -117,6 +117,13 @@ impl Questions {
                 question.kind == Kind::Tests || question.ignored.is_empty(),
                 "{id}: a question about users ignores no file"
             );
+            if let Some(path) = question
+                .answer
+                .iter()
+                .find(|path| question.ignored.contains(path))
+            {
+                bail!("{id}: `{path}` is in the answer and in the ignored files");
+            }
             for (what, paths) in [("answer", &question.answer), ("ignored", &question.ignored)] {
                 ensure!(
                     paths.is_sorted_by(|a, b| a < b),
@@ -138,7 +145,7 @@ pub(crate) fn prompt(kind: Kind, name: &str, file: &str, scope: &str, test: &[St
                 format!("under `{scope}`")
             };
             format!(
-                "In this repository, the function `{name}` is exported from `{file}`. List every other file {place} that refers to `{name}` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else."
+                "In this repository, the function `{name}` is exported from `{file}`. List every other TypeScript file {place} that refers to `{name}` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else."
             )
         }
         Kind::Tests => format!(
@@ -179,6 +186,7 @@ mod tests {
         }
     }
 
+    #[gsttt_scenario::scenario("agent-benchmarks", "The prompt asks for TypeScript files")]
     #[test]
     fn the_prompt_about_users_is_word_for_word() {
         let command = prompt(
@@ -190,11 +198,13 @@ mod tests {
         );
         assert_eq!(
             command,
-            "In this repository, the function `resolveId` is exported from `packages/vite/src/a.ts`. List every other file under `packages/vite` that refers to `resolveId` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else."
+            "In this repository, the function `resolveId` is exported from `packages/vite/src/a.ts`. List every other TypeScript file under `packages/vite` that refers to `resolveId` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else."
         );
         let whole = prompt(Kind::Users, "f", "a.ts", ".", &[]);
         assert!(
-            whole.contains("List every other file of the repository that refers to `f` by name"),
+            whole.contains(
+                "List every other TypeScript file of the repository that refers to `f` by name"
+            ),
             "{whole}"
         );
     }
@@ -268,6 +278,34 @@ mod tests {
         ] {
             assert!(questions.render().is_err(), "{what}");
         }
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A file is never right and ignored at once")]
+    #[test]
+    fn a_file_in_the_answer_and_in_the_ignored_files_is_refused() {
+        let mut questions = sample();
+        let tests = questions
+            .questions
+            .iter_mut()
+            .find(|question| question.kind == Kind::Tests)
+            .unwrap();
+        tests.ignored = vec!["c.spec.ts".to_owned()];
+        assert!(
+            questions.render().is_ok(),
+            "files of the answer and files ignored that differ are valid"
+        );
+
+        let tests = questions
+            .questions
+            .iter_mut()
+            .find(|question| question.kind == Kind::Tests)
+            .unwrap();
+        tests.ignored = vec!["b.spec.ts".to_owned(), "c.spec.ts".to_owned()];
+        let error = questions.render().unwrap_err().to_string();
+        assert!(error.contains("vite-tests-1"), "{error}");
+        assert!(error.contains("`b.spec.ts`"), "{error}");
+        assert!(error.contains("answer"), "{error}");
+        assert!(error.contains("ignored"), "{error}");
     }
 
     #[test]

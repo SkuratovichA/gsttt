@@ -15,7 +15,7 @@ scope = "packages/vite"
 users = 4
 tests = 4
 install = ["pnpm", "dlx", "pnpm@12.14.0", "install", "--frozen-lockfile", "--ignore-scripts"]
-# Vitest does not start until the package this repository is named after is built: its config imports vite, which resolves to packages/vite/dist. The bundle alone builds in a second, and the types are not needed.
+# Vitest does not start until the package this repository is named after is built: its config imports vite, which resolves to packages/vite/dist, and so do the tests of the other packages, so a throw in a function of vite reaches them only through a bundle built with it. The draw builds once after the install and the oracle builds again right before every run of the tests. The bundle alone builds in a second, and the types are not needed.
 build = ["pnpm", "--filter", "vite", "run", "build-bundle"]
 test = ["pnpm", "exec", "vitest", "run"]
 

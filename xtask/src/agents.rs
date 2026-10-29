@@ -190,7 +190,8 @@ fn questions_of(
     })?;
     // Ctrl-C is caught from the first wait on: before it, a signal ends the task at once, as it always did.
     let stop = Stop::catch()?;
-    let oracle = Oracle::new(&checkout, test, &checkout::scratch(name), &stop)?;
+    let work = checkout::scratch(name);
+    let oracle = Oracle::new(&checkout, agents.build.as_deref(), test, &work, &stop)?;
     say(&format!("{name}: {}", oracle.describe()))?;
     let with_body: Vec<&Candidate> = order
         .iter()

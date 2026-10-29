@@ -18,11 +18,15 @@ Agent benchmarks are the comparison of the README and the site of what Claude Co
 - **THEN** reading the pins fails, naming the repository
 
 ### Requirement: Questions about users
-A question of the kind `users` SHALL name a function that a file of the scope exports, and its answer SHALL be every other file of the scope in which the TypeScript language service, over a program of every tracked TypeScript file of the scope with the compiler options of the pinned tsconfig, finds a reference to it. A function SHALL be drawn only when 3 to 30 files make its answer.
+A question of the kind `users` SHALL name a function that a file of the scope exports, and its answer SHALL be every other file of the scope in which the TypeScript language service, over a program of every tracked TypeScript file of the scope with the compiler options of the pinned tsconfig, finds a reference to it. A function SHALL be drawn only when 3 to 30 files make its answer. The prompt SHALL ask for every other TypeScript file, since no other file can be in the answer.
 
 #### Scenario: A function with too few or too many users is not drawn
 - **WHEN** the candidates are a function referred to by 2 files, one referred to by 31 and one referred to by 5
 - **THEN** only the one referred to by 5 files becomes a question
+
+#### Scenario: The prompt asks for TypeScript files
+- **WHEN** the prompt of a question about users is written
+- **THEN** it asks for every other TypeScript file that refers to the function by name, and not for every other file
 
 ### Requirement: Questions about tests
 A question of the kind `tests` SHALL name a function with a block body, not a generator, that a file of the scope exports, and its answer SHALL be the test files that fail in both of two runs of the pinned test command with a `throw` as the first statement of that body and pass in both of two runs without it. A function SHALL be drawn only when 1 to 30 test files make its answer.
@@ -31,12 +35,38 @@ A question of the kind `tests` SHALL name a function with a block body, not a ge
 - **WHEN** with the throw `a.spec.ts` fails in both runs and `b.spec.ts` in one, and `c.spec.ts` fails with the throw and in one of the two runs without it
 - **THEN** the answer is `a.spec.ts` alone
 
+### Requirement: A build before every run of the tests
+When a repository pins a build command, `cargo xtask agents questions` SHALL run it from the tree as it is right before each of the four runs of the pinned test command, those with a `throw` included, so that the tests read a build that holds it, and again after each file is restored. A build that fails with a `throw` in place SHALL pass the function over, and one that fails without it SHALL stop the draw with an error that names its log.
+
+#### Scenario: The tests see the throw through the build output
+- **WHEN** a test file reads a build of a function and the function is made to throw
+- **THEN** the test file fails in both runs with the throw and is in the answer, and once the answer is back the build holds the function as git holds it
+
+#### Scenario: A build that fails with the throw passes the function over
+- **WHEN** the build fails while the function throws
+- **THEN** the function is passed over, no test run follows that build, the file is as git holds it and the build is made again from it
+
+#### Scenario: A build that fails without a throw stops the draw
+- **WHEN** the build fails before a run of the tests without a throw
+- **THEN** the draw fails with an error that names the log of the build
+
+### Requirement: A run that outlives its limit
+A run of the pinned test command or of the build that outlives its limit while a `throw` is in place SHALL be ended with the processes it started, and the function SHALL be passed over with the reason `a run outlived its limit`, and not with `a run wrote no report`, which says that the run ended and left none.
+
+#### Scenario: A run that outlives its limit is passed over for that
+- **WHEN** a run of the test command with the throw outlives its limit
+- **THEN** the function is passed over with the reason `a run outlived its limit`, and the file is as git holds it
+
 ### Requirement: Test files that are neither right nor wrong
-A question about tests SHALL keep as ignored the test files that fail in a run of the pinned test command without a throw, and the test files that pass in both runs without it and fail in only one of the two runs with it, and an answer SHALL be scored as if it did not list them.
+A question about tests SHALL keep as ignored the test files that fail in a run of the pinned test command without a throw, and the test files that pass in both runs without it and fail in only one of the two runs with it, and an answer SHALL be scored as if it did not list them. No test file SHALL be in the answer and ignored at once, and questions that hold one are refused.
 
 #### Scenario: A file the throw breaks in one run only is ignored
 - **WHEN** with the throw `a.spec.ts` fails in both runs, `b.spec.ts` in the first run only and `c.spec.ts` in the second run only, and all three pass without it
 - **THEN** the answer is `a.spec.ts` alone and the question ignores `b.spec.ts` and `c.spec.ts`
+
+#### Scenario: A file is never right and ignored at once
+- **WHEN** a question about tests lists a test file in its answer and in its ignored files
+- **THEN** the questions are refused when they are written or read, with an error that names the question and the file
 
 ### Requirement: The prompt about tests
 The prompt of a question about tests SHALL say that the function fails every time it is called, by throwing an error or, for an async function, by returning a promise that rejects with one, and SHALL ask which test files of the unit tests that the pinned command runs would fail.
