@@ -117,6 +117,47 @@ fn a_named_path_on_disk_is_traced_and_depth_limits_the_walk() {
 }
 
 #[test]
+fn names_go_to_the_query_for_every_path_and_a_walk_by_name_takes_one_hop_unless_a_depth_is_given() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+
+    let by_name = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "lib/util.ts",
+            "app/b.ts",
+            "--name",
+            "util",
+            "--name",
+            "other",
+        ],
+    ));
+    assert_eq!(by_name["changed"], value!(["lib/util.ts", "app/b.ts"]));
+    assert_eq!(by_name["names"], value!(["util", "other"]));
+    assert_eq!(by_name["depth"], 1);
+
+    let deeper = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "lib/util.ts",
+            "--name",
+            "util",
+            "--depth",
+            "3",
+        ],
+    ));
+    assert_eq!(deeper["depth"], 3);
+
+    let whole = json(&sandbox.run_in(&repo, &["--json", "impact", "lib/util.ts"]));
+    assert!(whole.get("names").is_none(), "{whole}");
+    assert_eq!(whole["depth"], Value::Null);
+}
+
+#[test]
 fn a_path_the_index_does_not_hold_does_not_fail_the_others() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();

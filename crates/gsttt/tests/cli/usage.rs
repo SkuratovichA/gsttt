@@ -4,7 +4,7 @@ use clap::{CommandFactory, Parser};
 use gsttt::Cli;
 use gsttt_scenario::scenario;
 
-use super::support::Sandbox;
+use super::support::{Sandbox, is_empty};
 
 /// The commands the cli spec lists, each as it is typed: those of the change that adds the command line, and `mcp`, which the change that adds the server puts among them.
 const COMMANDS: [&str; 17] = [
@@ -181,6 +181,35 @@ fn base_without_changed_exits_2() {
         "{}",
         ran.stderr
     );
+}
+
+#[scenario("cli", "--name with --changed exits 2")]
+#[test]
+fn name_with_changed_exits_2() {
+    let sandbox = Sandbox::new();
+    for args in [
+        &["impact", "--changed", "--name", "getHash"][..],
+        &[
+            "--json",
+            "impact",
+            "--name",
+            "getHash",
+            "--name",
+            "run",
+            "--changed",
+        ][..],
+        &["impact", "--changed", "--base", "main", "--name", "getHash"][..],
+    ] {
+        let ran = sandbox.run(args);
+        assert_eq!(ran.code, Some(2), "{args:?}: {ran:?}");
+        assert_eq!(ran.stdout, "", "{args:?}");
+        assert!(
+            ran.stderr.contains("`--name` needs paths"),
+            "{args:?}: {}",
+            ran.stderr
+        );
+    }
+    assert!(is_empty(sandbox.cache.path()), "nothing was indexed");
 }
 
 #[test]

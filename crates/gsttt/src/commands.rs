@@ -128,6 +128,11 @@ fn check_arguments(flags: &Flags, command: &Command) -> Result<(), CliError> {
             base: Some(_),
             ..
         }) => Err(CliError::BaseNeedsChanged),
+        Command::Impact(ImpactArgs {
+            changed: true,
+            names,
+            ..
+        }) if !names.is_empty() => Err(CliError::NameNeedsPaths),
         Command::Contract(query) if is_blank(query) => Err(CliError::EmptyQuery),
         _ => Ok(()),
     }
