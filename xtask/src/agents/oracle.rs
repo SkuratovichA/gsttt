@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::fs::{self, File};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -9,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, bail, ensure};
 use serde::Deserialize;
 
-use super::draw::{BROKEN, Verdict};
+use super::draw::{Answer, BROKEN, Verdict};
 use super::functions::Candidate;
 use super::process::{self, Job, Look, Stop};
 use crate::dist::git::git;
@@ -88,6 +89,11 @@ impl Baseline {
             failing: first.failing.union(&second.failing).cloned().collect(),
         }
     }
+
+    /// Whether both runs without a throw reported `file` and it passed in both.
+    fn passes(&self, file: &str) -> bool {
+        self.all.contains(file) && !self.failing.contains(file)
+    }
 }
 
 /// The test files that failed in both runs with the throw and passed in both runs without it.
@@ -98,7 +104,20 @@ fn broken(
 ) -> BTreeSet<String> {
     first
         .intersection(second)
-        .filter(|file| baseline.all.contains(*file) && !baseline.failing.contains(*file))
+        .filter(|file| baseline.passes(file))
+        .cloned()
+        .collect()
+}
+
+/// The test files that passed in both runs without a throw and failed in only one of the two runs with it: the throw may break them or the run may, so they are neither in the answer nor wrong to name.
+fn unstable(
+    baseline: &Baseline,
+    first: &BTreeSet<String>,
+    second: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    first
+        .symmetric_difference(second)
+        .filter(|file| baseline.passes(file))
         .cloned()
         .collect()
 }
@@ -118,7 +137,7 @@ pub(super) struct Oracle<'a> {
 }
 
 impl<'a> Oracle<'a> {
-    /// Runs the test command twice without a throw in `checkout`, which is canonical. Both runs must write a report; a failing test is no reason to stop.
+    /// Runs the test command twice without a throw in `checkout`, which is canonical. Both runs must write a report of at least one test file; a failing test is no reason to stop.
     pub(super) fn new(
         checkout: &'a Path,
         command: &'a [String],
@@ -148,12 +167,18 @@ impl<'a> Oracle<'a> {
 
     fn baseline_run(&self, label: &str) -> anyhow::Result<(Files, Duration)> {
         let started = Instant::now();
+        let log = self.work.join(format!("{label}.log"));
         let files = self.run(label, BASELINE_LIMIT)?.with_context(|| {
             format!(
-                "the test command wrote no usable report without a throw; see {}",
-                self.work.join(format!("{label}.log")).display()
+                "the test command wrote no report without a throw, or ran out of time; see {}",
+                log.display()
             )
         })?;
+        ensure!(
+            !files.all.is_empty(),
+            "the test command ran no test file without a throw; see {}",
+            log.display()
+        );
         Ok((files, started.elapsed()))
     }
 
@@ -173,44 +198,48 @@ impl<'a> Oracle<'a> {
         )
     }
 
-    /// The test files the function breaks, or why it is not drawn. One to 30 files must fail that passed in both runs without a throw, and then fail again in a second run with it; the answer is the files that failed in both.
+    /// The test files the function breaks, or why it is not drawn. `BROKEN` many files must fail that passed in both runs without a throw, and then fail again in a second run with it; the answer is the files that failed in both, and the files that failed in only one of the two runs with the throw are returned beside it as ignored.
     pub(super) fn answer(&self, candidate: &Candidate) -> anyhow::Result<Verdict> {
         let Some(first) = self.thrown(candidate, "throw-1")? else {
             return Ok(Err(NO_REPORT));
         };
         let once = broken(&self.baseline, &first.failing, &first.failing);
-        if once.is_empty() {
-            return Ok(Err(NO_TEST_BREAKS));
-        }
-        if once.len() > *BROKEN.end() {
-            return Ok(Err(TOO_MANY_BREAK));
+        if !BROKEN.contains(&once.len()) {
+            return Ok(Err(if once.len() < *BROKEN.start() {
+                NO_TEST_BREAKS
+            } else {
+                TOO_MANY_BREAK
+            }));
         }
         let Some(second) = self.thrown(candidate, "throw-2")? else {
             return Ok(Err(NO_REPORT));
         };
         let twice = broken(&self.baseline, &first.failing, &second.failing);
-        if twice.is_empty() {
+        if !BROKEN.contains(&twice.len()) {
             return Ok(Err(NOT_TWICE));
         }
-        Ok(Ok(twice.into_iter().collect()))
+        Ok(Ok(Answer {
+            files: twice.into_iter().collect(),
+            ignored: unstable(&self.baseline, &first.failing, &second.failing)
+                .into_iter()
+                .collect(),
+        }))
     }
 
-    /// One run with the throw in the function. The file is restored with git whatever happened, and the run fails if `git status --porcelain` is not what it was before the throw.
+    /// One run with the throw in the function. The file is restored with git whatever happened, a panic included, and the run fails if `git status --porcelain` is not what it was before the throw.
     fn thrown(&self, candidate: &Candidate, label: &str) -> anyhow::Result<Option<Files>> {
         let offset = candidate.body_offset.with_context(|| {
             format!("{} in {} has no block body", candidate.name, candidate.file)
         })?;
         let before = git(self.checkout, &["status", "--porcelain"])?;
+        let restore = Restore::new(self.checkout, &candidate.file);
         let run = insert_throw(
             &self.checkout.join(&candidate.file),
             offset,
             &candidate.name,
         )
         .and_then(|()| self.run(label, self.limit));
-        let restored = git(
-            self.checkout,
-            &["checkout", "--quiet", "--", candidate.file.as_str()],
-        );
+        let restored = restore.now();
         let after = git(self.checkout, &["status", "--porcelain"])?;
         restored.with_context(|| format!("cannot restore {}", candidate.file))?;
         ensure!(
@@ -221,7 +250,7 @@ impl<'a> Oracle<'a> {
         run
     }
 
-    /// Runs the test command once and reads its report; `None` when the limit ran out or no report was written.
+    /// Runs the test command once and reads its report: `None` when the limit ran out or no report was written, and an error when one was written that cannot be used.
     fn run(&self, label: &str, limit: Duration) -> anyhow::Result<Option<Files>> {
         let report = self.work.join(format!("{label}.json"));
         match fs::remove_file(&report) {
@@ -238,9 +267,61 @@ impl<'a> Oracle<'a> {
         if !run_limited(self.command, &flags, self.checkout, &log, limit, &self.stop)? {
             return Ok(None);
         }
-        Ok(fs::read_to_string(&report)
-            .ok()
-            .and_then(|text| files_of(&text, self.checkout).ok()))
+        let text = match fs::read_to_string(&report) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(error).with_context(|| format!("cannot read {}", report.display()));
+            }
+        };
+        let files = files_of(&text, self.checkout)
+            .with_context(|| format!("cannot use the report {}", report.display()))?;
+        Ok(Some(files))
+    }
+}
+
+/// Takes a file of the checkout back from git when it is dropped, so that a throw inserted into it outlives no way out of the run, a panic included. A signal is no way out: the wait ends at it and the run returns like any other.
+#[derive(Debug)]
+struct Restore<'a> {
+    checkout: &'a Path,
+    file: &'a str,
+    restored: bool,
+}
+
+impl<'a> Restore<'a> {
+    fn new(checkout: &'a Path, file: &'a str) -> Self {
+        Self {
+            checkout,
+            file,
+            restored: false,
+        }
+    }
+
+    fn checkout(&self) -> anyhow::Result<String> {
+        git(self.checkout, &["checkout", "--quiet", "--", self.file])
+    }
+
+    /// Restores the file now, and whether git could is the result; the drop then has nothing left to do.
+    fn now(mut self) -> anyhow::Result<()> {
+        self.restored = true;
+        self.checkout().map(drop)
+    }
+}
+
+impl Drop for Restore<'_> {
+    fn drop(&mut self) {
+        if self.restored {
+            return;
+        }
+        // The run is already ending in a panic or an error, so a message is all there is to report a failure to.
+        if let Err(error) = self.checkout() {
+            writeln!(
+                std::io::stderr().lock(),
+                "cannot restore {}: {error:#}",
+                self.file
+            )
+            .ok();
+        }
     }
 }
 
@@ -342,6 +423,20 @@ mod tests {
     }
 
     #[test]
+    fn a_file_is_unstable_when_one_throw_run_fails_it_and_the_baseline_passes_it() {
+        let all = ["a.spec.ts", "b.spec.ts", "c.spec.ts", "d.spec.ts"];
+        // c.spec.ts fails without the throw in one of the two baseline runs.
+        let baseline = Baseline::of(&files(&all, &["c.spec.ts"]), &files(&all, &[]));
+        // b.spec.ts fails in the first run with the throw only, d.spec.ts in the second only, c.spec.ts in the first only, and new.spec.ts, which the baselines did not report, in the first only.
+        let first = set(["a.spec.ts", "b.spec.ts", "c.spec.ts", "new.spec.ts"]);
+        let second = set(["a.spec.ts", "d.spec.ts"]);
+        let expected = set(["b.spec.ts", "d.spec.ts"]);
+        assert_eq!(unstable(&baseline, &first, &second), expected);
+        assert_eq!(unstable(&baseline, &second, &first), expected);
+        assert_eq!(broken(&baseline, &first, &second), set(["a.spec.ts"]));
+    }
+
+    #[test]
     fn a_file_the_baselines_did_not_both_report_is_no_answer() {
         let baseline = Baseline::of(&files(&["a.spec.ts"], &[]), &files(&["a.spec.ts"], &[]));
         let thrown = set(["a.spec.ts", "new.spec.ts"]);
@@ -395,7 +490,7 @@ mod tests {
         assert!(insert_throw(&file, 10_000, "f").is_err(), "past the end");
     }
 
-    /// A git repository with `lib.ts`, whose test command is a shell script that reports `a.spec.ts` as failed while `lib.ts` holds a throw. `extra` runs in the script when it does.
+    /// A git repository with `lib.ts`, whose test command is a shell script that reports `a.spec.ts` as failed while `lib.ts` holds a throw. `under_throw` runs in the script when it does.
     struct Repo {
         _guard: tempfile::TempDir,
         dir: PathBuf,
@@ -427,7 +522,7 @@ mod tests {
         ] {
             git(&dir, args).unwrap();
         }
-        let script = format!(
+        let body = format!(
             r#"out="${{2#--outputFile=}}"
 status=passed
 if grep -q 'gsttt agents' lib.ts; then status=failed; {under_throw}; fi
@@ -437,9 +532,7 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
             work: guard.path().join("work"),
             _guard: guard,
             dir,
-            command: ["sh", "-c", script.as_str(), "sh"]
-                .map(str::to_owned)
-                .to_vec(),
+            command: script(&body),
         }
     }
 
@@ -453,6 +546,11 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
         }
     }
 
+    /// The test command of a repository, as a shell script that reads the flag `--outputFile=<report>` as `$2`.
+    fn script(body: &str) -> Vec<String> {
+        ["sh", "-c", body, "sh"].map(str::to_owned).to_vec()
+    }
+
     #[gsttt_scenario::scenario("agent-benchmarks", "A throw leaves no trace in the checkout")]
     #[test]
     fn a_throw_leaves_no_trace_in_the_checkout() {
@@ -462,7 +560,10 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
         let answer = oracle.answer(&function()).unwrap();
         assert_eq!(
             answer,
-            Ok(vec!["a.spec.ts".to_owned()]),
+            Ok(Answer {
+                files: vec!["a.spec.ts".to_owned()],
+                ignored: Vec::new()
+            }),
             "the report of the throw run is read"
         );
         assert_eq!(git(&repo.dir, &["status", "--porcelain"]).unwrap(), "");
@@ -496,5 +597,127 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
         let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default()).unwrap();
         assert_eq!(oracle.answer(&function()).unwrap(), Err(NO_TEST_BREAKS));
         assert!(!repo.work.join("throw-2.json").exists());
+    }
+
+    #[test]
+    fn more_than_thirty_broken_files_reject_the_function_without_a_second_run() {
+        let mut repo = repo(":");
+        repo.command = script(
+            r#"out="${2#--outputFile=}"
+status=passed
+if grep -q 'gsttt agents' lib.ts; then status=failed; fi
+{ printf '{"testResults":['
+  for n in $(seq 1 31); do
+    [ "$n" -gt 1 ] && printf ','
+    printf '{"name":"%s/f%s.spec.ts","status":"%s"}' "$(pwd -P)" "$n" "$status"
+  done
+  printf ']}'; } > "$out""#,
+        );
+        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default()).unwrap();
+        assert_eq!(oracle.answer(&function()).unwrap(), Err(TOO_MANY_BREAK));
+        assert!(!repo.work.join("throw-2.json").exists());
+    }
+
+    /// `both.spec.ts` fails in every run with the throw, `first.spec.ts` in the first only, and `second.spec.ts` in the second only; all three pass without it.
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A file the throw breaks in one run only is ignored"
+    )]
+    #[test]
+    fn a_file_that_fails_in_one_of_the_two_runs_with_the_throw_is_ignored_and_not_the_answer() {
+        let mut repo = repo(":");
+        // The counter of the runs with a throw is outside the checkout: a file in it would be a trace the oracle refuses.
+        repo.command = script(
+            r#"out="${2#--outputFile=}"
+here="$(pwd -P)"
+both=passed; first=passed; second=passed
+if grep -q 'gsttt agents' lib.ts; then
+  echo . >> ../throws
+  both=failed
+  case "$(wc -l < ../throws | tr -d ' ')" in 1) first=failed ;; 2) second=failed ;; esac
+fi
+printf '{"testResults":[{"name":"%s/both.spec.ts","status":"%s"},{"name":"%s/first.spec.ts","status":"%s"},{"name":"%s/second.spec.ts","status":"%s"}]}' "$here" "$both" "$here" "$first" "$here" "$second" > "$out""#,
+        );
+        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default()).unwrap();
+        assert!(oracle.ignored().is_empty());
+        let answer = oracle.answer(&function()).unwrap();
+        assert_eq!(
+            answer,
+            Ok(Answer {
+                files: vec!["both.spec.ts".to_owned()],
+                ignored: vec!["first.spec.ts".to_owned(), "second.spec.ts".to_owned()]
+            })
+        );
+        assert_eq!(git(&repo.dir, &["status", "--porcelain"]).unwrap(), "");
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A report that cannot be read stops the draw")]
+    #[test]
+    fn a_report_that_cannot_be_used_is_an_error_that_says_why() {
+        // Without a throw: the report is not JSON.
+        let mut repo_without = repo(":");
+        repo_without.command = script(r#"printf '{' > "${2#--outputFile=}""#);
+        let error = Oracle::new(
+            &repo_without.dir,
+            &repo_without.command,
+            &repo_without.work,
+            &Stop::default(),
+        )
+        .unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("baseline-1.json"), "{error}");
+        assert!(error.contains("not Vitest's JSON"), "{error}");
+
+        // With the throw: the same, and the file is restored all the same.
+        let repo = repo(r#"printf '{' > "$out"; exit 0"#);
+        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default()).unwrap();
+        let error = format!("{:#}", oracle.answer(&function()).unwrap_err());
+        assert!(error.contains("throw-1.json"), "{error}");
+        assert!(error.contains("not Vitest's JSON"), "{error}");
+        assert_eq!(git(&repo.dir, &["status", "--porcelain"]).unwrap(), "");
+        assert_eq!(fs::read_to_string(repo.dir.join("lib.ts")).unwrap(), LIB);
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A run without a throw that reports no test file stops the draw"
+    )]
+    #[test]
+    fn a_test_command_that_runs_no_test_file_is_refused_naming_its_log() {
+        let mut repo = repo(":");
+        repo.command = script(r#"printf '{"testResults":[]}' > "${2#--outputFile=}""#);
+        let error = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("ran no test file"), "{error}");
+        assert!(error.contains("baseline-1.log"), "{error}");
+    }
+
+    /// The throw is in the file while the guard lives, and not after it is dropped, whether the run ended in an error or in a panic.
+    #[gsttt_scenario::scenario("agent-benchmarks", "A throw is taken back when the run fails")]
+    #[test]
+    fn a_throw_is_taken_back_when_the_run_ends_in_an_error_or_a_panic() {
+        let repo = repo(":");
+        let file = repo.dir.join("lib.ts");
+        let thrown = || {
+            let restore = Restore::new(&repo.dir, "lib.ts");
+            insert_throw(&file, 21, "f").unwrap();
+            assert!(fs::read_to_string(&file).unwrap().contains("gsttt agents"));
+            restore
+        };
+        let failing = || -> anyhow::Result<()> {
+            let _restore = thrown();
+            bail!("the run failed")
+        };
+        assert!(failing().is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), LIB);
+
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _restore = thrown();
+            panic!("the run panicked");
+        }));
+        assert!(panicked.is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), LIB);
+        assert_eq!(git(&repo.dir, &["status", "--porcelain"]).unwrap(), "");
     }
 }

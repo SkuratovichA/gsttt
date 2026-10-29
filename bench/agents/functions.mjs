@@ -6,7 +6,7 @@
 // The program is every tracked TypeScript file of the scope with the compiler options of the tsconfig. A language service that cannot follow an import misses the references behind it, so the script refuses to answer while a relative import or a path of the tsconfig does not resolve to a file.
 // Prints one JSON object on standard output, sorted so that the same checkout gives the same bytes:
 //   { typescript, files, functions: [{ file, name, line, bodyOffset, users }] }
-// `bodyOffset` is the byte offset just after the opening brace of a block body, or null when the body is an expression; `users` are the other files of the scope that refer to the function.
+// `bodyOffset` is the byte offset just after the opening brace of a block body, or null when the body is an expression or the function is a generator, whose body runs at its first `next()` and not when it is called; `users` are the other files of the scope that refer to the function.
 
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -143,18 +143,18 @@ function byteOffsetter(source) {
   return (position) => bom + Buffer.byteLength(source.text.slice(0, position), 'utf8')
 }
 
-/** The exported functions a statement declares: `export function f` and `export const f = (…) =>` or `= function`, never a default export. */
+/** The exported functions a statement declares: `export function f` and `export const f = (…) =>` or `= function`, never a default export. A generator is marked as one: calling it runs none of its body. */
 function* exportedFunctions(statement) {
   const modifiers = ts.canHaveModifiers(statement) ? (ts.getModifiers(statement) ?? []) : []
   const has = (kind) => modifiers.some((modifier) => modifier.kind === kind)
   if (!has(ts.SyntaxKind.ExportKeyword) || has(ts.SyntaxKind.DefaultKeyword)) return
   if (ts.isFunctionDeclaration(statement)) {
-    if (statement.name && statement.body) yield { name: statement.name, body: statement.body }
+    if (statement.name && statement.body) yield { name: statement.name, body: statement.body, generator: statement.asteriskToken !== undefined }
   } else if (ts.isVariableStatement(statement) && statement.declarationList.flags & ts.NodeFlags.Const) {
     for (const declaration of statement.declarationList.declarations) {
       const init = declaration.initializer
       if (ts.isIdentifier(declaration.name) && init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))) {
-        yield { name: declaration.name, body: init.body }
+        yield { name: declaration.name, body: init.body, generator: init.asteriskToken !== undefined }
       }
     }
   }
@@ -166,7 +166,7 @@ for (const file of files) {
   const source = program.getSourceFile(absolute(file))
   let offset
   for (const statement of source.statements) {
-    for (const { name, body } of exportedFunctions(statement)) {
+    for (const { name, body, generator } of exportedFunctions(statement)) {
       offset ??= byteOffsetter(source)
       const position = name.getStart(source)
       const users = new Set()
@@ -180,7 +180,7 @@ for (const file of files) {
         file,
         name: name.text,
         line: source.getLineAndCharacterOfPosition(position).line + 1,
-        bodyOffset: ts.isBlock(body) ? offset(body.getStart(source) + 1) : null,
+        bodyOffset: ts.isBlock(body) && !generator ? offset(body.getStart(source) + 1) : null,
         users: [...users].sort(compare),
       })
     }

@@ -18,7 +18,7 @@ pub(super) struct Candidate {
     pub(super) name: String,
     /// The line of its name, from 1.
     pub(super) line: u32,
-    /// The offset in bytes just after the opening brace of its body; absent when the body is an expression.
+    /// The offset in bytes just after the opening brace of its body; absent when the body is an expression, and for a generator, whose body runs at its first `next()` and not when it is called.
     pub(super) body_offset: Option<usize>,
     /// The other files of the scope that refer to it, as the language service finds them.
     pub(super) users: Vec<String>,

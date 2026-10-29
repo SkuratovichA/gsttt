@@ -178,7 +178,7 @@ fn questions_of(
         |candidate| {
             let verdict = oracle.answer(candidate)?;
             let said = match &verdict {
-                Ok(answer) => format!("{} test files", answer.len()),
+                Ok(answer) => format!("{} test files", answer.files.len()),
                 Err(why) => (*why).to_owned(),
             };
             writeln!(

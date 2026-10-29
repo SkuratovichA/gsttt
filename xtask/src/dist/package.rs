@@ -8,9 +8,9 @@ use std::process::ExitCode;
 use anyhow::{Context as _, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use sha2::{Digest as _, Sha256};
 
 use super::version::release_version;
+use crate::digest::sha256_hex;
 use crate::root::repository_root;
 
 const USAGE: &str = "usage: cargo xtask package --target <target>";
@@ -102,10 +102,7 @@ fn pack(root: &Path, target_dir: &Path, target: &str) -> anyhow::Result<Package>
     // The `sha256sum` format, so `sha256sum --check` and `shasum --algorithm 256 --check` read it as well.
     let bytes = fs::read(&archive).with_context(|| format!("cannot read {}", archive.display()))?;
     let checksum = directory.join(format!("{name}.sha256"));
-    let line = format!(
-        "{}  {name}\n",
-        faster_hex::hex_string(&Sha256::digest(&bytes))
-    );
+    let line = format!("{}  {name}\n", sha256_hex(&bytes));
     fs::write(&checksum, line).with_context(|| format!("cannot write {}", checksum.display()))?;
     Ok(Package { archive, checksum })
 }
