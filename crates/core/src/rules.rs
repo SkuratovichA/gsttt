@@ -103,7 +103,7 @@ pub struct DecoratorRule {
 pub struct ChainRule {
     /// Dotted roots a chain starts from: `process.env`, `import.meta.env`, `prisma`, `trpc`.
     pub root: OneOrMany,
-    /// Types that make a name a root too, wherever the file uses it: a variable, a parameter or a class property declared with one of them starts a chain of this rule, and so does `this.<name>` for a constructor parameter property. A type counts when it is written as one of these, as a member of a union, as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, or through a `type` alias of the same file: `PrismaClient`, `Prisma.TransactionClient`. Only the TypeScript connector reads them.
+    /// Types that make a name a root too: a variable, a parameter or a class property declared with one of them, or made with `new` of one, starts a chain of this rule, and so does `this.<name>` for a constructor parameter property. A type counts when it is written as one of these, as a member of a union or an intersection, as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, through a `type` alias of the same file, or as a class or an interface of the same file that extends one: `PrismaClient`, `Prisma.TransactionClient`. A name the file also binds elsewhere to anything but `this` or a root type starts no chain, and a type the file declares under the name of a root type is that local type. Only the TypeScript connector reads them.
     // Left out when empty, for the reason given at `Pack::imports`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub root_types: Vec<String>,
