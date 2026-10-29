@@ -17,7 +17,7 @@ use rustix::io::Errno;
 use rustix::process::{
     Pid, Signal, WaitId, WaitIdOptions, kill_process, kill_process_group, waitid,
 };
-use signal_hook::consts::{SIGINT, SIGTERM};
+use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::{flag, low_level};
 use xshell::Shell;
 
@@ -40,7 +40,7 @@ fn is_executable(file: &Path) -> bool {
     fs::metadata(file).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
 }
 
-/// Ctrl-C and `kill` on the task. A process the task waits for is in a group of its own, so the signal reaches the task alone and leaves that process running. Once the signals are caught, the wait ends the process and stops the task with an error instead; a second signal ends the task on the spot, for the wait that does not end.
+/// Ctrl-C, `kill` and the hangup of a closed terminal on the task. A process the task waits for is in a group of its own, so the signal reaches the task alone and leaves that process running. Once the signals are caught, the wait ends the process and stops the task with an error instead; a second signal ends the task on the spot, for the wait that does not end.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Stop {
     /// The number of the signal that arrived, or 0.
@@ -53,14 +53,14 @@ pub(super) struct Stop {
 static CAUGHT: Mutex<Option<Stop>> = Mutex::new(None);
 
 impl Stop {
-    /// Catches SIGINT and SIGTERM for the rest of the task, in place of ending it on the spot. The first call registers the handlers and every call returns the same `Stop`. A signal that comes between two waits is seen by the next, and a second signal ends the task at once.
+    /// Catches SIGINT, SIGTERM and SIGHUP for the rest of the task, in place of ending it on the spot. The first call registers the handlers and every call returns the same `Stop`. A signal that comes between two waits is seen by the next, and a second signal ends the task at once.
     pub(super) fn catch() -> anyhow::Result<Self> {
         let mut caught = CAUGHT.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(stop) = caught.as_ref() {
             return Ok(stop.clone());
         }
         let stop = Self::default();
-        for signal in [SIGINT, SIGTERM] {
+        for signal in [SIGINT, SIGTERM, SIGHUP] {
             // The handlers run in the order they are registered: the first signal finds `arrived` unset, and sets it after the default action has declined to run, and the second finds it set.
             let number = usize::try_from(signal)?;
             flag::register_conditional_default(signal, Arc::clone(&stop.arrived))
@@ -110,7 +110,7 @@ pub(super) struct Job<'a> {
     pub(super) command: Command,
     /// Written to the standard input, which is then closed.
     pub(super) input: Option<&'a str>,
-    /// The directories whose processes are ended with the group: the Bash tool of Claude Code starts every command in a session of its own, which a signal to the group does not reach, but it leaves the working directory of the run. Each is below a directory the task made itself, or the job is refused before it starts.
+    /// The directories whose processes are ended with the group: the Bash tool of Claude Code starts every command in a session of its own, which a signal to the group does not reach, but it leaves the working directory of the run. Each is below a directory the task made itself, or the job is refused before it starts. The processes that already work in them when the job starts are left alone.
     pub(super) dirs: &'a [&'a Path],
     /// The wall-clock limit.
     pub(super) limit: Duration,
@@ -136,7 +136,7 @@ enum Ending {
     Lingered,
 }
 
-/// Starts the job and waits for it, calling `look` at every poll until it says the work is done. Whatever happened, the group is killed afterwards with every process that has a directory of the job as its working directory, so nothing the job started stays alive, not even after a normal exit. A signal that was caught ends the job the same way and is an error.
+/// Starts the job and waits for it, calling `look` at every poll until it says the work is done. Whatever happened, the group is killed afterwards with every process that has a directory of the job as its working directory and did not have it before the job started, so nothing the job started stays alive, not even after a normal exit. A signal that was caught ends the job the same way and is an error. A directory the task did not make refuses the job before its process is started.
 pub(super) fn run(
     job: Job,
     look: &mut dyn FnMut() -> anyhow::Result<Look>,
@@ -149,6 +149,9 @@ pub(super) fn run(
         stop,
     } = job;
     stop.check()?;
+    // Before anything is started, so that a directory the task did not make costs no run, and so that the processes that stood there already are not taken for the job's.
+    let dirs = sweepable_dirs(dirs, &sweep_roots())?;
+    let spared: BTreeSet<u32> = standing_in(&working_directories()?, &dirs).collect();
     if input.is_some() {
         command.stdin(Stdio::piped());
     }
@@ -157,7 +160,7 @@ pub(super) fn run(
         .spawn()
         .with_context(|| format!("cannot start {}", command.get_program().to_string_lossy()))?;
     let waited = feed(&mut child, input).and_then(|()| wait(&child, limit, stop, look));
-    let ended = end(&mut child, dirs);
+    let ended = end(&mut child, &dirs, &spared);
     let (ending, elapsed) = waited?;
     let status = ended?;
     Ok(Finished {
@@ -221,23 +224,18 @@ fn has_exited(child: &Child) -> bool {
     )
 }
 
-/// Kills the process group of `child`, which was started with `process_group(0)`, collects `child`, and then kills every other process that works in one of `dirs`. A test runner, a language server or an MCP server starts processes of its own and a group reaches them, but the Bash tool of Claude Code starts its commands in sessions of their own, which leaves them and their children alive when `claude` is gone.
-fn end(child: &mut Child, dirs: &[&Path]) -> anyhow::Result<ExitStatus> {
+/// Kills the process group of `child`, which was started with `process_group(0)`, collects `child`, and then kills every other process that works in one of `dirs` and is not in `spared`. A test runner, a language server or an MCP server starts processes of its own and a group reaches them, but the Bash tool of Claude Code starts its commands in sessions of their own, which leaves them and their children alive when `claude` is gone.
+///
+/// The kill of the group is the same call as the one in `stop` in `crates/config/src/external/process.rs`, which this crate cannot reach, and only the error rule differs: `stop` ignores every error, and this one tolerates the two that a group with nothing left to kill gives. A test pins the two calls against each other.
+fn end(child: &mut Child, dirs: &[PathBuf], spared: &BTreeSet<u32>) -> anyhow::Result<ExitStatus> {
     match kill_process_group(Pid::from_child(child), Signal::KILL) {
         // A group with no process left is the usual case after a process that ended on its own. macOS says "not permitted" for a group whose members are all gone but not collected yet.
         Ok(()) | Err(Errno::SRCH | Errno::PERM) => {}
         Err(error) => return Err(error).context("cannot kill the process group"),
     }
     let status = child.wait()?;
-    sweep(dirs)?;
+    sweep_below(dirs, spared)?;
     Ok(status)
-}
-
-/// Kills every process whose working directory is one of `dirs` or below one, except this process and its parents: the shell the task was started from may stand in a directory of the sweep.
-///
-/// A directory that is not absolute, or is not below a directory the task made itself ([`checkout::made_by_the_task`]), is refused before any process is listed or killed: an empty path, `/` or the home directory would otherwise end every process of the user.
-fn sweep(dirs: &[&Path]) -> anyhow::Result<()> {
-    sweep_below(dirs, &sweep_roots())
 }
 
 /// The directories the task may end processes in: those it made, by the name it gave them and by their canonical name. The tests make theirs in the temporary directory of the system, which is no place for the task itself.
@@ -248,14 +246,11 @@ fn sweep_roots() -> Vec<PathBuf> {
     with_canonical_names(made)
 }
 
-/// [`sweep`] with the directories it may end processes in given.
-fn sweep_below(dirs: &[&Path], roots: &[PathBuf]) -> anyhow::Result<()> {
-    let dirs = sweepable_dirs(dirs, roots)?;
-    let keep = ancestry()?;
-    for (pid, directory) in working_directories()? {
-        if keep.contains(&pid) || !dirs.iter().any(|dir| directory.starts_with(dir)) {
-            continue;
-        }
+/// Kills every process whose working directory is one of `dirs` or below one, except this process and its parents, since the shell the task was started from may stand in a directory of the sweep, and except `spared`, the processes that were there before the job started. `dirs` is the list [`sweepable_dirs`] gave, which [`run`] asked for before it started anything.
+fn sweep_below(dirs: &[PathBuf], spared: &BTreeSet<u32>) -> anyhow::Result<()> {
+    let mut keep = ancestry()?;
+    keep.extend(spared);
+    for pid in victims(&working_directories()?, &keep, dirs) {
         let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else {
             continue;
         };
@@ -270,7 +265,25 @@ fn sweep_below(dirs: &[&Path], roots: &[PathBuf]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `dirs` in the form that working directories are read in, or an error naming the first one that is not the task's to sweep. Every directory is looked at before the first process is, so one wrong directory ends nothing.
+/// The processes of `listing` whose working directory is one of `dirs` or below one.
+fn standing_in<'a>(
+    listing: &'a [(u32, PathBuf)],
+    dirs: &'a [PathBuf],
+) -> impl Iterator<Item = u32> + 'a {
+    listing
+        .iter()
+        .filter(|(_, directory)| dirs.iter().any(|dir| directory.starts_with(dir)))
+        .map(|&(pid, _)| pid)
+}
+
+/// The processes the sweep ends: those of `listing` that stand in `dirs`, bar the ones in `keep`.
+fn victims(listing: &[(u32, PathBuf)], keep: &BTreeSet<u32>, dirs: &[PathBuf]) -> Vec<u32> {
+    standing_in(listing, dirs)
+        .filter(|pid| !keep.contains(pid))
+        .collect()
+}
+
+/// `dirs` in the form that working directories are read in, or an error naming the first one that is not absolute or not below a directory the task made itself, which would end the processes of the user or of another task: `/`, the home directory, the directory of a purpose as a whole. Every directory is looked at before the first process is started or listed, so one wrong directory refuses the job.
 fn sweepable_dirs(dirs: &[&Path], roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
     dirs.iter()
         .map(|&dir| {
@@ -365,8 +378,6 @@ fn parse_lsof(text: &str) -> Vec<(u32, PathBuf)> {
 
 #[cfg(test)]
 mod tests {
-    use rustix::process::getpid;
-
     use super::*;
 
     #[test]
@@ -413,31 +424,87 @@ mod tests {
         run(job, &mut || Ok(Look::Working))
     }
 
-    /// A background child that stands in `/`, so that only the group can reach it, and touches `marker` after 3 s.
-    fn background(marker: &Path) -> String {
-        format!(
-            "(cd / && sleep 3 && touch '{}') & sleep 60",
-            marker.display()
-        )
+    /// The stand-in of the tests of the group: a child that stands in `/`, so that only the group can reach it, writes its id to `pid` and stays on, with the stand-in itself staying on for a minute.
+    const IN_THE_GROUP: &str = "(cd / && sleep 60) & echo $! > pid; sleep 60";
+
+    /// The stand-in of the tests of the sweep: `perl` for `setsid`, which macOS has no program for, so that the child leaves the group and the session as the commands of the Bash tool of Claude Code do, keeps the directory, and writes its id to `pid` once it has left.
+    const OUT_OF_THE_SESSION: &str = r#"perl -e 'use POSIX; POSIX::setsid(); open(my $p, ">", "pid"); print $p $$; close($p); sleep 60' & sleep 60"#;
+
+    /// A process of a stand-in, found by the id the stand-in wrote to `pid` in its directory. Copied from `Grandchild` in `crates/config/tests/config/external.rs`, which a test of another crate cannot import, where it is found by the id in `grandchild.pid`. It is killed when the test ends, so that a failing test does not leave a `sleep` behind.
+    struct Grandchild(String);
+
+    impl Grandchild {
+        fn of(dir: &Path) -> Self {
+            let id = fs::read_to_string(dir.join("pid"))
+                .expect("the stand-in wrote its id before it was ended");
+            Self(id.trim().to_owned())
+        }
+
+        /// Whether it still runs. A zombie does not: it is ended, and only waits to be collected.
+        fn runs(&self) -> bool {
+            let output = Command::new("ps")
+                .args(["-o", "stat=", "-p", &self.0])
+                .output()
+                .unwrap();
+            let state = String::from_utf8_lossy(&output.stdout);
+            !state.trim().is_empty() && !state.trim_start().starts_with('Z')
+        }
+
+        /// Whether it is gone within the few seconds a kill takes to be seen.
+        fn is_gone_soon(&self) -> bool {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while self.runs() {
+                if Instant::now() > deadline {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            true
+        }
+    }
+
+    impl Drop for Grandchild {
+        fn drop(&mut self) {
+            if self.runs() {
+                Command::new("kill").args(["-KILL", &self.0]).output().ok();
+            }
+        }
+    }
+
+    /// Whether `child` is still alive two seconds after a kill that was sent to it would have taken effect: a process that was sent SIGKILL is not a zombie at once, so a look at the moment `run` returns finds it alive. It can only be wrong in the way that lets a regression pass, never in the way that fails a sound run on a busy machine.
+    fn stays_alive(child: &mut Child) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if child.try_wait().unwrap().is_some() {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        true
+    }
+
+    /// Whether the stand-in has written its id to `pid` in `dir`, which it does as soon as it runs, however long that takes on a busy machine.
+    fn has_written_its_id(dir: &Path) -> bool {
+        fs::read_to_string(dir.join("pid")).is_ok_and(|id| !id.is_empty())
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The group of a run ends with it")]
     #[test]
     fn a_process_that_outlives_its_limit_is_ended_with_the_group_it_started() {
         let dir = tempfile::tempdir().unwrap();
-        let marker = dir.path().join("survivor");
         let stop = Stop::default();
         let finished = working(job(
-            &background(&marker),
+            IN_THE_GROUP,
             &[dir.path()],
             Duration::from_secs(2),
             &stop,
         ))
         .unwrap();
         assert!(finished.timed_out && finished.exit.is_none());
-        // Past the touch.
-        std::thread::sleep(Duration::from_secs(2));
-        assert!(!marker.exists(), "the background child went on");
+        assert!(
+            Grandchild::of(dir.path()).is_gone_soon(),
+            "the background child went on"
+        );
     }
 
     #[gsttt_scenario::scenario(
@@ -447,19 +514,55 @@ mod tests {
     #[test]
     fn a_process_that_left_the_group_and_the_session_is_ended_by_its_directory() {
         let dir = tempfile::tempdir().unwrap();
-        // `perl` for `setsid`, which macOS has no program for: the child leaves the group and the session, as the commands of the Bash tool of Claude Code do, and keeps the directory.
-        let script = r#"perl -e 'use POSIX; POSIX::setsid(); open(my $r, ">", "ready"); close($r); sleep 3; open(my $f, ">", "survivor"); close($f)' & sleep 60"#;
         let stop = Stop::default();
-        let finished = working(job(script, &[dir.path()], Duration::from_secs(2), &stop)).unwrap();
+        let finished = working(job(
+            OUT_OF_THE_SESSION,
+            &[dir.path()],
+            Duration::from_secs(2),
+            &stop,
+        ))
+        .unwrap();
+        assert!(finished.timed_out);
+        // The id is written once the child has left the group and the session.
+        assert!(
+            Grandchild::of(dir.path()).is_gone_soon(),
+            "the child out of the group went on"
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A process that was in the directory before a run is left alone"
+    )]
+    #[test]
+    fn a_process_that_stood_in_the_directory_before_the_job_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        // The shell of the user, say, standing in the directory of the run when the job starts.
+        let mut before = Command::new("sleep")
+            .arg("60")
+            .current_dir(dir.path())
+            .spawn()
+            .unwrap();
+        let stop = Stop::default();
+        let finished = working(job(
+            OUT_OF_THE_SESSION,
+            &[dir.path()],
+            Duration::from_secs(2),
+            &stop,
+        ))
+        .unwrap();
+        // The process of the test is ended first, so that no assertion leaves it behind.
+        let alive = stays_alive(&mut before);
+        before.kill().unwrap();
+        before.wait().unwrap();
         assert!(finished.timed_out);
         assert!(
-            dir.path().join("ready").exists(),
-            "the child had left the group before the limit"
+            alive,
+            "the sweep ended a process that was there before the job"
         );
-        // Past the touch.
-        std::thread::sleep(Duration::from_secs(2));
+        // The sweep ran, and ended what the job put out of its group and its session.
         assert!(
-            !dir.path().join("survivor").exists(),
+            Grandchild::of(dir.path()).is_gone_soon(),
             "the child out of the group went on"
         );
     }
@@ -467,29 +570,29 @@ mod tests {
     #[test]
     fn the_group_is_ended_after_a_normal_exit_too() {
         let dir = tempfile::tempdir().unwrap();
-        let marker = dir.path().join("survivor");
         let stop = Stop::default();
-        let script = format!("(cd / && sleep 2 && touch '{}') & exit 0", marker.display());
-        let finished =
-            working(job(&script, &[dir.path()], Duration::from_secs(60), &stop)).unwrap();
+        let script = "(cd / && sleep 60) & echo $! > pid; exit 0";
+        let finished = working(job(script, &[dir.path()], Duration::from_secs(60), &stop)).unwrap();
         assert!(!finished.timed_out);
         assert!(finished.exit.unwrap().success());
-        std::thread::sleep(Duration::from_secs(3));
-        assert!(!marker.exists(), "the child outlived its parent");
+        assert!(
+            Grandchild::of(dir.path()).is_gone_soon(),
+            "the child outlived its parent"
+        );
     }
 
     #[test]
     fn a_process_whose_work_is_done_has_the_grace_to_exit_and_is_ended_after_it() {
         let dir = tempfile::tempdir().unwrap();
         let stop = Stop::default();
-        // It exits on its own within the grace: nothing is cut short.
+        // It exits on its own within the grace: nothing is cut short. The work is found done at the first look, so `elapsed` is a few milliseconds, and it would be 3 s if it were the exit. The stand-in has to exit within the grace and so cannot end ten seconds after the bound; the numbers give the widest margin both ways instead: 1.5 s between the look and the bound, 1.5 s between the bound and the exit of the stand-in, and 2 s between that exit and the end of the grace.
         let finished = run(
-            job("sleep 1", &[dir.path()], Duration::from_secs(60), &stop),
+            job("sleep 3", &[dir.path()], Duration::from_secs(60), &stop),
             &mut || Ok(Look::Done),
         )
         .unwrap();
         assert!(finished.exit.unwrap().success() && !finished.timed_out);
-        assert!(finished.elapsed < Duration::from_secs(1));
+        assert!(finished.elapsed < Duration::from_millis(1500));
 
         // It stays on, past the limit: it is ended after the grace, and the limit is no timeout.
         let started = Instant::now();
@@ -506,18 +609,21 @@ mod tests {
     #[test]
     fn a_signal_ends_the_process_with_what_it_started_and_names_itself() {
         let dir = tempfile::tempdir().unwrap();
-        let marker = dir.path().join("survivor");
         let stop = Stop::default();
         let raiser = {
             let stop = stop.clone();
+            let dir = dir.path().to_path_buf();
             std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(500));
+                let waited = Instant::now();
+                while !has_written_its_id(&dir) && waited.elapsed() < Duration::from_secs(30) {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
                 stop.raise(SIGTERM);
             })
         };
         let started = Instant::now();
         let error = working(job(
-            &background(&marker),
+            IN_THE_GROUP,
             &[dir.path()],
             Duration::from_secs(60),
             &stop,
@@ -525,9 +631,12 @@ mod tests {
         .unwrap_err();
         raiser.join().unwrap();
         assert!(error.to_string().contains("SIGTERM"), "{error}");
+        // The signal comes as soon as the stand-in is up, so the run ends within a poll of it, after the listing of the processes before the start and before the listing after the end, which take a second or so between them on a machine at rest. The bound leaves a busy machine ten seconds for all of that, and the stand-in and the limit are a minute off.
         assert!(started.elapsed() < Duration::from_secs(10));
-        std::thread::sleep(Duration::from_secs(3));
-        assert!(!marker.exists(), "the background child went on");
+        assert!(
+            Grandchild::of(dir.path()).is_gone_soon(),
+            "the background child went on"
+        );
 
         // A signal that came between two waits stops the next before it starts anything.
         let error = working(job(
@@ -541,23 +650,116 @@ mod tests {
         assert!(!dir.path().join("started").exists());
     }
 
-    #[test]
-    fn the_signals_of_the_task_are_caught_and_end_the_wait() {
+    /// Set in the environment of the child that a test runs itself again as.
+    const CHILD: &str = "GSTTT_TEST_IN_CHILD";
+
+    /// Whether this is the child of [`in_a_child`].
+    fn in_the_child() -> bool {
+        std::env::var_os(CHILD).is_some()
+    }
+
+    /// Runs the test `test` of this module again in a child process, which is how a test sends a signal to its own process: the tests of the crate share the process they run in, unless they run apart.
+    fn in_a_child(test: &str) -> std::process::Output {
+        Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &format!("agents::process::tests::{test}"),
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap()
+    }
+
+    /// What the child of a test does: catches the signals of the task, waits for a stand-in, sends itself `signal` once the stand-in is up, and says how the wait ended and whether what the stand-in started is gone.
+    fn wait_and_be_signalled(signal: i32) {
         let dir = tempfile::tempdir().unwrap();
         let stop = Stop::catch().unwrap();
-        let raiser = std::thread::spawn(|| {
-            std::thread::sleep(Duration::from_millis(500));
-            kill_process(getpid(), Signal::TERM).unwrap();
-        });
-        let error = working(job(
-            "sleep 60",
-            &[dir.path()],
+        let mut sent = false;
+        let error = run(
+            job(IN_THE_GROUP, &[dir.path()], Duration::from_secs(60), &stop),
+            &mut || {
+                if !sent && has_written_its_id(dir.path()) {
+                    sent = true;
+                    low_level::raise(signal)?;
+                }
+                Ok(Look::Working)
+            },
+        )
+        .unwrap_err();
+        println!("{error}");
+        let gone = Grandchild::of(dir.path()).is_gone_soon();
+        println!(
+            "what it started {}",
+            if gone { "is gone" } else { "went on" }
+        );
+    }
+
+    /// The side of a test that runs `test` in a child, which has to say that its wait ended with an error that names `signal` and that what the process it waited for started is gone.
+    fn assert_child_ended_by(test: &str, signal: &str) {
+        let output = in_a_child(test);
+        let said = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{:?}: {said}", output.status);
+        assert!(said.contains(&format!("stopped by {signal}")), "{said}");
+        assert!(said.contains("what it started is gone"), "{said}");
+    }
+
+    #[test]
+    fn the_signals_of_the_task_are_caught_and_end_the_wait() {
+        if in_the_child() {
+            wait_and_be_signalled(SIGTERM);
+            return;
+        }
+        assert_child_ended_by(
+            "the_signals_of_the_task_are_caught_and_end_the_wait",
+            "SIGTERM",
+        );
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A hangup stops the task")]
+    #[test]
+    fn a_hangup_is_caught_and_ends_the_wait() {
+        if in_the_child() {
+            wait_and_be_signalled(SIGHUP);
+            return;
+        }
+        assert_child_ended_by("a_hangup_is_caught_and_ends_the_wait", "SIGHUP");
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A job is refused before its process is started"
+    )]
+    #[test]
+    fn a_job_with_a_directory_the_task_did_not_make_is_refused_before_it_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let stop = Stop::default();
+        let mut inside = Command::new("sleep")
+            .arg("30")
+            .current_dir(dir.path())
+            .spawn()
+            .unwrap();
+        // A directory that no process can stand in, since a sweep of `/` or of the home directory that was not refused would end the processes of the machine.
+        let elsewhere = Path::new("/gsttt-not-made-by-the-task");
+        // The directory that is the task's is first, and still nothing is started or ended.
+        let refused = working(job(
+            "touch started",
+            &[dir.path(), elsewhere],
             Duration::from_secs(60),
             &stop,
-        ))
-        .unwrap_err();
-        raiser.join().unwrap();
-        assert!(error.to_string().contains("SIGTERM"), "{error}");
+        ));
+        // The process of the test is ended first, so that no assertion leaves it behind.
+        let alive = stays_alive(&mut inside);
+        inside.kill().unwrap();
+        inside.wait().unwrap();
+        let error = refused.unwrap_err().to_string();
+        assert!(
+            error.contains(&format!("`{}`", elsewhere.display()))
+                && error.contains("this task made"),
+            "{error}"
+        );
+        assert!(!dir.path().join("started").exists(), "the job was started");
+        assert!(alive, "the refusal ended a process");
     }
 
     #[test]
@@ -574,7 +776,8 @@ mod tests {
             .current_dir(swept.path())
             .spawn()
             .unwrap();
-        sweep(&[swept.path()]).unwrap();
+        let dirs = sweepable_dirs(&[swept.path()], &sweep_roots()).unwrap();
+        sweep_below(&dirs, &BTreeSet::new()).unwrap();
         assert!(inside.wait().is_ok_and(|status| !status.success()));
         assert!(bystander.try_wait().unwrap().is_none(), "it was killed");
         bystander.kill().unwrap();
@@ -652,35 +855,6 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_sweep_ends_nothing() {
-        let made = tempfile::tempdir().unwrap();
-        let elsewhere = tempfile::tempdir().unwrap();
-        let roots = with_canonical_names([made.path().to_path_buf()]);
-        let run = made.path().join("run");
-        fs::create_dir_all(&run).unwrap();
-        let mut inside = Command::new("sleep")
-            .arg("30")
-            .current_dir(&run)
-            .spawn()
-            .unwrap();
-        let mut outside = Command::new("sleep")
-            .arg("30")
-            .current_dir(elsewhere.path())
-            .spawn()
-            .unwrap();
-        // The directory that is the task's is first, and still nothing is ended.
-        assert!(sweep_below(&[&run, elsewhere.path()], &roots).is_err());
-        assert!(inside.try_wait().unwrap().is_none(), "it was killed");
-        assert!(outside.try_wait().unwrap().is_none(), "it was killed");
-        // Without the other directory the same sweep ends what works in `run` and leaves the rest.
-        sweep_below(&[&run], &roots).unwrap();
-        assert!(inside.wait().is_ok_and(|status| !status.success()));
-        assert!(outside.try_wait().unwrap().is_none(), "it was killed");
-        outside.kill().unwrap();
-        outside.wait().unwrap();
-    }
-
-    #[test]
     fn this_process_and_its_parents_are_never_swept() {
         let keep = ancestry().unwrap();
         assert!(keep.contains(&std::process::id()));
@@ -695,6 +869,26 @@ mod tests {
 
     fn getppid_raw() -> u32 {
         rustix::process::getppid().map_or(0, |pid| pid.as_raw_nonzero().get().unsigned_abs())
+    }
+
+    #[test]
+    fn the_victims_are_the_processes_below_the_directories_that_are_not_kept() {
+        let own = std::process::id();
+        let dir = PathBuf::from("/tmp/gsttt/run");
+        let listing = [
+            // This process stands below the directory, as the shell the task was started from may.
+            (own, dir.join("checkout")),
+            // A process that stood in the directory before the job.
+            (own + 1, dir.join("checkout")),
+            (own + 2, dir.clone()),
+            (own + 3, dir.join("checkout/src")),
+            (own + 4, PathBuf::from("/")),
+            // A name that only starts like the directory is another directory.
+            (own + 5, PathBuf::from("/tmp/gsttt/runner")),
+        ];
+        let keep = BTreeSet::from([own, own + 1]);
+        assert_eq!(victims(&listing, &keep, &[dir]), [own + 2, own + 3]);
+        assert_eq!(victims(&listing, &keep, &[]), Vec::<u32>::new());
     }
 
     #[test]
@@ -729,6 +923,38 @@ mod tests {
         );
     }
 
+    /// The call that kills the group in `source`, from its name to the parenthesis that closes it.
+    fn group_kill_in(source: &str) -> Option<&str> {
+        let rest = source.get(source.find(concat!("kill_process_group", "("))?..)?;
+        let mut open = 0_u32;
+        for (at, character) in rest.char_indices() {
+            match character {
+                '(' => open += 1,
+                ')' => {
+                    open -= 1;
+                    if open == 0 {
+                        return rest.get(..=at);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn the_group_kill_is_the_same_call_as_the_one_the_config_crate_has() {
+        let ours = group_kill_in(include_str!("process.rs"));
+        let theirs = group_kill_in(include_str!(
+            "../../../crates/config/src/external/process.rs"
+        ));
+        assert!(ours.is_some(), "the group kill is not in this file");
+        assert_eq!(
+            ours, theirs,
+            "the copy of the group kill has drifted from stop in crates/config/src/external/process.rs"
+        );
+    }
+
     #[test]
     fn two_calls_to_catch_share_what_they_caught() {
         let first = Stop::catch().unwrap();
@@ -747,8 +973,7 @@ mod tests {
     fn a_second_signal_ends_the_task_at_once() {
         use std::os::unix::process::ExitStatusExt as _;
 
-        const CHILD: &str = "GSTTT_TEST_STOP_TWICE";
-        if std::env::var_os(CHILD).is_some() {
+        if in_the_child() {
             let stop = Stop::catch().unwrap();
             low_level::raise(SIGTERM).unwrap();
             assert!(stop.check().is_err());
@@ -757,15 +982,7 @@ mod tests {
             println!("the second signal was caught too");
             return;
         }
-        let output = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "agents::process::tests::a_second_signal_ends_the_task_at_once",
-                "--nocapture",
-            ])
-            .env(CHILD, "1")
-            .output()
-            .unwrap();
+        let output = in_a_child("a_second_signal_ends_the_task_at_once");
         let said = String::from_utf8_lossy(&output.stdout);
         assert!(said.contains("the first signal was caught"), "{said}");
         assert!(!said.contains("too"), "{said}");

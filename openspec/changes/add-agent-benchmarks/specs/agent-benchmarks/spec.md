@@ -222,7 +222,7 @@ The runs SHALL go one at a time, by repeat, then by question, then by setup and 
 - **THEN** the task fails, and the results hold the runs before it and not that one
 
 ### Requirement: The end of a run
-A run SHALL end with its result event: a process still alive five seconds after it SHALL be ended, and the run recorded from the result, with a duration that ends at the event. When a run ends, its process group SHALL be killed with every process whose working directory is the checkout or below it. Ctrl-C and SIGTERM SHALL end a run the same way, and stop the task without recording that run. The task SHALL end processes only in directories below one it made itself.
+A run SHALL end with its result event: a process still alive five seconds after it SHALL be ended, and the run recorded from the result, with a duration that ends at the event. When a run ends, its process group SHALL be killed with every process whose working directory is the checkout or below it, bar those that already worked there when its process was started. Ctrl-C, SIGTERM and SIGHUP SHALL end a run the same way, and stop the task without recording that run.
 
 #### Scenario: A run ends with its result
 - **WHEN** a run writes its result event and its process stays alive
@@ -236,16 +236,31 @@ A run SHALL end with its result event: a process still alive five seconds after 
 - **WHEN** a process of a run leaves the group and the session and keeps the checkout as its working directory
 - **THEN** it is ended with the run
 
+#### Scenario: A process that was in the directory before a run is left alone
+- **WHEN** a process that is not the run's already works in the checkout when the process of the run is started, and the run ends
+- **THEN** that process is still alive, and the process the run put out of its group and session in the checkout is ended
+
 #### Scenario: A signal stops the task
 - **WHEN** the task gets SIGINT or SIGTERM while a run is going
 - **THEN** the run is ended, the task fails naming the signal, and the results do not hold that run
+
+#### Scenario: A hangup stops the task
+- **WHEN** the task gets SIGHUP, as it does when its terminal is closed, while a run is going
+- **THEN** the wait for the run ends with an error naming the signal, and the process of the run is ended
+
+### Requirement: The directories a run may end processes in
+The task SHALL end processes only in directories below one it made itself, and SHALL refuse any other directory before it starts the process of a run.
 
 #### Scenario: A sweep refuses a directory the task did not make
 - **WHEN** a sweep is asked for an empty path, `/`, the home directory, a relative path, or a directory outside the ones the task made
 - **THEN** it is refused before any process is ended
 
+#### Scenario: A job is refused before its process is started
+- **WHEN** a job names a directory the task did not make, beside one it did
+- **THEN** the job is refused with an error naming that directory, its process is never started, and no process is ended
+
 ### Requirement: A second signal
-A second Ctrl-C or SIGTERM SHALL end the task at once with the default action of the signal, whatever the task is waiting for.
+A second Ctrl-C, SIGTERM or SIGHUP SHALL end the task at once with the default action of the signal, whatever the task is waiting for.
 
 #### Scenario: A second signal ends the task at once
 - **WHEN** the task gets a signal it has already caught once
