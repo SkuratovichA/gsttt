@@ -82,6 +82,13 @@ The prompt of a question about tests SHALL say that the function fails every tim
 - **WHEN** the commands of the four setups are planned
 - **THEN** each allows the four base tools, only `lsp` allows the LSP tool and loads a language server, only `cbm` loads an MCP server of its own, and only `gsttt` loads the gsttt plugin
 
+### Requirement: The tools a setup adds
+A tool SHALL be one a setup adds when it is `LSP`, by its whole name, for `lsp`, or when its name starts with the prefix of the MCP server of `cbm` or `gsttt`, which ends in `__`; `plain` adds none. The init check and the table of the agent runs SHALL both tell the tools of a setup from the others by this rule.
+
+#### Scenario: A name that only begins like a tool of a setup is not one of its tools
+- **WHEN** a setup is asked whether it adds `LSPx`, or a tool of a server whose name begins like its own
+- **THEN** it does not, and it does add `LSP` or a tool of its own server, as its setup has them
+
 ### Requirement: The arms of a setup
 Every setup but `plain` SHALL be asked in two arms: `installed`, as the setup is, and `told`, with the same command line and the same environment and one `--append-system-prompt` more, whose sentence names the tools of the setup by the prefix of their names. `plain` has no told arm. The task SHALL check the init event of a told run as any other.
 
@@ -119,6 +126,13 @@ A run SHALL load none of the settings, hooks, memory, plugins, MCP servers or CL
 #### Scenario: A plugin from another source stops the task
 - **WHEN** the init event of a run lists a plugin with the name of the plugin of its setup from another source than the one the task gave it
 - **THEN** the task fails naming the setup and the plugin
+
+### Requirement: The init event of a run
+A run SHALL write its init event whatever becomes of its process: one that exited, was stopped at its limit or was ended after its result without having written one is an error that stops the task, naming the transcript, the time the run took and the tail of its standard error, and is never recorded as a timeout.
+
+#### Scenario: A run stopped at its limit with no init event is an error
+- **WHEN** a run is stopped at its limit before it wrote an init event
+- **THEN** the task fails naming its transcript and the time it took, and records no run
 
 ### Requirement: What a run can reach
 Every run SHALL pass `--settings` with a sandbox that makes the run fail at start when it is unavailable and lets the Bash tool write only in the checkout and in a temporary directory of the run. This repository, the main worktree it was made from, the configuration directory of Claude Code and the files of the setups SHALL be unreadable to the Bash tool by the sandbox and to the Read tool by `Read` rules, and so SHALL the binary under test in every setup but `gsttt`.
@@ -248,6 +262,13 @@ A run SHALL end with its result event: a process still alive five seconds after 
 - **WHEN** the task gets SIGHUP, as it does when its terminal is closed, while a run is going
 - **THEN** the wait for the run ends with an error naming the signal, and the process of the run is ended
 
+### Requirement: One result per stream
+The stream of a run SHALL hold one result event. A second one is an error that stops the task, naming the run and its transcript, and the run is not recorded.
+
+#### Scenario: A stream with two results stops the task
+- **WHEN** the stream of a run holds two result events
+- **THEN** the task fails naming the run and its transcript, and records no run
+
 ### Requirement: The directories a run may end processes in
 The task SHALL end processes only in directories below one it made itself, and SHALL refuse any other directory before it starts the process of a run.
 
@@ -267,7 +288,7 @@ A second Ctrl-C, SIGTERM or SIGHUP SHALL end the task at once with the default a
 - **THEN** the task is ended by that signal itself, and the handlers are installed once however many runs ask for them
 
 ### Requirement: The results of the runs
-`cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run its question and kind, setup, arm, repeat, outcome, answer, precision, recall, F1, the four token counts, cost, turns, tool calls by name, duration and whether it changed the checkout. It SHALL hold no path or user name of the machine.
+`cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run its question and kind, setup, arm, repeat, outcome, answer, precision, recall, F1, the four token counts, cost, turns, tool calls by name, tool errors by name, duration and whether it changed the checkout. It SHALL hold no path or user name of the machine.
 
 #### Scenario: The agent results have the published shape
 - **WHEN** agent results are written
@@ -278,15 +299,23 @@ A second Ctrl-C, SIGTERM or SIGHUP SHALL end the task at once with the default a
 - **THEN** the run counts it as wrong, and the results hold neither that path nor the user name
 
 ### Requirement: What a run called
-A run SHALL record how many times it called each tool, by the name the stream gives it: every `tool_use` block of an `assistant` event counted once by its `id`, whichever event of its message carries it. A run that ended without a result SHALL keep the calls it made.
+A run SHALL record how many times it called each tool, by the name the stream gives it, and how many of those calls failed: every `tool_use` block of an `assistant` event counts once by its `id`, whichever event of its message carries it, and every `tool_result` block with `is_error` true counts once by its `tool_use_id`, under the name of that call. A run that ended without a result SHALL keep both.
 
 #### Scenario: A tool call repeated in the stream counts once
 - **WHEN** two events of one message carry the same `tool_use` block
 - **THEN** the run counts that call once, under the name of the tool
 
+#### Scenario: A failed tool call counts under the name of its tool
+- **WHEN** a run calls `LSP` twice and the result of one call says `is_error`
+- **THEN** the run counts one error, under `LSP`
+
+#### Scenario: A failure repeated in the stream counts once
+- **WHEN** two events carry the failed `tool_result` block of the same call
+- **THEN** the run counts that failure once
+
 #### Scenario: A run without a result keeps its tool calls
 - **WHEN** a transcript is cut off before its result
-- **THEN** the calls made before the cut are counted
+- **THEN** the calls made before the cut are counted, and so are the ones that failed
 
 ### Requirement: A run is kept once the results are written
 A run SHALL be added to the results and reported as done only once the results with it in them are written. When they cannot be written, the run SHALL not be kept and the task SHALL stop.
