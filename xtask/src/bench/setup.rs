@@ -3,17 +3,16 @@
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::BufRead as _;
 use std::path::Path;
 
 use anyhow::{Context as _, ensure};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
-use sha2::{Digest as _, Sha256};
 use xshell::Shell;
 
 use super::pins::{Language, Pins, Repository, Tool};
 use super::plan::Programs;
+use crate::digest::sha256_file;
 use crate::dist::git::git;
 
 /// Installs the tools `needed` that are not installed at their pinned version yet.
@@ -223,7 +222,7 @@ fn platform_key(os: &str, arch: &str) -> String {
 
 /// Unpacks `archive` into `destination` once its SHA-256 is `sha256`. An archive with another sum is refused before anything is unpacked.
 fn unpack_verified(archive: &Path, sha256: &str, destination: &Path) -> anyhow::Result<()> {
-    let actual = checksum(archive)?;
+    let actual = sha256_file(archive)?;
     ensure!(
         actual == sha256,
         "{} has the SHA-256 {actual}, but bench/bench.toml pins {sha256}, so nothing was unpacked",
@@ -239,25 +238,6 @@ fn unpack_verified(archive: &Path, sha256: &str, destination: &Path) -> anyhow::
                 destination.display()
             )
         })
-}
-
-/// The SHA-256 of a file as 64 lower-case hexadecimal digits, read in pieces: an archive is too large to hold in memory twice.
-fn checksum(file: &Path) -> anyhow::Result<String> {
-    let input = File::open(file).with_context(|| format!("cannot read {}", file.display()))?;
-    let mut reader = std::io::BufReader::new(input);
-    let mut hasher = Sha256::new();
-    loop {
-        let piece = reader
-            .fill_buf()
-            .with_context(|| format!("cannot read {}", file.display()))?;
-        if piece.is_empty() {
-            break;
-        }
-        hasher.update(piece);
-        let length = piece.len();
-        reader.consume(length);
-    }
-    Ok(faster_hex::hex_string(&hasher.finalize()))
 }
 
 #[cfg(test)]
@@ -290,7 +270,7 @@ mod tests {
     fn an_archive_with_another_checksum_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let archive = archive_in(dir.path());
-        let pinned = checksum(&archive).unwrap();
+        let pinned = sha256_file(&archive).unwrap();
         let other = "0".repeat(64);
         let destination = dir.path().join("unpacked");
 
@@ -303,17 +283,6 @@ mod tests {
 
         unpack_verified(&archive, &pinned, &destination).unwrap();
         assert!(destination.join("codebase-memory-mcp").is_file());
-    }
-
-    #[test]
-    fn the_checksum_is_the_sha256_in_lower_case_hexadecimal() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("abc");
-        fs::write(&file, "abc").unwrap();
-        assert_eq!(
-            checksum(&file).unwrap(),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
     }
 
     #[test]
