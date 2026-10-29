@@ -422,7 +422,7 @@ pub(super) fn system_path() -> Vec<PathBuf> {
     SYSTEM_PATH.map(PathBuf::from).to_vec()
 }
 
-/// The settings of a run, as the JSON that `--settings` takes: the sandbox of the Bash tool, which may write in `writable`, read nothing in `denied` and reach no domain of the network, and the rules that keep the Read tool out of `denied` too, since the sandbox confines the commands of the Bash tool and not the tools of Claude Code itself. A run whose sandbox is not available does not start, instead of going on without it.
+/// The settings of a run, as the JSON that `--settings` takes: the sandbox of the Bash tool, which may write in `writable` but nothing in `denied`, read nothing in `denied` and reach no domain of the network, and the rules that keep the Read tool out of `denied` too, since the sandbox confines the commands of the Bash tool and not the tools of Claude Code itself. A run whose sandbox is not available does not start, instead of going on without it.
 fn settings(writable: &[&Path], denied: &[&Path]) -> anyhow::Result<Value> {
     let writable = names(writable)?;
     let denied = names(denied)?;
@@ -437,7 +437,7 @@ fn settings(writable: &[&Path], denied: &[&Path]) -> anyhow::Result<Value> {
             "failIfUnavailable": true,
             "allowUnsandboxedCommands": false,
             "autoAllowBashIfSandboxed": true,
-            "filesystem": { "allowWrite": writable, "denyRead": denied },
+            "filesystem": { "allowWrite": writable, "denyRead": denied, "denyWrite": denied },
             "network": { "allowedDomains": [], "strictAllowlist": true },
         },
         "permissions": { "deny": rules },
@@ -981,6 +981,12 @@ mod tests {
                 .collect();
             assert_eq!(
                 strings(&sandbox["filesystem"]["denyRead"]),
+                denied,
+                "{setup}"
+            );
+            // The client lets a command write at the top of its temporary root, so every path a run may not read is one it may not write either: an entry of that root is both.
+            assert_eq!(
+                strings(&sandbox["filesystem"]["denyWrite"]),
                 denied,
                 "{setup}"
             );
