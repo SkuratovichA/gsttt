@@ -551,14 +551,6 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     setups::place_node(&node, &node_dir)?;
     let tmp_root = checkout::tmp_root();
     setups::fresh_dir(&tmp_root)?;
-    // Where earlier versions of the task kept the copy of the binary and the files of the setups: in the directory of the checkouts.
-    for earlier in [".bin", ".setups"] {
-        let earlier = runs_root.join(earlier);
-        if earlier.exists() {
-            fs::remove_dir_all(&earlier)
-                .with_context(|| format!("cannot remove {}", earlier.display()))?;
-        }
-    }
     let programs = Programs::new(&root.join("bench/tools"), &copy);
     setup::node_tools(&programs, &pins)?;
     setup::install(&programs, &pins, &BTreeSet::from([Tool::CodebaseMemory]))?;

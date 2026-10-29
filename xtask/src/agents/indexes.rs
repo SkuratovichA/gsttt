@@ -36,10 +36,7 @@ impl Aside {
             "{} is not a directory, so there is no index to keep",
             live.display()
         );
-        if copy.exists() {
-            fs::remove_dir_all(copy)
-                .with_context(|| format!("cannot remove {}", copy.display()))?;
-        }
+        super::setups::fresh_dir(copy)?;
         copy_tree(live, copy, own)?;
         Ok(Self {
             live: live.to_path_buf(),
@@ -116,11 +113,16 @@ impl Indexes {
         Ok(())
     }
 
-    /// Puts back the index that a run of `setup` in `repository` could have changed, and says whether it had: the index of gsttt for the gsttt setup, the cache of codebase-memory-mcp for the cbm setup, and none for the others.
+    /// Puts back the index that a run of `setup` in `repository` could have changed, and says whether it had: the index of gsttt for the gsttt setup, the cache of codebase-memory-mcp for the cbm setup, and none for the others. A copy that is missing for the gsttt or the cbm setup is an error: nothing would be compared or put back, and nothing would say so.
     pub(super) fn restore(&self, setup: Setup, repository: &str) -> anyhow::Result<bool> {
+        let missing = || {
+            format!(
+                "no copy of the index of the {setup} setup was kept for `{repository}`, so it cannot be put back"
+            )
+        };
         let aside = match setup {
-            Setup::Gsttt => self.gsttt.get(repository),
-            Setup::Cbm => self.cbm.as_ref(),
+            Setup::Gsttt => Some(self.gsttt.get(repository).with_context(missing)?),
+            Setup::Cbm => Some(self.cbm.as_ref().with_context(missing)?),
             Setup::Plain | Setup::Lsp => None,
         };
         aside.map_or(Ok(false), Aside::restore)
@@ -342,9 +344,14 @@ mod tests {
         for setup in [Setup::Plain, Setup::Lsp] {
             assert!(!bed.indexes.restore(setup, "repo").unwrap(), "{setup}");
         }
+        let error = bed
+            .indexes
+            .restore(Setup::Gsttt, "another")
+            .unwrap_err()
+            .to_string();
         assert!(
-            !bed.indexes.restore(Setup::Gsttt, "another").unwrap(),
-            "no index of that repository is kept"
+            error.contains("`another`") && error.contains("gsttt"),
+            "{error}"
         );
         assert_eq!(read(&bed.gsttt(), "snapshot.gsttt"), "changed\n");
         assert_eq!(read(&bed.cache(), "project.db"), "changed\n");
@@ -358,6 +365,33 @@ mod tests {
         );
         assert!(bed.indexes.restore(Setup::Cbm, "repo").unwrap());
         assert_eq!(read(&bed.cache(), "project.db"), "graph\n");
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A missing copy of an index is an error")]
+    #[test]
+    fn a_missing_copy_of_an_index_is_an_error_for_the_setups_that_have_one() {
+        let indexes = Indexes::default();
+        for setup in [Setup::Gsttt, Setup::Cbm] {
+            let error = indexes.restore(setup, "repo").unwrap_err().to_string();
+            assert!(
+                error.contains("`repo`") && error.contains(&setup.to_string()),
+                "{error}"
+            );
+        }
+        for setup in [Setup::Plain, Setup::Lsp] {
+            assert!(!indexes.restore(setup, "repo").unwrap(), "{setup}");
+        }
+    }
+
+    #[test]
+    fn an_index_kept_again_replaces_the_copy_that_was_there() {
+        let mut bed = Bed::new();
+        let copy = bed.dir.path().join("aside/gsttt");
+        put(&copy, "stale.gsttt", "from an earlier task\n");
+        let checkout = bed.dir.path().join("checkout");
+        bed.indexes.keep_gsttt("repo", &checkout, &copy).unwrap();
+        assert!(!copy.join("stale.gsttt").exists());
+        assert_eq!(read(&copy, "snapshot.gsttt"), "snapshot\n");
     }
 
     #[test]

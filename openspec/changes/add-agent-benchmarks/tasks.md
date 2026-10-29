@@ -21,6 +21,8 @@
 - [x] 4.2 The four setups: their commands, the plugin of the language server, the MCP config of codebase-memory-mcp and the PATH
 - [x] 4.3 One run: the init check, the limits, the answer, the scores, the status of the checkout and the transcript
 - [x] 4.4 The results file, resuming, and `cargo xtask agents table`
+- [x] 4.5 One task at a time: a lock on a file in the temporary directory of the system, taken by `questions` and `run`, refused to a second task
+- [x] 4.6 The daemon of codebase-memory-mcp stopped before its cache is thrown away or put back, and a missing copy of an index an error
 
 ## 5. Proof
 
