@@ -624,7 +624,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::agents::exec::fake_claude;
+    use crate::agents::exec::{fake_claude, fake_program};
     use crate::agents::guard::repo;
     use crate::agents::init::{event_of, expected};
     use crate::agents::questions::Kind;
@@ -966,6 +966,46 @@ touch "$d/finished"
             error.to_string().contains("other versions of the tools"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn the_tools_hold_the_sum_of_the_binary_beside_its_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = dir.path().join("tools");
+        let cbm = tools.join("cbm");
+        fs::create_dir_all(&cbm).unwrap();
+        fake_program(
+            &cbm,
+            "codebase-memory-mcp",
+            "echo codebase-memory-mcp 0.6.0",
+        );
+        for package in NODE_PACKAGES {
+            let installed = tools.join("node/node_modules").join(package);
+            fs::create_dir_all(&installed).unwrap();
+            fs::write(installed.join("package.json"), r#"{"version":"5.0.0"}"#).unwrap();
+        }
+        // Two builds of one version: the comment makes the bytes differ and the answer to `--version` the same.
+        let record = |build: &str| {
+            let home = dir.path().join(build);
+            fs::create_dir(&home).unwrap();
+            let gsttt = fake_program(&home, "gsttt", &format!("echo gsttt 1.2.3 # {build}"));
+            tool_versions(&Programs::new(&tools, &gsttt)).unwrap()
+        };
+        let (first, second) = (record("one"), record("another"));
+        let find = |tools: &[ToolVersion], name: &str| {
+            tools
+                .iter()
+                .find(|tool| tool.tool == name)
+                .map(|tool| tool.version.clone())
+        };
+
+        assert_eq!(find(&first, "gsttt").as_deref(), Some("1.2.3"));
+        assert_eq!(find(&first, "gsttt"), find(&second, "gsttt"));
+        assert_ne!(find(&first, "gsttt-sha256"), find(&second, "gsttt-sha256"));
+        let built = fs::read(dir.path().join("one/gsttt")).unwrap();
+        assert_eq!(find(&first, "gsttt-sha256"), Some(sha256_hex(&built)));
+        let names: Vec<&str> = first.iter().map(|tool| tool.tool.as_str()).collect();
+        assert!(names.is_sorted(), "{names:?}");
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The session directory of a run is removed")]

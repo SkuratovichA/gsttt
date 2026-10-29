@@ -148,8 +148,14 @@ impl<'a> Stream<'a> {
 /// A script that stands in for `claude` in tests: it is called with the arguments of a run, and `body` is a shell script.
 #[cfg(test)]
 pub(super) fn fake_claude(dir: &Path, body: &str) -> PathBuf {
+    fake_program(dir, "claude", body)
+}
+
+/// A script named `name` in `dir` that stands in for a program in tests, `body` being a shell script.
+#[cfg(test)]
+pub(super) fn fake_program(dir: &Path, name: &str, body: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
-    let script = dir.join("claude");
+    let script = dir.join(name);
     fs::write(&script, format!("#!/bin/sh\n{body}\n")).unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
     script
