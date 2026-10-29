@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context as _, bail, ensure};
 
+use super::setups::Setup;
 use crate::bench::args::set;
 
 /// The task the arguments are for.
@@ -26,9 +27,11 @@ pub(super) struct Args {
     pub(super) questions: Vec<String>,
     /// How many times each question is asked, at most the number the pins give. Only `run` takes it.
     pub(super) repeats: Option<u32>,
+    /// The setups to ask, as named; every setup when empty. Only `run` takes it.
+    pub(super) setups: Vec<Setup>,
 }
 
-/// Reads `[--repository <name>]... [--out <file>]` for `questions`, and for `run` also `--gsttt <binary>` and `[--question <id>]... [--repeats <n>]`.
+/// Reads `[--repository <name>]... [--out <file>]` for `questions`, and for `run` also `--gsttt <binary>` and `[--question <id>]... [--repeats <n>] [--setup <name>]...`.
 pub(super) fn parse(task: Task, args: &[String]) -> anyhow::Result<Args> {
     let mut parsed = Args {
         repositories: Vec::new(),
@@ -36,6 +39,7 @@ pub(super) fn parse(task: Task, args: &[String]) -> anyhow::Result<Args> {
         gsttt: None,
         questions: Vec::new(),
         repeats: None,
+        setups: Vec::new(),
     };
     let mut words = args.iter();
     while let Some(flag) = words.next() {
@@ -57,7 +61,8 @@ pub(super) fn parse(task: Task, args: &[String]) -> anyhow::Result<Args> {
                 ensure!(repeats >= 1, "--repeats needs at least 1");
                 set(&mut parsed.repeats, "--repeats", repeats)?;
             }
-            "--gsttt" | "--question" | "--repeats" => {
+            "--setup" if task == Task::Run => parsed.setups.push(setup_named(value()?)?),
+            "--gsttt" | "--question" | "--repeats" | "--setup" => {
                 bail!("{flag} is an argument of `agents run`, not of `agents questions`")
             }
             other => bail!("unknown argument `{other}`"),
@@ -74,6 +79,17 @@ pub(super) fn parse(task: Task, args: &[String]) -> anyhow::Result<Args> {
         ),
     }
     Ok(parsed)
+}
+
+/// The setup that `name` spells, or an error that lists the names there are.
+fn setup_named(name: &str) -> anyhow::Result<Setup> {
+    Setup::ALL
+        .into_iter()
+        .find(|setup| setup.name() == name)
+        .with_context(|| {
+            let names: Vec<&str> = Setup::ALL.into_iter().map(Setup::name).collect();
+            format!("no setup is called `{name}`; they are {}", names.join(", "))
+        })
 }
 
 #[cfg(test)]
@@ -165,6 +181,7 @@ mod tests {
             &["--gsttt", "gsttt"][..],
             &["--question", "vite-users-1"],
             &["--repeats", "1"],
+            &["--setup", "plain"],
         ] {
             let error = parse(Task::Questions, &words(args))
                 .unwrap_err()
@@ -176,5 +193,25 @@ mod tests {
             assert!(parse(Task::Run, &args).is_err(), "{repeats}");
         }
         assert!(parse(Task::Run, &words(&["--gsttt", "a", "--gsttt", "b"])).is_err());
+    }
+
+    #[test]
+    fn setups_are_read_by_name_and_an_unknown_name_lists_the_known_ones() {
+        let args = parse(
+            Task::Run,
+            &words(&["--gsttt", "g", "--setup", "gsttt", "--setup", "plain"]),
+        )
+        .unwrap();
+        assert_eq!(args.setups, [Setup::Gsttt, Setup::Plain]);
+        let none = parse(Task::Run, &words(&["--gsttt", "g"])).unwrap();
+        assert_eq!(none.setups, []);
+
+        let error = parse(Task::Run, &words(&["--gsttt", "g", "--setup", "vim"]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("`vim`") && error.contains("plain, lsp, cbm, gsttt"),
+            "{error}"
+        );
     }
 }

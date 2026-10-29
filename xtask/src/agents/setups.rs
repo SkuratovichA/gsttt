@@ -166,6 +166,11 @@ pub(super) fn every_arm() -> impl Iterator<Item = (Setup, Arm)> {
         .flat_map(|setup| setup.arms().iter().map(move |&arm| (setup, arm)))
 }
 
+/// The arms of the `chosen` setups only, in the order of [`every_arm`] whatever the order of `chosen`; a setup named twice counts once.
+pub(super) fn arms_of(chosen: &[Setup]) -> impl Iterator<Item = (Setup, Arm)> + '_ {
+    every_arm().filter(|(setup, _)| chosen.contains(setup))
+}
+
 impl Arm {
     /// The word the results, the transcripts and the table use.
     pub(super) fn name(self) -> &'static str {

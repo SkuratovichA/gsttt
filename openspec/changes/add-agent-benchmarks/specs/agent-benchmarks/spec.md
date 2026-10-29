@@ -112,6 +112,13 @@ The prompt of a question about tests SHALL say that the function fails every tim
 - **WHEN** the commands of the four setups are planned
 - **THEN** each allows the four base tools, only `lsp` allows the LSP tool and loads a language server, only `cbm` loads an MCP server of its own, and only `gsttt` loads the gsttt plugin
 
+### Requirement: A run may ask only some setups
+`--setup <name>`, which may be given several times, SHALL limit `cargo xtask agents run` to the setups it names, each in all its arms and in the usual order of the setups; a name that is no setup SHALL be an error that lists the four.
+
+#### Scenario: --setup asks only the setups it names
+- **WHEN** `run` is given `--setup gsttt --setup plain`
+- **THEN** the runs planned are plain installed, gsttt installed and gsttt told in that order, and an unknown name is refused
+
 ### Requirement: The tools a setup adds
 A tool SHALL be one a setup adds when it is `LSP`, by its whole name, for `lsp`, or when its name starts with the prefix of the MCP server of `cbm` or `gsttt`, which ends in `__`; `plain` adds none. The init check and the table of the agent runs SHALL both tell the tools of a setup from the others by this rule.
 
