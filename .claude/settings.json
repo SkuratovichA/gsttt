@@ -14,5 +14,16 @@
       "Bash(openspec show:*)",
       "Bash(openspec validate:*)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "gsttt": {
+      "source": {
+        "source": "github",
+        "repo": "SkuratovichA/gsttt"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "gsttt@gsttt": true
   }
 }
