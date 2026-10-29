@@ -870,7 +870,8 @@ touch "$d/finished"
     fn results_of_the_same_questions_and_tools_are_continued() {
         let (_dir, out) = written();
         let results = open(&out, &"a".repeat(64), tools("1.0.0")).unwrap();
-        assert!(results.runs.is_empty());
+        assert_eq!(results.questions_sha256, "a".repeat(64));
+        assert_eq!(results.tools, tools("1.0.0"));
     }
 
     #[test]
