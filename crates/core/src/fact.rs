@@ -177,7 +177,7 @@ pub struct Import {
     pub flags: ImportFlags,
     /// The names the import takes from `spec`: `a` and `b` in `import { a, b } from 'spec'`, `default` for a default import, `*` for a namespace. Resolution may depend on them too: Python `from pkg import sub` may import the module `pkg/sub.py`. Empty when the connector records none.
     pub names: Vec<String>,
-    /// For a named re-export, the name each entry of `names` is exported as: `w` for `export { z as w } from 'spec'`, `ns` for `export * as ns from 'spec'`. A connector may also give, for any import, the name the file binds an entry as when it is not the name taken, which Rust does for `use a::Foo as Bar`; the graph reads it only in a re-export. Empty for every other import.
+    /// For a named re-export, the name each entry of `names` is exported as: `w` for `export { z as w } from 'spec'`, `ns` for `export * as ns from 'spec'`. A connector may also give, for any import, the name the file binds an entry as when it is not the name taken, which Rust does for `use a::Foo as Bar`. A connector that records [`Symbols`] gives, for every static import of the file, type-only ones included, the local name of each entry of `names` in the same order: `React` for `import React from 'react'`, whose name is `default`, `ns` for `import * as ns`, `b` for `import { a as b }` and `a` for `import { a }`, which is how a walk by name finds the declarations that use what the import takes. Empty for every other import.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exported: Vec<String>,
 }
@@ -283,6 +283,76 @@ pub struct FileFacts {
     /// The names the file exports itself, sorted, without the names an `export *` brings in. `None` when the connector cannot tell, because the file does not list its exports or was read past errors. Empty for a file that exports nothing itself, such as a barrel made only of `export *`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exports: Option<Vec<String>>,
+    /// The declarations of the file and what each of them refers to, which `impact` follows when it is asked about names. `None` when the connector records none, which every connector but TypeScript does for now, or when the file was read past errors; `impact` follows such a file whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbols: Option<Symbols>,
+}
+
+/// The declarations of a file and what each of them refers to, so that `impact` asked about a name can list the declarations that use it instead of every file that imports its file.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct Symbols {
+    /// The declarations of the file, by the line they start on and then by name, each name once.
+    pub declared: Vec<Declared>,
+    /// What the file's code refers to as the file loads, sorted, once each: everything in a top-level statement that is not a declaration, callbacks included, and what a declaration calls while it is evaluated, such as `f` in `const x = f()`. A change to one of them can fail the file as it loads, and so every file that loads it.
+    pub on_load: Vec<String>,
+    /// Each name the file exports from a local of another name, by the name it is exported as: `b` from `a` for `export { a as b }`, `default` from `f` for `export default f`. A name exported under its own local name is not listed, and neither is a re-export, which its import describes.
+    pub exports: Vec<LocalExport>,
+}
+
+/// One declaration of a file.
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct Declared {
+    /// The name it declares: `getHash`; `ModuleRunner.import` for a member of a class; `default` for `export default` of an expression. Overloads and merged declarations share one entry.
+    pub name: String,
+    /// The line it starts on, from 1.
+    pub line: Line,
+    /// The line it ends on, from 1.
+    pub end: Line,
+    /// The names it refers to, sorted, once each, never its own: other declarations of the file, `Class.member` for `this.member` inside the class, and the local names the file's imports bind. A top-level variable also lists the declarations that write it.
+    pub uses: Vec<String>,
+}
+
+/// A name a file exports from a local of another name.
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct LocalExport {
+    /// The name it is exported as: `b` in `export { a as b }`.
+    pub name: String,
+    /// The declaration or import binding behind it: `a` in `export { a as b }`.
+    pub local: String,
 }
 
 impl FileFacts {

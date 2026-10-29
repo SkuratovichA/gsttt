@@ -165,6 +165,7 @@ impl Project for RustProject {
                 embedded: sites.embedded,
                 unresolved: sites.unresolved,
                 exports: None,
+                symbols: None,
             },
             extra: sites.extra,
         }
