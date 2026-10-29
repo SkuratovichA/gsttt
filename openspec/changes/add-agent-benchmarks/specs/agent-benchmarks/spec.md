@@ -165,11 +165,11 @@ A run SHALL write its init event whatever becomes of its process: one that exite
 - **THEN** the task fails naming its transcript and the time it took, and records no run
 
 ### Requirement: What a run can reach
-Every run SHALL pass `--settings` with a sandbox that makes the run fail at start when it is unavailable, lets the Bash tool write only in the checkout and in a temporary directory of the run, and allows it no domain of the network. The files of the setups SHALL be unreadable to the Bash tool by the sandbox and to the Read tool by `Read` rules, and so SHALL the binary under test in every setup but `gsttt`.
+Every run SHALL pass `--settings` with a sandbox that fails the run at start when it is unavailable, lets the Bash tool write in the checkout, in a temporary directory of the run and at the top of the temporary root of the client, and allows no domain of the network. The files of the setups, the binary under test in every setup but `gsttt` and the entries of that root SHALL be unreadable to the Bash tool and the Read tool, and the entries SHALL be unwritable too.
 
 #### Scenario: A run is confined by the sandbox
 - **WHEN** the command line of a run is planned in each of the four setups
-- **THEN** it carries the sandbox settings, only the checkout and the temporary directory of the run are writable, no domain of the network is allowed, and each denied path is both a denied read of the sandbox and two `Read` rules, one for the path and one for everything below it
+- **THEN** it carries the sandbox settings, only the checkout and the temporary directory of the run are in its list of writable paths, no domain of the network is allowed, and each denied path is both a denied read and a denied write of the sandbox and two `Read` rules, one for the path and one for everything below it
 
 ### Requirement: The index of gsttt is private to its setup
 A run of a setup but `gsttt` SHALL NOT read `.git/gsttt` of its checkout, where the index of gsttt is built: the sandbox denies it to the Bash tool and a `Read` rule to the Read tool.
@@ -222,7 +222,7 @@ A path denied to a run SHALL be UTF-8 and hold none of `*`, `?`, `[`, `]`, `{` a
 - **THEN** the second is refused with a message that names the lock file and says that another task holds it, and a task started once the first has let go is not refused
 
 ### Requirement: The directories of a run
-A run SHALL have a temporary directory of its own, made new for it and removed when it ends, and SHALL find `node` in a directory that holds nothing else. When a run ends, whatever became of it, the directory Claude Code made for its session in the temporary root that every session of the user shares SHALL be removed, and nothing else in that root.
+A run SHALL have a temporary directory of its own, made new for it and removed when it ends, and SHALL find `node` in a directory that holds nothing else.
 
 #### Scenario: A run has a temporary directory of its own
 - **WHEN** runs are made, one that answers, one that fails and one that a signal stops
@@ -232,13 +232,31 @@ A run SHALL have a temporary directory of its own, made new for it and removed w
 - **WHEN** the PATH of a run is planned
 - **THEN** the directory it finds `node` in holds a link to `node` and nothing else
 
+### Requirement: What Claude Code keeps for a run
+When a run whose init event was read ends, whatever became of it, the task SHALL remove what Claude Code made for its session: the session directory in the temporary root that every session of the user shares, `session-env/<id>` in the configuration directory and the session directory in its `projects`, and nothing else there. The id SHALL be a UUID; any other SHALL remove nothing and stop the task.
+
 #### Scenario: The session directory of a run is removed
 - **WHEN** runs are made while the temporary root also holds the directory of another session and a file
 - **THEN** the directory of the session of each run is gone when the run is over, and the other session and the file are as they were
 
 #### Scenario: The session directory of a run the task stops on is removed
 - **WHEN** the init event of a run lists something the setup must not have, and the task stops on it
-- **THEN** the directory of the session of that run is gone as well
+- **THEN** what Claude Code made for the session of that run is gone as well
+
+#### Scenario: What Claude Code keeps for a run in its configuration directory is removed
+- **WHEN** runs are made while the configuration directory also holds `session-env/<id>` and a `projects` directory of other sessions, and a settings file
+- **THEN** `session-env/<id>` and the session directory in `projects` of each run are gone when the run is over, and the other sessions and the file are as they were
+
+#### Scenario: Only a UUID names the session directory to remove
+- **WHEN** a directory is to be removed for the id `abc-123`, `..`, an id with a `/`, or an empty id
+- **THEN** nothing is removed and the removal fails, naming the id
+
+### Requirement: The project directory of a checkout
+When the task ends, well or not, the project directory Claude Code made for each checkout, in the temporary root and in `projects` of the configuration directory, SHALL be removed if it is empty, and kept, without an error, if anything is in it.
+
+#### Scenario: The project directory of the checkouts is removed when the task ends
+- **WHEN** a task ends, well or on an error, after runs that made sessions in the project directory of the checkout, and another session is in that directory in one of the two places
+- **THEN** the project directory that holds nothing else is gone, and the one that holds the other session is as it was
 
 ### Requirement: The checkout of the runs
 Each repository SHALL have one checkout for the runs, prepared once: cloned at its commit, installed with its install command, not built, and indexed by gsttt and by codebase-memory-mcp. A checkout whose `node_modules` is gone SHALL be installed again. The binary under test and the files of the setups SHALL be kept outside the directory of the checkouts.
@@ -252,7 +270,7 @@ Each repository SHALL have one checkout for the runs, prepared once: cloned at i
 - **THEN** the install command runs again, and it did not run the time before, when `node_modules` and the record of the preparation were there
 
 ### Requirement: What a run leaves in the checkout
-After every run, whatever became of it, HEAD and its form (a branch, or a detached commit) SHALL be put back, the tracked files reset, and the untracked and ignored files compared one by one, and only the files the run added SHALL be removed. A run that changed any of this SHALL be marked. The task SHALL stop when the checkout cannot be put back as it was, and SHALL NOT clean the whole tree.
+After every run, whatever became of it, HEAD and its form (a branch, or a detached commit) SHALL be put back, the tracked files reset, and the untracked and ignored files and the empty directories compared one by one, and only what the run added SHALL be removed. A run that changed any of this SHALL be marked. The task SHALL stop when the checkout cannot be put back as it was, and SHALL NOT clean the whole tree.
 
 #### Scenario: A run that writes into the checkout is marked and undone
 - **WHEN** a run leaves a new file in the checkout
@@ -269,6 +287,28 @@ After every run, whatever became of it, HEAD and its form (a branch, or a detach
 #### Scenario: A file that a run deleted stops the task
 - **WHEN** a run deletes a file the preparation left, which git cannot restore
 - **THEN** the task fails naming the checkout
+
+#### Scenario: A directory that a run left empty is removed with the files it added
+- **WHEN** a run makes a directory with nothing in it, or one inside another, or leaves one empty after it deleted the file it put there
+- **THEN** the run is marked, and the directories are gone before the next run
+
+#### Scenario: A directory that was empty before the run stays
+- **WHEN** a run puts a file in a directory that was empty when it started
+- **THEN** the file is removed, and the directory is still there
+
+### Requirement: The refs of the checkout
+After every run, whatever became of it, every ref of the checkout, the stash included, SHALL be as it was: one the run added SHALL be deleted, and one it moved or deleted SHALL be set back. A run that changed one SHALL be marked. A symbolic ref the run made SHALL be deleted itself, and not the ref it points to.
+
+#### Scenario: A ref that a run made, moved or deleted is put back
+- **WHEN** a run makes a branch, a tag and a stash entry, moves one branch, deletes another, and makes a symbolic ref to the branch HEAD is on
+- **THEN** the run is marked, every ref is as it was, and HEAD is on the branch it was on
+
+### Requirement: A checkout runs no code of its own
+The task SHALL NOT run a hook or a file system monitor of a checkout when it reads the checkout or puts it back, since a run may have written one, and it would run outside the sandbox with the rights of the user.
+
+#### Scenario: A hook and a file system monitor of the checkout do not run
+- **WHEN** the guard puts HEAD back in a checkout whose `post-checkout` hook and `core.fsmonitor` each make a file outside the checkout
+- **THEN** neither file exists afterwards
 
 ### Requirement: The indexes of the runs
 The index of gsttt in each checkout and the cache of codebase-memory-mcp SHALL be kept aside when they are made. After a run of the setup that reads one, the index SHALL be put back as it was when it differs, and the run SHALL be marked. What the tool writes into its index on its own SHALL NOT count as a change. A copy that is missing for the setup that reads an index SHALL be an error.
