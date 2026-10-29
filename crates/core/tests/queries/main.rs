@@ -5,6 +5,7 @@ mod contracts;
 mod http;
 mod impact;
 mod json;
+mod names;
 mod neighbours;
 mod paths;
 mod reports;

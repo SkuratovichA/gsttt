@@ -16,7 +16,7 @@ use crate::text::{noun, summary};
 use super::cross::Crossing;
 use super::lookup::{Miss, find, possible_misses};
 use super::render::{Answer, Entries, Footer, Searched, display_as_text, list, name_list};
-use super::walk::{Cause, reach};
+use super::walk::{Cause, Hit, Note, reach, reach_names};
 
 /// What a change is asked about.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -25,8 +25,10 @@ pub struct ImpactRequest {
     pub files: Vec<String>,
     /// The paths the caller knows were deleted. One the index still holds is traced like any changed file; one it no longer holds is listed, with the unresolved imports that may have pointed at it, and not traced.
     pub deleted: Vec<String>,
-    /// Stop the walk after this many hops from a changed file.
+    /// Stop the walk after this many hops from a changed file. A walk by name takes one hop when this is `None`.
     pub depth: Option<u32>,
+    /// Declarations of the files in `files` to ask about instead of the files: a function, class, method (`Class.method`) or variable. The answer lists their direct callers, declaration by declaration. A name a file does not declare reaches nothing and goes into a note.
+    pub names: Vec<String>,
 }
 
 /// The files a change affects.
@@ -34,7 +36,10 @@ pub struct ImpactRequest {
 pub struct Impact {
     /// The changed files the index holds, in the order asked.
     pub changed: Vec<String>,
-    /// The hops the walk was allowed, `None` when it ran to a fixpoint.
+    /// The names asked about in those files, each once, in the order asked. Left out when the files were asked about whole.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
+    /// The hops the walk was allowed, `None` when it ran to a fixpoint. A walk by name always has one.
     pub depth: Option<u32>,
     /// The files the change reaches, nearest first and then by path, without the tests.
     pub affected: Vec<Affected>,
@@ -44,6 +49,9 @@ pub struct Impact {
     pub deleted: Vec<Deleted>,
     /// The paths the index does not hold that nobody reported deleted.
     pub unknown: Vec<String>,
+    /// What a walk by name has to say beside the files it reached: a name a file does not declare, a file followed whole, callers of a member found through its class, a walk the depth stopped. Left out when there is nothing to say.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
     /// When the change reaches nothing: the unresolved imports that may have meant a changed file.
     pub possible_misses: Vec<Miss>,
     /// What an answer that finds nothing searched.
@@ -59,6 +67,39 @@ pub struct Affected {
     pub distance: u32,
     /// The first way the walk got here: of the equally near ways, the one from the file with the smallest path, and from that file an import before a contract.
     pub reason: Reason,
+    /// A walk by name: the declarations of the file that the walk reached, which are the callers of what it came from, in byte order of their names. Those asked about are not among them. Left out when there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub callers: Vec<Caller>,
+    /// A walk by name: whether the code that runs as the file loads was reached. Left out when it was not.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub load: bool,
+}
+
+/// A declaration the walk by name reached.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Caller {
+    /// `run`, or `Runner.start` for a member of a class.
+    pub name: String,
+    /// The line the declaration starts on.
+    pub line: u32,
+}
+
+impl Affected {
+    /// `; in run (line 3), stop (line 7)` for the callers of an entry the walk by name reached, then `; at load` when its load was reached. Callers are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    fn write_callers(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
+        if !self.callers.is_empty() {
+            let callers: Vec<String> = self
+                .callers
+                .iter()
+                .map(|caller| format!("{} (line {})", caller.name, caller.line))
+                .collect();
+            write!(f, "; in {}", name_list(&callers, entries))?;
+        }
+        if self.load {
+            f.write_str("; at load")?;
+        }
+        Ok(())
+    }
 }
 
 /// Why the walk reached a file.
@@ -79,15 +120,18 @@ pub enum Reason {
     },
     /// The file has a site with `role` in the contract `key`, which joins a contract of a file the walk had reached.
     Contract { role: Role, key: String },
+    /// A walk by name: the file declares `names`, which were asked about, and its own declarations refer to them. They are in byte order.
+    Declares { names: Vec<String> },
 }
 
 impl Reason {
-    /// `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `re-exports useFoo as useBar from src/a.ts`, `imports src/a.ts`, `calls http GET /bookings/{}`. Names are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    /// `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `re-exports useFoo as useBar from src/a.ts`, `imports src/a.ts`, `calls http GET /bookings/{}`, `declares useFoo`. Names are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
     fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         let (verb, file, names) = match self {
             Self::Imports { file, names } => ("imports", file, names),
             Self::ReExports { file, names } => ("re-exports", file, names),
             Self::Contract { role, key } => return write!(f, "{role} {key}"),
+            Self::Declares { names } => return write!(f, "declares {}", name_list(names, entries)),
         };
         if names.is_empty() {
             write!(f, "{verb} {file}")
@@ -139,20 +183,40 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
 
     let absent = in_asked_order(absent);
     let crossing = Crossing::new(index);
-    let reached = reach(graph, &crossing, &changed, request.depth);
+    let mut names: Vec<String> = Vec::new();
+    for name in &request.names {
+        if !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    let (hits, notes, depth): (Vec<Hit>, Vec<Note>, Option<u32>) = if names.is_empty() {
+        let reached = reach(graph, &crossing, &changed, request.depth);
+        (
+            reached.into_iter().map(Hit::from).collect(),
+            Vec::new(),
+            request.depth,
+        )
+    } else {
+        // A walk by name takes the direct callers unless a depth is asked.
+        let depth = request.depth.unwrap_or(1);
+        let walked = reach_names(index, &crossing, &changed, &names, depth);
+        (walked.hits, walked.notes, Some(depth))
+    };
     let mut affected = Vec::new();
     let mut tests = Vec::new();
-    for reached in &reached {
+    for hit in &hits {
         // A file without a path cannot be named in the answer, so it is the only one the walk reaches and the answer leaves out.
-        let Some(path) = graph.path(reached.file) else {
+        let Some(path) = graph.path(hit.file) else {
             continue;
         };
         let entry = Affected {
             path: path.to_string(),
-            distance: reached.distance,
-            reason: reason(graph, &reached.cause),
+            distance: hit.distance,
+            reason: reason(graph, &hit.cause),
+            callers: callers(graph, hit),
+            load: hit.load,
         };
-        if graph.tags(reached.file).contains(FileTags::TEST) {
+        if graph.tags(hit.file).contains(FileTags::TEST) {
             tests.push(entry);
         } else {
             affected.push(entry);
@@ -163,7 +227,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         .iter()
         .filter_map(|&file| graph.path(file))
         .collect();
-    let misses = if reached.is_empty() {
+    let misses = if hits.is_empty() {
         possible_misses(index, &changed_paths)
     } else {
         Vec::new()
@@ -186,19 +250,21 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
 
     Impact {
         changed: changed_paths.iter().map(ToString::to_string).collect(),
-        depth: request.depth,
+        names,
+        depth,
         footer: Footer::new(
             index,
             freshness,
             changed
                 .iter()
                 .copied()
-                .chain(reached.iter().map(|reached| reached.file)),
+                .chain(hits.iter().map(|hit| hit.file)),
         ),
         affected,
         tests,
         deleted,
         unknown,
+        notes: notes.iter().map(|note| note_text(graph, note)).collect(),
         possible_misses: misses,
         searched: Searched::of(index),
     }
@@ -215,6 +281,42 @@ fn in_asked_order(absent: BTreeMap<String, (usize, bool)>) -> Vec<(String, bool)
         .into_iter()
         .map(|(_, path, deleted)| (path, deleted))
         .collect()
+}
+
+/// The declarations a walk by name reached in the file of `hit`, each with the line it starts on.
+fn callers(graph: &Graph, hit: &Hit) -> Vec<Caller> {
+    let Some(symbols) = graph.symbols(hit.file).filter(|_| !hit.callers.is_empty()) else {
+        return Vec::new();
+    };
+    hit.callers
+        .iter()
+        .filter_map(|&index| symbols.declaration(index))
+        .map(|declaration| Caller {
+            name: declaration.name().to_owned(),
+            line: declaration.line(),
+        })
+        .collect()
+}
+
+/// What a walk by name says beside the files it reached, in a sentence. A file the graph holds no path for is left empty, as in a reason.
+fn note_text(graph: &Graph, note: &Note) -> String {
+    let path = |file: FileId| {
+        graph
+            .path(file)
+            .map(ToString::to_string)
+            .unwrap_or_default()
+    };
+    match note {
+        Note::Undeclared { file, name } => format!("{} declares no {name}", path(*file)),
+        Note::NoDeclarations { file } => format!(
+            "{} is followed whole because its connector records no declarations",
+            path(*file)
+        ),
+        Note::ThroughClass { member, class } => format!(
+            "callers of {member} through a value are found through the declarations that refer to {class}"
+        ),
+        Note::Stopped => "the walk stopped with callers left to follow; ask about a caller by name, or with a larger depth, to go on".to_owned(),
+    }
 }
 
 /// Why the walk reached a file, spelled as far as the graph can. A reached file is never dropped for a reason that cannot be spelled in full: a list of names with one the graph holds no spelling for is left out whole, so the reason reads as the file taken in all its names, which is never less than the walk found (a shorter list would say that the file takes fewer names than it does), and a file or a contract the graph does not hold is left empty.
@@ -240,6 +342,9 @@ fn reason(graph: &Graph, cause: &Cause) -> Reason {
                 .contract(*contract)
                 .map(ToString::to_string)
                 .unwrap_or_default(),
+        },
+        Cause::Declares { names } => Reason::Declares {
+            names: names.clone(),
         },
     }
 }
@@ -271,10 +376,15 @@ impl Answer for Impact {
         let mut asked = self.changed.clone();
         asked.extend(self.deleted.iter().map(|deleted| deleted.path.clone()));
         asked.extend(self.unknown.iter().cloned());
-        if asked.is_empty() {
-            f.write_str("impact of no files")?;
+        let files = if asked.is_empty() {
+            "no files".to_owned()
         } else {
-            write!(f, "impact of {}", summary(&asked))?;
+            summary(&asked)
+        };
+        if self.names.is_empty() {
+            write!(f, "impact of {files}")?;
+        } else {
+            write!(f, "impact of {} in {files}", summary(&self.names))?;
         }
         if let Some(depth) = self.depth {
             write!(f, ", within {}", noun(depth, "hop"))?;
@@ -283,7 +393,8 @@ impl Answer for Impact {
 
         let affected_line = |f: &mut fmt::Formatter<'_>, affected: &Affected| {
             write!(f, "{}  distance {}  ", affected.path, affected.distance)?;
-            affected.reason.write(f, entries)
+            affected.reason.write(f, entries)?;
+            affected.write_callers(f, entries)
         };
         list(f, "affected files", &self.affected, entries, affected_line)?;
         list(f, "tests", &self.tests, entries, affected_line)?;
@@ -297,11 +408,18 @@ impl Answer for Impact {
         for path in &self.unknown {
             writeln!(f, "{path} is not in the index")?;
         }
+        for note in &self.notes {
+            writeln!(f, "note: {note}")?;
+        }
         if !self.changed.is_empty() && self.affected.is_empty() && self.tests.is_empty() {
+            let subject = if self.names.is_empty() {
+                summary(&self.changed)
+            } else {
+                format!("{} in {}", summary(&self.names), summary(&self.changed))
+            };
             writeln!(
                 f,
-                "nothing is affected by a change to {} among {}",
-                summary(&self.changed),
+                "nothing is affected by a change to {subject} among {}",
                 self.searched
             )?;
             list(
