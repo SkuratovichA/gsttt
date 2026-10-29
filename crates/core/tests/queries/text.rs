@@ -3,8 +3,8 @@
 use gsttt_core::fact::{Import, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{
-    Answer, Entries, ImpactRequest, contract, coverage, dependencies, dependents, impact, path,
-    status,
+    Answer, Entries, ImpactRequest, LIST_CAP, contract, coverage, dependencies, dependents, impact,
+    path, status,
 };
 use gsttt_core::testing::{To, Tree, package, resolving};
 use gsttt_scenario::scenario;
@@ -81,6 +81,52 @@ fn every_list_of_an_answer_is_cut_on_its_own() {
     assert_eq!(lines_starting_with(&text, "src/dep").len(), 30);
     assert_eq!(lines_starting_with(&text, "pkg").len(), 30);
     assert_eq!(lines_starting_with(&text, "… "), ["… 10 more", "… 10 more"]);
+}
+
+/// What `answer` writes capped, with its first `LIST_CAP` rows, and with every entry.
+fn cut_three_ways<A: Answer>(answer: &A) -> [String; 3] {
+    [
+        answer.text(Entries::Capped),
+        answer.text(Entries::First(LIST_CAP)),
+        answer.text(Entries::All),
+    ]
+}
+
+#[test]
+fn first_at_the_cap_writes_what_capped_writes() {
+    let names = ["alpha", "beta", "gamma", "delta", "epsilon"];
+    let index = (0..45)
+        .fold(Tree::new(), |tree, n| {
+            tree.imports_names(&format!("src/user{n:02}.ts"), "src/hub.ts", &names)
+                .imports_names("src/hub.ts", &format!("src/dep{n:02}.ts"), &names)
+        })
+        .exports("src/hub.ts", &names)
+        .build();
+    let request = ImpactRequest {
+        files: vec!["src/hub.ts".to_owned()],
+        ..ImpactRequest::default()
+    };
+    let fresh = Freshness::Fresh;
+    let answers = [
+        (
+            "dependents",
+            cut_three_ways(&dependents(&index, fresh, "src/hub.ts")),
+        ),
+        (
+            "dependencies",
+            cut_three_ways(&dependencies(&index, fresh, "src/hub.ts")),
+        ),
+        ("impact", cut_three_ways(&impact(&index, fresh, &request))),
+    ];
+
+    for (query, [capped, first, every]) in answers {
+        assert_eq!(first, capped, "{query}");
+        // The lists are longer than the cap and the names longer than three, or the equality above proves nothing.
+        assert!(capped.contains("\n… 15 more\n"), "{query}: {capped}");
+        assert!(capped.contains(" and 2 more"), "{query}: {capped}");
+        assert!(!every.contains("… "), "{query}: {every}");
+        assert!(!every.contains(" and 2 more"), "{query}: {every}");
+    }
 }
 
 #[scenario("queries", "An empty answer says what was searched")]

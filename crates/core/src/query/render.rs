@@ -20,6 +20,8 @@ pub enum Entries {
     Capped,
     /// Every entry.
     All,
+    /// The first `n` entries of each list that can be cut, then a line with the count of the rest. The names of a line are cut as [`Entries::Capped`] cuts them, because in a text that is shortened to a size the rows are what a reader needs and the names in a reason are not, so `First(LIST_CAP)` writes what `Capped` writes.
+    First(usize),
 }
 
 impl Entries {
@@ -282,10 +284,10 @@ pub(super) fn moved(added: u32, removed: u32, changed: u32) -> String {
     join_and(&parts)
 }
 
-/// The names of a line of an answer, written as they come: separated by commas, and with `entries` capped the first [`NAMES_SHOWN`](crate::text::NAMES_SHOWN) followed by `and N more` when there are more.
+/// The names of a line of an answer, written as they come: separated by commas, and with `entries` capped, or cut to the first rows of a list, the first [`NAMES_SHOWN`](crate::text::NAMES_SHOWN) followed by `and N more` when there are more.
 pub(super) fn name_list(names: &[String], entries: Entries) -> String {
     match entries {
-        Entries::Capped => comma_summary(names),
+        Entries::Capped | Entries::First(_) => comma_summary(names),
         Entries::All => names.join(", "),
     }
 }
@@ -315,6 +317,7 @@ pub(super) fn rows<T>(
     let shown = match entries {
         Entries::All => items.len(),
         Entries::Capped => items.len().min(LIST_CAP),
+        Entries::First(n) => items.len().min(n),
     };
     for item in items.iter().take(shown) {
         each(f, item)?;
@@ -330,15 +333,31 @@ pub(super) fn rows<T>(
 mod tests {
     use super::*;
 
+    /// The first `count` of four names, in the order an answer sorts them.
+    fn names(count: usize) -> Vec<String> {
+        ["four", "one", "three", "two"]
+            .iter()
+            .take(count)
+            .map(|&name| name.to_owned())
+            .collect()
+    }
+
+    /// What `rows` writes for `count` items named `item0`, `item1` and on.
+    fn rows_text(count: usize, entries: Entries) -> String {
+        struct Rows(Vec<String>, Entries);
+
+        impl fmt::Display for Rows {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                rows(f, &self.0, self.1, |f, item| f.write_str(item))
+            }
+        }
+
+        let items = (0..count).map(|number| format!("item{number}")).collect();
+        Rows(items, entries).to_string()
+    }
+
     #[test]
     fn names_are_cut_after_three_unless_every_entry_is_asked_for() {
-        let names = |count: usize| -> Vec<String> {
-            ["four", "one", "three", "two"]
-                .iter()
-                .take(count)
-                .map(|&name| name.to_owned())
-                .collect()
-        };
         assert_eq!(name_list(&names(0), Entries::Capped), "");
         assert_eq!(name_list(&names(2), Entries::Capped), "four, one");
         assert_eq!(name_list(&names(3), Entries::Capped), "four, one, three");
@@ -347,6 +366,43 @@ mod tests {
             "four, one, three and 1 more"
         );
         assert_eq!(name_list(&names(4), Entries::All), "four, one, three, two");
+    }
+
+    #[test]
+    fn first_shows_that_many_rows_and_counts_the_rest() {
+        assert_eq!(rows_text(5, Entries::First(2)), "item0\nitem1\n… 3 more\n");
+        assert_eq!(rows_text(5, Entries::First(0)), "… 5 more\n");
+        // A list no longer than `n` leaves nothing out, so it has no count.
+        assert_eq!(rows_text(2, Entries::First(2)), "item0\nitem1\n");
+        assert_eq!(rows_text(2, Entries::First(9)), rows_text(2, Entries::All));
+        assert_ne!(rows_text(5, Entries::First(2)), rows_text(5, Entries::All));
+    }
+
+    #[test]
+    fn first_writes_the_names_of_a_row_as_capped_writes_them() {
+        for shown in [0, 2, 3, 4, LIST_CAP] {
+            assert_eq!(
+                name_list(&names(4), Entries::First(shown)),
+                "four, one, three and 1 more",
+                "{shown} rows"
+            );
+            assert_eq!(
+                name_list(&names(3), Entries::First(shown)),
+                name_list(&names(3), Entries::Capped),
+                "{shown} rows"
+            );
+        }
+    }
+
+    #[test]
+    fn first_at_the_cap_writes_the_rows_capped_writes() {
+        for count in [0, 1, LIST_CAP, LIST_CAP + 1, 2 * LIST_CAP] {
+            assert_eq!(
+                rows_text(count, Entries::First(LIST_CAP)),
+                rows_text(count, Entries::Capped),
+                "{count} items"
+            );
+        }
     }
 
     #[test]

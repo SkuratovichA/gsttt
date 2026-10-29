@@ -4,18 +4,45 @@ use gsttt_core::Freshness;
 use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::query::{self, Answer, Entries, ImpactRequest};
 use gsttt_core::testing::Tree;
+use gsttt_core::text::thousands;
+use gsttt_mcp::BUDGET;
 use gsttt_scenario::scenario;
 use serde_json::json;
 
 use crate::fake::Fake;
 use crate::session::Session;
 
-/// A tree in which `count` files import `lib/util.ts`.
-fn imported_by(count: usize) -> Fake {
+/// A tree in which `count` files import `lib/util.ts`, each from a path `padding` characters longer than `src/user00.ts`.
+fn imported_by(count: usize, padding: usize) -> Fake {
     let tree = (0..count).fold(Tree::new(), |tree, number| {
-        tree.imports(&format!("src/user{number:02}.ts"), "lib/util.ts")
+        let importer = format!("src/user{number:02}{}.ts", "x".repeat(padding));
+        tree.imports(&importer, "lib/util.ts")
     });
     Fake::over(tree.build())
+}
+
+/// The first line of an answer that was cut to fit the budget.
+fn cut_line() -> String {
+    format!(
+        "cut: lists shortened to fit this answer in {} characters; the \"more\" counts say what they leave out. Ask a narrower question for the rest: fewer files, or a smaller depth.",
+        thousands(BUDGET)
+    )
+}
+
+/// The text of `answer` cut to `shown` entries of each list, after the cut line.
+fn cut_to(answer: &impl Answer, shown: usize) -> String {
+    format!("{}\n{}", cut_line(), answer.text(Entries::First(shown)))
+}
+
+fn size(text: &str) -> usize {
+    text.chars().count()
+}
+
+/// The importers of `lib/util.ts` a text lists.
+fn importers(text: &str) -> usize {
+    text.lines()
+        .filter(|line| line.starts_with("src/user"))
+        .count()
 }
 
 /// What the command line prints when it is asked about `files` and `deleted`.
@@ -152,7 +179,7 @@ async fn each_tool_answers_with_the_text_of_its_query() {
 #[scenario("mcp", "all lists every entry")]
 #[tokio::test]
 async fn all_lists_every_entry() {
-    let source = imported_by(45);
+    let source = imported_by(45, 0);
     let session = Session::start(source.clone()).await;
 
     let all = session
@@ -167,6 +194,134 @@ async fn all_lists_every_entry() {
     assert_eq!(all.text.matches("static import").count(), 45);
     assert_eq!(cut.text, answer.text(Entries::Capped));
     assert_eq!(cut.text.matches("static import").count(), query::LIST_CAP);
+}
+
+#[scenario("mcp", "An answer over the budget is cut to fit")]
+#[tokio::test]
+async fn an_answer_over_the_budget_is_cut_to_fit() {
+    let source = imported_by(600, 90);
+    let session = Session::start(source.clone()).await;
+
+    let dependents = session
+        .call("dependents", json!({ "path": "lib/util.ts", "all": true }))
+        .await;
+    let impact = session
+        .call("impact", json!({ "paths": ["lib/util.ts"], "all": true }))
+        .await;
+
+    for (tool, reply) in [("dependents", &dependents), ("impact", &impact)] {
+        assert!(!reply.is_error, "{tool}: {}", reply.text);
+        assert!(
+            size(&reply.text) <= BUDGET,
+            "{tool} holds {} characters",
+            size(&reply.text)
+        );
+        assert!(
+            reply.text.starts_with(&cut_line()),
+            "{tool}: {}",
+            reply.text.chars().take(200).collect::<String>()
+        );
+        assert!(importers(&reply.text) > query::LIST_CAP, "{tool}");
+        assert!(
+            reply
+                .text
+                .lines()
+                .any(|line| line.starts_with("… ") && line.ends_with(" more")),
+            "{tool} counts the rest"
+        );
+    }
+    let answer = query::dependents(&source.index(), Freshness::Fresh, "lib/util.ts");
+    let shown = importers(&dependents.text);
+    assert_eq!(dependents.text, cut_to(&answer, shown));
+    assert!(
+        size(&cut_to(&answer, shown + 1)) > BUDGET,
+        "one importer more does not fit"
+    );
+}
+
+#[scenario("mcp", "A cut list is cut further when it does not fit")]
+#[tokio::test]
+async fn a_cut_list_is_cut_further_when_it_does_not_fit() {
+    let source = imported_by(45, 900);
+    let session = Session::start(source.clone()).await;
+
+    let reply = session
+        .call("dependents", json!({ "path": "lib/util.ts" }))
+        .await;
+
+    let answer = query::dependents(&source.index(), Freshness::Fresh, "lib/util.ts");
+    assert!(
+        size(&answer.text(Entries::Capped)) > BUDGET,
+        "the first 30 importers do not fit"
+    );
+    assert!(
+        size(&reply.text) <= BUDGET,
+        "{} characters",
+        size(&reply.text)
+    );
+    assert!(reply.text.starts_with(&cut_line()));
+    let shown = importers(&reply.text);
+    assert!(shown < query::LIST_CAP, "{shown} importers");
+    assert_eq!(reply.text, cut_to(&answer, shown));
+    assert!(
+        size(&cut_to(&answer, shown + 1)) > BUDGET,
+        "one importer more does not fit"
+    );
+}
+
+#[tokio::test]
+async fn names_that_alone_fill_the_budget_are_cut_and_every_row_stays() {
+    let owned: Vec<String> = (0..400)
+        .map(|number| format!("a_name_of_some_length_{number:03}"))
+        .collect();
+    let names: Vec<&str> = owned.iter().map(String::as_str).collect();
+    let tree = (0..3).fold(Tree::new(), |tree, number| {
+        tree.imports_names(&format!("src/user{number}.ts"), "lib/util.ts", &names)
+    });
+    let source = Fake::over(tree.build());
+    let session = Session::start(source.clone()).await;
+
+    let reply = session
+        .call("dependents", json!({ "path": "lib/util.ts", "all": true }))
+        .await;
+
+    let answer = query::dependents(&source.index(), Freshness::Fresh, "lib/util.ts");
+    assert!(size(&answer.text(Entries::All)) > BUDGET);
+    // The three rows stay, with the names of each cut to three and a count.
+    assert_eq!(
+        reply.text,
+        format!("{}\n{}", cut_line(), answer.text(Entries::Capped))
+    );
+}
+
+#[tokio::test]
+async fn problems_that_alone_fill_the_budget_are_returned_whole_after_the_cut_line() {
+    let mut index = Tree::new().imports("src/a.ts", "lib/util.ts").build();
+    index.coverage.problems.push("p".repeat(BUDGET + 1));
+    let source = Fake::over(index);
+    let session = Session::start(source.clone()).await;
+
+    let reply = session.call("coverage", json!({})).await;
+
+    // The problems of a coverage answer are never cut, so no list is left to shorten.
+    let answer = query::coverage(&source.index(), Freshness::Fresh);
+    assert_eq!(reply.text, cut_to(&answer, 0));
+    assert!(size(&reply.text) > BUDGET);
+}
+
+#[tokio::test]
+async fn all_does_not_change_an_answer_that_is_cut_before_it_reaches_the_cap() {
+    let session = Session::start(imported_by(45, 900)).await;
+
+    let capped = session
+        .call("dependents", json!({ "path": "lib/util.ts" }))
+        .await;
+    let all = session
+        .call("dependents", json!({ "path": "lib/util.ts", "all": true }))
+        .await;
+
+    assert!(capped.text.starts_with(&cut_line()));
+    assert_eq!(all.text, capped.text);
 }
 
 /// A tree whose every list is longer than the cut: 45 importers of a file, a file that imports 45, 45 served routes, 45 skipped files, and a chain of 45 hops from `src/chain00.ts` to `src/chain45.ts`.
