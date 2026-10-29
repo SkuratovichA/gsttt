@@ -242,7 +242,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         fs::create_dir(&source).unwrap();
-        for args in [&["init", "--quiet"][..], &["config", "user.name", "t"]] {
+        for args in [
+            &["init", "--quiet"][..],
+            &["config", "user.name", "t"],
+            &["config", "user.email", "t@example.test"],
+        ] {
             git(&source, args).unwrap();
         }
         fs::write(source.join(".gitignore"), "node_modules/\n").unwrap();
