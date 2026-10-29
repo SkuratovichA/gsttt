@@ -23,3 +23,4 @@ gsttt keeps a graph of the files of a repository and of the contracts between th
 - A path the answer calls `not in the index` was read by no connector. gsttt says nothing about it.
 - An empty answer says what was searched. Nothing found means nothing found among those files, so check that the files you care about were among them.
 - Long lists stop at 30 entries with a count of the rest. Ask for every entry when you need all of them.
+- An answer stops at 25,000 characters. When it would be longer, its first line starts with `cut:`, its lists are shortened further, and the counts say what they leave out; ask a narrower question for the rest.

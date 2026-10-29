@@ -65,7 +65,7 @@ pub(crate) struct ImpactArguments {
     pub(crate) base: Option<String>,
     /// Stop the walk after this many hops from a changed file. Leave it out to follow every hop.
     pub(crate) depth: Option<u32>,
-    /// Show every entry of each list. Without it a long list is cut, with a line that counts the rest.
+    /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
 }
@@ -86,7 +86,7 @@ impl Arguments for ImpactArguments {
 pub(crate) struct NeighbourArguments {
     /// The file to ask about, as a path from the repository root, for example "src/a.ts".
     pub(crate) path: String,
-    /// Show every entry of each list. Without it a long list is cut, with a line that counts the rest.
+    /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
 }
@@ -103,7 +103,7 @@ pub(crate) struct RouteArguments {
     pub(crate) from: String,
     /// The file the chain ends at, as a path from the repository root, for example "src/b.ts".
     pub(crate) to: String,
-    /// Show every file of the chain. Without it a long chain is cut, with a line that counts the rest.
+    /// Show every file of the chain, as far as the 25,000 characters of an answer allow. Without it a long chain stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
 }
@@ -122,7 +122,7 @@ impl Arguments for RouteArguments {
 pub(crate) struct ContractArguments {
     /// A contract key such as "http GET /bookings/{}", or part of one, such as "/bookings", which lists the keys that contain it.
     pub(crate) query: String,
-    /// Show every entry of each list. Without it a long list is cut, with a line that counts the rest.
+    /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
 }
@@ -141,7 +141,7 @@ impl Arguments for ContractArguments {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CoverageArguments {
-    /// Show every entry of each list. Without it a long list is cut, with a line that counts the rest.
+    /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
 }

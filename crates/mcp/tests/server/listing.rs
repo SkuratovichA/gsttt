@@ -1,6 +1,9 @@
 //! The tools the server lists.
 
+use gsttt_core::query::LIST_CAP;
 use gsttt_core::testing::json::descriptions;
+use gsttt_core::text::thousands;
+use gsttt_mcp::BUDGET;
 use gsttt_scenario::scenario;
 use serde_json::json;
 
@@ -57,6 +60,30 @@ async fn a_description_reaches_the_model_as_one_line() {
     );
     for description in all {
         assert!(!description.contains('\n'), "{description:?}");
+    }
+}
+
+#[tokio::test]
+async fn every_all_argument_says_where_an_answer_stops() {
+    let session = Session::start(Fake::small()).await;
+
+    let tools = session.tools().await;
+
+    let descriptions: Vec<&str> = tools
+        .iter()
+        .filter_map(|tool| {
+            let argument = tool.input_schema.get("properties")?.get("all")?;
+            argument.get("description")?.as_str()
+        })
+        .collect();
+    assert_eq!(
+        descriptions.len(),
+        6,
+        "every tool but `index_status` takes `all`"
+    );
+    for description in descriptions {
+        assert!(description.contains(&thousands(BUDGET)), "{description}");
+        assert!(description.contains(&LIST_CAP.to_string()), "{description}");
     }
 }
 
