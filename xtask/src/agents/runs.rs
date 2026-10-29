@@ -168,15 +168,20 @@ impl Session<'_> {
             let cost = done
                 .cost_usd
                 .map_or_else(|| "no cost".to_owned(), |cost| format!("${cost:.3}"));
-            say(&format!(
+            let report = format!(
                 "{label}: {}, recall {:.2}, {} turns, {} s, {cost}",
                 done.outcome.name(),
                 done.recall,
                 done.turns,
                 done.duration_ms / 1000
-            ))?;
+            );
+            // A run is kept and reported once the results with it in them are written: one that cannot be written down is not kept, and the task stops on it.
             results.runs.push(done);
-            results.write(self.out, &local)?;
+            if let Err(error) = results.write(self.out, &local) {
+                results.runs.pop();
+                return Err(error);
+            }
+            say(&report)?;
             made += 1;
         }
         Ok(made)
@@ -822,6 +827,24 @@ touch "$d/finished"
         for (dir, file) in [(&gsttt, "snapshot.gsttt"), (&cache, "project.db")] {
             assert_eq!(fs::read_to_string(dir.join(file)).unwrap(), "as indexed\n");
         }
+    }
+
+    #[test]
+    fn a_run_whose_results_cannot_be_written_is_not_kept() {
+        let mut bed = Bed::answering(ANSWER);
+        // The results name the question, so a local path that looks like it keeps them from being written.
+        bed.local = vec!["repo-users-1".to_owned()];
+        let mut results = started();
+
+        let error = bed.run(&mut results).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("must not be published"),
+            "{error:#}"
+        );
+        assert!(results.runs.is_empty(), "the run is not kept in memory");
+        assert!(!bed.out().exists(), "and not on disk");
+        assert_eq!(bed.calls(), 1, "the task stopped at that run");
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The setups take turns")]
