@@ -54,7 +54,7 @@ A question of the kind `tests` SHALL name a function with a body that a file of 
 - **THEN** each allows the four base tools, only `lsp` allows the LSP tool and loads a language server, only `cbm` loads an MCP server of its own, and only `gsttt` loads the gsttt plugin
 
 ### Requirement: Isolation of a run
-A run SHALL load none of the settings, hooks, memory, plugins, MCP servers or CLAUDE.md files of the machine, SHALL run in a checkout outside every directory that holds a CLAUDE.md, and SHALL find gsttt on its PATH in the `gsttt` setup only. The task SHALL check the init event of every run against its setup and stop at the first run that loaded anything else, naming what it loaded.
+A run SHALL load none of the settings, hooks, memory, plugins, MCP servers or CLAUDE.md files of the machine, SHALL run in a checkout outside every directory that holds a CLAUDE.md or an AGENTS.md, and SHALL find `gsttt` on its PATH in the `gsttt` setup only. The task SHALL check the init event of every run, plugin names and sources included, against its setup and stop at the first run that loaded anything else, naming what it loaded.
 
 #### Scenario: A run that loaded something else stops the task
 - **WHEN** the init event of a `plain` run lists an MCP server or a tool beyond its own
@@ -64,12 +64,42 @@ A run SHALL load none of the settings, hooks, memory, plugins, MCP servers or CL
 - **WHEN** the PATH of a `plain`, `lsp` or `cbm` run is planned
 - **THEN** none of its directories holds a program named `gsttt`
 
+#### Scenario: Claude Code and the tools are out of reach of every setup
+- **WHEN** a directory of the PATH of a run holds a program named `claude`, `codebase-memory-mcp`, `typescript-language-server` or `tsc`
+- **THEN** the run is refused before it starts, naming the setup and the program
+
+#### Scenario: A plugin from another source stops the task
+- **WHEN** the init event of a run lists a plugin with the name of the plugin of its setup from another source than the one the task gave it
+- **THEN** the task fails naming the setup and the plugin
+
+### Requirement: What a run can reach
+Every run SHALL pass `--settings` with a sandbox that makes the run fail at start when it is unavailable and lets the Bash tool write only in the checkout and in a temporary directory of the run. This repository, the configuration directory of Claude Code and the files of the setups SHALL be unreadable to the Bash tool by the sandbox and to the Read tool by `Read` rules, and so SHALL the binary under test in every setup but `gsttt`.
+
+#### Scenario: A run is confined by the sandbox
+- **WHEN** the command line of a run is planned in each of the four setups
+- **THEN** it carries the sandbox settings, only the checkout and the temporary directory of the run are writable, and each denied directory is both a denied read of the sandbox and a `Read` rule
+
+### Requirement: The directories of a run
+A run SHALL have a temporary directory of its own, made new for it and removed when it ends, and SHALL find `node` in a directory that holds nothing else.
+
+#### Scenario: A run has a temporary directory of its own
+- **WHEN** runs are made, one that answers, one that fails and one that a signal stops
+- **THEN** each is given a new directory outside its checkout, and every one is gone when its run is over
+
+#### Scenario: The directory of node holds node alone
+- **WHEN** the PATH of a run is planned
+- **THEN** the directory it finds `node` in holds a link to `node` and nothing else
+
 ### Requirement: The checkout of the runs
-Each repository SHALL have one checkout for the runs, prepared once: cloned at its commit, installed with its install command, not built, and indexed by gsttt and by codebase-memory-mcp. Every run SHALL leave `git status --porcelain --ignored` of the checkout as it was after the preparation; a run that changed it SHALL be marked, and the checkout restored before the next run.
+Each repository SHALL have one checkout for the runs, prepared once: cloned at its commit, installed with its install command, not built, and indexed by gsttt and by codebase-memory-mcp. Every run SHALL leave `git status --porcelain --ignored` of the checkout as it was after the preparation; a run that changed it SHALL be marked, and the checkout restored before the next run. The binary under test and the files of the setups SHALL be kept outside the directory of the checkouts.
 
 #### Scenario: A run that writes into the checkout is marked and undone
 - **WHEN** a run leaves a new file in the checkout
 - **THEN** the run is marked as one that changed the checkout, and the file is gone before the next run
+
+#### Scenario: The binary and the files of the setups are outside the checkouts
+- **WHEN** the directories the task keeps for itself are planned
+- **THEN** none of them is inside another or inside the directory of the checkouts
 
 ### Requirement: Answers and scores
 The prompt SHALL ask for the answer as a fenced block marked `files`, one path per line, and the answer SHALL be the last such block of the final message. Paths SHALL be made relative to the checkout and kept once, and one outside the checkout or the question's scope counts as wrong. A run SHALL be scored by precision, recall and F1, and a run without an answer by zeros. A test file that fails without the throw SHALL count as neither right nor wrong.
@@ -102,7 +132,7 @@ The runs SHALL go one at a time, by repeat, then by question, then by setup. A r
 - **THEN** the task fails, and the results hold the runs before it and not that one
 
 ### Requirement: The end of a run
-A run SHALL end with its result event: a process still alive five seconds after it SHALL be ended, and the run recorded from the result, with a duration that ends at the event. When a run ends, its process group SHALL be killed with every process whose working directory is the checkout or below it. Ctrl-C and SIGTERM SHALL end a run the same way, and stop the task without recording that run.
+A run SHALL end with its result event: a process still alive five seconds after it SHALL be ended, and the run recorded from the result, with a duration that ends at the event. When a run ends, its process group SHALL be killed with every process whose working directory is the checkout or below it. Ctrl-C and SIGTERM SHALL end a run the same way, and stop the task without recording that run. The task SHALL end processes only in directories below one it made itself.
 
 #### Scenario: A run ends with its result
 - **WHEN** a run writes its result event and its process stays alive
@@ -119,6 +149,10 @@ A run SHALL end with its result event: a process still alive five seconds after 
 #### Scenario: A signal stops the task
 - **WHEN** the task gets SIGINT or SIGTERM while a run is going
 - **THEN** the run is ended, the task fails naming the signal, and the results do not hold that run
+
+#### Scenario: A sweep refuses a directory the task did not make
+- **WHEN** a sweep is asked for an empty path, `/`, the home directory, a relative path, or a directory outside the ones the task made
+- **THEN** it is refused before any process is ended
 
 ### Requirement: The results of the runs
 `cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run the question and its kind, the setup, the repeat, the outcome, the answer, precision, recall, F1, the four token counts, the cost in USD, the turns, the duration and whether it changed the checkout. It SHALL hold no path or user name of the machine.
