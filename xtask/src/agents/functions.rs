@@ -64,7 +64,13 @@ pub(super) fn list(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
+    use crate::agents::say;
+    use crate::bench::plan::Programs;
+    use crate::dist::git::git;
+    use crate::root::repository_root;
 
     #[test]
     fn the_listing_of_the_script_is_read() {
@@ -78,5 +84,47 @@ mod tests {
             Some(21)
         );
         assert_eq!(listing.functions.last().and_then(|c| c.body_offset), None);
+    }
+
+    /// The script as `cargo xtask agents questions` runs it, over a git repository of a generator, an arrow function and a function: all three are listed, and only the function has a body to put a throw in. The script needs the Node tools of `bench/tools` and a `node`; where they are not installed, as in CI, the test says so and ends.
+    #[test]
+    fn a_generator_has_no_body_offset_and_a_function_has_one() {
+        let root = repository_root().unwrap();
+        let programs = Programs::new(&root.join("bench/tools"), Path::new(""));
+        let script = root.join("bench/agents/functions.mjs");
+        let typescript = programs.node.join("node_modules/typescript/package.json");
+        if !typescript.is_file() {
+            say(&format!(
+                "skipped: {} is not installed; `cargo xtask agents questions` installs the Node tools",
+                typescript.display()
+            ))
+            .unwrap();
+            return;
+        }
+        if Command::new("node").arg("--version").output().is_err() {
+            say("skipped: there is no `node` on the PATH").unwrap();
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let checkout = fs::canonicalize(dir.path()).unwrap();
+        fs::write(
+            checkout.join("tsconfig.json"),
+            r#"{"compilerOptions":{"target":"es2022","module":"esnext","moduleResolution":"bundler","strict":true}}"#,
+        )
+        .unwrap();
+        fs::write(
+            checkout.join("lib.ts"),
+            "export function* g() {}\nexport const e = () => 1\nexport function f() {}\n",
+        )
+        .unwrap();
+        git(&checkout, &["init", "--quiet"]).unwrap();
+        git(&checkout, &["add", "."]).unwrap();
+
+        let found = list(&script, &programs.node, &checkout, ".", "tsconfig.json").unwrap();
+        let shapes: Vec<(&str, bool)> = found
+            .iter()
+            .map(|candidate| (candidate.name.as_str(), candidate.body_offset.is_some()))
+            .collect();
+        assert_eq!(shapes, [("e", false), ("f", true), ("g", false)]);
     }
 }
