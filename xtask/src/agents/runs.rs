@@ -692,7 +692,7 @@ if [ -f "$d/hold" ]; then sleep 30; fi
 if [ -f "$d/dirty" ]; then rm "$d/dirty"; echo notes > notes.md; fi
 if [ -f "$d/touch-$2" ]; then echo run >> "$(cat "$d/touch-$2")"; fi
 if [ -f "$d/stream-$n.jsonl" ]; then cat "$d/stream-$n.jsonl"; else cat "$d/stream.jsonl"; fi
-if [ -f "$d/slow-$n" ]; then sleep 30; fi
+if [ -f "$d/slow-$n" ]; then sleep 60; fi
 touch "$d/finished"
 "#,
                 dir.path().display()
@@ -750,7 +750,7 @@ touch "$d/finished"
             fs::write(self.dir.path().join(format!("stream-{number}.jsonl")), text).unwrap();
         }
 
-        /// Makes the stand-in do something extra: `hold` and `dirty` in its first call, or `slow-<n>` to stay on after its stream in its `n`th.
+        /// Makes the stand-in do something extra: `hold` and `dirty` in its first call, or `slow-<n>` to stay on after its stream, for a minute, in its `n`th.
         fn mark(&self, what: &str) {
             fs::write(self.dir.path().join(what), "").unwrap();
         }
@@ -1481,14 +1481,15 @@ touch "$d/finished"
         bed.mark("slow-1");
         let mut results = started();
         let started_at = Instant::now();
-        bed.go(&mut results, Duration::from_secs(8)).unwrap();
+        bed.go(&mut results, Duration::from_secs(40)).unwrap();
 
         let first = &results.runs[0];
         assert_eq!(first.outcome, Outcome::Answered);
         assert_eq!(first.answer, ["a.ts"]);
         // The time of the run ends at the result, which was written at once; the wait for the exit is no part of it.
         assert!(first.duration_ms < 4000, "{}", first.duration_ms);
-        assert!(started_at.elapsed() < Duration::from_secs(60));
+        // The task waits the grace for the stand-in, which stays on for a minute: the bound is more than three times the whole task takes, and leaves the stand-in thirty seconds to end by itself.
+        assert!(started_at.elapsed() < Duration::from_secs(30));
     }
 
     #[test]

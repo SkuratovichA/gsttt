@@ -298,22 +298,26 @@ mod tests {
                 &invocation(),
                 dir.path(),
                 &transcript,
-                Duration::from_secs(10),
+                Duration::from_secs(40),
             ),
             &mut |_| Ok(()),
         )
         .unwrap();
         assert!(!finished.timed_out, "the answer was written");
         assert!(finished.exit.is_none(), "the task ended it");
-        // Its time stops at the result, and it was ended after the grace, before the limit.
+        // Its time stops at the result, and it was ended after the grace, before the limit. The upper bound is six times the grace and leaves the stand-in, which stays on for a minute, thirty seconds more to end by itself.
         assert!(finished.elapsed < GRACE, "{:?}", finished.elapsed);
-        assert!(started.elapsed() >= GRACE && started.elapsed() < Duration::from_secs(10));
+        assert!(started.elapsed() >= GRACE && started.elapsed() < Duration::from_secs(30));
     }
 
     #[test]
     fn a_run_that_loaded_the_wrong_things_is_stopped_at_its_init() {
         let dir = tempfile::tempdir().unwrap();
-        let claude = fake_claude(dir.path(), &format!("echo '{INIT}'\nsleep 3\ntouch spent"));
+        // It would touch the file at 3 s, and end at 33 s: a task that left it on would not look as if it had ended it.
+        let claude = fake_claude(
+            dir.path(),
+            &format!("echo '{INIT}'\nsleep 3\ntouch spent\nsleep 30"),
+        );
         let transcript = dir.path().join("run.jsonl");
         let started = Instant::now();
         let error = execute(
@@ -328,7 +332,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("wrong things"), "{error}");
-        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(started.elapsed() < Duration::from_secs(15));
         std::thread::sleep(Duration::from_secs(4));
         assert!(!dir.path().join("spent").exists(), "the process went on");
     }
