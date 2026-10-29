@@ -120,14 +120,9 @@ fn median_ms(export: &str) -> anyhow::Result<u64> {
 }
 
 /// Gives `cmd` the variables the tool runs with.
-pub(crate) fn environment<'a>(mut cmd: Cmd<'a>, run: &Run) -> Cmd<'a> {
-    for (key, value) in &run.command.env {
-        cmd = cmd.env(key, value);
-    }
-    for (key, value) in &run.isolation {
-        cmd = cmd.env(key, value);
-    }
-    cmd
+pub(crate) fn environment<'a>(cmd: Cmd<'a>, run: &Run) -> Cmd<'a> {
+    cmd.envs(run.command.env.iter().copied())
+        .envs(run.isolation.iter().map(|(key, value)| (key, value)))
 }
 
 /// What the tool says when it is run once by itself in `dir`: hyperfine hides the output of the commands it times.
