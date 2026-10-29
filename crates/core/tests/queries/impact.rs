@@ -1,6 +1,6 @@
 //! `impact`: what a change reaches through imports and contracts.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind, UnresolvedReason};
@@ -9,6 +9,7 @@ use gsttt_core::query::{Affected, Answer, Entries, Impact, ImpactRequest, impact
 use gsttt_core::testing::{To, Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
+use serde_json::{json, to_value};
 
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];
@@ -706,4 +707,927 @@ proptest! {
             .collect();
         prop_assert_eq!(actual, expected);
     }
+}
+
+/// How many files the trees of the next property have.
+const FILES: usize = 6;
+
+/// The names the generated files export, take and re-export. `default` is among them because `export *` treats it apart.
+const NAMES: &[&str] = &["a", "b", "c", "default"];
+
+/// How a generated file takes from another: every form of import the walk tells apart.
+#[derive(Clone, Debug)]
+enum Take {
+    /// `import 'to'`: everything the file exports.
+    Plain,
+    /// `import * as ns from 'to'`.
+    Namespace,
+    /// `import { .. } from 'to'`.
+    Named(Vec<&'static str>),
+    /// `export { source as exported } from 'to'`, one `(exported, source)` pair per name. `("ns", "*")` is `export * as ns from 'to'`.
+    ReExport(Vec<(&'static str, &'static str)>),
+    /// `export * from 'to'`.
+    Star,
+}
+
+/// A tree of `FILES` files with random exports and imports, and the file that changes.
+#[derive(Clone, Debug)]
+struct Case {
+    /// The names each file exports itself, `None` when they are unknown.
+    own: Vec<Option<BTreeSet<&'static str>>>,
+    /// The importer, the target, and how the first takes from the second.
+    edges: Vec<(usize, usize, Take)>,
+    changed: usize,
+}
+
+fn case() -> impl Strategy<Value = Case> {
+    let name = || prop::sample::select(NAMES);
+    // An import of everything makes its importer whole at once, which hides what the names do, so the others weigh more.
+    let take = prop_oneof![
+        1 => Just(Take::Plain),
+        1 => Just(Take::Namespace),
+        4 => Just(Take::Star),
+        5 => prop::collection::vec(name(), 1..3).prop_map(Take::Named),
+        5 => prop::collection::vec(prop_oneof![(name(), name()), Just(("ns", "*"))], 1..3)
+            .prop_map(Take::ReExport),
+    ];
+    (
+        prop::collection::vec(
+            prop::option::weighted(0.85, prop::collection::btree_set(name(), 0..4)),
+            FILES,
+        ),
+        prop::collection::vec((0..FILES, 0..FILES, take), 0..16),
+        0..FILES,
+    )
+        .prop_map(|(mut own, edges, changed)| {
+            // A file that lists what it exports lists the names it re-exports by name too, as the connector does.
+            for (importer, target, take) in &edges {
+                if let (Take::ReExport(pairs), Some(names), true) =
+                    (take, &mut own[*importer], importer != target)
+                {
+                    names.extend(pairs.iter().map(|&(exported, _)| exported));
+                }
+            }
+            Case {
+                own,
+                edges,
+                changed,
+            }
+        })
+}
+
+fn file_path(number: usize) -> String {
+    format!("f{number}.ts")
+}
+
+impl Case {
+    /// The files with their exports and the imports that name what they take.
+    fn by_name(&self) -> Index {
+        let mut tree = Tree::new();
+        for (number, own) in self.own.iter().enumerate() {
+            tree = tree.read_by("ts", &file_path(number));
+            if let Some(names) = own {
+                let names: Vec<&str> = names.iter().copied().collect();
+                tree = tree.exports(&file_path(number), &names);
+            }
+        }
+        for (importer, target, take) in &self.edges {
+            let (importer, target) = (file_path(*importer), file_path(*target));
+            tree = match take {
+                Take::Plain => tree.imports(&importer, &target),
+                Take::Namespace => tree.imports_namespace(&importer, &target),
+                Take::Named(names) => tree.imports_names(&importer, &target, names),
+                Take::ReExport(pairs) => tree.re_exports(&importer, &target, pairs),
+                Take::Star => tree.re_exports_all(&importer, &target),
+            };
+        }
+        tree.build()
+    }
+
+    /// The same files and the same edges with every name taken out, so that each import brings in everything: the walk over files.
+    fn by_file(&self) -> Index {
+        let mut tree = Tree::new();
+        for number in 0..FILES {
+            tree = tree.read_by("ts", &file_path(number));
+        }
+        for (importer, target, _) in &self.edges {
+            tree = tree.imports(&file_path(*importer), &file_path(*target));
+        }
+        tree.build()
+    }
+}
+
+/// What a file is affected in, in the model of the next property.
+#[derive(Clone, Debug, PartialEq)]
+enum Reach {
+    No,
+    /// These names only, which may be none.
+    In(BTreeSet<&'static str>),
+    All,
+}
+
+impl Reach {
+    fn join(&mut self, more: Reach) {
+        *self = match (std::mem::replace(self, Reach::No), more) {
+            (Reach::All, _) | (_, Reach::All) => Reach::All,
+            (Reach::No, other) | (other, Reach::No) => other,
+            (Reach::In(mut names), Reach::In(more)) => {
+                names.extend(more);
+                Reach::In(names)
+            }
+        };
+    }
+}
+
+/// X of each file: what it exports itself and through its `export *` lines, which never forward `default`; `None` when that is unknown.
+fn exported(case: &Case) -> Vec<Option<BTreeSet<&'static str>>> {
+    let mut all = case.own.clone();
+    loop {
+        let before = all.clone();
+        for (importer, target, take) in &case.edges {
+            if importer == target || !matches!(take, Take::Star) {
+                continue;
+            }
+            let behind = all[*target].clone();
+            match (&mut all[*importer], behind) {
+                (None, _) => {}
+                (slot, None) => *slot = None,
+                (Some(names), Some(behind)) => {
+                    names.extend(behind.into_iter().filter(|&name| name != "default"));
+                }
+            }
+        }
+        if all == before {
+            return all;
+        }
+    }
+}
+
+/// What an importer is affected in through one import, given what its target is affected in and exports.
+fn through(
+    take: &Take,
+    lists_exports: bool,
+    target: &Reach,
+    exports: Option<&BTreeSet<&'static str>>,
+) -> Reach {
+    if *target == Reach::No {
+        return Reach::No;
+    }
+    // A file whose exports are unknown is followed at file level, whatever the import carries.
+    if *target == Reach::All && exports.is_none() {
+        return Reach::All;
+    }
+    // Whether taking `name` meets what the change reaches: it is one of the names reached, or the target does not export it.
+    let meets = |name: &str| match target {
+        Reach::No => false,
+        Reach::All => true,
+        Reach::In(names) => names.contains(name) || exports.is_none_or(|all| !all.contains(name)),
+    };
+    let passed: BTreeSet<&'static str> = match take {
+        Take::Plain | Take::Namespace => return Reach::All,
+        Take::Named(names) => {
+            return if names.iter().any(|&name| meets(name)) {
+                Reach::All
+            } else {
+                Reach::No
+            };
+        }
+        Take::ReExport(pairs) => pairs
+            .iter()
+            .filter(|&&(_, source)| source == "*" || meets(source))
+            .map(|&(exported, _)| exported)
+            .collect(),
+        Take::Star => match target {
+            Reach::In(names) => names.clone(),
+            Reach::All => exports.cloned().unwrap_or_default(),
+            Reach::No => BTreeSet::new(),
+        }
+        .into_iter()
+        .filter(|&name| name != "default")
+        .collect(),
+    };
+    // A star reaches its importer even when it has nothing to pass on.
+    if passed.is_empty() && !matches!(take, Take::Star) {
+        return Reach::No;
+    }
+    // A file that does not list what it exports could pass on any of its names.
+    if lists_exports {
+        Reach::In(passed)
+    } else {
+        Reach::All
+    }
+}
+
+/// The files that a change to `case.changed` has to reach, as a fixpoint over what each file is affected in: no layers, no distances and no reasons, only the rules of the design. The walk may report more, never fewer.
+fn certain(case: &Case) -> BTreeSet<usize> {
+    let exported = exported(case);
+    let mut reach = vec![Reach::No; FILES];
+    reach[case.changed] = Reach::All;
+    loop {
+        let before = reach.clone();
+        for (importer, target, take) in &case.edges {
+            if importer == target {
+                continue;
+            }
+            let more = through(
+                take,
+                case.own[*importer].is_some(),
+                &reach[*target],
+                exported[*target].as_ref(),
+            );
+            reach[*importer].join(more);
+        }
+        if reach == before {
+            break;
+        }
+    }
+    (0..FILES)
+        .filter(|&number| number != case.changed && reach[number] != Reach::No)
+        .collect()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2048))]
+
+    /// Following names narrows the answer of the walk over files and never makes a file nearer, and it drops no file that the rules make certain: one that takes a name the change reaches or a name its target does not export, from any file the change reaches, one behind an `export *` of such a file, and one that cannot be told apart.
+    #[test]
+    fn names_narrow_the_answer_and_drop_nothing_certain(case in case()) {
+        let changed = file_path(case.changed);
+        let by_name = run(&case.by_name(), &[&changed]);
+        let by_file = run(&case.by_file(), &[&changed]);
+
+        let named: BTreeMap<&str, u32> = by_name
+            .affected
+            .iter()
+            .map(|entry| (entry.path.as_str(), entry.distance))
+            .collect();
+        let whole: BTreeMap<&str, u32> = by_file
+            .affected
+            .iter()
+            .map(|entry| (entry.path.as_str(), entry.distance))
+            .collect();
+        for (file, distance) in &named {
+            prop_assert!(
+                whole.get(file).is_some_and(|nearest| nearest <= distance),
+                "{file} is {distance} hops away by name and {:?} by file",
+                whole.get(file)
+            );
+        }
+        let dropped: Vec<String> = certain(&case)
+            .into_iter()
+            .map(file_path)
+            .filter(|file| !named.contains_key(file.as_str()))
+            .collect();
+        prop_assert!(dropped.is_empty(), "dropped {dropped:?}");
+    }
+}
+
+/// A row of `rows`, with the reason written out.
+fn row<'a>(path: &'a str, distance: u32, reason: &str) -> (&'a str, u32, String) {
+    (path, distance, reason.to_owned())
+}
+
+#[scenario("queries", "A changed barrel reaches every importer")]
+#[test]
+fn a_changed_barrel_reaches_every_importer() {
+    let index = Tree::new()
+        .exports("index.ts", &["own"])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("a.ts", &["fromA"])
+        .imports_names("form.ts", "index.ts", &["fromA"])
+        .imports_names("page.ts", "index.ts", &["own"])
+        .build();
+
+    let answer = run(&index, &["index.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("form.ts", 1, "imports fromA from index.ts"),
+            row("page.ts", 1, "imports own from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A file that uses an affected name is affected in all its names"
+)]
+#[test]
+fn a_file_that_uses_an_affected_name_is_affected_in_all_its_names() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .re_exports_all("index.ts", "b.ts")
+        .exports("a.ts", &["fromA"])
+        .exports("b.ts", &["fromB"])
+        .imports_names("b.ts", "a.ts", &["fromA"])
+        .imports_names("page.ts", "index.ts", &["fromB"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("b.ts", 1, "imports fromA from a.ts"),
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("page.ts", 3, "imports fromB from index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "A name the barrel does not export is affected")]
+#[test]
+fn a_name_the_barrel_does_not_export_is_affected() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("a.ts", &["kept"])
+        .imports_names("old.ts", "index.ts", &["gone"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports kept from a.ts"),
+            row("old.ts", 2, "imports gone from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A re-export of a name the barrel does not export is affected"
+)]
+#[test]
+fn a_re_export_of_a_name_the_barrel_does_not_export_is_affected() {
+    // `a.ts` used to export `gone` as well, and `index.ts` passed it on through its star.
+    let index = Tree::new()
+        .exports("a.ts", &["kept"])
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("outer.ts", &["gone", "kept", "stable"])
+        .re_exports(
+            "outer.ts",
+            "index.ts",
+            &[("gone", "gone"), ("kept", "kept")],
+        )
+        .imports_names("page.ts", "outer.ts", &["gone"])
+        .imports_names("other.ts", "outer.ts", &["stable"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports kept from a.ts"),
+            row("outer.ts", 2, "re-exports gone, kept from index.ts"),
+            row("page.ts", 3, "imports gone from outer.ts"),
+        ]
+    );
+}
+
+/// A barrel of `fromA` and `fromB`, and a page for each name.
+fn two_sources() -> Tree {
+    Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .re_exports_all("index.ts", "b.ts")
+        .exports("a.ts", &["fromA"])
+        .exports("b.ts", &["fromB"])
+        .imports_names("form.ts", "index.ts", &["fromA"])
+        .imports_names("page.ts", "index.ts", &["fromB"])
+}
+
+#[scenario("queries", "A barrel passes on only what it re-exports")]
+#[test]
+fn a_barrel_passes_on_only_what_it_re_exports() {
+    let answer = run(&two_sources().build(), &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("form.ts", 2, "imports fromA from index.ts"),
+        ]
+    );
+    assert!(!paths(&answer.affected).contains(&"page.ts"));
+}
+
+#[scenario("queries", "A named re-export passes on its alias")]
+#[test]
+fn a_named_re_export_passes_on_its_alias() {
+    let index = Tree::new()
+        .exports("index.ts", &["other", "useBar"])
+        .exports("foo.ts", &["useFoo"])
+        .re_exports("index.ts", "foo.ts", &[("useBar", "useFoo")])
+        .re_exports("index.ts", "other.ts", &[("other", "other")])
+        .imports_names("x.ts", "index.ts", &["useBar"])
+        .imports_names("y.ts", "index.ts", &["other"])
+        .build();
+
+    let answer = run(&index, &["foo.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports useFoo as useBar from foo.ts"),
+            row("x.ts", 2, "imports useBar from index.ts"),
+        ]
+    );
+    // The JSON spells it the same way, so a search of foo.ts for what is named finds it.
+    assert_eq!(
+        to_value(&answer.affected[0].reason).unwrap(),
+        json!({"via": "re-exports", "file": "foo.ts", "names": ["useFoo as useBar"]})
+    );
+}
+
+#[scenario("queries", "Chained barrels pass names on")]
+#[test]
+fn chained_barrels_pass_names_on() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "inner.ts")
+        .exports("inner.ts", &[])
+        .re_exports_all("inner.ts", "a.ts")
+        .re_exports_all("inner.ts", "b.ts")
+        .exports("a.ts", &["fromA"])
+        .exports("b.ts", &["fromB"])
+        .imports_names("app.ts", "index.ts", &["fromA"])
+        .imports_names("other.ts", "index.ts", &["fromB"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("inner.ts", 1, "re-exports fromA from a.ts"),
+            row("index.ts", 2, "re-exports fromA from inner.ts"),
+            row("app.ts", 3, "imports fromA from index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "A namespace import takes every name")]
+#[test]
+fn a_namespace_import_takes_every_name() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("a.ts", &["fromA"])
+        .imports_namespace("all.ts", "index.ts")
+        .imports_for_effect("side.ts", "index.ts")
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("all.ts", 2, "imports index.ts"),
+            row("side.ts", 2, "imports index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "Unknown exports keep every importer")]
+#[test]
+fn unknown_exports_keep_every_importer() {
+    let index = Tree::new()
+        .re_exports_all("index.ts", "legacy.js")
+        .imports_names("page.ts", "index.ts", &["thing"])
+        .build();
+
+    let answer = run(&index, &["legacy.js"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "imports legacy.js"),
+            row("page.ts", 2, "imports index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "A barrel reached for some names crosses no contract")]
+#[test]
+fn a_barrel_reached_for_some_names_crosses_no_contract() {
+    let index = Tree::new()
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "a.ts")
+        .exports("a.ts", &["fromA"])
+        .serves("index.ts", "http GET /health")
+        .calls("client.ts", "http GET /health")
+        .build();
+
+    let by_name = run(&index, &["a.ts"]);
+    let whole = run(&index, &["index.ts"]);
+
+    assert_eq!(paths(&by_name.affected), ["index.ts"]);
+    assert_eq!(paths(&whole.affected), ["client.ts"]);
+}
+
+#[scenario("queries", "Names are cut after three")]
+#[test]
+fn names_are_cut_after_three() {
+    let index = Tree::new()
+        .exports("a.ts", &["four", "one", "three", "two"])
+        .imports_names("x.ts", "a.ts", &["one", "two", "three", "four"])
+        .imports_names("y.ts", "a.ts", &["one"])
+        .build();
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("x.ts", 1, "imports four, one, three and 1 more from a.ts"),
+            row("y.ts", 1, "imports one from a.ts"),
+        ]
+    );
+    assert!(
+        answer
+            .text(Entries::All)
+            .contains("x.ts  distance 1  imports four, one, three, two from a.ts")
+    );
+    assert_eq!(
+        to_value(&answer.affected[0].reason).unwrap(),
+        json!({"via": "imports", "file": "a.ts", "names": ["four", "one", "three", "two"]})
+    );
+}
+
+#[test]
+fn a_re_export_is_written_as_re_exports_in_json() {
+    let answer = run(&two_sources().build(), &["a.ts"]);
+
+    assert_eq!(
+        to_value(&answer.affected[0].reason).unwrap(),
+        json!({"via": "re-exports", "file": "a.ts", "names": ["fromA"]})
+    );
+}
+
+#[test]
+fn a_cycle_of_star_exports_ends_and_knows_the_names_of_every_member() {
+    let index = Tree::new()
+        .exports("s.ts", &["fromS"])
+        .exports("p.ts", &["ownP"])
+        .exports("q.ts", &["ownQ"])
+        .re_exports_all("p.ts", "s.ts")
+        .re_exports_all("p.ts", "q.ts")
+        .re_exports_all("q.ts", "p.ts")
+        .imports_names("x.ts", "q.ts", &["fromS"])
+        .imports_names("y.ts", "q.ts", &["ownP"])
+        .imports_names("z.ts", "q.ts", &["missing"])
+        .build();
+
+    let answer = run(&index, &["s.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("p.ts", 1, "re-exports fromS from s.ts"),
+            row("q.ts", 2, "re-exports fromS from p.ts"),
+            row("x.ts", 3, "imports fromS from q.ts"),
+            row("z.ts", 3, "imports missing from q.ts"),
+        ]
+    );
+}
+
+#[test]
+fn a_barrel_whose_names_grow_over_two_layers_passes_each_gain_on_once() {
+    let index = two_sources()
+        .imports_names("b.ts", "a.ts", &["fromA"])
+        .imports_names("both.ts", "index.ts", &["fromA", "fromB"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("b.ts", 1, "imports fromA from a.ts"),
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("both.ts", 2, "imports fromA from index.ts"),
+            row("form.ts", 2, "imports fromA from index.ts"),
+            row("page.ts", 3, "imports fromB from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A file that exports nothing more still reaches the importers of its barrel"
+)]
+#[test]
+fn a_file_that_exports_nothing_more_still_reaches_the_importers_of_its_barrel() {
+    let index = Tree::new()
+        .exports("only.ts", &[])
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "only.ts")
+        .imports_names("page.ts", "index.ts", &["foo"])
+        .build();
+
+    let answer = run(&index, &["only.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports only.ts"),
+            row("page.ts", 2, "imports foo from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A file left with only a default export still reaches the importers of its barrel"
+)]
+#[test]
+fn a_file_left_with_only_a_default_export_still_reaches_the_importers_of_its_barrel() {
+    let index = Tree::new()
+        .exports("only.ts", &["default"])
+        .exports("index.ts", &[])
+        .re_exports_all("index.ts", "only.ts")
+        .imports_names("page.ts", "index.ts", &["foo"])
+        .build();
+
+    let answer = run(&index, &["only.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports only.ts"),
+            row("page.ts", 2, "imports foo from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A star barrel behind a star barrel reaches the importers of both"
+)]
+#[test]
+fn a_star_barrel_behind_a_star_barrel_reaches_the_importers_of_both() {
+    let index = Tree::new()
+        .exports("only.ts", &[])
+        .exports("mid.ts", &[])
+        .exports("index.ts", &[])
+        .re_exports_all("mid.ts", "only.ts")
+        .re_exports_all("index.ts", "mid.ts")
+        .imports_names("page.ts", "index.ts", &["foo"])
+        .build();
+
+    let answer = run(&index, &["only.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("mid.ts", 1, "re-exports only.ts"),
+            row("index.ts", 2, "re-exports mid.ts"),
+            row("page.ts", 3, "imports foo from index.ts"),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A named import of a file with unknown exports is followed at file level"
+)]
+#[test]
+fn a_named_import_of_a_file_with_unknown_exports_is_followed_at_file_level() {
+    // Python and Rust record the names an import takes and list no exports.
+    let named = Tree::new()
+        .imports_names("user.py", "lib.py", &["parse"])
+        .build();
+    let plain = Tree::new().imports("user.py", "lib.py").build();
+
+    let by_name = run(&named, &["lib.py"]);
+
+    assert_eq!(
+        rows(&by_name.affected),
+        [row("user.py", 1, "imports lib.py")]
+    );
+    assert_eq!(by_name.affected, run(&plain, &["lib.py"]).affected);
+    assert_eq!(
+        to_value(&by_name.affected).unwrap(),
+        to_value(&run(&plain, &["lib.py"]).affected).unwrap()
+    );
+}
+
+#[scenario(
+    "queries",
+    "A star re-export of a file with unknown exports is followed at file level"
+)]
+#[test]
+fn a_star_re_export_of_a_file_with_unknown_exports_is_followed_at_file_level() {
+    let star = Tree::new()
+        .re_exports_all("index.py", "lib.py")
+        .imports_names("app.py", "index.py", &["parse"])
+        .build();
+    let plain = Tree::new()
+        .imports("index.py", "lib.py")
+        .imports("app.py", "index.py")
+        .build();
+
+    let by_name = run(&star, &["lib.py"]);
+
+    assert_eq!(
+        rows(&by_name.affected),
+        [
+            row("index.py", 1, "imports lib.py"),
+            row("app.py", 2, "imports index.py"),
+        ]
+    );
+    assert_eq!(by_name.affected, run(&plain, &["lib.py"]).affected);
+    assert_eq!(
+        to_value(&by_name.affected).unwrap(),
+        to_value(&run(&plain, &["lib.py"]).affected).unwrap()
+    );
+}
+
+#[scenario(
+    "queries",
+    "A named re-export of a file with unknown exports is followed at file level"
+)]
+#[test]
+fn a_named_re_export_of_a_file_with_unknown_exports_is_followed_at_file_level() {
+    let named = Tree::new()
+        .exports("index.ts", &["thing"])
+        .re_exports("index.ts", "legacy.js", &[("thing", "thing")])
+        .imports_names("page.ts", "index.ts", &["thing"])
+        .build();
+    let plain = Tree::new()
+        .exports("index.ts", &["thing"])
+        .imports("index.ts", "legacy.js")
+        .imports_names("page.ts", "index.ts", &["thing"])
+        .build();
+
+    let by_name = run(&named, &["legacy.js"]);
+
+    assert_eq!(
+        rows(&by_name.affected),
+        [
+            row("index.ts", 1, "imports legacy.js"),
+            row("page.ts", 2, "imports thing from index.ts"),
+        ]
+    );
+    assert_eq!(by_name.affected, run(&plain, &["legacy.js"]).affected);
+    assert_eq!(
+        to_value(&by_name.affected).unwrap(),
+        to_value(&run(&plain, &["legacy.js"]).affected).unwrap()
+    );
+}
+
+#[scenario(
+    "queries",
+    "A barrel that re-exports a file with unknown exports has unknown exports too"
+)]
+#[test]
+fn a_barrel_that_re_exports_a_file_with_unknown_exports_has_unknown_exports_too() {
+    let index = Tree::new()
+        .exports("index.ts", &["own"])
+        .re_exports_all("index.ts", "legacy.js")
+        .imports_names("page.ts", "index.ts", &["thing"])
+        .build();
+
+    let answer = run(&index, &["legacy.js"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "imports legacy.js"),
+            row("page.ts", 2, "imports index.ts"),
+        ]
+    );
+}
+
+#[test]
+fn a_barrel_that_becomes_whole_later_reaches_its_importers_and_its_contracts() {
+    // `index.ts` is met at distance 1 for `fromA` alone. At distance 2 `b.ts`, which is whole, is imported by name in it, so `index.ts` is whole too, and what only a whole file does follows: its importers of any name and its contracts.
+    let index = Tree::new()
+        .exports("a.ts", &["fromA"])
+        .exports("b.ts", &["fromB"])
+        .imports_names("b.ts", "a.ts", &["fromA"])
+        .exports("index.ts", &["own"])
+        .re_exports_all("index.ts", "a.ts")
+        .imports_names("index.ts", "b.ts", &["fromB"])
+        .serves("index.ts", "http GET /health")
+        .calls("client.ts", "http GET /health")
+        .imports_names("page.ts", "index.ts", &["own"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("b.ts", 1, "imports fromA from a.ts"),
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("client.ts", 3, "calls http GET /health"),
+            row("page.ts", 3, "imports own from index.ts"),
+        ]
+    );
+}
+
+#[test]
+fn a_namespace_re_export_passes_its_name_on() {
+    let index = Tree::new()
+        .exports("lib.ts", &["fromLib"])
+        .exports("index.ts", &["ns", "stable"])
+        .re_exports("index.ts", "lib.ts", &[("ns", "*")])
+        .imports_names("page.ts", "index.ts", &["ns"])
+        .imports_names("other.ts", "index.ts", &["stable"])
+        .build();
+
+    let answer = run(&index, &["lib.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports * as ns from lib.ts"),
+            row("page.ts", 2, "imports ns from index.ts"),
+        ]
+    );
+}
+
+#[test]
+fn a_namespace_re_export_of_a_barrel_with_no_names_is_still_reached() {
+    // `mid.ts` has nothing left to pass on, so it is held with no names, and `export * as ns` takes the whole of it whatever it holds.
+    let index = Tree::new()
+        .exports("only.ts", &[])
+        .exports("mid.ts", &[])
+        .re_exports_all("mid.ts", "only.ts")
+        .exports("index.ts", &["ns"])
+        .re_exports("index.ts", "mid.ts", &[("ns", "*")])
+        .imports_names("page.ts", "index.ts", &["ns"])
+        .build();
+
+    let answer = run(&index, &["only.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("mid.ts", 1, "re-exports only.ts"),
+            row("index.ts", 2, "re-exports * as ns from mid.ts"),
+            row("page.ts", 3, "imports ns from index.ts"),
+        ]
+    );
+}
+
+#[scenario("queries", "A star does not forward default")]
+#[test]
+fn a_star_does_not_forward_default() {
+    let index = Tree::new()
+        .exports("a.ts", &["default", "fromA"])
+        .exports("index.ts", &["default", "own"])
+        .re_exports_all("index.ts", "a.ts")
+        .imports_names("form.ts", "index.ts", &["fromA"])
+        .imports_names("page.ts", "index.ts", &["default"])
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports fromA from a.ts"),
+            row("form.ts", 2, "imports fromA from index.ts"),
+        ]
+    );
+}
+
+#[test]
+fn a_barrel_with_unknown_exports_in_its_star_chain_keeps_every_importer_by_name() {
+    // `mid.ts` is met for `fromA` alone. What else it exports depends on `legacy.js`: when that is unknown any name may be one of them, and when it is not the importer of `other` is safe.
+    let barrel = |legacy: Tree| {
+        legacy
+            .exports("a.ts", &["fromA"])
+            .exports("mid.ts", &["other"])
+            .re_exports_all("mid.ts", "a.ts")
+            .re_exports_all("mid.ts", "legacy.js")
+            .imports_names("page.ts", "mid.ts", &["other"])
+            .build()
+    };
+    let unknown = run(&barrel(Tree::new()), &["a.ts"]);
+    let known = run(
+        &barrel(Tree::new().exports("legacy.js", &["legacy"])),
+        &["a.ts"],
+    );
+
+    assert_eq!(
+        rows(&unknown.affected),
+        [
+            row("mid.ts", 1, "re-exports fromA from a.ts"),
+            row("page.ts", 2, "imports other from mid.ts"),
+        ]
+    );
+    assert_eq!(
+        rows(&known.affected),
+        [row("mid.ts", 1, "re-exports fromA from a.ts")]
+    );
 }

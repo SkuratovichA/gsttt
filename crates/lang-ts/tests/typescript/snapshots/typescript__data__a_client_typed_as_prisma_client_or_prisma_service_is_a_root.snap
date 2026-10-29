@@ -38,6 +38,10 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "InvoiceRepo",
+        "count"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -75,6 +79,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "PrismaService"
+      ],
       "imports": [
         {
           "flags": 0,

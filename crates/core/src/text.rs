@@ -94,13 +94,26 @@ pub fn join_and(names: &[String]) -> String {
     }
 }
 
-/// Names for a heading: the first three as [`join_and`] writes them, then a count of the rest.
+/// How many names a line of an answer shows before it counts the rest.
+pub const NAMES_SHOWN: usize = 3;
+
+/// Names for a heading: the first [`NAMES_SHOWN`] as [`join_and`] writes them, then a count of the rest.
 pub fn summary(names: &[String]) -> String {
-    match names.split_at_checked(3) {
+    cut(names, join_and)
+}
+
+/// Names for a line that lists them: [`summary`] with commas all the way, so that three names are `a, b, c` and not `a, b and c`.
+pub fn comma_summary(names: &[String]) -> String {
+    cut(names, |names| names.join(", "))
+}
+
+/// The first [`NAMES_SHOWN`] names and a count of the rest when there are more of them, and all of them as `join` writes them when there are not.
+fn cut(names: &[String], join: impl FnOnce(&[String]) -> String) -> String {
+    match names.split_at_checked(NAMES_SHOWN) {
         Some((shown, rest)) if !rest.is_empty() => {
             format!("{} and {} more", shown.join(", "), thousands(rest.len()))
         }
-        _ => join_and(names),
+        _ => join(names),
     }
 }
 
@@ -135,6 +148,7 @@ pub fn tenths(micros: u64, unit: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::owned;
 
     #[test]
     fn offsets_map_to_lines() {
@@ -174,10 +188,6 @@ mod tests {
         assert_eq!(index.column("", 7), 1);
     }
 
-    fn names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|name| (*name).to_owned()).collect()
-    }
-
     #[test]
     fn counts_get_a_thousands_separator() {
         let spelled: Vec<String> = [0_u64, 999, 1_000, 4_213, 1_234_567]
@@ -215,16 +225,27 @@ mod tests {
 
     #[test]
     fn names_are_joined_for_a_sentence() {
-        assert_eq!(join_and(&names(&[])), "");
-        assert_eq!(join_and(&names(&["a"])), "a");
-        assert_eq!(join_and(&names(&["a", "b"])), "a and b");
-        assert_eq!(join_and(&names(&["a", "b", "c"])), "a, b and c");
+        assert_eq!(join_and(&owned(&[])), "");
+        assert_eq!(join_and(&owned(&["a"])), "a");
+        assert_eq!(join_and(&owned(&["a", "b"])), "a and b");
+        assert_eq!(join_and(&owned(&["a", "b", "c"])), "a, b and c");
     }
 
     #[test]
     fn a_summary_names_three_and_counts_the_rest() {
-        assert_eq!(summary(&names(&["a", "b", "c"])), "a, b and c");
-        assert_eq!(summary(&names(&["a", "b", "c", "d"])), "a, b, c and 1 more");
+        assert_eq!(summary(&owned(&["a", "b", "c"])), "a, b and c");
+        assert_eq!(summary(&owned(&["a", "b", "c", "d"])), "a, b, c and 1 more");
+    }
+
+    #[test]
+    fn a_comma_summary_keeps_its_commas_until_it_cuts_as_a_summary_does() {
+        assert_eq!(comma_summary(&owned(&[])), "");
+        assert_eq!(comma_summary(&owned(&["a", "b"])), "a, b");
+        assert_eq!(comma_summary(&owned(&["a", "b", "c"])), "a, b, c");
+        assert_eq!(
+            comma_summary(&owned(&["a", "b", "c", "d"])),
+            "a, b, c and 1 more"
+        );
     }
 
     #[test]

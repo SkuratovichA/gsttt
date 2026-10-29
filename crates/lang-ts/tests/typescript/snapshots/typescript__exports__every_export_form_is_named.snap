@@ -1,0 +1,166 @@
+---
+source: crates/lang-ts/tests/typescript/exports.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "everything"
+      ],
+      "imports": [],
+      "path": "src/all.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "C",
+        "E",
+        "I",
+        "N",
+        "T",
+        "a",
+        "b",
+        "d",
+        "default",
+        "f",
+        "g",
+        "ns",
+        "w",
+        "y"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "w"
+          ],
+          "flags": 0,
+          "kind": "re-export",
+          "line": 16,
+          "names": [
+            "z"
+          ],
+          "spec": "./z",
+          "to": {
+            "file": "src/z.ts"
+          }
+        },
+        {
+          "exported": [
+            "ns"
+          ],
+          "flags": 0,
+          "kind": "re-export",
+          "line": 17,
+          "names": [
+            "*"
+          ],
+          "spec": "./ns",
+          "to": {
+            "file": "src/ns.ts"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "re-export-all",
+          "line": 18,
+          "names": [],
+          "spec": "./all",
+          "to": {
+            "file": "src/all.ts"
+          }
+        }
+      ],
+      "path": "src/forms.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "one"
+      ],
+      "imports": [],
+      "path": "src/ns.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "z"
+      ],
+      "imports": [],
+      "path": "src/z.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

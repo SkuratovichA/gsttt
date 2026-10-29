@@ -15,14 +15,15 @@ use gsttt_core::fact::{
 use gsttt_core::rules::{Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
-    AccessorProperty, Argument, AssignmentExpression, AssignmentTarget, BindingPattern,
-    CallExpression, Class, Declaration, Decorator, ExportAllDeclaration, ExportDeclaration,
-    ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportFromDeclaration,
-    ExportNamedDeclaration, Expression, ImportDeclaration, ImportDeclarationSpecifier,
-    ImportExpression, ImportOrExportKind, MemberExpression, MethodDefinition, ModuleExportName,
-    ObjectProperty, ObjectPropertyKind, Program, PropertyDefinition, TSExportAssignment,
-    TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier, TSModuleReference,
-    TaggedTemplateExpression, VariableDeclarator,
+    AccessorProperty, Argument, AssignmentExpression, AssignmentTarget, BindingIdentifier,
+    BindingPattern, CallExpression, Class, Declaration, Decorator, ExportAllDeclaration,
+    ExportDeclaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind,
+    ExportFromDeclaration, ExportNamedDeclaration, Expression, ImportDeclaration,
+    ImportDeclarationSpecifier, ImportExpression, ImportOrExportKind, MemberExpression,
+    MethodDefinition, ModuleExportName, ObjectProperty, ObjectPropertyKind, Program,
+    PropertyDefinition, TSExportAssignment, TSImportEqualsDeclaration, TSImportType,
+    TSImportTypeQualifier, TSModuleBlock, TSModuleReference, TaggedTemplateExpression,
+    VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
@@ -42,6 +43,8 @@ pub(crate) struct Analysis {
     pub(crate) contracts: Vec<ContractFact>,
     pub(crate) embedded: Vec<Embedded>,
     pub(crate) unresolved: Vec<UnresolvedSite>,
+    /// The names the file exports itself, sorted, once each, and without what an `export *` brings. `None` when its syntax does not list them: it assigns `module.exports` or `exports`, or has `export =`.
+    pub(crate) exports: Option<Vec<String>>,
     pub(crate) extra: TsExtra,
 }
 
@@ -63,6 +66,8 @@ pub(crate) fn analyze(
         classes: Vec::new(),
         has_graphql: packs.iter().any(|pack| pack.name == "graphql"),
         has_trpc: packs.iter().any(|pack| pack.name == "trpc"),
+        exports_unknown: false,
+        module_depth: 0,
         out: Analysis::default(),
     };
     analyzer.visit_program(program);
@@ -90,6 +95,10 @@ struct Analyzer<'p> {
     classes: Vec<ClassFrame>,
     has_graphql: bool,
     has_trpc: bool,
+    /// Whether the file assigns `module.exports` or `exports`, or has `export =`, so that its syntax does not list what it exports.
+    exports_unknown: bool,
+    /// How many `namespace` and `declare module` bodies the walk is in, whose `export`s are theirs and not the file's.
+    module_depth: u32,
     out: Analysis,
 }
 
@@ -121,6 +130,9 @@ impl Analyzer<'_> {
     }
 
     fn export(&mut self, name: &str, target: ExportTarget) {
+        if self.module_depth > 0 {
+            return;
+        }
         self.out.extra.exports.push(Export {
             name: name.to_owned(),
             target,
@@ -488,9 +500,10 @@ impl Analyzer<'_> {
         }
     }
 
-    /// `module.exports = x` and `exports.name = x`.
+    /// `module.exports = x` and `exports.name = x`. A file that does either lists no exports in its syntax, so they are unknown.
     fn commonjs_export(&mut self, target: &str, value: &Expression<'_>) {
         if target == "module.exports" {
+            self.exports_unknown = true;
             if let Expression::ObjectExpression(object) = value.get_inner_expression() {
                 for property in &object.properties {
                     if let ObjectPropertyKind::ObjectProperty(property) = property
@@ -507,6 +520,7 @@ impl Analyzer<'_> {
             .strip_prefix("exports.")
             .or_else(|| target.strip_prefix("module.exports."))
         {
+            self.exports_unknown = true;
             self.export_value(name, value);
         }
     }
@@ -531,7 +545,10 @@ impl Analyzer<'_> {
 
     fn finish(self) -> Analysis {
         let Self {
-            makers, mut out, ..
+            makers,
+            mut out,
+            exports_unknown,
+            ..
         } = self;
         out.extra.hosts = makers
             .into_iter()
@@ -550,8 +567,21 @@ impl Analyzer<'_> {
             .sort_by(|a, b| (a.line, &a.detail).cmp(&(b.line, &b.detail)));
         out.unresolved
             .dedup_by(|a, b| a.line == b.line && a.detail == b.detail);
+        out.exports = (!exports_unknown).then(|| exported_names(&out.extra.exports));
         out
     }
+}
+
+/// The names `exports` give, in byte order and once each. `*` is what an `export *` brings, which is no name of the file.
+fn exported_names(exports: &[Export]) -> Vec<String> {
+    let mut names: Vec<String> = exports
+        .iter()
+        .filter(|export| export.name != "*")
+        .map(|export| export.name.clone())
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 /// The order facts are emitted in.
@@ -628,15 +658,17 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         let mut import = Import::new(spec, ImportKind::ReExport, line);
         for specifier in &it.specifiers {
             let name = export_name(&specifier.local);
+            let exported = export_name(&specifier.exported);
             let target = ExportTarget::From {
                 spec: spec.to_owned(),
                 name: name.clone(),
             };
-            self.export(&export_name(&specifier.exported), target);
+            self.export(&exported, target);
             if is_member(&name) {
                 self.import_rules(spec, &name, line);
             }
             import.names.push(name);
+            import.exported.push(exported);
         }
         if matches!(it.export_kind, ImportOrExportKind::Type) {
             import.flags = import.flags | ImportFlags::TYPE_ONLY;
@@ -649,20 +681,18 @@ impl<'a> Visit<'a> for Analyzer<'_> {
             return;
         };
         let line = self.line(it.span.start);
+        let namespace = it.exported.as_ref().map(export_name);
         // `export * as ns from 'x'` re-exports the namespace under one name, which is not `export *`.
-        let mut import = if it.exported.is_some() {
+        let mut import = if let Some(namespace) = &namespace {
             let mut import = Import::new(spec, ImportKind::ReExport, line);
             import.names.push("*".to_owned());
+            import.exported.push(namespace.clone());
             import
         } else {
             Import::new(spec, ImportKind::ReExportAll, line)
         };
-        let exported = it
-            .exported
-            .as_ref()
-            .map_or_else(|| "*".to_owned(), export_name);
         self.export(
-            &exported,
+            namespace.as_deref().unwrap_or("*"),
             ExportTarget::From {
                 spec: spec.to_owned(),
                 name: "*".to_owned(),
@@ -699,8 +729,15 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     }
 
     fn visit_ts_export_assignment(&mut self, it: &TSExportAssignment<'a>) {
+        self.exports_unknown = true;
         self.export_value("default", &it.expression);
         walk::walk_ts_export_assignment(self, it);
+    }
+
+    fn visit_ts_module_block(&mut self, it: &TSModuleBlock<'a>) {
+        self.module_depth = self.module_depth.saturating_add(1);
+        walk::walk_ts_module_block(self, it);
+        self.module_depth = self.module_depth.saturating_sub(1);
     }
 
     fn visit_ts_import_equals_declaration(&mut self, it: &TSImportEqualsDeclaration<'a>) {
@@ -936,28 +973,27 @@ fn export_name(name: &ModuleExportName<'_>) -> String {
     }
 }
 
-/// The names `export const a = 1, b = 2`, `export function f() {}` and `export class C {}` declare.
+/// The names an `export` declaration declares: `export const a = 1, { b, c: d } = e`, `export function f() {}`, `export class C {}`, `export enum E {}`, `export type T = string`, `export interface I {}`, `export namespace N {}` and `export import A = B.C`.
 fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
+    let name = |id: &BindingIdentifier<'_>| id.name.as_str().to_owned();
     match declaration {
         Declaration::VariableDeclaration(variables) => variables
             .declarations
             .iter()
-            .filter_map(|declarator| match &declarator.id {
-                BindingPattern::BindingIdentifier(id) => Some(id.name.as_str().to_owned()),
-                _ => None,
-            })
+            .flat_map(|declarator| declarator.id.get_binding_identifiers())
+            .map(name)
             .collect(),
-        Declaration::FunctionDeclaration(function) => function
-            .id
-            .iter()
-            .map(|id| id.name.as_str().to_owned())
-            .collect(),
-        Declaration::ClassDeclaration(class) => class
-            .id
-            .iter()
-            .map(|id| id.name.as_str().to_owned())
-            .collect(),
-        _ => Vec::new(),
+        Declaration::FunctionDeclaration(function) => function.id.iter().map(name).collect(),
+        Declaration::ClassDeclaration(class) => class.id.iter().map(name).collect(),
+        Declaration::TSTypeAliasDeclaration(alias) => vec![name(&alias.id)],
+        Declaration::TSInterfaceDeclaration(interface) => vec![name(&interface.id)],
+        Declaration::TSEnumDeclaration(declared) => vec![name(&declared.id)],
+        Declaration::TSNamespaceDeclaration(namespace) => vec![name(&namespace.id)],
+        Declaration::TSImportEqualsDeclaration(import) => vec![name(&import.id)],
+        // `declare module 'x' {}` and `declare global {}` declare no name of the file.
+        Declaration::TSExternalModuleDeclaration(_) | Declaration::TSGlobalDeclaration(_) => {
+            Vec::new()
+        }
     }
 }
 

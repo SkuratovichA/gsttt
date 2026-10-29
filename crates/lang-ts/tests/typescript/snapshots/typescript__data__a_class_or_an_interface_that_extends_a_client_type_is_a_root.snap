@@ -50,6 +50,13 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "audited",
+        "count",
+        "logged",
+        "narrow",
+        "wide"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -82,6 +89,10 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "PrismaService",
+        "TenantRepository"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -107,6 +118,10 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "cached",
+        "shaped"
+      ],
       "imports": [],
       "path": "src/unrelated.ts",
       "project": "ts .",

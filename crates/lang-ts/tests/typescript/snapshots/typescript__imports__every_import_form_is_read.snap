@@ -19,6 +19,13 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "Kept",
+        "star",
+        "used",
+        "x",
+        "z"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -89,6 +96,10 @@ expression: json
           }
         },
         {
+          "exported": [
+            "x",
+            "z"
+          ],
           "flags": 0,
           "kind": "re-export",
           "line": 6,
@@ -116,6 +127,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "star"
+          ],
           "flags": 0,
           "kind": "re-export",
           "line": 8,
@@ -195,6 +209,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "ok"
+      ],
       "imports": [],
       "path": "src/present.ts",
       "project": "ts .",

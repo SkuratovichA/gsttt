@@ -19,6 +19,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "get"
+      ],
       "imports": [],
       "path": "src/api.ts",
       "project": "ts .",

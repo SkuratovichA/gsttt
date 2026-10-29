@@ -19,6 +19,11 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "Client",
+        "all",
+        "models"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -77,6 +82,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "models"
+          ],
           "flags": 0,
           "kind": "re-export",
           "line": 7,
@@ -89,6 +97,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "Client"
+          ],
           "flags": 0,
           "kind": "re-export",
           "line": 8,

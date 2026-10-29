@@ -19,6 +19,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "lib"
+      ],
       "imports": [],
       "path": "src/lib.ts",
       "project": "ts .",
@@ -31,6 +34,7 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [],
       "imports": [
         {
           "flags": 0,

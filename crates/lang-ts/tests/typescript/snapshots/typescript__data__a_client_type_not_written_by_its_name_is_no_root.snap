@@ -19,6 +19,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -44,6 +47,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -69,6 +75,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -94,6 +103,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [
         {
           "flags": 0,

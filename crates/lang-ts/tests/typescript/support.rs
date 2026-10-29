@@ -13,7 +13,8 @@ use gsttt_core::RepoView;
 use gsttt_core::engine::build::build_index;
 use gsttt_core::engine::pipeline::{self, Module, Output};
 use gsttt_core::fact::{FileTags, ImportFlags};
-use gsttt_core::index::IndexInfo;
+use gsttt_core::index::{Freshness, Index, IndexInfo};
+use gsttt_core::query::{ImpactRequest, impact};
 use serde_json::Value;
 
 /// The size above which a file is left unread; the fixtures are far below it, and so is the largest file that a test generates.
@@ -78,10 +79,21 @@ pub(crate) fn run_tree_within(root: &Path, limit: Duration) -> Result<Value, Box
     within(limit, move || run_at(&root))
 }
 
-/// Every site of the graph the engine builds from the output for `fixture`, as `<role> <key> @<line> in <path>`, in byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query would answer from.
-pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
+/// The index the engine builds from the output for `fixture`. Unlike the output, its graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query would answer from.
+fn index_of(fixture: &str) -> Result<Index, Box<dyn Error>> {
     let (repo, output) = pipeline_at(&fixture_root(fixture))?;
-    let index = build_index(&repo, &output, &["ts"], &[], IndexInfo::default());
+    Ok(build_index(
+        &repo,
+        &output,
+        &["ts"],
+        &[],
+        IndexInfo::default(),
+    ))
+}
+
+/// Every site of the graph for `fixture`, as `<role> <key> @<line> in <path>`, in byte order.
+pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let index = index_of(fixture)?;
     let graph = &index.graph;
     let mut sites: Vec<String> = graph
         .contracts()
@@ -94,6 +106,20 @@ pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
         .collect();
     sites.sort();
     Ok(sites)
+}
+
+/// What a change to the file at `path` affects in `fixture`, as `<path> <distance> <reason>` in the order of the answer, without the tests.
+pub(crate) fn affected_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let request = ImpactRequest {
+        files: vec![path.to_owned()],
+        ..ImpactRequest::default()
+    };
+    let answer = impact(&index_of(fixture)?, Freshness::Fresh, &request);
+    Ok(answer
+        .affected
+        .iter()
+        .map(|entry| format!("{} {} {}", entry.path, entry.distance, entry.reason))
+        .collect())
 }
 
 /// The roots of the projects, in the order of the output.
@@ -185,6 +211,34 @@ pub(crate) fn imports(json: &Value, path: &str) -> Vec<String> {
             parts.push("->".to_owned());
             parts.push(target(import.get("to")));
             parts.join(" ")
+        })
+        .collect()
+}
+
+/// The names the file at `path` exports itself, `None` when the output has no such file or says they are unknown.
+pub(crate) fn exports<'a>(json: &'a Value, path: &str) -> Option<Vec<&'a str>> {
+    let exports = file(json, path)?.get("exports")?.as_array()?;
+    Some(exports.iter().filter_map(Value::as_str).collect())
+}
+
+/// What the named re-exports of the file at `path` export each name as, in file order: `<specifier> <name> as <exported>, …`.
+pub(crate) fn exported_as(json: &Value, path: &str) -> Vec<String> {
+    file(json, path)
+        .into_iter()
+        .flat_map(|file| items(file, "imports"))
+        .filter(|import| items(import, "exported").next().is_some())
+        .map(|import| {
+            let names = items(import, "names").filter_map(Value::as_str);
+            let exported = items(import, "exported").filter_map(Value::as_str);
+            let pairs: Vec<String> = names
+                .zip(exported)
+                .map(|(name, exported)| format!("{name} as {exported}"))
+                .collect();
+            format!(
+                "{} {}",
+                text(import, "spec").unwrap_or("?"),
+                pairs.join(", ")
+            )
         })
         .collect()
 }

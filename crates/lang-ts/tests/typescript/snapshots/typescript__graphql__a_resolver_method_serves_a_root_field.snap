@@ -32,6 +32,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "BookingsResolver"
+      ],
       "imports": [
         {
           "flags": 0,

@@ -11,3 +11,4 @@ from pkg import *
 importlib.import_module("plugins.csv")
 __import__("plugins.json")
 importlib.import_module(name)
+__all__ = ["value", "other"]

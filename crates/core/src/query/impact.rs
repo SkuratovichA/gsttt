@@ -8,14 +8,14 @@ use serde::Serialize;
 use crate::contract::Role;
 use crate::fact::FileTags;
 use crate::graph::Graph;
-use crate::ids::{FileId, IdSet};
+use crate::ids::{FileId, IdSet, NameId};
 use crate::index::{Freshness, Index};
 use crate::path::RepoPath;
 use crate::text::{noun, summary};
 
 use super::cross::Crossing;
 use super::lookup::{Miss, find, possible_misses};
-use super::render::{Answer, Entries, Footer, Searched, display_as_text, list};
+use super::render::{Answer, Entries, Footer, Searched, display_as_text, list, name_list};
 use super::walk::{Cause, reach};
 
 /// What a change is asked about.
@@ -65,19 +65,41 @@ pub struct Affected {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "via", rename_all = "kebab-case")]
 pub enum Reason {
-    /// The file imports `file`, which the walk had reached.
-    Imports { file: String },
+    /// The file imports `file`, which the walk had reached. `names` are the names it imports that the change can reach, in byte order, and are left out when it takes every name of `file`.
+    Imports {
+        file: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        names: Vec<String>,
+    },
+    /// The file re-exports `names` of `file`, which the walk had reached, in byte order of the name `file` has for each, which is followed by ` as <alias>` when the file exports it under another name. They are left out when it passes none on, because `file` has nothing left to export through a star.
+    ReExports {
+        file: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        names: Vec<String>,
+    },
     /// The file has a site with `role` in the contract `key`, which joins a contract of a file the walk had reached.
     Contract { role: Role, key: String },
 }
 
-/// `imports src/a.ts`, `calls http GET /bookings/{}`.
+impl Reason {
+    /// `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `re-exports useFoo as useBar from src/a.ts`, `imports src/a.ts`, `calls http GET /bookings/{}`. Names are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
+        let (verb, file, names) = match self {
+            Self::Imports { file, names } => ("imports", file, names),
+            Self::ReExports { file, names } => ("re-exports", file, names),
+            Self::Contract { role, key } => return write!(f, "{role} {key}"),
+        };
+        if names.is_empty() {
+            write!(f, "{verb} {file}")
+        } else {
+            write!(f, "{verb} {} from {file}", name_list(names, entries))
+        }
+    }
+}
+
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Imports { file } => write!(f, "imports {file}"),
-            Self::Contract { role, key } => write!(f, "{role} {key}"),
-        }
+        self.write(f, Entries::Capped)
     }
 }
 
@@ -121,14 +143,14 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     let mut affected = Vec::new();
     let mut tests = Vec::new();
     for reached in &reached {
-        let (Some(path), Some(reason)) = (graph.path(reached.file), reason(graph, reached.cause))
-        else {
+        // A file without a path cannot be named in the answer, so it is the only one the walk reaches and the answer leaves out.
+        let Some(path) = graph.path(reached.file) else {
             continue;
         };
         let entry = Affected {
             path: path.to_string(),
             distance: reached.distance,
-            reason,
+            reason: reason(graph, &reached.cause),
         };
         if graph.tags(reached.file).contains(FileTags::TEST) {
             tests.push(entry);
@@ -195,16 +217,53 @@ fn in_asked_order(absent: BTreeMap<String, (usize, bool)>) -> Vec<(String, bool)
         .collect()
 }
 
-fn reason(graph: &Graph, cause: Cause) -> Option<Reason> {
+/// Why the walk reached a file, spelled as far as the graph can. A reached file is never dropped for a reason that cannot be spelled in full: a list of names with one the graph holds no spelling for is left out whole, so the reason reads as the file taken in all its names, which is never less than the walk found (a shorter list would say that the file takes fewer names than it does), and a file or a contract the graph does not hold is left empty.
+fn reason(graph: &Graph, cause: &Cause) -> Reason {
+    let path = |file: FileId| {
+        graph
+            .path(file)
+            .map(ToString::to_string)
+            .unwrap_or_default()
+    };
     match cause {
-        Cause::Imports(file) => Some(Reason::Imports {
-            file: graph.path(file)?.to_string(),
-        }),
-        Cause::Contract { role, contract } => Some(Reason::Contract {
-            role,
-            key: graph.contract(contract)?.to_string(),
-        }),
+        Cause::Imports { file, names } => Reason::Imports {
+            file: path(*file),
+            names: spell(graph, names).unwrap_or_default(),
+        },
+        Cause::ReExports { file, names } => Reason::ReExports {
+            file: path(*file),
+            names: spell_re_exports(graph, names).unwrap_or_default(),
+        },
+        Cause::Contract { role, contract } => Reason::Contract {
+            role: *role,
+            key: graph
+                .contract(*contract)
+                .map(ToString::to_string)
+                .unwrap_or_default(),
+        },
     }
+}
+
+/// The names behind `ids`, `None` when the graph holds no spelling for one of them. Ids are numbered in byte order, so they come out sorted.
+fn spell(graph: &Graph, ids: &[NameId]) -> Option<Vec<String>> {
+    ids.iter()
+        .map(|&id| graph.name(id).map(str::to_owned))
+        .collect()
+}
+
+/// The names a file re-exports, each as `name` or, when the file exports it under another name, `name as alias`. `None` when the graph holds no spelling for one of them.
+fn spell_re_exports(graph: &Graph, names: &[(NameId, NameId)]) -> Option<Vec<String>> {
+    names
+        .iter()
+        .map(|&(source, exported_as)| {
+            let source_name = graph.name(source)?;
+            if source == exported_as {
+                Some(source_name.to_owned())
+            } else {
+                Some(format!("{source_name} as {}", graph.name(exported_as)?))
+            }
+        })
+        .collect()
 }
 
 impl Answer for Impact {
@@ -223,11 +282,8 @@ impl Answer for Impact {
         f.write_str("\n")?;
 
         let affected_line = |f: &mut fmt::Formatter<'_>, affected: &Affected| {
-            write!(
-                f,
-                "{}  distance {}  {}",
-                affected.path, affected.distance, affected.reason
-            )
+            write!(f, "{}  distance {}  ", affected.path, affected.distance)?;
+            affected.reason.write(f, entries)
         };
         list(f, "affected files", &self.affected, entries, affected_line)?;
         list(f, "tests", &self.tests, entries, affected_line)?;
@@ -261,3 +317,105 @@ impl Answer for Impact {
 }
 
 display_as_text!(Impact);
+
+#[cfg(test)]
+mod tests {
+    use crate::ids::ContractId;
+    use crate::testing::{Tree, owned};
+
+    use super::*;
+
+    /// A name the graph holds no spelling for. The builder numbers a name together with its spelling, so no graph the testing module builds has an edge that carries such an id, and the cause below is made by hand with the id the builder would fall back on.
+    const UNSPELLED: NameId = NameId::from_raw(u32::MAX);
+
+    /// The graph of `src/a.ts` importing `foo` from `src/b.ts`, with the ids of `src/b.ts` and of `foo`.
+    fn graph() -> (Index, FileId, NameId) {
+        let index = Tree::new()
+            .imports_names("src/a.ts", "src/b.ts", &["foo"])
+            .build();
+        let file = index.graph.file_id("src/b.ts").unwrap();
+        let foo = index.graph.name_id("foo").unwrap();
+        (index, file, foo)
+    }
+
+    #[test]
+    fn names_the_graph_spells_stay_in_the_reason() {
+        let (index, file, foo) = graph();
+        let imports = Cause::Imports {
+            file,
+            names: vec![foo],
+        };
+        assert_eq!(
+            reason(&index.graph, &imports),
+            Reason::Imports {
+                file: "src/b.ts".to_owned(),
+                names: owned(&["foo"]),
+            }
+        );
+        let re_exports = Cause::ReExports {
+            file,
+            names: vec![(foo, foo)],
+        };
+        assert_eq!(
+            reason(&index.graph, &re_exports),
+            Reason::ReExports {
+                file: "src/b.ts".to_owned(),
+                names: owned(&["foo"]),
+            }
+        );
+    }
+
+    #[test]
+    fn one_name_the_graph_cannot_spell_leaves_the_whole_file_as_the_reason() {
+        let (index, file, foo) = graph();
+        let imports = Cause::Imports {
+            file,
+            names: vec![foo, UNSPELLED],
+        };
+        assert_eq!(
+            reason(&index.graph, &imports),
+            Reason::Imports {
+                file: "src/b.ts".to_owned(),
+                names: Vec::new(),
+            }
+        );
+        let re_exports = Cause::ReExports {
+            file,
+            names: vec![(foo, foo), (foo, UNSPELLED)],
+        };
+        assert_eq!(
+            reason(&index.graph, &re_exports),
+            Reason::ReExports {
+                file: "src/b.ts".to_owned(),
+                names: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_file_or_a_contract_the_graph_does_not_hold_leaves_its_part_of_the_reason_empty() {
+        let (index, ..) = graph();
+        let imports = Cause::Imports {
+            file: FileId::from_raw(u32::MAX),
+            names: Vec::new(),
+        };
+        assert_eq!(
+            reason(&index.graph, &imports),
+            Reason::Imports {
+                file: String::new(),
+                names: Vec::new(),
+            }
+        );
+        let contract = Cause::Contract {
+            role: Role::Calls,
+            contract: ContractId::from_raw(u32::MAX),
+        };
+        assert_eq!(
+            reason(&index.graph, &contract),
+            Reason::Contract {
+                role: Role::Calls,
+                key: String::new(),
+            }
+        );
+    }
+}

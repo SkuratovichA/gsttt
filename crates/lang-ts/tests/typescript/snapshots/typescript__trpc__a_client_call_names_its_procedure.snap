@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "Bookings"
+      ],
       "imports": [
         {
           "flags": 0,

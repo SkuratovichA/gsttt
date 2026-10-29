@@ -50,6 +50,13 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "D",
+        "a",
+        "b",
+        "c",
+        "renamed"
+      ],
       "imports": [],
       "path": "src/config.ts",
       "project": "ts .",

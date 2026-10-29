@@ -26,6 +26,11 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "load",
+        "pick",
+        "spin"
+      ],
       "imports": [
         {
           "flags": 1,

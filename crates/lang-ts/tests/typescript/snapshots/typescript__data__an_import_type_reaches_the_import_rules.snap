@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "Row"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -64,6 +67,14 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "Client",
+        "Other",
+        "Row",
+        "Rows",
+        "Where",
+        "Whole"
+      ],
       "imports": [
         {
           "flags": 1,

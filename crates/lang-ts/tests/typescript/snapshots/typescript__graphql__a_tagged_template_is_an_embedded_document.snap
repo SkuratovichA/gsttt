@@ -28,6 +28,10 @@ expression: json
           "via": "graphql"
         }
       ],
+      "exports": [
+        "Q",
+        "unrelated"
+      ],
       "imports": [
         {
           "flags": 0,

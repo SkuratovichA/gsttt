@@ -84,9 +84,14 @@ mod id_types {
         /// A project of the index: one connector's view of one root, such as the TypeScript project in `apps/web`.
         ProjectId
     );
+
+    define_id!(
+        /// A name that an import takes or passes on, or that a file exports. Names are numbered in byte order, so the order of ids is the order of names.
+        NameId
+    );
 }
 
-pub use id_types::{ContractId, FileId, ProjectId};
+pub use id_types::{ContractId, FileId, NameId, ProjectId};
 
 /// A vector indexed by a typed id, so a [`FileId`] cannot index a table of contracts.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

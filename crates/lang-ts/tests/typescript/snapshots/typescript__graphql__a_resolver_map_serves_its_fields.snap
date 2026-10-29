@@ -32,6 +32,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "resolvers"
+      ],
       "imports": [],
       "path": "src/resolvers.ts",
       "project": "ts .",

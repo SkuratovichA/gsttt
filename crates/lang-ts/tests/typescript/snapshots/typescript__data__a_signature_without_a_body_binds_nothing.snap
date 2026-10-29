@@ -19,6 +19,14 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "Base",
+        "Deps",
+        "Runner",
+        "declared",
+        "overloaded",
+        "reads"
+      ],
       "imports": [
         {
           "flags": 1,

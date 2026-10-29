@@ -164,6 +164,7 @@ impl Project for RustProject {
                 contracts: sites.found.into_iter().map(|found| found.fact).collect(),
                 embedded: sites.embedded,
                 unresolved: sites.unresolved,
+                exports: None,
             },
             extra: sites.extra,
         }
