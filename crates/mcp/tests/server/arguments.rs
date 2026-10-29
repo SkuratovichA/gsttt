@@ -48,6 +48,38 @@ async fn paths_together_with_changed_are_a_tool_error() {
     assert_eq!(source.calls(), 0);
 }
 
+#[scenario("mcp", "names with changed is a tool error")]
+#[tokio::test]
+async fn names_with_changed_are_a_tool_error_that_asks_for_paths() {
+    let source = Fake::small();
+    let session = Session::start(source.clone()).await;
+
+    let reply = session
+        .call("impact", json!({ "changed": true, "names": ["foo"] }))
+        .await;
+
+    assert!(reply.is_error);
+    assert!(
+        reply.text.starts_with("impact: `names` needs `paths`"),
+        "{}",
+        reply.text
+    );
+    assert_eq!(source.calls(), 0);
+}
+
+#[tokio::test]
+async fn names_without_paths_say_the_same() {
+    let session = Session::start(Fake::small()).await;
+
+    let with_changed = session
+        .call("impact", json!({ "changed": true, "names": ["foo"] }))
+        .await;
+    let alone = session.call("impact", json!({ "names": ["foo"] })).await;
+
+    assert!(alone.is_error);
+    assert_eq!(alone.text, with_changed.text);
+}
+
 #[tokio::test]
 async fn impact_without_paths_or_changed_says_what_to_pass() {
     let session = Session::start(Fake::small()).await;
@@ -152,6 +184,11 @@ async fn a_value_of_the_wrong_type_names_its_argument_whichever_the_tool() {
             "impact",
             json!({ "changed": true, "base": 7 }),
             "`base` must be a git revision",
+        ),
+        (
+            "impact",
+            json!({ "paths": ["src/a.ts"], "names": "getHash" }),
+            "`names` must be a list of names",
         ),
         (
             "dependents",

@@ -94,6 +94,12 @@ pub(crate) enum CliError {
     ))]
     BaseNeedsChanged,
 
+    #[error("`--name` needs paths, and `--changed` names none")]
+    #[diagnostic(help(
+        "`--name` asks about names declared in the files you give: `gsttt impact path/to/file.ts --name getHash`; a diff does not say which declarations changed"
+    ))]
+    NameNeedsPaths,
+
     #[error("`index` always refreshes the index, so it cannot run with `--no-refresh`")]
     #[diagnostic(help("drop `--no-refresh`"))]
     NoRefreshWithIndex,
@@ -144,6 +150,7 @@ impl CliError {
             | Self::Base(_)
             | Self::EmptyQuery
             | Self::BaseNeedsChanged
+            | Self::NameNeedsPaths
             | Self::NoRefreshWithIndex
             | Self::TrustNeedsTerminal
             | Self::McpTakesNoFlag { .. } => Outcome::Usage,

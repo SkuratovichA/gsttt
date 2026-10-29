@@ -1,6 +1,7 @@
 //! The fixpoint behind `impact`: every file a change reaches, how many hops away, and the first way it got there.
 
 mod exports;
+mod names;
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
@@ -12,6 +13,8 @@ use crate::graph::{Edge, Graph, Uses};
 use crate::ids::{ContractId, FileId, IdSet, NameId};
 
 use super::cross::{Crossed, Crossing, Direction};
+
+pub(super) use names::{Hit, Note, reach_names};
 
 /// How the walk got to a file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +28,8 @@ pub(super) enum Cause {
     },
     /// The file has a site with `role` in `contract`, which joins a contract of the file the walk came from.
     Contract { role: Role, contract: ContractId },
+    /// A walk by name only: the file declares the names the walk came from, and its own declarations refer to them. `names` are the declarations asked about, in byte order.
+    Declares { names: Vec<String> },
 }
 
 /// A file the walk reached.

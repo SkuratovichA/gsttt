@@ -620,7 +620,7 @@ fn an_absent_path_is_listed_once_in_the_order_it_was_first_asked() {
         &ImpactRequest {
             files: strings(&["z.md", "a.md", "./z.md", "m.md", "a.md"]),
             deleted: strings(&["m.md", "gone.ts", "./gone.ts"]),
-            depth: None,
+            ..ImpactRequest::default()
         },
     );
 

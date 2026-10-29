@@ -46,6 +46,38 @@ async fn tools_list_names_the_seven_tools_each_with_a_description_and_a_schema()
     }
 }
 
+#[scenario("mcp", "The description of impact speaks of names")]
+#[tokio::test]
+async fn the_description_of_impact_speaks_of_names_and_direct_callers() {
+    let session = Session::start(Fake::small()).await;
+
+    let tools = session.tools().await;
+
+    let impact = tools
+        .iter()
+        .find(|tool| tool.name == "impact")
+        .expect("impact is listed");
+    let description = impact.description.as_deref().unwrap_or_default();
+    assert!(
+        description
+            .contains("one function, class, method or variable is asked with its name in `names`"),
+        "{description}"
+    );
+    assert!(description.contains("direct callers"), "{description}");
+    assert!(
+        description.contains("ask again about a caller to go further"),
+        "{description}"
+    );
+    assert!(
+        impact
+            .input_schema
+            .get("properties")
+            .and_then(|properties| properties.get("names"))
+            .is_some(),
+        "the schema of impact offers `names`"
+    );
+}
+
 #[tokio::test]
 async fn a_description_reaches_the_model_as_one_line() {
     let session = Session::start(Fake::small()).await;

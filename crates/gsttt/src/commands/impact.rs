@@ -25,10 +25,11 @@ pub(super) fn impact(
     )
 }
 
-/// What to ask: the named files, with those that are not on disk passed as deleted, or the files git lists as changed, where a deleted file is passed as deleted.
+/// What to ask: the named files, with those that are not on disk passed as deleted, and the names to ask about in them, or the files git lists as changed, where a deleted file is passed as deleted.
 fn request(session: &Session<'_>, args: &ImpactArgs) -> Result<ImpactRequest, CliError> {
     let mut request = ImpactRequest {
         depth: args.depth,
+        names: args.names.clone(),
         ..ImpactRequest::default()
     };
     if args.changed {

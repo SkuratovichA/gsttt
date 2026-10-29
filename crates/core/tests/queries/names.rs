@@ -1,0 +1,1159 @@
+//! `impact` asked about names: the direct callers of a declaration, and the callers of callers when a depth is asked.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use gsttt_core::VERSION;
+use gsttt_core::contract::Role;
+use gsttt_core::engine::snapshot::{Header, Snapshot, Stored, now, write};
+use gsttt_core::fact::{FileTags, Import, ImportFlags, ImportKind};
+use gsttt_core::index::{Freshness, Index};
+use gsttt_core::query::{Affected, Answer, Entries, Impact, ImpactRequest, impact};
+use gsttt_core::testing::{Code, Tree, file};
+use gsttt_scenario::scenario;
+use proptest::prelude::*;
+use serde_json::{json, to_value};
+
+/// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
+const NONE: [&str; 0] = [];
+
+/// What a note says when the depth ended the walk with callers left to follow.
+const STOPPED: &str = "the walk stopped with callers left to follow; ask about a caller by name, or with a larger depth, to go on";
+
+/// Asks about `names` declared in `files`, with the depth of the request left as given.
+fn ask_in(index: &Index, files: &[&str], names: &[&str], depth: Option<u32>) -> Impact {
+    let request = ImpactRequest {
+        files: files.iter().map(|&path| path.to_owned()).collect(),
+        names: names.iter().map(|&name| name.to_owned()).collect(),
+        depth,
+        ..ImpactRequest::default()
+    };
+    impact(index, Freshness::Fresh, &request)
+}
+
+fn ask(index: &Index, path: &str, names: &[&str], depth: Option<u32>) -> Impact {
+    ask_in(index, &[path], names, depth)
+}
+
+/// What a reader of the answer sees of an entry: its path, distance and reason, the names of its callers and whether its load is reached.
+type Row<'a> = (&'a str, u32, String, Vec<&'a str>, bool);
+
+fn rows(list: &[Affected]) -> Vec<Row<'_>> {
+    list.iter()
+        .map(|entry| {
+            (
+                entry.path.as_str(),
+                entry.distance,
+                entry.reason.to_string(),
+                entry
+                    .callers
+                    .iter()
+                    .map(|caller| caller.name.as_str())
+                    .collect(),
+                entry.load,
+            )
+        })
+        .collect()
+}
+
+/// A row of an entry reached through declarations only.
+fn row<'a>(path: &'a str, distance: u32, reason: &str, callers: &[&'a str]) -> Row<'a> {
+    (path, distance, reason.to_owned(), callers.to_vec(), false)
+}
+
+fn paths(list: &[Affected]) -> Vec<&str> {
+    list.iter().map(|entry| entry.path.as_str()).collect()
+}
+
+/// `a.ts`, which declares `foo` and `bar`, and `b.ts`, which imports both and uses `foo` in `run` and `bar` in `stop`.
+fn library() -> Tree {
+    Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("bar", (4, 5), &[]),
+        )
+        .exports("a.ts", &["foo", "bar"])
+        .imports_names("b.ts", "a.ts", &["foo", "bar"])
+        .symbols(
+            "b.ts",
+            Code::new()
+                .declaration("run", (3, 5), &["foo"])
+                .declaration("stop", (7, 9), &["bar"]),
+        )
+        .exports("b.ts", &["run", "stop"])
+}
+
+/// `a.ts` declaring `foo`, which `b.ts` uses in `run`, and `c.ts` using `run` in `main`.
+fn chain() -> Index {
+    Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .symbols("b.ts", Code::new().declaration("run", (3, 5), &["foo"]))
+        .exports("b.ts", &["run"])
+        .imports_names("c.ts", "b.ts", &["run"])
+        .symbols("c.ts", Code::new().declaration("main", (1, 3), &["run"]))
+        .exports("c.ts", &[])
+        .build()
+}
+
+#[scenario("queries", "Only the direct callers are listed")]
+#[test]
+fn only_the_direct_callers_are_listed() {
+    let index = library()
+        .imports_names("c.ts", "b.ts", &["run"])
+        .symbols("c.ts", Code::new().declaration("main", (1, 3), &["run"]))
+        .exports("c.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("b.ts", 1, "imports foo from a.ts", &["run"])]
+    );
+    assert_eq!(paths(&answer.tests), NONE);
+}
+
+#[scenario("queries", "Callers in the asked file are listed")]
+#[test]
+fn callers_in_the_asked_file_are_listed() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("helper", (4, 6), &["foo"])
+                .declaration("other", (8, 9), &[]),
+        )
+        .exports("a.ts", &["foo", "helper", "other"])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("a.ts", 1, "declares foo", &["helper"])]
+    );
+}
+
+#[scenario("queries", "A barrel adds no hop")]
+#[test]
+fn a_barrel_adds_no_hop() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .re_exports("index.ts", "a.ts", &[("bar", "foo")])
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &["bar"])
+        .imports_names("page.ts", "index.ts", &["bar"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("render", (1, 4), &["bar"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports foo as bar from a.ts", &[]),
+            row("page.ts", 1, "imports bar from index.ts", &["render"]),
+        ]
+    );
+}
+
+#[scenario("queries", "A name imported and exported again adds no hop")]
+#[test]
+fn a_name_imported_and_exported_again_adds_no_hop() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("mid.ts", "a.ts", &["foo"])
+        .symbols("mid.ts", Code::new())
+        .exports("mid.ts", &["foo"])
+        .imports_names("page.ts", "mid.ts", &["foo"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("render", (1, 4), &["foo"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("mid.ts", 1, "imports foo from a.ts", &[]),
+            row("page.ts", 1, "imports foo from mid.ts", &["render"]),
+        ]
+    );
+}
+
+#[scenario("queries", "A name the file does not declare reaches nothing")]
+#[test]
+fn a_name_the_file_does_not_declare_reaches_nothing() {
+    let index = library().build();
+
+    let answer = ask(&index, "a.ts", &["fooo"], None);
+
+    assert!(answer.affected.is_empty() && answer.tests.is_empty());
+    assert_eq!(answer.notes, ["a.ts declares no fooo"]);
+    assert!(
+        answer
+            .text(Entries::Capped)
+            .contains("nothing is affected by a change to fooo in a.ts among")
+    );
+}
+
+#[scenario("queries", "The answer names the callers and their lines")]
+#[test]
+fn the_answer_names_the_callers_and_their_lines() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .symbols(
+            "b.ts",
+            Code::new()
+                .declaration("run", (3, 5), &["foo"])
+                .declaration("stop", (7, 9), &["foo"]),
+        )
+        .exports("b.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    let text = answer.text(Entries::Capped);
+    assert!(
+        text.starts_with("impact of foo in a.ts, within 1 hop\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("b.ts  distance 1  imports foo from a.ts; in run (line 3), stop (line 7)\n"),
+        "{text}"
+    );
+    let json = to_value(&answer).unwrap();
+    assert_eq!(
+        json["affected"][0]["callers"],
+        json!([{ "name": "run", "line": 3 }, { "name": "stop", "line": 7 }])
+    );
+}
+
+#[scenario("queries", "A name used in a method affects that method")]
+#[test]
+fn a_name_used_in_a_method_affects_that_method() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("runner.ts", "a.ts", &["foo"])
+        .symbols(
+            "runner.ts",
+            Code::new()
+                .declaration("Runner", (1, 12), &[])
+                .declaration("Runner.start", (2, 5), &["foo"])
+                .declaration("Runner.stop", (7, 10), &[]),
+        )
+        .exports("runner.ts", &["Runner"])
+        .imports_names("app.ts", "runner.ts", &["Runner"])
+        .symbols(
+            "app.ts",
+            Code::new().declaration("main", (1, 3), &["Runner"]),
+        )
+        .exports("app.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row(
+            "runner.ts",
+            1,
+            "imports foo from a.ts",
+            &["Runner.start"]
+        )]
+    );
+}
+
+#[scenario(
+    "queries",
+    "Callers of a member are found through this and through its class"
+)]
+#[test]
+fn callers_of_a_member_are_found_through_this_and_through_its_class() {
+    let index = Tree::new()
+        .symbols(
+            "runner.ts",
+            Code::new()
+                .declaration("Runner", (1, 12), &[])
+                .declaration("Runner.start", (2, 5), &[])
+                .declaration("Runner.stop", (7, 10), &["Runner.start"]),
+        )
+        .exports("runner.ts", &["Runner"])
+        .imports_names("app.ts", "runner.ts", &["Runner"])
+        .symbols(
+            "app.ts",
+            Code::new().declaration("main", (1, 3), &["Runner"]),
+        )
+        .exports("app.ts", &[])
+        .build();
+
+    let answer = ask(&index, "runner.ts", &["Runner.start"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("app.ts", 1, "imports Runner from runner.ts", &["main"]),
+            row("runner.ts", 1, "declares Runner.start", &["Runner.stop"]),
+        ]
+    );
+    assert_eq!(
+        answer.notes,
+        [
+            "callers of Runner.start through a value are found through the declarations that refer to Runner"
+        ]
+    );
+}
+
+#[scenario("queries", "A test that calls a name is a direct caller")]
+#[test]
+fn a_test_that_calls_a_name_is_a_direct_caller() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("a.test.ts", "a.ts", &["foo"])
+        .symbols("a.test.ts", Code::new().on_load(&["foo"]))
+        .exports("a.test.ts", &[])
+        .tag("a.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert_eq!(
+        rows(&answer.tests),
+        [(
+            "a.test.ts",
+            1,
+            "imports foo from a.ts".to_owned(),
+            Vec::new(),
+            true
+        )]
+    );
+}
+
+#[scenario("queries", "A file reached at load reaches the files that load it")]
+#[test]
+fn a_file_reached_at_load_reaches_the_files_that_load_it() {
+    let type_only = Import {
+        names: vec!["Config".to_owned()],
+        exported: vec!["Config".to_owned()],
+        flags: ImportFlags::TYPE_ONLY,
+        ..Import::new("config.ts", ImportKind::Static, 1)
+    };
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("load", (1, 3), &[]))
+        .exports("a.ts", &["load"])
+        .imports_names("config.ts", "a.ts", &["load"])
+        .symbols(
+            "config.ts",
+            Code::new()
+                .declaration("config", (1, 1), &["load"])
+                .declaration("Config", (3, 3), &[])
+                .on_load(&["load"]),
+        )
+        .exports("config.ts", &["config", "Config"])
+        .imports_names("app.ts", "config.ts", &["config"])
+        .symbols("app.ts", Code::new())
+        .exports("app.ts", &[])
+        .import("types.ts", type_only, file("config.ts"))
+        .symbols(
+            "types.ts",
+            Code::new().declaration("Alias", (1, 1), &["Config"]),
+        )
+        .exports("types.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["load"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            (
+                "config.ts",
+                1,
+                "imports load from a.ts".to_owned(),
+                vec!["config"],
+                true
+            ),
+            (
+                "app.ts",
+                2,
+                "imports config.ts".to_owned(),
+                Vec::new(),
+                true
+            ),
+        ]
+    );
+}
+
+#[scenario("queries", "A larger depth follows the callers of callers")]
+#[test]
+fn a_larger_depth_follows_the_callers_of_callers() {
+    let answer = ask(&chain(), "a.ts", &["foo"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("b.ts", 1, "imports foo from a.ts", &["run"]),
+            row("c.ts", 2, "imports run from b.ts", &["main"]),
+        ]
+    );
+    assert_eq!(answer.depth, Some(2));
+}
+
+#[scenario("queries", "The answer says when the walk stopped at the callers")]
+#[test]
+fn the_answer_says_when_the_walk_stopped_at_the_callers() {
+    let answer = ask(&chain(), "a.ts", &["foo"], None);
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(answer.notes, [STOPPED]);
+    assert!(
+        answer
+            .text(Entries::Capped)
+            .contains(&format!("note: {STOPPED}\n"))
+    );
+}
+
+#[scenario("queries", "A walk that runs out says nothing about stopping")]
+#[test]
+fn a_walk_that_runs_out_says_nothing_about_stopping() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .symbols("b.ts", Code::new().declaration("run", (3, 5), &["foo"]))
+        .exports("b.ts", &["run"])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert!(answer.notes.is_empty(), "{:?}", answer.notes);
+}
+
+#[scenario("queries", "A Python file asked about by name is followed whole")]
+#[test]
+fn a_python_file_asked_about_by_name_is_followed_whole() {
+    let index = Tree::new()
+        .read_by("python", "lib.py")
+        .read_by("python", "user.py")
+        .read_by("python", "app.py")
+        .imports_names("user.py", "lib.py", &["parse"])
+        .imports("app.py", "user.py")
+        .build();
+
+    let answer = ask(&index, "lib.py", &["parse"], None);
+
+    assert_eq!(paths(&answer.affected), ["user.py"]);
+    assert!(
+        answer.notes.contains(
+            &"lib.py is followed whole because its connector records no declarations".to_owned()
+        ),
+        "{:?}",
+        answer.notes
+    );
+}
+
+#[scenario("queries", "An importer without declarations is followed whole")]
+#[test]
+fn an_importer_without_declarations_is_followed_whole() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .recovered("b.ts", 1, 3)
+        .imports_names("c.ts", "b.ts", &["bar"])
+        .symbols("c.ts", Code::new().declaration("main", (1, 3), &["bar"]))
+        .exports("c.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("b.ts", 1, "imports foo from a.ts", &[]),
+            row("c.ts", 2, "imports bar from b.ts", &["main"]),
+        ]
+    );
+}
+
+#[scenario("queries", "A declaration crosses only its own contracts")]
+#[test]
+fn a_declaration_crosses_only_its_own_contracts() {
+    let index = Tree::new()
+        .symbols(
+            "api.ts",
+            Code::new()
+                .declaration("listUsers", (1, 5), &[])
+                .declaration("health", (7, 10), &[]),
+        )
+        .exports("api.ts", &["listUsers", "health"])
+        .site("api.ts", "http GET /users", Role::Serves, 3)
+        .site("api.ts", "http GET /health", Role::Serves, 8)
+        .symbols(
+            "users.ts",
+            Code::new().declaration("fetchUsers", (1, 4), &[]),
+        )
+        .exports("users.ts", &[])
+        .site("users.ts", "http GET /users", Role::Calls, 2)
+        .symbols("ping.ts", Code::new().declaration("ping", (1, 4), &[]))
+        .exports("ping.ts", &[])
+        .site("ping.ts", "http GET /health", Role::Calls, 2)
+        .build();
+
+    let answer = ask(&index, "api.ts", &["listUsers"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("users.ts", 1, "calls http GET /users", &["fetchUsers"])]
+    );
+}
+
+#[test]
+fn a_namespace_import_is_a_use_of_every_name_by_what_uses_the_namespace() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_as("b.ts", "a.ts", &[("*", "ns")])
+        .symbols(
+            "b.ts",
+            Code::new()
+                .declaration("run", (3, 5), &["ns"])
+                .declaration("idle", (7, 8), &[]),
+        )
+        .exports("b.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("b.ts", 1, "imports a.ts", &["run"])]
+    );
+}
+
+#[test]
+fn a_name_is_followed_under_the_local_name_an_import_gives_it() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_as("b.ts", "a.ts", &[("foo", "renamed")])
+        .symbols(
+            "b.ts",
+            Code::new()
+                .declaration("run", (3, 5), &["renamed"])
+                .declaration("idle", (7, 8), &["foo"]),
+        )
+        .exports("b.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("b.ts", 1, "imports foo from a.ts", &["run"])]
+    );
+}
+
+#[test]
+fn a_default_export_is_followed_through_the_local_it_is_exported_from() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .exports_from("default", "foo"),
+        )
+        .exports("a.ts", &["default"])
+        .imports_as("b.ts", "a.ts", &[("default", "Thing")])
+        .symbols("b.ts", Code::new().declaration("run", (3, 5), &["Thing"]))
+        .exports("b.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("b.ts", 1, "imports default from a.ts", &["run"])]
+    );
+}
+
+#[test]
+fn a_name_exported_under_another_name_is_passed_on_by_the_file_that_imports_it() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("mid.ts", "a.ts", &["foo"])
+        .symbols("mid.ts", Code::new().exports_from("bar", "foo"))
+        .exports("mid.ts", &["bar"])
+        .imports_names("page.ts", "mid.ts", &["bar"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("render", (1, 4), &["bar"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("mid.ts", 1, "imports foo from a.ts", &[]),
+            row("page.ts", 1, "imports bar from mid.ts", &["render"]),
+        ]
+    );
+}
+
+#[test]
+fn a_star_barrel_passes_a_name_on_but_never_the_default() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("thing", (4, 5), &[])
+                .exports_from("default", "thing"),
+        )
+        .exports("a.ts", &["foo", "default"])
+        .re_exports_all("index.ts", "a.ts")
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &[])
+        .imports_names("page.ts", "index.ts", &["foo", "default"])
+        .symbols(
+            "page.ts",
+            Code::new()
+                .declaration("render", (1, 4), &["foo"])
+                .declaration("show", (6, 8), &["default"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let foo = ask(&index, "a.ts", &["foo"], None);
+    let thing = ask(&index, "a.ts", &["thing"], None);
+
+    assert_eq!(
+        rows(&foo.affected),
+        [
+            row("index.ts", 1, "re-exports foo from a.ts", &[]),
+            row("page.ts", 1, "imports foo from index.ts", &["render"]),
+        ]
+    );
+    assert!(thing.affected.is_empty(), "{:?}", thing.affected);
+}
+
+#[test]
+fn an_import_nothing_uses_is_not_a_caller() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .symbols("b.ts", Code::new().declaration("run", (3, 5), &[]))
+        .exports("b.ts", &["run"])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert!(
+        answer
+            .text(Entries::Capped)
+            .contains("nothing is affected by a change to foo in a.ts among")
+    );
+}
+
+#[test]
+fn a_dynamic_import_is_a_use_by_the_declaration_that_holds_its_line_or_by_the_load() {
+    let dynamic = |line| Import::new("a.ts", ImportKind::Dynamic, line);
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .import("inside.ts", dynamic(6), file("a.ts"))
+        .symbols(
+            "inside.ts",
+            Code::new()
+                .declaration("lazy", (5, 8), &[])
+                .declaration("idle", (10, 12), &[]),
+        )
+        .exports("inside.ts", &[])
+        .import("outside.ts", dynamic(20), file("a.ts"))
+        .symbols("outside.ts", Code::new().declaration("lazy", (5, 8), &[]))
+        .exports("outside.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("inside.ts", 1, "imports a.ts", &["lazy"]),
+            ("outside.ts", 1, "imports a.ts".to_owned(), Vec::new(), true),
+        ]
+    );
+}
+
+#[test]
+fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line_or_in_the_load() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("bar", (3, 4), &[]),
+        )
+        .exports("a.ts", &["foo", "bar"])
+        .imports_type("named.ts", "a.ts", &["foo"], 6)
+        .symbols(
+            "named.ts",
+            Code::new()
+                .declaration("Alias", (5, 8), &[])
+                .declaration("Idle", (10, 12), &[]),
+        )
+        .exports("named.ts", &[])
+        .imports_type("module.ts", "a.ts", &["*"], 6)
+        .symbols("module.ts", Code::new().declaration("Shape", (5, 8), &[]))
+        .exports("module.ts", &[])
+        .imports_type("loose.ts", "a.ts", &["foo"], 20)
+        .symbols("loose.ts", Code::new().declaration("Alias", (5, 8), &[]))
+        .exports("loose.ts", &[])
+        .build();
+
+    let foo = ask(&index, "a.ts", &["foo"], None);
+    let bar = ask(&index, "a.ts", &["bar"], None);
+
+    assert_eq!(
+        rows(&foo.affected),
+        [
+            (
+                "loose.ts",
+                1,
+                "imports foo from a.ts".to_owned(),
+                Vec::new(),
+                true
+            ),
+            row("module.ts", 1, "imports a.ts", &["Shape"]),
+            row("named.ts", 1, "imports foo from a.ts", &["Alias"]),
+        ]
+    );
+    // `import('./a').foo` takes `foo` and nothing else, and `typeof import('./a')` takes every name.
+    assert_eq!(
+        rows(&bar.affected),
+        [row("module.ts", 1, "imports a.ts", &["Shape"])]
+    );
+}
+
+#[test]
+fn a_side_effect_import_uses_no_name_but_loads_the_file() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .on_load(&["foo"]),
+        )
+        .exports("a.ts", &["foo"])
+        .imports_for_effect("b.ts", "a.ts")
+        .symbols("b.ts", Code::new().declaration("run", (3, 5), &["foo"]))
+        .exports("b.ts", &[])
+        .build();
+
+    let by_name = ask(&index, "a.ts", &["foo"], Some(2));
+
+    assert_eq!(
+        rows(&by_name.affected),
+        [
+            ("a.ts", 1, "declares foo".to_owned(), Vec::new(), true),
+            ("b.ts", 2, "imports a.ts".to_owned(), Vec::new(), true),
+        ]
+    );
+}
+
+/// `routes.ts` serves `/inner` in its handler and `/top` outside every declaration, `other.ts` calls `/inner` outside every declaration and `client.ts` calls `/top` in a function.
+fn routes() -> Tree {
+    Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("routes.ts", "a.ts", &["foo"])
+        .symbols(
+            "routes.ts",
+            Code::new()
+                .declaration("handler", (3, 8), &[])
+                .on_load(&["foo"]),
+        )
+        .exports("routes.ts", &[])
+        .site("routes.ts", "http GET /top", Role::Serves, 20)
+        .site("routes.ts", "http GET /inner", Role::Serves, 5)
+        .symbols(
+            "client.ts",
+            Code::new().declaration("fetchTop", (1, 4), &[]),
+        )
+        .exports("client.ts", &[])
+        .site("client.ts", "http GET /top", Role::Calls, 2)
+        .symbols(
+            "other.ts",
+            Code::new().declaration("fetchInner", (1, 4), &[]),
+        )
+        .exports("other.ts", &[])
+        .site("other.ts", "http GET /inner", Role::Calls, 30)
+}
+
+#[test]
+fn a_site_outside_every_declaration_belongs_to_the_load() {
+    let index = routes().build();
+
+    let answer = ask(&index, "routes.ts", &["handler"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [(
+            "other.ts",
+            1,
+            "calls http GET /inner".to_owned(),
+            Vec::new(),
+            true
+        )]
+    );
+}
+
+#[test]
+fn a_file_reached_at_load_crosses_all_its_contracts() {
+    let index = routes().build();
+
+    let answer = ask(&index, "a.ts", &["foo"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            (
+                "routes.ts",
+                1,
+                "imports foo from a.ts".to_owned(),
+                Vec::new(),
+                true
+            ),
+            (
+                "client.ts",
+                2,
+                "calls http GET /top".to_owned(),
+                vec!["fetchTop"],
+                false
+            ),
+            (
+                "other.ts",
+                2,
+                "calls http GET /inner".to_owned(),
+                Vec::new(),
+                true
+            ),
+        ]
+    );
+}
+
+#[test]
+fn several_names_in_several_files_are_one_question() {
+    let index = library()
+        .symbols("z.ts", Code::new().declaration("zed", (1, 2), &[]))
+        .exports("z.ts", &["zed"])
+        .imports_names("y.ts", "z.ts", &["zed"])
+        .symbols("y.ts", Code::new().declaration("use", (1, 3), &["zed"]))
+        .exports("y.ts", &[])
+        .build();
+
+    let answer = ask_in(&index, &["a.ts", "z.ts"], &["foo", "zed", "nothing"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("b.ts", 1, "imports foo from a.ts", &["run"]),
+            row("y.ts", 1, "imports zed from z.ts", &["use"]),
+        ]
+    );
+    // Names apply to every path of the request, so each path that lacks one gets a note for it.
+    assert_eq!(
+        answer.notes,
+        [
+            "a.ts declares no nothing",
+            "a.ts declares no zed",
+            "z.ts declares no foo",
+            "z.ts declares no nothing"
+        ]
+    );
+    assert!(
+        answer
+            .text(Entries::Capped)
+            .starts_with("impact of foo, zed and nothing in a.ts and z.ts, within 1 hop\n")
+    );
+}
+
+#[test]
+fn the_callers_of_an_entry_are_cut_after_three_unless_all_are_asked_for() {
+    let mut users = Code::new();
+    for (number, name) in ["a", "b", "c", "d", "e"].into_iter().enumerate() {
+        let line = u32::try_from(number).unwrap() * 3 + 1;
+        users = users.declaration(name, (line, line + 1), &["foo"]);
+    }
+    let index = Tree::new()
+        .symbols("lib.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("lib.ts", &["foo"])
+        .imports_names("many.ts", "lib.ts", &["foo"])
+        .symbols("many.ts", users)
+        .exports("many.ts", &[])
+        .build();
+
+    let answer = ask(&index, "lib.ts", &["foo"], None);
+
+    assert!(
+        answer.text(Entries::Capped).contains(
+            "many.ts  distance 1  imports foo from lib.ts; in a (line 1), b (line 4), c (line 7) and 2 more\n"
+        ),
+        "{}",
+        answer.text(Entries::Capped)
+    );
+    assert!(
+        answer.text(Entries::All).contains(
+            "imports foo from lib.ts; in a (line 1), b (line 4), c (line 7), d (line 10), e (line 13)\n"
+        ),
+        "{}",
+        answer.text(Entries::All)
+    );
+    assert_eq!(answer.affected[0].callers.len(), 5);
+}
+
+#[test]
+fn an_answer_without_names_serialises_as_before() {
+    let index = Tree::new().imports("b.ts", "a.ts").build();
+    let request = ImpactRequest {
+        files: vec!["a.ts".to_owned()],
+        ..ImpactRequest::default()
+    };
+
+    let json = to_value(impact(&index, Freshness::Fresh, &request)).unwrap();
+
+    assert!(json.get("names").is_none() && json.get("notes").is_none());
+    assert_eq!(
+        json["affected"],
+        json!([{ "path": "b.ts", "distance": 1, "reason": { "via": "imports", "file": "a.ts" } }])
+    );
+}
+
+#[test]
+fn a_depth_of_zero_lists_nothing_and_says_the_walk_stopped() {
+    let answer = ask(&chain(), "a.ts", &["foo"], Some(0));
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert_eq!(answer.notes, [STOPPED]);
+    assert!(
+        answer
+            .text(Entries::Capped)
+            .starts_with("impact of foo in a.ts, within 0 hops\n")
+    );
+}
+
+#[test]
+fn a_name_asked_twice_is_one_name() {
+    let answer = ask(&chain(), "a.ts", &["foo", "foo"], None);
+
+    assert_eq!(answer.names, ["foo"]);
+}
+
+#[test]
+fn an_index_read_from_a_snapshot_answers_by_name_as_it_did() {
+    let tree = || {
+        Tree::new()
+            .symbols(
+                "a.ts",
+                Code::new()
+                    .declaration("foo", (1, 2), &[])
+                    .declaration("helper", (4, 6), &["foo"])
+                    .exports_from("default", "helper"),
+            )
+            .exports("a.ts", &["foo", "helper", "default"])
+            .imports_names("b.ts", "a.ts", &["foo"])
+            .symbols(
+                "b.ts",
+                Code::new()
+                    .declaration("run", (3, 5), &["foo"])
+                    .on_load(&["foo"]),
+            )
+            .exports("b.ts", &["run"])
+            .imports_names("c.ts", "b.ts", &["run"])
+            .symbols("c.ts", Code::new().declaration("main", (1, 3), &["run"]))
+            .exports("c.ts", &[])
+            .build()
+    };
+    let before = to_value(ask(&tree(), "a.ts", &["foo"], Some(3))).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("snapshot.gsttt");
+    let header = Header {
+        built_by: VERSION.to_owned(),
+        built_at: now(),
+        head: None,
+        dirty: 0,
+        files: 0,
+        connectors: Vec::new(),
+        coverage: String::new(),
+    };
+    let stored = Stored {
+        index: tree(),
+        config: 0,
+        listed_at: 0,
+        files: Vec::new(),
+    };
+    write(&path, &header, &stored).unwrap();
+
+    let snapshot = Snapshot::open(&path).unwrap();
+    let read = snapshot.stored().unwrap().to_index().unwrap();
+    let after = to_value(ask(&read, "a.ts", &["foo"], Some(3))).unwrap();
+
+    assert_eq!(after, before);
+    assert_eq!(
+        before["affected"][1]["callers"],
+        json!([{ "name": "run", "line": 3 }])
+    );
+    assert_eq!(before["affected"][1]["load"], json!(true));
+}
+
+/// How many files a random tree has.
+const FILES: usize = 5;
+
+/// The names the declarations of a random tree can have.
+const NAMES: [&str; 3] = ["a", "b", "c"];
+
+/// What one file of a random tree declares, uses, exports and imports.
+#[derive(Clone, Debug)]
+struct Module {
+    /// Per name: whether the file declares it, and a mask of the names that declaration uses.
+    declared: [Option<u8>; 3],
+    /// A mask of the names the code of the file uses as it loads.
+    on_load: u8,
+    /// A mask of the names the file exports, of which it keeps those it declares.
+    exports: u8,
+    /// Per file: a mask of the names this file imports from it, none when zero.
+    imports: [u8; FILES],
+}
+
+fn module() -> impl Strategy<Value = Module> {
+    (
+        prop::array::uniform3(prop::option::of(0_u8..8)),
+        0_u8..8,
+        0_u8..8,
+        prop::array::uniform5(0_u8..8),
+    )
+        .prop_map(|(declared, on_load, exports, imports)| Module {
+            declared,
+            on_load,
+            exports,
+            imports,
+        })
+}
+
+/// The names `mask` picks out of [`NAMES`].
+fn picked(mask: u8) -> Vec<&'static str> {
+    NAMES
+        .into_iter()
+        .enumerate()
+        .filter(|&(at, _)| mask & (1 << at) != 0)
+        .map(|(_, name)| name)
+        .collect()
+}
+
+fn module_path(number: usize) -> String {
+    format!("f{number}.ts")
+}
+
+/// The index of the files of `modules`, each with declarations of its own.
+fn random_tree(modules: &[Module]) -> Index {
+    let mut tree = Tree::new();
+    for (number, module) in modules.iter().enumerate() {
+        let path = module_path(number);
+        let mut code = Code::new().on_load(&picked(module.on_load));
+        let mut exported = 0_u8;
+        for (at, declared) in module.declared.iter().enumerate() {
+            let (Some(uses), Ok(line)) = (declared, u32::try_from(at * 3 + 1)) else {
+                continue;
+            };
+            code = code.declaration(NAMES[at], (line, line + 1), &picked(*uses));
+            exported |= module.exports & (1 << at);
+        }
+        tree = tree.symbols(&path, code).exports(&path, &picked(exported));
+        for (target, &mask) in module.imports.iter().enumerate() {
+            if mask != 0 && target != number {
+                tree = tree.imports_names(&path, &module_path(target), &picked(mask));
+            }
+        }
+    }
+    tree.build()
+}
+
+/// What a reader of the answer sees of each entry: its path with its distance, its callers and whether its load is reached.
+type Seen = BTreeMap<String, (u32, BTreeSet<String>, bool)>;
+
+fn seen(answer: &Impact) -> Seen {
+    answer
+        .affected
+        .iter()
+        .chain(&answer.tests)
+        .map(|entry| {
+            let callers = entry.callers.iter().map(|caller| caller.name.clone());
+            (
+                entry.path.clone(),
+                (entry.distance, callers.collect(), entry.load),
+            )
+        })
+        .collect()
+}
+
+proptest! {
+    /// On any tree, a larger depth keeps what a smaller one found, each file at the same distance, lists nothing beyond the depth, lists nearest first and gives the same answer twice.
+    #[test]
+    fn a_larger_depth_keeps_what_a_smaller_one_found(modules in prop::collection::vec(module(), FILES)) {
+        let index = random_tree(&modules);
+        for number in 0..FILES {
+            for name in NAMES {
+                let path = module_path(number);
+                let mut nearer: Seen = Seen::new();
+                for depth in 0..=4 {
+                    let answer = ask(&index, &path, &[name], Some(depth));
+                    prop_assert_eq!(
+                        to_value(&answer).unwrap(),
+                        to_value(ask(&index, &path, &[name], Some(depth))).unwrap()
+                    );
+                    for list in [&answer.affected, &answer.tests] {
+                        let order: Vec<(u32, &str)> = list
+                            .iter()
+                            .map(|entry| (entry.distance, entry.path.as_str()))
+                            .collect();
+                        prop_assert!(order.is_sorted(), "{order:?}");
+                        prop_assert!(order.iter().all(|&(distance, _)| (1..=depth).contains(&distance)), "{order:?}");
+                    }
+                    let now = seen(&answer);
+                    for (file, (distance, callers, load)) in &nearer {
+                        let (later, more, loaded) = &now[file];
+                        prop_assert_eq!(later, distance);
+                        prop_assert!(callers.is_subset(more), "{file}");
+                        prop_assert!(!load || *loaded, "{file}");
+                    }
+                    nearer = now;
+                }
+            }
+        }
+    }
+}

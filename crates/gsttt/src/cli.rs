@@ -82,7 +82,7 @@ pub enum Command {
     },
 }
 
-/// The arguments of `impact`: paths or `--changed`, never both.
+/// The arguments of `impact`: paths or `--changed`, never both, and `--name` with paths.
 #[derive(Debug, Args)]
 #[command(group = ArgGroup::new("target").required(true).args(["paths", "changed"]))]
 pub struct ImpactArgs {
@@ -98,9 +98,13 @@ pub struct ImpactArgs {
     #[arg(long, value_name = "REV")]
     pub base: Option<String>,
 
-    /// Follow dependents at most N hops from a changed file
+    /// Follow dependents at most N hops from a changed file. With `--name` the default is 1
     #[arg(long, value_name = "N")]
     pub depth: Option<u32>,
+
+    /// Ask about a name that the paths declare, such as `getHash` or `Runner.start`, and get its direct callers. May be repeated, and needs paths
+    #[arg(long = "name", value_name = "NAME")]
+    pub names: Vec<String>,
 }
 
 /// The arguments of `dependents` and `dependencies`.
