@@ -10,11 +10,11 @@
 
 ## 3. TypeScript
 
-- [ ] 3.1 The declarations, with each member of a class as `Class.member`, overloads and merged declarations joined
-- [ ] 3.2 The uses: references, JSX tags, types, `typeof`, `this.member`, and the writes of top-level variables
-- [ ] 3.3 What the file uses at load
-- [ ] 3.4 The local names of imports and of exports
-- [ ] 3.5 The fixtures and their snapshots, the scenarios of the `typescript` delta, and the cold index of vite measured against 95 ms
+- [x] 3.1 The declarations, with each member of a class as `Class.member`, overloads and merged declarations joined
+- [x] 3.2 The uses: references, JSX tags, types, `typeof`, `this.member`, and the writes of top-level variables
+- [x] 3.3 What the file uses at load
+- [x] 3.4 The local names of imports and of exports
+- [x] 3.5 The fixtures and their snapshots, the scenarios of the `typescript` delta, and the cold index of vite measured against 95 ms
 
 ## 4. The graph and the walk
 
