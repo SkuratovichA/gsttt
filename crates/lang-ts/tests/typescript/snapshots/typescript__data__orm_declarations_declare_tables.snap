@@ -31,6 +31,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Entity"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -47,6 +50,22 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 3,
+            "name": "Booking",
+            "uses": [
+              "Entity"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Entity"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -66,6 +85,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Entity"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -82,6 +104,22 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 3,
+            "name": "Room",
+            "uses": [
+              "Entity"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Entity"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -101,6 +139,10 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "pgTable",
+            "serial"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -118,6 +160,24 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "items",
+            "uses": [
+              "pgTable",
+              "serial"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "pgTable",
+          "serial"
+        ]
       },
       "tags": 0,
       "unresolved": []

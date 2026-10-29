@@ -37,6 +37,11 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Mutation",
+            "Query",
+            "Resolver"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -55,6 +60,48 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Booking",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 5,
+            "name": "BookingsResolver",
+            "uses": [
+              "Resolver"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 7,
+            "name": "BookingsResolver.bookings",
+            "uses": [
+              "Booking",
+              "Query"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 10,
+            "name": "BookingsResolver.cancel",
+            "uses": [
+              "Booking",
+              "Mutation"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Mutation",
+          "Query",
+          "Resolver"
+        ]
       },
       "tags": 0,
       "unresolved": []

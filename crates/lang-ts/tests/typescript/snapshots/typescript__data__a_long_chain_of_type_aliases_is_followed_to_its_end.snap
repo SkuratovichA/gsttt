@@ -31,6 +31,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -47,6 +50,92 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Chain1",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Chain2",
+            "uses": [
+              "Chain1"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Chain3",
+            "uses": [
+              "Chain2"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "Chain4",
+            "uses": [
+              "Chain3"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "Chain5",
+            "uses": [
+              "Chain4"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "Chain6",
+            "uses": [
+              "Chain5"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "Chain7",
+            "uses": [
+              "Chain6"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "Chain8",
+            "uses": [
+              "Chain7"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 11,
+            "name": "Chain9",
+            "uses": [
+              "Chain8"
+            ]
+          },
+          {
+            "end": 15,
+            "line": 13,
+            "name": "find",
+            "uses": [
+              "Chain9"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []
@@ -67,6 +156,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -84,6 +176,61 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Ping",
+            "uses": [
+              "Pong"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Pong",
+            "uses": [
+              "Ping"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Back",
+            "uses": [
+              "Forth",
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "Forth",
+            "uses": [
+              "Back"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 8,
+            "name": "loop",
+            "uses": [
+              "Ping"
+            ]
+          },
+          {
+            "end": 14,
+            "line": 12,
+            "name": "escape",
+            "uses": [
+              "Forth"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -98,6 +245,26 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Wide",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 3,
+            "name": "find",
+            "uses": [
+              "Wide"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

@@ -22,6 +22,9 @@ expression: json
       "exports": [],
       "imports": [
         {
+          "exported": [
+            "terms"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -34,6 +37,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "plainTerms"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -46,6 +52,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "worker"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 3,
@@ -58,6 +67,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "plainWorker"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 4,
@@ -70,6 +82,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "logo"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 5,
@@ -82,6 +97,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "plainLogo"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 6,
@@ -94,6 +112,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "theme"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 7,
@@ -106,6 +127,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "plainTheme"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 8,
@@ -118,6 +142,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "schema"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 9,
@@ -132,6 +159,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "plainSchema"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 10,
@@ -146,6 +176,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "absent"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 11,
@@ -160,6 +193,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "plainAbsent"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 12,
@@ -174,6 +210,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "kit"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 13,
@@ -186,6 +225,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "plainKit"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 14,
@@ -203,6 +245,11 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -217,6 +264,18 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "worker",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

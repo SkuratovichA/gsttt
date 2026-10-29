@@ -1,0 +1,163 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "path": "src/forms.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "f",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 3,
+            "name": "g",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "a",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "c",
+            "uses": []
+          },
+          {
+            "end": 20,
+            "line": 11,
+            "name": "C",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 12,
+            "name": "C.constructor",
+            "uses": []
+          },
+          {
+            "end": 13,
+            "line": 13,
+            "name": "C.m",
+            "uses": []
+          },
+          {
+            "end": 14,
+            "line": 14,
+            "name": "C.s",
+            "uses": []
+          },
+          {
+            "end": 15,
+            "line": 15,
+            "name": "C.#p",
+            "uses": []
+          },
+          {
+            "end": 19,
+            "line": 16,
+            "name": "C.v",
+            "uses": []
+          },
+          {
+            "end": 22,
+            "line": 22,
+            "name": "E",
+            "uses": []
+          },
+          {
+            "end": 29,
+            "line": 24,
+            "name": "I",
+            "uses": []
+          },
+          {
+            "end": 31,
+            "line": 31,
+            "name": "T",
+            "uses": []
+          },
+          {
+            "end": 33,
+            "line": 33,
+            "name": "N",
+            "uses": []
+          },
+          {
+            "end": 35,
+            "line": 35,
+            "name": "default",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

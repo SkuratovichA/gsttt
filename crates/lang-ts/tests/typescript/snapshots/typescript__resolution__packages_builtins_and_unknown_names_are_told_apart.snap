@@ -24,6 +24,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "useState"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -36,6 +39,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "createRoot"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -48,6 +54,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "readFileSync"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 3,
@@ -58,6 +67,9 @@ expression: json
           "to": "builtin"
         },
         {
+          "exported": [
+            "join"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 4,
@@ -68,6 +80,9 @@ expression: json
           "to": "builtin"
         },
         {
+          "exported": [
+            "leftPad"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 5,
@@ -82,6 +97,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "missing"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 6,
@@ -100,6 +118,25 @@ expression: json
       "project": "ts apps/web",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 8,
+            "line": 8,
+            "name": "all",
+            "uses": [
+              "createRoot",
+              "join",
+              "leftPad",
+              "missing",
+              "readFileSync",
+              "useState"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

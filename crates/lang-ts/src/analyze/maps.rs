@@ -12,7 +12,7 @@ use crate::shape::{chain_of, dotted, property_name};
 /// The operation types a resolver map names its fields under.
 const ROOTS: [&str; 3] = ["Query", "Mutation", "Subscription"];
 
-impl Analyzer<'_> {
+impl Analyzer<'_, '_> {
     /// `{ Query: { bookings() {} }, Mutation: { cancelBooking() {} } }` serves `graphql Query.bookings` and `graphql Mutation.cancelBooking`; types other than the roots are not entry points.
     pub(super) fn resolver_map(&mut self, object: &ObjectExpression<'_>) {
         for root in &object.properties {

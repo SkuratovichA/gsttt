@@ -1,0 +1,166 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "D",
+            "f",
+            "g",
+            "h",
+            "k",
+            "mixin",
+            "n"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "D",
+            "f",
+            "g",
+            "h",
+            "k",
+            "mixin",
+            "n"
+          ],
+          "spec": "./x",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "exported": [
+            "test"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "test"
+          ],
+          "spec": "vitest",
+          "to": {
+            "unresolved": {
+              "reason": "unknown-package"
+            }
+          }
+        }
+      ],
+      "path": "src/main.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "a",
+            "uses": [
+              "f"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "b",
+            "uses": [
+              "g"
+            ]
+          },
+          {
+            "end": 14,
+            "line": 9,
+            "name": "C",
+            "uses": [
+              "D",
+              "mixin"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "C.s",
+            "uses": [
+              "k"
+            ]
+          },
+          {
+            "end": 13,
+            "line": 11,
+            "name": "C.m",
+            "uses": [
+              "n"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "D",
+          "f",
+          "h",
+          "k",
+          "mixin",
+          "test"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

@@ -33,6 +33,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Prisma"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -49,6 +52,74 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Client",
+            "uses": [
+              "Prisma"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Reader",
+            "uses": [
+              "Client"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Options",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "Loop",
+            "uses": [
+              "Again"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "Again",
+            "uses": [
+              "Loop"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 9,
+            "name": "load",
+            "uses": [
+              "Reader"
+            ]
+          },
+          {
+            "end": 15,
+            "line": 13,
+            "name": "pick",
+            "uses": [
+              "Options"
+            ]
+          },
+          {
+            "end": 19,
+            "line": 17,
+            "name": "spin",
+            "uses": [
+              "Loop"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

@@ -28,6 +28,18 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "main",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -66,6 +78,18 @@ expression: json
       "project": "ts packages/ui",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Button",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

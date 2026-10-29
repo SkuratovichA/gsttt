@@ -28,6 +28,18 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "lib",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -40,6 +52,11 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": []
       },
       "tags": 1,
       "unresolved": []

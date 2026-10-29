@@ -29,6 +29,24 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Editor",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 2,
+            "name": "Outer",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -69,6 +87,24 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Editor",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Inner",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

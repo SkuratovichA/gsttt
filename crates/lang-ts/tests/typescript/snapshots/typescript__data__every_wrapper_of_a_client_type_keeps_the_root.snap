@@ -31,6 +31,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -48,6 +51,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -66,6 +83,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -83,6 +103,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -101,6 +135,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -118,6 +155,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -129,6 +180,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Other"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -148,6 +202,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "Other"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -166,6 +234,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -183,6 +254,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -201,6 +286,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -218,40 +306,19 @@ expression: json
       "status": {
         "status": "ok"
       },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [
-        {
-          "key": "table tenant",
-          "line": 4,
-          "role": "calls",
-          "via": "prisma"
-        }
-      ],
-      "embedded": [],
-      "exports": [
-        "load"
-      ],
-      "imports": [
-        {
-          "flags": 1,
-          "kind": "static",
-          "line": 1,
-          "names": [
-            "PrismaClient"
-          ],
-          "spec": "@prisma/client",
-          "to": {
-            "external": "@prisma/client"
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "PrismaClient"
+            ]
           }
-        }
-      ],
-      "path": "src/readonly.ts",
-      "project": "ts .",
-      "status": {
-        "status": "ok"
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []
@@ -271,6 +338,61 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "PrismaClient"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/readonly.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "table tenant",
+          "line": 4,
+          "role": "calls",
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "load"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -287,6 +409,20 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

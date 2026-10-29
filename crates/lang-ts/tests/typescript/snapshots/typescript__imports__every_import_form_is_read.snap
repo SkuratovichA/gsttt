@@ -40,6 +40,11 @@ expression: json
           }
         },
         {
+          "exported": [
+            "def",
+            "a",
+            "c"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -56,6 +61,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "ns"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 3,
@@ -82,6 +90,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "T"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 5,
@@ -186,6 +197,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "ok"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 15,
@@ -203,6 +217,46 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 9,
+            "line": 9,
+            "name": "lazy",
+            "uses": []
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "cjs",
+            "uses": []
+          },
+          {
+            "end": 13,
+            "line": 13,
+            "name": "Kept",
+            "uses": [
+              "T"
+            ]
+          },
+          {
+            "end": 14,
+            "line": 14,
+            "name": "used",
+            "uses": [
+              "a",
+              "c",
+              "cjs",
+              "def",
+              "lazy",
+              "legacy",
+              "ns"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -217,6 +271,18 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "ok",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

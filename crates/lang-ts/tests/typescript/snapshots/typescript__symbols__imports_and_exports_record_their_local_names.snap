@@ -1,0 +1,160 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "default",
+        "g"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "React"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "react",
+          "to": {
+            "unresolved": {
+              "reason": "unknown-package"
+            }
+          }
+        },
+        {
+          "exported": [
+            "ns"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "*"
+          ],
+          "spec": "./ns",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "exported": [
+            "b",
+            "c"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 3,
+          "names": [
+            "a",
+            "c"
+          ],
+          "spec": "./x",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "exported": [
+            "T"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 4,
+          "names": [
+            "T"
+          ],
+          "spec": "./t",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        }
+      ],
+      "path": "src/names.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 6,
+            "line": 6,
+            "name": "f",
+            "uses": []
+          }
+        ],
+        "exports": [
+          {
+            "local": "f",
+            "name": "default"
+          },
+          {
+            "local": "f",
+            "name": "g"
+          }
+        ],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

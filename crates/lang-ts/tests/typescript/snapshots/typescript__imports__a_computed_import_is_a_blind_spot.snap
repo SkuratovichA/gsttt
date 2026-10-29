@@ -28,6 +28,18 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "load",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": [
         {

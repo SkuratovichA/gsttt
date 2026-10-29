@@ -63,6 +63,42 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "a",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "b",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "c",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "D",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "renamed",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     }

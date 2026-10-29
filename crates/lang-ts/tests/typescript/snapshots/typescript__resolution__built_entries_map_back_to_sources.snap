@@ -36,6 +36,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "db"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -52,6 +55,20 @@ expression: json
       "project": "ts packages/api",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "api",
+            "uses": [
+              "db"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []
@@ -79,6 +96,18 @@ expression: json
       "project": "ts packages/db",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "db",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

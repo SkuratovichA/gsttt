@@ -35,6 +35,26 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "API_URL",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "list",
+            "uses": [
+              "API_URL"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     }

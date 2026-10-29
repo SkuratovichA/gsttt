@@ -31,6 +31,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Tenant"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -47,6 +50,20 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Row",
+            "uses": [
+              "Tenant"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []
@@ -155,6 +172,48 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Row",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Rows",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Where",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Client",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Whole",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "Other",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

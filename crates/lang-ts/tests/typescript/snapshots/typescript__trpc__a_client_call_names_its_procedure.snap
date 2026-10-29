@@ -31,6 +31,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "api"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -49,6 +52,20 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 6,
+            "line": 3,
+            "name": "Bookings",
+            "uses": [
+              "api"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []
