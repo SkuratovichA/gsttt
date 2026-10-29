@@ -36,7 +36,7 @@ impl Connector for TypeScript {
     fn meta(&self) -> Meta {
         Meta {
             name: "ts",
-            version: 2,
+            version: 3,
             summary: "TypeScript and JavaScript: imports, tsconfig paths, workspaces and the contracts of web frameworks",
             extensions: CODE_EXTENSIONS,
         }
