@@ -711,6 +711,56 @@ fn a_dynamic_import_is_a_use_by_the_declaration_that_holds_its_line_or_by_the_lo
 }
 
 #[test]
+fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line_or_in_the_load() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("bar", (3, 4), &[]),
+        )
+        .exports("a.ts", &["foo", "bar"])
+        .imports_type("named.ts", "a.ts", &["foo"], 6)
+        .symbols(
+            "named.ts",
+            Code::new()
+                .declaration("Alias", (5, 8), &[])
+                .declaration("Idle", (10, 12), &[]),
+        )
+        .exports("named.ts", &[])
+        .imports_type("module.ts", "a.ts", &["*"], 6)
+        .symbols("module.ts", Code::new().declaration("Shape", (5, 8), &[]))
+        .exports("module.ts", &[])
+        .imports_type("loose.ts", "a.ts", &["foo"], 20)
+        .symbols("loose.ts", Code::new().declaration("Alias", (5, 8), &[]))
+        .exports("loose.ts", &[])
+        .build();
+
+    let foo = ask(&index, "a.ts", &["foo"], None);
+    let bar = ask(&index, "a.ts", &["bar"], None);
+
+    assert_eq!(
+        rows(&foo.affected),
+        [
+            (
+                "loose.ts",
+                1,
+                "imports foo from a.ts".to_owned(),
+                Vec::new(),
+                true
+            ),
+            row("module.ts", 1, "imports a.ts", &["Shape"]),
+            row("named.ts", 1, "imports foo from a.ts", &["Alias"]),
+        ]
+    );
+    // `import('./a').foo` takes `foo` and nothing else, and `typeof import('./a')` takes every name.
+    assert_eq!(
+        rows(&bar.affected),
+        [row("module.ts", 1, "imports a.ts", &["Shape"])]
+    );
+}
+
+#[test]
 fn a_side_effect_import_uses_no_name_but_loads_the_file() {
     let index = Tree::new()
         .symbols(

@@ -368,7 +368,7 @@ struct Via<'a> {
     locals: Vec<&'a str>,
     /// What it passes on as a named re-export, as the name it takes and the name it exports.
     passes: Vec<(NameId, NameId)>,
-    /// Whether it uses a name beyond its locals: it exports one again, or takes every name by a dynamic import or a `require`.
+    /// Whether it uses a name beyond its locals: it exports one again, takes every name by a dynamic import or a `require`, or takes names by an import type.
     used: bool,
     /// Whether it re-exports a name.
     barrel: bool,
@@ -676,6 +676,19 @@ impl<'w, 'a> Step<'w, 'a> {
         let graph = self.walk.graph;
         match import.kind {
             ImportKind::Static | ImportKind::ReExport => {
+                // An import type binds no local: `import('./a').foo` uses `foo` where it is written, in the declaration whose lines hold it or in the load, as a dynamic import does.
+                if import.kind == ImportKind::Static
+                    && !import.names.is_empty()
+                    && import.exported.is_empty()
+                {
+                    let mut takes = false;
+                    for taken in import.names.iter().filter(|taken| name.takes(taken)) {
+                        via.taken.name(graph, taken);
+                        takes = true;
+                    }
+                    via.used |= takes && self.place(importer, symbols, import.line);
+                    return;
+                }
                 // An import that names what it takes binds each name; one that does not could use anything.
                 if import.names.is_empty() || import.exported.len() != import.names.len() {
                     via.whole = true;

@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{
-    Declared, FileTags, Import, ImportKind, LocalExport, ParseFailure, ParseStatus, Resolution,
-    ResolvedImport, Symbols, UnresolvedReason, UnresolvedSite,
+    Declared, FileTags, Import, ImportFlags, ImportKind, LocalExport, ParseFailure, ParseStatus,
+    Resolution, ResolvedImport, Symbols, UnresolvedReason, UnresolvedSite,
 };
 use crate::graph::{ContractSite, GraphBuilder};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
@@ -155,13 +155,22 @@ impl Code {
     }
 }
 
+/// An import of a file and what it resolves to.
+#[derive(Debug)]
+struct Written {
+    import: Import,
+    to: To,
+    /// Whether the facts keep the import with no locals, as a connector records an import type. [`bound`] binds the others.
+    unbound: bool,
+}
+
 #[derive(Debug)]
 struct Entry {
     /// The connector that read the file, `None` when no connector did.
     connector: Option<String>,
     tags: FileTags,
     status: ParseStatus,
-    imports: Vec<(Import, To)>,
+    imports: Vec<Written>,
     /// The names the file exports itself, `None` when the connector cannot tell.
     exports: Option<Vec<String>>,
     /// The declarations of the file, `None` when the connector records none.
@@ -190,10 +199,11 @@ pub(crate) fn owned(names: &[&str]) -> Vec<String> {
     names.iter().map(|&name| name.to_owned()).collect()
 }
 
-/// `import` as a connector records it for a file that does or does not have symbols: a static import that names what it takes binds each name under itself unless the test said otherwise.
-fn bound(import: &Import, has_symbols: bool) -> Import {
-    let mut import = import.clone();
-    let names_only = import.kind == ImportKind::Static
+/// `written` as a connector records it for a file that does or does not have symbols: a static import that names what it takes binds each name under itself unless the test said otherwise.
+fn bound(written: &Written, has_symbols: bool) -> Import {
+    let mut import = written.import.clone();
+    let names_only = !written.unbound
+        && import.kind == ImportKind::Static
         && !import.names.is_empty()
         && import.exported.is_empty()
         && !import.names.iter().any(|name| name == "*");
@@ -338,11 +348,29 @@ impl Tree {
     }
 
     /// `from` has `import`, which points at `to`.
-    pub fn import(mut self, from: &str, import: Import, to: To) -> Self {
+    pub fn import(self, from: &str, import: Import, to: To) -> Self {
+        self.written(from, import, to, false)
+    }
+
+    /// `from` names `names` of the file `to` in a type on `line`, as `import('to').name` does, and `typeof import('to')` with the name `*`: a type-only static import that binds no local, which is how a connector records an import type.
+    pub fn imports_type(self, from: &str, to: &str, names: &[&str], line: u32) -> Self {
+        let import = Import {
+            names: owned(names),
+            flags: ImportFlags::TYPE_ONLY,
+            ..Import::new(to, ImportKind::Static, line)
+        };
+        self.written(from, import, file(to), true)
+    }
+
+    fn written(mut self, from: &str, import: Import, to: To, unbound: bool) -> Self {
         for target in to.paths() {
             self.entry(target);
         }
-        self.entry(from).imports.push((import, to));
+        self.entry(from).imports.push(Written {
+            import,
+            to,
+            unbound,
+        });
         self
     }
 
@@ -440,9 +468,9 @@ impl Tree {
             graph.tag(from, entry.tags);
             graph.exports(from, entry.exports.as_deref());
             graph.symbols(from, entry.symbols.as_ref());
-            for (import, to) in &entry.imports {
-                for target in to.paths() {
-                    graph.import(from, ids[target], import);
+            for written in &entry.imports {
+                for target in written.to.paths() {
+                    graph.import(from, ids[target], &written.import);
                 }
             }
             for (key, role, line) in &entry.sites {
@@ -483,9 +511,9 @@ impl Tree {
             let imports: Vec<ResolvedImport> = entry
                 .imports
                 .iter()
-                .map(|(import, to)| ResolvedImport {
-                    import: bound(import, entry.symbols.is_some()),
-                    to: to.resolve(&ids),
+                .map(|written| ResolvedImport {
+                    import: bound(written, entry.symbols.is_some()),
+                    to: written.to.resolve(&ids),
                 })
                 .collect();
             let project = entry.connector.as_ref().map(|connector| {
