@@ -216,12 +216,8 @@ fn reset(tool: Tool, programs: &Programs) -> Option<String> {
         Tool::Madge => None,
         Tool::Grimp => Some(remove(GRIMP_CACHE)),
         Tool::CodebaseMemory => {
-            let cbm = quote(&programs.of(tool).to_string_lossy());
             let cache = quote(&programs.cbm_cache().to_string_lossy());
-            // The daemon keeps the index open, so it is stopped first; stopping it when none runs is not an error.
-            Some(format!(
-                "{cbm} daemon stop >/dev/null 2>&1; rm -rf {cache} && mkdir -p {cache}"
-            ))
+            Some(format!("rm -rf {cache} && mkdir -p {cache}"))
         }
     }
 }
@@ -380,7 +376,6 @@ mod tests {
                     Tool::Madge => assert_eq!(prepare, None),
                     Tool::CodebaseMemory => {
                         let prepare = prepare.unwrap();
-                        assert!(prepare.contains("daemon stop"), "{prepare}");
                         assert!(prepare.contains(&format!("rm -rf {cache} ")), "{prepare}");
                     }
                 }
