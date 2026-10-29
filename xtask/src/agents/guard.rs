@@ -337,6 +337,7 @@ mod tests {
         }
     }
 
+    #[gsttt_scenario::scenario("agent-benchmarks", "A file that a run deleted stops the task")]
     #[test]
     fn a_file_of_the_preparation_that_the_run_deleted_stops_the_task() {
         let (_guard, dir) = repo();

@@ -102,14 +102,18 @@ A run SHALL load none of the settings, hooks, memory, plugins, MCP servers or CL
 - **THEN** the task fails naming the setup and the plugin
 
 ### Requirement: What a run can reach
-Every run SHALL pass `--settings` with a sandbox that makes the run fail at start when it is unavailable and lets the Bash tool write only in the checkout and in a temporary directory of the run. This repository, the configuration directory of Claude Code and the files of the setups SHALL be unreadable to the Bash tool by the sandbox and to the Read tool by `Read` rules, and so SHALL the binary under test in every setup but `gsttt`.
+Every run SHALL pass `--settings` with a sandbox that makes the run fail at start when it is unavailable and lets the Bash tool write only in the checkout and in a temporary directory of the run. This repository, the main worktree it was made from, the configuration directory of Claude Code and the files of the setups SHALL be unreadable to the Bash tool by the sandbox and to the Read tool by `Read` rules, and so SHALL the binary under test in every setup but `gsttt`.
 
 #### Scenario: A run is confined by the sandbox
 - **WHEN** the command line of a run is planned in each of the four setups
 - **THEN** it carries the sandbox settings, only the checkout and the temporary directory of the run are writable, and each denied directory is both a denied read of the sandbox and a `Read` rule
 
+#### Scenario: The main worktree of the repository is out of reach of the runs
+- **WHEN** the directories no run may read are planned from a linked worktree, and from the main worktree itself
+- **THEN** the first list holds the linked worktree, the configuration directory and the main worktree, and the second holds the main worktree once
+
 ### Requirement: The directories of a run
-A run SHALL have a temporary directory of its own, made new for it and removed when it ends, and SHALL find `node` in a directory that holds nothing else.
+A run SHALL have a temporary directory of its own, made new for it and removed when it ends, and SHALL find `node` in a directory that holds nothing else. When a run ends, whatever became of it, the directory Claude Code made for its session in the temporary root that every session of the user shares SHALL be removed, and nothing else in that root.
 
 #### Scenario: A run has a temporary directory of its own
 - **WHEN** runs are made, one that answers, one that fails and one that a signal stops
@@ -119,16 +123,54 @@ A run SHALL have a temporary directory of its own, made new for it and removed w
 - **WHEN** the PATH of a run is planned
 - **THEN** the directory it finds `node` in holds a link to `node` and nothing else
 
+#### Scenario: The session directory of a run is removed
+- **WHEN** runs are made while the temporary root also holds the directory of another session and a file
+- **THEN** the directory of the session of each run is gone when the run is over, and the other session and the file are as they were
+
+#### Scenario: The session directory of a run the task stops on is removed
+- **WHEN** the init event of a run lists something the setup must not have, and the task stops on it
+- **THEN** the directory of the session of that run is gone as well
+
 ### Requirement: The checkout of the runs
-Each repository SHALL have one checkout for the runs, prepared once: cloned at its commit, installed with its install command, not built, and indexed by gsttt and by codebase-memory-mcp. Every run SHALL leave `git status --porcelain --ignored` of the checkout as it was after the preparation; a run that changed it SHALL be marked, and the checkout restored before the next run. The binary under test and the files of the setups SHALL be kept outside the directory of the checkouts.
+Each repository SHALL have one checkout for the runs, prepared once: cloned at its commit, installed with its install command, not built, and indexed by gsttt and by codebase-memory-mcp. A checkout whose `node_modules` is gone SHALL be installed again. The binary under test and the files of the setups SHALL be kept outside the directory of the checkouts.
+
+#### Scenario: The binary and the files of the setups are outside the checkouts
+- **WHEN** the directories the task keeps for itself are planned
+- **THEN** none of them is inside another or inside the directory of the checkouts
+
+#### Scenario: The install is made again when node_modules is gone
+- **WHEN** a prepared checkout loses its `node_modules` and is prepared again
+- **THEN** the install command runs again, and it did not run the time before, when `node_modules` and the record of the preparation were there
+
+### Requirement: What a run leaves in the checkout
+After every run, whatever became of it, HEAD and its form (a branch, or a detached commit) SHALL be put back, the tracked files reset, and the untracked and ignored files compared one by one, and only the files the run added SHALL be removed. A run that changed any of this SHALL be marked. The task SHALL stop when the checkout cannot be put back as it was, and SHALL NOT clean the whole tree.
 
 #### Scenario: A run that writes into the checkout is marked and undone
 - **WHEN** a run leaves a new file in the checkout
 - **THEN** the run is marked as one that changed the checkout, and the file is gone before the next run
 
-#### Scenario: The binary and the files of the setups are outside the checkouts
-- **WHEN** the directories the task keeps for itself are planned
-- **THEN** none of them is inside another or inside the directory of the checkouts
+#### Scenario: A run that moves HEAD is marked and HEAD is put back
+- **WHEN** a run moves HEAD to another commit, makes a branch, or resets the branch HEAD was on
+- **THEN** the run is marked, and HEAD is on the commit and the branch, or detached, as it was
+
+#### Scenario: A file that was there before the run is not removed with the files the run added
+- **WHEN** a run adds a file in a directory that already held ignored and untracked files
+- **THEN** the file is removed, and every file that was there before the run is still there
+
+#### Scenario: A file that a run deleted stops the task
+- **WHEN** a run deletes a file the preparation left, which git cannot restore
+- **THEN** the task fails naming the checkout
+
+### Requirement: The indexes of the runs
+The index of gsttt in each checkout and the cache of codebase-memory-mcp SHALL be kept aside when they are made. After a run of the setup that reads one, the index SHALL be put back as it was when it differs, and the run SHALL be marked. What the tool writes into its index on its own SHALL NOT count as a change.
+
+#### Scenario: A run that changes an index is marked and the index is put back
+- **WHEN** a run of the `gsttt` setup changes the index of its checkout, or a run of the `cbm` setup the cache of codebase-memory-mcp
+- **THEN** the run is marked, and the index holds the files and the bytes it held before the run
+
+#### Scenario: What a tool writes into its index on its own is not a change
+- **WHEN** the server of codebase-memory-mcp writes its activity database and its logs while it answers
+- **THEN** the run is not marked, and those files are left as they are
 
 ### Requirement: Answers and scores
 The prompt SHALL ask for the answer as a fenced block marked `files`, one path per line, and the answer SHALL be the last such block of the final message. Paths SHALL be made relative to the checkout and kept once, and one outside the checkout or the question's scope counts as wrong. A run SHALL be scored by precision, recall and F1, and a run without an answer by zeros. A test file the question ignores SHALL count as neither right nor wrong.
@@ -183,6 +225,13 @@ A run SHALL end with its result event: a process still alive five seconds after 
 - **WHEN** a sweep is asked for an empty path, `/`, the home directory, a relative path, or a directory outside the ones the task made
 - **THEN** it is refused before any process is ended
 
+### Requirement: A second signal
+A second Ctrl-C or SIGTERM SHALL end the task at once with the default action of the signal, whatever the task is waiting for.
+
+#### Scenario: A second signal ends the task at once
+- **WHEN** the task gets a signal it has already caught once
+- **THEN** the task is ended by that signal itself, and the handlers are installed once however many runs ask for them
+
 ### Requirement: The results of the runs
 `cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run the question and its kind, the setup, the repeat, the outcome, the answer, precision, recall, F1, the four token counts, the cost in USD, the turns, the duration and whether it changed the checkout. It SHALL hold no path or user name of the machine.
 
@@ -194,8 +243,15 @@ A run SHALL end with its result event: a process still alive five seconds after 
 - **WHEN** a run answers with a path under the home directory and outside the checkout
 - **THEN** the run counts it as wrong, and the results hold neither that path nor the user name
 
+### Requirement: A run is kept once the results are written
+A run SHALL be added to the results and reported as done only once the results with it in them are written. When they cannot be written, the run SHALL not be kept and the task SHALL stop.
+
+#### Scenario: A run whose results cannot be written is not kept
+- **WHEN** the results of a run that answered cannot be written
+- **THEN** the task fails, the run is neither in the results nor on disk, and no later run is started
+
 ### Requirement: Resuming the runs
-A task started over SHALL skip the runs whose question, setup and repeat the results already hold, and SHALL refuse to add to results written with another model, another Claude Code version, other questions or other versions of the tools.
+A task started over SHALL skip the runs whose question, setup and repeat the results already hold, and SHALL refuse to add to results written with another model, another Claude Code version, other questions, other versions of the tools or another build of the binary under test.
 
 #### Scenario: Finished runs are skipped
 - **WHEN** the results hold the first run and the task starts over
@@ -204,6 +260,18 @@ A task started over SHALL skip the runs whose question, setup and repeat the res
 #### Scenario: Results of another model are refused
 - **WHEN** the results were written with another model
 - **THEN** the task fails naming both models, and runs nothing
+
+#### Scenario: Results of other questions are refused
+- **WHEN** the results were written for other questions
+- **THEN** the task fails saying so, and runs nothing
+
+#### Scenario: Results of other versions of the tools are refused
+- **WHEN** the results were written with another version of a tool
+- **THEN** the task fails saying so, and runs nothing
+
+#### Scenario: Results of another build of the binary are refused
+- **WHEN** the results were written with a binary of the same version whose bytes have another SHA-256
+- **THEN** the task fails saying so, and runs nothing
 
 ### Requirement: The table of the agent runs
 `cargo xtask agents table` SHALL print, for each kind of question, a Markdown table with a row per setup and the mean over its runs of recall, precision, F1, tokens, turns and seconds, the mean cost over its runs that report one, and the number of its runs and of those without an answer. Results without a run SHALL print nothing.

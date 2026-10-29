@@ -868,6 +868,10 @@ touch "$d/finished"
         }
     }
 
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A run whose results cannot be written is not kept"
+    )]
     #[test]
     fn a_run_whose_results_cannot_be_written_is_not_kept() {
         let mut bed = Bed::answering(ANSWER);
@@ -913,6 +917,7 @@ touch "$d/finished"
         assert_eq!(results.tools, tools("1.0.0"));
     }
 
+    #[gsttt_scenario::scenario("agent-benchmarks", "Results of other questions are refused")]
     #[test]
     fn results_of_other_questions_are_not_continued() {
         let (_dir, out) = written();
@@ -920,6 +925,10 @@ touch "$d/finished"
         assert!(error.to_string().contains("other questions"), "{error}");
     }
 
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "Results of other versions of the tools are refused"
+    )]
     #[test]
     fn results_of_another_version_of_a_tool_are_not_continued() {
         let (_dir, out) = written();
@@ -930,6 +939,10 @@ touch "$d/finished"
         );
     }
 
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "Results of another build of the binary are refused"
+    )]
     #[test]
     fn results_of_another_build_of_the_binary_are_not_continued() {
         let dir = tempfile::tempdir().unwrap();
@@ -978,6 +991,10 @@ touch "$d/finished"
         assert!(bed.sessions.join("stray").exists());
     }
 
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The session directory of a run the task stops on is removed"
+    )]
     #[test]
     fn the_session_directory_of_a_run_the_task_stops_on_is_removed_too() {
         let bed = Bed::answering(ANSWER);

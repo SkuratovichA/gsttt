@@ -742,6 +742,7 @@ mod tests {
     }
 
     /// The test runs itself again as a child that catches SIGTERM, raises it twice and says what it saw: the first is caught and the second ends the process.
+    #[gsttt_scenario::scenario("agent-benchmarks", "A second signal ends the task at once")]
     #[test]
     fn a_second_signal_ends_the_task_at_once() {
         use std::os::unix::process::ExitStatusExt as _;

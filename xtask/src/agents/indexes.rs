@@ -272,10 +272,6 @@ mod tests {
         }
     }
 
-    #[gsttt_scenario::scenario(
-        "agent-benchmarks",
-        "A run that changes an index is marked and the index is put back"
-    )]
     #[test]
     fn an_index_of_gsttt_that_a_run_changed_is_put_back_and_marked() {
         let bed = Bed::new();
@@ -300,10 +296,6 @@ mod tests {
         assert_eq!(read(&gsttt, "snapshot.gsttt"), "snapshot\n");
     }
 
-    #[gsttt_scenario::scenario(
-        "agent-benchmarks",
-        "A run that changes an index is marked and the index is put back"
-    )]
     #[test]
     fn the_cache_of_codebase_memory_that_a_run_changed_is_put_back_and_marked() {
         let bed = Bed::new();
