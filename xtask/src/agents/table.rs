@@ -39,9 +39,12 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// A table for each kind of question the results hold, with a row for each setup that has runs of it.
+/// A table for each kind of question the results hold, with a row for each setup that has runs of it; nothing at all for results without a run.
 pub(super) fn render(results: &Results) -> String {
     let kinds: BTreeSet<Kind> = results.runs.iter().map(|run| run.kind).collect();
+    if kinds.is_empty() {
+        return String::new();
+    }
     let tables: Vec<String> = kinds
         .into_iter()
         .map(|kind| {
@@ -193,6 +196,12 @@ mod tests {
                 "lsp", "0.50", "1.00", "0.67", "118", "3.5", "3", "0.500", "2", "1"
             ]
         );
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "Results without a run print no table")]
+    #[test]
+    fn results_without_a_run_render_to_nothing_and_not_to_an_empty_line() {
+        assert_eq!(render(&started()), "");
     }
 
     #[test]

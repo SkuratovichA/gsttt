@@ -25,11 +25,25 @@ A question of the kind `users` SHALL name a function that a file of the scope ex
 - **THEN** only the one referred to by 5 files becomes a question
 
 ### Requirement: Questions about tests
-A question of the kind `tests` SHALL name a function with a body that a file of the scope exports, and its answer SHALL be the test files that fail in both of two runs of the pinned test command with a `throw` as the first statement of that body and pass in both of two runs without it. A function SHALL be drawn only when 1 to 30 test files make its answer.
+A question of the kind `tests` SHALL name a function with a block body, not a generator, that a file of the scope exports, and its answer SHALL be the test files that fail in both of two runs of the pinned test command with a `throw` as the first statement of that body and pass in both of two runs without it. A function SHALL be drawn only when 1 to 30 test files make its answer.
 
 #### Scenario: Only the files the throw breaks are the answer
 - **WHEN** with the throw `a.spec.ts` fails in both runs and `b.spec.ts` in one, and `c.spec.ts` fails with the throw and in one of the two runs without it
 - **THEN** the answer is `a.spec.ts` alone
+
+### Requirement: Test files that are neither right nor wrong
+A question about tests SHALL keep as ignored the test files that fail in a run of the pinned test command without a throw, and the test files that pass in both runs without it and fail in only one of the two runs with it, and an answer SHALL be scored as if it did not list them.
+
+#### Scenario: A file the throw breaks in one run only is ignored
+- **WHEN** with the throw `a.spec.ts` fails in both runs, `b.spec.ts` in the first run only and `c.spec.ts` in the second run only, and all three pass without it
+- **THEN** the answer is `a.spec.ts` alone and the question ignores `b.spec.ts` and `c.spec.ts`
+
+### Requirement: The prompt about tests
+The prompt of a question about tests SHALL say that the function fails every time it is called, by throwing an error or, for an async function, by returning a promise that rejects with one, and SHALL ask which test files of the unit tests that the pinned command runs would fail.
+
+#### Scenario: The prompt says how the function fails
+- **WHEN** the prompt of a question about tests is written
+- **THEN** it says the function failed every time it was called, by throwing an error or, if it is async, by returning a promise that rejects with one
 
 ### Requirement: Drawing the questions
 `cargo xtask agents questions` SHALL take the candidates of each repository and kind in the order of the SHA-256 of the seed, the repository, the file and the name, until it has as many questions as the pins ask for, and SHALL write them to `bench/agents/questions.json`, each with an id, the repository, the kind, the file, the name, the prompt and the answer in byte order. It SHALL leave the checkout as it found it.
@@ -39,12 +53,27 @@ A question of the kind `tests` SHALL name a function with a body that a file of 
 - **THEN** both files are the same byte for byte
 
 #### Scenario: Candidates are taken in the order of their hash
-- **WHEN** two candidates are ordered with a seed
-- **THEN** the one with the lower SHA-256 of the seed, the repository, the file and the name comes first
+- **WHEN** twelve candidates are ordered with a seed
+- **THEN** they come in the order of the SHA-256 of the seed, the repository, the file and the name, the lowest first
 
 #### Scenario: A throw leaves no trace in the checkout
 - **WHEN** a function was made to throw and the tests have run
 - **THEN** `git status --porcelain` of the checkout is what it was before
+
+#### Scenario: A throw is taken back when the run fails
+- **WHEN** a function was made to throw and the run then ended in an error or a panic
+- **THEN** the file is as git holds it, and `git status --porcelain` of the checkout is what it was before
+
+### Requirement: A test command the draw can read
+`cargo xtask agents questions` SHALL stop with an error that names the report when a run of the pinned test command writes one that is not Vitest's JSON, and with an error that names the log when a run without a throw reports no test file.
+
+#### Scenario: A report that cannot be read stops the draw
+- **WHEN** a run of the test command writes a report that is not JSON
+- **THEN** the draw fails with an error that names the report, and the checkout is as it was
+
+#### Scenario: A run without a throw that reports no test file stops the draw
+- **WHEN** a run of the test command without a throw reports no test file
+- **THEN** the draw fails with an error that names the log of the run
 
 ### Requirement: The setups
 `cargo xtask agents run` SHALL ask every question in four setups that all have the tools Bash, Read, ToolSearch and Skill: `plain` with nothing more, `lsp` with the LSP tool backed by the pinned typescript-language-server, `cbm` with the tools of the pinned codebase-memory-mcp over its index of the checkout, and `gsttt` with the plugin of this repository running the binary under test over its index of the checkout.
@@ -72,7 +101,7 @@ Each repository SHALL have one checkout for the runs, prepared once: cloned at i
 - **THEN** the run is marked as one that changed the checkout, and the file is gone before the next run
 
 ### Requirement: Answers and scores
-The prompt SHALL ask for the answer as a fenced block marked `files`, one path per line, and the answer SHALL be the last such block of the final message. Paths SHALL be made relative to the checkout and kept once, and one outside the checkout or the question's scope counts as wrong. A run SHALL be scored by precision, recall and F1, and a run without an answer by zeros. A test file that fails without the throw SHALL count as neither right nor wrong.
+The prompt SHALL ask for the answer as a fenced block marked `files`, one path per line, and the answer SHALL be the last such block of the final message. Paths SHALL be made relative to the checkout and kept once, and one outside the checkout or the question's scope counts as wrong. A run SHALL be scored by precision, recall and F1, and a run without an answer by zeros. A test file the question ignores SHALL count as neither right nor wrong.
 
 #### Scenario: The last files block is the answer
 - **WHEN** the final message has two blocks marked `files` and one marked `ts`
@@ -143,7 +172,11 @@ A task started over SHALL skip the runs whose question, setup and repeat the res
 - **THEN** the task fails naming both models, and runs nothing
 
 ### Requirement: The table of the agent runs
-`cargo xtask agents table` SHALL print, for each kind of question, a Markdown table with a row per setup and the mean over its runs of recall, precision, F1, tokens, turns and seconds, the mean cost over its runs that report one, and the number of its runs and of those without an answer.
+`cargo xtask agents table` SHALL print, for each kind of question, a Markdown table with a row per setup and the mean over its runs of recall, precision, F1, tokens, turns and seconds, the mean cost over its runs that report one, and the number of its runs and of those without an answer. Results without a run SHALL print nothing.
+
+#### Scenario: Results without a run print no table
+- **WHEN** the results hold no run
+- **THEN** nothing is printed, not even an empty line
 
 #### Scenario: The table averages the runs of each setup
 - **WHEN** a setup has two runs of a kind, with recall 1 and 0.5

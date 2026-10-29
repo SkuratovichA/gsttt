@@ -109,7 +109,7 @@ impl Score {
     };
 }
 
-/// Scores `answer` against the `expected` files. The `ignored` files, which fail without the throw, are neither right nor wrong, so they are taken out of the answer. A path outside the scope is simply not in `expected`, which makes it wrong.
+/// Scores `answer` against the `expected` files. The `ignored` files, which fail without the throw or fail in only one of two runs with it, are neither right nor wrong, so they are taken out of the answer. A path outside the scope is simply not in `expected`, which makes it wrong.
 pub(super) fn score(answer: &[String], expected: &[String], ignored: &[String]) -> Score {
     let answer: BTreeSet<&String> = answer
         .iter()

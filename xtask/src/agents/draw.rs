@@ -16,8 +16,15 @@ const USERS: RangeInclusive<usize> = 3..=30;
 /// How many test files may break with a function that a question about tests is drawn for.
 pub(super) const BROKEN: RangeInclusive<usize> = 1..=30;
 
+/// What a function that is drawn for adds up to: the paths of its answer, and the test files that count as neither right nor wrong for this function alone.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct Answer {
+    pub(super) files: Vec<String>,
+    pub(super) ignored: Vec<String>,
+}
+
 /// Why a candidate was passed over, or the answer when it was not.
-pub(super) type Verdict = Result<Vec<String>, &'static str>;
+pub(super) type Verdict = Result<Answer, &'static str>;
 
 const TOO_FEW_USERS: &str = "too few users";
 const TOO_MANY_USERS: &str = "too many users";
@@ -52,7 +59,7 @@ pub(super) fn order<'a>(
 /// What a pass over the candidates found.
 pub(super) struct Taken<'a> {
     /// The candidates that qualified, in draw order, with their answers.
-    picked: Vec<(&'a Candidate, Vec<String>)>,
+    picked: Vec<(&'a Candidate, Answer)>,
     /// How many candidates were looked at.
     tried: usize,
     /// How many were passed over, by reason.
@@ -110,10 +117,15 @@ fn found(repository: &str, kind: Kind, wanted: u32, taken: &Taken<'_>) -> anyhow
         kind.name(),
         taken.describe()
     )?;
+    let picked = taken.picked.len();
     ensure!(
-        taken.picked.len() >= usize::try_from(wanted).unwrap_or(usize::MAX),
-        "`{repository}` has {} candidates for questions of the kind `{}`, but {wanted} are asked for ({})",
-        taken.picked.len(),
+        picked >= usize::try_from(wanted).unwrap_or(usize::MAX),
+        "`{repository}` has {picked} {} for questions of the kind `{}`, but the pins ask for {wanted} ({})",
+        if picked == 1 {
+            "candidate"
+        } else {
+            "candidates"
+        },
         kind.name(),
         taken.describe()
     );
@@ -128,18 +140,21 @@ fn users_answer(candidate: &Candidate) -> Verdict {
     match users.len() {
         count if count < *USERS.start() => Err(TOO_FEW_USERS),
         count if count > *USERS.end() => Err(TOO_MANY_USERS),
-        _ => Ok(users),
+        _ => Ok(Answer {
+            files: users,
+            ignored: Vec::new(),
+        }),
     }
 }
 
-/// The questions of `kind`, numbered from 1 in the order they were taken.
+/// The questions of `kind`, numbered from 1 in the order they were taken. Each ignores the `ignored` of the repository and its own, once each and in byte order.
 fn questions(
     kind: Kind,
     repository: &str,
     scope: &str,
     test: &[String],
     ignored: &BTreeSet<String>,
-    picked: &[(&Candidate, Vec<String>)],
+    picked: &[(&Candidate, Answer)],
 ) -> Vec<Question> {
     picked
         .iter()
@@ -153,8 +168,14 @@ fn questions(
             name: candidate.name.clone(),
             line: candidate.line,
             prompt: prompt(kind, &candidate.name, &candidate.file, scope, test),
-            answer: answer.clone(),
-            ignored: ignored.iter().cloned().collect(),
+            answer: answer.files.clone(),
+            ignored: ignored
+                .iter()
+                .chain(&answer.ignored)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .cloned()
+                .collect(),
         })
         .collect()
 }
@@ -178,7 +199,7 @@ pub(super) fn users(
     ))
 }
 
-/// The questions about the tests a function breaks: the first `count` candidates in `order` that `judge` gives an answer for. `ignored` are the test files that fail without any throw.
+/// The questions about the tests a function breaks: the first `count` candidates in `order` that `judge` gives an answer for. `ignored` are the test files that fail without any throw, which every question ignores; `judge` adds the ones of one function.
 pub(super) fn tests<'a>(
     repository: &str,
     scope: &str,
@@ -235,11 +256,20 @@ mod tests {
         let error = users("vite", "packages/vite", 2, &order)
             .unwrap_err()
             .to_string();
-        assert!(error.contains("`vite` has 1 candidates"), "{error}");
+        assert!(error.contains("`vite` has 1 candidate for"), "{error}");
         assert!(
             error.contains("1 too few users") && error.contains("1 too many users"),
             "{error}"
         );
+        assert!(error.contains("the pins ask for 2"), "{error}");
+    }
+
+    #[test]
+    fn the_count_of_candidates_found_is_a_plural_unless_it_is_one() {
+        let candidates = [candidate("a.ts", "few", 2)];
+        let order = order("seed", "vite", &candidates);
+        let error = users("vite", ".", 1, &order).unwrap_err().to_string();
+        assert!(error.contains("`vite` has 0 candidates for"), "{error}");
     }
 
     #[gsttt_scenario::scenario(
@@ -271,6 +301,17 @@ mod tests {
             .collect();
         assert_eq!(seeds.len(), 8);
         assert_ne!(hash("seed", "vite", &a), hash("seed", "excalidraw", &a));
+
+        // Of many candidates an order that is not the order of the hashes cannot agree by luck.
+        let many: Vec<Candidate> = (0..12_usize)
+            .map(|n| candidate(&format!("src/f{n}.ts"), &format!("f{n}"), 3))
+            .collect();
+        let mut by_hash: Vec<&Candidate> = many.iter().collect();
+        by_hash.sort_by_cached_key(|c| hash("seed", "vite", c));
+        let expected: Vec<&str> = by_hash.iter().map(|c| c.name.as_str()).collect();
+        let drawn = order("seed", "vite", &many);
+        let names: Vec<&str> = drawn.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, expected);
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The same pins draw the same questions")]
@@ -338,12 +379,17 @@ mod tests {
         let test = ["pnpm", "exec", "vitest", "run"].map(str::to_owned);
         let ignored: BTreeSet<String> = ["cli.spec.ts".to_owned()].into();
         let questions = tests("vite", "packages/vite", 1, &test, &ignored, &order, |_| {
-            Ok(Ok(vec!["a.spec.ts".to_owned()]))
+            Ok(Ok(Answer {
+                files: vec!["a.spec.ts".to_owned()],
+                ignored: vec!["cli.spec.ts".to_owned(), "b.spec.ts".to_owned()],
+            }))
         })
         .unwrap();
         let question = questions.first().unwrap();
         assert_eq!(question.id, "vite-tests-1");
-        assert_eq!(question.ignored, ["cli.spec.ts"]);
+        assert_eq!(question.answer, ["a.spec.ts"]);
+        // The ignored files of the repository and of the function, once each and in byte order.
+        assert_eq!(question.ignored, ["b.spec.ts", "cli.spec.ts"]);
         assert!(question.prompt.contains("`pnpm exec vitest run`"));
     }
 }

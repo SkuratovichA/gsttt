@@ -46,7 +46,7 @@ pub(crate) struct Question {
     pub(crate) prompt: String,
     /// The paths the agent should list, relative to the checkout, sorted.
     pub(crate) answer: Vec<String>,
-    /// The test files that failed before the throw and so are neither right nor wrong in an answer, sorted; empty for the kind `users`.
+    /// The test files that are neither right nor wrong in an answer, sorted: the ones that failed before the throw, and the ones that failed in only one of the two runs with it. Empty for the kind `users`.
     pub(crate) ignored: Vec<String>,
 }
 
@@ -128,7 +128,7 @@ impl Questions {
     }
 }
 
-/// What the agent is asked about the function `name` of `file`: the files of `scope` that refer to it, or the test files, of the unit tests that `test` runs, that fail when it throws.
+/// What the agent is asked about the function `name` of `file`: the files of `scope` that refer to it, or the test files, of the unit tests that `test` runs, that fail when the function fails every time it is called: by throwing an error or, for an async function, by returning a promise that rejects with one.
 pub(crate) fn prompt(kind: Kind, name: &str, file: &str, scope: &str, test: &[String]) -> String {
     match kind {
         Kind::Users => {
@@ -142,7 +142,7 @@ pub(crate) fn prompt(kind: Kind, name: &str, file: &str, scope: &str, test: &[St
             )
         }
         Kind::Tests => format!(
-            "In this repository, suppose the function `{name}` in `{file}` threw an error whenever it is called. Which test files of the unit tests that `{}` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+            "In this repository, suppose the function `{name}` in `{file}` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `{}` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
             test.join(" ")
         ),
     }
@@ -199,12 +199,13 @@ mod tests {
         );
     }
 
+    #[gsttt_scenario::scenario("agent-benchmarks", "The prompt says how the function fails")]
     #[test]
     fn the_prompt_about_tests_is_word_for_word() {
         let test = ["pnpm", "exec", "vitest", "run"].map(str::to_owned);
         assert_eq!(
             prompt(Kind::Tests, "f", "src/a.ts", "packages/vite", &test),
-            "In this repository, suppose the function `f` in `src/a.ts` threw an error whenever it is called. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else."
+            "In this repository, suppose the function `f` in `src/a.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else."
         );
     }
 

@@ -84,7 +84,7 @@
       "file": "packages/vite/src/node/utils.ts",
       "name": "moduleListContains",
       "line": 146,
-      "prompt": "In this repository, suppose the function `moduleListContains` in `packages/vite/src/node/utils.ts` threw an error whenever it is called. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, suppose the function `moduleListContains` in `packages/vite/src/node/utils.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/vite/src/node/__tests__/optimizer/discoverBeforeListen.spec.ts",
         "packages/vite/src/node/__tests__/scan.spec.ts"
@@ -101,7 +101,7 @@
       "file": "packages/vite/src/node/server/middlewares/transform.ts",
       "name": "cachedTransformMiddleware",
       "line": 80,
-      "prompt": "In this repository, suppose the function `cachedTransformMiddleware` in `packages/vite/src/node/server/middlewares/transform.ts` threw an error whenever it is called. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, suppose the function `cachedTransformMiddleware` in `packages/vite/src/node/server/middlewares/transform.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/vite/src/node/__tests__/dev.spec.ts",
         "packages/vite/src/node/__tests__/environment.spec.ts",
@@ -139,7 +139,7 @@
       "file": "packages/vite/src/node/plugins/oxc.ts",
       "name": "transformWithOxc",
       "line": 120,
-      "prompt": "In this repository, suppose the function `transformWithOxc` in `packages/vite/src/node/plugins/oxc.ts` threw an error whenever it is called. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, suppose the function `transformWithOxc` in `packages/vite/src/node/plugins/oxc.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/vite/src/node/__tests__/plugins/importGlob/fixture.spec.ts",
         "packages/vite/src/node/__tests__/plugins/index.spec.ts",
@@ -166,7 +166,7 @@
       "file": "packages/vite/src/node/ssr/ssrModuleLoader.ts",
       "name": "ssrLoadModule",
       "line": 19,
-      "prompt": "In this repository, suppose the function `ssrLoadModule` in `packages/vite/src/node/ssr/ssrModuleLoader.ts` threw an error whenever it is called. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, suppose the function `ssrLoadModule` in `packages/vite/src/node/ssr/ssrModuleLoader.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/vite/src/node/__tests__/environment.spec.ts",
         "packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts",
