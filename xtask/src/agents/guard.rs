@@ -257,7 +257,9 @@ mod tests {
     )]
     #[test]
     fn a_run_that_moves_head_is_marked_and_head_is_put_back() {
-        let moves: [(&str, fn(&Path)); 5] = [
+        /// What a run does to the repository of its checkout.
+        type Move = fn(&Path);
+        let moves: [(&str, Move); 5] = [
             ("commits", |dir| {
                 fs::write(dir.join("committed.ts"), "export {}\n").unwrap();
                 git(dir, &["add", "committed.ts"]).unwrap();
