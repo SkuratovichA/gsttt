@@ -226,6 +226,7 @@ pub(crate) fn exported_as(json: &Value, path: &str) -> Vec<String> {
     file(json, path)
         .into_iter()
         .flat_map(|file| items(file, "imports"))
+        .filter(|import| text(import, "kind") == Some("re-export"))
         .filter(|import| items(import, "exported").next().is_some())
         .map(|import| {
             let names = items(import, "names").filter_map(Value::as_str);

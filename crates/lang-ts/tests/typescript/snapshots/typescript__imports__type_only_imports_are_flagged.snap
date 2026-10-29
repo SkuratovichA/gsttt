@@ -24,6 +24,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "A"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -38,6 +41,10 @@ expression: json
           }
         },
         {
+          "exported": [
+            "B",
+            "C"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -57,6 +64,22 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Both",
+            "uses": [
+              "A",
+              "B",
+              "C"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

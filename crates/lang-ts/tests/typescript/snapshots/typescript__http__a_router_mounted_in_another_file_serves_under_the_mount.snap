@@ -24,6 +24,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Router"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -36,6 +39,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "bookings"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -53,6 +59,29 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "api",
+            "uses": [
+              "Router"
+            ]
+          }
+        ],
+        "exports": [
+          {
+            "local": "api",
+            "name": "default"
+          }
+        ],
+        "on_load": [
+          "Router",
+          "api",
+          "bookings"
+        ]
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -64,6 +93,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "express"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -76,6 +108,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "api"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -93,6 +128,29 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "app",
+            "uses": [
+              "express"
+            ]
+          }
+        ],
+        "exports": [
+          {
+            "local": "app",
+            "name": "default"
+          }
+        ],
+        "on_load": [
+          "api",
+          "app",
+          "express"
+        ]
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -104,6 +162,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Router"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -120,6 +181,28 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "router",
+            "uses": [
+              "Router"
+            ]
+          }
+        ],
+        "exports": [
+          {
+            "local": "router",
+            "name": "default"
+          }
+        ],
+        "on_load": [
+          "Router",
+          "router"
+        ]
       },
       "tags": 0,
       "unresolved": []

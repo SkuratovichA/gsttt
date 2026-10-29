@@ -28,6 +28,18 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "everything",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -97,6 +109,99 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "obj",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "local",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "a",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "b",
+            "uses": [
+              "obj"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "d",
+            "uses": [
+              "obj"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "g",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "f",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "C",
+            "uses": []
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "E",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "T",
+            "uses": []
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "I",
+            "uses": []
+          },
+          {
+            "end": 13,
+            "line": 11,
+            "name": "N",
+            "uses": []
+          },
+          {
+            "end": 14,
+            "line": 14,
+            "name": "default",
+            "uses": []
+          }
+        ],
+        "exports": [
+          {
+            "local": "local",
+            "name": "y"
+          }
+        ],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -112,6 +217,18 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "one",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -126,6 +243,18 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "z",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

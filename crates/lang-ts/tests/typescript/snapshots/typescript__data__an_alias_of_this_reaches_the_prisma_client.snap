@@ -38,6 +38,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -54,6 +57,46 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 17,
+            "line": 3,
+            "name": "TenantService",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "TenantService.prisma",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 6,
+            "name": "TenantService.find",
+            "uses": []
+          },
+          {
+            "end": 16,
+            "line": 13,
+            "name": "TenantService.total",
+            "uses": []
+          },
+          {
+            "end": 22,
+            "line": 19,
+            "name": "unrelated",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

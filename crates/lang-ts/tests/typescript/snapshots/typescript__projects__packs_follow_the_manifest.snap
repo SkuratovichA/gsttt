@@ -31,6 +31,10 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Controller",
+            "Get"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -48,6 +52,31 @@ expression: json
       "project": "ts apps/api",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 7,
+            "line": 3,
+            "name": "StatusController",
+            "uses": [
+              "Controller"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 5,
+            "name": "StatusController.live",
+            "uses": [
+              "Get"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Controller",
+          "Get"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -72,6 +101,10 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Controller",
+            "Get"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -91,6 +124,31 @@ expression: json
       "project": "ts apps/web",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 7,
+            "line": 3,
+            "name": "StatusController",
+            "uses": [
+              "Controller"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 5,
+            "name": "StatusController.live",
+            "uses": [
+              "Get"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Controller",
+          "Get"
+        ]
       },
       "tags": 0,
       "unresolved": []

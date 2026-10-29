@@ -25,6 +25,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "express"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -41,6 +44,37 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "cache",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "hit",
+            "uses": [
+              "cache"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "app",
+            "uses": [
+              "express"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "cache",
+          "express"
+        ]
       },
       "tags": 0,
       "unresolved": []

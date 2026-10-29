@@ -31,6 +31,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -48,6 +51,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "find",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -63,6 +80,39 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Left",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Right",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 4,
+            "name": "joined",
+            "uses": [
+              "Left",
+              "Right"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 8,
+            "name": "inline",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

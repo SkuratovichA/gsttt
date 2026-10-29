@@ -26,6 +26,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "client"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -38,6 +41,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "clientDefault"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -50,6 +56,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "other"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 3,
@@ -116,6 +125,22 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 10,
+            "line": 10,
+            "name": "all",
+            "uses": [
+              "client",
+              "clientDefault",
+              "other"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

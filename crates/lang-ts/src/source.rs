@@ -85,8 +85,18 @@ fn assemble(text: &str, analysis: Analysis, status: ParseStatus) -> Parsed<TsExt
         .map(|(spec, line)| Import::new(spec, ImportKind::Reference, line))
         .collect();
     imports.extend(analysis.imports);
-    // A file read past errors may have lost an export with the line that held it.
+    // A file read past errors may have lost an export or a declaration with the line that held it.
     let exports = analysis.exports.filter(|_| status == ParseStatus::Ok);
+    let symbols = analysis.symbols.filter(|_| status == ParseStatus::Ok);
+    if symbols.is_none() {
+        // The local name of an import is recorded with the declarations that use it, and a file read past errors has none. A re-export keeps the names it exports.
+        for import in imports
+            .iter_mut()
+            .filter(|import| import.kind == ImportKind::Static)
+        {
+            import.exported.clear();
+        }
+    }
     Parsed {
         facts: FileFacts {
             status,
@@ -96,7 +106,7 @@ fn assemble(text: &str, analysis: Analysis, status: ParseStatus) -> Parsed<TsExt
             embedded: analysis.embedded,
             unresolved: analysis.unresolved,
             exports,
-            symbols: None,
+            symbols,
         },
         extra: analysis.extra,
     }

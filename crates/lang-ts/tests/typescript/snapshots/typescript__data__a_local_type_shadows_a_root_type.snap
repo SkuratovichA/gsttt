@@ -31,6 +31,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Prisma"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -48,6 +51,28 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "PrismaClient",
+            "uses": [
+              "Prisma"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "find",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -62,6 +87,26 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "PrismaClient",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 3,
+            "name": "find",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []
@@ -78,6 +123,32 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "PrismaService",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "PrismaService.tenant",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "find",
+            "uses": [
+              "PrismaService"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -93,6 +164,26 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "PrismaClient",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "find",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -107,6 +198,26 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "PrismaClient",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "find",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

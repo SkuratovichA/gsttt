@@ -37,6 +37,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "axios"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -53,6 +56,20 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 6,
+            "line": 3,
+            "name": "cancel",
+            "uses": [
+              "axios"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

@@ -27,6 +27,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -43,6 +46,51 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "make",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 7,
+            "name": "Holder",
+            "uses": []
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "Holder.handler",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 11,
+            "name": "cast",
+            "uses": [
+              "PrismaClient",
+              "make"
+            ]
+          },
+          {
+            "end": 17,
+            "line": 13,
+            "name": "reads",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "make"
+        ]
       },
       "tags": 0,
       "unresolved": []

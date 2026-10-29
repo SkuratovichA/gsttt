@@ -24,6 +24,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "util"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -41,6 +44,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "page",
+            "uses": [
+              "util"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -55,6 +72,18 @@ expression: json
       "project": "ts apps/web",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "util",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

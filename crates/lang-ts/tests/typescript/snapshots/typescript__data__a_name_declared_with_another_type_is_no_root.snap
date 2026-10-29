@@ -38,6 +38,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -55,6 +58,28 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "first",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 7,
+            "name": "second",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -69,6 +94,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -86,6 +114,68 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "plain",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 7,
+            "name": "typed",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 17,
+            "line": 11,
+            "name": "Earlier",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 12,
+            "name": "Earlier.client",
+            "uses": []
+          },
+          {
+            "end": 16,
+            "line": 14,
+            "name": "Earlier.find",
+            "uses": [
+              "Earlier.client"
+            ]
+          },
+          {
+            "end": 25,
+            "line": 19,
+            "name": "Later",
+            "uses": []
+          },
+          {
+            "end": 20,
+            "line": 20,
+            "name": "Later.client",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 24,
+            "line": 22,
+            "name": "Later.find",
+            "uses": [
+              "Later.client"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -98,6 +188,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Prisma"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -115,6 +208,26 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 3,
+            "name": "a",
+            "uses": [
+              "Prisma"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 7,
+            "name": "b",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -127,6 +240,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -143,6 +259,54 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 9,
+            "line": 3,
+            "name": "Reads",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Reads.client",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 6,
+            "name": "Reads.find",
+            "uses": [
+              "Reads.client"
+            ]
+          },
+          {
+            "end": 17,
+            "line": 11,
+            "name": "Fakes",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 12,
+            "name": "Fakes.client",
+            "uses": []
+          },
+          {
+            "end": 16,
+            "line": 14,
+            "name": "Fakes.find",
+            "uses": [
+              "Fakes.client"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

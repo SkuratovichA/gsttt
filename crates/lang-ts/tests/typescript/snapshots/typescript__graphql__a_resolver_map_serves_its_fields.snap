@@ -41,6 +41,33 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "list",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "cancel",
+            "uses": []
+          },
+          {
+            "end": 11,
+            "line": 4,
+            "name": "resolvers",
+            "uses": [
+              "cancel",
+              "list"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     }
