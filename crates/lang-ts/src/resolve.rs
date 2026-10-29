@@ -55,6 +55,8 @@ impl Conditions<'_> {
 /// Where `import` written in the file `from` of the project rooted at `root` leads.
 pub(crate) fn resolve(shared: &Shared, root: &str, from: &RepoPath, import: &Import) -> Resolution {
     let spec = import.spec.as_str();
+    // A query such as `?raw` tells the bundler how to load a file and names no other file.
+    let spec = spec.split_once('?').map_or(spec, |(file, _)| file);
     let dir = from.parent();
     if matches!(import.kind, ImportKind::Reference) {
         return if is_config_name(from.file_name()) {

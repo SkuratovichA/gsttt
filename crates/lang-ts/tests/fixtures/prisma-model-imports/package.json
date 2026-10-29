@@ -1,0 +1,1 @@
+{ "name": "prisma-model-imports", "dependencies": { "@prisma/client": "^6.0.0" } }

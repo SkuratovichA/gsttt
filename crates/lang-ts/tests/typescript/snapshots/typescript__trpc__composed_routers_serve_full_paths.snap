@@ -19,6 +19,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "bookingRouter"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -45,6 +48,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "appRouter"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -82,6 +88,10 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "publicProcedure",
+        "router"
+      ],
       "imports": [
         {
           "flags": 0,

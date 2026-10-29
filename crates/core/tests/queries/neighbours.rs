@@ -2,7 +2,7 @@
 
 use gsttt_core::fact::{Import, ImportFlags, ImportKind, ParseFailure, UnresolvedReason};
 use gsttt_core::index::Freshness;
-use gsttt_core::query::{Answer, External, Neighbour, dependencies, dependents};
+use gsttt_core::query::{Answer, Entries, External, Neighbour, dependencies, dependents};
 use gsttt_core::testing::{To, Tree, file, package};
 use gsttt_scenario::scenario;
 
@@ -11,6 +11,15 @@ fn neighbour(path: &str, kinds: &[ImportKind], type_only: bool) -> Neighbour {
         path: path.to_owned(),
         kinds: kinds.to_vec(),
         type_only,
+        names: Vec::new(),
+    }
+}
+
+/// A neighbour whose edge takes `names`, which are in byte order.
+fn taking(path: &str, kinds: &[ImportKind], names: &[&str]) -> Neighbour {
+    Neighbour {
+        names: names.iter().map(|&name| name.to_owned()).collect(),
+        ..neighbour(path, kinds, false)
     }
 }
 
@@ -111,6 +120,116 @@ fn dependents_show_edge_kinds() {
     let text = answer.to_string();
     assert!(text.contains("b.ts  static import\n"), "{text}");
     assert!(text.contains("c.ts  re-export of everything\n"), "{text}");
+}
+
+#[scenario("queries", "Neighbours show the names taken")]
+#[test]
+fn neighbours_show_the_names_taken() {
+    let index = Tree::new()
+        .imports_names("b.ts", "a.ts", &["useFoo", "useBar"])
+        .re_exports("c.ts", "a.ts", &[("useBaz", "useFoo")])
+        .imports_for_effect("d.ts", "a.ts")
+        .build();
+
+    let answer = dependents(&index, Freshness::Fresh, "a.ts");
+
+    assert_eq!(
+        answer.files,
+        [
+            taking("b.ts", &[ImportKind::Static], &["useBar", "useFoo"]),
+            taking("c.ts", &[ImportKind::ReExport], &["useFoo"]),
+            neighbour("d.ts", &[ImportKind::SideEffect], false),
+        ]
+    );
+    let text = answer.to_string();
+    for line in [
+        "b.ts  static import  useBar, useFoo\n",
+        "c.ts  re-export  useFoo\n",
+        "d.ts  side-effect import\n",
+    ] {
+        assert!(text.contains(line), "{line:?} is missing from\n{text}");
+    }
+    let text = dependencies(&index, Freshness::Fresh, "b.ts").to_string();
+    assert!(
+        text.contains("a.ts  static import  useBar, useFoo\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_edge_that_takes_everything_names_nothing() {
+    let index = Tree::new()
+        .imports("plain.ts", "a.ts")
+        .imports_namespace("namespace.ts", "a.ts")
+        .re_exports_all("star.ts", "a.ts")
+        .re_exports("as-namespace.ts", "a.ts", &[("ns", "*")])
+        .imports_names("mixed.ts", "a.ts", &["used"])
+        .imports_namespace("mixed.ts", "a.ts")
+        .build();
+
+    let answer = dependents(&index, Freshness::Fresh, "a.ts");
+
+    assert_eq!(
+        answer.files,
+        [
+            neighbour("as-namespace.ts", &[ImportKind::ReExport], false),
+            neighbour("mixed.ts", &[ImportKind::Static], false),
+            neighbour("namespace.ts", &[ImportKind::Static], false),
+            neighbour("plain.ts", &[ImportKind::Static], false),
+            neighbour("star.ts", &[ImportKind::ReExportAll], false),
+        ]
+    );
+}
+
+#[test]
+fn an_edge_names_what_it_uses_and_what_it_passes_on_once() {
+    let index = Tree::new()
+        .imports_names("b.ts", "a.ts", &["used", "both"])
+        .re_exports("b.ts", "a.ts", &[("both", "both"), ("other", "passed")])
+        .build();
+
+    let answer = dependents(&index, Freshness::Fresh, "a.ts");
+
+    assert_eq!(
+        answer.files,
+        [taking(
+            "b.ts",
+            &[ImportKind::Static, ImportKind::ReExport],
+            &["both", "passed", "used"]
+        )]
+    );
+}
+
+#[test]
+fn names_are_cut_after_three_in_text_and_whole_in_json() {
+    let index = Tree::new()
+        .imports_names("x.ts", "a.ts", &["one", "two", "three", "four"])
+        .imports("y.ts", "a.ts")
+        .build();
+    let answer = dependents(&index, Freshness::Fresh, "a.ts");
+
+    assert!(
+        answer
+            .to_string()
+            .contains("x.ts  static import  four, one, three and 1 more\n"),
+        "the text is cut after three names"
+    );
+    assert!(
+        answer
+            .text(Entries::All)
+            .contains("x.ts  static import  four, one, three, two\n"),
+        "every entry asked for holds every name"
+    );
+    let json = serde_json::to_value(&answer).unwrap();
+    assert_eq!(
+        json["files"][0]["names"],
+        serde_json::json!(["four", "one", "three", "two"])
+    );
+    assert_eq!(
+        json["files"][1].get("names"),
+        None,
+        "empty names are left out"
+    );
 }
 
 #[test]

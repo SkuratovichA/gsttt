@@ -263,3 +263,29 @@ fn an_import_of_an_ignored_file_says_so() -> Result<(), Box<dyn Error>> {
     }
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A query does not change where an import leads")]
+fn a_query_does_not_change_where_an_import_leads() -> Result<(), Box<dyn Error>> {
+    let json = run("import-queries")?;
+    let expected = [
+        ("../docs/terms.md", "?raw", "file docs/terms.md"),
+        ("./worker", "?worker", "file src/worker.ts"),
+        ("./logo.svg", "?url", "file src/logo.svg"),
+        ("ui-kit/theme.css", "?inline", "external ui-kit"),
+        ("../generated/schema.json", "?url", "unresolved ignored"),
+        ("./absent.md", "?raw", "unresolved not-found"),
+        ("ui-kit", "?raw", "external ui-kit"),
+    ];
+    for (spec, query, target) in expected {
+        let with_query = format!("{spec}{query}");
+        assert_eq!(
+            leads(&json, "src/page.ts", &with_query),
+            target,
+            "{with_query}"
+        );
+        assert_eq!(leads(&json, "src/page.ts", spec), target, "{spec}");
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

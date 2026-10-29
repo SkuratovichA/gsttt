@@ -1,0 +1,1 @@
+{ "name": "prisma-function-types", "dependencies": { "@prisma/client": "^6.0.0" } }

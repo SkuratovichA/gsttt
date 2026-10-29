@@ -175,8 +175,11 @@ pub struct Import {
     pub kind: ImportKind,
     pub line: Line,
     pub flags: ImportFlags,
-    /// The names imported from `spec` when resolution depends on them: Python `from pkg import sub` may import the module `pkg/sub.py`. Empty otherwise.
+    /// The names the import takes from `spec`: `a` and `b` in `import { a, b } from 'spec'`, `default` for a default import, `*` for a namespace. Resolution may depend on them too: Python `from pkg import sub` may import the module `pkg/sub.py`. Empty when the connector records none.
     pub names: Vec<String>,
+    /// For a named re-export, the name each entry of `names` is exported as: `w` for `export { z as w } from 'spec'`, `ns` for `export * as ns from 'spec'`. A connector may also give, for any import, the name the file binds an entry as when it is not the name taken, which Rust does for `use a::Foo as Bar`; the graph reads it only in a re-export. Empty for every other import.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exported: Vec<String>,
 }
 
 impl Import {
@@ -188,6 +191,7 @@ impl Import {
             line,
             flags: ImportFlags::NONE,
             names: Vec::new(),
+            exported: Vec::new(),
         }
     }
 }
@@ -276,6 +280,9 @@ pub struct FileFacts {
     pub contracts: Vec<ContractFact>,
     pub embedded: Vec<Embedded>,
     pub unresolved: Vec<UnresolvedSite>,
+    /// The names the file exports itself, sorted, without the names an `export *` brings in. `None` when the connector cannot tell, because the file does not list its exports or was read past errors. Empty for a file that exports nothing itself, such as a barrel made only of `export *`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exports: Option<Vec<String>>,
 }
 
 impl FileFacts {

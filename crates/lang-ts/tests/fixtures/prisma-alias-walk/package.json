@@ -1,0 +1,1 @@
+{ "name": "prisma-alias-walk", "dependencies": { "@prisma/client": "^6.0.0" } }

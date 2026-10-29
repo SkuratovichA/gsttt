@@ -31,6 +31,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "api"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -68,6 +71,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "db"
+      ],
       "imports": [],
       "path": "packages/db/src/index.ts",
       "project": "ts packages/db",

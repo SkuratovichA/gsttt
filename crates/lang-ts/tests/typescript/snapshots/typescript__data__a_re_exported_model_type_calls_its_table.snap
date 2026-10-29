@@ -1,0 +1,145 @@
+---
+source: crates/lang-ts/tests/typescript/data.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "table tenant",
+          "line": 1,
+          "role": "calls",
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "Prisma",
+        "Tenant"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Tenant",
+            "Prisma"
+          ],
+          "flags": 1,
+          "kind": "re-export",
+          "line": 1,
+          "names": [
+            "Tenant",
+            "Prisma"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/models.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "table tenant",
+          "line": 1,
+          "role": "calls",
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "T"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "T"
+          ],
+          "flags": 0,
+          "kind": "re-export",
+          "line": 1,
+          "names": [
+            "Tenant"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/renamed.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "raw SQL and query builders are not read",
+            "clients under a root other than the chain roots of the pack are recognised only through an alias of this, or a name the same file declares with one of the root types of the pack, directly or through a type alias of that file; a name that the file also binds anywhere else to anything but this or a root type is not recognised (function a(tx2: PrismaClient) beside items.map(tx2 => tx2) reads no table), and a root type that the file declares as a type of its own is that local type",
+            "a root type is not read when the file imports it under another name (PrismaClient as Base), reaches it through a renamed namespace (P.TransactionClient), writes it as typeof a name, or aliases an import type of it (type Db = import('@prisma/client').PrismaClient)",
+            "model types are read only from the packages the pack names: those of a client generated to a custom output path, or of a package that re-exports the client with export * from '@prisma/client', name no table",
+            "an enum imported by name from @prisma/client reads as a table of that name that no model declares"
+          ],
+          "kind": "table",
+          "role": "calls",
+          "via": [
+            "prisma"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

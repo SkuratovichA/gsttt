@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "Booking"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -58,6 +61,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "Room"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -90,6 +96,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "items"
+      ],
       "imports": [
         {
           "flags": 0,

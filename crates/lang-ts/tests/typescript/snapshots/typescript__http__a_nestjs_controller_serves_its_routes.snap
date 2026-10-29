@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "BookingsController"
+      ],
       "imports": [
         {
           "flags": 0,

@@ -31,11 +31,14 @@ expression: "out.file(\"src/forms.rs\")"
       }
     },
     {
+      "exported": [
+        "Renamed"
+      ],
       "flags": 0,
       "kind": "static",
       "line": 2,
       "names": [
-        "Renamed"
+        "Thing"
       ],
       "spec": "crate::a::c::Thing",
       "to": {
@@ -79,11 +82,14 @@ expression: "out.file(\"src/forms.rs\")"
       }
     },
     {
+      "exported": [
+        "sd"
+      ],
       "flags": 0,
       "kind": "static",
       "line": 6,
       "names": [
-        "sd"
+        "serde"
       ],
       "spec": "serde",
       "to": {

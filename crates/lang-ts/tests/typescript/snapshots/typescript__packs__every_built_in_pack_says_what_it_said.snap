@@ -286,6 +286,11 @@ expression: packs
           "db",
           "tx"
         ],
+        "root_types": [
+          "PrismaClient",
+          "PrismaService",
+          "Prisma.TransactionClient"
+        ],
         "kind": "table",
         "role": "calls",
         "segments": 1,
@@ -311,7 +316,21 @@ expression: packs
       }
     ],
     "embeds": [],
-    "assigns": []
+    "assigns": [],
+    "imports": [
+      {
+        "from": "@prisma/client",
+        "kind": "table",
+        "role": "calls",
+        "except": [
+          "Prisma",
+          "PrismaClient",
+          "PrismaPromise",
+          "$Enums"
+        ],
+        "case": null
+      }
+    ]
   },
   {
     "name": "trpc",

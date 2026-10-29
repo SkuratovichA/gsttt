@@ -166,7 +166,7 @@ fn dependencies_path_and_coverage_answer_from_the_index() {
     assert!(
         dependencies
             .stdout
-            .contains("\nlib/util.ts  static import\n"),
+            .contains("\nlib/util.ts  static import  util\n"),
         "{dependencies:?}"
     );
 

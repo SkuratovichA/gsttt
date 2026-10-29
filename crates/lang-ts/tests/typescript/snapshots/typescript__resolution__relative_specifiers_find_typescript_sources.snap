@@ -19,6 +19,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "all"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -68,6 +71,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "Panel"
+      ],
       "imports": [],
       "path": "src/components/index.tsx",
       "project": "ts .",
@@ -80,6 +86,10 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "again",
+        "util"
+      ],
       "imports": [],
       "path": "src/util.ts",
       "project": "ts .",

@@ -62,10 +62,14 @@ fn source(groups: Vec<Group>, functions: Vec<Function>) -> Source {
     }
 }
 
-/// An import of `spec` that brings `name` in and reaches `file`.
+/// An import of `spec` that brings `name` in and reaches `file`, as the reader writes it: the name it takes is the last segment of `spec`, and `name` is kept apart when it is another.
 fn imported(name: &str, spec: &str, file: u32) -> ResolvedImport {
     let mut import = Import::new(spec, ImportKind::Static, 1);
-    import.names = vec![name.to_owned()];
+    let taken = spec.rsplit("::").next().unwrap_or(spec);
+    import.names = vec![taken.to_owned()];
+    if name != taken {
+        import.exported = vec![name.to_owned()];
+    }
     ResolvedImport {
         import,
         to: Resolution::File {

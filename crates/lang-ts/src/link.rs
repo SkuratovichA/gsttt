@@ -53,7 +53,9 @@ fn define(input: &LinkInput<'_, TsExtra>, file: FileId, name: &str, depth: usize
     )
 }
 
-/// What `file` exports as `name`, as the name it has where it is defined.
+/// What `file` exports as `name`, as the name it has where it is defined. `export * from` forwards every name but `default`.
+///
+/// The impact walk follows the same stars in `X(file)` (`crates/core/src/query/walk/exports.rs`). The two cannot share code, because the core knows no language, so the test `a_star_does_not_forward_default_to_a_mount` pins them against each other on one barrel.
 fn export_of(
     input: &LinkInput<'_, TsExtra>,
     file: FileId,
@@ -72,6 +74,9 @@ fn export_of(
                 name: original,
             } => export_of(input, module_file(here, spec)?, original, depth + 1),
         };
+    }
+    if name == "default" {
+        return None;
     }
     here.extra
         .exports

@@ -3,24 +3,33 @@
 //! The snapshot of a test holds everything the connector found. The readers below give the few facts a scenario speaks about, so that a test says what it proves even when a snapshot is accepted in a hurry.
 
 use std::error::Error;
+use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use gsttt_config::builtin_packs;
 use gsttt_core::RepoView;
 use gsttt_core::engine::build::build_index;
 use gsttt_core::engine::pipeline::{self, Module, Output};
 use gsttt_core::fact::{FileTags, ImportFlags};
-use gsttt_core::index::IndexInfo;
+use gsttt_core::index::{Freshness, Index, IndexInfo};
+use gsttt_core::query::{ImpactRequest, impact};
 use serde_json::Value;
 
-/// The size above which a file is left unread; the fixtures are far below it.
-const MAX_FILE_BYTES: u64 = 1_000_000;
+/// The size above which a file is left unread; the fixtures are far below it, and so is the largest file that a test generates.
+const MAX_FILE_BYTES: u64 = 10_000_000;
 
 /// What a reader returns when the output holds nothing of the kind, typed so that a test can compare against it.
 pub(crate) const NOTHING: [&str; 0] = [];
 
-/// Runs the tree `tests/fixtures/<fixture>` through the pipeline with the TypeScript connector and its built-in packs.
-fn pipeline_of(fixture: &str) -> Result<(RepoView, Output), Box<dyn Error>> {
-    let root = format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"));
+/// The directory of the fixture tree `fixture`.
+fn fixture_root(fixture: &str) -> String {
+    format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Runs the tree at `root` through the pipeline with the TypeScript connector and its built-in packs.
+fn pipeline_at(root: &str) -> Result<(RepoView, Output), Box<dyn Error>> {
     let repo = RepoView::scan(root)?;
     let modules = [Module {
         connector: &gsttt_lang_ts::TYPESCRIPT,
@@ -31,19 +40,60 @@ fn pipeline_of(fixture: &str) -> Result<(RepoView, Output), Box<dyn Error>> {
     Ok((repo, output))
 }
 
-/// Indexes the tree `tests/fixtures/<fixture>` with the TypeScript connector and its built-in packs, and returns the output in the JSON form that is snapshotted, with the keys of every object in byte order.
-pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
-    let (repo, output) = pipeline_of(fixture)?;
+/// Indexes the tree at `root` with the TypeScript connector and its built-in packs, and returns the output in the JSON form that is snapshotted, with the keys of every object in byte order.
+fn run_at(root: &str) -> Result<Value, Box<dyn Error>> {
+    let (repo, output) = pipeline_at(root)?;
     // Sorted here, once, so that no snapshot depends on whether serde_json keeps insertion order (its `preserve_order` feature, which another crate of the workspace may switch on).
     let mut json = output.to_json(&repo);
     json.sort_all_objects();
     Ok(json)
 }
 
-/// Every site of the graph the engine builds from the output for `fixture`, as `<role> <key> @<line> in <path>`, in byte order. Unlike the output, the graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query would answer from.
+/// Indexes the tree `tests/fixtures/<fixture>`, as `run_at` does.
+pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
+    run_at(&fixture_root(fixture))
+}
+
+/// Runs `work` on another thread and gives up after `limit`, so that a walk that does not end fails its test instead of hanging the run.
+fn within(
+    limit: Duration,
+    work: impl FnOnce() -> Result<Value, Box<dyn Error>> + Send + 'static,
+) -> Result<Value, Box<dyn Error>> {
+    let (sender, receiver) = mpsc::channel();
+    // The receiver is gone when the test gave up, and then there is nobody to tell.
+    thread::spawn(move || sender.send(work().map_err(|error| error.to_string())).ok());
+    Ok(receiver.recv_timeout(limit)??)
+}
+
+/// Runs `fixture` as `run` does, and gives up after `limit`.
+pub(crate) fn run_within(fixture: &'static str, limit: Duration) -> Result<Value, Box<dyn Error>> {
+    within(limit, move || run(fixture))
+}
+
+/// Runs the tree that a test wrote under `root`, and gives up after `limit`.
+pub(crate) fn run_tree_within(root: &Path, limit: Duration) -> Result<Value, Box<dyn Error>> {
+    let root = root
+        .to_str()
+        .ok_or("the root of the tree is not UTF-8")?
+        .to_owned();
+    within(limit, move || run_at(&root))
+}
+
+/// The index the engine builds from the output for `fixture`. Unlike the output, its graph has applied the rule that a linked fact replaces the own fact it names, so it is what a query would answer from.
+fn index_of(fixture: &str) -> Result<Index, Box<dyn Error>> {
+    let (repo, output) = pipeline_at(&fixture_root(fixture))?;
+    Ok(build_index(
+        &repo,
+        &output,
+        &["ts"],
+        &[],
+        IndexInfo::default(),
+    ))
+}
+
+/// Every site of the graph for `fixture`, as `<role> <key> @<line> in <path>`, in byte order.
 pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
-    let (repo, output) = pipeline_of(fixture)?;
-    let index = build_index(&repo, &output, &["ts"], &[], IndexInfo::default());
+    let index = index_of(fixture)?;
     let graph = &index.graph;
     let mut sites: Vec<String> = graph
         .contracts()
@@ -56,6 +106,20 @@ pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
         .collect();
     sites.sort();
     Ok(sites)
+}
+
+/// What a change to the file at `path` affects in `fixture`, as `<path> <distance> <reason>` in the order of the answer, without the tests.
+pub(crate) fn affected_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let request = ImpactRequest {
+        files: vec![path.to_owned()],
+        ..ImpactRequest::default()
+    };
+    let answer = impact(&index_of(fixture)?, Freshness::Fresh, &request);
+    Ok(answer
+        .affected
+        .iter()
+        .map(|entry| format!("{} {} {}", entry.path, entry.distance, entry.reason))
+        .collect())
 }
 
 /// The roots of the projects, in the order of the output.
@@ -147,6 +211,34 @@ pub(crate) fn imports(json: &Value, path: &str) -> Vec<String> {
             parts.push("->".to_owned());
             parts.push(target(import.get("to")));
             parts.join(" ")
+        })
+        .collect()
+}
+
+/// The names the file at `path` exports itself, `None` when the output has no such file or says they are unknown.
+pub(crate) fn exports<'a>(json: &'a Value, path: &str) -> Option<Vec<&'a str>> {
+    let exports = file(json, path)?.get("exports")?.as_array()?;
+    Some(exports.iter().filter_map(Value::as_str).collect())
+}
+
+/// What the named re-exports of the file at `path` export each name as, in file order: `<specifier> <name> as <exported>, …`.
+pub(crate) fn exported_as(json: &Value, path: &str) -> Vec<String> {
+    file(json, path)
+        .into_iter()
+        .flat_map(|file| items(file, "imports"))
+        .filter(|import| items(import, "exported").next().is_some())
+        .map(|import| {
+            let names = items(import, "names").filter_map(Value::as_str);
+            let exported = items(import, "exported").filter_map(Value::as_str);
+            let pairs: Vec<String> = names
+                .zip(exported)
+                .map(|(name, exported)| format!("{name} as {exported}"))
+                .collect();
+            format!(
+                "{} {}",
+                text(import, "spec").unwrap_or("?"),
+                pairs.join(", ")
+            )
         })
         .collect()
 }

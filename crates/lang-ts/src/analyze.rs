@@ -2,7 +2,9 @@
 
 mod makers;
 mod maps;
+mod roots;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
@@ -13,22 +15,25 @@ use gsttt_core::fact::{
 use gsttt_core::rules::{Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
-    AccessorProperty, Argument, AssignmentExpression, AssignmentTarget, BindingPattern,
-    CallExpression, Class, Declaration, Decorator, ExportAllDeclaration, ExportDeclaration,
-    ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportFromDeclaration,
-    ExportNamedDeclaration, Expression, ImportDeclaration, ImportDeclarationSpecifier,
-    ImportExpression, ImportOrExportKind, MemberExpression, MethodDefinition, ModuleExportName,
-    ObjectProperty, ObjectPropertyKind, Program, PropertyDefinition, TSExportAssignment,
-    TSImportEqualsDeclaration, TSModuleReference, TaggedTemplateExpression, VariableDeclarator,
+    AccessorProperty, Argument, AssignmentExpression, AssignmentTarget, BindingIdentifier,
+    BindingPattern, CallExpression, Class, Declaration, Decorator, ExportAllDeclaration,
+    ExportDeclaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind,
+    ExportFromDeclaration, ExportNamedDeclaration, Expression, ImportDeclaration,
+    ImportDeclarationSpecifier, ImportExpression, ImportOrExportKind, MemberExpression,
+    MethodDefinition, ModuleExportName, ObjectProperty, ObjectPropertyKind, Program,
+    PropertyDefinition, TSExportAssignment, TSImportEqualsDeclaration, TSImportType,
+    TSImportTypeQualifier, TSModuleBlock, TSModuleReference, TaggedTemplateExpression,
+    VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
 
 use self::makers::Maker;
+use self::roots::Roots;
 use crate::extra::{Binding, Export, ExportTarget, Mount, MountTarget, Route, TsExtra};
 use crate::shape::{
-    Shape, chain_of, dotted, literal_text, member_chain, property_name, static_chain,
-    template_text, text_of,
+    Shape, chain_of, dotted, dotted_name, field_name, literal_text, member_chain, property_name,
+    property_str, static_chain, template_text, text_of,
 };
 
 /// Everything one file says on its own.
@@ -38,6 +43,8 @@ pub(crate) struct Analysis {
     pub(crate) contracts: Vec<ContractFact>,
     pub(crate) embedded: Vec<Embedded>,
     pub(crate) unresolved: Vec<UnresolvedSite>,
+    /// The names the file exports itself, sorted, once each, and without what an `export *` brings. `None` when its syntax does not list them: it assigns `module.exports` or `exports`, or has `export =`.
+    pub(crate) exports: Option<Vec<String>>,
     pub(crate) extra: TsExtra,
 }
 
@@ -53,11 +60,14 @@ pub(crate) fn analyze(
         index,
         packs,
         makers: makers::collect(program, packs),
+        roots: roots::collect(program, packs),
         done: BTreeSet::new(),
         names: BTreeMap::new(),
         classes: Vec::new(),
         has_graphql: packs.iter().any(|pack| pack.name == "graphql"),
         has_trpc: packs.iter().any(|pack| pack.name == "trpc"),
+        exports_unknown: false,
+        module_depth: 0,
         out: Analysis::default(),
     };
     analyzer.visit_program(program);
@@ -76,6 +86,8 @@ struct Analyzer<'p> {
     packs: &'p [Pack],
     /// Variables made by a call in this file, found before the walk so that a route may come before its router.
     makers: BTreeMap<String, Maker>,
+    /// The aliases of `this` and the names declared with a root type, found before the walk because a class may use `self` above the method that binds it.
+    roots: Roots<'p>,
     /// Starts of the calls whose meaning another visit already took, so they are read once.
     done: BTreeSet<u32>,
     /// The name a call is stored under, `appRouter` for `const appRouter = router({…})`, by the start of the call.
@@ -83,6 +95,10 @@ struct Analyzer<'p> {
     classes: Vec<ClassFrame>,
     has_graphql: bool,
     has_trpc: bool,
+    /// Whether the file assigns `module.exports` or `exports`, or has `export =`, so that its syntax does not list what it exports.
+    exports_unknown: bool,
+    /// How many `namespace` and `declare module` bodies the walk is in, whose `export`s are theirs and not the file's.
+    module_depth: u32,
     out: Analysis,
 }
 
@@ -114,6 +130,9 @@ impl Analyzer<'_> {
     }
 
     fn export(&mut self, name: &str, target: ExportTarget) {
+        if self.module_depth > 0 {
+            return;
+        }
         self.out.extra.exports.push(Export {
             name: name.to_owned(),
             target,
@@ -222,10 +241,12 @@ impl Analyzer<'_> {
         }
     }
 
-    /// Applies the chain rules to every root the chain starts with. A rule that lists terminals needs one of them after the first segment, so `trpc.useUtils()` and `prisma.$transaction()` name nothing.
+    /// Applies the chain rules to every root the chain starts with: a root a rule lists, a name declared with one of its root types, or the alias of `this` that the chain starts with, read as `this`. A rule that lists terminals needs one of them after the first segment, so `trpc.useUtils()` and `prisma.$transaction()` name nothing.
     fn chain_rules(&mut self, names: &[Option<String>], offset: u32) {
         let line = self.line(offset);
         let packs = self.packs;
+        let names = self.roots.through_this(names);
+        let names = names.as_ref();
         for pack in packs {
             for rule in &pack.chains {
                 for count in 1..names.len() {
@@ -235,7 +256,7 @@ impl Analyzer<'_> {
                     let Some(root) = dotted(head) else {
                         break;
                     };
-                    if !rule.root.matches(&root) {
+                    if !(rule.root.matches(&root) || self.roots.is_typed_root(rule, &root)) {
                         continue;
                     }
                     let segments: Vec<Option<&str>> = tail.iter().map(Option::as_deref).collect();
@@ -249,6 +270,17 @@ impl Analyzer<'_> {
                     let outcome = rule.apply(&pack.name, &segments, line, &root);
                     self.record(outcome);
                 }
+            }
+        }
+    }
+
+    /// Applies the import rules to a name the file takes from the package `spec`; `line` is the line of the import.
+    fn import_rules(&mut self, spec: &str, name: &str, line: Line) {
+        let packs = self.packs;
+        for pack in packs {
+            for rule in pack.imports.iter().filter(|rule| rule.reads(spec)) {
+                let outcome = rule.apply(&pack.name, name, line);
+                self.record(outcome);
             }
         }
     }
@@ -468,9 +500,10 @@ impl Analyzer<'_> {
         }
     }
 
-    /// `module.exports = x` and `exports.name = x`.
+    /// `module.exports = x` and `exports.name = x`. A file that does either lists no exports in its syntax, so they are unknown.
     fn commonjs_export(&mut self, target: &str, value: &Expression<'_>) {
         if target == "module.exports" {
+            self.exports_unknown = true;
             if let Expression::ObjectExpression(object) = value.get_inner_expression() {
                 for property in &object.properties {
                     if let ObjectPropertyKind::ObjectProperty(property) = property
@@ -487,6 +520,7 @@ impl Analyzer<'_> {
             .strip_prefix("exports.")
             .or_else(|| target.strip_prefix("module.exports."))
         {
+            self.exports_unknown = true;
             self.export_value(name, value);
         }
     }
@@ -511,7 +545,10 @@ impl Analyzer<'_> {
 
     fn finish(self) -> Analysis {
         let Self {
-            makers, mut out, ..
+            makers,
+            mut out,
+            exports_unknown,
+            ..
         } = self;
         out.extra.hosts = makers
             .into_iter()
@@ -530,8 +567,21 @@ impl Analyzer<'_> {
             .sort_by(|a, b| (a.line, &a.detail).cmp(&(b.line, &b.detail)));
         out.unresolved
             .dedup_by(|a, b| a.line == b.line && a.detail == b.detail);
+        out.exports = (!exports_unknown).then(|| exported_names(&out.extra.exports));
         out
     }
+}
+
+/// The names `exports` give, in byte order and once each. `*` is what an `export *` brings, which is no name of the file.
+fn exported_names(exports: &[Export]) -> Vec<String> {
+    let mut names: Vec<String> = exports
+        .iter()
+        .filter(|export| export.name != "*")
+        .map(|export| export.name.clone())
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 /// The order facts are emitted in.
@@ -573,6 +623,9 @@ impl<'a> Visit<'a> for Analyzer<'_> {
             };
             all_type &= is_type;
             self.bind(local, spec, &name);
+            if is_member(&name) {
+                self.import_rules(spec, &name, line);
+            }
             import.names.push(name);
         }
         if matches!(it.import_kind, ImportOrExportKind::Type)
@@ -601,15 +654,21 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         let Some(spec) = it.source.value.as_str() else {
             return;
         };
-        let mut import = Import::new(spec, ImportKind::ReExport, self.line(it.span.start));
+        let line = self.line(it.span.start);
+        let mut import = Import::new(spec, ImportKind::ReExport, line);
         for specifier in &it.specifiers {
             let name = export_name(&specifier.local);
+            let exported = export_name(&specifier.exported);
             let target = ExportTarget::From {
                 spec: spec.to_owned(),
                 name: name.clone(),
             };
-            self.export(&export_name(&specifier.exported), target);
+            self.export(&exported, target);
+            if is_member(&name) {
+                self.import_rules(spec, &name, line);
+            }
             import.names.push(name);
+            import.exported.push(exported);
         }
         if matches!(it.export_kind, ImportOrExportKind::Type) {
             import.flags = import.flags | ImportFlags::TYPE_ONLY;
@@ -622,20 +681,18 @@ impl<'a> Visit<'a> for Analyzer<'_> {
             return;
         };
         let line = self.line(it.span.start);
+        let namespace = it.exported.as_ref().map(export_name);
         // `export * as ns from 'x'` re-exports the namespace under one name, which is not `export *`.
-        let mut import = if it.exported.is_some() {
+        let mut import = if let Some(namespace) = &namespace {
             let mut import = Import::new(spec, ImportKind::ReExport, line);
             import.names.push("*".to_owned());
+            import.exported.push(namespace.clone());
             import
         } else {
             Import::new(spec, ImportKind::ReExportAll, line)
         };
-        let exported = it
-            .exported
-            .as_ref()
-            .map_or_else(|| "*".to_owned(), export_name);
         self.export(
-            &exported,
+            namespace.as_deref().unwrap_or("*"),
             ExportTarget::From {
                 spec: spec.to_owned(),
                 name: "*".to_owned(),
@@ -672,8 +729,15 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     }
 
     fn visit_ts_export_assignment(&mut self, it: &TSExportAssignment<'a>) {
+        self.exports_unknown = true;
         self.export_value("default", &it.expression);
         walk::walk_ts_export_assignment(self, it);
+    }
+
+    fn visit_ts_module_block(&mut self, it: &TSModuleBlock<'a>) {
+        self.module_depth = self.module_depth.saturating_add(1);
+        walk::walk_ts_module_block(self, it);
+        self.module_depth = self.module_depth.saturating_sub(1);
     }
 
     fn visit_ts_import_equals_declaration(&mut self, it: &TSImportEqualsDeclaration<'a>) {
@@ -693,6 +757,22 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     fn visit_import_expression(&mut self, it: &ImportExpression<'a>) {
         self.load(it.span, Some(&it.source), ImportKind::Dynamic, None);
         walk::walk_import_expression(self, it);
+    }
+
+    /// `typeof import('x')` and `import('x').T` in a type bind nothing and run nothing, but the file depends on `x`. Without a qualifier the type is the module itself, which is the name `*` of a namespace import. The name it takes from `x` reaches the import rules as the name of `import { T } from 'x'` does.
+    fn visit_ts_import_type(&mut self, it: &TSImportType<'a>) {
+        if let Some(spec) = it.source.value.as_str() {
+            let line = self.line(it.source.span.start);
+            let mut import = Import::new(spec, ImportKind::Static, line);
+            import.flags = import.flags | ImportFlags::TYPE_ONLY;
+            let name = it.qualifier.as_ref().map_or("*", first_name);
+            if is_member(name) {
+                self.import_rules(spec, name, line);
+            }
+            import.names.push(name.to_owned());
+            self.out.imports.push(import);
+        }
+        walk::walk_ts_import_type(self, it);
     }
 
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
@@ -727,7 +807,7 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
         if self.has_graphql
             && !it.computed
-            && property_name(&it.key).as_deref() == Some("resolvers")
+            && property_str(&it.key) == Some("resolvers")
             && let Expression::ObjectExpression(object) = it.value.get_inner_expression()
         {
             self.resolver_map(object);
@@ -747,10 +827,14 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        let argument = it.arguments.first().and_then(Argument::as_expression);
         if is_require(it) {
-            let argument = it.arguments.first().and_then(Argument::as_expression);
             self.load(it.span, argument, ImportKind::Require, None);
         } else if let Some(callee) = chain_of(&it.callee).and_then(|names| dotted(&names)) {
+            // A module named at run time is neither an import nor a blind spot, so only a literal one goes to `load`.
+            if is_module_call(&callee) && argument.and_then(literal_text).is_some() {
+                self.load(it.span, argument, ImportKind::Dynamic, None);
+            }
             self.call(it, &callee);
         }
         walk::walk_call_expression(self, it);
@@ -786,8 +870,8 @@ impl<'a> Visit<'a> for Analyzer<'_> {
             heritage: it
                 .heritage
                 .as_ref()
-                .and_then(|heritage| chain_of(&heritage.expression))
-                .and_then(|names| dotted(&names)),
+                .and_then(|heritage| dotted_name(&heritage.expression))
+                .map(Cow::into_owned),
         };
         let name = it.id.as_ref().map(|id| id.name.as_str().to_owned());
         self.classes.push(frame);
@@ -807,13 +891,9 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     }
 
     fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
-        let member = if it.computed {
-            None
-        } else {
-            property_name(&it.key)
-        };
-        self.decorators(&it.decorators, member.as_deref());
-        if let (Some(name), Some(value)) = (&member, &it.value) {
+        let member = field_name(it);
+        self.decorators(&it.decorators, member);
+        if let (Some(name), Some(value)) = (member, &it.value) {
             self.assignment(name, value, it.span.start, true);
         }
         walk::walk_property_definition(self, it);
@@ -842,8 +922,45 @@ fn is_require(call: &CallExpression<'_>) -> bool {
     matches!(&call.callee, Expression::Identifier(name) if name.name.as_str() == "require")
 }
 
+/// The calls of Vitest and Jest whose first argument is a module: the ones that mock it, set a mock for it or make one from it, and the ones that load it as it is.
+fn is_module_call(callee: &str) -> bool {
+    matches!(
+        callee,
+        "vi.mock"
+            | "vi.doMock"
+            | "vi.unmock"
+            | "vi.doUnmock"
+            | "vi.importActual"
+            | "vi.importMock"
+            | "jest.mock"
+            | "jest.doMock"
+            | "jest.unmock"
+            | "jest.dontMock"
+            | "jest.requireActual"
+            | "jest.requireMock"
+            | "jest.setMock"
+            | "jest.createMockFromModule"
+            | "jest.genMockFromModule"
+            | "jest.unstable_mockModule"
+            | "jest.deepUnmock"
+    )
+}
+
 fn is_resolvers_name(name: &str) -> bool {
     name == "resolvers" || name.ends_with("Resolvers")
+}
+
+/// The first name of the qualifier of an import type: `A` for `import('x').A.B`.
+fn first_name<'q>(qualifier: &'q TSImportTypeQualifier<'_>) -> &'q str {
+    match qualifier {
+        TSImportTypeQualifier::Identifier(name) => name.name.as_str(),
+        TSImportTypeQualifier::QualifiedName(qualified) => first_name(&qualified.left),
+    }
+}
+
+/// Whether an imported or re-exported `name` is a member of the module, not its default export or its namespace.
+fn is_member(name: &str) -> bool {
+    name != "default" && name != "*"
 }
 
 fn export_name(name: &ModuleExportName<'_>) -> String {
@@ -856,28 +973,27 @@ fn export_name(name: &ModuleExportName<'_>) -> String {
     }
 }
 
-/// The names `export const a = 1, b = 2`, `export function f() {}` and `export class C {}` declare.
+/// The names an `export` declaration declares: `export const a = 1, { b, c: d } = e`, `export function f() {}`, `export class C {}`, `export enum E {}`, `export type T = string`, `export interface I {}`, `export namespace N {}` and `export import A = B.C`.
 fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
+    let name = |id: &BindingIdentifier<'_>| id.name.as_str().to_owned();
     match declaration {
         Declaration::VariableDeclaration(variables) => variables
             .declarations
             .iter()
-            .filter_map(|declarator| match &declarator.id {
-                BindingPattern::BindingIdentifier(id) => Some(id.name.as_str().to_owned()),
-                _ => None,
-            })
+            .flat_map(|declarator| declarator.id.get_binding_identifiers())
+            .map(name)
             .collect(),
-        Declaration::FunctionDeclaration(function) => function
-            .id
-            .iter()
-            .map(|id| id.name.as_str().to_owned())
-            .collect(),
-        Declaration::ClassDeclaration(class) => class
-            .id
-            .iter()
-            .map(|id| id.name.as_str().to_owned())
-            .collect(),
-        _ => Vec::new(),
+        Declaration::FunctionDeclaration(function) => function.id.iter().map(name).collect(),
+        Declaration::ClassDeclaration(class) => class.id.iter().map(name).collect(),
+        Declaration::TSTypeAliasDeclaration(alias) => vec![name(&alias.id)],
+        Declaration::TSInterfaceDeclaration(interface) => vec![name(&interface.id)],
+        Declaration::TSEnumDeclaration(declared) => vec![name(&declared.id)],
+        Declaration::TSNamespaceDeclaration(namespace) => vec![name(&namespace.id)],
+        Declaration::TSImportEqualsDeclaration(import) => vec![name(&import.id)],
+        // `declare module 'x' {}` and `declare global {}` declare no name of the file.
+        Declaration::TSExternalModuleDeclaration(_) | Declaration::TSGlobalDeclaration(_) => {
+            Vec::new()
+        }
     }
 }
 

@@ -6,7 +6,7 @@ use proptest::prelude::*;
 use ra_ap_edition::Edition;
 use ra_ap_syntax::ast;
 
-use super::read;
+use super::{binding, bindings, read};
 
 fn imports(source: &str) -> Vec<Import> {
     let parse = ast::SourceFile::parse(source, Edition::CURRENT);
@@ -23,6 +23,14 @@ fn specs(source: &str) -> Vec<String> {
     imports(source)
         .into_iter()
         .map(|import| import.spec)
+        .collect()
+}
+
+/// The names each import takes and the name it binds when that differs, in the order the imports are returned.
+fn taken_and_bound(source: &str) -> Vec<(Vec<String>, Vec<String>)> {
+    imports(source)
+        .into_iter()
+        .map(|import| (import.names, import.exported))
         .collect()
 }
 
@@ -227,4 +235,42 @@ fn a_use_of_a_macro_declared_in_the_file_reads_no_import() {
         specs("use shout;\nmacro_rules! shout { () => {}; }"),
         ["shout"]
     );
+}
+
+#[test]
+fn a_renamed_use_takes_the_name_the_module_declares_and_binds_the_new_one() {
+    let pair = |taken: &str, bound: &str| (vec![taken.to_owned()], vec![bound.to_owned()]);
+    let own = |taken: &str| (vec![taken.to_owned()], Vec::<String>::new());
+    assert_eq!(
+        taken_and_bound(
+            "use a::Foo as Bar;\npub use a::Foo as Baz;\nuse a::{self as m, Plain};\nuse a::Anon as _;\nextern crate serde as sd;\nextern crate log;"
+        ),
+        [
+            pair("Foo", "Bar"),
+            pair("Foo", "Baz"),
+            pair("a", "m"),
+            own("Plain"),
+            pair("Anon", "_"),
+            pair("serde", "sd"),
+            own("log"),
+        ]
+    );
+    assert_eq!(
+        taken_and_bound("use a::*;\npub use a::*;"),
+        [own("*"), own("*")]
+    );
+}
+
+#[test]
+fn the_binding_of_a_use_is_the_name_it_renames_to() {
+    let found = imports(
+        "use a::Foo as Bar;\nuse a::Plain;\nuse a::Anon as _;\nuse a::*;\nmod child;\npub use b::Foo as Baz;",
+    );
+    assert_eq!(
+        bindings(&found).collect::<Vec<_>>(),
+        [("Bar", "a::Foo"), ("Plain", "a::Plain"), ("Baz", "b::Foo")]
+    );
+    assert_eq!(binding(&found[2]), None, "as _ binds nothing");
+    assert_eq!(binding(&found[3]), None, "a glob binds no one name");
+    assert_eq!(binding(&found[4]), None, "a mod is no use");
 }
