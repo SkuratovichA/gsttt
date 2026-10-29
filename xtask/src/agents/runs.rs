@@ -1066,10 +1066,15 @@ touch "$d/finished"
         // The stand-in has written its init event and holds on, as a run does while the model works.
         bed.mark("hold");
         let stop = Stop::default();
+        // The signal comes once the stand-in has started, however long that takes on a busy machine.
+        let calls = bed.dir.path().join("calls");
         let raiser = {
             let stop = stop.clone();
             std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_secs(2));
+                let waited = Instant::now();
+                while !calls.exists() && waited.elapsed() < Duration::from_secs(30) {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
                 stop.raise(signal_hook::consts::SIGINT);
             })
         };
