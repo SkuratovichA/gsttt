@@ -165,15 +165,54 @@ A run SHALL write its init event whatever becomes of its process: one that exite
 - **THEN** the task fails naming its transcript and the time it took, and records no run
 
 ### Requirement: What a run can reach
-Every run SHALL pass `--settings` with a sandbox that makes the run fail at start when it is unavailable and lets the Bash tool write only in the checkout and in a temporary directory of the run. This repository, the main worktree it was made from, the configuration directory of Claude Code and the files of the setups SHALL be unreadable to the Bash tool by the sandbox and to the Read tool by `Read` rules, and so SHALL the binary under test in every setup but `gsttt`.
+Every run SHALL pass `--settings` with a sandbox that makes the run fail at start when it is unavailable, lets the Bash tool write only in the checkout and in a temporary directory of the run, and allows it no domain of the network. The files of the setups SHALL be unreadable to the Bash tool by the sandbox and to the Read tool by `Read` rules, and so SHALL the binary under test in every setup but `gsttt`.
 
 #### Scenario: A run is confined by the sandbox
 - **WHEN** the command line of a run is planned in each of the four setups
-- **THEN** it carries the sandbox settings, only the checkout and the temporary directory of the run are writable, and each denied directory is both a denied read of the sandbox and a `Read` rule
+- **THEN** it carries the sandbox settings, only the checkout and the temporary directory of the run are writable, no domain of the network is allowed, and each denied path is both a denied read of the sandbox and two `Read` rules, one for the path and one for everything below it
 
-#### Scenario: The main worktree of the repository is out of reach of the runs
-- **WHEN** the directories no run may read are planned from a linked worktree, and from the main worktree itself
-- **THEN** the first list holds the linked worktree, the configuration directory and the main worktree, and the second holds the main worktree once
+### Requirement: The index of gsttt is private to its setup
+A run of a setup but `gsttt` SHALL NOT read `.git/gsttt` of its checkout, where the index of gsttt is built: the sandbox denies it to the Bash tool and a `Read` rule to the Read tool.
+
+#### Scenario: The index of gsttt is out of reach of the other setups
+- **WHEN** the command line of a run is planned in each of the four setups
+- **THEN** `.git/gsttt` of the checkout is denied to the sandbox and to the Read tool in `plain`, `lsp` and `cbm`, and is not denied in `gsttt`
+
+### Requirement: Every worktree of the repository is out of reach
+No run SHALL read this repository or any worktree of it, the main one or a linked one, wherever it was made, since each holds the sources of the tool under test and the questions with their answers. The worktrees SHALL be those that `git worktree list` gives.
+
+#### Scenario: Every worktree of the repository is out of reach of the runs
+- **WHEN** the directories no run may read are planned from a linked worktree, from the main worktree and from another linked worktree made outside the directory of the repository
+- **THEN** each list holds its own worktree first and every worktree of the repository once
+
+### Requirement: What a run can read of Claude Code
+A run SHALL be denied the state of Claude Code but the project directory of its own checkout, where Claude Code saves what a run reads back: every entry of the home directory named `.claude*` but the active configuration directory, every entry of that directory but `projects`, every entry of `projects` but the project directory, and every entry in it when the run starts. `/tmp/claude-<uid>` SHALL be denied the same way, and all of it listed before every run.
+
+#### Scenario: A run is denied the state of Claude Code but its own project directory
+- **WHEN** the command line of a run is planned over a home directory with several `.claude*` entries, a configuration directory with other projects and a project directory of the checkout that holds an earlier run, and a temporary root of the same shape
+- **THEN** each entry is denied to the sandbox and to the Read tool but the home directory, the configuration directory, `projects`, the root and the project directory of the checkout, and so is each entry already in that project directory
+
+#### Scenario: The state of Claude Code is listed before every run
+- **WHEN** an entry is made in one of those directories after one run is planned and before the next
+- **THEN** the next run is denied it
+
+#### Scenario: The project directory is named after the canonical path of its checkout
+- **WHEN** the project directory of the checkout `/private/var/folders/8b/t787z9xj78lggd7wng56cxsh0000gn/T/gsttt-agents-runs/vite` is named
+- **THEN** it is `-private-var-folders-8b-t787z9xj78lggd7wng56cxsh0000gn-T-gsttt-agents-runs-vite`, every character that is not an ASCII letter or digit being a dash
+
+### Requirement: The shell of a run
+A run SHALL get `SHELL=/bin/bash` whatever the shell of the task is, since zsh fails a command whose glob matches nothing and carries the aliases of the user into the run.
+
+#### Scenario: A run gets bash whatever the shell of the host is
+- **WHEN** a run is planned on a host whose `SHELL` is `/bin/zsh`, on one whose `SHELL` is another shell and on one that sets none
+- **THEN** its environment holds `SHELL` once, as `/bin/bash`
+
+### Requirement: A denied path is a plain path
+A path denied to a run SHALL be UTF-8 and hold none of `*`, `?`, `[`, `]`, `{` and `}`, by its own name or its canonical one, since a `Read` rule would take the character for a pattern and match other paths than the one. The task SHALL stop before the run and name the path.
+
+#### Scenario: A path that a rule of the Read tool would take for a pattern stops the task
+- **WHEN** a path to deny holds one of those characters, or is not UTF-8, whether it was given or listed from a directory
+- **THEN** no command line is planned and the error names the path, saying for a character of a pattern that a `Read` rule would take it for one
 
 ### Requirement: One task at a time
 `cargo xtask agents questions` and `cargo xtask agents run` SHALL take an exclusive lock on one file in the temporary directory of the system before they do anything else and hold it to their end. A second one SHALL be refused with a message that names the file, because the directories they empty and the processes they end are shared. `table` SHALL take none.

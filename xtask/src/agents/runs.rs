@@ -366,15 +366,18 @@ fn binary_sum(binary: &Path) -> anyhow::Result<ToolVersion> {
     })
 }
 
-/// The directories no run may read: `root`, the main worktree it was made from when it is a linked one, which holds the same sources, and `config`. The main worktree is the parent of the common directory of git.
-fn private_dirs(root: &Path, config: &Path) -> anyhow::Result<Vec<PathBuf>> {
-    let common = git(
-        root,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )?;
-    let mut private = vec![root.to_path_buf(), config.to_path_buf()];
-    if let Some(main) = Path::new(&common).parent().filter(|main| *main != root) {
-        private.push(main.to_path_buf());
+/// The directories no run may read: `root` and every other worktree of its repository, each of which holds the sources of the tool under test and `bench/agents/questions.json` with the answers. A worktree made outside the directory of the repository (`git worktree add ../x`) is one of them, and git lists it by its record in the common directory. The list is NUL-separated, since a path may hold a newline.
+fn private_dirs(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let listing = git(root, &["worktree", "list", "--porcelain", "-z"])?;
+    let mut private = vec![root.to_path_buf()];
+    for worktree in listing
+        .split('\0')
+        .filter_map(|field| field.strip_prefix("worktree "))
+        .map(PathBuf::from)
+    {
+        if !private.contains(&worktree) {
+            private.push(worktree);
+        }
     }
     Ok(private)
 }
@@ -566,8 +569,14 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     let config = init::config_dir(&host).context(
         "neither CLAUDE_CONFIG_DIR nor HOME is set, so the directory of the configuration of Claude Code, which no run may read, is not known",
     )?;
-    // What no run may read: this repository and the main worktree it was made from, which hold the sources of the tool under test, and the configuration of the user.
-    let private = private_dirs(&root, &config)?;
+    // What no run may read: this repository and every worktree of it, which hold the sources of the tool under test and the questions with their answers. The state of Claude Code is listed for every run and not once here, since a task lasts hours and the directories change meanwhile.
+    let private = private_dirs(&root)?;
+    let state = sessions::State {
+        home: host("HOME").map(PathBuf::from),
+        config,
+        sessions: sessions::root(),
+    };
+    let system = setups::system_path();
     let context = Context {
         model: &pins.agents.model,
         turns: pins.agents.turns,
@@ -577,6 +586,8 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         node: &node_dir,
         task: &task_dir,
         private: &private,
+        state: &state,
+        system: &system,
     };
     let invoke = |setup: Setup, arm: Arm, dirs: RunDirs<'_>| {
         setups::invocation(setup, arm, &context, dirs, &host)
@@ -627,11 +638,10 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
 
     // The cache of codebase-memory-mcp holds every checkout, so it is kept once they are all indexed.
     indexes.keep_cbm(&programs.cbm_cache(), &aside.join("cbm"))?;
-    let user = init::user_entries(&config);
+    let user = init::user_entries(&state.config);
     let local = local_paths(&root, &checkouts);
     // Ctrl-C is caught from here, where the first run starts: before it, a signal ends the task at once, as it always did.
     let stop = Stop::catch()?;
-    let sessions_root = sessions::root();
     let session = Session {
         claude: &claude,
         questions: &questions,
@@ -639,7 +649,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         checkouts: &checkouts,
         invoke: Invoke(&invoke),
         tmp_root: &tmp_root,
-        sessions: &sessions_root,
+        sessions: &state.sessions,
         user: &user,
         indexes: &indexes,
         programs: &programs,
@@ -1238,34 +1248,54 @@ touch "$d/finished"
 
     #[gsttt_scenario::scenario(
         "agent-benchmarks",
-        "The main worktree of the repository is out of reach of the runs"
+        "Every worktree of the repository is out of reach of the runs"
     )]
     #[test]
-    fn the_main_worktree_of_a_linked_worktree_is_private_with_the_repository() {
+    fn every_worktree_of_the_repository_is_private() {
         let (_guard, main) = repo();
         let dir = tempfile::tempdir().unwrap();
-        let linked = dir.path().join("linked");
-        git(
-            &main,
-            &[
-                "worktree",
-                "add",
-                "--quiet",
-                "--detach",
-                linked.to_str().unwrap(),
-            ],
-        )
-        .unwrap();
-        let linked = fs::canonicalize(linked).unwrap();
-        let config = dir.path().join("config");
+        // Worktrees in directories of their own, as `git worktree add ../x` makes them, and none below the repository.
+        let add = |name: &str| -> PathBuf {
+            let path = dir.path().join(name);
+            git(
+                &main,
+                &[
+                    "worktree",
+                    "add",
+                    "--quiet",
+                    "--detach",
+                    path.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+            fs::canonicalize(path).unwrap()
+        };
+        let linked = add("linked");
+        let elsewhere = add("elsewhere");
+        let all = BTreeSet::from([main.clone(), linked.clone(), elsewhere.clone()]);
 
-        // A linked worktree comes with the worktree it was made from.
+        // From any of the three the list has that one first and each worktree once, the main worktree and the ones made elsewhere included.
+        for root in [&linked, &main, &elsewhere] {
+            let private = private_dirs(root).unwrap();
+            assert_eq!(private[0], *root);
+            assert_eq!(private.len(), 3, "{private:?}");
+            assert_eq!(private.into_iter().collect::<BTreeSet<_>>(), all);
+        }
+    }
+
+    #[test]
+    fn the_task_gives_the_runs_the_system_directories() {
         assert_eq!(
-            private_dirs(&linked, &config).unwrap(),
-            [linked.clone(), config.clone(), main.clone()]
+            setups::system_path(),
+            ["/usr/bin", "/bin", "/usr/sbin", "/sbin"].map(PathBuf::from)
         );
-        // The main worktree is the repository itself, which is listed once.
-        assert_eq!(private_dirs(&main, &config).unwrap(), [main, config]);
+        // `run` hands that list to the context of every invocation. This test is not in the part of the file it reads.
+        let shipped = include_str!("runs.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(shipped.contains("let system = setups::system_path();"));
+        assert!(shipped.contains("system: &system,"));
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The setups take turns")]
