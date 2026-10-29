@@ -371,7 +371,6 @@ mod tests {
         assert_eq!(Results::load(&file).unwrap(), results);
 
         // A run that reported no cost keeps the key.
-        let mut results = results;
         results.runs[0].cost_usd = None;
         results.write(&file, &[]).unwrap();
         let value: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
