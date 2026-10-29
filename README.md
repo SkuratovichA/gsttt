@@ -56,6 +56,17 @@ It brings the gsttt MCP server and a skill that says when to ask it; [plugin/REA
   <img src="assets/vite.gif" alt="gsttt indexes vite, 2,878 files, from scratch; after a one-line edit it rereads only that file, and then answers what the edit affects: 9 files and 2 tests">
 </p>
 
+How long each tool takes to build the import graph of a whole repository, in milliseconds, cold / warm: the median of five runs under hyperfine, cold after the tool's cache is removed and warm after a run that left it in place. Measured on 29 October 2026 on an Apple M3 Pro (11 cores, 36 GiB, macOS 26.5.1) with gsttt 0.1.14, dependency-cruiser 18.7.0, madge 8.0.0, codebase-memory-mcp 0.12.1 and grimp 3.18.
+
+| Repository | Files | gsttt | dependency-cruiser | madge | codebase-memory-mcp | grimp |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| [vite](https://github.com/vitejs/vite) v8.3.5 | 1,619 | 92 / 36 | 1,080 / 361 | 1,731 / 1,676 | 1,990 / 955 | – |
+| [excalidraw](https://github.com/excalidraw/excalidraw) v0.18.1 | 544 | 32 / 10 | 1,297 / 387 | 2,045 / 2,046 | 1,994 / 960 | – |
+| [django](https://github.com/django/django) 6.1.2 | 2,919 | 314 / 70 | – | – | 9,692 / 2,497 | 80 / 59 |
+| [ripgrep](https://github.com/BurntSushi/ripgrep) 15.2.0 | 100 | 33 / 6 | – | – | 1,485 / 954 | – |
+
+Files counts the tracked files with an extension of the repository's language, and each repository is measured with the tools of its language. Every tool reads the whole checkout except grimp, which reads the `django` package: 907 of the 2,919 files. madge keeps no cache, so its warm run is one more cold run. `cargo xtask bench --gsttt <path to gsttt>` measures it all again from this repository alone, with hyperfine, pnpm and uv installed: `bench/bench.toml` pins each repository at a commit and each tool at a version, and the numbers land in `bench/results/benchmarks.json`.
+
 ## What it reads
 
 - Languages: TypeScript and JavaScript, Python, Rust.
