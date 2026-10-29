@@ -96,24 +96,39 @@ pub(crate) fn prepare(
     agents: &RepositoryAgents,
     purpose: Purpose,
 ) -> anyhow::Result<PathBuf> {
-    let dir = directory(purpose, &repository.name);
-    setup::checkout(&dir, repository)?;
-    git(&dir, &["checkout", "--quiet", "--force", "--", "."])?;
+    prepare_in(
+        &directory(purpose, &repository.name),
+        repository,
+        agents,
+        purpose,
+    )
+}
+
+/// [`prepare`] in `dir`.
+fn prepare_in(
+    dir: &Path,
+    repository: &Repository,
+    agents: &RepositoryAgents,
+    purpose: Purpose,
+) -> anyhow::Result<PathBuf> {
+    setup::checkout(dir, repository)?;
+    git(dir, &["checkout", "--quiet", "--force", "--", "."])?;
     if purpose == Purpose::Runs {
         // What a run that was killed left, apart from the ignored files the install made.
-        git(&dir, &["clean", "--force", "-d", "--quiet"])?;
+        git(dir, &["clean", "--force", "-d", "--quiet"])?;
     }
-    let dir =
-        fs::canonicalize(&dir).with_context(|| format!("cannot resolve {}", dir.display()))?;
+    let dir = fs::canonicalize(dir).with_context(|| format!("cannot resolve {}", dir.display()))?;
 
     let build = match purpose {
         Purpose::Draw => agents.build.as_ref(),
         Purpose::Runs => None,
     };
-    // The marker holds the commands it was prepared with, so that another pin prepares again.
+    // The marker holds the commands it was prepared with, so that another pin prepares again. It says nothing of what became of the install since: a directory of the install that is gone, such as `node_modules`, is prepared again too.
     let marker = dir.join(".git/gsttt-agents-prepared");
     let commands = format!("{:?}\n{:?}\n", agents.install, build);
-    if fs::read_to_string(&marker).is_ok_and(|done| done == commands) {
+    if dir.join("node_modules").is_dir()
+        && fs::read_to_string(&marker).is_ok_and(|done| done == commands)
+    {
         return Ok(dir);
     }
     let shell = Shell::new()?;
@@ -136,6 +151,8 @@ pub(crate) fn prepare(
 
 #[cfg(test)]
 mod tests {
+    use crate::bench::pins::Language;
+
     use super::*;
 
     #[test]
@@ -214,5 +231,65 @@ mod tests {
         let made = made_by_the_task();
         assert!(made.contains(&tmp_root()) && made.contains(&root(Purpose::Runs)));
         assert!(!made.contains(&task_dir()) && !made.contains(&node_dir()));
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The install is made again when node_modules is gone"
+    )]
+    #[test]
+    fn the_install_is_made_again_when_node_modules_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        fs::create_dir(&source).unwrap();
+        for args in [&["init", "--quiet"][..], &["config", "user.name", "t"]] {
+            git(&source, args).unwrap();
+        }
+        fs::write(source.join(".gitignore"), "node_modules/\n").unwrap();
+        git(&source, &["add", "."]).unwrap();
+        crate::agents::guard::commit(&source, "init");
+        let repository = Repository {
+            name: "installed".to_owned(),
+            url: source.to_string_lossy().into_owned(),
+            tag: "v1".to_owned(),
+            commit: git(&source, &["rev-parse", "HEAD"]).unwrap(),
+            language: Language::Typescript,
+            tsconfig: Some("tsconfig.json".to_owned()),
+            packages: Vec::new(),
+            agents: None,
+        };
+        // Every install adds a line to a file beside the checkout.
+        let agents = RepositoryAgents {
+            scope: ".".to_owned(),
+            users: 1,
+            tests: None,
+            install: Some(
+                [
+                    "sh",
+                    "-c",
+                    "echo run >> ../installs && mkdir -p node_modules",
+                ]
+                .map(String::from)
+                .to_vec(),
+            ),
+            build: None,
+            test: None,
+        };
+        let checkout = dir.path().join("checkout");
+        let installs = || fs::read_to_string(dir.path().join("installs")).unwrap_or_default();
+
+        prepare_in(&checkout, &repository, &agents, Purpose::Runs).unwrap();
+        assert_eq!(installs(), "run\n", "the first preparation installs");
+        prepare_in(&checkout, &repository, &agents, Purpose::Runs).unwrap();
+        assert_eq!(installs(), "run\n", "the marker and node_modules skip it");
+
+        fs::remove_dir_all(checkout.join("node_modules")).unwrap();
+        prepare_in(&checkout, &repository, &agents, Purpose::Runs).unwrap();
+        assert_eq!(
+            installs(),
+            "run\nrun\n",
+            "node_modules is gone, so it installs"
+        );
+        assert!(checkout.join("node_modules").is_dir());
     }
 }
