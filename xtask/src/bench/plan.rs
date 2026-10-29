@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use super::pins::{Language, Repository, Tool};
 
 /// gsttt keeps its state in the `.git/gsttt` of a git repository (`crates/core/src/engine/workspace.rs`), so that is what a cold run removes.
-const GSTTT_CACHE: &str = ".git/gsttt";
+pub(crate) const GSTTT_CACHE: &str = ".git/gsttt";
 
 /// The directory the `--cache` of dependency-cruiser writes to, in the checkout.
 const DEPENDENCY_CRUISER_CACHE: &str = ".depcruise-cache";
@@ -209,7 +209,7 @@ fn command(tool: Tool, repository: &Repository, programs: &Programs) -> Command 
 }
 
 /// The shell line that throws the cache of `tool` away, which every cold run starts with; `None` for madge, which keeps no cache.
-fn reset(tool: Tool, programs: &Programs) -> Option<String> {
+pub(crate) fn reset(tool: Tool, programs: &Programs) -> Option<String> {
     match tool {
         Tool::Gsttt => Some(remove(GSTTT_CACHE)),
         Tool::DependencyCruiser => Some(remove(DEPENDENCY_CRUISER_CACHE)),

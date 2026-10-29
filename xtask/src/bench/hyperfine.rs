@@ -120,7 +120,7 @@ fn median_ms(export: &str) -> anyhow::Result<u64> {
 }
 
 /// Gives `cmd` the variables the tool runs with.
-fn environment<'a>(mut cmd: Cmd<'a>, run: &Run) -> Cmd<'a> {
+pub(crate) fn environment<'a>(mut cmd: Cmd<'a>, run: &Run) -> Cmd<'a> {
     for (key, value) in &run.command.env {
         cmd = cmd.env(key, value);
     }

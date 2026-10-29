@@ -1,13 +1,13 @@
 //! The seeded order of the candidates, and the loop that takes the first ones that qualify.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Write as _;
 use std::ops::RangeInclusive;
 
 use anyhow::ensure;
 
 use super::functions::Candidate;
 use super::questions::{Kind, Question, prompt};
+use super::say;
 use crate::digest::sha256_hex;
 
 /// How many other files may refer to a function that a question about its users is drawn for.
@@ -111,12 +111,11 @@ fn take<'a>(
 
 /// Says what the pass found, and fails when it found fewer candidates than the pins ask for questions.
 fn found(repository: &str, kind: Kind, wanted: u32, taken: &Taken<'_>) -> anyhow::Result<()> {
-    writeln!(
-        std::io::stderr().lock(),
+    say(&format!(
         "{repository} {}: {}",
         kind.name(),
         taken.describe()
-    )?;
+    ))?;
     let picked = taken.picked.len();
     ensure!(
         picked >= usize::try_from(wanted).unwrap_or(usize::MAX),

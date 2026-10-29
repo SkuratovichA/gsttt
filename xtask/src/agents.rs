@@ -50,6 +50,12 @@ pub(crate) const QUESTIONS: &str = "bench/agents/questions.json";
 /// Where the results of the runs are written, relative to the root of the repository.
 pub(crate) const RESULTS: &str = "bench/results/agents.json";
 
+/// Writes a line of progress to the standard error, where the standard output stays the table or the path a script reads.
+fn say(text: &str) -> anyhow::Result<()> {
+    writeln!(std::io::stderr().lock(), "{text}")?;
+    Ok(())
+}
+
 /// Runs `cargo xtask agents <task>`.
 pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     match args.split_first() {
@@ -143,12 +149,11 @@ fn questions_of(
         .with_context(|| format!("`{name}` has no tsconfig"))?;
     let checkout = checkout::prepare(repository, agents, Purpose::Draw)?;
     let candidates = functions::list(script, &programs.node, &checkout, &agents.scope, tsconfig)?;
-    writeln!(
-        std::io::stderr().lock(),
+    say(&format!(
         "{name}: {} exported functions under {}",
         candidates.len(),
         agents.scope
-    )?;
+    ))?;
 
     let order = draw::order(seed, name, &candidates);
     let mut questions = draw::users(name, &agents.scope, agents.users, &order)?;
@@ -162,7 +167,7 @@ fn questions_of(
     // Ctrl-C is caught from the first wait on: before it, a signal ends the task at once, as it always did.
     let stop = Stop::catch()?;
     let oracle = Oracle::new(&checkout, test, &checkout::scratch(name), &stop)?;
-    writeln!(std::io::stderr().lock(), "{name}: {}", oracle.describe())?;
+    say(&format!("{name}: {}", oracle.describe()))?;
     let with_body: Vec<&Candidate> = order
         .iter()
         .copied()
@@ -181,12 +186,10 @@ fn questions_of(
                 Ok(answer) => format!("{} test files", answer.files.len()),
                 Err(why) => (*why).to_owned(),
             };
-            writeln!(
-                std::io::stderr().lock(),
+            say(&format!(
                 "{name} tests: {} {}: {said}",
-                candidate.file,
-                candidate.name
-            )?;
+                candidate.file, candidate.name
+            ))?;
             Ok(verdict)
         },
     )?);

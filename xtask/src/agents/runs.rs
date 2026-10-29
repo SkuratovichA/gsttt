@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
-use std::io::{ErrorKind, Write as _};
+use std::io::Write as _;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -23,10 +23,10 @@ use super::score::{Score, last_files_block, normalize, score};
 use super::setups::{self, Context, Invocation, RunDirs, Setup};
 use super::stream::{self, End, Observed};
 use super::table;
-use super::{QUESTIONS, RESULTS, asking};
+use super::{QUESTIONS, RESULTS, asking, say};
 use crate::bench::pins::{Pins, Repository, Tool};
 use crate::bench::plan::{self, Programs};
-use crate::bench::{machine, setup};
+use crate::bench::{hyperfine, machine, setup};
 use crate::digest::sha256_hex;
 use crate::root::repository_root;
 
@@ -278,11 +278,6 @@ impl Session<'_> {
     }
 }
 
-fn say(text: &str) -> anyhow::Result<()> {
-    writeln!(std::io::stderr().lock(), "{text}")?;
-    Ok(())
-}
-
 /// The questions of the repositories named, in the order of the questions file, or only those named by `ids`. An id that no question has, or that is about another repository, is an error.
 fn choose<'a>(
     all: &'a [Question],
@@ -349,30 +344,38 @@ fn open(out: &Path, questions_sha256: &str, tools: Vec<ToolVersion>) -> anyhow::
     Ok(results)
 }
 
+/// Throws the cache of `tool` away from `dir` with the line that every cold run of the speed benchmark starts with.
+fn forget(tool: Tool, dir: &Path, programs: &Programs) -> anyhow::Result<()> {
+    let Some(line) = plan::reset(tool, programs) else {
+        return Ok(());
+    };
+    let shell = Shell::new()?;
+    shell.change_dir(dir);
+    shell
+        .cmd("sh")
+        .args(["-c", &line])
+        .quiet()
+        .run()
+        .with_context(|| format!("cannot throw the cache of {} away", tool.name()))
+}
+
 /// Indexes the checkout with the two tools that keep an index. The index of gsttt in the checkout is from an earlier task and may be of another binary, so it is thrown away first.
 fn index(repository: &Repository, dir: &Path, programs: &Programs) -> anyhow::Result<()> {
-    match fs::remove_dir_all(dir.join(".git/gsttt")) {
-        Err(error) if error.kind() != ErrorKind::NotFound => {
-            return Err(error).context("cannot remove the gsttt index of an earlier task");
-        }
-        _ => {}
-    }
+    forget(Tool::Gsttt, dir, programs)?;
     let shell = Shell::new()?;
     shell.change_dir(dir);
     let indexing = plan::plan(repository, programs)
         .into_iter()
         .filter(|run| matches!(run.tool, Tool::Gsttt | Tool::CodebaseMemory));
     for run in indexing {
-        let mut command = shell.cmd(&run.command.program).args(&run.command.args);
-        for (name, value) in &run.command.env {
-            command = command.env(name, value);
-        }
-        for (name, value) in &run.isolation {
-            command = command.env(name, value);
-        }
-        command.quiet().ignore_stdout().run().with_context(|| {
-            format!("{} could not index `{}`", run.tool.name(), repository.name)
-        })?;
+        let command = shell.cmd(&run.command.program).args(&run.command.args);
+        hyperfine::environment(command, &run)
+            .quiet()
+            .ignore_stdout()
+            .run()
+            .with_context(|| {
+                format!("{} could not index `{}`", run.tool.name(), repository.name)
+            })?;
     }
     Ok(())
 }
@@ -504,6 +507,8 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         invoke(setup, dirs)?;
     }
 
+    // The cache of codebase-memory-mcp holds the index of every checkout, so it is thrown away once, and not with each.
+    forget(Tool::CodebaseMemory, &root, &programs)?;
     let mut checkouts = BTreeMap::new();
     for repository in repositories {
         if !questions

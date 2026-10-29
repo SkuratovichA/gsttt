@@ -2,7 +2,6 @@
 
 use std::collections::BTreeSet;
 use std::fs::{self, File};
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -13,6 +12,7 @@ use serde::Deserialize;
 use super::draw::{Answer, BROKEN, Verdict};
 use super::functions::Candidate;
 use super::process::{self, Job, Look, Stop};
+use super::say;
 use crate::dist::git::git;
 
 /// The wall-clock limit of each of the two runs without a throw.
@@ -315,12 +315,7 @@ impl Drop for Restore<'_> {
         }
         // The run is already ending in a panic or an error, so a message is all there is to report a failure to.
         if let Err(error) = self.checkout() {
-            writeln!(
-                std::io::stderr().lock(),
-                "cannot restore {}: {error:#}",
-                self.file
-            )
-            .ok();
+            say(&format!("cannot restore {}: {error:#}", self.file)).ok();
         }
     }
 }

@@ -691,4 +691,24 @@ mod tests {
             ]
         );
     }
+
+    /// The body of `has_exited` in `source`: from its signature to the closing brace that starts a line.
+    fn has_exited_in(source: &str) -> Option<&str> {
+        let signature = concat!("fn has_exited", "(child: &Child) -> bool {");
+        let rest = source.get(source.find(signature)?..)?;
+        rest.get(..rest.find("\n}\n")?)
+    }
+
+    #[test]
+    fn has_exited_is_the_same_call_as_the_one_the_config_crate_has() {
+        let ours = has_exited_in(include_str!("process.rs"));
+        let theirs = has_exited_in(include_str!(
+            "../../../crates/config/src/external/process.rs"
+        ));
+        assert!(ours.is_some(), "has_exited is not in this file");
+        assert_eq!(
+            ours, theirs,
+            "the copy of has_exited has drifted from crates/config/src/external/process.rs"
+        );
+    }
 }

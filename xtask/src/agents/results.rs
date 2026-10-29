@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use super::init::Init;
 use super::questions::Kind;
 use super::setups::Setup;
-use crate::bench::results::{is_utc_time, refuse_local_paths, write_atomically};
+use crate::bench::results::{is_utc_time, write_json};
 use crate::digest::is_hex;
 
 /// The results of the runs. The order of the fields is the order of the keys in the file.
@@ -181,10 +181,7 @@ impl Results {
     /// Writes the results to `out` through a temporary file, and fails, writing nothing, when they do not check or hold one of the paths of `local`.
     pub(super) fn write(&self, out: &Path, local: &[&str]) -> anyhow::Result<()> {
         self.check()?;
-        let mut text = serde_json::to_string_pretty(self)?;
-        text.push('\n');
-        refuse_local_paths(&text, local)?;
-        write_atomically(out, &text)
+        write_json(out, self, local)
     }
 
     /// Fails on whatever the site would refuse to decode.

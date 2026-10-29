@@ -3,7 +3,7 @@
 //! The repositories and the tools are pinned in `bench/bench.toml`. The task clones the repositories into `bench/repos`, installs the tools into `bench/tools`, times every tool with hyperfine and writes the medians to `bench/results/benchmarks.json`, in the shape the site decodes.
 
 pub(crate) mod args;
-mod hyperfine;
+pub(crate) mod hyperfine;
 pub(crate) mod machine;
 pub(crate) mod pins;
 pub(crate) mod plan;
