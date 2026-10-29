@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use super::pins::{Language, Repository, Tool};
 
 /// gsttt keeps its state in the `.git/gsttt` of a git repository (`crates/core/src/engine/workspace.rs`), so that is what a cold run removes.
-const GSTTT_CACHE: &str = ".git/gsttt";
+pub(crate) const GSTTT_CACHE: &str = ".git/gsttt";
 
 /// The directory the `--cache` of dependency-cruiser writes to, in the checkout.
 const DEPENDENCY_CRUISER_CACHE: &str = ".depcruise-cache";
@@ -18,19 +18,19 @@ const WARMUP_RUNS: u32 = 1;
 
 /// Where the programs of the tools are on this machine: the layout of `bench/tools`, and the binary of gsttt.
 #[derive(Debug)]
-pub(super) struct Programs {
+pub(crate) struct Programs {
     /// The directory pnpm installs the Node tools into.
-    pub(super) node: PathBuf,
+    pub(crate) node: PathBuf,
     /// The virtual environment uv installs grimp into.
-    pub(super) venv: PathBuf,
+    pub(crate) venv: PathBuf,
     /// The directory codebase-memory-mcp is unpacked into, with its home and its cache beside the binary.
-    pub(super) cbm: PathBuf,
+    pub(crate) cbm: PathBuf,
     gsttt: PathBuf,
 }
 
 impl Programs {
     /// The programs as the task installs them under `tools`, and `gsttt` as the task was given it.
-    pub(super) fn new(tools: &Path, gsttt: &Path) -> Self {
+    pub(crate) fn new(tools: &Path, gsttt: &Path) -> Self {
         Self {
             node: tools.join("node"),
             venv: tools.join("python"),
@@ -40,7 +40,7 @@ impl Programs {
     }
 
     /// The program of `tool`.
-    pub(super) fn of(&self, tool: Tool) -> PathBuf {
+    pub(crate) fn of(&self, tool: Tool) -> PathBuf {
         match tool {
             Tool::Gsttt => self.gsttt.clone(),
             Tool::DependencyCruiser => self.node.join("node_modules/.bin/depcruise"),
@@ -51,26 +51,26 @@ impl Programs {
     }
 
     /// The `HOME` codebase-memory-mcp runs with, so that it writes nothing into the home of the user.
-    fn cbm_home(&self) -> PathBuf {
+    pub(crate) fn cbm_home(&self) -> PathBuf {
         self.cbm.join("home")
     }
 
     /// The `CBM_CACHE_DIR` codebase-memory-mcp runs with.
-    pub(super) fn cbm_cache(&self) -> PathBuf {
+    pub(crate) fn cbm_cache(&self) -> PathBuf {
         self.cbm.join("cache")
     }
 }
 
 /// A command, in the two forms it is needed in: as a reader types it in the checkout, and as hyperfine runs it.
 #[derive(Debug)]
-pub(super) struct Command {
-    pub(super) tool: Tool,
+pub(crate) struct Command {
+    pub(crate) tool: Tool,
     /// The program by its path on this machine.
-    pub(super) program: PathBuf,
+    pub(crate) program: PathBuf,
     /// The arguments, relative to the checkout the command runs in.
-    pub(super) args: Vec<String>,
+    pub(crate) args: Vec<String>,
     /// Variables that are part of the command a reader types.
-    pub(super) env: Vec<(&'static str, &'static str)>,
+    pub(crate) env: Vec<(&'static str, &'static str)>,
 }
 
 impl Command {
@@ -108,19 +108,19 @@ pub(super) struct Measure {
 
 /// One tool on one repository.
 #[derive(Debug)]
-pub(super) struct Run {
-    pub(super) tool: Tool,
-    pub(super) command: Command,
+pub(crate) struct Run {
+    pub(crate) tool: Tool,
+    pub(crate) command: Command,
     /// Every run starts without the cache of the tool.
     pub(super) cold: Measure,
     /// The runs follow one that left the cache in place.
     pub(super) warm: Measure,
     /// Variables the tool runs with that a reader does not type.
-    pub(super) isolation: Vec<(&'static str, PathBuf)>,
+    pub(crate) isolation: Vec<(&'static str, PathBuf)>,
 }
 
 /// The runs of `repository`: one per tool of its language.
-pub(super) fn plan(repository: &Repository, programs: &Programs) -> Vec<Run> {
+pub(crate) fn plan(repository: &Repository, programs: &Programs) -> Vec<Run> {
     repository
         .language
         .tools()
@@ -209,28 +209,35 @@ fn command(tool: Tool, repository: &Repository, programs: &Programs) -> Command 
 }
 
 /// The shell line that throws the cache of `tool` away, which every cold run starts with; `None` for madge, which keeps no cache.
-fn reset(tool: Tool, programs: &Programs) -> Option<String> {
+pub(crate) fn reset(tool: Tool, programs: &Programs) -> Option<String> {
     match tool {
         Tool::Gsttt => Some(remove(GSTTT_CACHE)),
         Tool::DependencyCruiser => Some(remove(DEPENDENCY_CRUISER_CACHE)),
         Tool::Madge => None,
         Tool::Grimp => Some(remove(GRIMP_CACHE)),
         Tool::CodebaseMemory => {
-            let cbm = quote(&programs.of(tool).to_string_lossy());
+            let stop = stop_daemon(programs);
             let cache = quote(&programs.cbm_cache().to_string_lossy());
             // The daemon keeps the index open, so it is stopped first; stopping it when none runs is not an error.
             Some(format!(
-                "{cbm} daemon stop >/dev/null 2>&1; rm -rf {cache} && mkdir -p {cache}"
+                "{stop} >/dev/null 2>&1; rm -rf {cache} && mkdir -p {cache}"
             ))
         }
     }
+}
+
+/// The shell line that stops the daemon of codebase-memory-mcp, which keeps its index open. It finds the daemon only in the environment the tool runs with, that of [`isolation`]; `daemon stop` ends with 0 when no daemon runs.
+pub(crate) fn stop_daemon(programs: &Programs) -> String {
+    let cbm = quote(&programs.of(Tool::CodebaseMemory).to_string_lossy());
+    format!("{cbm} daemon stop")
 }
 
 fn remove(path: &str) -> String {
     format!("rm -rf {}", quote(path))
 }
 
-fn isolation(tool: Tool, programs: &Programs) -> Vec<(&'static str, PathBuf)> {
+/// The variables `tool` runs with besides those of its command: codebase-memory-mcp is given a home and a cache of its own, which is also where its daemon is found.
+pub(crate) fn isolation(tool: Tool, programs: &Programs) -> Vec<(&'static str, PathBuf)> {
     match tool {
         Tool::CodebaseMemory => vec![
             ("HOME", programs.cbm_home()),
@@ -277,6 +284,7 @@ mod tests {
             language,
             tsconfig: tsconfig.map(str::to_owned),
             packages: strings(packages),
+            agents: None,
         }
     }
 

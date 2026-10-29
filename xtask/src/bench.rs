@@ -2,13 +2,13 @@
 //!
 //! The repositories and the tools are pinned in `bench/bench.toml`. The task clones the repositories into `bench/repos`, installs the tools into `bench/tools`, times every tool with hyperfine and writes the medians to `bench/results/benchmarks.json`, in the shape the site decodes.
 
-mod args;
-mod hyperfine;
-mod machine;
-mod pins;
-mod plan;
-mod results;
-mod setup;
+pub(crate) mod args;
+pub(crate) mod hyperfine;
+pub(crate) mod machine;
+pub(crate) mod pins;
+pub(crate) mod plan;
+pub(crate) mod results;
+pub(crate) mod setup;
 mod table;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -95,7 +95,7 @@ pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
 }
 
 /// The pinned repositories to measure, in the order of the pins: the ones named, or all of them when none is named.
-fn select<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec<&'a Repository>> {
+pub(crate) fn select<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec<&'a Repository>> {
     for name in names {
         ensure!(
             pins.repository
@@ -152,7 +152,7 @@ fn measure(session: &Session, repository: &Repository) -> anyhow::Result<Reposit
         .iter()
         .map(|run| time_run(session, &dir, repository, run))
         .collect::<anyhow::Result<Vec<_>>>();
-    // Whatever happened, no cache and no codebase-memory-mcp daemon is left behind.
+    // Whatever happened, no cache is left behind.
     let cleaned = runs.iter().try_for_each(|run| hyperfine::reset(&dir, run));
     let tools = timed?;
     cleaned?;

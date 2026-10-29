@@ -78,14 +78,34 @@ impl Results {
 /// Writes `results` to `out` through a temporary file beside it, so that a failed run leaves no half of a file. Fails, writing nothing, when the text holds one of the paths of `local`.
 pub(super) fn write(out: &Path, results: &Results, local: &[&str]) -> anyhow::Result<()> {
     results.check()?;
-    let mut text = serde_json::to_string_pretty(results)?;
+    write_json(out, results, local)
+}
+
+/// Writes `value` to `out` as pretty JSON and a newline, through a temporary file beside it, so that a failed run leaves no half of a file. Fails, writing nothing, when the text holds one of the paths of `local`.
+pub(crate) fn write_json<T: Serialize>(
+    out: &Path,
+    value: &T,
+    local: &[&str],
+) -> anyhow::Result<()> {
+    let mut text = serde_json::to_string_pretty(value)?;
     text.push('\n');
+    refuse_local_paths(&text, local)?;
+    write_atomically(out, &text)
+}
+
+/// Fails when `text` holds one of the paths of `local`: the results are published, and a path of this machine is not.
+pub(crate) fn refuse_local_paths(text: &str, local: &[&str]) -> anyhow::Result<()> {
     for path in local {
         ensure!(
             path.is_empty() || !text.contains(path),
             "the results hold the local path {path}, which must not be published"
         );
     }
+    Ok(())
+}
+
+/// Writes `text` to `out` through a temporary file beside it, so that a failed run leaves no half of a file.
+pub(crate) fn write_atomically(out: &Path, text: &str) -> anyhow::Result<()> {
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
@@ -99,7 +119,7 @@ pub(super) fn write(out: &Path, results: &Results, local: &[&str]) -> anyhow::Re
 }
 
 /// Whether `text` is `YYYY-MM-DDTHH:MM:SSZ`.
-fn is_utc_time(text: &str) -> bool {
+pub(crate) fn is_utc_time(text: &str) -> bool {
     text.len() == 20
         && text.bytes().enumerate().all(|(at, byte)| match at {
             4 | 7 => byte == b'-',
@@ -188,6 +208,7 @@ mod tests {
             language: Language::Typescript,
             tsconfig: Some("tsconfig.json".to_owned()),
             packages: Vec::new(),
+            agents: None,
         };
         let tools = plan(&repository, &programs)
             .iter()

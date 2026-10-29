@@ -70,7 +70,7 @@ pub(super) fn parse(args: &[String]) -> anyhow::Result<Args> {
 }
 
 /// Stores the value of a flag that may be given once.
-fn set<T>(slot: &mut Option<T>, flag: &str, value: T) -> anyhow::Result<()> {
+pub(crate) fn set<T>(slot: &mut Option<T>, flag: &str, value: T) -> anyhow::Result<()> {
     ensure!(slot.is_none(), "{flag} is given twice");
     *slot = Some(value);
     Ok(())
