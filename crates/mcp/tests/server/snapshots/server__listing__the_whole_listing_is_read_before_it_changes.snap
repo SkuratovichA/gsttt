@@ -41,7 +41,7 @@ expression: tools
           "minimum": 0
         },
         "all": {
-          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "description": "Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.",
           "type": "boolean",
           "default": false
         }
@@ -70,7 +70,7 @@ expression: tools
           "type": "string"
         },
         "all": {
-          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "description": "Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.",
           "type": "boolean",
           "default": false
         }
@@ -98,7 +98,7 @@ expression: tools
           "type": "string"
         },
         "all": {
-          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "description": "Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.",
           "type": "boolean",
           "default": false
         }
@@ -131,7 +131,7 @@ expression: tools
           "type": "string"
         },
         "all": {
-          "description": "Show every file of the chain. Without it a long chain is cut, with a line that counts the rest.",
+          "description": "Show every file of the chain, as far as the 25,000 characters of an answer allow. Without it a long chain stops at 30 entries. A cut list ends with a line that counts the rest.",
           "type": "boolean",
           "default": false
         }
@@ -159,7 +159,7 @@ expression: tools
           "type": "string"
         },
         "all": {
-          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "description": "Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.",
           "type": "boolean",
           "default": false
         }
@@ -179,7 +179,7 @@ expression: tools
       "additionalProperties": false,
       "properties": {
         "all": {
-          "description": "Show every entry of each list. Without it a long list is cut, with a line that counts the rest.",
+          "description": "Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.",
           "type": "boolean",
           "default": false
         }

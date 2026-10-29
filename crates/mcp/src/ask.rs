@@ -3,7 +3,8 @@
 //! The paths are read, and the changed files listed, before the index is refreshed, so that a call that cannot be answered does not first pay for an index. The answer is the text the command line prints, produced by the same functions in `gsttt-core`.
 
 use gsttt_core::engine::changes::ChangeKind;
-use gsttt_core::query::{self, Answer, Entries, ImpactRequest};
+use gsttt_core::query::{self, Answer, Entries, ImpactRequest, LIST_CAP};
+use gsttt_core::text::thousands;
 use gsttt_core::{Freshness, Index, Loaded};
 
 use crate::arguments::{
@@ -12,6 +13,9 @@ use crate::arguments::{
 };
 use crate::error::ToolError;
 use crate::source::IndexSource;
+
+/// The most characters an answer holds: it stays under Claude Code's warning at 10,000 tokens, and at half the 50,000 characters above which Claude Code saves a result to a file.
+pub const BUDGET: usize = 25_000;
 
 /// What `index_status` says before the first index. It points at the questions that build one, because the tool does not.
 const NO_INDEX: &str = "There is no index yet: the first question builds one. Ask `impact`, `dependents` or \
@@ -36,11 +40,15 @@ pub(crate) fn run<S: IndexSource>(source: &S, call: Call) -> Result<String, Tool
         }
         Call::Contract(ContractArguments { query: wanted, all }) => {
             let Loaded { index, freshness } = source.refreshed()?;
-            Ok(query::contract(&index, freshness, &wanted)?.text(Entries::from_flag(all)))
+            let answer = query::contract(&index, freshness, &wanted)?;
+            Ok(within_budget(&answer, Entries::from_flag(all)))
         }
         Call::Coverage(CoverageArguments { all }) => {
             let Loaded { index, freshness } = source.refreshed()?;
-            Ok(query::coverage(&index, freshness).text(Entries::from_flag(all)))
+            Ok(within_budget(
+                &query::coverage(&index, freshness),
+                Entries::from_flag(all),
+            ))
         }
         Call::IndexStatus => status(source),
     }
@@ -60,10 +68,51 @@ fn about_a_file<S: IndexSource, A: Answer>(
     )
 }
 
+/// The text of `answer` showing `entries`, or, when that is longer than [`BUDGET`] characters, the most entries of each list that fit, after a line that says the lists were shortened. Every answer text the server returns passes through here, so that no result is long enough for a client to save to a file.
+fn within_budget<A: Answer>(answer: &A, entries: Entries) -> String {
+    let text = answer.text(entries);
+    let size = text.chars().count();
+    if size <= BUDGET {
+        return text;
+    }
+    let line = format!(
+        "cut: lists shortened to fit this answer in {} characters; the \"more\" counts say what they leave out. \
+         Ask a narrower question for the rest: fewer files, or a smaller depth.",
+        thousands(BUDGET)
+    );
+    let cut_to = |shown: usize| format!("{line}\n{}", answer.text(Entries::First(shown)));
+    let fits = |shown: usize| cut_to(shown).chars().count() <= BUDGET;
+
+    // Every entry shown takes a character at least, so no list is longer than the uncut text.
+    let upper = match entries {
+        Entries::Capped => LIST_CAP,
+        Entries::First(shown) => shown,
+        Entries::All => size,
+    };
+    if fits(upper) {
+        return cut_to(upper);
+    }
+    // Only the problems of a coverage answer are never cut, and they alone can fill the budget: no list is left to shorten, and the text goes out as it is.
+    if !fits(0) {
+        return cut_to(0);
+    }
+    // `low` fits and `high` does not, so the last `low` is a count that fits where one entry more does not. A larger count can give a shorter text, as a `… N more` line goes away, so this finds a boundary and not always the largest count; it finds the same one for the same answer.
+    let (mut low, mut high) = (0, upper);
+    while high - low > 1 {
+        let middle = low + (high - low) / 2;
+        if fits(middle) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    cut_to(low)
+}
+
 /// The text of `answer` showing `entries`, or, when the index does not hold a file it was asked about, the error that carries the text the command line prints for it.
 fn text_if_held<A: Answer>(answer: &A, entries: Entries) -> Result<String, ToolError> {
     if answer.held() {
-        Ok(answer.text(entries))
+        Ok(within_budget(answer, entries))
     } else {
         Err(ToolError::NotInIndex(answer.text(Entries::Capped)))
     }
@@ -103,13 +152,19 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
         }
     }
     let Loaded { index, freshness } = source.refreshed()?;
-    Ok(query::impact(&index, freshness, &request).text(Entries::from_flag(all)))
+    Ok(within_budget(
+        &query::impact(&index, freshness, &request),
+        Entries::from_flag(all),
+    ))
 }
 
 /// How the stored index was built and how it stands against the tree. This is the one tool that does not refresh.
 fn status<S: IndexSource>(source: &S) -> Result<String, ToolError> {
     Ok(match source.stored()? {
-        Some(loaded) => query::status(&loaded.index, loaded.freshness).text(Entries::Capped),
+        Some(loaded) => within_budget(
+            &query::status(&loaded.index, loaded.freshness),
+            Entries::Capped,
+        ),
         None => NO_INDEX.to_owned(),
     })
 }
