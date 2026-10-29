@@ -21,6 +21,7 @@ use super::process::{Stop, which};
 use super::questions::{Question, Questions};
 use super::results::{Outcome, Results, Run, ToolVersion};
 use super::score::{Score, last_files_block, normalize, score};
+use super::sessions;
 use super::setups::{self, Context, Invocation, RunDirs, Setup};
 use super::stream::{self, End, Observed};
 use super::table;
@@ -130,6 +131,8 @@ struct Session<'a> {
     invoke: Invoke<'a>,
     /// The directory the temporary directory of every run is made in.
     tmp_root: &'a Path,
+    /// The temporary root that every Claude Code session of the user shares: the directory the session of a run made in it is removed after the run.
+    sessions: &'a Path,
     user: &'a UserEntries,
     /// The indexes as the runs began, which the run of their setup puts back.
     indexes: &'a Indexes,
@@ -233,17 +236,21 @@ impl Session<'_> {
             limit: self.limit,
             stop: self.stop,
         };
-        // The init event of the run is held against the setup and against the runs before it, before the run has spent anything.
+        // The init event of the run is held against the setup and against the runs before it, before the run has spent anything. Its session is noted first, so that the run the task stops on is swept as well.
+        let mut session = None;
         let executed = exec::execute(&launch, &mut |init| {
+            session = Some(init.session_id.clone());
             init::check(setup, init, self.user)?;
             results.accept(init)
         });
-        // The checkout and the index of the setup are put back whatever became of the run.
+        // The checkout and the index of the setup are put back, and the directory of the session is removed, whatever became of the run.
         let restored = guard.finish();
         let index = self.indexes.restore(setup, &question.repository);
+        let swept = session.map_or(Ok(()), |id| sessions::remove(self.sessions, &id));
         let finished = executed.with_context(|| what.clone())?;
         let changed_checkout = restored.with_context(|| what.clone())?;
         let changed_index = index.with_context(|| what.clone())?;
+        swept.with_context(|| what.clone())?;
 
         let bytes = fs::read(&transcript)
             .with_context(|| format!("cannot read {}", transcript.display()))?;
@@ -568,6 +575,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     let local = local_paths(&root, &checkouts);
     // Ctrl-C is caught from here, where the first run starts: before it, a signal ends the task at once, as it always did.
     let stop = Stop::catch()?;
+    let sessions_root = sessions::root();
     let session = Session {
         claude: &claude,
         questions: &questions,
@@ -575,6 +583,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         checkouts: &checkouts,
         invoke: Invoke(&invoke),
         tmp_root: &tmp_root,
+        sessions: &sessions_root,
         user: &user,
         indexes: &indexes,
         limit: Duration::from_secs(pins.agents.seconds),
@@ -639,6 +648,8 @@ mod tests {
         local: Vec<String>,
         /// The indexes kept aside, for the tests of the runs that change one.
         indexes: Indexes,
+        /// The temporary root of the Claude Code sessions, where the stand-in makes the directory of its session as the real one does.
+        sessions: PathBuf,
     }
 
     impl Bed {
@@ -653,6 +664,7 @@ echo x >> "$d/calls"
 n=$(wc -l < "$d/calls" | tr -d ' ')
 echo "$TMPDIR" >> "$d/tmpdirs"
 touch "$TMPDIR/inside"
+mkdir -p "$d/sessions/-project/session-$2" && echo x > "$d/sessions/-project/session-$2/note"
 cat "$d/init-$2.json"
 if [ -f "$d/hold" ]; then sleep 30; fi
 if [ -f "$d/dirty" ]; then rm "$d/dirty"; echo notes > notes.md; fi
@@ -673,6 +685,7 @@ touch "$d/finished"
             }
             let tmp_root = dir.path().join("tmp");
             fs::create_dir_all(&tmp_root).unwrap();
+            let sessions = dir.path().join("sessions");
             let bed = Self {
                 dir,
                 _repo: repo_guard,
@@ -689,6 +702,7 @@ touch "$d/finished"
                 claude,
                 local: Vec::new(),
                 indexes: Indexes::default(),
+                sessions,
             };
             bed.stream(stream);
             bed
@@ -778,6 +792,7 @@ touch "$d/finished"
                 checkouts: &self.checkouts,
                 invoke: Invoke(&invoke),
                 tmp_root: &self.tmp_root,
+                sessions: &self.sessions,
                 user: &user,
                 indexes: &self.indexes,
                 limit,
@@ -924,6 +939,52 @@ touch "$d/finished"
             error.to_string().contains("other versions of the tools"),
             "{error}"
         );
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "The session directory of a run is removed")]
+    #[test]
+    fn the_session_directory_of_every_run_is_removed_and_no_other_in_the_root() {
+        let bed = Bed::answering(ANSWER);
+        // The session of other work of the user, and a file in the root itself.
+        let other = bed.sessions.join("-project/another-session");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join("note"), "").unwrap();
+        fs::write(bed.sessions.join("stray"), "").unwrap();
+
+        let mut results = started();
+        bed.run(&mut results).unwrap();
+
+        // The stand-in made `session-<setup>` in each call, as Claude Code does for the session of a run, and named it in its init event.
+        assert_eq!(bed.calls(), Setup::ALL.len());
+        for setup in Setup::ALL {
+            let session = bed.sessions.join(format!("-project/session-{setup}"));
+            assert!(!session.exists(), "{}", session.display());
+        }
+        assert!(other.join("note").exists());
+        assert!(bed.sessions.join("stray").exists());
+    }
+
+    #[test]
+    fn the_session_directory_of_a_run_the_task_stops_on_is_removed_too() {
+        let bed = Bed::answering(ANSWER);
+        bed.mark("hold");
+        let mut leaked = expected(Setup::Plain);
+        leaked.mcp_servers.push(init::McpServer {
+            name: "telegram".to_owned(),
+            status: "connected".to_owned(),
+        });
+        fs::write(
+            bed.dir.path().join("init-plain.json"),
+            format!("{}\n", event_of(&leaked)),
+        )
+        .unwrap();
+
+        let mut results = started();
+        bed.run(&mut results).unwrap_err();
+
+        assert_eq!(bed.calls(), 1);
+        assert!(bed.sessions.join("-project").is_dir());
+        assert!(!bed.sessions.join("-project/session-plain").exists());
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The setups take turns")]

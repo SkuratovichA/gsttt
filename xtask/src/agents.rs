@@ -18,6 +18,7 @@ pub(crate) mod questions;
 mod results;
 mod runs;
 mod score;
+mod sessions;
 mod setups;
 mod stream;
 mod table;

@@ -163,7 +163,7 @@ mod tests {
     use super::super::process::GRACE;
     use super::*;
 
-    const INIT: &str = r#"{"type":"system","subtype":"init","tools":["Bash"],"mcp_servers":[],"plugins":[],"skills":[],"slash_commands":[],"agents":[],"model":"claude-test-1","claude_code_version":"9.9.9"}"#;
+    const INIT: &str = r#"{"type":"system","subtype":"init","tools":["Bash"],"mcp_servers":[],"plugins":[],"skills":[],"slash_commands":[],"agents":[],"model":"claude-test-1","claude_code_version":"9.9.9","session_id":"s-1"}"#;
 
     const RESULT: &str =
         r#"{"type":"result","subtype":"success","is_error":false,"result":"done"}"#;

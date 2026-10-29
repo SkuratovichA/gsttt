@@ -23,6 +23,8 @@ pub(super) struct Init {
     /// The id of the model, not the alias the run was asked for.
     pub(super) model: String,
     pub(super) claude_code_version: String,
+    /// The id of the session, which names the directory Claude Code makes for it in the temporary root that every session of the user shares.
+    pub(super) session_id: String,
 }
 
 /// An MCP server and whether it started.
@@ -227,6 +229,7 @@ pub(super) fn expected(setup: Setup) -> Init {
         agents: names(&["Explore", "Plan"]),
         model: "claude-test-1".to_owned(),
         claude_code_version: "9.9.9".to_owned(),
+        session_id: format!("session-{setup}"),
     }
 }
 
@@ -254,6 +257,7 @@ pub(super) fn event_of(init: &Init) -> String {
         "agents": init.agents,
         "model": init.model,
         "claude_code_version": init.claude_code_version,
+        "session_id": init.session_id,
     })
     .to_string()
 }
@@ -407,12 +411,16 @@ mod tests {
 
     #[test]
     fn the_init_event_is_read_from_the_stream() {
-        let line = r#"{"type":"system","subtype":"init","tools":["Bash"],"mcp_servers":[{"name":"a","status":"connected","source":"dynamic"}],"plugins":[{"name":"p","path":"x","source":"p@inline"}],"skills":["s"],"slash_commands":["s"],"agents":["Plan"],"model":"claude-test-1","claude_code_version":"9.9.9","cwd":"/x"}"#;
+        let line = r#"{"type":"system","subtype":"init","tools":["Bash"],"mcp_servers":[{"name":"a","status":"connected","source":"dynamic"}],"plugins":[{"name":"p","path":"x","source":"p@inline"}],"skills":["s"],"slash_commands":["s"],"agents":["Plan"],"model":"claude-test-1","claude_code_version":"9.9.9","session_id":"7d1f0f0e-3c2b-4a55-8c1e-2f6a9b0c4d11","cwd":"/x"}"#;
         let event: Value = serde_json::from_str(line).unwrap();
         let init = from_event(&event).unwrap().unwrap();
         assert_eq!(
-            (init.model.as_str(), init.tools.len()),
-            ("claude-test-1", 1)
+            (
+                init.model.as_str(),
+                init.tools.len(),
+                init.session_id.as_str()
+            ),
+            ("claude-test-1", 1, "7d1f0f0e-3c2b-4a55-8c1e-2f6a9b0c4d11")
         );
         let other: Value = serde_json::from_str(r#"{"type":"assistant"}"#).unwrap();
         assert!(from_event(&other).unwrap().is_none());
