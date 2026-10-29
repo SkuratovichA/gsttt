@@ -74,6 +74,16 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "Base",
+        "Deps",
+        "Runner",
+        "declared",
+        "make",
+        "overloaded",
+        "pick",
+        "reads"
+      ],
       "imports": [
         {
           "flags": 1,

@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -51,6 +54,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [],
       "path": "src/alias.ts",
       "project": "ts .",
@@ -63,6 +69,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [],
       "path": "src/class.ts",
       "project": "ts .",
@@ -75,6 +84,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [],
       "path": "src/enum.ts",
       "project": "ts .",
@@ -87,6 +99,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [],
       "path": "src/interface.ts",
       "project": "ts .",

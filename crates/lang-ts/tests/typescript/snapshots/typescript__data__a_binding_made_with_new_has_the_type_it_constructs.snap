@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "count"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -64,6 +67,10 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "Repository",
+        "total"
+      ],
       "imports": [
         {
           "flags": 0,
@@ -89,6 +96,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -121,6 +131,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "seed"
+      ],
       "imports": [
         {
           "flags": 0,

@@ -26,8 +26,16 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "Prisma",
+        "Tenant"
+      ],
       "imports": [
         {
+          "exported": [
+            "Tenant",
+            "Prisma"
+          ],
           "flags": 1,
           "kind": "re-export",
           "line": 1,
@@ -59,8 +67,14 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "T"
+      ],
       "imports": [
         {
+          "exported": [
+            "T"
+          ],
           "flags": 0,
           "kind": "re-export",
           "line": 1,

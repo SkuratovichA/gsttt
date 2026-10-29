@@ -26,6 +26,9 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -58,6 +61,10 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "escape",
+        "loop"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -83,6 +90,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "find"
+      ],
       "imports": [],
       "path": "src/fan-out.ts",
       "project": "ts .",

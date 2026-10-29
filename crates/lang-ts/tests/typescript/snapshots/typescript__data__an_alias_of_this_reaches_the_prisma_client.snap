@@ -32,6 +32,10 @@ expression: json
         }
       ],
       "embedded": [],
+      "exports": [
+        "TenantService",
+        "unrelated"
+      ],
       "imports": [
         {
           "flags": 0,

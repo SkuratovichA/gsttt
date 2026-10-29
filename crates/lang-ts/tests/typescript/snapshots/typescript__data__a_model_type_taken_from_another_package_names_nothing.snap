@@ -7,6 +7,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "Tenant"
+      ],
       "imports": [],
       "path": "generated/prisma/index.ts",
       "project": "ts .",
@@ -31,6 +34,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "Row"
+      ],
       "imports": [
         {
           "flags": 1,
@@ -56,6 +62,9 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "Row"
+      ],
       "imports": [
         {
           "flags": 1,
