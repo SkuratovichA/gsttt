@@ -251,7 +251,7 @@ pub(super) struct Context<'a> {
     pub(super) node: &'a Path,
     /// The directory that holds [`bin`](Self::bin) and the directory of [`files`](Self::files), and nothing else: the runs that must not find the binary under test are denied it.
     pub(super) task: &'a Path,
-    /// The directories that no run may read: this repository, and the configuration directory of Claude Code.
+    /// The directories that no run may read: this repository, the main worktree it was made from when it is a linked one, and the configuration directory of Claude Code.
     pub(super) private: &'a [PathBuf],
 }
 

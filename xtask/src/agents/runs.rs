@@ -30,6 +30,7 @@ use crate::bench::pins::{Pins, Repository, Tool};
 use crate::bench::plan::{self, Programs};
 use crate::bench::{hyperfine, machine, setup};
 use crate::digest::sha256_hex;
+use crate::dist::git::git;
 use crate::root::repository_root;
 
 /// The packages whose versions are recorded beside the tools: the language server and the TypeScript it reads with.
@@ -356,6 +357,19 @@ fn binary_sum(binary: &Path) -> anyhow::Result<ToolVersion> {
     })
 }
 
+/// The directories no run may read: `root`, the main worktree it was made from when it is a linked one, which holds the same sources, and `config`. The main worktree is the parent of the common directory of git.
+fn private_dirs(root: &Path, config: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let common = git(
+        root,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let mut private = vec![root.to_path_buf(), config.to_path_buf()];
+    if let Some(main) = Path::new(&common).parent().filter(|main| *main != root) {
+        private.push(main.to_path_buf());
+    }
+    Ok(private)
+}
+
 /// The results to add to: the ones in `out` when it exists, which must be for the same questions and the same tools, or new ones.
 fn open(out: &Path, questions_sha256: &str, tools: Vec<ToolVersion>) -> anyhow::Result<Results> {
     if !out.exists() {
@@ -512,8 +526,8 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     let config = init::config_dir(&host).context(
         "neither CLAUDE_CONFIG_DIR nor HOME is set, so the directory of the configuration of Claude Code, which no run may read, is not known",
     )?;
-    // What no run may read: this repository, which holds the sources of the tool under test, and the configuration of the user.
-    let private = vec![root.clone(), config.clone()];
+    // What no run may read: this repository and the main worktree it was made from, which hold the sources of the tool under test, and the configuration of the user.
+    let private = private_dirs(&root, &config)?;
     let context = Context {
         model: &pins.agents.model,
         turns: pins.agents.turns,
@@ -985,6 +999,38 @@ touch "$d/finished"
         assert_eq!(bed.calls(), 1);
         assert!(bed.sessions.join("-project").is_dir());
         assert!(!bed.sessions.join("-project/session-plain").exists());
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The main worktree of the repository is out of reach of the runs"
+    )]
+    #[test]
+    fn the_main_worktree_of_a_linked_worktree_is_private_with_the_repository() {
+        let (_guard, main) = repo();
+        let dir = tempfile::tempdir().unwrap();
+        let linked = dir.path().join("linked");
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                linked.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        let linked = fs::canonicalize(linked).unwrap();
+        let config = dir.path().join("config");
+
+        // A linked worktree comes with the worktree it was made from.
+        assert_eq!(
+            private_dirs(&linked, &config).unwrap(),
+            [linked.clone(), config.clone(), main.clone()]
+        );
+        // The main worktree is the repository itself, which is listed once.
+        assert_eq!(private_dirs(&main, &config).unwrap(), [main, config]);
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The setups take turns")]
