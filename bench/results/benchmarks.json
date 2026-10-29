@@ -1,0 +1,125 @@
+{
+  "measuredAt": "2026-10-29T00:56:13Z",
+  "machine": "Apple M3 Pro, 11 cores, 36 GiB, macOS 26.5.1",
+  "repositories": [
+    {
+      "name": "vite",
+      "url": "https://github.com/vitejs/vite",
+      "files": 1619,
+      "tools": [
+        {
+          "tool": "gsttt",
+          "version": "0.1.14",
+          "coldMs": 92,
+          "warmMs": 36,
+          "command": "gsttt index"
+        },
+        {
+          "tool": "dependency-cruiser",
+          "version": "18.7.0",
+          "coldMs": 1080,
+          "warmMs": 361,
+          "command": "depcruise . --no-config --ts-pre-compilation-deps --output-type json --cache .depcruise-cache"
+        },
+        {
+          "tool": "madge",
+          "version": "8.0.0",
+          "coldMs": 1731,
+          "warmMs": 1676,
+          "command": "madge --json --extensions ts,tsx,mts,cts,js,jsx,mjs,cjs . --ts-config packages/vite/tsconfig.json"
+        },
+        {
+          "tool": "codebase-memory-mcp",
+          "version": "0.12.1",
+          "coldMs": 1990,
+          "warmMs": 955,
+          "command": "codebase-memory-mcp cli --json index_repository --repo-path . --name vite --mode full"
+        }
+      ]
+    },
+    {
+      "name": "excalidraw",
+      "url": "https://github.com/excalidraw/excalidraw",
+      "files": 544,
+      "tools": [
+        {
+          "tool": "gsttt",
+          "version": "0.1.14",
+          "coldMs": 32,
+          "warmMs": 10,
+          "command": "gsttt index"
+        },
+        {
+          "tool": "dependency-cruiser",
+          "version": "18.7.0",
+          "coldMs": 1297,
+          "warmMs": 387,
+          "command": "depcruise . --no-config --ts-pre-compilation-deps --output-type json --cache .depcruise-cache --ts-config tsconfig.json"
+        },
+        {
+          "tool": "madge",
+          "version": "8.0.0",
+          "coldMs": 2045,
+          "warmMs": 2046,
+          "command": "madge --json --extensions ts,tsx,mts,cts,js,jsx,mjs,cjs . --ts-config tsconfig.json"
+        },
+        {
+          "tool": "codebase-memory-mcp",
+          "version": "0.12.1",
+          "coldMs": 1994,
+          "warmMs": 960,
+          "command": "codebase-memory-mcp cli --json index_repository --repo-path . --name excalidraw --mode full"
+        }
+      ]
+    },
+    {
+      "name": "django",
+      "url": "https://github.com/django/django",
+      "files": 2919,
+      "tools": [
+        {
+          "tool": "gsttt",
+          "version": "0.1.14",
+          "coldMs": 314,
+          "warmMs": 70,
+          "command": "gsttt index"
+        },
+        {
+          "tool": "grimp",
+          "version": "3.18",
+          "coldMs": 80,
+          "warmMs": 59,
+          "command": "PYTHONPATH=. python -c \"import grimp; grimp.build_graph('django', cache_dir='.grimp_cache')\""
+        },
+        {
+          "tool": "codebase-memory-mcp",
+          "version": "0.12.1",
+          "coldMs": 9692,
+          "warmMs": 2497,
+          "command": "codebase-memory-mcp cli --json index_repository --repo-path . --name django --mode full"
+        }
+      ]
+    },
+    {
+      "name": "ripgrep",
+      "url": "https://github.com/BurntSushi/ripgrep",
+      "files": 100,
+      "tools": [
+        {
+          "tool": "gsttt",
+          "version": "0.1.14",
+          "coldMs": 33,
+          "warmMs": 6,
+          "command": "gsttt index"
+        },
+        {
+          "tool": "codebase-memory-mcp",
+          "version": "0.12.1",
+          "coldMs": 1485,
+          "warmMs": 954,
+          "command": "codebase-memory-mcp cli --json index_repository --repo-path . --name ripgrep --mode full"
+        }
+      ]
+    }
+  ]
+}

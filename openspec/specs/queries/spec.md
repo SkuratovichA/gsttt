@@ -6,7 +6,7 @@ Queries read an index and answer what a change affects and how files and contrac
 ## Requirements
 
 ### Requirement: Impact through imports
-`impact` SHALL return every file that reaches a changed file through import edges followed backwards to a fixpoint, with its distance in hops and the first reason it was reached, and where the edges name what the importer takes, SHALL carry the change only as far as the names allow, by the requirements on names below. An edge whose only kind is a Rust `mod` declaration SHALL NOT carry impact. A depth limit SHALL stop the walk at that many hops. The changed files themselves SHALL NOT be listed as affected.
+`impact` SHALL return every file that reaches a changed file through import edges followed backwards to a fixpoint, with its distance in hops and the first reason it was reached; where the edges name what the importer takes, the change SHALL go only as far as the names allow, per the requirements on names below. An edge whose only kind is a Rust `mod` declaration SHALL NOT carry impact. A depth limit SHALL stop the walk at that many hops. The changed files SHALL NOT be listed as affected.
 
 #### Scenario: A change reaches importers of importers
 - **WHEN** `c.ts` imports `b.ts`, `b.ts` imports `a.ts`, and `a.ts` changes
