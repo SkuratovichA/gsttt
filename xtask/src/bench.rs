@@ -152,7 +152,7 @@ fn measure(session: &Session, repository: &Repository) -> anyhow::Result<Reposit
         .iter()
         .map(|run| time_run(session, &dir, repository, run))
         .collect::<anyhow::Result<Vec<_>>>();
-    // Whatever happened, no cache and no codebase-memory-mcp daemon is left behind.
+    // Whatever happened, no cache is left behind.
     let cleaned = runs.iter().try_for_each(|run| hyperfine::reset(&dir, run));
     let tools = timed?;
     cleaned?;

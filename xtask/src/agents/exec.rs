@@ -1,4 +1,4 @@
-//! One `claude -p` process: started in the checkout with the prompt on its standard input, and watched until it ends or its time is up. Its stream goes to the transcript file, and the init event in it is handed over as soon as it is written, so that a run that loaded the wrong things is stopped before it spends anything. The result event ends the run: `claude -p` stays alive after it for as long as a task the model left in the background runs, and that time is no part of the answer.
+//! One `claude -p` process: started in the checkout with the prompt on its standard input, and watched until it ends or its time is up. Its stream goes to the transcript file, and the init event in it is handed over as soon as it is written, so that a run that loaded the wrong things is stopped as soon as the event is written, which is after its first request is sent. The result event ends the run: `claude -p` stays alive after it for as long as a task the model left in the background runs, and that time is no part of the answer.
 
 use std::fs::{self, File};
 use std::io::{Read as _, Seek as _, SeekFrom};
