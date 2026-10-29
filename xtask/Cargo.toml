@@ -22,7 +22,7 @@ serde_json.workspace = true
 # The workflows are parsed to tell a real `uses` from text that looks like one.
 serde_norway.workspace = true
 sha2.workspace = true
-# Ctrl-C and SIGTERM while the agent benchmarks wait for a run, which is in a group of its own and would be left running.
+# Ctrl-C, SIGTERM and SIGHUP while the agent benchmarks wait for a run, which is in a group of its own and would be left running.
 signal-hook.workspace = true
 syn = { workspace = true, features = ["visit"] }
 tar.workspace = true

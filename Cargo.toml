@@ -76,7 +76,7 @@ faster-hex = { version = "0.10.1", default-features = false, features = ["std"] 
 tempfile = "3.27.0"
 # Process groups and opening files without waiting. Only for unix, which gsttt is.
 rustix = "1.1.6"
-# Catching Ctrl-C and SIGTERM in `xtask`, where rustix has no safe call for it and the workspace forbids `unsafe`. Only the `flag` module is used.
+# Catching Ctrl-C, SIGTERM and SIGHUP in `xtask`, where rustix has no safe call for it and the workspace forbids `unsafe`. Only the `flag` module is used.
 signal-hook = { version = "0.4.5", default-features = false }
 jiff = "0.2.38"
 
