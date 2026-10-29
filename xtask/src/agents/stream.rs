@@ -1,6 +1,6 @@
-//! What a run says in its stream: the final message, the tokens, the cost, the turns, and whether the account ran out of usage.
+//! What a run says in its stream: the final message, the tokens, the cost, the turns, the tools it called, and whether the account ran out of usage.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
@@ -104,15 +104,19 @@ pub(super) struct Observed {
     /// What Claude Code says the run cost; `None` when it ended without saying.
     pub(super) cost_usd: Option<f64>,
     pub(super) turns: u32,
+    /// How many times each tool was called, by name, whatever way the run ended.
+    pub(super) tool_calls: BTreeMap<String, u32>,
     /// The account ran out of usage during the run.
     pub(super) usage_limit: bool,
 }
 
 /// Reads the lines of a transcript, skipping what is not JSON: the last line of a run that was killed may be half written.
 ///
-/// The counts are those of the result when it has them, summed over the models. Without one, they are those of the messages streamed so far, each counted once at the largest it reached.
+/// The counts are those of the result when it has them, summed over the models. Without one, they are those of the messages streamed so far, each counted once at the largest it reached. The tool calls are those of the messages streamed, with or without a result.
 pub(super) fn observe(transcript: &str) -> Observed {
     let mut messages: BTreeMap<String, Tokens> = BTreeMap::new();
+    let mut tool_calls: BTreeMap<String, u32> = BTreeMap::new();
+    let mut called = BTreeSet::new();
     let mut result = None;
     let mut usage_limit = false;
     let mut first_message = true;
@@ -132,6 +136,7 @@ pub(super) fn observe(transcript: &str) -> Observed {
                         .and_modify(|seen| *seen = seen.largest(tokens))
                         .or_insert(tokens);
                 }
+                count_tool_calls(message, &mut called, &mut tool_calls);
                 // Only the first message is the account's refusal. A later one that has the same words is the model quoting them, in a file it read or in the answer.
                 if std::mem::take(&mut first_message) {
                     usage_limit |= first_text(message).is_some_and(is_limit);
@@ -160,6 +165,7 @@ pub(super) fn observe(transcript: &str) -> Observed {
             tokens: streamed,
             cost_usd: None,
             turns: streamed_turns,
+            tool_calls,
             usage_limit,
         };
     };
@@ -199,7 +205,31 @@ pub(super) fn observe(transcript: &str) -> Observed {
             .map_or(streamed_turns, |turns| {
                 u32::try_from(turns).unwrap_or(u32::MAX)
             }),
+        tool_calls,
         usage_limit,
+    }
+}
+
+/// Counts the `tool_use` blocks of a message under their names. A message comes again in the events that grow it, and its blocks with it, so a block counts at the first event that carries its id and never again; a block without an id or a name is no call.
+fn count_tool_calls(
+    message: &Value,
+    called: &mut BTreeSet<String>,
+    tool_calls: &mut BTreeMap<String, u32>,
+) {
+    let Some(blocks) = message.get("content").and_then(Value::as_array) else {
+        return;
+    };
+    for block in blocks {
+        if string(block, "type") != Some("tool_use") {
+            continue;
+        }
+        let (Some(id), Some(name)) = (string(block, "id"), string(block, "name")) else {
+            continue;
+        };
+        if called.insert(id.to_owned()) {
+            let count = tool_calls.entry(name.to_owned()).or_default();
+            *count = count.saturating_add(1);
+        }
     }
 }
 
@@ -252,6 +282,14 @@ pub(crate) mod events {
         })
     }
 
+    /// An assistant event of message `message` that holds the call `call` of the tool `name`.
+    pub(crate) fn tool_call(message: &str, call: &str, name: &str) -> Value {
+        let mut event = assistant(message, 1, "");
+        event["message"]["content"] =
+            json!([{ "type": "tool_use", "id": call, "name": name, "input": {} }]);
+        event
+    }
+
     pub(crate) fn result(subtype: &str, is_error: bool, text: &str) -> Value {
         json!({
             "type": "result",
@@ -276,7 +314,9 @@ pub(crate) mod events {
 
 #[cfg(test)]
 mod tests {
-    use super::events::{assistant, lines, result};
+    use serde_json::json;
+
+    use super::events::{assistant, lines, result, tool_call};
     use super::*;
 
     #[test]
@@ -374,5 +414,62 @@ mod tests {
         assert!(!observe(&lines(&[result("success", false, limit)])).usage_limit);
         let transient = "Server is temporarily limiting requests (not your usage limit)";
         assert!(!observe(&lines(&[result("success", true, transient)])).usage_limit);
+    }
+
+    fn calls(pairs: &[(&str, u32)]) -> BTreeMap<String, u32> {
+        pairs
+            .iter()
+            .map(|&(name, count)| (name.to_owned(), count))
+            .collect()
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A tool call repeated in the stream counts once"
+    )]
+    #[test]
+    fn a_tool_call_two_events_repeat_counts_once() {
+        let without_id = json!({
+            "type": "assistant",
+            "message": {
+                "id": "m4",
+                "content": [{ "type": "tool_use", "name": "Read", "input": {} }]
+            }
+        });
+        let observed = observe(&lines(&[
+            tool_call("m1", "call-1", "Read"),
+            // The same block of the same message, streamed again.
+            tool_call("m1", "call-1", "Read"),
+            tool_call("m2", "call-2", "Read"),
+            tool_call("m3", "call-3", "LSP"),
+            // Text is no call, and a block that names no call is none either.
+            assistant("m5", 2, "thinking"),
+            without_id,
+            result("success", false, "done"),
+        ]));
+        assert_eq!(observed.tool_calls, calls(&[("LSP", 1), ("Read", 2)]));
+        assert_eq!(observed.end, End::Success);
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A run without a result keeps its tool calls")]
+    #[test]
+    fn a_run_cut_off_before_its_result_keeps_its_tool_calls() {
+        let transcript = lines(&[
+            tool_call("m1", "call-1", "ToolSearch"),
+            tool_call("m2", "call-2", "mcp__plugin_gsttt_gsttt__impact"),
+            tool_call("m2", "call-2", "mcp__plugin_gsttt_gsttt__impact"),
+        ]);
+        // The last line was cut in the middle by the kill.
+        let observed = observe(&format!("{transcript}{{\"type\":\"assist"));
+        assert_eq!(observed.end, End::Unfinished);
+        assert_eq!(
+            observed.tool_calls,
+            calls(&[("ToolSearch", 1), ("mcp__plugin_gsttt_gsttt__impact", 1)])
+        );
+        assert!(
+            observe(&lines(&[assistant("m1", 1, "a")]))
+                .tool_calls
+                .is_empty()
+        );
     }
 }

@@ -1,6 +1,6 @@
 //! The results of `cargo xtask agents run`, in the shape the site decodes, and what decides whether a task started over may add to them.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::init::Init;
 use super::questions::Kind;
-use super::setups::Setup;
+use super::setups::{Arm, Setup};
 use crate::bench::results::{is_utc_time, write_json};
 use crate::digest::is_hex;
 
@@ -65,7 +65,7 @@ impl Outcome {
     }
 }
 
-/// One run: a question asked in a setup. The order of the fields is the order of the keys in the file.
+/// One run: a question asked in a setup, in one of its arms. The order of the fields is the order of the keys in the file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Run {
@@ -74,6 +74,8 @@ pub(super) struct Run {
     /// The kind of the question, which the table groups by.
     pub(super) kind: Kind,
     pub(super) setup: Setup,
+    /// Whether the model was told about the tools of the setup or found them installed.
+    pub(super) arm: Arm,
     /// From 1.
     pub(super) repeat: u32,
     pub(super) outcome: Outcome,
@@ -89,6 +91,8 @@ pub(super) struct Run {
     /// What Claude Code says the run cost; `null` when the run ended without saying.
     pub(super) cost_usd: Option<f64>,
     pub(super) turns: u32,
+    /// How many times the run called each tool, by the name the stream gives it, every call counted once. Kept for every outcome, a run that ended without a result included.
+    pub(super) tool_calls: BTreeMap<String, u32>,
     pub(super) duration_ms: u64,
     /// Whether the run left the checkout, its HEAD, or the index of its setup other than the preparation left them. They were put back before the next run.
     pub(super) changed_checkout: bool,
@@ -161,14 +165,14 @@ impl Results {
         Ok(())
     }
 
-    /// Whether the results hold the run of `question` in `setup` at `repeat`.
-    pub(super) fn holds(&self, question: &str, setup: Setup, repeat: u32) -> bool {
-        self.runs
-            .iter()
-            .any(|run| run.question == question && run.setup == setup && run.repeat == repeat)
+    /// Whether the results hold the run of `question` in `setup` and `arm` at `repeat`.
+    pub(super) fn holds(&self, question: &str, setup: Setup, arm: Arm, repeat: u32) -> bool {
+        self.runs.iter().any(|run| {
+            run.question == question && run.setup == setup && run.arm == arm && run.repeat == repeat
+        })
     }
 
-    /// Takes the model and the version of Claude Code of a run as the ones of the results when they have none yet, and fails when they have others. Called at the init event of every run, before the run has spent anything.
+    /// Takes the model and the version of Claude Code of a run as the ones of the results when they have none yet, and fails when they have others. Called as soon as the init event of a run is written, which is after the first request of the run is sent.
     pub(super) fn accept(&mut self, init: &Init) -> anyhow::Result<()> {
         adopt(&mut self.model, &init.model, "the model")?;
         adopt(
@@ -213,13 +217,16 @@ impl Results {
 
         let mut seen = BTreeSet::new();
         for run in &self.runs {
-            let name = format!("{} in {} at repeat {}", run.question, run.setup, run.repeat);
+            let name = format!(
+                "{} in {} ({}) at repeat {}",
+                run.question, run.setup, run.arm, run.repeat
+            );
             ensure!(
                 !run.question.is_empty() && run.repeat >= 1,
                 "a run has no question or repeat 0"
             );
             ensure!(
-                seen.insert((&run.question, run.setup, run.repeat)),
+                seen.insert((&run.question, run.setup, run.arm, run.repeat)),
                 "{name} is there twice"
             );
             for (what, score) in [
@@ -270,6 +277,7 @@ pub(super) fn sample(question: &str, kind: Kind, setup: Setup, repeat: u32) -> R
         question: question.to_owned(),
         kind,
         setup,
+        arm: Arm::Installed,
         repeat,
         outcome: Outcome::Answered,
         answer: vec!["src/a.ts".to_owned()],
@@ -282,6 +290,7 @@ pub(super) fn sample(question: &str, kind: Kind, setup: Setup, repeat: u32) -> R
         cache_write_tokens: 10,
         cost_usd: Some(0.25),
         turns: 2,
+        tool_calls: BTreeMap::new(),
         duration_ms: 1500,
         changed_checkout: false,
     }
@@ -336,7 +345,9 @@ mod tests {
     fn the_agent_results_have_the_published_shape() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("agents.json");
-        let results = ready();
+        let mut results = ready();
+        results.runs[0].tool_calls =
+            BTreeMap::from([("Read".to_owned(), 2), ("LSP".to_owned(), 1)]);
         results.write(&file, &[]).unwrap();
 
         let text = fs::read_to_string(&file).unwrap();
@@ -349,10 +360,13 @@ mod tests {
         assert_eq!(keys(&value["tools"][0]), "tool,version");
         assert_eq!(
             keys(&value["runs"][0]),
-            "question,kind,setup,repeat,outcome,answer,precision,recall,f1,inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens,costUsd,turns,durationMs,changedCheckout"
+            "question,kind,setup,arm,repeat,outcome,answer,precision,recall,f1,inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens,costUsd,turns,toolCalls,durationMs,changedCheckout"
         );
         assert_eq!(value["runs"][0]["kind"], "users");
         assert_eq!(value["runs"][0]["setup"], "plain");
+        assert_eq!(value["runs"][0]["arm"], "installed");
+        assert_eq!(keys(&value["runs"][0]["toolCalls"]), "LSP,Read");
+        assert_eq!(value["runs"][0]["toolCalls"]["Read"], 2);
         assert_eq!(value["runs"][0]["outcome"], "answered");
         assert_eq!(Results::load(&file).unwrap(), results);
 
@@ -472,13 +486,39 @@ mod tests {
         );
     }
 
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A told run and an installed run of one question are two runs"
+    )]
     #[test]
-    fn a_run_is_held_by_its_question_setup_and_repeat() {
-        let results = ready();
-        assert!(results.holds("vite-users-1", Setup::Plain, 1));
-        assert!(!results.holds("vite-users-1", Setup::Lsp, 1));
-        assert!(!results.holds("vite-users-1", Setup::Plain, 2));
-        assert!(!results.holds("vite-users-2", Setup::Plain, 1));
+    fn a_run_is_held_by_its_question_setup_arm_and_repeat() {
+        let mut results = ready();
+        assert!(results.holds("vite-users-1", Setup::Plain, Arm::Installed, 1));
+        assert!(!results.holds("vite-users-1", Setup::Lsp, Arm::Installed, 1));
+        assert!(!results.holds("vite-users-1", Setup::Plain, Arm::Installed, 2));
+        assert!(!results.holds("vite-users-2", Setup::Plain, Arm::Installed, 1));
         assert_eq!(results.runs[0].tokens(), 118);
+
+        // The installed run of a setup does not stand for its told run, and the other way round.
+        let mut lsp = sample("vite-users-1", Kind::Users, Setup::Lsp, 1);
+        results.runs.push(lsp.clone());
+        assert!(results.holds("vite-users-1", Setup::Lsp, Arm::Installed, 1));
+        assert!(!results.holds("vite-users-1", Setup::Lsp, Arm::Told, 1));
+        lsp.arm = Arm::Told;
+        results.runs.push(lsp);
+        assert!(results.holds("vite-users-1", Setup::Lsp, Arm::Told, 1));
+        assert!(!results.holds("vite-users-1", Setup::Lsp, Arm::Told, 2));
+
+        // Both are kept, because the file refuses only the same run twice.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("agents.json");
+        results.write(&file, &[]).unwrap();
+        assert_eq!(Results::load(&file).unwrap(), results);
+        results.runs.push(results.runs[2].clone());
+        let error = results.write(&file, &[]).unwrap_err().to_string();
+        assert!(
+            error.contains("lsp (told)") && error.contains("twice"),
+            "{error}"
+        );
     }
 }

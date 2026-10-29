@@ -1,4 +1,4 @@
-//! `cargo xtask agents table`: the mean of the runs of each setup, for each kind of question, as Markdown.
+//! `cargo xtask agents table`: the mean of the runs of each setup and arm, for each kind of question, as Markdown.
 
 use std::collections::BTreeSet;
 use std::io::Write as _;
@@ -11,10 +11,10 @@ use super::RESULTS;
 use super::questions::Kind;
 use super::results::{Outcome, Results, Run};
 use super::score::float;
-use super::setups::Setup;
+use super::setups::{self, Arm, Setup};
 use crate::root::repository_root;
 
-const COLUMNS: [&str; 10] = [
+const COLUMNS: [&str; 13] = [
     "setup",
     "recall",
     "precision",
@@ -25,6 +25,9 @@ const COLUMNS: [&str; 10] = [
     "cost (USD)",
     "runs",
     "without an answer",
+    "own tool calls",
+    "runs that called them",
+    "changed the checkout",
 ];
 
 /// Prints the table of the results in the file named, or in `bench/results/agents.json`.
@@ -39,7 +42,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// A table for each kind of question the results hold, with a row for each setup that has runs of it; nothing at all for results without a run.
+/// A table for each kind of question the results hold, with a row for each setup and arm that has runs of it; nothing at all for results without a run.
 pub(super) fn render(results: &Results) -> String {
     let kinds: BTreeSet<Kind> = results.runs.iter().map(|run| run.kind).collect();
     if kinds.is_empty() {
@@ -54,14 +57,14 @@ pub(super) fn render(results: &Results) -> String {
                 row(&COLUMNS),
                 row(&COLUMNS.map(|_| "---")),
             ];
-            for setup in Setup::ALL {
+            for (setup, arm) in setups::every_arm() {
                 let runs: Vec<&Run> = results
                     .runs
                     .iter()
-                    .filter(|run| run.kind == kind && run.setup == setup)
+                    .filter(|run| run.kind == kind && run.setup == setup && run.arm == arm)
                     .collect();
                 if !runs.is_empty() {
-                    lines.push(row(&cells(setup, &runs)));
+                    lines.push(row(&cells(setup, arm, &runs)));
                 }
             }
             lines.join("\n")
@@ -77,8 +80,8 @@ fn row<S: AsRef<str>>(cells: &[S]) -> String {
     format!("| {} |", cells.join(" | "))
 }
 
-/// The means over the `runs` of one setup, written the way the table shows them: the scores to two decimals, the tokens and the seconds whole, the turns to one decimal, the cost to three.
-fn cells(setup: Setup, runs: &[&Run]) -> Vec<String> {
+/// The means over the `runs` of one setup in one arm, written the way the table shows them: the scores to two decimals, the tokens and the seconds whole, the turns and the calls of the setup's own tools to one decimal, the cost to three. The own tools are the ones whose names start with the prefix of the setup, so `plain` has none and shows a dash for them.
+fn cells(setup: Setup, arm: Arm, runs: &[&Run]) -> Vec<String> {
     let mean_of =
         |value: fn(&Run) -> f64| mean(&runs.iter().map(|run| value(run)).collect::<Vec<_>>());
     let costs: Vec<f64> = runs.iter().filter_map(|run| run.cost_usd).collect();
@@ -91,8 +94,20 @@ fn cells(setup: Setup, runs: &[&Run]) -> Vec<String> {
         .iter()
         .filter(|run| run.outcome != Outcome::Answered)
         .count();
+    let (own_calls, called_them) = match setup.own_prefix() {
+        Some(prefix) => {
+            let calls: Vec<u32> = runs.iter().map(|run| own_calls(run, prefix)).collect();
+            let floats: Vec<f64> = calls.iter().map(|&calls| float(calls)).collect();
+            (
+                format!("{:.1}", mean(&floats)),
+                calls.iter().filter(|&&calls| calls > 0).count().to_string(),
+            )
+        }
+        None => ("-".to_owned(), "-".to_owned()),
+    };
+    let changed = runs.iter().filter(|run| run.changed_checkout).count();
     vec![
-        setup.name().to_owned(),
+        label(setup, arm),
         format!("{:.2}", mean_of(|run| run.recall)),
         format!("{:.2}", mean_of(|run| run.precision)),
         format!("{:.2}", mean_of(|run| run.f1)),
@@ -102,7 +117,26 @@ fn cells(setup: Setup, runs: &[&Run]) -> Vec<String> {
         cost,
         runs.len().to_string(),
         unanswered.to_string(),
+        own_calls,
+        called_them,
+        changed.to_string(),
     ]
+}
+
+/// The name of a row: the setup, and the arm too when the model was told about its tools.
+fn label(setup: Setup, arm: Arm) -> String {
+    match arm {
+        Arm::Installed => setup.name().to_owned(),
+        Arm::Told => format!("{}, {arm}", setup.name()),
+    }
+}
+
+/// How many times `run` called the tools whose names start with `prefix`.
+fn own_calls(run: &Run, prefix: &str) -> u32 {
+    run.tool_calls
+        .iter()
+        .filter(|(name, _)| name.starts_with(prefix))
+        .fold(0, |sum, (_, &calls)| sum.saturating_add(calls))
 }
 
 fn mean(values: &[f64]) -> f64 {
@@ -117,20 +151,39 @@ mod tests {
     use super::*;
     use crate::agents::results::{sample, started};
 
-    /// The cells of the row of `setup` in the table of `kind`, or `None` when it has none.
-    fn cells_of(table: &str, kind: &str, setup: &str) -> Option<Vec<String>> {
-        let section = table
+    /// The cells of every row of the table of `kind`, the header and its rule first.
+    fn rows_of(table: &str, kind: &str) -> Vec<Vec<String>> {
+        table
             .split("### ")
-            .find(|section| section.starts_with(kind))?;
-        section
-            .lines()
+            .find(|section| section.starts_with(kind))
+            .into_iter()
+            .flat_map(str::lines)
+            .filter(|line| line.starts_with('|'))
             .map(|line| {
                 line.trim_matches('|')
                     .split('|')
                     .map(|cell| cell.trim().to_owned())
-                    .collect::<Vec<_>>()
+                    .collect()
             })
-            .find(|cells| cells.first().map(String::as_str) == Some(setup))
+            .collect()
+    }
+
+    /// The cells of the row named `label` in the table of `kind`, or `None` when it has none.
+    fn cells_of(table: &str, kind: &str, label: &str) -> Option<Vec<String>> {
+        rows_of(table, kind)
+            .into_iter()
+            .find(|cells| cells.first().map(String::as_str) == Some(label))
+    }
+
+    /// A run of the first question in `setup` and `arm` that called the tools named, so many times each.
+    fn calling(setup: Setup, arm: Arm, calls: &[(&str, u32)]) -> Run {
+        let mut run = sample("vite-users-1", Kind::Users, setup, 1);
+        run.arm = arm;
+        run.tool_calls = calls
+            .iter()
+            .map(|&(name, count)| (name.to_owned(), count))
+            .collect();
+        run
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The table averages the runs of each setup")]
@@ -145,8 +198,8 @@ mod tests {
         let table = render(&results);
         let row = cells_of(&table, "users", "plain").unwrap();
         assert_eq!(row[1], "0.75", "{table}");
-        assert_eq!(row[row.len() - 2], "2", "{table}");
-        assert_eq!(row[row.len() - 1], "0", "{table}");
+        assert_eq!(row[8], "2", "{table}");
+        assert_eq!(row[9], "0", "{table}");
     }
 
     #[test]
@@ -165,7 +218,7 @@ mod tests {
 
         // Users come before tests, the setups in their order, and the columns are the ones the spec names.
         assert!(table.find("### users") < table.find("### tests"), "{table}");
-        assert!(table.contains("| setup | recall | precision | F1 | tokens | turns | seconds | cost (USD) | runs | without an answer |"));
+        assert!(table.contains("| setup | recall | precision | F1 | tokens | turns | seconds | cost (USD) | runs | without an answer | own tool calls | runs that called them | changed the checkout |"));
         let users = table.split("### tests").next().unwrap();
         assert!(users.find("| plain |") < users.find("| cbm |"), "{table}");
         assert!(cells_of(&table, "users", "gsttt").is_none(), "{table}");
@@ -181,6 +234,7 @@ mod tests {
         first.outcome = Outcome::Timeout;
         first.turns = 3;
         first.duration_ms = 2000;
+        first.changed_checkout = true;
         let mut second = sample("vite-users-1", Kind::Users, Setup::Lsp, 2);
         second.cost_usd = Some(0.5);
         second.turns = 4;
@@ -189,11 +243,12 @@ mod tests {
 
         let table = render(&results);
         let row = cells_of(&table, "users", "lsp").unwrap();
-        // The mean cost is over the run that reported one, the tokens are the four kinds together.
+        // The mean cost is over the run that reported one, the tokens are the four kinds together, and the runs that called no tool of their own still count in the mean of the calls.
         assert_eq!(
             row,
             [
-                "lsp", "0.50", "1.00", "0.67", "118", "3.5", "3", "0.500", "2", "1"
+                "lsp", "0.50", "1.00", "0.67", "118", "3.5", "3", "0.500", "2", "1", "0.0", "0",
+                "1"
             ]
         );
     }
@@ -212,5 +267,71 @@ mod tests {
         results.runs.push(run);
         let row = cells_of(&render(&results), "users", "plain").unwrap();
         assert_eq!(row[7], "-");
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "The table has a row for each setup and arm")]
+    #[test]
+    fn a_row_is_made_for_each_setup_and_arm_that_has_runs() {
+        let mut results = started();
+        // The runs are pushed out of the order of the table, and the gsttt setup was only asked told.
+        for (setup, arm) in [
+            (Setup::Gsttt, Arm::Told),
+            (Setup::Lsp, Arm::Told),
+            (Setup::Lsp, Arm::Installed),
+            (Setup::Plain, Arm::Installed),
+        ] {
+            results.runs.push(calling(setup, arm, &[]));
+        }
+        let table = render(&results);
+        let labels: Vec<String> = rows_of(&table, "users")
+            .into_iter()
+            .skip(2)
+            .map(|cells| cells[0].clone())
+            .collect();
+        assert_eq!(
+            labels,
+            ["plain", "lsp", "lsp, told", "gsttt, told"],
+            "{table}"
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The table counts the calls of the tools a setup adds"
+    )]
+    #[test]
+    fn only_the_tools_of_a_setup_count_as_its_own_calls() {
+        let gsttt = "mcp__plugin_gsttt_gsttt__impact";
+        let mut results = started();
+        results.runs.extend([
+            // Four calls of the built-in tool, whatever else the run read and searched for.
+            calling(
+                Setup::Lsp,
+                Arm::Installed,
+                &[("LSP", 4), ("Read", 6), ("ToolSearch", 1)],
+            ),
+            calling(Setup::Lsp, Arm::Installed, &[("Read", 1)]),
+            // The `LSP` call of a run in the gsttt setup is not a call of a tool of gsttt.
+            calling(
+                Setup::Gsttt,
+                Arm::Told,
+                &[(gsttt, 2), ("LSP", 1), ("Read", 3), ("ToolSearch", 1)],
+            ),
+            calling(Setup::Plain, Arm::Installed, &[("LSP", 9), ("Read", 2)]),
+        ]);
+        let mut changed = calling(Setup::Gsttt, Arm::Told, &[("Read", 1)]);
+        changed.changed_checkout = true;
+        results.runs.push(changed);
+
+        let table = render(&results);
+        let last_three = |label: &str| {
+            let cells = cells_of(&table, "users", label).unwrap();
+            cells[cells.len() - 3..].to_vec()
+        };
+        // The mean over the two runs of the setup, and the runs that called one of its tools.
+        assert_eq!(last_three("lsp"), ["2.0", "1", "0"], "{table}");
+        assert_eq!(last_three("gsttt, told"), ["1.0", "1", "1"], "{table}");
+        // A setup with no tools of its own has nothing to count.
+        assert_eq!(last_three("plain"), ["-", "-", "0"], "{table}");
     }
 }

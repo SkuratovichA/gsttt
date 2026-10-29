@@ -22,7 +22,7 @@ use super::questions::{Question, Questions};
 use super::results::{Outcome, Results, Run, ToolVersion};
 use super::score::{Score, last_files_block, normalize, score};
 use super::sessions;
-use super::setups::{self, Context, Invocation, RunDirs, Setup};
+use super::setups::{self, Arm, Context, Invocation, RunDirs, Setup};
 use super::stream::{self, End, Observed};
 use super::table;
 use super::{QUESTIONS, RESULTS, asking, say};
@@ -44,23 +44,25 @@ struct Checkout {
     roots: Vec<PathBuf>,
 }
 
-/// One run of the task: a question in a setup at a repeat.
+/// One run of the task: a question in a setup and an arm of it at a repeat.
 #[derive(Clone, Copy, Debug)]
 struct Planned<'a> {
     question: &'a Question,
     setup: Setup,
+    arm: Arm,
     repeat: u32,
 }
 
-/// The runs in the order they are made: by repeat, then by question, then by setup. A slow hour of the API, or a limit that stops the task, then falls on every setup alike.
+/// The runs in the order they are made: by repeat, then by question, then by setup and its arms. A slow hour of the API, or a limit that stops the task, then falls on every setup and arm alike.
 fn order<'a>(questions: &[&'a Question], repeats: u32) -> Vec<Planned<'a>> {
     let mut planned = Vec::new();
     for repeat in 1..=repeats {
         for &question in questions {
-            for setup in Setup::ALL {
+            for (setup, arm) in setups::every_arm() {
                 planned.push(Planned {
                     question,
                     setup,
+                    arm,
                     repeat,
                 });
             }
@@ -113,7 +115,7 @@ fn judge(
 }
 
 /// How the command line of a run is made once the directories of the run are known: the sandbox of a run names its checkout and its temporary directory, so it cannot be made before them.
-struct Invoke<'a>(&'a dyn Fn(Setup, RunDirs<'_>) -> anyhow::Result<Invocation>);
+struct Invoke<'a>(&'a dyn Fn(Setup, Arm, RunDirs<'_>) -> anyhow::Result<Invocation>);
 
 impl fmt::Debug for Invoke<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -157,14 +159,15 @@ impl Session<'_> {
         let local: Vec<&str> = self.local.iter().map(String::as_str).collect();
         let mut made = 0;
         for (index, run) in planned.into_iter().enumerate() {
-            if results.holds(&run.question.id, run.setup, run.repeat) {
+            if results.holds(&run.question.id, run.setup, run.arm, run.repeat) {
                 continue;
             }
             let label = format!(
-                "[{}/{total}] {} {} repeat {}",
+                "[{}/{total}] {} {} {} repeat {}",
                 index + 1,
                 run.question.id,
                 run.setup,
+                run.arm,
                 run.repeat
             );
             say(&format!("{label}: started"))?;
@@ -196,10 +199,11 @@ impl Session<'_> {
         let Planned {
             question,
             setup,
+            arm,
             repeat,
         } = planned;
         let what = format!(
-            "the run of {} in the `{setup}` setup (repeat {repeat})",
+            "the run of {} in the `{setup}` setup, {arm} (repeat {repeat})",
             question.id
         );
         let checkout = self
@@ -220,11 +224,11 @@ impl Session<'_> {
             checkout: &checkout.dir,
             tmp: tmp.path(),
         };
-        let invocation = (self.invoke.0)(setup, dirs)
+        let invocation = (self.invoke.0)(setup, arm, dirs)
             .with_context(|| format!("cannot make the command line of {what}"))?;
         let transcript = self
             .transcripts
-            .join(format!("{}-{setup}-{repeat}.jsonl", question.id));
+            .join(format!("{}-{setup}-{arm}-{repeat}.jsonl", question.id));
 
         let guard = Guard::new(&checkout.dir)?;
         let launch = Launch {
@@ -237,7 +241,7 @@ impl Session<'_> {
             limit: self.limit,
             stop: self.stop,
         };
-        // The init event of the run is held against the setup and against the runs before it, before the run has spent anything. Its session is noted first, so that the run the task stops on is swept as well.
+        // The init event of the run is held against the setup and against the runs before it as soon as it is written, which is after the first request of the run is sent: a run it stops has spent that request. Its session is noted first, so that the run the task stops on is swept as well.
         let mut session = None;
         let executed = exec::execute(&launch, &mut |init| {
             session = Some(init.session_id.clone());
@@ -278,6 +282,7 @@ impl Session<'_> {
             question: question.id.clone(),
             kind: question.kind,
             setup,
+            arm,
             repeat,
             outcome: judged.outcome,
             answer: judged.answer,
@@ -290,6 +295,7 @@ impl Session<'_> {
             cache_write_tokens: observed.tokens.cache_write,
             cost_usd: observed.cost_usd,
             turns: observed.turns,
+            tool_calls: observed.tool_calls,
             duration_ms: u64::try_from(finished.elapsed.as_millis()).unwrap_or(u64::MAX),
             changed_checkout: changed_checkout || changed_index,
         })
@@ -538,14 +544,16 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         task: &task_dir,
         private: &private,
     };
-    let invoke = |setup: Setup, dirs: RunDirs<'_>| setups::invocation(setup, &context, dirs, &host);
-    // Every setup is tried once before the first run: a PATH that holds a program no run may find stops the task before it spends anything.
-    for setup in Setup::ALL {
+    let invoke = |setup: Setup, arm: Arm, dirs: RunDirs<'_>| {
+        setups::invocation(setup, arm, &context, dirs, &host)
+    };
+    // Every setup in each of its arms is tried once before the first run: a PATH that holds a program no run may find stops the task before it spends anything.
+    for (setup, arm) in setups::every_arm() {
         let dirs = RunDirs {
             checkout: &runs_root,
             tmp: &tmp_root,
         };
-        invoke(setup, dirs)?;
+        invoke(setup, arm, dirs)?;
     }
 
     // The cache of codebase-memory-mcp holds the index of every checkout, so it is thrown away once, and not with each.
@@ -629,7 +637,7 @@ mod tests {
     use crate::agents::init::{event_of, expected};
     use crate::agents::questions::Kind;
     use crate::agents::results::{sample, started};
-    use crate::agents::stream::events::{assistant, lines, result};
+    use crate::agents::stream::events::{assistant, lines, result, tool_call};
 
     const ANSWER: &str = "Found them.\n\n```files\na.ts\n```";
 
@@ -667,7 +675,7 @@ mod tests {
     }
 
     impl Bed {
-        /// A bed whose runs answer with `stream`. Every setup prints the init event it should.
+        /// A bed whose runs answer with `stream`. Every setup prints the init event it should, in both its arms unless a test writes `init-<setup>-<arm>.json` to tell another.
         fn new(stream: &str) -> Self {
             let dir = tempfile::tempdir().unwrap();
             let (repo_guard, checkout) = repo();
@@ -679,7 +687,7 @@ n=$(wc -l < "$d/calls" | tr -d ' ')
 echo "$TMPDIR" >> "$d/tmpdirs"
 touch "$TMPDIR/inside"
 mkdir -p "$d/sessions/-project/session-$2" && echo x > "$d/sessions/-project/session-$2/note"
-cat "$d/init-$2.json"
+if [ -f "$d/init-$2-$4.json" ]; then cat "$d/init-$2-$4.json"; else cat "$d/init-$2.json"; fi
 if [ -f "$d/hold" ]; then sleep 30; fi
 if [ -f "$d/dirty" ]; then rm "$d/dirty"; echo notes > notes.md; fi
 if [ -f "$d/touch-$2" ]; then echo run >> "$(cat "$d/touch-$2")"; fi
@@ -726,6 +734,9 @@ touch "$d/finished"
         fn answering(text: &str) -> Self {
             Self::new(&lines(&[
                 assistant("m1", 5, "looking"),
+                tool_call("m2", "call-1", "Read"),
+                tool_call("m3", "call-2", "Read"),
+                tool_call("m3", "call-3", "ToolSearch"),
                 result("success", false, text),
             ]))
         }
@@ -787,18 +798,24 @@ touch "$d/finished"
             fs::create_dir_all(&transcripts).unwrap();
             let user = UserEntries::default();
             // Every setup is given the directories of its run, which the stand-in finds in `TMPDIR`.
-            let invoke = |setup: Setup, dirs: RunDirs<'_>| -> anyhow::Result<Invocation> {
-                self.seen
-                    .borrow_mut()
-                    .push((dirs.checkout.to_path_buf(), dirs.tmp.to_path_buf()));
-                Ok(Invocation {
-                    args: vec!["--setup".into(), setup.name().into()],
-                    env: vec![
-                        ("PATH".to_owned(), "/usr/bin:/bin".into()),
-                        ("TMPDIR".to_owned(), dirs.tmp.as_os_str().to_owned()),
-                    ],
-                })
-            };
+            let invoke =
+                |setup: Setup, arm: Arm, dirs: RunDirs<'_>| -> anyhow::Result<Invocation> {
+                    self.seen
+                        .borrow_mut()
+                        .push((dirs.checkout.to_path_buf(), dirs.tmp.to_path_buf()));
+                    Ok(Invocation {
+                        args: vec![
+                            "--setup".into(),
+                            setup.name().into(),
+                            "--arm".into(),
+                            arm.name().into(),
+                        ],
+                        env: vec![
+                            ("PATH".to_owned(), "/usr/bin:/bin".into()),
+                            ("TMPDIR".to_owned(), dirs.tmp.as_os_str().to_owned()),
+                        ],
+                    })
+                };
             Session {
                 claude: &self.claude,
                 questions: &questions,
@@ -849,18 +866,21 @@ touch "$d/finished"
         let mut results = started();
         bed.run(&mut results).unwrap();
 
-        let marked: Vec<(Setup, bool)> = results
+        let marked: Vec<(Setup, Arm, bool)> = results
             .runs
             .iter()
-            .map(|run| (run.setup, run.changed_checkout))
+            .map(|run| (run.setup, run.arm, run.changed_checkout))
             .collect();
         assert_eq!(
             marked,
             [
-                (Setup::Plain, false),
-                (Setup::Lsp, false),
-                (Setup::Cbm, true),
-                (Setup::Gsttt, true)
+                (Setup::Plain, Arm::Installed, false),
+                (Setup::Lsp, Arm::Installed, false),
+                (Setup::Lsp, Arm::Told, false),
+                (Setup::Cbm, Arm::Installed, true),
+                (Setup::Cbm, Arm::Told, true),
+                (Setup::Gsttt, Arm::Installed, true),
+                (Setup::Gsttt, Arm::Told, true)
             ]
         );
         for (dir, file) in [(&gsttt, "snapshot.gsttt"), (&cache, "project.db")] {
@@ -1022,7 +1042,7 @@ touch "$d/finished"
         bed.run(&mut results).unwrap();
 
         // The stand-in made `session-<setup>` in each call, as Claude Code does for the session of a run, and named it in its init event.
-        assert_eq!(bed.calls(), Setup::ALL.len());
+        assert_eq!(bed.calls(), setups::every_arm().count());
         for setup in Setup::ALL {
             let session = bed.sessions.join(format!("-project/session-{setup}"));
             assert!(!session.exists(), "{}", session.display());
@@ -1098,31 +1118,48 @@ touch "$d/finished"
         let planned = order(&[&first, &second], 2);
         let names: Vec<String> = planned
             .iter()
-            .map(|run| format!("{} {} {}", run.question.id, run.setup, run.repeat))
+            .map(|run| {
+                format!(
+                    "{} {} {} {}",
+                    run.question.id, run.setup, run.arm, run.repeat
+                )
+            })
             .collect();
 
-        assert_eq!(names.len(), 16);
+        // Seven runs of a question in a repeat: plain, then each other setup as installed and as told.
+        assert_eq!(names.len(), 28);
         assert_eq!(
-            names[..4],
+            names[..7],
             [
-                "repo-users-1 plain 1",
-                "repo-users-1 lsp 1",
-                "repo-users-1 cbm 1",
-                "repo-users-1 gsttt 1"
+                "repo-users-1 plain installed 1",
+                "repo-users-1 lsp installed 1",
+                "repo-users-1 lsp told 1",
+                "repo-users-1 cbm installed 1",
+                "repo-users-1 cbm told 1",
+                "repo-users-1 gsttt installed 1",
+                "repo-users-1 gsttt told 1"
             ]
         );
         assert_eq!(
-            names[12..],
+            names[21..],
             [
-                "repo-users-2 plain 2",
-                "repo-users-2 lsp 2",
-                "repo-users-2 cbm 2",
-                "repo-users-2 gsttt 2"
+                "repo-users-2 plain installed 2",
+                "repo-users-2 lsp installed 2",
+                "repo-users-2 lsp told 2",
+                "repo-users-2 cbm installed 2",
+                "repo-users-2 cbm told 2",
+                "repo-users-2 gsttt installed 2",
+                "repo-users-2 gsttt told 2"
             ]
         );
-        // The first repeat is over before the second begins.
-        assert!(planned[..8].iter().all(|run| run.repeat == 1));
-        assert!(planned[8..].iter().all(|run| run.repeat == 2));
+        // The first question is over before the second begins, and the first repeat before the second.
+        assert!(
+            planned[7..14]
+                .iter()
+                .all(|run| run.question.id == second.id)
+        );
+        assert!(planned[..14].iter().all(|run| run.repeat == 1));
+        assert!(planned[14..].iter().all(|run| run.repeat == 2));
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "A run without an answer scores zero")]
@@ -1130,9 +1167,9 @@ touch "$d/finished"
     fn a_run_without_an_answer_scores_zero() {
         let bed = Bed::answering("Done, but I have no list for you.");
         let mut results = started();
-        assert_eq!(bed.run(&mut results).unwrap(), 4);
+        assert_eq!(bed.run(&mut results).unwrap(), 7);
 
-        assert_eq!(results.runs.len(), 4);
+        assert_eq!(results.runs.len(), 7);
         for run in &results.runs {
             assert_eq!(run.outcome, Outcome::NoAnswer);
             assert_eq!(run.answer, Vec::<String>::new());
@@ -1155,8 +1192,12 @@ touch "$d/finished"
             (written.model.as_str(), written.claude_version.as_str()),
             ("claude-test-1", "9.9.9")
         );
-        let setups: Vec<Setup> = written.runs.iter().map(|run| run.setup).collect();
-        assert_eq!(setups, Setup::ALL);
+        let ways: Vec<(Setup, Arm)> = written
+            .runs
+            .iter()
+            .map(|run| (run.setup, run.arm))
+            .collect();
+        assert_eq!(ways, setups::every_arm().collect::<Vec<_>>());
         for run in &written.runs {
             assert_eq!(
                 (run.question.as_str(), run.kind, run.repeat),
@@ -1166,13 +1207,24 @@ touch "$d/finished"
             assert_eq!(run.answer, ["a.ts"]);
             assert_eq!((run.precision, run.recall), (1.0, 0.5));
             assert!(!run.changed_checkout);
+            // The calls of the stand-in: two of `Read` and one of `ToolSearch`, the last in a message that came twice.
+            assert_eq!(
+                run.tool_calls,
+                BTreeMap::from([("Read".to_owned(), 2), ("ToolSearch".to_owned(), 1)])
+            );
         }
-        // The stream of every run is kept.
-        let kept = bed
-            .dir
-            .path()
-            .join("results/agents/repo-users-1-gsttt-1.jsonl");
-        assert!(fs::read_to_string(kept).unwrap().contains("\"init\""));
+        // The stream of every run is kept, a told run beside its installed run.
+        for (setup, arm) in setups::every_arm() {
+            let kept = bed
+                .dir
+                .path()
+                .join(format!("results/agents/repo-users-1-{setup}-{arm}-1.jsonl"));
+            assert!(
+                fs::read_to_string(&kept).unwrap().contains("\"init\""),
+                "{}",
+                kept.display()
+            );
+        }
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "No local path reaches the agent results")]
@@ -1213,10 +1265,15 @@ touch "$d/finished"
         );
         assert_eq!(bed.calls(), 3, "nothing is asked after the limit");
         let written = Results::load(&bed.out()).unwrap();
-        let setups: Vec<Setup> = written.runs.iter().map(|run| run.setup).collect();
+        let ways: Vec<(Setup, Arm)> = written
+            .runs
+            .iter()
+            .map(|run| (run.setup, run.arm))
+            .collect();
+        // The third run is the told run of the lsp setup.
         assert_eq!(
-            setups,
-            [Setup::Plain, Setup::Lsp],
+            ways,
+            [(Setup::Plain, Arm::Installed), (Setup::Lsp, Arm::Installed)],
             "the runs before it, and not that one"
         );
         assert_eq!(results.runs.len(), 2);
@@ -1228,21 +1285,33 @@ touch "$d/finished"
         let bed = Bed::answering(ANSWER);
         let mut results = started();
         results.accept(&expected(Setup::Plain)).unwrap();
+        // The installed run of the lsp setup is finished, and its told run is not.
         results
             .runs
             .push(sample("repo-users-1", Kind::Users, Setup::Plain, 1));
-        let first = results.runs[0].clone();
+        results
+            .runs
+            .push(sample("repo-users-1", Kind::Users, Setup::Lsp, 1));
+        let finished = results.runs.clone();
 
-        assert_eq!(bed.run(&mut results).unwrap(), 3);
-        assert_eq!(bed.calls(), 3, "every planned run but that one");
-        assert_eq!(results.runs.len(), 4);
-        assert_eq!(results.runs[0], first, "the finished run is as it was");
-        let setups: Vec<Setup> = results.runs.iter().map(|run| run.setup).collect();
-        assert_eq!(setups, Setup::ALL);
+        assert_eq!(bed.run(&mut results).unwrap(), 5);
+        assert_eq!(bed.calls(), 5, "every planned run but those two");
+        assert_eq!(results.runs.len(), 7);
+        assert_eq!(
+            results.runs[..2],
+            finished,
+            "the finished runs are as they were"
+        );
+        let ways: Vec<(Setup, Arm)> = results
+            .runs
+            .iter()
+            .map(|run| (run.setup, run.arm))
+            .collect();
+        assert_eq!(ways, setups::every_arm().collect::<Vec<_>>());
 
         // Started over once more, nothing is left to run.
         assert_eq!(bed.run(&mut results).unwrap(), 0);
-        assert_eq!(bed.calls(), 3);
+        assert_eq!(bed.calls(), 5);
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "Results of another model are refused")]
@@ -1273,7 +1342,7 @@ touch "$d/finished"
         assert_eq!(bed.calls(), 1);
         assert!(
             !bed.finished(),
-            "the run was ended before the model was asked"
+            "the run was ended as soon as its init event was written"
         );
         assert_eq!(results.runs.len(), 1, "nothing was added");
         assert_eq!(
@@ -1284,7 +1353,7 @@ touch "$d/finished"
     }
 
     #[test]
-    fn a_run_that_loaded_something_else_stops_the_task_before_it_spends_anything() {
+    fn a_run_that_loaded_something_else_is_ended_as_soon_as_its_init_event_is_written() {
         let bed = Bed::answering(ANSWER);
         bed.mark("hold");
         let mut leaked = expected(Setup::Plain);
@@ -1309,6 +1378,47 @@ touch "$d/finished"
         assert!(results.runs.is_empty() && !bed.out().exists());
     }
 
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The init event of a told run is checked like any other"
+    )]
+    #[test]
+    fn the_init_event_of_a_told_run_is_checked_like_any_other() {
+        let bed = Bed::answering(ANSWER);
+        // The told run of the lsp setup loads a server that no run may have; its installed run, which comes before it, loads what it should.
+        let mut leaked = expected(Setup::Lsp);
+        leaked.mcp_servers.push(init::McpServer {
+            name: "telegram".to_owned(),
+            status: "connected".to_owned(),
+        });
+        fs::write(
+            bed.dir.path().join("init-lsp-told.json"),
+            format!("{}\n", event_of(&leaked)),
+        )
+        .unwrap();
+        let mut results = started();
+        let error = format!("{:#}", bed.run(&mut results).unwrap_err());
+
+        assert!(
+            error.contains("`lsp`") && error.contains("told") && error.contains("`telegram`"),
+            "{error}"
+        );
+        assert_eq!(
+            bed.calls(),
+            3,
+            "the plain run, the installed run, then that one"
+        );
+        let ways: Vec<(Setup, Arm)> = results
+            .runs
+            .iter()
+            .map(|run| (run.setup, run.arm))
+            .collect();
+        assert_eq!(
+            ways,
+            [(Setup::Plain, Arm::Installed), (Setup::Lsp, Arm::Installed)]
+        );
+    }
+
     #[test]
     fn a_run_that_changed_the_checkout_is_marked_and_the_checkout_is_restored() {
         let bed = Bed::answering(ANSWER);
@@ -1321,7 +1431,7 @@ touch "$d/finished"
             .iter()
             .map(|run| run.changed_checkout)
             .collect();
-        assert_eq!(marks, [true, false, false, false]);
+        assert_eq!(marks, [true, false, false, false, false, false, false]);
         assert!(!bed.checkout().join("notes.md").exists());
     }
 
@@ -1386,7 +1496,14 @@ touch "$d/finished"
         let bed = Bed::answering(ANSWER);
         // Only the first run is slow, and has streamed one message when it is stopped. The limit leaves the stand-in room to start on a busy machine.
         bed.mark("slow-1");
-        bed.stream_of_call(1, &lines(&[assistant("m1", 5, "still looking")]));
+        bed.stream_of_call(
+            1,
+            &lines(&[
+                assistant("m1", 5, "still looking"),
+                // The same message again, grown by a call.
+                tool_call("m1", "call-1", "LSP"),
+            ]),
+        );
         let mut results = started();
         bed.go(&mut results, Duration::from_secs(4)).unwrap();
 
@@ -1404,9 +1521,11 @@ touch "$d/finished"
             (3, 5, 100, 10)
         );
         assert_eq!((first.cost_usd, first.turns), (None, 1));
+        // A run that never reached its result keeps the calls it made.
+        assert_eq!(first.tool_calls, BTreeMap::from([("LSP".to_owned(), 1)]));
         assert!(first.duration_ms >= 4000);
         // The runs after it are made and judged as usual.
-        assert_eq!(results.runs.len(), 4);
+        assert_eq!(results.runs.len(), 7);
         assert!(
             results.runs[1..]
                 .iter()
@@ -1419,13 +1538,13 @@ touch "$d/finished"
     fn a_run_has_a_temporary_directory_of_its_own() {
         let bed = Bed::answering(ANSWER);
         let mut results = started();
-        assert_eq!(bed.run(&mut results).unwrap(), 4);
+        assert_eq!(bed.run(&mut results).unwrap(), 7);
 
-        // Each of the four runs was given a directory of its own, made in the root of the temporary directories and outside the checkout, and the stand-in found it in `TMPDIR` and made a file in it.
+        // Each of the seven runs was given a directory of its own, made in the root of the temporary directories and outside the checkout, and the stand-in found it in `TMPDIR` and made a file in it.
         let seen = bed.seen.borrow().clone();
-        assert_eq!(seen.len(), 4);
+        assert_eq!(seen.len(), 7);
         let given: BTreeSet<&PathBuf> = seen.iter().map(|(_, tmp)| tmp).collect();
-        assert_eq!(given.len(), 4, "a directory was shared by two runs");
+        assert_eq!(given.len(), 7, "a directory was shared by two runs");
         for (checkout, tmp) in &seen {
             assert_eq!(checkout, bed.checkout());
             assert_eq!(tmp.parent(), Some(bed.tmp_root.as_path()));
@@ -1486,7 +1605,10 @@ touch "$d/finished"
             error.contains("repo-users-1") && error.contains("without a result"),
             "{error}"
         );
-        assert!(error.contains("repo-users-1-plain-1.jsonl"), "{error}");
+        assert!(
+            error.contains("repo-users-1-plain-installed-1.jsonl"),
+            "{error}"
+        );
         assert!(results.runs.is_empty(), "a fault is not a result");
     }
 

@@ -97,6 +97,23 @@ impl Setup {
         }
     }
 
+    /// What the names of the tools this setup adds start with; `LSP` is the whole name of the built-in tool.
+    pub(super) fn own_prefix(self) -> Option<&'static str> {
+        match self {
+            Self::Lsp => Some("LSP"),
+            Self::Cbm | Self::Gsttt => self.mcp_prefix(),
+            Self::Plain => None,
+        }
+    }
+
+    /// The arms a question is asked in: `plain` has no tools to tell about.
+    pub(super) fn arms(self) -> &'static [Arm] {
+        match self {
+            Self::Plain => &[Arm::Installed],
+            Self::Lsp | Self::Cbm | Self::Gsttt => &[Arm::Installed, Arm::Told],
+        }
+    }
+
     /// The plugin the setup is given with `--plugin-dir`.
     pub(super) fn plugin(self) -> Option<&'static str> {
         match self {
@@ -117,6 +134,42 @@ impl fmt::Display for Setup {
         f.write_str(self.name())
     }
 }
+
+/// How a question is asked in a setup: as installed, or told in one sentence to use the setup's tools.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum Arm {
+    /// Claude Code loads the tools of the setup as it always does, and nothing is said about them.
+    Installed,
+    /// One sentence appended to the system prompt names the tools of the setup.
+    Told,
+}
+
+/// Every setup in each of its arms, in the order the runs are made and the table lists them.
+pub(super) fn every_arm() -> impl Iterator<Item = (Setup, Arm)> {
+    Setup::ALL
+        .into_iter()
+        .flat_map(|setup| setup.arms().iter().map(move |&arm| (setup, arm)))
+}
+
+impl Arm {
+    /// The word the results, the transcripts and the table use.
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Self::Installed => "installed",
+            Self::Told => "told",
+        }
+    }
+}
+
+impl fmt::Display for Arm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// What the `told` arm appends to the system prompt. Only `{prefix}` differs between setups, so two setups' told arms differ in nothing but the names of their tools.
+const TOLD: &str = "The tools whose names start with `{prefix}` answer questions about the code of this repository: load them with ToolSearch, and use them before you search or read files yourself.";
 
 /// The files the setups are started with, written once per task.
 #[derive(Debug)]
@@ -271,11 +324,12 @@ pub(super) struct Invocation {
     pub(super) env: Vec<(String, OsString)>,
 }
 
-/// The invocation of `setup`. `host` answers for a variable of the environment of this task.
+/// The invocation of `setup` in `arm`. `host` answers for a variable of the environment of this task.
 ///
-/// Every run gets the same flags: the pinned model; the stream as JSON; no session kept; no permission asked; only the settings of the project, so that no settings, hooks, memory or CLAUDE.md of the user are read; only the tools of the setup; the limit of turns; and the sandbox and the Read rules of [`settings`]. The MCP servers of the machine are dropped by a strict config in every setup but `gsttt`, whose server comes from its plugin and would be dropped with them.
+/// Every run gets the same flags: the pinned model; the stream as JSON; no session kept; no permission asked; only the settings of the project, so that no settings, hooks, memory or CLAUDE.md of the user are read; only the tools of the setup; the limit of turns; and the sandbox and the Read rules of [`settings`]. The MCP servers of the machine are dropped by a strict config in every setup but `gsttt`, whose server comes from its plugin and would be dropped with them. The `told` arm adds `--append-system-prompt` with [`TOLD`] and nothing else, and a setup that adds no tools has no such arm.
 pub(super) fn invocation(
     setup: Setup,
+    arm: Arm,
     ctx: &Context,
     run: RunDirs,
     host: &dyn Fn(&str) -> Option<OsString>,
@@ -321,6 +375,15 @@ pub(super) fn invocation(
         Setup::Lsp => args.extend(plugin_dir(&ctx.files.lsp_plugin)),
         Setup::Gsttt => args.extend(plugin_dir(ctx.plugin)),
         Setup::Plain | Setup::Cbm => {}
+    }
+    if arm == Arm::Told {
+        let prefix = setup.own_prefix().with_context(|| {
+            format!("the `{setup}` setup adds no tools, so there are none to tell the model about")
+        })?;
+        args.extend([
+            "--append-system-prompt".into(),
+            TOLD.replace("{prefix}", prefix).into(),
+        ]);
     }
 
     let mut path = Vec::new();
@@ -501,6 +564,7 @@ mod tests {
     fn invoke_with(
         layout: &Layout,
         setup: Setup,
+        arm: Arm,
         host: &dyn Fn(&str) -> Option<OsString>,
     ) -> anyhow::Result<Invocation> {
         let ctx = Context {
@@ -517,11 +581,17 @@ mod tests {
             checkout: &layout.checkout,
             tmp: &layout.tmp,
         };
-        invocation(setup, &ctx, run, host)
+        invocation(setup, arm, &ctx, run, host)
     }
 
+    /// The invocation of `setup` as installed.
     fn invoke(layout: &Layout, setup: Setup) -> anyhow::Result<Invocation> {
-        invoke_with(layout, setup, &|_| None)
+        invoke_with(layout, setup, Arm::Installed, &|_| None)
+    }
+
+    /// The invocation of `setup` in the `told` arm.
+    fn invoke_told(layout: &Layout, setup: Setup) -> anyhow::Result<Invocation> {
+        invoke_with(layout, setup, Arm::Told, &|_| None)
     }
 
     fn args(invocation: &Invocation) -> Vec<String> {
@@ -684,6 +754,84 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .ends_with("node_modules/typescript/lib/tsserver.js")
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A told run is its installed run with one sentence more"
+    )]
+    #[test]
+    fn a_told_run_is_its_installed_run_with_one_sentence_more() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = layout(dir.path());
+        for setup in [Setup::Lsp, Setup::Cbm, Setup::Gsttt] {
+            let installed = invoke(&layout, setup).unwrap();
+            let told = invoke_told(&layout, setup).unwrap();
+            let (installed_args, told_args) = (args(&installed), args(&told));
+            assert_eq!(told_args[..installed_args.len()], installed_args, "{setup}");
+            assert_eq!(
+                told_args[installed_args.len()..],
+                [
+                    "--append-system-prompt".to_owned(),
+                    told_args[installed_args.len() + 1].clone()
+                ],
+                "{setup}: exactly the flag and its sentence"
+            );
+            assert_eq!(told.env, installed.env, "{setup}");
+        }
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "The sentence names the tools of the setup")]
+    #[test]
+    fn the_sentence_names_the_tools_of_the_setup() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = layout(dir.path());
+        let sentence = |setup: Setup| -> String {
+            let told = args(&invoke_told(&layout, setup).unwrap());
+            after(&told, "--append-system-prompt").unwrap().to_owned()
+        };
+        let gsttt = sentence(Setup::Gsttt);
+        assert_eq!(
+            gsttt,
+            "The tools whose names start with `mcp__plugin_gsttt_gsttt__` answer questions about the code of this repository: load them with ToolSearch, and use them before you search or read files yourself."
+        );
+        // The sentences of two setups differ in the names of their tools and in nothing else.
+        for (setup, prefix) in [
+            (Setup::Lsp, "LSP"),
+            (Setup::Cbm, "mcp__codebase-memory-mcp__"),
+        ] {
+            assert_eq!(
+                sentence(setup),
+                gsttt.replace("mcp__plugin_gsttt_gsttt__", prefix),
+                "{setup}"
+            );
+        }
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A setup that adds no tools is asked as installed only"
+    )]
+    #[test]
+    fn a_setup_that_adds_no_tools_is_asked_as_installed_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = layout(dir.path());
+        assert_eq!(Setup::Plain.arms(), [Arm::Installed]);
+        for setup in [Setup::Lsp, Setup::Cbm, Setup::Gsttt] {
+            assert_eq!(setup.arms(), [Arm::Installed, Arm::Told], "{setup}");
+        }
+        let error = invoke_told(&layout, Setup::Plain).unwrap_err().to_string();
+        assert!(error.contains("`plain`"), "{error}");
+        // The tools of a setup are named by a prefix, and the built-in one by its whole name.
+        assert_eq!(
+            Setup::ALL.map(Setup::own_prefix),
+            [
+                None,
+                Some("LSP"),
+                Some("mcp__codebase-memory-mcp__"),
+                Some("mcp__plugin_gsttt_gsttt__")
+            ]
         );
     }
 
@@ -882,11 +1030,12 @@ mod tests {
                 _ => None,
             }
         };
-        let env: BTreeMap<String, OsString> = invoke_with(&layout, Setup::Plain, &host)
-            .unwrap()
-            .env
-            .into_iter()
-            .collect();
+        let env: BTreeMap<String, OsString> =
+            invoke_with(&layout, Setup::Plain, Arm::Installed, &host)
+                .unwrap()
+                .env
+                .into_iter()
+                .collect();
         let names: Vec<&str> = env.keys().map(String::as_str).collect();
         assert_eq!(
             names,

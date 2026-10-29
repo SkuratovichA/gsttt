@@ -82,6 +82,25 @@ The prompt of a question about tests SHALL say that the function fails every tim
 - **WHEN** the commands of the four setups are planned
 - **THEN** each allows the four base tools, only `lsp` allows the LSP tool and loads a language server, only `cbm` loads an MCP server of its own, and only `gsttt` loads the gsttt plugin
 
+### Requirement: The arms of a setup
+Every setup but `plain` SHALL be asked in two arms: `installed`, as the setup is, and `told`, with the same command line and the same environment and one `--append-system-prompt` more, whose sentence names the tools of the setup by the prefix of their names. `plain` has no told arm. The task SHALL check the init event of a told run as any other.
+
+#### Scenario: A told run is its installed run with one sentence more
+- **WHEN** the commands of `lsp`, `cbm` and `gsttt` are planned in both arms
+- **THEN** each told command is its installed command with `--append-system-prompt` and a sentence added, and its environment is the same
+
+#### Scenario: The sentence names the tools of the setup
+- **WHEN** the told commands of the three setups are planned
+- **THEN** the sentence of `gsttt` is "The tools whose names start with `mcp__plugin_gsttt_gsttt__` answer questions about the code of this repository: load them with ToolSearch, and use them before you search or read files yourself.", and those of `lsp` and `cbm` differ in the prefix alone, `LSP` and `mcp__codebase-memory-mcp__`
+
+#### Scenario: A setup that adds no tools is asked as installed only
+- **WHEN** the `plain` setup is planned in the told arm
+- **THEN** the command is refused, and `plain` is planned as installed alone
+
+#### Scenario: The init event of a told run is checked like any other
+- **WHEN** the init event of a told run lists an MCP server beyond its setup's
+- **THEN** the task fails naming the setup and what was loaded, and keeps the runs before it
+
 ### Requirement: Isolation of a run
 A run SHALL load none of the settings, hooks, memory, plugins, MCP servers or CLAUDE.md files of the machine, SHALL run in a checkout outside every directory that holds a CLAUDE.md or an AGENTS.md, and SHALL find `gsttt` on its PATH in the `gsttt` setup only. The task SHALL check the init event of every run, plugin names and sources included, against its setup and stop at the first run that loaded anything else, naming what it loaded.
 
@@ -192,11 +211,11 @@ The prompt SHALL ask for the answer as a fenced block marked `files`, one path p
 - **THEN** precision, recall and F1 are 0
 
 ### Requirement: The order and the limits of the runs
-The runs SHALL go one at a time, by repeat, then by question, then by setup. A run SHALL be stopped at the wall-clock limit, scored as without an answer, and keep the tokens of the messages it streamed. A run that ends on the usage limit of the account SHALL stop the task, keeping the runs before it.
+The runs SHALL go one at a time, by repeat, then by question, then by setup and arm: seven runs of a question in a repeat. A run SHALL be stopped at the wall-clock limit, scored as without an answer, and keep the tokens of the messages it streamed. A run that ends on the usage limit of the account SHALL stop the task, keeping the runs before it.
 
 #### Scenario: The setups take turns
 - **WHEN** two questions are planned in the four setups with two repeats
-- **THEN** the first four runs are the first question in the four setups in the first repeat, and the last four are the second question in the second repeat
+- **THEN** the first seven runs are the first question in the first repeat in the order `plain`, `lsp`, `lsp` told, `cbm`, `cbm` told, `gsttt` and `gsttt` told, and the last seven are the second question in the second repeat in that order
 
 #### Scenario: A usage limit stops the task
 - **WHEN** a run ends with the message that the usage limit is reached
@@ -233,7 +252,7 @@ A second Ctrl-C or SIGTERM SHALL end the task at once with the default action of
 - **THEN** the task is ended by that signal itself, and the handlers are installed once however many runs ask for them
 
 ### Requirement: The results of the runs
-`cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run the question and its kind, the setup, the repeat, the outcome, the answer, precision, recall, F1, the four token counts, the cost in USD, the turns, the duration and whether it changed the checkout. It SHALL hold no path or user name of the machine.
+`cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run its question and kind, setup, arm, repeat, outcome, answer, precision, recall, F1, the four token counts, cost, turns, tool calls by name, duration and whether it changed the checkout. It SHALL hold no path or user name of the machine.
 
 #### Scenario: The agent results have the published shape
 - **WHEN** agent results are written
@@ -243,6 +262,17 @@ A second Ctrl-C or SIGTERM SHALL end the task at once with the default action of
 - **WHEN** a run answers with a path under the home directory and outside the checkout
 - **THEN** the run counts it as wrong, and the results hold neither that path nor the user name
 
+### Requirement: What a run called
+A run SHALL record how many times it called each tool, by the name the stream gives it: every `tool_use` block of an `assistant` event counted once by its `id`, whichever event of its message carries it. A run that ended without a result SHALL keep the calls it made.
+
+#### Scenario: A tool call repeated in the stream counts once
+- **WHEN** two events of one message carry the same `tool_use` block
+- **THEN** the run counts that call once, under the name of the tool
+
+#### Scenario: A run without a result keeps its tool calls
+- **WHEN** a transcript is cut off before its result
+- **THEN** the calls made before the cut are counted
+
 ### Requirement: A run is kept once the results are written
 A run SHALL be added to the results and reported as done only once the results with it in them are written. When they cannot be written, the run SHALL not be kept and the task SHALL stop.
 
@@ -251,15 +281,19 @@ A run SHALL be added to the results and reported as done only once the results w
 - **THEN** the task fails, the run is neither in the results nor on disk, and no later run is started
 
 ### Requirement: Resuming the runs
-A task started over SHALL skip the runs whose question, setup and repeat the results already hold, and SHALL refuse to add to results written with another model, another Claude Code version, other questions, other versions of the tools or another build of the binary under test.
+A task started over SHALL skip the runs whose question, setup, arm and repeat the results already hold, and SHALL refuse to add to results written with another model, another Claude Code version, other questions, other versions of the tools or another build of the binary under test.
 
 #### Scenario: Finished runs are skipped
-- **WHEN** the results hold the first run and the task starts over
-- **THEN** it runs every planned run but that one
+- **WHEN** the results hold the installed runs of `plain` and of `lsp` and the task starts over
+- **THEN** it runs every planned run but those two, the told run of `lsp` among them
+
+#### Scenario: A told run and an installed run of one question are two runs
+- **WHEN** the results hold the installed run of a question in a setup
+- **THEN** they do not hold its told run, and the file can hold both side by side but not either twice
 
 #### Scenario: Results of another model are refused
 - **WHEN** the results were written with another model
-- **THEN** the task fails naming both models, and runs nothing
+- **THEN** the task fails naming both models as soon as the first init event is written, and adds no run
 
 #### Scenario: Results of other questions are refused
 - **WHEN** the results were written for other questions
@@ -274,11 +308,19 @@ A task started over SHALL skip the runs whose question, setup and repeat the res
 - **THEN** the task fails saying so, and runs nothing
 
 ### Requirement: The table of the agent runs
-`cargo xtask agents table` SHALL print, for each kind of question, a Markdown table with a row per setup and the mean over its runs of recall, precision, F1, tokens, turns and seconds, the mean cost over its runs that report one, and the number of its runs and of those without an answer. Results without a run SHALL print nothing.
+`cargo xtask agents table` SHALL print, for each kind of question, a Markdown table with a row per setup and arm: the mean over its runs of recall, precision, F1, tokens, turns, seconds and calls of its own tools, the mean cost over those that report one, and the number of runs, of those without an answer, of those that called an own tool and of those that changed the checkout. Results without a run SHALL print nothing.
 
 #### Scenario: Results without a run print no table
 - **WHEN** the results hold no run
 - **THEN** nothing is printed, not even an empty line
+
+#### Scenario: The table has a row for each setup and arm
+- **WHEN** the results hold runs in `plain`, in `lsp` as installed and told, and in `gsttt` told alone
+- **THEN** the table has the rows `plain`, `lsp`, `lsp, told` and `gsttt, told` in that order, and none for `cbm` or `gsttt`
+
+#### Scenario: The table counts the calls of the tools a setup adds
+- **WHEN** runs of `lsp` and `gsttt` call `LSP`, `mcp__plugin_gsttt_gsttt__impact`, `Read` and `ToolSearch`
+- **THEN** only the `LSP` calls count for `lsp` and only the `impact` calls for `gsttt`, the runs that made one are counted, and `plain` shows a dash
 
 #### Scenario: The table averages the runs of each setup
 - **WHEN** a setup has two runs of a kind, with recall 1 and 0.5
