@@ -244,6 +244,98 @@ pub(crate) fn exported_as(json: &Value, path: &str) -> Vec<String> {
         .collect()
 }
 
+/// The local names that the static imports of the file at `path` bind, in file order: `<specifier> <local>, …`.
+pub(crate) fn local_names(json: &Value, path: &str) -> Vec<String> {
+    file(json, path)
+        .into_iter()
+        .flat_map(|file| items(file, "imports"))
+        .filter(|import| text(import, "kind") == Some("static"))
+        .filter(|import| items(import, "exported").next().is_some())
+        .map(|import| {
+            let locals: Vec<&str> = items(import, "exported")
+                .filter_map(Value::as_str)
+                .collect();
+            format!(
+                "{} {}",
+                text(import, "spec").unwrap_or("?"),
+                locals.join(", ")
+            )
+        })
+        .collect()
+}
+
+/// The declarations of the file at `path`, in the order of the output: `<name> @<line>`, or `<name> @<line>-<end>` when the declaration spans lines.
+pub(crate) fn declared(json: &Value, path: &str) -> Vec<String> {
+    symbols(json, path)
+        .into_iter()
+        .flat_map(|symbols| items(symbols, "declared"))
+        .map(|declared| {
+            let (line, end) = (number(declared, "line"), number(declared, "end"));
+            let lines = if line == end {
+                format!("@{line}")
+            } else {
+                format!("@{line}-{end}")
+            };
+            format!("{} {lines}", text(declared, "name").unwrap_or("?"))
+        })
+        .collect()
+}
+
+/// What every declaration of the file at `path` uses, in the order of the output, leaving out those that use nothing: `<name> -> <used>, <used>`.
+pub(crate) fn edges(json: &Value, path: &str) -> Vec<String> {
+    symbols(json, path)
+        .into_iter()
+        .flat_map(|symbols| items(symbols, "declared"))
+        .filter(|declared| items(declared, "uses").next().is_some())
+        .map(|declared| {
+            let used: Vec<&str> = items(declared, "uses").filter_map(Value::as_str).collect();
+            format!(
+                "{} -> {}",
+                text(declared, "name").unwrap_or("?"),
+                used.join(", ")
+            )
+        })
+        .collect()
+}
+
+/// What the declaration `name` of the file at `path` uses, `None` when the file records no such declaration.
+pub(crate) fn uses<'a>(json: &'a Value, path: &str, name: &str) -> Option<Vec<&'a str>> {
+    let declared = items(symbols(json, path)?, "declared")
+        .find(|declared| text(declared, "name") == Some(name))?;
+    Some(items(declared, "uses").filter_map(Value::as_str).collect())
+}
+
+/// What the file at `path` refers to as it loads, `None` when the file records no declarations.
+pub(crate) fn on_load<'a>(json: &'a Value, path: &str) -> Option<Vec<&'a str>> {
+    Some(
+        items(symbols(json, path)?, "on_load")
+            .filter_map(Value::as_str)
+            .collect(),
+    )
+}
+
+/// The exports of the file at `path` whose local has another name, in the order of the output: `<name> from <local>`.
+pub(crate) fn local_exports(json: &Value, path: &str) -> Vec<String> {
+    symbols(json, path)
+        .into_iter()
+        .flat_map(|symbols| items(symbols, "exports"))
+        .map(|export| {
+            format!(
+                "{} from {}",
+                text(export, "name").unwrap_or("?"),
+                text(export, "local").unwrap_or("?")
+            )
+        })
+        .collect()
+}
+
+/// The line of the first import of the file at `path` that reads `spec`.
+pub(crate) fn import_line(json: &Value, path: &str, spec: &str) -> Option<u64> {
+    items(file(json, path)?, "imports")
+        .find(|import| text(import, "spec") == Some(spec))
+        .map(|import| number(import, "line"))
+}
+
 /// The contract facts the file at `path` carries: `<role> <key> @<line>`.
 pub(crate) fn contracts(json: &Value, path: &str) -> Vec<String> {
     file(json, path)
@@ -330,6 +422,13 @@ fn target(to: Option<&Value>) -> String {
         return format!("unresolved {reason}");
     }
     to.to_string()
+}
+
+/// What the connector recorded of the declarations of the file at `path`, `None` when it recorded none.
+fn symbols<'a>(json: &'a Value, path: &str) -> Option<&'a Value> {
+    file(json, path)?
+        .get("symbols")
+        .filter(|symbols| !symbols.is_null())
 }
 
 fn file<'a>(json: &'a Value, path: &str) -> Option<&'a Value> {

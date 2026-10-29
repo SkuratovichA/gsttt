@@ -9,4 +9,5 @@ mod packs;
 mod projects;
 mod resolution;
 mod support;
+mod symbols;
 mod trpc;
