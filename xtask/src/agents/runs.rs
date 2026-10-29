@@ -141,7 +141,7 @@ struct Session<'a> {
     indexes: &'a Indexes,
     /// The wall-clock limit of one run.
     limit: Duration,
-    /// Ctrl-C and SIGTERM on the task: a run that waits for one is ended, and not recorded.
+    /// Ctrl-C, SIGTERM and SIGHUP on the task: a run that waits for one is ended, and not recorded.
     stop: &'a Stop,
     /// The results file.
     out: &'a Path,
@@ -260,7 +260,8 @@ impl Session<'_> {
         let bytes = fs::read(&transcript)
             .with_context(|| format!("cannot read {}", transcript.display()))?;
         // A run that was killed may have been cut in the middle of a character.
-        let observed = stream::observe(&String::from_utf8_lossy(&bytes));
+        let observed = stream::observe(&String::from_utf8_lossy(&bytes))
+            .with_context(|| format!("{what}, whose stream is in {}", transcript.display()))?;
         ensure!(
             !observed.usage_limit,
             "the usage limit of the account was reached in {what}, which is not recorded; the {} runs before it are in {}, and the same command continues from there once the limit is over",
@@ -296,6 +297,7 @@ impl Session<'_> {
             cost_usd: observed.cost_usd,
             turns: observed.turns,
             tool_calls: observed.tool_calls,
+            tool_errors: observed.tool_errors,
             duration_ms: u64::try_from(finished.elapsed.as_millis()).unwrap_or(u64::MAX),
             changed_checkout: changed_checkout || changed_index,
         })
@@ -635,11 +637,15 @@ mod tests {
     use crate::agents::exec::{fake_claude, fake_program};
     use crate::agents::guard::repo;
     use crate::agents::init::{event_of, expected};
+    use crate::agents::process::GRACE;
     use crate::agents::questions::Kind;
     use crate::agents::results::{sample, started};
-    use crate::agents::stream::events::{assistant, lines, result, tool_call};
+    use crate::agents::stream::events::{assistant, lines, result, tool_call, tool_result};
 
     const ANSWER: &str = "Found them.\n\n```files\na.ts\n```";
+
+    /// How long the stand-in stays on after its stream when a test marks it `slow-<n>`. The bounds of the tests that wait for it are made from this.
+    const SLOW_SECONDS: u64 = 60;
 
     fn question(id: &str, kind: Kind) -> Question {
         Question {
@@ -692,7 +698,7 @@ if [ -f "$d/hold" ]; then sleep 30; fi
 if [ -f "$d/dirty" ]; then rm "$d/dirty"; echo notes > notes.md; fi
 if [ -f "$d/touch-$2" ]; then echo run >> "$(cat "$d/touch-$2")"; fi
 if [ -f "$d/stream-$n.jsonl" ]; then cat "$d/stream-$n.jsonl"; else cat "$d/stream.jsonl"; fi
-if [ -f "$d/slow-$n" ]; then sleep 60; fi
+if [ -f "$d/slow-$n" ]; then sleep {SLOW_SECONDS}; fi
 touch "$d/finished"
 "#,
                 dir.path().display()
@@ -750,7 +756,7 @@ touch "$d/finished"
             fs::write(self.dir.path().join(format!("stream-{number}.jsonl")), text).unwrap();
         }
 
-        /// Makes the stand-in do something extra: `hold` and `dirty` in its first call, or `slow-<n>` to stay on after its stream, for a minute, in its `n`th.
+        /// Makes the stand-in do something extra: `hold` and `dirty` in its first call, or `slow-<n>` to stay on after its stream, for `SLOW_SECONDS`, in its `n`th.
         fn mark(&self, what: &str) {
             fs::write(self.dir.path().join(what), "").unwrap();
         }
@@ -1482,14 +1488,19 @@ touch "$d/finished"
         let mut results = started();
         let started_at = Instant::now();
         bed.go(&mut results, Duration::from_secs(40)).unwrap();
+        let took = started_at.elapsed();
 
         let first = &results.runs[0];
         assert_eq!(first.outcome, Outcome::Answered);
         assert_eq!(first.answer, ["a.ts"]);
-        // The time of the run ends at the result, which was written at once; the wait for the exit is no part of it.
-        assert!(first.duration_ms < 4000, "{}", first.duration_ms);
-        // The task waits the grace for the stand-in, which stays on for a minute: the bound is more than three times the whole task takes, and leaves the stand-in thirty seconds to end by itself.
-        assert!(started_at.elapsed() < Duration::from_secs(30));
+        // The time of the run ends at the result, which was written at once; the wait for the exit is no part of it. The task waited the grace for a process that stayed on after the result, so it took the time of the run and the grace, and more: a time that held the wait would leave nothing of the grace over. That holds on a machine of any speed, where a bound in seconds would not.
+        assert!(
+            took >= Duration::from_millis(first.duration_ms) + GRACE,
+            "{took:?} against {} ms",
+            first.duration_ms
+        );
+        // The task waits the grace for the stand-in, which stays on for `SLOW_SECONDS`: half of that is more than three times the whole task takes, and leaves the stand-in as long again to end by itself.
+        assert!(took < Duration::from_secs(SLOW_SECONDS / 2));
     }
 
     #[test]
@@ -1501,8 +1512,9 @@ touch "$d/finished"
             1,
             &lines(&[
                 assistant("m1", 5, "still looking"),
-                // The same message again, grown by a call.
+                // The same message again, grown by a call, which failed.
                 tool_call("m1", "call-1", "LSP"),
+                tool_result("call-1", true),
             ]),
         );
         let mut results = started();
@@ -1524,6 +1536,7 @@ touch "$d/finished"
         assert_eq!((first.cost_usd, first.turns), (None, 1));
         // A run that never reached its result keeps the calls it made.
         assert_eq!(first.tool_calls, BTreeMap::from([("LSP".to_owned(), 1)]));
+        assert_eq!(first.tool_errors, BTreeMap::from([("LSP".to_owned(), 1)]));
         assert!(first.duration_ms >= 4000);
         // The runs after it are made and judged as usual.
         assert_eq!(results.runs.len(), 7);
@@ -1613,6 +1626,26 @@ touch "$d/finished"
         assert!(results.runs.is_empty(), "a fault is not a result");
     }
 
+    #[gsttt_scenario::scenario("agent-benchmarks", "A stream with two results stops the task")]
+    #[test]
+    fn a_stream_with_two_results_stops_the_task() {
+        let bed = Bed::new(&lines(&[
+            result("success", false, ANSWER),
+            result("success", false, ANSWER),
+        ]));
+        let mut results = started();
+        let error = format!("{:#}", bed.run(&mut results).unwrap_err());
+        assert!(
+            error.contains("repo-users-1") && error.contains("second result event"),
+            "{error}"
+        );
+        assert!(
+            error.contains("repo-users-1-plain-installed-1.jsonl"),
+            "{error}"
+        );
+        assert!(results.runs.is_empty(), "a fault is not a result");
+    }
+
     #[test]
     fn the_questions_are_chosen_by_repository_and_by_id() {
         let all = vec![
@@ -1684,6 +1717,6 @@ touch "$d/finished"
         ]);
         let first: Value = serde_json::from_str(stream.lines().next().unwrap()).unwrap();
         assert_eq!(first["type"], "assistant");
-        assert_eq!(stream::observe(&stream).end, End::Success);
+        assert_eq!(stream::observe(&stream).unwrap().end, End::Success);
     }
 }

@@ -93,6 +93,8 @@ pub(super) struct Run {
     pub(super) turns: u32,
     /// How many times the run called each tool, by the name the stream gives it, every call counted once. Kept for every outcome, a run that ended without a result included.
     pub(super) tool_calls: BTreeMap<String, u32>,
+    /// How many of those calls failed, by the name of the tool: the results of the calls that said `is_error`, every call counted once. Kept for every outcome, as the calls are.
+    pub(super) tool_errors: BTreeMap<String, u32>,
     pub(super) duration_ms: u64,
     /// Whether the run left the checkout, its HEAD, or the index of its setup other than the preparation left them. They were put back before the next run.
     pub(super) changed_checkout: bool,
@@ -291,6 +293,7 @@ pub(super) fn sample(question: &str, kind: Kind, setup: Setup, repeat: u32) -> R
         cost_usd: Some(0.25),
         turns: 2,
         tool_calls: BTreeMap::new(),
+        tool_errors: BTreeMap::new(),
         duration_ms: 1500,
         changed_checkout: false,
     }
@@ -348,6 +351,7 @@ mod tests {
         let mut results = ready();
         results.runs[0].tool_calls =
             BTreeMap::from([("Read".to_owned(), 2), ("LSP".to_owned(), 1)]);
+        results.runs[0].tool_errors = BTreeMap::from([("LSP".to_owned(), 1)]);
         results.write(&file, &[]).unwrap();
 
         let text = fs::read_to_string(&file).unwrap();
@@ -360,13 +364,15 @@ mod tests {
         assert_eq!(keys(&value["tools"][0]), "tool,version");
         assert_eq!(
             keys(&value["runs"][0]),
-            "question,kind,setup,arm,repeat,outcome,answer,precision,recall,f1,inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens,costUsd,turns,toolCalls,durationMs,changedCheckout"
+            "question,kind,setup,arm,repeat,outcome,answer,precision,recall,f1,inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens,costUsd,turns,toolCalls,toolErrors,durationMs,changedCheckout"
         );
         assert_eq!(value["runs"][0]["kind"], "users");
         assert_eq!(value["runs"][0]["setup"], "plain");
         assert_eq!(value["runs"][0]["arm"], "installed");
         assert_eq!(keys(&value["runs"][0]["toolCalls"]), "LSP,Read");
         assert_eq!(value["runs"][0]["toolCalls"]["Read"], 2);
+        assert_eq!(keys(&value["runs"][0]["toolErrors"]), "LSP");
+        assert_eq!(value["runs"][0]["toolErrors"]["LSP"], 1);
         assert_eq!(value["runs"][0]["outcome"], "answered");
         assert_eq!(Results::load(&file).unwrap(), results);
 

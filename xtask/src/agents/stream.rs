@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use anyhow::ensure;
 use serde_json::Value;
 
 /// How the message that ends a run on the usage limit of the account starts, for each form of the limit Claude Code words. They are read from the Claude Code binary, not seen in a run, since a limit cannot be asked for.
@@ -106,17 +107,22 @@ pub(super) struct Observed {
     pub(super) turns: u32,
     /// How many times each tool was called, by name, whatever way the run ended.
     pub(super) tool_calls: BTreeMap<String, u32>,
+    /// How many of those calls failed, by the name of the tool: the `tool_result` blocks that say `is_error`, each counted once by the id of its call, whatever way the run ended.
+    pub(super) tool_errors: BTreeMap<String, u32>,
     /// The account ran out of usage during the run.
     pub(super) usage_limit: bool,
 }
 
-/// Reads the lines of a transcript, skipping what is not JSON: the last line of a run that was killed may be half written.
+/// Reads the lines of a transcript, skipping what is not JSON: the last line of a run that was killed may be half written. A run says its result once, so a transcript with a second result event is an error.
 ///
-/// The counts are those of the result when it has them, summed over the models. Without one, they are those of the messages streamed so far, each counted once at the largest it reached. The tool calls are those of the messages streamed, with or without a result.
-pub(super) fn observe(transcript: &str) -> Observed {
+/// The counts are those of the result when it has them, summed over the models. Without one, they are those of the messages streamed so far, each counted once at the largest it reached. The tool calls and the ones that failed are those of the events streamed, with or without a result.
+pub(super) fn observe(transcript: &str) -> anyhow::Result<Observed> {
     let mut messages: BTreeMap<String, Tokens> = BTreeMap::new();
     let mut tool_calls: BTreeMap<String, u32> = BTreeMap::new();
-    let mut called = BTreeSet::new();
+    let mut tool_errors: BTreeMap<String, u32> = BTreeMap::new();
+    // The tool of each call by the id of the call, and the calls whose failure is counted.
+    let mut called: BTreeMap<String, String> = BTreeMap::new();
+    let mut failed = BTreeSet::new();
     let mut result = None;
     let mut usage_limit = false;
     let mut first_message = true;
@@ -142,6 +148,11 @@ pub(super) fn observe(transcript: &str) -> Observed {
                     usage_limit |= first_text(message).is_some_and(is_limit);
                 }
             }
+            Some("user") => {
+                if let Some(message) = event.get("message") {
+                    count_tool_errors(message, &called, &mut failed, &mut tool_errors);
+                }
+            }
             // `rejected` is a limit that stops the run; `allowed_warning` only says one is near.
             Some("rate_limit_event") => {
                 usage_limit |= event
@@ -149,7 +160,10 @@ pub(super) fn observe(transcript: &str) -> Observed {
                     .and_then(Value::as_str)
                     == Some("rejected");
             }
-            Some("result") => result = Some(event),
+            Some("result") => {
+                let earlier = result.replace(event);
+                ensure!(earlier.is_none(), "the stream holds a second result event");
+            }
             _ => {}
         }
     }
@@ -159,15 +173,16 @@ pub(super) fn observe(transcript: &str) -> Observed {
         .fold(Tokens::default(), |sum, tokens| sum.plus(*tokens));
     let streamed_turns = u32::try_from(messages.len()).unwrap_or(u32::MAX);
     let Some(result) = result else {
-        return Observed {
+        return Ok(Observed {
             end: End::Unfinished,
             message: None,
             tokens: streamed,
             cost_usd: None,
             turns: streamed_turns,
             tool_calls,
+            tool_errors,
             usage_limit,
-        };
+        });
     };
 
     let is_error = result
@@ -194,7 +209,7 @@ pub(super) fn observe(transcript: &str) -> Observed {
                 sum.plus(Tokens::of(Some(usage), MODEL_KEYS))
             })
         });
-    Observed {
+    Ok(Observed {
         end,
         message,
         tokens,
@@ -206,14 +221,15 @@ pub(super) fn observe(transcript: &str) -> Observed {
                 u32::try_from(turns).unwrap_or(u32::MAX)
             }),
         tool_calls,
+        tool_errors,
         usage_limit,
-    }
+    })
 }
 
-/// Counts the `tool_use` blocks of a message under their names. A message comes again in the events that grow it, and its blocks with it, so a block counts at the first event that carries its id and never again; a block without an id or a name is no call.
+/// Counts the `tool_use` blocks of a message under their names, and notes the tool of each call under its id for [`count_tool_errors`]. A message comes again in the events that grow it, and its blocks with it, so a block counts at the first event that carries its id and never again; a block without an id or a name is no call.
 fn count_tool_calls(
     message: &Value,
-    called: &mut BTreeSet<String>,
+    called: &mut BTreeMap<String, String>,
     tool_calls: &mut BTreeMap<String, u32>,
 ) {
     let Some(blocks) = message.get("content").and_then(Value::as_array) else {
@@ -226,11 +242,42 @@ fn count_tool_calls(
         let (Some(id), Some(name)) = (string(block, "id"), string(block, "name")) else {
             continue;
         };
-        if called.insert(id.to_owned()) {
-            let count = tool_calls.entry(name.to_owned()).or_default();
-            *count = count.saturating_add(1);
+        if called.insert(id.to_owned(), name.to_owned()).is_none() {
+            bump(tool_calls, name);
         }
     }
+}
+
+/// Counts the `tool_result` blocks of a message that say their call failed, under the name of the tool that was called, found through the id of the call. A result comes again as the event that carries it does, so a failure counts for the first block of its call and never again; one whose call was never seen has no tool to be named by and is not counted.
+fn count_tool_errors(
+    message: &Value,
+    called: &BTreeMap<String, String>,
+    failed: &mut BTreeSet<String>,
+    tool_errors: &mut BTreeMap<String, u32>,
+) {
+    let Some(blocks) = message.get("content").and_then(Value::as_array) else {
+        return;
+    };
+    for block in blocks {
+        let says_failed = block.get("is_error").and_then(Value::as_bool) == Some(true);
+        if string(block, "type") != Some("tool_result") || !says_failed {
+            continue;
+        }
+        let Some(id) = string(block, "tool_use_id") else {
+            continue;
+        };
+        let Some(name) = called.get(id) else {
+            continue;
+        };
+        if failed.insert(id.to_owned()) {
+            bump(tool_errors, name);
+        }
+    }
+}
+
+fn bump(counts: &mut BTreeMap<String, u32>, name: &str) {
+    let count = counts.entry(name.to_owned()).or_default();
+    *count = count.saturating_add(1);
 }
 
 /// The string at `key` of an event.
@@ -290,6 +337,22 @@ pub(crate) mod events {
         event
     }
 
+    /// A user event that answers the call `call`: with a failure when `failed`, with an output otherwise.
+    pub(crate) fn tool_result(call: &str, failed: bool) -> Value {
+        json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": call,
+                    "content": "what the tool said",
+                    "is_error": failed
+                }]
+            }
+        })
+    }
+
     pub(crate) fn result(subtype: &str, is_error: bool, text: &str) -> Value {
         json!({
             "type": "result",
@@ -316,12 +379,17 @@ pub(crate) mod events {
 mod tests {
     use serde_json::json;
 
-    use super::events::{assistant, lines, result, tool_call};
+    use super::events::{assistant, lines, result, tool_call, tool_result};
     use super::*;
+
+    /// What `observe` says about a transcript that holds at most one result.
+    fn streamed(transcript: &str) -> Observed {
+        observe(transcript).unwrap()
+    }
 
     #[test]
     fn the_result_gives_the_message_the_tokens_summed_over_the_models_the_cost_and_the_turns() {
-        let observed = observe(&lines(&[
+        let observed = streamed(&lines(&[
             assistant("m1", 2, "thinking"),
             result("success", false, "done"),
         ]));
@@ -350,7 +418,7 @@ mod tests {
             assistant("m2", 4, "c"),
         ]);
         // The last line was cut in the middle by the kill.
-        let observed = observe(&format!("{transcript}{{\"type\":\"assist"));
+        let observed = streamed(&format!("{transcript}{{\"type\":\"assist"));
         assert_eq!(observed.end, End::Unfinished);
         assert_eq!(observed.message, None);
         assert_eq!(
@@ -367,9 +435,9 @@ mod tests {
 
     #[test]
     fn an_error_result_has_no_message() {
-        let observed = observe(&lines(&[result("error_max_turns", true, "")]));
+        let observed = streamed(&lines(&[result("error_max_turns", true, "")]));
         assert_eq!((observed.end, observed.message), (End::MaxTurns, None));
-        let observed = observe(&lines(&[result("error_during_execution", true, "boom")]));
+        let observed = streamed(&lines(&[result("error_during_execution", true, "boom")]));
         assert_eq!((observed.end, observed.message), (End::Failed, None));
         assert!(!observed.usage_limit);
     }
@@ -378,7 +446,7 @@ mod tests {
     fn a_later_message_that_has_the_words_of_the_limit_is_no_limit() {
         let words = "You've hit your limit \u{b7} resets 5pm";
         // The model read a file, or quotes the message, in the middle of a run that goes on to answer.
-        let observed = observe(&lines(&[
+        let observed = streamed(&lines(&[
             assistant("m1", 1, "reading the docs"),
             assistant("m2", 2, words),
             result("success", false, "done"),
@@ -386,7 +454,7 @@ mod tests {
         assert!(!observed.usage_limit);
         // The first message is the account's refusal.
         assert!(
-            observe(&lines(&[
+            streamed(&lines(&[
                 assistant("m1", 1, words),
                 assistant("m2", 2, "again")
             ]))
@@ -397,23 +465,23 @@ mod tests {
     #[test]
     fn the_usage_limit_is_read_from_the_message_and_from_a_rejected_rate_limit() {
         let limit = "You've hit your limit \u{b7} resets 5pm";
-        assert!(observe(&lines(&[result("success", true, limit)])).usage_limit);
-        assert!(observe(&lines(&[assistant("m1", 1, limit)])).usage_limit);
+        assert!(streamed(&lines(&[result("success", true, limit)])).usage_limit);
+        assert!(streamed(&lines(&[assistant("m1", 1, limit)])).usage_limit);
         let rejected = serde_json::json!({
             "type": "rate_limit_event",
             "rate_limit_info": { "status": "rejected" }
         });
-        assert!(observe(&lines(&[rejected])).usage_limit);
+        assert!(streamed(&lines(&[rejected])).usage_limit);
 
         let warning = serde_json::json!({
             "type": "rate_limit_event",
             "rate_limit_info": { "status": "allowed_warning" }
         });
-        assert!(!observe(&lines(&[warning])).usage_limit);
+        assert!(!streamed(&lines(&[warning])).usage_limit);
         // An answer that happens to say it is not a limit.
-        assert!(!observe(&lines(&[result("success", false, limit)])).usage_limit);
+        assert!(!streamed(&lines(&[result("success", false, limit)])).usage_limit);
         let transient = "Server is temporarily limiting requests (not your usage limit)";
-        assert!(!observe(&lines(&[result("success", true, transient)])).usage_limit);
+        assert!(!streamed(&lines(&[result("success", true, transient)])).usage_limit);
     }
 
     fn calls(pairs: &[(&str, u32)]) -> BTreeMap<String, u32> {
@@ -436,7 +504,7 @@ mod tests {
                 "content": [{ "type": "tool_use", "name": "Read", "input": {} }]
             }
         });
-        let observed = observe(&lines(&[
+        let observed = streamed(&lines(&[
             tool_call("m1", "call-1", "Read"),
             // The same block of the same message, streamed again.
             tool_call("m1", "call-1", "Read"),
@@ -458,18 +526,83 @@ mod tests {
             tool_call("m1", "call-1", "ToolSearch"),
             tool_call("m2", "call-2", "mcp__plugin_gsttt_gsttt__impact"),
             tool_call("m2", "call-2", "mcp__plugin_gsttt_gsttt__impact"),
+            tool_result("call-2", true),
         ]);
         // The last line was cut in the middle by the kill.
-        let observed = observe(&format!("{transcript}{{\"type\":\"assist"));
+        let observed = streamed(&format!("{transcript}{{\"type\":\"assist"));
         assert_eq!(observed.end, End::Unfinished);
         assert_eq!(
             observed.tool_calls,
             calls(&[("ToolSearch", 1), ("mcp__plugin_gsttt_gsttt__impact", 1)])
         );
         assert!(
-            observe(&lines(&[assistant("m1", 1, "a")]))
+            streamed(&lines(&[assistant("m1", 1, "a")]))
                 .tool_calls
                 .is_empty()
+        );
+        // The failure of a call is kept as the call is, and a stream without one has none.
+        assert_eq!(
+            observed.tool_errors,
+            calls(&[("mcp__plugin_gsttt_gsttt__impact", 1)])
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A failed tool call counts under the name of its tool"
+    )]
+    #[test]
+    fn a_result_that_says_error_counts_under_the_tool_that_was_called() {
+        let observed = streamed(&lines(&[
+            tool_call("m1", "call-1", "LSP"),
+            tool_result("call-1", true),
+            tool_call("m2", "call-2", "LSP"),
+            tool_result("call-2", false),
+            tool_call("m3", "call-3", "Read"),
+            tool_result("call-3", false),
+            result("success", false, "done"),
+        ]));
+        assert_eq!(observed.tool_calls, calls(&[("LSP", 2), ("Read", 1)]));
+        assert_eq!(observed.tool_errors, calls(&[("LSP", 1)]));
+        // A stream with no failure has none to count.
+        let observed = streamed(&lines(&[
+            tool_call("m1", "call-1", "Read"),
+            tool_result("call-1", false),
+        ]));
+        assert!(observed.tool_errors.is_empty());
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A failure repeated in the stream counts once")]
+    #[test]
+    fn a_failed_result_two_events_repeat_counts_once() {
+        let observed = streamed(&lines(&[
+            tool_call("m1", "call-1", "LSP"),
+            tool_result("call-1", true),
+            // The same block again, in the event that repeats it.
+            tool_result("call-1", true),
+            // A failure of a call the stream never showed has no tool to be named by.
+            tool_result("call-9", true),
+        ]));
+        assert_eq!(observed.tool_errors, calls(&[("LSP", 1)]));
+    }
+
+    #[test]
+    fn a_second_result_in_the_stream_is_an_error() {
+        let error = observe(&lines(&[
+            result("success", false, "done"),
+            assistant("m1", 1, "late"),
+            result("error_during_execution", true, "boom"),
+        ]))
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("second result"), "{error}");
+        // One result is none too many, with whatever else the stream holds.
+        assert!(
+            observe(&lines(&[
+                assistant("m1", 1, "a"),
+                result("success", false, "done")
+            ]))
+            .is_ok()
         );
     }
 }
