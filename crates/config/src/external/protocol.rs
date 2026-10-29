@@ -167,7 +167,11 @@ impl From<Reason> for UnresolvedReason {
 /// One line of the protocol: a request from gsttt or the response of the process.
 #[derive(JsonSchema)]
 #[serde(untagged)]
-#[expect(dead_code, reason = "never built: `schema` reads its schema")]
+#[expect(
+    dead_code,
+    clippy::large_enum_variant,
+    reason = "never built: `schema` reads its schema, so the size of a value does not matter"
+)]
 enum Message<'a> {
     Request(Request<'a>),
     Response(Response),
