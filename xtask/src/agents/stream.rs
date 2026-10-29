@@ -115,6 +115,7 @@ pub(super) fn observe(transcript: &str) -> Observed {
     let mut messages: BTreeMap<String, Tokens> = BTreeMap::new();
     let mut result = None;
     let mut usage_limit = false;
+    let mut first_message = true;
     for line in transcript.lines() {
         let Ok(event) = serde_json::from_str::<Value>(line) else {
             continue;
@@ -131,7 +132,10 @@ pub(super) fn observe(transcript: &str) -> Observed {
                         .and_modify(|seen| *seen = seen.largest(tokens))
                         .or_insert(tokens);
                 }
-                usage_limit |= first_text(message).is_some_and(is_limit);
+                // Only the first message is the account's refusal. A later one that has the same words is the model quoting them, in a file it read or in the answer.
+                if std::mem::take(&mut first_message) {
+                    usage_limit |= first_text(message).is_some_and(is_limit);
+                }
             }
             // `rejected` is a limit that stops the run; `allowed_warning` only says one is near.
             Some("rate_limit_event") => {
@@ -328,6 +332,26 @@ mod tests {
         let observed = observe(&lines(&[result("error_during_execution", true, "boom")]));
         assert_eq!((observed.end, observed.message), (End::Failed, None));
         assert!(!observed.usage_limit);
+    }
+
+    #[test]
+    fn a_later_message_that_has_the_words_of_the_limit_is_no_limit() {
+        let words = "You've hit your limit \u{b7} resets 5pm";
+        // The model read a file, or quotes the message, in the middle of a run that goes on to answer.
+        let observed = observe(&lines(&[
+            assistant("m1", 1, "reading the docs"),
+            assistant("m2", 2, words),
+            result("success", false, "done"),
+        ]));
+        assert!(!observed.usage_limit);
+        // The first message is the account's refusal.
+        assert!(
+            observe(&lines(&[
+                assistant("m1", 1, words),
+                assistant("m2", 2, "again")
+            ]))
+            .usage_limit
+        );
     }
 
     #[test]
