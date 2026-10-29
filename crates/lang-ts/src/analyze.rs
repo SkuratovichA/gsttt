@@ -4,6 +4,7 @@ mod makers;
 mod maps;
 mod roots;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
@@ -30,8 +31,8 @@ use self::makers::Maker;
 use self::roots::Roots;
 use crate::extra::{Binding, Export, ExportTarget, Mount, MountTarget, Route, TsExtra};
 use crate::shape::{
-    Shape, chain_of, dotted, field_name, literal_text, member_chain, property_name, property_str,
-    static_chain, template_text, text_of,
+    Shape, chain_of, dotted, dotted_name, field_name, literal_text, member_chain, property_name,
+    property_str, static_chain, template_text, text_of,
 };
 
 /// Everything one file says on its own.
@@ -832,8 +833,8 @@ impl<'a> Visit<'a> for Analyzer<'_> {
             heritage: it
                 .heritage
                 .as_ref()
-                .and_then(|heritage| chain_of(&heritage.expression))
-                .and_then(|names| dotted(&names)),
+                .and_then(|heritage| dotted_name(&heritage.expression))
+                .map(Cow::into_owned),
         };
         let name = it.id.as_ref().map(|id| id.name.as_str().to_owned());
         self.classes.push(frame);

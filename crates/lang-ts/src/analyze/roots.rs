@@ -8,7 +8,8 @@ use gsttt_core::rules::{ChainRule, Pack};
 use oxc_ast::ast::{
     BindingIdentifier, BindingPattern, Class, Expression, FormalParameter, Function, Program,
     PropertyDefinition, TSEnumDeclaration, TSInterfaceDeclaration, TSType, TSTypeAliasDeclaration,
-    TSTypeAnnotation, TSTypeName, TSTypeParameter, VariableDeclarator,
+    TSTypeAnnotation, TSTypeName, TSTypeParameter, TSTypeParameterInstantiation,
+    VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::ScopeFlags;
@@ -173,11 +174,10 @@ impl<'p, 'a> Collector<'p, 'a> {
         }
     }
 
-    /// The file declares a type called `name`.
-    fn declare_type(&mut self, name: &'a str) {
-        if self.reads_types {
-            self.types.entry(name).or_default();
-        }
+    /// The file declares a type called `name`. The names that the type stands for at its head go into the rows returned, which are absent when no rule lists a root type.
+    fn declare_type(&mut self, name: &'a str) -> Option<&mut Vec<Cow<'a, str>>> {
+        self.reads_types
+            .then(|| self.types.entry(name).or_default())
     }
 
     /// The root type that some pack lists under `name`.
@@ -329,14 +329,23 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
         }
     }
 
-    /// The members of an interface are signatures without a body.
+    /// The members of an interface are signatures without a body, and the types it extends are what it stands for.
     fn visit_ts_interface_declaration(&mut self, it: &TSInterfaceDeclaration<'a>) {
-        self.declare_type(it.id.name.as_str());
+        if let Some(rows) = self.declare_type(it.id.name.as_str()) {
+            for base in &it.extends {
+                reference_heads(
+                    &base.type_name,
+                    base.type_arguments.as_deref(),
+                    &mut |head| {
+                        rows.push(head);
+                    },
+                );
+            }
+        }
     }
 
     fn visit_ts_type_alias_declaration(&mut self, it: &TSTypeAliasDeclaration<'a>) {
-        if self.reads_types {
-            let rows = self.types.entry(it.id.name.as_str()).or_default();
+        if let Some(rows) = self.declare_type(it.id.name.as_str()) {
             heads(&it.type_annotation, &mut |head| rows.push(head));
         }
     }
@@ -352,9 +361,16 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
         walk::walk_ts_enum_declaration(self, it);
     }
 
+    /// A class is the class it extends, and a class that extends none is no root type.
     fn visit_class(&mut self, it: &Class<'a>) {
-        if let Some(id) = &it.id {
-            self.declare_type(id.name.as_str());
+        if let Some(id) = &it.id
+            && let Some(rows) = self.declare_type(id.name.as_str())
+        {
+            rows.extend(
+                it.heritage
+                    .as_ref()
+                    .and_then(|heritage| dotted_name(&heritage.expression)),
+            );
         }
         walk::walk_class(self, it);
     }
@@ -368,7 +384,7 @@ fn constructed<'a>(init: &Expression<'a>) -> Option<Cow<'a, str>> {
     }
 }
 
-/// Calls `found` with the name of every type that `ty` stands for at its head: a reference is its own name, a union is each of its members, and a wrapper such as `Pick<T, …>` is what it wraps.
+/// Calls `found` with the name of every type that `ty` stands for at its head: a reference is its own name, a union or an intersection is each of its members, and a wrapper such as `Pick<T, …>` is what it wraps.
 fn heads<'a>(ty: &TSType<'a>, found: &mut impl FnMut(Cow<'a, str>)) {
     match ty {
         TSType::TSParenthesizedType(inner) => heads(&inner.type_annotation, found),
@@ -377,19 +393,35 @@ fn heads<'a>(ty: &TSType<'a>, found: &mut impl FnMut(Cow<'a, str>)) {
                 heads(member, found);
             }
         }
-        TSType::TSTypeReference(reference) => match &reference.type_name {
-            TSTypeName::IdentifierReference(name) if WRAPPERS.contains(&name.name.as_str()) => {
-                let wrapped = reference
-                    .type_arguments
-                    .as_ref()
-                    .and_then(|arguments| arguments.params.first());
-                if let Some(wrapped) = wrapped {
-                    heads(wrapped, found);
-                }
+        TSType::TSIntersectionType(intersection) => {
+            for member in &intersection.types {
+                heads(member, found);
             }
-            TSTypeName::IdentifierReference(name) => found(Cow::Borrowed(name.name.as_str())),
-            qualified => found(Cow::Owned(qualified.to_string())),
-        },
+        }
+        TSType::TSTypeReference(reference) => {
+            reference_heads(
+                &reference.type_name,
+                reference.type_arguments.as_deref(),
+                found,
+            );
+        }
         _ => {}
+    }
+}
+
+/// Like [`heads`] for the type `name<arguments>`, which an `extends` clause of an interface writes as well as a type reference does.
+fn reference_heads<'a>(
+    name: &TSTypeName<'a>,
+    arguments: Option<&TSTypeParameterInstantiation<'a>>,
+    found: &mut impl FnMut(Cow<'a, str>),
+) {
+    match name {
+        TSTypeName::IdentifierReference(name) if WRAPPERS.contains(&name.name.as_str()) => {
+            if let Some(wrapped) = arguments.and_then(|arguments| arguments.params.first()) {
+                heads(wrapped, found);
+            }
+        }
+        TSTypeName::IdentifierReference(name) => found(Cow::Borrowed(name.name.as_str())),
+        qualified => found(Cow::Owned(qualified.to_string())),
     }
 }

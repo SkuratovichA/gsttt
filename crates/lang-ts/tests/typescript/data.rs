@@ -229,12 +229,56 @@ fn a_local_type_shadows_a_root_type() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-#[scenario("typescript", "A renamed or combined client type is no root")]
-fn a_renamed_or_combined_client_type_is_no_root() -> Result<(), Box<dyn Error>> {
+#[scenario("typescript", "A client type not written by its name is no root")]
+fn a_client_type_not_written_by_its_name_is_no_root() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-unread-types")?;
-    for path in ["src/renamed.ts", "src/namespaced.ts", "src/intersected.ts"] {
+    for path in [
+        "src/renamed.ts",
+        "src/namespaced.ts",
+        "src/typed-of.ts",
+        "src/aliased-import.ts",
+    ] {
         assert_eq!(contracts(&json, path), NOTHING, "{path}");
     }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An intersection with a client type is a root")]
+fn an_intersection_with_a_client_type_is_a_root() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-intersected-types")?;
+    assert_eq!(
+        contracts(&json, "src/intersected.ts"),
+        ["calls table tenant @4"]
+    );
+    assert_eq!(contracts(&json, "src/unrelated.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A class or an interface that extends a client type is a root"
+)]
+fn a_class_or_an_interface_that_extends_a_client_type_is_a_root() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-extended-types")?;
+    assert_eq!(
+        contracts(&json, "src/service.ts"),
+        ["calls table tenant @13"]
+    );
+    assert_eq!(
+        contracts(&json, "src/chain.ts"),
+        [
+            "calls table tenant @12",
+            "calls table tenant @16",
+            "calls table tenant @20",
+            "calls table tenant @24",
+            "calls table tenant @30",
+        ]
+    );
+    assert_eq!(contracts(&json, "src/unrelated.ts"), NOTHING);
     insta::assert_json_snapshot!(json);
     Ok(())
 }

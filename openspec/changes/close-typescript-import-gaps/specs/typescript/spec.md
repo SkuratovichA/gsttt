@@ -135,7 +135,7 @@ A `type` alias of the same file SHALL be read as the type it defines, through an
 - **AND** `src/long.ts` calls `table tenant` at line 100003, and the project is indexed within twenty seconds
 
 ### Requirement: Local types shadow root types
-A name that the file declares itself, as a `type` alias, an `interface`, a `class` or an `enum`, SHALL be that local type and never the root type of a pack with the same name. A local `type` alias SHALL be read as the type it defines, which may be a root type, and an `interface`, a `class` or an `enum` SHALL be no root type. Only a name that the file does not declare SHALL be checked against the root types.
+A name that the file declares itself, as a `type` alias, an `interface`, a `class` or an `enum`, SHALL be that local type and never the root type of a pack with the same name. A local `type` alias SHALL be read as the type it defines, which may be a root type, an `interface` or a `class` SHALL be a root type only when it extends one, and an `enum` SHALL be none. Only a name that the file does not declare SHALL be checked against the root types.
 
 #### Scenario: A local type shadows a root type
 - **WHEN** `src/alias.ts` has `type PrismaClient = { tenant: { findFirst(): void } }`, `src/interface.ts` has an `interface PrismaClient`, `src/class.ts` has a `class PrismaService`, `src/enum.ts` has an `enum PrismaClient`, and each of the four has a function with a parameter of that type that calls `.tenant.findFirst()` on it
@@ -143,12 +143,28 @@ A name that the file declares itself, as a `type` alias, an `interface`, a `clas
 - **THEN** `src/alias-of-root.ts` calls `table tenant` at line 6
 - **AND** the other four files call no table
 
-### Requirement: Renamed and combined root types are not read
-A root type imported under another name, a root type reached through a namespace import under another name, and an intersection with a root type SHALL NOT be read as a root type.
+### Requirement: Root types not written by their name are not read
+A root type imported under another name, a root type reached through a namespace import under another name, `typeof` a name, and a local `type` alias of an import type SHALL NOT be read as a root type.
 
-#### Scenario: A renamed or combined client type is no root
-- **WHEN** `src/renamed.ts` has `import type { PrismaClient as Base } from '@prisma/client'` and a parameter `client: Base`, `src/namespaced.ts` has `import type { Prisma as P } from '@prisma/client'` and a parameter `reader: P.TransactionClient`, and `src/intersected.ts` has `import type { PrismaClient } from '@prisma/client'` and a parameter `client: PrismaClient & { extra: true }`, each of them calling `.tenant.findFirst()` on its parameter
-- **THEN** the three files call no table
+#### Scenario: A client type not written by its name is no root
+- **WHEN** `src/renamed.ts` has `import type { PrismaClient as Base } from '@prisma/client'` and a parameter `client: Base`, `src/namespaced.ts` has `import type { Prisma as P } from '@prisma/client'` and a parameter `reader: P.TransactionClient`, `src/typed-of.ts` has `const shared = new PrismaClient()` and a parameter `client: typeof shared`, and `src/aliased-import.ts` has `type Db = import('@prisma/client').PrismaClient` and a parameter `client: Db`, each of them calling `.tenant.findFirst()` on its parameter
+- **THEN** the four files call no table
+
+### Requirement: Intersections and heritage of root types
+An intersection that has a root type as one of its members SHALL be read as a root type, as a union is. A class or an interface of the file that extends a root type, or one of the file that does, SHALL be a root type, through any number of such declarations and `type` aliases. One that extends no root type SHALL NOT be.
+
+#### Scenario: An intersection with a client type is a root
+- **WHEN** `src/intersected.ts` has `import type { PrismaClient } from '@prisma/client'` and a parameter `client: PrismaClient & { extra: true }` that calls `client.tenant.findFirst()` on line 4
+- **AND** `src/unrelated.ts` has a parameter typed with an intersection of two `type` aliases that are no root types and a parameter typed with an intersection of two object types, and calls `.tenant.findFirst()` on each
+- **THEN** `src/intersected.ts` calls `table tenant` at line 4
+- **AND** `src/unrelated.ts` calls no table
+
+#### Scenario: A class or an interface that extends a client type is a root
+- **WHEN** `src/service.ts` has `class PrismaService extends PrismaClient` and a class with the constructor parameter `private readonly store: PrismaService` whose method calls `this.store.tenant.findFirst()` on line 13
+- **AND** `src/chain.ts` has `class Audited extends PrismaClient`, `class Logged extends Audited`, `interface Narrow extends Pick<PrismaClient, 'tenant'>` and `interface Wide extends Narrow`, a function with a parameter of each of those four types that calls `.tenant.findFirst()` on it on lines 12, 16, 20 and 24, and `const made = new Logged()` with `made.tenant.count()` on line 30
+- **AND** `src/unrelated.ts` has `class Cache extends Map` and `interface Shape extends Base`, where `Base` is an interface of the file, and a function with a parameter of each that calls `.tenant.findFirst()` on it
+- **THEN** `src/service.ts` calls `table tenant` at line 13 and `src/chain.ts` calls `table tenant` at lines 12, 16, 20, 24 and 30
+- **AND** `src/unrelated.ts` calls no table
 
 ### Requirement: Imported model types
 A pack MAY name a contract for each name a file takes from a package. With the `prisma` pack, a name imported or re-exported by name from `@prisma/client` SHALL call the table of that name at the line of the import, as the package exports it and not as the file renames it, except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`. A namespace import, a default import, a side-effect import and `export *` SHALL name nothing.

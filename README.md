@@ -82,7 +82,7 @@ It brings the gsttt MCP server and a skill that says when to ask it; [plugin/REA
 - GraphQL resolvers built at run time, and schema-first resolvers outside a resolvers map.
 - tRPC routers merged or built at run time, router entries that are spread, read from a member (`other.router`) or built by another call, and clients named anything other than `trpc` or `api`.
 - Raw SQL and query builders, and Prisma clients under a root other than the chain roots of the `prisma` pack, unless the file reaches the client through an alias of `this` or declares the name with one of the root types of the pack, directly or through a `type` alias of the same file.
-- A Prisma root type that a file imports under another name (`PrismaClient as Base`), reaches through a renamed namespace (`P.TransactionClient`) or combines with other types (`PrismaClient & {…}`).
+- A Prisma root type that a file imports under another name (`PrismaClient as Base`), reaches through a renamed namespace (`P.TransactionClient`), writes as `typeof` a name, or aliases as an import type (`type Db = import('@prisma/client').PrismaClient`).
 - The model types of a Prisma client generated to a custom `output` path, or of a package that re-exports the client with `export * from '@prisma/client'`: only the imports from `@prisma/client` itself name a table.
 - An enum imported by name from `@prisma/client` reads as a table of that name that no model declares, because the import does not say which names are models.
 - Environment variables read through an alias of the environment object.
