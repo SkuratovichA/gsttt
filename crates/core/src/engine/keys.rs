@@ -112,12 +112,23 @@ mod tests {
         assert_eq!(canonical_json(&a), r#"{"a":{"x":null,"y":[1,2]},"b":1}"#);
     }
 
-    /// A pack with one call rule on `callee`, so that two packs may share a name and a place in the list and differ in their body only.
+    /// A pack with one call rule on `callee` and one chain rule from `tx`, so that two packs may share a name and a place in the list and differ in their body only.
     fn pack(name: &str, callee: &str) -> Pack {
+        typed_pack(name, callee, &[], &[])
+    }
+
+    /// `pack` with an import rule for each package of `imports` and the types of `root_types` as the root types of its chain rule.
+    fn typed_pack(name: &str, callee: &str, imports: &[&str], root_types: &[&str]) -> Pack {
+        let imports: Vec<Value> = imports
+            .iter()
+            .map(|from| json!({ "from": from, "kind": "table", "role": "calls" }))
+            .collect();
         serde_json::from_value(json!({
             "name": name,
             "language": "ts",
             "calls": [{ "callee": callee, "kind": "http", "role": "calls", "key": "$arg1" }],
+            "chains": [{ "root": "tx", "root_types": root_types, "kind": "table", "role": "calls" }],
+            "imports": imports,
         }))
         .unwrap()
     }
@@ -149,6 +160,23 @@ mod tests {
             &Value::Null,
             &[pack("b", "axios.get"), pack("a", "fetch")],
         );
+        // The two lists are left out of a pack that has none, so that the packs written before they existed hash as they did, and that must not make a pack that lists them hash like one that does not.
+        let other_imports = module_state(
+            &meta,
+            &Value::Null,
+            &[
+                typed_pack("a", "fetch", &["@prisma/client"], &[]),
+                pack("b", "axios.get"),
+            ],
+        );
+        let other_root_types = module_state(
+            &meta,
+            &Value::Null,
+            &[
+                typed_pack("a", "fetch", &[], &["PrismaClient"]),
+                pack("b", "axios.get"),
+            ],
+        );
         let other_path = RepoPath::normalize("b.ts").unwrap();
         let other_id = crate::engine::files::blob_id(b"x");
         let keys = [
@@ -156,6 +184,8 @@ mod tests {
             file_key(&other_version, "", 0, &path, id),
             file_key(&other_body, "", 0, &path, id),
             file_key(&other_order, "", 0, &path, id),
+            file_key(&other_imports, "", 0, &path, id),
+            file_key(&other_root_types, "", 0, &path, id),
             file_key(&base, "web", 0, &path, id),
             file_key(&base, "", 1, &path, id),
             file_key(&base, "", 0, &other_path, id),

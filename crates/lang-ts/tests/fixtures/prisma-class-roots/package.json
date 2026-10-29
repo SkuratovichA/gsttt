@@ -1,0 +1,1 @@
+{ "name": "prisma-class-roots", "dependencies": { "@prisma/client": "^6.0.0" } }

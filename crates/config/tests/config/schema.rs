@@ -108,10 +108,18 @@ fn a_pack_file_has_a_schema() {
             "chains",
             "embeds",
             "assigns",
+            "imports",
         ])
     );
     // The rules of each kind are tables that refuse unknown keys as well.
-    for kind in ["calls", "decorators", "chains", "embeds", "assigns"] {
+    for kind in [
+        "calls",
+        "decorators",
+        "chains",
+        "embeds",
+        "assigns",
+        "imports",
+    ] {
         assert_eq!(schema["properties"][kind]["type"], "array", "{kind}");
         let rule = followed(&schema, &schema["properties"][kind]["items"]);
         assert_eq!(rule["additionalProperties"], false, "{kind}");

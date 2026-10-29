@@ -5,6 +5,7 @@ detect = ["@prisma/client"]
 
 [[chains]]
 root = ["prisma", "this.prisma", "this.prismaService", "ctx.prisma", "ctx.db", "this.db", "db", "tx"]
+root_types = ["PrismaClient", "PrismaService", "Prisma.TransactionClient"]
 kind = "table"
 role = "calls"
 segments = 1
@@ -26,3 +27,10 @@ terminals = [
   "aggregate",
   "groupBy",
 ]
+
+# The client exports one type per model, so a file that imports the type of a model depends on its table, even when it never queries it.
+[[imports]]
+from = "@prisma/client"
+kind = "table"
+role = "calls"
+except = ["Prisma", "PrismaClient", "PrismaPromise", "$Enums"]

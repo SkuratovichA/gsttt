@@ -5,8 +5,8 @@ use std::num::NonZeroU32;
 
 use gsttt_core::rules::Site;
 use oxc_ast::ast::{
-    Argument, ChainElement, Expression, MemberExpression, ObjectPropertyKind, PropertyKey,
-    TemplateLiteral,
+    Argument, ChainElement, Expression, MemberExpression, ObjectPropertyKind, PropertyDefinition,
+    PropertyKey, TemplateLiteral,
 };
 use oxc_syntax::operator::BinaryOperator;
 
@@ -121,13 +121,31 @@ fn arg_of(expr: &Expression<'_>) -> Arg {
     }
 }
 
-/// The name of a property key written as an identifier or a string.
-pub(crate) fn property_name(key: &PropertyKey<'_>) -> Option<String> {
+/// The name of a property key written as an identifier or a string, as the source spells it.
+pub(crate) fn property_str<'a>(key: &PropertyKey<'a>) -> Option<&'a str> {
     match key {
-        PropertyKey::StaticIdentifier(name) => Some(name.name.as_str().to_owned()),
-        PropertyKey::StringLiteral(text) => text.value.as_str().map(str::to_owned),
+        PropertyKey::StaticIdentifier(name) => Some(name.name.as_str()),
+        PropertyKey::StringLiteral(text) => text.value.as_str(),
         _ => None,
     }
+}
+
+/// The name of a property key written as an identifier or a string.
+pub(crate) fn property_name(key: &PropertyKey<'_>) -> Option<String> {
+    property_str(key).map(str::to_owned)
+}
+
+/// The name of the field that `field` declares in its class, `None` for a computed key.
+pub(crate) fn field_name<'a>(field: &PropertyDefinition<'a>) -> Option<&'a str> {
+    if field.computed {
+        return None;
+    }
+    property_str(&field.key)
+}
+
+/// The name under which a chain that starts at the property `name` of `this` is looked up: `this.db` for the property `db`.
+pub(crate) fn this_key(name: &str) -> String {
+    format!("this.{name}")
 }
 
 /// The text of a string, a template or a concatenation, with each computed part written `${}`; the first element that has text for an array. `None` for anything else.
@@ -213,6 +231,16 @@ pub(crate) fn static_chain(object: &Expression<'_>, property: &str) -> Option<Ve
 pub(crate) fn dotted(names: &[Option<String>]) -> Option<String> {
     let parts: Option<Vec<&str>> = names.iter().map(Option::as_deref).collect();
     parts.map(|parts| parts.join("."))
+}
+
+/// The name that `expr` writes when it is a name or a chain of names, `Base` for `Base` and `ns.Base` for `ns.Base`, with `None` for anything else. A single name is borrowed from the source, so that the common case allocates nothing.
+pub(crate) fn dotted_name<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+    if let Expression::Identifier(name) = expr.get_inner_expression() {
+        return Some(Cow::Borrowed(name.name.as_str()));
+    }
+    chain_of(expr)
+        .and_then(|names| dotted(&names))
+        .map(Cow::Owned)
 }
 
 fn push_chain(expr: &Expression<'_>, names: &mut Vec<Option<String>>) -> bool {

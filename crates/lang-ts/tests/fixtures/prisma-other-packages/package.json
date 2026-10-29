@@ -1,0 +1,1 @@
+{ "name": "prisma-other-packages", "dependencies": { "@prisma/client": "^6.0.0", "@acme/db": "1.0.0" } }

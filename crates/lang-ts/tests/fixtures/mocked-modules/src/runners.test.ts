@@ -1,0 +1,13 @@
+vi.mock('./lib');
+vi.doMock('./lib');
+vi.unmock('./lib');
+vi.doUnmock('./lib');
+vi.importActual('./lib');
+vi.importMock('./lib');
+jest.mock('./lib');
+jest.doMock('./lib');
+jest.unmock('./lib');
+jest.dontMock('./lib');
+jest.requireActual('./lib');
+jest.requireMock('./lib');
+vi.mock(`./lib`);

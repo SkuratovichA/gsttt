@@ -1,0 +1,257 @@
+---
+source: crates/lang-ts/tests/typescript/resolution.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "../docs/terms.md?raw",
+          "to": {
+            "file": "docs/terms.md"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "default"
+          ],
+          "spec": "../docs/terms.md",
+          "to": {
+            "file": "docs/terms.md"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 3,
+          "names": [
+            "default"
+          ],
+          "spec": "./worker?worker",
+          "to": {
+            "file": "src/worker.ts"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 4,
+          "names": [
+            "default"
+          ],
+          "spec": "./worker",
+          "to": {
+            "file": "src/worker.ts"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 5,
+          "names": [
+            "default"
+          ],
+          "spec": "./logo.svg?url",
+          "to": {
+            "file": "src/logo.svg"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 6,
+          "names": [
+            "default"
+          ],
+          "spec": "./logo.svg",
+          "to": {
+            "file": "src/logo.svg"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 7,
+          "names": [
+            "default"
+          ],
+          "spec": "ui-kit/theme.css?inline",
+          "to": {
+            "external": "ui-kit"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 8,
+          "names": [
+            "default"
+          ],
+          "spec": "ui-kit/theme.css",
+          "to": {
+            "external": "ui-kit"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 9,
+          "names": [
+            "default"
+          ],
+          "spec": "../generated/schema.json?url",
+          "to": {
+            "unresolved": {
+              "reason": "ignored"
+            }
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 10,
+          "names": [
+            "default"
+          ],
+          "spec": "../generated/schema.json",
+          "to": {
+            "unresolved": {
+              "reason": "ignored"
+            }
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 11,
+          "names": [
+            "default"
+          ],
+          "spec": "./absent.md?raw",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 12,
+          "names": [
+            "default"
+          ],
+          "spec": "./absent.md",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 13,
+          "names": [
+            "default"
+          ],
+          "spec": "ui-kit?raw",
+          "to": {
+            "external": "ui-kit"
+          }
+        },
+        {
+          "flags": 0,
+          "kind": "static",
+          "line": 14,
+          "names": [
+            "default"
+          ],
+          "spec": "ui-kit",
+          "to": {
+            "external": "ui-kit"
+          }
+        }
+      ],
+      "path": "src/page.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "src/worker.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": [
+    ".ignore",
+    "docs/terms.md",
+    "src/logo.svg"
+  ]
+}
