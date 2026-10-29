@@ -90,7 +90,7 @@ pub(super) struct Run {
     pub(super) cost_usd: Option<f64>,
     pub(super) turns: u32,
     pub(super) duration_ms: u64,
-    /// Whether the run left the checkout other than the preparation left it. It was restored before the next run.
+    /// Whether the run left the checkout, its HEAD, or the index of its setup other than the preparation left them. They were put back before the next run.
     pub(super) changed_checkout: bool,
 }
 

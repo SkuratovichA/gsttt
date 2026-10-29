@@ -10,6 +10,7 @@ mod draw;
 mod exec;
 mod functions;
 mod guard;
+mod indexes;
 mod init;
 mod oracle;
 mod process;

@@ -15,6 +15,7 @@ use super::args::{self, Task};
 use super::checkout::{self, Purpose};
 use super::exec::{self, Launch};
 use super::guard::Guard;
+use super::indexes::Indexes;
 use super::init::{self, UserEntries};
 use super::process::{Stop, which};
 use super::questions::{Question, Questions};
@@ -130,6 +131,8 @@ struct Session<'a> {
     /// The directory the temporary directory of every run is made in.
     tmp_root: &'a Path,
     user: &'a UserEntries,
+    /// The indexes as the runs began, which the run of their setup puts back.
+    indexes: &'a Indexes,
     /// The wall-clock limit of one run.
     limit: Duration,
     /// Ctrl-C and SIGTERM on the task: a run that waits for one is ended, and not recorded.
@@ -230,10 +233,12 @@ impl Session<'_> {
             init::check(setup, init, self.user)?;
             results.accept(init)
         });
-        // The checkout is put back whatever became of the run.
+        // The checkout and the index of the setup are put back whatever became of the run.
         let restored = guard.finish();
+        let index = self.indexes.restore(setup, &question.repository);
         let finished = executed.with_context(|| what.clone())?;
         let changed_checkout = restored.with_context(|| what.clone())?;
+        let changed_index = index.with_context(|| what.clone())?;
 
         let bytes = fs::read(&transcript)
             .with_context(|| format!("cannot read {}", transcript.display()))?;
@@ -273,7 +278,7 @@ impl Session<'_> {
             cost_usd: observed.cost_usd,
             turns: observed.turns,
             duration_ms: u64::try_from(finished.elapsed.as_millis()).unwrap_or(u64::MAX),
-            changed_checkout,
+            changed_checkout: changed_checkout || changed_index,
         })
     }
 }
@@ -509,6 +514,8 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
 
     // The cache of codebase-memory-mcp holds the index of every checkout, so it is thrown away once, and not with each.
     forget(Tool::CodebaseMemory, &root, &programs)?;
+    let aside = files.dir.join("indexes");
+    let mut indexes = Indexes::default();
     let mut checkouts = BTreeMap::new();
     for repository in repositories {
         if !questions
@@ -523,6 +530,11 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
             .with_context(|| format!("`{}` has no `agents` table", repository.name))?;
         let dir = checkout::prepare(repository, agents, Purpose::Runs)?;
         index(repository, &dir, &programs)?;
+        indexes.keep_gsttt(
+            &repository.name,
+            &dir,
+            &aside.join("gsttt").join(&repository.name),
+        )?;
         checkouts.insert(
             repository.name.clone(),
             Checkout {
@@ -535,6 +547,8 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         );
     }
 
+    // The cache of codebase-memory-mcp holds every checkout, so it is kept once they are all indexed.
+    indexes.keep_cbm(&programs.cbm_cache(), &aside.join("cbm"))?;
     let user = init::user_entries(&config);
     let local = local_paths(&root, &checkouts);
     // Ctrl-C is caught from here, where the first run starts: before it, a signal ends the task at once, as it always did.
@@ -547,6 +561,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         invoke: Invoke(&invoke),
         tmp_root: &tmp_root,
         user: &user,
+        indexes: &indexes,
         limit: Duration::from_secs(pins.agents.seconds),
         stop: &stop,
         out: &out,
@@ -607,6 +622,8 @@ mod tests {
         questions: Vec<Question>,
         claude: PathBuf,
         local: Vec<String>,
+        /// The indexes kept aside, for the tests of the runs that change one.
+        indexes: Indexes,
     }
 
     impl Bed {
@@ -624,6 +641,7 @@ touch "$TMPDIR/inside"
 cat "$d/init-$2.json"
 if [ -f "$d/hold" ]; then sleep 30; fi
 if [ -f "$d/dirty" ]; then rm "$d/dirty"; echo notes > notes.md; fi
+if [ -f "$d/touch-$2" ]; then echo run >> "$(cat "$d/touch-$2")"; fi
 if [ -f "$d/stream-$n.jsonl" ]; then cat "$d/stream-$n.jsonl"; else cat "$d/stream.jsonl"; fi
 if [ -f "$d/slow-$n" ]; then sleep 30; fi
 touch "$d/finished"
@@ -655,6 +673,7 @@ touch "$d/finished"
                 questions: vec![question("repo-users-1", Kind::Users)],
                 claude,
                 local: Vec::new(),
+                indexes: Indexes::default(),
             };
             bed.stream(stream);
             bed
@@ -680,6 +699,15 @@ touch "$d/finished"
         /// Makes the stand-in do something extra: `hold` and `dirty` in its first call, or `slow-<n>` to stay on after its stream in its `n`th.
         fn mark(&self, what: &str) {
             fs::write(self.dir.path().join(what), "").unwrap();
+        }
+
+        /// Makes the run of `setup` add a line to `file`.
+        fn touch(&self, setup: &str, file: &Path) {
+            fs::write(
+                self.dir.path().join(format!("touch-{setup}")),
+                file.to_string_lossy().as_bytes(),
+            )
+            .unwrap();
         }
 
         fn out(&self) -> PathBuf {
@@ -736,6 +764,7 @@ touch "$d/finished"
                 invoke: Invoke(&invoke),
                 tmp_root: &self.tmp_root,
                 user: &user,
+                indexes: &self.indexes,
                 limit,
                 stop,
                 out: &out,
@@ -747,6 +776,51 @@ touch "$d/finished"
 
         fn run(&self, results: &mut Results) -> anyhow::Result<usize> {
             self.go(results, Duration::from_secs(60))
+        }
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A run that changes an index is marked and the index is put back"
+    )]
+    #[test]
+    fn a_run_that_changes_the_index_of_its_setup_is_marked_and_the_index_is_put_back() {
+        let mut bed = Bed::answering(ANSWER);
+        let gsttt = bed.checkout().join(plan::GSTTT_CACHE);
+        let cache = bed.dir.path().join("cbm-cache");
+        for (dir, file) in [(&gsttt, "snapshot.gsttt"), (&cache, "project.db")] {
+            fs::create_dir_all(dir).unwrap();
+            fs::write(dir.join(file), "as indexed\n").unwrap();
+        }
+        let checkout = bed.checkout().to_path_buf();
+        let aside = bed.dir.path().join("aside");
+        bed.indexes
+            .keep_gsttt("repo", &checkout, &aside.join("gsttt"))
+            .unwrap();
+        bed.indexes.keep_cbm(&cache, &aside.join("cbm")).unwrap();
+        // The run of the gsttt setup writes into the index of gsttt, and the run of the cbm setup into the cache.
+        bed.touch("gsttt", &gsttt.join("snapshot.gsttt"));
+        bed.touch("cbm", &cache.join("project.db"));
+
+        let mut results = started();
+        bed.run(&mut results).unwrap();
+
+        let marked: Vec<(Setup, bool)> = results
+            .runs
+            .iter()
+            .map(|run| (run.setup, run.changed_checkout))
+            .collect();
+        assert_eq!(
+            marked,
+            [
+                (Setup::Plain, false),
+                (Setup::Lsp, false),
+                (Setup::Cbm, true),
+                (Setup::Gsttt, true)
+            ]
+        );
+        for (dir, file) in [(&gsttt, "snapshot.gsttt"), (&cache, "project.db")] {
+            assert_eq!(fs::read_to_string(dir.join(file)).unwrap(), "as indexed\n");
         }
     }
 
