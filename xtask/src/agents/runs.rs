@@ -15,7 +15,7 @@ use super::checkout::{self, Purpose};
 use super::exec::{self, Launch};
 use super::guard::Guard;
 use super::init::{self, UserEntries};
-use super::process::which;
+use super::process::{Stop, which};
 use super::questions::{Question, Questions};
 use super::results::{Outcome, Results, Run, ToolVersion};
 use super::score::{Score, last_files_block, normalize, score};
@@ -119,6 +119,8 @@ struct Session<'a> {
     user: &'a UserEntries,
     /// The wall-clock limit of one run.
     limit: Duration,
+    /// Ctrl-C and SIGTERM on the task: a run that waits for one is ended, and not recorded.
+    stop: &'a Stop,
     /// The results file.
     out: &'a Path,
     /// The directory the stream of every run is kept in.
@@ -195,6 +197,7 @@ impl Session<'_> {
             prompt: &question.prompt,
             transcript: &transcript,
             limit: self.limit,
+            stop: self.stop,
         };
         // The init event of the run is held against the setup and against the runs before it, before the run has spent anything.
         let executed = exec::execute(&launch, &mut |init| {
@@ -481,6 +484,8 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         .map(|dir| init::user_entries(&dir))
         .unwrap_or_default();
     let local = local_paths(&root, &checkouts);
+    // Ctrl-C is caught from here, where the first run starts: before it, a signal ends the task at once, as it always did.
+    let stop = Stop::catch()?;
     let session = Session {
         claude: &claude,
         questions: &questions,
@@ -489,6 +494,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         invocations: &invocations,
         user: &user,
         limit: Duration::from_secs(pins.agents.seconds),
+        stop: &stop,
         out: &out,
         transcripts: &transcripts,
         local: &local,
@@ -640,6 +646,16 @@ touch "$d/finished"
         }
 
         fn go(&self, results: &mut Results, limit: Duration) -> anyhow::Result<usize> {
+            self.go_until(results, limit, &Stop::default())
+        }
+
+        /// Like `go`, with a `stop` that the test may raise.
+        fn go_until(
+            &self,
+            results: &mut Results,
+            limit: Duration,
+            stop: &Stop,
+        ) -> anyhow::Result<usize> {
             let questions: Vec<&Question> = self.questions.iter().collect();
             let out = self.out();
             let transcripts = self.dir.path().join("results/agents");
@@ -653,6 +669,7 @@ touch "$d/finished"
                 invocations: &self.invocations,
                 user: &user,
                 limit,
+                stop,
                 out: &out,
                 transcripts: &transcripts,
                 local: &self.local,
@@ -898,6 +915,57 @@ touch "$d/finished"
             .collect();
         assert_eq!(marks, [true, false, false, false]);
         assert!(!bed.checkout().join("notes.md").exists());
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A signal stops the task")]
+    #[test]
+    fn a_signal_ends_the_run_and_stops_the_task_with_nothing_recorded_for_it() {
+        let bed = Bed::answering(ANSWER);
+        // The stand-in has written its init event and holds on, as a run does while the model works.
+        bed.mark("hold");
+        let stop = Stop::default();
+        let raiser = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(2));
+                stop.raise(signal_hook::consts::SIGINT);
+            })
+        };
+        let mut results = started();
+        let error = format!(
+            "{:#}",
+            bed.go_until(&mut results, Duration::from_secs(60), &stop)
+                .unwrap_err()
+        );
+        raiser.join().unwrap();
+        assert!(
+            error.contains("SIGINT") && error.contains("repo-users-1"),
+            "{error}"
+        );
+        assert!(
+            results.runs.is_empty(),
+            "the run it stopped is not recorded"
+        );
+        assert!(!bed.finished(), "the process was ended");
+        assert_eq!(bed.calls(), 1, "no run is started after the signal");
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A run ends with its result")]
+    #[test]
+    fn a_run_that_stays_alive_after_its_result_is_recorded_from_it_and_not_as_a_timeout() {
+        let bed = Bed::answering(ANSWER);
+        // The stand-in writes its stream, result included, and stays on, as `claude -p` does for a task of the model left in the background.
+        bed.mark("slow-1");
+        let mut results = started();
+        let started_at = Instant::now();
+        bed.go(&mut results, Duration::from_secs(8)).unwrap();
+
+        let first = &results.runs[0];
+        assert_eq!(first.outcome, Outcome::Answered);
+        assert_eq!(first.answer, ["a.ts"]);
+        // The time of the run ends at the result, which was written at once; the wait for the exit is no part of it.
+        assert!(first.duration_ms < 4000, "{}", first.duration_ms);
+        assert!(started_at.elapsed() < Duration::from_secs(60));
     }
 
     #[test]

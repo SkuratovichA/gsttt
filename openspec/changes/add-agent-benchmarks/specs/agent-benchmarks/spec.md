@@ -101,6 +101,25 @@ The runs SHALL go one at a time, by repeat, then by question, then by setup. A r
 - **WHEN** a run ends with the message that the usage limit is reached
 - **THEN** the task fails, and the results hold the runs before it and not that one
 
+### Requirement: The end of a run
+A run SHALL end with its result event: a process still alive five seconds after it SHALL be ended, and the run recorded from the result, with a duration that ends at the event. When a run ends, its process group SHALL be killed with every process whose working directory is the checkout or below it. Ctrl-C and SIGTERM SHALL end a run the same way, and stop the task without recording that run.
+
+#### Scenario: A run ends with its result
+- **WHEN** a run writes its result event and its process stays alive
+- **THEN** the process is ended after five seconds, and the run is recorded from the result and not as a timeout
+
+#### Scenario: The group of a run ends with it
+- **WHEN** a run is stopped at the limit and a job it put in the background would write a file after that
+- **THEN** the file is never written
+
+#### Scenario: A process out of the group is ended by its directory
+- **WHEN** a process of a run leaves the group and the session and keeps the checkout as its working directory
+- **THEN** it is ended with the run
+
+#### Scenario: A signal stops the task
+- **WHEN** the task gets SIGINT or SIGTERM while a run is going
+- **THEN** the run is ended, the task fails naming the signal, and the results do not hold that run
+
 ### Requirement: The results of the runs
 `cargo xtask agents run` SHALL write `bench/results/agents.json` through a temporary file after every run, with the time, the machine, the Claude Code version, the model, the SHA-256 of the questions, the versions of the tools, and per run the question and its kind, the setup, the repeat, the outcome, the answer, precision, recall, F1, the four token counts, the cost in USD, the turns, the duration and whether it changed the checkout. It SHALL hold no path or user name of the machine.
 

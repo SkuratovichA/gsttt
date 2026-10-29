@@ -2,7 +2,6 @@
 
 use std::collections::BTreeSet;
 use std::fs::{self, File};
-use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -12,7 +11,7 @@ use serde::Deserialize;
 
 use super::draw::{BROKEN, Verdict};
 use super::functions::Candidate;
-use super::process::{POLL, kill_group};
+use super::process::{self, Job, Look, Stop};
 use crate::dist::git::git;
 
 /// The wall-clock limit of each of the two runs without a throw.
@@ -115,6 +114,7 @@ pub(super) struct Oracle<'a> {
     /// The wall-clock limit of a run with a throw.
     limit: Duration,
     slowest: Duration,
+    stop: Stop,
 }
 
 impl<'a> Oracle<'a> {
@@ -123,6 +123,7 @@ impl<'a> Oracle<'a> {
         checkout: &'a Path,
         command: &'a [String],
         work: &Path,
+        stop: &Stop,
     ) -> anyhow::Result<Self> {
         fs::create_dir_all(work).with_context(|| format!("cannot create {}", work.display()))?;
         let mut oracle = Self {
@@ -135,6 +136,7 @@ impl<'a> Oracle<'a> {
             },
             limit: MIN_LIMIT,
             slowest: Duration::ZERO,
+            stop: stop.clone(),
         };
         let (first, took_first) = oracle.baseline_run("baseline-1")?;
         let (second, took_second) = oracle.baseline_run("baseline-2")?;
@@ -233,7 +235,7 @@ impl<'a> Oracle<'a> {
             format!("--outputFile={}", report.display()),
         ];
         let log = self.work.join(format!("{label}.log"));
-        if !run_limited(self.command, &flags, self.checkout, &log, limit)? {
+        if !run_limited(self.command, &flags, self.checkout, &log, limit, &self.stop)? {
             return Ok(None);
         }
         Ok(fs::read_to_string(&report)
@@ -258,38 +260,37 @@ fn insert_throw(file: &Path, offset: usize, name: &str) -> anyhow::Result<()> {
         .with_context(|| format!("cannot write {}", file.display()))
 }
 
-/// Runs `command` with `extra` arguments in `dir`, its output in `log`, and kills its whole process group after `limit`. Returns whether it finished in time.
+/// Runs `command` with `extra` arguments in `dir`, its output in `log`, and ends its whole process group, and every process that works in `dir`, when it exits or after `limit`. Returns whether it finished in time.
 fn run_limited(
     command: &[String],
     extra: &[String],
     dir: &Path,
     log: &Path,
     limit: Duration,
+    stop: &Stop,
 ) -> anyhow::Result<bool> {
     let (program, args) = command.split_first().context("the test command is empty")?;
     let out = File::create(log).with_context(|| format!("cannot create {}", log.display()))?;
-    let mut child = Command::new(program)
-        .args(args)
+    let mut test = Command::new(program);
+    test.args(args)
         .args(extra)
         .current_dir(dir)
         .env("CI", "true")
         .stdin(Stdio::null())
         .stdout(out.try_clone()?)
-        .stderr(out)
-        .process_group(0)
-        .spawn()
-        .with_context(|| format!("cannot run `{program}` in {}", dir.display()))?;
-    let started = Instant::now();
-    loop {
-        if child.try_wait()?.is_some() {
-            return Ok(true);
-        }
-        if started.elapsed() >= limit {
-            kill_group(&mut child)?;
-            return Ok(false);
-        }
-        std::thread::sleep(POLL);
-    }
+        .stderr(out);
+    let finished = process::run(
+        Job {
+            command: test,
+            input: None,
+            dirs: &[dir],
+            limit,
+            stop,
+        },
+        &mut || Ok(Look::Working),
+    )
+    .with_context(|| format!("cannot run `{program}` in {}", dir.display()))?;
+    Ok(!finished.timed_out)
 }
 
 #[cfg(test)]
@@ -353,12 +354,29 @@ mod tests {
         let log = dir.path().join("log");
         let sleeper = ["sh", "-c", "sleep 30"].map(str::to_owned);
         let started = Instant::now();
-        let finished =
-            run_limited(&sleeper, &[], dir.path(), &log, Duration::from_millis(300)).unwrap();
+        let finished = run_limited(
+            &sleeper,
+            &[],
+            dir.path(),
+            &log,
+            Duration::from_millis(300),
+            &Stop::default(),
+        )
+        .unwrap();
         assert!(!finished);
         assert!(started.elapsed() < Duration::from_secs(20));
         let quick = ["sh", "-c", "echo hi"].map(str::to_owned);
-        assert!(run_limited(&quick, &[], dir.path(), &log, Duration::from_secs(30)).unwrap());
+        assert!(
+            run_limited(
+                &quick,
+                &[],
+                dir.path(),
+                &log,
+                Duration::from_secs(30),
+                &Stop::default()
+            )
+            .unwrap()
+        );
         assert_eq!(fs::read_to_string(&log).unwrap(), "hi\n");
     }
 
@@ -439,7 +457,7 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
     #[test]
     fn a_throw_leaves_no_trace_in_the_checkout() {
         let repo = repo(":");
-        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work).unwrap();
+        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default()).unwrap();
         assert!(oracle.ignored().is_empty());
         let answer = oracle.answer(&function()).unwrap();
         assert_eq!(
@@ -454,7 +472,7 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
     #[test]
     fn a_run_that_writes_no_report_rejects_the_candidate_and_leaves_no_trace() {
         let repo = repo("exit 1");
-        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work).unwrap();
+        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default()).unwrap();
         assert_eq!(oracle.answer(&function()).unwrap(), Err(NO_REPORT));
         assert_eq!(git(&repo.dir, &["status", "--porcelain"]).unwrap(), "");
         assert_eq!(fs::read_to_string(repo.dir.join("lib.ts")).unwrap(), LIB);
@@ -463,7 +481,7 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
     #[test]
     fn a_test_command_that_dirties_the_checkout_fails_the_run_and_the_file_is_restored() {
         let repo = repo("echo stray > stray.txt");
-        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work).unwrap();
+        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default()).unwrap();
         let error = oracle.answer(&function()).unwrap_err().to_string();
         assert!(error.contains("not what it was"), "{error}");
         assert!(error.contains("stray.txt"), "{error}");
@@ -475,7 +493,7 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
         // The script reports `a.spec.ts` as passed whatever `lib.ts` holds.
         let mut repo = repo(":");
         repo.command = ["sh", "-c", r#"printf '{"testResults":[{"name":"%s/a.spec.ts","status":"passed"}]}' "$(pwd -P)" > "${2#--outputFile=}""#, "sh"].map(str::to_owned).to_vec();
-        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work).unwrap();
+        let oracle = Oracle::new(&repo.dir, &repo.command, &repo.work, &Stop::default()).unwrap();
         assert_eq!(oracle.answer(&function()).unwrap(), Err(NO_TEST_BREAKS));
         assert!(!repo.work.join("throw-2.json").exists());
     }

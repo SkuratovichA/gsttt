@@ -31,6 +31,7 @@ use self::args::Task;
 use self::checkout::Purpose;
 use self::functions::Candidate;
 use self::oracle::Oracle;
+use self::process::Stop;
 use self::questions::{Question, Questions};
 use crate::bench::pins::{Pins, Repository};
 use crate::bench::plan::Programs;
@@ -158,7 +159,9 @@ fn questions_of(
     let test = agents.test.as_deref().with_context(|| {
         format!("`{name}` asks for questions about tests and names no test command")
     })?;
-    let oracle = Oracle::new(&checkout, test, &checkout::scratch(name))?;
+    // Ctrl-C is caught from the first wait on: before it, a signal ends the task at once, as it always did.
+    let stop = Stop::catch()?;
+    let oracle = Oracle::new(&checkout, test, &checkout::scratch(name), &stop)?;
     writeln!(std::io::stderr().lock(), "{name}: {}", oracle.describe())?;
     let with_body: Vec<&Candidate> = order
         .iter()
