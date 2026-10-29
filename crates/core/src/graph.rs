@@ -4,15 +4,19 @@
 //!
 //! An edge also says what the importer takes from the file and what it passes on, by name. The names are numbered once, in byte order, so that a set of names is a sorted slice of ids, and the binding of an edge is a row in a table that both directions of the edge share.
 
+mod symbols;
+
 use std::collections::HashMap;
 
 use foldhash::fast::RandomState;
 use serde::{Deserialize, Serialize};
 
 use crate::contract::{ContractKey, Role};
-use crate::fact::{FileTags, Import, ImportFlags, ImportKind, Line};
+use crate::fact::{FileTags, Import, ImportFlags, ImportKind, Line, Symbols};
 use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::path::RepoPath;
+
+pub use symbols::{Declaration, FileSymbols};
 
 /// How one file depends on another: the import kinds between them, and the flags every one of those imports carries.
 #[derive(
@@ -262,6 +266,8 @@ pub struct Graph {
     own_exports: Rows<NameId>,
     /// Whether the exports of each file are known; an unknown file has an empty row.
     exports_known: Vec<bool>,
+    /// The declarations of the files whose connector records them.
+    symbols: symbols::Table,
 }
 
 impl Graph {
@@ -359,6 +365,11 @@ impl Graph {
             .then(|| self.own_exports.row(file.index()))
     }
 
+    /// The declarations of `file`, what its code uses as it loads and what it exports from a local of another name. `None` when its connector records no declarations, which is not the same as a file that declares nothing.
+    pub fn symbols(&self, file: FileId) -> Option<FileSymbols<'_>> {
+        self.symbols.of(file)
+    }
+
     /// The name `id` stands for.
     pub fn name(&self, id: NameId) -> Option<&str> {
         self.names.get(id.index()).map(String::as_str)
@@ -405,6 +416,7 @@ pub struct GraphBuilder {
     numbers: HashMap<String, u32, RandomState>,
     /// The names each file exports itself, `None` for a file that is not known to.
     exports: Vec<Option<Vec<u32>>>,
+    symbols: symbols::Table,
 }
 
 impl GraphBuilder {
@@ -412,6 +424,7 @@ impl GraphBuilder {
     pub fn new(files: Vec<RepoPath>) -> Self {
         let tags = vec![FileTags::NONE; files.len()];
         let exports = vec![None; files.len()];
+        let symbols = symbols::Table::new(files.len());
         Self {
             files,
             tags,
@@ -419,6 +432,7 @@ impl GraphBuilder {
             sites: Vec::new(),
             numbers: HashMap::default(),
             exports,
+            symbols,
         }
     }
 
@@ -485,6 +499,11 @@ impl GraphBuilder {
         if let Some(slot) = self.exports.get_mut(file.index()) {
             *slot = numbers;
         }
+    }
+
+    /// The declarations of `file`, `None` when its connector records none. They are copied into one buffer in the order of the calls, so that the same tree gives the same bytes when the calls come in file order, as the engine's do.
+    pub fn symbols(&mut self, file: FileId, symbols: Option<&Symbols>) {
+        self.symbols.insert(file, symbols);
     }
 
     pub fn site(&mut self, key: ContractKey, site: ContractSite) {
@@ -606,6 +625,7 @@ impl GraphBuilder {
             bindings,
             own_exports,
             exports_known,
+            symbols: self.symbols,
         }
     }
 }

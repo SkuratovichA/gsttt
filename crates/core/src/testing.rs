@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{
-    FileTags, Import, ImportKind, ParseFailure, ParseStatus, Resolution, ResolvedImport,
-    UnresolvedReason, UnresolvedSite,
+    Declared, FileTags, Import, ImportKind, LocalExport, ParseFailure, ParseStatus, Resolution,
+    ResolvedImport, Symbols, UnresolvedReason, UnresolvedSite,
 };
 use crate::graph::{ContractSite, GraphBuilder};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
@@ -98,6 +98,63 @@ impl To {
     }
 }
 
+/// The declarations of a file of a test tree, written as its connector would record them: where each starts and ends and what it refers to, what the code refers to as the file loads, and what the file exports from a local of another name.
+#[derive(Clone, Debug, Default)]
+#[must_use = "code is nothing until a tree is given it"]
+pub struct Code {
+    symbols: Symbols,
+}
+
+impl Code {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A declaration of `name` on lines `from` to `to` that refers to `uses`. The class of a member is declared too, as `Class`, and the member as `Class.member`.
+    pub fn declaration(mut self, name: &str, lines: (u32, u32), uses: &[&str]) -> Self {
+        self.symbols.declared.push(Declared {
+            name: name.to_owned(),
+            line: lines.0,
+            end: lines.1,
+            uses: owned(uses),
+        });
+        self
+    }
+
+    /// What the code of the file refers to as the file loads.
+    pub fn on_load(mut self, uses: &[&str]) -> Self {
+        self.symbols.on_load.extend(owned(uses));
+        self
+    }
+
+    /// The file exports `name` from the local `local`, as `export { local as name }` does.
+    pub fn exports_from(mut self, name: &str, local: &str) -> Self {
+        self.symbols.exports.push(LocalExport {
+            name: name.to_owned(),
+            local: local.to_owned(),
+        });
+        self
+    }
+
+    /// The symbols in the order a connector records them: declarations by line and then by name, and every list sorted and without repeats.
+    fn finish(self) -> Symbols {
+        let mut symbols = self.symbols;
+        symbols
+            .declared
+            .sort_by(|left, right| (left.line, &left.name).cmp(&(right.line, &right.name)));
+        for declared in &mut symbols.declared {
+            declared.uses.sort_unstable();
+            declared.uses.dedup();
+        }
+        symbols.on_load.sort_unstable();
+        symbols.on_load.dedup();
+        symbols
+            .exports
+            .sort_by(|left, right| left.name.cmp(&right.name));
+        symbols
+    }
+}
+
 #[derive(Debug)]
 struct Entry {
     /// The connector that read the file, `None` when no connector did.
@@ -107,6 +164,8 @@ struct Entry {
     imports: Vec<(Import, To)>,
     /// The names the file exports itself, `None` when the connector cannot tell.
     exports: Option<Vec<String>>,
+    /// The declarations of the file, `None` when the connector records none.
+    symbols: Option<Symbols>,
     sites: Vec<(ContractKey, Role, u32)>,
     blind: Vec<UnresolvedSite>,
 }
@@ -119,6 +178,7 @@ impl Entry {
             status: ParseStatus::Ok,
             imports: Vec::new(),
             exports: None,
+            symbols: None,
             sites: Vec::new(),
             blind: Vec::new(),
         }
@@ -128,6 +188,19 @@ impl Entry {
 /// Names as a connector records them. The unit tests of the graph build facts by hand and take them from here.
 pub(crate) fn owned(names: &[&str]) -> Vec<String> {
     names.iter().map(|&name| name.to_owned()).collect()
+}
+
+/// `import` as a connector records it for a file that does or does not have symbols: a static import that names what it takes binds each name under itself unless the test said otherwise.
+fn bound(import: &Import, has_symbols: bool) -> Import {
+    let mut import = import.clone();
+    let names_only = import.kind == ImportKind::Static
+        && !import.names.is_empty()
+        && import.exported.is_empty()
+        && !import.names.iter().any(|name| name == "*");
+    if has_symbols && names_only {
+        import.exported.clone_from(&import.names);
+    }
+    import
 }
 
 /// A tree of files, their imports and their contract sites, built the way the engine builds an index from the facts of a connector: a file keeps its imports in the order they were given, which is the order of its facts and not a sorted one, a file the engine puts aside is owned and counted apart, and a project is named `.` at the repository root.
@@ -214,6 +287,16 @@ impl Tree {
         self.import(from, import, file(to))
     }
 
+    /// `from` imports the file `to` and binds `(name, local)` for each pair, as `import { name as local } from 'to'` does. `("default", "React")` is `import React from 'to'` and `("*", "ns")` is `import * as ns from 'to'`.
+    pub fn imports_as(self, from: &str, to: &str, pairs: &[(&str, &str)]) -> Self {
+        let import = Import {
+            names: pairs.iter().map(|&(name, _)| name.to_owned()).collect(),
+            exported: pairs.iter().map(|&(_, local)| local.to_owned()).collect(),
+            ..Import::new(to, ImportKind::Static, 1)
+        };
+        self.import(from, import, file(to))
+    }
+
     /// `from` imports the namespace of the file `to`, as `import * as ns from 'to'` does.
     pub fn imports_namespace(self, from: &str, to: &str) -> Self {
         self.imports_names(from, to, &["*"])
@@ -245,6 +328,12 @@ impl Tree {
     /// `path` exports exactly `names` itself, and none when the list is empty, as a barrel made only of `export *` does. A file the tree says nothing about exports names that are unknown.
     pub fn exports(mut self, path: &str, names: &[&str]) -> Self {
         self.entry(path).exports = Some(owned(names));
+        self
+    }
+
+    /// `path` has the declarations `code` writes down. A file the tree gives none is one whose connector records none. A static import of a file with declarations that names what it takes and says nothing of the locals binds each under its own name, as a connector records it.
+    pub fn symbols(mut self, path: &str, code: Code) -> Self {
+        self.entry(path).symbols = Some(code.finish());
         self
     }
 
@@ -350,6 +439,7 @@ impl Tree {
             let from = ids[path];
             graph.tag(from, entry.tags);
             graph.exports(from, entry.exports.as_deref());
+            graph.symbols(from, entry.symbols.as_ref());
             for (import, to) in &entry.imports {
                 for target in to.paths() {
                     graph.import(from, ids[target], import);
@@ -394,7 +484,7 @@ impl Tree {
                 .imports
                 .iter()
                 .map(|(import, to)| ResolvedImport {
-                    import: import.clone(),
+                    import: bound(import, entry.symbols.is_some()),
                     to: to.resolve(&ids),
                 })
                 .collect();
