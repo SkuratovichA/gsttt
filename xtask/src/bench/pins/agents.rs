@@ -58,7 +58,7 @@ pub(crate) struct RepositoryAgents {
     pub(crate) tests: Option<u32>,
     /// The command that installs the checkout, as a program and its arguments.
     pub(crate) install: Option<Vec<String>>,
-    /// The command that builds what the unit tests import, run once after the install, for a repository whose tests start only from a built package.
+    /// The command that builds what the unit tests import, for a repository whose tests start only from a built package or import their own build output: the draw runs it once after the install, and the oracle runs it from the tree as it is right before every run of the test command, a run with a `throw` included, so that the tests read a build that holds the throw.
     pub(crate) build: Option<Vec<String>>,
     /// The command that runs the unit tests from the root of the checkout; the task appends the reporter flags.
     pub(crate) test: Option<Vec<String>>,
