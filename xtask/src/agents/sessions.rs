@@ -16,10 +16,10 @@ pub(super) fn root() -> PathBuf {
     ))
 }
 
-/// Removes the directory of the session `id`, which is `<root>/<project>/<id>` for the project it ran in, and nothing else in `root`: the sessions of the user's other work are there too. The id is read from the stream of a run, so one that is not a plain id removes nothing and is an error, and a link is never followed.
+/// Removes the directory of the session `id`, which is `<root>/<project>/<id>` for the project it ran in, and nothing else in `root`: the sessions of the user's other work are there too. The id is read from the stream of a run, so one that is not a UUID, the form Claude Code gives a session, removes nothing and is an error, and a link is never followed.
 pub(super) fn remove(root: &Path, id: &str) -> anyhow::Result<()> {
     ensure!(
-        !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+        is_uuid(id),
         "the session id `{id}` is not a plain id, so no directory is removed for it"
     );
     let projects = match fs::read_dir(root) {
@@ -39,6 +39,17 @@ pub(super) fn remove(root: &Path, id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Whether `id` is a UUID: five groups of hexadecimal digits, of 8, 4, 4, 4 and 12, joined by `-`, in either case since RFC 4122 reads both. Nothing else can name a directory in a project: no `.`, no `/`, no empty id.
+fn is_uuid(id: &str) -> bool {
+    let mut groups = id.split('-');
+    let shaped = [8, 4, 4, 4, 12].into_iter().all(|length| {
+        groups.next().is_some_and(|group| {
+            group.len() == length && group.bytes().all(|b| b.is_ascii_hexdigit())
+        })
+    });
+    shaped && groups.next().is_none()
+}
+
 /// Where Claude Code keeps its state: the transcripts and the memory of the user, the logins, and the sessions of the user's other work. A run is denied all of it but the project directory of its own checkout, which holds what Claude Code saved of the run's own output when it was too big to show.
 #[derive(Debug)]
 pub(super) struct State {
@@ -55,9 +66,7 @@ impl State {
     ///
     /// Denied are every entry of `home` whose name starts with `.claude` but the configuration directory; every entry of the configuration directory but `projects`; and, of `projects` and of the temporary root, every entry but the project directory of `checkout`, and every entry that directory holds. The run's own session directory is made after this, so it is in no list. A path inside an entry that is denied is denied with it, so a link may deny a run the output it saved, and never opens anything.
     pub(super) fn denied(&self, checkout: &Path) -> anyhow::Result<Vec<PathBuf>> {
-        // A checkout that is not there yet has no canonical name, and no session has been made in it.
-        let canonical = fs::canonicalize(checkout).unwrap_or_else(|_| checkout.to_path_buf());
-        let project = project_name(&canonical);
+        let project = project_of(checkout);
         let mut denied = Vec::new();
         if let Some(home) = &self.home {
             for entry in entries(home)? {
@@ -78,6 +87,49 @@ impl State {
         denied.extend(all_but(&self.sessions, &project)?);
         Ok(denied)
     }
+
+    /// Removes what Claude Code made for the session `id`, whatever became of the run: `<project>/<id>` in the temporary root and in `projects` of the configuration directory, and `<id>` in every other directory of the configuration directory, which is `session-env/<id>`, where the client keeps the environment of a session. Each place is tried, and the first error is returned; nothing else goes, the sessions of the user's other work are in the same places.
+    pub(super) fn remove_session(&self, id: &str) -> anyhow::Result<()> {
+        let projects = self.config.join("projects");
+        [&self.sessions, &self.config, &projects]
+            .map(|root| remove(root, id))
+            .into_iter()
+            .collect()
+    }
+
+    /// Removes the project directory of every one of `checkouts` from the temporary root and from `projects` of the configuration directory when it is empty, and leaves it, without an error, when anything is in it or it is not there: the sessions of the user's other work in the same checkout are kept.
+    pub(super) fn remove_projects<'a>(
+        &self,
+        checkouts: impl IntoIterator<Item = &'a Path>,
+    ) -> anyhow::Result<()> {
+        let projects = self.config.join("projects");
+        for checkout in checkouts {
+            let name = project_of(checkout);
+            for root in [&self.sessions, &projects] {
+                let dir = root.join(&name);
+                match fs::remove_dir(&dir) {
+                    Err(error)
+                        if !matches!(
+                            error.kind(),
+                            io::ErrorKind::NotFound
+                                | io::ErrorKind::DirectoryNotEmpty
+                                | io::ErrorKind::NotADirectory
+                        ) =>
+                    {
+                        return Err(error)
+                            .with_context(|| format!("cannot remove {}", dir.display()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The name of the project directory of a run in `checkout`: [`project_name`] of its canonical path. A checkout that is not there yet has no canonical name, and no session has been made in it.
+fn project_of(checkout: &Path) -> String {
+    project_name(&fs::canonicalize(checkout).unwrap_or_else(|_| checkout.to_path_buf()))
 }
 
 /// The name of the directory Claude Code makes for the project of a session that works in `canonical`, both in `projects` of its configuration directory and in the temporary root: the path with every character that is not a letter or a digit made `-`.
@@ -136,6 +188,10 @@ mod tests {
 
     use super::*;
 
+    /// A session id as Claude Code makes it, and another.
+    const ID: &str = "7d1f0f0e-3c2b-4a55-8c1e-2f6a9b0c4d11";
+    const OTHER: &str = "7d1f0f0e-3c2b-4a55-8c1e-2f6a9b0c4d12";
+
     /// A session directory with a file in it.
     fn session(root: &Path, project: &str, id: &str) -> PathBuf {
         let dir = root.join(project).join(id);
@@ -148,16 +204,18 @@ mod tests {
     fn the_directories_of_the_session_are_removed_and_nothing_else() {
         let root = tempfile::tempdir().unwrap();
         let mine = [
-            session(root.path(), "-a", "abc-123"),
-            session(root.path(), "-b", "abc-123"),
+            session(root.path(), "-a", ID),
+            session(root.path(), "-b", ID),
         ];
+        // A directory that only ends in the id is not the session's.
+        let longer = format!("x{ID}");
         let others = [
-            session(root.path(), "-a", "abc-124"),
-            session(root.path(), "-c", "xabc-123"),
+            session(root.path(), "-a", OTHER),
+            session(root.path(), "-c", &longer),
         ];
         fs::write(root.path().join("stray"), "").unwrap();
 
-        remove(root.path(), "abc-123").unwrap();
+        remove(root.path(), ID).unwrap();
 
         for gone in &mine {
             assert!(!gone.exists(), "{}", gone.display());
@@ -171,21 +229,65 @@ mod tests {
     #[test]
     fn a_session_without_a_directory_and_a_root_that_is_not_there_are_fine() {
         let root = tempfile::tempdir().unwrap();
-        let kept = session(root.path(), "-a", "other");
-        remove(root.path(), "abc-123").unwrap();
+        let kept = session(root.path(), "-a", OTHER);
+        remove(root.path(), ID).unwrap();
         assert!(kept.join("note").exists());
-        remove(&root.path().join("not-there"), "abc-123").unwrap();
+        remove(&root.path().join("not-there"), ID).unwrap();
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "Only a UUID names the session directory to remove"
+    )]
+    #[test]
+    fn an_id_that_is_not_a_uuid_removes_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let kept = [
+            session(root.path(), "-a", "x"),
+            session(root.path(), "-a", ID),
+        ];
+        // Shapes close to a UUID, and the ones that would leave the project directory.
+        let with_slash = format!("{ID}/");
+        let with_newline = format!("{ID}\n");
+        let with_group = format!("{ID}-0");
+        let short: String = ID.chars().skip(1).collect();
+        let no_dashes = ID.replace('-', "");
+        let not_hex = ID.replacen('7', "g", 1);
+        for id in [
+            "",
+            ".",
+            "..",
+            "../x",
+            "-a/x",
+            "a b",
+            "a\n",
+            "abc-123",
+            &with_slash,
+            &with_newline,
+            &with_group,
+            &short,
+            &no_dashes,
+            &not_hex,
+        ] {
+            let error = remove(root.path(), id).unwrap_err();
+            assert!(error.to_string().contains("not a plain id"), "{id:?}");
+            for dir in &kept {
+                assert!(
+                    dir.join("note").exists(),
+                    "{id:?} removed {}",
+                    dir.display()
+                );
+            }
+        }
     }
 
     #[test]
-    fn an_id_that_is_not_a_plain_id_removes_nothing() {
+    fn an_id_in_capitals_is_a_uuid_too() {
         let root = tempfile::tempdir().unwrap();
-        let kept = session(root.path(), "-a", "x");
-        for id in ["", ".", "..", "../x", "-a/x", "a b", "a\n"] {
-            let error = remove(root.path(), id).unwrap_err();
-            assert!(error.to_string().contains("not a plain id"), "{id:?}");
-            assert!(kept.join("note").exists(), "{id:?}");
-        }
+        let capitals = ID.to_uppercase();
+        let session = session(root.path(), "-a", &capitals);
+        remove(root.path(), &capitals).unwrap();
+        assert!(!session.exists());
     }
 
     #[test]
@@ -193,15 +295,15 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let elsewhere = tempfile::tempdir().unwrap();
         // A project that is a link to a directory with a session of that id in it, and a session that is a link.
-        let behind_a_link = session(elsewhere.path(), "project", "abc-123");
+        let behind_a_link = session(elsewhere.path(), "project", ID);
         symlink(elsewhere.path().join("project"), root.path().join("-link")).unwrap();
         let target = elsewhere.path().join("target");
         fs::create_dir(&target).unwrap();
         fs::write(target.join("note"), "").unwrap();
         fs::create_dir(root.path().join("-b")).unwrap();
-        symlink(&target, root.path().join("-b/abc-123")).unwrap();
+        symlink(&target, root.path().join("-b").join(ID)).unwrap();
 
-        remove(root.path(), "abc-123").unwrap();
+        remove(root.path(), ID).unwrap();
 
         assert!(behind_a_link.join("note").exists());
         assert!(target.join("note").exists());
@@ -432,5 +534,62 @@ mod tests {
             none.denied(&machine.checkout).unwrap(),
             Vec::<PathBuf>::new()
         );
+    }
+
+    #[test]
+    fn the_session_is_removed_from_the_temporary_root_and_the_configuration_directory() {
+        let machine = machine();
+        let (config, sessions) = (&machine.state.config, &machine.state.sessions);
+        let projects = config.join("projects");
+        // What the client makes for a session: a directory in a project of the temporary root and of `projects`, and `session-env/<id>` beside `projects`.
+        let mine = [
+            session(sessions, &machine.project, ID),
+            session(&projects, &machine.project, ID),
+            session(config, "session-env", ID),
+        ];
+        let others = [
+            session(sessions, &machine.project, OTHER),
+            session(&projects, &machine.project, OTHER),
+            session(&projects, "-other", OTHER),
+            session(config, "session-env", OTHER),
+        ];
+        put(&config.join("settings.json"));
+
+        machine.state.remove_session(ID).unwrap();
+
+        for gone in &mine {
+            assert!(!gone.exists(), "{}", gone.display());
+        }
+        for kept in &others {
+            assert!(kept.join("note").exists(), "{}", kept.display());
+        }
+        assert!(config.join("settings.json").exists());
+        // An id that is not a UUID removes nothing anywhere and is an error.
+        assert!(machine.state.remove_session("..").is_err());
+        for kept in &others {
+            assert!(kept.join("note").exists(), "{}", kept.display());
+        }
+    }
+
+    #[test]
+    fn a_project_directory_goes_when_it_is_empty_and_stays_when_it_is_not() {
+        let machine = machine();
+        let (config, sessions) = (&machine.state.config, &machine.state.sessions);
+        let projects = config.join("projects");
+        let nowhere = machine.base.join("runs/nowhere");
+        // Empty in the temporary root, and another session in it in `projects`.
+        fs::create_dir_all(sessions.join(&machine.project)).unwrap();
+        let busy = session(&projects, &machine.project, OTHER);
+        let other = session(&projects, "-other", OTHER);
+
+        machine
+            .state
+            .remove_projects([machine.checkout.as_path(), nowhere.as_path()])
+            .unwrap();
+
+        assert!(!sessions.join(&machine.project).exists());
+        assert!(busy.join("note").exists());
+        assert!(other.join("note").exists());
+        assert!(sessions.exists(), "the temporary root itself stays");
     }
 }

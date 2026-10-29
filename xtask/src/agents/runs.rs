@@ -134,8 +134,8 @@ struct Session<'a> {
     invoke: Invoke<'a>,
     /// The directory the temporary directory of every run is made in.
     tmp_root: &'a Path,
-    /// The temporary root that every Claude Code session of the user shares: the directory the session of a run made in it is removed after the run.
-    sessions: &'a Path,
+    /// Where Claude Code keeps its state: what it made for the session of a run is removed after the run, and the project directories of the checkouts when the task ends.
+    state: &'a sessions::State,
     user: &'a UserEntries,
     /// The indexes as the runs began, which the run of their setup puts back.
     indexes: &'a Indexes,
@@ -154,8 +154,21 @@ struct Session<'a> {
 }
 
 impl Session<'_> {
-    /// Makes the runs the results do not hold yet, in order, and writes the results after each. Returns how many it made. A run that ends on the usage limit of the account is not recorded, and stops the task.
+    /// Makes the runs the results do not hold yet, in order, and writes the results after each. Returns how many it made. A run that ends on the usage limit of the account is not recorded, and stops the task. When the task ends, well or not, the project directory Claude Code made for each checkout is removed if nothing else is in it.
     fn run_all(&self, results: &mut Results) -> anyhow::Result<usize> {
+        let made = self.run_planned(results);
+        let swept = self.state.remove_projects(
+            self.checkouts
+                .values()
+                .map(|checkout| checkout.dir.as_path()),
+        );
+        let made = made?;
+        swept.context("cannot remove the project directories of the checkouts")?;
+        Ok(made)
+    }
+
+    /// The runs of [`Self::run_all`], in order.
+    fn run_planned(&self, results: &mut Results) -> anyhow::Result<usize> {
         let planned = order(self.questions, self.repeats);
         let total = planned.len();
         let local: Vec<&str> = self.local.iter().map(String::as_str).collect();
@@ -250,10 +263,10 @@ impl Session<'_> {
             init::check(setup, init, self.user)?;
             results.accept(init)
         });
-        // The checkout and the index of the setup are put back, and the directory of the session is removed, whatever became of the run.
+        // The checkout and the index of the setup are put back, and what Claude Code made for the session is removed, whatever became of the run.
         let restored = guard.finish();
         let index = put_back_index(self.indexes, self.programs, setup, &question.repository);
-        let swept = session.map_or(Ok(()), |id| sessions::remove(self.sessions, &id));
+        let swept = session.map_or(Ok(()), |id| self.state.remove_session(&id));
         let finished = executed.with_context(|| what.clone())?;
         let changed_checkout = restored.with_context(|| what.clone())?;
         let changed_index = index.with_context(|| what.clone())?;
@@ -437,10 +450,12 @@ fn stop_daemon(programs: &Programs) -> anyhow::Result<()> {
 fn shell_line(tool: Tool, line: &str, dir: &Path, programs: &Programs) -> anyhow::Result<()> {
     let shell = Shell::new()?;
     shell.change_dir(dir);
-    let mut command = shell.cmd("sh").args(["-c", line]).quiet().ignore_status();
-    for (key, value) in plan::isolation(tool, programs) {
-        command = command.env(key, value);
-    }
+    let command = shell
+        .cmd("sh")
+        .args(["-c", line])
+        .quiet()
+        .ignore_status()
+        .envs(plan::isolation(tool, programs));
     let output = command.output()?;
     ensure!(
         output.status.success(),
@@ -649,7 +664,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         checkouts: &checkouts,
         invoke: Invoke(&invoke),
         tmp_root: &tmp_root,
-        sessions: &state.sessions,
+        state: &state,
         user: &user,
         indexes: &indexes,
         programs: &programs,
@@ -736,6 +751,10 @@ mod tests {
         programs: Programs,
         /// The temporary root of the Claude Code sessions, where the stand-in makes the directory of its session as the real one does.
         sessions: PathBuf,
+        /// The configuration directory of Claude Code, where the stand-in makes `session-env/<id>` and `projects/<project>/<id>` as the real one does.
+        config: PathBuf,
+        /// The name of the project directory of the checkout, in the temporary root and in `projects`.
+        project: String,
     }
 
     impl Bed {
@@ -743,16 +762,20 @@ mod tests {
         fn new(stream: &str) -> Self {
             let dir = tempfile::tempdir().unwrap();
             let (repo_guard, checkout) = repo();
+            let project = sessions::project_name(&checkout);
             let script = format!(
                 r#"d='{}'
+p='{project}'
 cat > /dev/null
 echo x >> "$d/calls"
 n=$(wc -l < "$d/calls" | tr -d ' ')
 echo "$TMPDIR" >> "$d/tmpdirs"
 touch "$TMPDIR/inside"
-mkdir -p "$d/sessions/-project/session-$2" && echo x > "$d/sessions/-project/session-$2/note"
+id=$(cat "$d/id-$2")
+mkdir -p "$d/sessions/$p/$id" && echo x > "$d/sessions/$p/$id/note"
+mkdir -p "$d/config/session-env/$id" "$d/config/projects/$p/$id/tool-results" && echo x > "$d/config/projects/$p/$id/tool-results/out.txt"
 if [ -f "$d/init-$2-$4.json" ]; then cat "$d/init-$2-$4.json"; else cat "$d/init-$2.json"; fi
-if [ -f "$d/hold" ]; then sleep 30; fi
+if [ -f "$d/hold" ]; then touch "$d/holding"; sleep 30; fi
 if [ -f "$d/dirty" ]; then rm "$d/dirty"; echo notes > notes.md; fi
 if [ -f "$d/touch-$2" ]; then echo run >> "$(cat "$d/touch-$2")"; fi
 if [ -f "$d/stream-$n.jsonl" ]; then cat "$d/stream-$n.jsonl"; else cat "$d/stream.jsonl"; fi
@@ -764,14 +787,20 @@ touch "$d/finished"
             let claude = fake_claude(dir.path(), &script);
             for setup in Setup::ALL {
                 fs::write(
+                    dir.path().join(format!("id-{setup}")),
+                    Self::session_of(setup),
+                )
+                .unwrap();
+                fs::write(
                     dir.path().join(format!("init-{setup}.json")),
-                    format!("{}\n", event_of(&expected(setup))),
+                    Self::init_of(setup),
                 )
                 .unwrap();
             }
             let tmp_root = dir.path().join("tmp");
             fs::create_dir_all(&tmp_root).unwrap();
             let sessions = dir.path().join("sessions");
+            let config = dir.path().join("config");
             let programs = programs_with_cbm(dir.path());
             let gsttt = checkout.join(plan::GSTTT_CACHE);
             fs::create_dir_all(&gsttt).unwrap();
@@ -801,9 +830,24 @@ touch "$d/finished"
                 indexes,
                 programs,
                 sessions,
+                config,
+                project,
             };
             bed.stream(stream);
             bed
+        }
+
+        /// The session id of the runs of `setup`: a UUID, as the client gives one, and one for each setup, so that a test sees which run made which directory.
+        fn session_of(setup: Setup) -> String {
+            let position = Setup::ALL.iter().position(|&each| each == setup).unwrap();
+            format!("00000000-0000-4000-8000-{:012}", position + 1)
+        }
+
+        /// The init event the stand-in prints for `setup`, a line, with the session id of [`Self::session_of`].
+        fn init_of(setup: Setup) -> String {
+            let mut init = expected(setup);
+            init.session_id = Self::session_of(setup);
+            format!("{}\n", event_of(&init))
         }
 
         /// A bed whose runs end with `text` as the final message.
@@ -829,6 +873,24 @@ touch "$d/finished"
         /// Makes the stand-in do something extra: `hold` and `dirty` in its first call, or `slow-<n>` to stay on after its stream, for `SLOW_SECONDS`, in its `n`th.
         fn mark(&self, what: &str) {
             fs::write(self.dir.path().join(what), "").unwrap();
+        }
+
+        /// Makes the stand-in hold in its first call, and returns the `Stop` of the task with the thread that raises SIGINT on it once the stand-in holds: the stand-in makes `holding` as the first thing it does when it holds, after its init event, so the signal never comes before the process it is to end, however long that process took to start. The thread is joined after the run.
+        fn stop_once_holding(&self) -> (Stop, std::thread::JoinHandle<()>) {
+            self.mark("hold");
+            let stop = Stop::default();
+            let holding = self.dir.path().join("holding");
+            let raiser = {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    let waited = Instant::now();
+                    while !holding.exists() && waited.elapsed() < Duration::from_secs(30) {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    stop.raise(signal_hook::consts::SIGINT);
+                })
+            };
+            (stop, raiser)
         }
 
         /// Makes the run of `setup` add a line to `file`.
@@ -901,6 +963,11 @@ touch "$d/finished"
                         ],
                     })
                 };
+            let state = sessions::State {
+                home: None,
+                config: self.config.clone(),
+                sessions: self.sessions.clone(),
+            };
             Session {
                 claude: &self.claude,
                 questions: &questions,
@@ -908,7 +975,7 @@ touch "$d/finished"
                 checkouts: &self.checkouts,
                 invoke: Invoke(&invoke),
                 tmp_root: &self.tmp_root,
-                sessions: &self.sessions,
+                state: &state,
                 user: &user,
                 indexes: &self.indexes,
                 programs: &self.programs,
@@ -1201,7 +1268,7 @@ touch "$d/finished"
     fn the_session_directory_of_every_run_is_removed_and_no_other_in_the_root() {
         let bed = Bed::answering(ANSWER);
         // The session of other work of the user, and a file in the root itself.
-        let other = bed.sessions.join("-project/another-session");
+        let other = bed.sessions.join(&bed.project).join("another-session");
         fs::create_dir_all(&other).unwrap();
         fs::write(other.join("note"), "").unwrap();
         fs::write(bed.sessions.join("stray"), "").unwrap();
@@ -1209,14 +1276,108 @@ touch "$d/finished"
         let mut results = started();
         bed.run(&mut results).unwrap();
 
-        // The stand-in made `session-<setup>` in each call, as Claude Code does for the session of a run, and named it in its init event.
+        // The stand-in made the directory of its session in each call, as Claude Code does for the session of a run, and named the session in its init event.
         assert_eq!(bed.calls(), setups::every_arm().count());
         for setup in Setup::ALL {
-            let session = bed.sessions.join(format!("-project/session-{setup}"));
+            let session = bed.sessions.join(&bed.project).join(Bed::session_of(setup));
             assert!(!session.exists(), "{}", session.display());
         }
         assert!(other.join("note").exists());
         assert!(bed.sessions.join("stray").exists());
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "What Claude Code keeps for a run in its configuration directory is removed"
+    )]
+    #[test]
+    fn what_the_configuration_directory_holds_for_every_run_is_removed_and_nothing_else() {
+        let bed = Bed::answering(ANSWER);
+        // The sessions of other work of the user, in the places the stand-in makes its own, and a file beside them.
+        let id = "00000000-0000-4000-8000-0000000000ff";
+        let others = [
+            bed.config.join("session-env").join(id),
+            bed.config.join("projects").join(&bed.project).join(id),
+            bed.config.join("projects/-other").join(id),
+        ];
+        for dir in &others {
+            fs::create_dir_all(dir).unwrap();
+            fs::write(dir.join("note"), "").unwrap();
+        }
+        fs::write(bed.config.join("settings.json"), "{}").unwrap();
+
+        let mut results = started();
+        bed.run(&mut results).unwrap();
+
+        for setup in Setup::ALL {
+            let session = Bed::session_of(setup);
+            for gone in [
+                bed.config.join("session-env").join(&session),
+                bed.config
+                    .join("projects")
+                    .join(&bed.project)
+                    .join(&session),
+            ] {
+                assert!(!gone.exists(), "{}", gone.display());
+            }
+        }
+        for kept in &others {
+            assert!(kept.join("note").exists(), "{}", kept.display());
+        }
+        assert!(bed.config.join("settings.json").exists());
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The project directory of the checkouts is removed when the task ends"
+    )]
+    #[test]
+    fn the_project_directory_of_the_checkouts_goes_when_the_task_ends_if_nothing_else_is_in_it() {
+        // A task whose runs end well: the project directory in the temporary root held nothing but the sessions of the runs, and the one in `projects` holds a session of other work.
+        let bed = Bed::answering(ANSWER);
+        let other = bed
+            .config
+            .join("projects")
+            .join(&bed.project)
+            .join("another-session");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join("note"), "").unwrap();
+        let mut results = started();
+        bed.run(&mut results).unwrap();
+        assert!(!bed.sessions.join(&bed.project).exists());
+        assert!(other.join("note").exists());
+
+        // And a task that ends on an error.
+        let bed = Bed::new(&lines(&[result("error_during_execution", true, "boom")]));
+        let mut results = started();
+        bed.run(&mut results).unwrap_err();
+        assert!(!bed.sessions.join(&bed.project).exists());
+        assert!(!bed.config.join("projects").join(&bed.project).exists());
+    }
+
+    #[test]
+    fn a_session_id_that_is_not_a_uuid_stops_the_task_and_removes_nothing() {
+        let bed = Bed::answering(ANSWER);
+        let mut told = expected(Setup::Plain);
+        told.session_id = "../escape".to_owned();
+        fs::write(
+            bed.dir.path().join("init-plain.json"),
+            format!("{}\n", event_of(&told)),
+        )
+        .unwrap();
+        let other = bed.sessions.join(&bed.project).join("another-session");
+        fs::create_dir_all(&other).unwrap();
+
+        let mut results = started();
+        let error = format!("{:#}", bed.run(&mut results).unwrap_err());
+
+        assert!(
+            error.contains("not a plain id") && error.contains("../escape"),
+            "{error}"
+        );
+        assert_eq!(bed.calls(), 1, "no run is started after it");
+        assert!(results.runs.is_empty(), "the run is not recorded");
+        assert!(other.exists());
     }
 
     #[gsttt_scenario::scenario(
@@ -1228,6 +1389,7 @@ touch "$d/finished"
         let bed = Bed::answering(ANSWER);
         bed.mark("hold");
         let mut leaked = expected(Setup::Plain);
+        leaked.session_id = Bed::session_of(Setup::Plain);
         leaked.mcp_servers.push(init::McpServer {
             name: "telegram".to_owned(),
             status: "connected".to_owned(),
@@ -1237,13 +1399,26 @@ touch "$d/finished"
             format!("{}\n", event_of(&leaked)),
         )
         .unwrap();
+        // The session of other work of the user in the same project directory.
+        let other = bed.sessions.join(&bed.project).join("another-session");
+        fs::create_dir_all(&other).unwrap();
 
         let mut results = started();
         bed.run(&mut results).unwrap_err();
 
         assert_eq!(bed.calls(), 1);
-        assert!(bed.sessions.join("-project").is_dir());
-        assert!(!bed.sessions.join("-project/session-plain").exists());
+        let project = bed.sessions.join(&bed.project);
+        assert!(
+            project.is_dir(),
+            "the project directory has another session in it"
+        );
+        assert!(!project.join(Bed::session_of(Setup::Plain)).exists());
+        assert!(
+            !bed.config
+                .join("session-env")
+                .join(Bed::session_of(Setup::Plain))
+                .exists()
+        );
     }
 
     #[gsttt_scenario::scenario(
@@ -1545,6 +1720,7 @@ touch "$d/finished"
         let bed = Bed::answering(ANSWER);
         bed.mark("hold");
         let mut leaked = expected(Setup::Plain);
+        leaked.session_id = Bed::session_of(Setup::Plain);
         leaked.mcp_servers.push(init::McpServer {
             name: "telegram".to_owned(),
             status: "connected".to_owned(),
@@ -1575,6 +1751,7 @@ touch "$d/finished"
         let bed = Bed::answering(ANSWER);
         // The told run of the lsp setup loads a server that no run may have; its installed run, which comes before it, loads what it should.
         let mut leaked = expected(Setup::Lsp);
+        leaked.session_id = Bed::session_of(Setup::Lsp);
         leaked.mcp_servers.push(init::McpServer {
             name: "telegram".to_owned(),
             status: "connected".to_owned(),
@@ -1627,21 +1804,8 @@ touch "$d/finished"
     #[test]
     fn a_signal_ends_the_run_and_stops_the_task_with_nothing_recorded_for_it() {
         let bed = Bed::answering(ANSWER);
-        // The stand-in has written its init event and holds on, as a run does while the model works.
-        bed.mark("hold");
-        let stop = Stop::default();
-        // The signal comes once the stand-in has started, however long that takes on a busy machine.
-        let calls = bed.dir.path().join("calls");
-        let raiser = {
-            let stop = stop.clone();
-            std::thread::spawn(move || {
-                let waited = Instant::now();
-                while !calls.exists() && waited.elapsed() < Duration::from_secs(30) {
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-                stop.raise(signal_hook::consts::SIGINT);
-            })
-        };
+        // The stand-in writes its init event and holds on, as a run does while the model works, and the signal comes once it holds.
+        let (stop, raiser) = bed.stop_once_holding();
         let mut results = started();
         let error = format!(
             "{:#}",
@@ -1764,15 +1928,7 @@ touch "$d/finished"
 
         // And after a run that was stopped while it worked.
         let bed = Bed::answering(ANSWER);
-        bed.mark("hold");
-        let stop = Stop::default();
-        let raiser = {
-            let stop = stop.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_secs(2));
-                stop.raise(signal_hook::consts::SIGINT);
-            })
-        };
+        let (stop, raiser) = bed.stop_once_holding();
         let mut results = started();
         bed.go_until(&mut results, Duration::from_secs(60), &stop)
             .unwrap_err();
