@@ -29,7 +29,7 @@ use super::{QUESTIONS, RESULTS, asking, say};
 use crate::bench::pins::{Pins, Repository, Tool};
 use crate::bench::plan::{self, Programs};
 use crate::bench::{hyperfine, machine, setup};
-use crate::digest::sha256_hex;
+use crate::digest::{sha256_file, sha256_hex};
 use crate::dist::git::git;
 use crate::root::repository_root;
 
@@ -356,10 +356,9 @@ fn tool_versions(programs: &Programs) -> anyhow::Result<Vec<ToolVersion>> {
 
 /// The SHA-256 of the bytes of `binary`, as a tool of its own: two builds of one version answer `--version` alike, and the results of one must not be continued with the other.
 fn binary_sum(binary: &Path) -> anyhow::Result<ToolVersion> {
-    let bytes = fs::read(binary).with_context(|| format!("cannot read {}", binary.display()))?;
     Ok(ToolVersion {
         tool: "gsttt-sha256".to_owned(),
-        version: sha256_hex(&bytes),
+        version: sha256_file(binary)?,
     })
 }
 
