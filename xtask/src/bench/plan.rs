@@ -216,17 +216,28 @@ pub(crate) fn reset(tool: Tool, programs: &Programs) -> Option<String> {
         Tool::Madge => None,
         Tool::Grimp => Some(remove(GRIMP_CACHE)),
         Tool::CodebaseMemory => {
+            let stop = stop_daemon(programs);
             let cache = quote(&programs.cbm_cache().to_string_lossy());
-            Some(format!("rm -rf {cache} && mkdir -p {cache}"))
+            // The daemon keeps the index open, so it is stopped first; stopping it when none runs is not an error.
+            Some(format!(
+                "{stop} >/dev/null 2>&1; rm -rf {cache} && mkdir -p {cache}"
+            ))
         }
     }
+}
+
+/// The shell line that stops the daemon of codebase-memory-mcp, which keeps its index open. It finds the daemon only in the environment the tool runs with, that of [`isolation`]; `daemon stop` ends with 0 when no daemon runs.
+pub(crate) fn stop_daemon(programs: &Programs) -> String {
+    let cbm = quote(&programs.of(Tool::CodebaseMemory).to_string_lossy());
+    format!("{cbm} daemon stop")
 }
 
 fn remove(path: &str) -> String {
     format!("rm -rf {}", quote(path))
 }
 
-fn isolation(tool: Tool, programs: &Programs) -> Vec<(&'static str, PathBuf)> {
+/// The variables `tool` runs with besides those of its command: codebase-memory-mcp is given a home and a cache of its own, which is also where its daemon is found.
+pub(crate) fn isolation(tool: Tool, programs: &Programs) -> Vec<(&'static str, PathBuf)> {
     match tool {
         Tool::CodebaseMemory => vec![
             ("HOME", programs.cbm_home()),
@@ -376,6 +387,7 @@ mod tests {
                     Tool::Madge => assert_eq!(prepare, None),
                     Tool::CodebaseMemory => {
                         let prepare = prepare.unwrap();
+                        assert!(prepare.contains("daemon stop"), "{prepare}");
                         assert!(prepare.contains(&format!("rm -rf {cache} ")), "{prepare}");
                     }
                 }

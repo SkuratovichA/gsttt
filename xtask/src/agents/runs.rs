@@ -139,6 +139,8 @@ struct Session<'a> {
     user: &'a UserEntries,
     /// The indexes as the runs began, which the run of their setup puts back.
     indexes: &'a Indexes,
+    /// Where the programs of the tools are: the daemon of codebase-memory-mcp is stopped with them before its cache is put back.
+    programs: &'a Programs,
     /// The wall-clock limit of one run.
     limit: Duration,
     /// Ctrl-C and SIGTERM on the task: a run that waits for one is ended, and not recorded.
@@ -250,7 +252,7 @@ impl Session<'_> {
         });
         // The checkout and the index of the setup are put back, and the directory of the session is removed, whatever became of the run.
         let restored = guard.finish();
-        let index = self.indexes.restore(setup, &question.repository);
+        let index = put_back_index(self.indexes, self.programs, setup, &question.repository);
         let swept = session.map_or(Ok(()), |id| sessions::remove(self.sessions, &id));
         let finished = executed.with_context(|| what.clone())?;
         let changed_checkout = restored.with_context(|| what.clone())?;
@@ -390,19 +392,58 @@ fn open(out: &Path, questions_sha256: &str, tools: Vec<ToolVersion>) -> anyhow::
     Ok(results)
 }
 
-/// Throws the cache of `tool` away from `dir` with the line that every cold run of the speed benchmark starts with.
+/// Throws the cache of `tool` away from `dir` with the line that every cold run of the speed benchmark starts with, in the environment `tool` runs with. The daemon of codebase-memory-mcp is stopped first and a stop that fails is an error: the line goes on after one, and the cache would be thrown away under a live daemon.
 fn forget(tool: Tool, dir: &Path, programs: &Programs) -> anyhow::Result<()> {
     let Some(line) = plan::reset(tool, programs) else {
         return Ok(());
     };
+    if tool == Tool::CodebaseMemory {
+        stop_daemon(programs)?;
+    }
+    shell_line(tool, &line, dir, programs)
+        .with_context(|| format!("cannot throw the cache of {} away", tool.name()))
+}
+
+/// Puts back the index that a run of `setup` in `repository` could have changed. The daemon of codebase-memory-mcp keeps its index open, so it is stopped before its cache is put back.
+fn put_back_index(
+    indexes: &Indexes,
+    programs: &Programs,
+    setup: Setup,
+    repository: &str,
+) -> anyhow::Result<bool> {
+    if setup == Setup::Cbm {
+        stop_daemon(programs)?;
+    }
+    indexes.restore(setup, repository)
+}
+
+/// Stops the daemon of codebase-memory-mcp that has the cache of `programs` open. Stopping it when none runs is not an error (`daemon stop` says so and ends with 0), so a stop that fails is one.
+fn stop_daemon(programs: &Programs) -> anyhow::Result<()> {
+    shell_line(
+        Tool::CodebaseMemory,
+        &plan::stop_daemon(programs),
+        &programs.cbm,
+        programs,
+    )
+    .context("cannot stop the daemon of codebase-memory-mcp")
+}
+
+/// Runs `line` with `sh -c` in `dir`, in the environment `tool` is isolated in, which is how a tool finds its daemon and its cache. What the line prints is held back and goes into the error when it fails.
+fn shell_line(tool: Tool, line: &str, dir: &Path, programs: &Programs) -> anyhow::Result<()> {
     let shell = Shell::new()?;
     shell.change_dir(dir);
-    shell
-        .cmd("sh")
-        .args(["-c", &line])
-        .quiet()
-        .run()
-        .with_context(|| format!("cannot throw the cache of {} away", tool.name()))
+    let mut command = shell.cmd("sh").args(["-c", line]).quiet().ignore_status();
+    for (key, value) in plan::isolation(tool, programs) {
+        command = command.env(key, value);
+    }
+    let output = command.output()?;
+    ensure!(
+        output.status.success(),
+        "`{line}` ended with {}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(())
 }
 
 /// Indexes the checkout with the two tools that keep an index. The index of gsttt in the checkout is from an earlier task and may be of another binary, so it is thrown away first.
@@ -607,6 +648,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         sessions: &sessions_root,
         user: &user,
         indexes: &indexes,
+        programs: &programs,
         limit: Duration::from_secs(pins.agents.seconds),
         stop: &stop,
         out: &out,
@@ -655,6 +697,19 @@ mod tests {
         }
     }
 
+    /// The programs under `dir`, with a stand-in for codebase-memory-mcp over a cache that holds a `project.db`. The stand-in adds a line to `daemon` in `dir` for each call: its arguments, its `CBM_CACHE_DIR` and what `project.db` held then.
+    fn programs_with_cbm(dir: &Path) -> Programs {
+        let programs = Programs::new(&dir.join("tools"), &dir.join("gsttt"));
+        fs::create_dir_all(programs.cbm_cache()).unwrap();
+        fs::write(programs.cbm_cache().join("project.db"), "as indexed\n").unwrap();
+        let body = format!(
+            r#"echo "$* $CBM_CACHE_DIR $(cat "$CBM_CACHE_DIR/project.db" 2>/dev/null | tr '\n' ' ')" >> '{}/daemon'"#,
+            dir.display()
+        );
+        fake_program(&programs.cbm, "codebase-memory-mcp", &body);
+        programs
+    }
+
     /// A stand-in for `claude` that prints an init event and a stream, in a directory of its own, against a git repository as the checkout.
     struct Bed {
         dir: TempDir,
@@ -667,8 +722,10 @@ mod tests {
         questions: Vec<Question>,
         claude: PathBuf,
         local: Vec<String>,
-        /// The indexes kept aside, for the tests of the runs that change one.
+        /// The indexes kept aside: the ones the runs of the gsttt and cbm setups find put back, and the tests of the runs that change one.
         indexes: Indexes,
+        /// The programs of the task, whose codebase-memory-mcp is the stand-in of `programs_with_cbm`.
+        programs: Programs,
         /// The temporary root of the Claude Code sessions, where the stand-in makes the directory of its session as the real one does.
         sessions: PathBuf,
     }
@@ -707,6 +764,17 @@ touch "$d/finished"
             let tmp_root = dir.path().join("tmp");
             fs::create_dir_all(&tmp_root).unwrap();
             let sessions = dir.path().join("sessions");
+            let programs = programs_with_cbm(dir.path());
+            let gsttt = checkout.join(plan::GSTTT_CACHE);
+            fs::create_dir_all(&gsttt).unwrap();
+            fs::write(gsttt.join("snapshot.gsttt"), "as indexed\n").unwrap();
+            let mut indexes = Indexes::default();
+            indexes
+                .keep_gsttt("repo", &checkout, &dir.path().join("kept/gsttt"))
+                .unwrap();
+            indexes
+                .keep_cbm(&programs.cbm_cache(), &dir.path().join("kept/cbm"))
+                .unwrap();
             let bed = Self {
                 dir,
                 _repo: repo_guard,
@@ -722,7 +790,8 @@ touch "$d/finished"
                 questions: vec![question("repo-users-1", Kind::Users)],
                 claude,
                 local: Vec::new(),
-                indexes: Indexes::default(),
+                indexes,
+                programs,
                 sessions,
             };
             bed.stream(stream);
@@ -770,6 +839,15 @@ touch "$d/finished"
         fn calls(&self) -> usize {
             fs::read_to_string(self.dir.path().join("calls"))
                 .map_or(0, |calls| calls.lines().count())
+        }
+
+        /// What the stand-in for codebase-memory-mcp logged, a line for each call.
+        fn daemon_calls(&self) -> Vec<String> {
+            fs::read_to_string(self.dir.path().join("daemon"))
+                .unwrap_or_default()
+                .lines()
+                .map(str::to_owned)
+                .collect()
         }
 
         fn finished(&self) -> bool {
@@ -825,6 +903,7 @@ touch "$d/finished"
                 sessions: &self.sessions,
                 user: &user,
                 indexes: &self.indexes,
+                programs: &self.programs,
                 limit,
                 stop,
                 out: &out,
@@ -885,6 +964,88 @@ touch "$d/finished"
         for (dir, file) in [(&gsttt, "snapshot.gsttt"), (&cache, "project.db")] {
             assert_eq!(fs::read_to_string(dir.join(file)).unwrap(), "as indexed\n");
         }
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The daemon is stopped before its cache is thrown away"
+    )]
+    #[test]
+    fn the_daemon_of_codebase_memory_is_stopped_before_its_cache_is_thrown_away() {
+        let bed = Bed::answering(ANSWER);
+        let cache = bed.programs.cbm_cache();
+        forget(Tool::CodebaseMemory, bed.checkout(), &bed.programs).unwrap();
+
+        let stops = bed.daemon_calls();
+        assert!(!stops.is_empty(), "the daemon was not stopped");
+        for stop in &stops {
+            // `project.db` was still there when the daemon was asked to stop.
+            assert_eq!(
+                stop,
+                &format!("daemon stop {} as indexed ", cache.display())
+            );
+        }
+        assert!(
+            fs::read_dir(&cache).unwrap().next().is_none(),
+            "the cache is thrown away"
+        );
+    }
+
+    #[test]
+    fn a_cache_is_not_thrown_away_under_a_daemon_that_cannot_be_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let programs = programs_with_cbm(dir.path());
+        fake_program(
+            &programs.cbm,
+            "codebase-memory-mcp",
+            "echo it stays >&2; exit 1",
+        );
+        let error = format!(
+            "{:#}",
+            forget(Tool::CodebaseMemory, dir.path(), &programs).unwrap_err()
+        );
+        assert!(
+            error.contains("daemon") && error.contains("it stays"),
+            "{error}"
+        );
+        assert!(programs.cbm_cache().join("project.db").exists());
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The daemon is stopped before its cache is put back"
+    )]
+    #[test]
+    fn the_daemon_of_codebase_memory_is_stopped_before_its_cache_is_put_back() {
+        let bed = Bed::answering(ANSWER);
+        let cache = bed.programs.cbm_cache();
+        // The run of the cbm setup writes into the cache.
+        bed.touch("cbm", &cache.join("project.db"));
+        let mut results = started();
+        bed.run(&mut results).unwrap();
+
+        // One stop for each run of the cbm setup, with the cache as the run left it.
+        let stops = bed.daemon_calls();
+        assert_eq!(stops.len(), 2, "{stops:?}");
+        for stop in &stops {
+            assert_eq!(
+                stop,
+                &format!("daemon stop {} as indexed run ", cache.display())
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(cache.join("project.db")).unwrap(),
+            "as indexed\n"
+        );
+    }
+
+    #[test]
+    fn a_daemon_that_cannot_be_stopped_stops_the_task_before_the_cache_is_put_back() {
+        let bed = Bed::answering(ANSWER);
+        fake_program(&bed.programs.cbm, "codebase-memory-mcp", "exit 1");
+        let mut results = started();
+        let error = format!("{:#}", bed.run(&mut results).unwrap_err());
+        assert!(error.contains("cannot stop the daemon"), "{error}");
     }
 
     #[gsttt_scenario::scenario(
