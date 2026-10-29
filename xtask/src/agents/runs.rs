@@ -317,7 +317,7 @@ fn choose<'a>(
     Ok(chosen)
 }
 
-/// The versions of the tools the runs use, by name: the binary under test, codebase-memory-mcp, and the language server with its TypeScript.
+/// The versions of the tools the runs use, by name: the binary under test with the sum of its bytes, codebase-memory-mcp, and the language server with its TypeScript.
 fn tool_versions(programs: &Programs) -> anyhow::Result<Vec<ToolVersion>> {
     let mut tools = Vec::new();
     for tool in [Tool::Gsttt, Tool::CodebaseMemory] {
@@ -335,8 +335,18 @@ fn tool_versions(programs: &Programs) -> anyhow::Result<Vec<ToolVersion>> {
             version,
         });
     }
+    tools.push(binary_sum(&programs.of(Tool::Gsttt))?);
     tools.sort_by(|first, second| first.tool.cmp(&second.tool));
     Ok(tools)
+}
+
+/// The SHA-256 of the bytes of `binary`, as a tool of its own: two builds of one version answer `--version` alike, and the results of one must not be continued with the other.
+fn binary_sum(binary: &Path) -> anyhow::Result<ToolVersion> {
+    let bytes = fs::read(binary).with_context(|| format!("cannot read {}", binary.display()))?;
+    Ok(ToolVersion {
+        tool: "gsttt-sha256".to_owned(),
+        version: sha256_hex(&bytes),
+    })
 }
 
 /// The results to add to: the ones in `out` when it exists, which must be for the same questions and the same tools, or new ones.
@@ -885,6 +895,31 @@ touch "$d/finished"
     fn results_of_another_version_of_a_tool_are_not_continued() {
         let (_dir, out) = written();
         let error = open(&out, &"a".repeat(64), tools("2.0.0")).unwrap_err();
+        assert!(
+            error.to_string().contains("other versions of the tools"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn results_of_another_build_of_the_binary_are_not_continued() {
+        let dir = tempfile::tempdir().unwrap();
+        let (first, second) = (dir.path().join("first"), dir.path().join("second"));
+        fs::write(&first, "one build\n").unwrap();
+        fs::write(&second, "another build of the same version\n").unwrap();
+        let out = dir.path().join("agents.json");
+        let mut results = Results::start(
+            "2026-10-29T10:00:00Z".to_owned(),
+            "Test CPU, 8 cores, 16 GiB, TestOS 1".to_owned(),
+            "a".repeat(64),
+            vec![binary_sum(&first).unwrap()],
+        );
+        results.accept(&expected(Setup::Plain)).unwrap();
+        results.write(&out, &[]).unwrap();
+
+        let same = open(&out, &"a".repeat(64), vec![binary_sum(&first).unwrap()]);
+        assert!(same.is_ok(), "the same build continues the results");
+        let error = open(&out, &"a".repeat(64), vec![binary_sum(&second).unwrap()]).unwrap_err();
         assert!(
             error.to_string().contains("other versions of the tools"),
             "{error}"
