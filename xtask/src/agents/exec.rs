@@ -27,7 +27,7 @@ pub(super) struct Launch<'a> {
     pub(super) transcript: &'a Path,
     /// The wall-clock limit.
     pub(super) limit: Duration,
-    /// Ctrl-C and SIGTERM on the task.
+    /// Ctrl-C, SIGTERM and SIGHUP on the task.
     pub(super) stop: &'a Stop,
 }
 
@@ -43,7 +43,7 @@ pub(super) fn stderr_tail(transcript: &Path, chars: usize) -> String {
     tail.into_iter().rev().collect()
 }
 
-/// Runs the process of `launch`. `on_init` gets the init event once, and an error from it stops the process and is returned. The process is ended when its result is written and it has not exited five seconds later, and the checkout and the temporary directory of the run are the directories whose other processes are ended with it.
+/// Runs the process of `launch`. `on_init` gets the init event once, and an error from it stops the process and is returned; so is a process that ended in any way without having written one. The process is ended when its result is written and it has not exited five seconds later, and the checkout and the temporary directory of the run are the directories whose other processes are ended with it.
 pub(super) fn execute(
     launch: &Launch,
     on_init: &mut dyn FnMut(&Init) -> anyhow::Result<()>,
@@ -78,11 +78,12 @@ pub(super) fn execute(
         },
         &mut || stream.look(on_init),
     )?;
-    // A process that exited on its own without an init event was not started as it should be. One that the task ended may not have got that far.
+    // A run that never wrote its init event loaded nothing that was checked, so whatever became of its process, a timeout of it says nothing about its setup.
     ensure!(
-        finished.exit.is_none() || stream.init_seen,
-        "the stream in {} holds no init event: {}",
+        stream.init_seen,
+        "the stream in {} holds no init event after {:?}: {}",
         launch.transcript.display(),
+        finished.elapsed,
         stderr_tail(launch.transcript, 400)
     );
     Ok(finished)
@@ -167,6 +168,7 @@ mod tests {
     use std::time::Instant;
 
     use super::super::process::GRACE;
+    use super::super::process::stand_in::Grandchild;
     use super::*;
 
     const INIT: &str = r#"{"type":"system","subtype":"init","tools":["Bash"],"mcp_servers":[],"plugins":[],"skills":[],"slash_commands":[],"agents":[],"model":"claude-test-1","claude_code_version":"9.9.9","session_id":"s-1"}"#;
@@ -252,14 +254,10 @@ mod tests {
     #[test]
     fn a_process_that_runs_past_the_limit_is_stopped_with_what_it_started() {
         let dir = tempfile::tempdir().unwrap();
-        let survivor = dir.path().join("survivor");
-        // The background job stands in `/`, outside the checkout, so that only the process group can reach it. It would touch the file at 6 s, after the limit.
+        // The background job stands in `/`, outside the checkout, so that only the process group can reach it, and the stand-in writes its id for the test to look at once the run is over.
         let claude = fake_claude(
             dir.path(),
-            &format!(
-                "echo '{INIT}'\n(cd / && sleep 6 && touch '{}') &\nsleep 60",
-                survivor.display()
-            ),
+            &format!("echo '{INIT}'\n(cd / && sleep 60) &\necho $! > pid\nsleep 60"),
         );
         let transcript = dir.path().join("run.jsonl");
         let started = Instant::now();
@@ -269,18 +267,20 @@ mod tests {
                 &invocation(),
                 dir.path(),
                 &transcript,
-                // Long enough for the stand-in to start and write its init event on a machine that is busy with a build.
+                // Long enough for the stand-in to start and write its init event and its id on a machine that is busy with a build.
                 Duration::from_secs(3),
             ),
             &mut |_| Ok(()),
         )
         .unwrap();
         assert!(finished.timed_out && finished.exit.is_none());
+        // Ten times the limit, with the stand-in, which stays on for a minute, thirty seconds more to end by itself.
         assert!(started.elapsed() < Duration::from_secs(30));
         assert!(fs::read_to_string(&transcript).unwrap().contains("init"));
-        // Past the touch.
-        std::thread::sleep(Duration::from_secs(4));
-        assert!(!survivor.exists(), "what the process started went on");
+        assert!(
+            Grandchild::of(dir.path()).is_gone_soon(),
+            "what the process started went on"
+        );
     }
 
     #[test]
@@ -356,35 +356,117 @@ mod tests {
         assert!(error.to_string().contains("not logged in"), "{error}");
     }
 
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A run stopped at its limit with no init event is an error"
+    )]
+    #[test]
+    fn a_process_that_runs_past_the_limit_without_an_init_event_is_an_error_and_not_a_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        // It waits, as `claude` does for a login or a hook, and has written nothing when its time is up: nothing it loaded was checked.
+        let claude = fake_claude(dir.path(), "echo 'waiting for the login' >&2\nsleep 60");
+        let transcript = dir.path().join("run.jsonl");
+        let started = Instant::now();
+        let error = execute(
+            &launch(
+                &claude,
+                &invocation(),
+                dir.path(),
+                &transcript,
+                Duration::from_secs(3),
+            ),
+            &mut |_| Ok(()),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("run.jsonl") && error.contains("holds no init event after "),
+            "{error}"
+        );
+        assert!(error.contains("waiting for the login"), "{error}");
+        // The limit ended the stand-in, which stays on for a minute.
+        assert!(started.elapsed() < Duration::from_secs(30));
+    }
+
+    #[test]
+    fn a_process_that_stays_alive_after_a_result_without_an_init_event_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let claude = fake_claude(
+            dir.path(),
+            &format!("echo 'no init, only an answer' >&2\necho '{RESULT}'\nsleep 60"),
+        );
+        let transcript = dir.path().join("run.jsonl");
+        let started = Instant::now();
+        let error = execute(
+            &launch(
+                &claude,
+                &invocation(),
+                dir.path(),
+                &transcript,
+                Duration::from_secs(40),
+            ),
+            &mut |_| Ok(()),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("holds no init event") && error.contains("no init, only an answer"),
+            "{error}"
+        );
+        // The task ended it after the grace, long before its limit and before it ended by itself.
+        assert!(started.elapsed() < Duration::from_secs(30));
+    }
+
     #[test]
     fn a_stream_is_read_once_whatever_the_size_of_the_pieces_it_is_written_in() {
         let dir = tempfile::tempdir().unwrap();
         let transcript = dir.path().join("run.jsonl");
+        let add = |bytes: &[u8]| {
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&transcript)
+                .unwrap();
+            std::io::Write::write_all(&mut file, bytes).unwrap();
+        };
+        let inits = std::cell::Cell::new(0);
+        let look = |stream: &mut Stream| {
+            stream
+                .look(&mut |_| {
+                    inits.set(inits.get() + 1);
+                    Ok(())
+                })
+                .unwrap()
+        };
         let mut stream = Stream::new(&transcript);
-        let mut inits = 0;
-        let look = |stream: &mut Stream| stream.look(&mut |_| Ok(())).unwrap();
         assert_eq!(look(&mut stream), Look::Working, "no file yet");
-        // The line break of the init event, and the end of the result event, come in later pieces; a multi-byte character is cut in two.
+
+        // The init event comes in two pieces, the second with its line break. The result event comes after it, with a character of two bytes in its text, and the character is cut between two pieces.
         let (init, rest) = INIT.split_at(40);
-        fs::write(&transcript, init).unwrap();
+        let (first, second) = "\u{e9}".as_bytes().split_at(1);
+        let result = r#"{"type":"result","subtype":"success","is_error":false,"result":""#;
+        add(init.as_bytes());
         assert_eq!(look(&mut stream), Look::Working);
-        fs::write(&transcript, format!("{init}{rest}\n{{\"note\":\"\u{e9}")).unwrap();
+        assert_eq!(inits.get(), 0, "half a line is not handed over");
+        add(&[rest.as_bytes(), b"\n", result.as_bytes(), first].concat());
         assert_eq!(look(&mut stream), Look::Working);
         assert!(stream.init_seen);
-        let mut file = fs::OpenOptions::new()
-            .append(true)
-            .open(&transcript)
-            .unwrap();
-        std::io::Write::write_all(&mut file, format!("\"}}\n{RESULT}\n").as_bytes()).unwrap();
-        assert_eq!(look(&mut stream), Look::Done);
-        // Handing the init event over happens once.
-        let mut again = Stream::new(&transcript);
-        again
+        assert_eq!(inits.get(), 1);
+        add(&[second, b"\"}\n"].concat());
+        assert_eq!(look(&mut stream), Look::Done, "the cut line was read whole");
+        // A second init event, in a later piece, is not handed over again.
+        add(format!("{INIT}\n").as_bytes());
+        assert_eq!(look(&mut stream), Look::Working);
+        assert_eq!(inits.get(), 1, "the init event was handed over twice");
+
+        // The whole file read in one piece gives the same: one init event handed over, and the result found.
+        let mut once = 0;
+        let found = Stream::new(&transcript)
             .look(&mut |_| {
-                inits += 1;
+                once += 1;
                 Ok(())
             })
             .unwrap();
-        assert_eq!(inits, 1);
+        assert_eq!((found, once), (Look::Done, 1));
     }
 }
