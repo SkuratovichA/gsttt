@@ -103,7 +103,7 @@ pub fn config_schema(registry: &[&dyn DynConnector]) -> Schema {
     schema
 }
 
-/// The JSON Schema of a pack file in `.gsttt/packs/`: the fields of a pack and the five kinds of rules, each table closed to keys it does not have.
+/// The JSON Schema of a pack file in `.gsttt/packs/`: the fields of a pack and the six kinds of rules, each table closed to keys it does not have.
 #[must_use]
 pub fn pack_schema() -> Schema {
     let mut schema = generator().into_root_schema_for::<Pack>();

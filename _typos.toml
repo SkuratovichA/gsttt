@@ -20,6 +20,8 @@ extend-ignore-re = [
   'exlude = \{',
   # The config tests assert that the message names that key.
   'contains\("`(exlude|comand|languge)`"\)',
+  # The rule tests set up `exept` for `except` in an import rule, to check that an unknown key is rejected.
+  '"exept": \[\]',
   # "café" as the bytes of Latin-1, in the engine test of a file that is not UTF-8.
   'b"caf\\xe9',
   # The Python linker test has router "a" include router "b" under the prefix "/ba", and "b" include "a" under "/ab"; the prefixes are made of the two names and are not words.

@@ -1,0 +1,1 @@
+{ "name": "prisma-signature-names", "dependencies": { "@prisma/client": "^6.0.0" } }

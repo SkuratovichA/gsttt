@@ -1,0 +1,42 @@
+# Tasks
+
+## 1. Imports
+
+- [x] 1.1 `visit_ts_import_type` reads `typeof import('x')` and `import('x').T` as a type-only static import at the line of the specifier, naming the first segment of the qualifier, and walks into the types nested in it
+- [x] 1.2 The first argument of the mock, unmock and actual-module calls of Vitest and Jest is a dynamic import with no names through `load`, when it is a string or a template with no expression, and a computed one is neither an import nor an unread site
+- [x] 1.3 `resolve` drops the query of a specifier before resolving it, and the fact keeps the specifier as written
+- [x] 1.4 The connector version is 2
+- [x] 1.5 A test annotated `#[scenario("typescript", …)]` for every scenario of the requirements Imports in types, Mocked modules and Query suffixes
+
+## 2. Prisma tables
+
+- [x] 2.1 `ChainRule` has `root_types` and `Pack` has `imports`, a list of `ImportRule` with `from`, `kind`, `role`, `except` and `case`, and the pack schema describes both
+- [x] 2.2 `analyze/roots.rs` finds the aliases of `this` and the names declared with a root type before the walk, and `chain_rules` reads an alias as `this` and a typed name as a root
+- [x] 2.3 `import_rules` applies the import rules to each name of an import and of a re-export by name, at the line of the declaration
+- [x] 2.4 The `prisma` pack lists `PrismaClient`, `PrismaService` and `Prisma.TransactionClient` as root types, and names a table for each name imported from `@prisma/client` except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`
+- [x] 2.5 `visit_ts_import_type` records `*` for `typeof import('x')` without a qualifier
+- [x] 2.6 A test annotated `#[scenario("typescript", …)]` for every scenario of the requirements Aliases of this, Roots by type, Type aliases of root types and Imported model types
+- [x] 2.7 The scenario A pack file has a schema counts six kinds of rules, and the pinned pack schema holds `imports` and `root_types`
+
+## 3. Review fixes
+
+- [x] 3.1 A name the file declares as a `type` alias, an `interface`, a `class` or an `enum` is that local type and never a root type of the pack, and a root type imported under another name, reached through a renamed namespace import or intersected with another type stays unread
+- [x] 3.2 The walk through the type aliases of a file keeps a list of the names it has followed instead of a depth limit, so that a chain of any length is followed, a cycle ends, and a type that names itself many times is followed once
+- [x] 3.3 A name is an alias of `this` or a typed root only when every binding of it in the file, and of `this.<name>` for a class property, binds `this` or a root type, and one other binding makes it neither for the whole file
+- [x] 3.4 The parameters of a signature without a body bind nothing
+- [x] 3.5 An import type reaches the import rules by the first name of its qualifier, at the line of its specifier
+- [x] 3.6 The doc comments of the `imports` and `root_types` rule fields say that only the TypeScript connector reads them, and the pinned pack schema follows
+- [x] 3.7 The provides text, the README and the architecture document describe the roots of the pack, an alias of `this` and the root types of the pack instead of listing them, say that the pack has `[[imports]]`, and name what is not read: a root type renamed on import, reached through a renamed namespace or combined with other types, the model types of a client generated to a custom `output` path or re-exported by a package, and an enum imported by name
+- [x] 3.8 The tests pin each wrapper of a root type and the union with null, that a pack which differs only in `imports` or only in `root_types` changes the key of a file, that `export { Tenant as T } from '@prisma/client'` names `table tenant`, and that `ui-kit?raw` resolves as `ui-kit` does
+- [x] 3.9 The name of a class property and its key `this.<name>` are read by two helpers of `shape.rs` that the roots and the makers both use; the two collectors stay two walks, because their gates, the subtrees they skip and what they return differ
+- [x] 3.10 The first argument of `jest.setMock`, `jest.createMockFromModule` and `jest.genMockFromModule` is a dynamic import, as it is for the other mock calls
+- [x] 3.11 A name taken from a package that `from` does not list names nothing, which the tests pin with a client generated to a custom `output` path and with a package that re-exports the client
+- [x] 3.12 No requirement of the TypeScript spec has more than 500 characters of text: the consistency of a root, the root types that are not read, the import types and the model types of other packages are requirements of their own, with the scenarios they had
+- [x] 3.13 The name of a class property is read with `field_name` and the key `resolvers` with `property_str` instead of a copy of the first and a `String` for the second, and `run_within` lives in the shared test support next to `run`
+- [x] 3.14 The first argument of `jest.unstable_mockModule` and `jest.deepUnmock` is a dynamic import, as it is for the other mock calls; both take the module first in `jest-runtime` 29.7.0 and 30.5.2
+- [x] 3.15 The tests pin that a function type and the name of a type parameter bind nothing, and that a signature is no reason for another declaration of its name to be no root, so that deleting the `visit_ts_type` or `visit_ts_type_parameter` override of the roots walk fails them
+- [x] 3.16 The walk over the type aliases of a root type keeps its names on a list and looks the declared types up in a map, instead of recursing and scanning the file for every step, so that a chain of 100,000 aliases, which the recursion it replaces could not follow without overflowing a stack of 2 MiB, is followed to its end
+- [x] 3.17 The roots of a file are read without a list of the root types built for each file and without a record of every binding of the file: the first walk finds the names that could start a chain, and only a file that has one is walked again, to keep the other bindings of those names, which may come before the one that makes the name a root; the tests pin that order with a plain binding that comes first
+- [x] 3.18 A binding without an annotation has the type of the class that its initializer constructs with `new <Name>(…)`, for a variable, a class property and a parameter with a default, so that `const client = new PrismaClient()` starts a chain and agrees with `client: PrismaClient`, while a binding with an annotation or with any other initializer keeps what it had
+- [x] 3.19 An intersection with a root type is a root type, as a union is, and so is a class or an interface of the file that extends a root type, directly or through other classes, interfaces and `type` aliases of the file, which brings back `class PrismaService extends PrismaClient`; the root types that stay unread are a renamed import, a renamed namespace, `typeof` a name and a local alias of an import type, and the provides text and the README list those four
+- [x] 3.20 The proposal, the README and the provides text say under which two conditions a name declared with a root type, or bound to `this`, starts no chain: the file also binds the name anywhere else to something that is neither `this` nor a root type, or the file declares a type of the root type's own name; the proposal also says that an import type reaches the import rules, and its two chain bullets name the forms that tasks 3.18 and 3.19 added

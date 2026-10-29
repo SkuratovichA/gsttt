@@ -1,6 +1,6 @@
 //! Rule packs: how a framework spells a contract in code, written down as data.
 //!
-//! A pack tells one language connector which calls, decorators, member chains and embedded documents name a contract, and where the key is: `fetch("/bookings")` calls `http GET /bookings`, `@Get(":id")` inside `@Controller("bookings")` serves `http GET /bookings/{}`, `process.env.API_URL` calls `env API_URL`. Packs are TOML files: the built-in ones live next to the connector they are for (`crates/lang-ts/packs/`), a user's own in `.gsttt/packs/`. They arrive here through serde. A language connector finds the sites a rule names with [`callee_matches`] and hands each one to the rule's `apply`, which makes every decision after that: where the key is, whether the site is a contract at all, and whether it is a blind spot. So a rule means the same thing in TypeScript, Python and Rust.
+//! A pack tells one language connector which calls, decorators, member chains, imported names and embedded documents name a contract, and where the key is: `fetch("/bookings")` calls `http GET /bookings`, `@Get(":id")` inside `@Controller("bookings")` serves `http GET /bookings/{}`, `process.env.API_URL` calls `env API_URL`. Packs are TOML files: the built-in ones live next to the connector they are for (`crates/lang-ts/packs/`), a user's own in `.gsttt/packs/`. They arrive here through serde. A language connector finds the sites a rule names with [`callee_matches`] and hands each one to the rule's `apply`, which makes every decision after that: where the key is, whether the site is a contract at all, and whether it is a blind spot. So a rule means the same thing in TypeScript, Python and Rust.
 //!
 //! Callees are dotted member paths in every language. `a?.b` is read as `a.b`, a subscript with a string literal (`process.env["X"]`) is a segment, and a Rust path is written with dots: `env.var` matches `env::var(…)`.
 
@@ -36,6 +36,10 @@ pub struct Pack {
     pub embeds: Vec<EmbedRule>,
     #[serde(default)]
     pub assigns: Vec<AssignRule>,
+    /// Packages whose imported names each name a contract: the model types of `@prisma/client`. Only the TypeScript connector reads them.
+    // Left out when empty, unlike the lists above, so that a pack written before this rule existed serialises as it did: the hash of the packs that keys the cache and the pinned packs of the other languages do not move.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<ImportRule>,
 }
 
 impl Pack {
@@ -99,6 +103,10 @@ pub struct DecoratorRule {
 pub struct ChainRule {
     /// Dotted roots a chain starts from: `process.env`, `import.meta.env`, `prisma`, `trpc`.
     pub root: OneOrMany,
+    /// Types that make a name a root too: a variable, a parameter or a class property declared with one of them, or made with `new` of one, starts a chain of this rule, and so does `this.<name>` for a constructor parameter property. A type counts when it is written as one of these, as a member of a union or an intersection, as the first type argument of `Pick`, `Omit`, `Partial`, `Required`, `Readonly` or `NonNullable`, through a `type` alias of the same file, or as a class or an interface of the same file that extends one: `PrismaClient`, `Prisma.TransactionClient`. A name the file also binds elsewhere to anything but `this` or a root type starts no chain, and a type the file declares under the name of a root type is that local type. Only the TypeScript connector reads them.
+    // Left out when empty, for the reason given at `Pack::imports`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub root_types: Vec<String>,
     #[schemars(with = "String")]
     pub kind: ContractKind,
     pub role: Role,
@@ -109,6 +117,23 @@ pub struct ChainRule {
     #[serde(default)]
     pub terminals: Vec<String>,
     /// A case change applied to the whole key: `upper-first` turns `prisma.booking` into `table Booking`.
+    #[serde(default)]
+    pub case: Option<Case>,
+}
+
+/// Names imported from a package that each name a contract: `import type { Tenant } from '@prisma/client'` names the table of the model `Tenant`, because the package exports one type per model.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ImportRule {
+    /// Package specifiers, as written in the import: `@prisma/client`. A name imported from one of them is the key, at the line of the import, and so is a name re-exported from it by name. A namespace import, a default import and a side-effect import name nothing.
+    pub from: OneOrMany,
+    #[schemars(with = "String")]
+    pub kind: ContractKind,
+    pub role: Role,
+    /// Exported names that name nothing, because the package exports more than contracts: `Prisma`, `PrismaClient`.
+    #[serde(default)]
+    pub except: Vec<String>,
+    /// A case change applied to the exported name before it becomes a key.
     #[serde(default)]
     pub case: Option<Case>,
 }
@@ -514,6 +539,16 @@ fn blind(line: Line, what: &str) -> Outcome {
     })
 }
 
+/// The outcome of a rule that gives no prefix and no method: `key` is a contract of `kind`.
+fn named(kind: &ContractKind, role: Role, key: &str, line: Line, pack: &str) -> Outcome {
+    Outcome::Fact(ContractFact {
+        key: contract_key(kind, None, key, None),
+        role,
+        line,
+        via: pack.to_owned(),
+    })
+}
+
 impl CallRule {
     /// What this rule makes of a call whose callee matched [`CallRule::callee`]. `prefix` is what the connector read for [`CallRule::receiver`]; `callee` is the callee as written.
     pub fn apply(
@@ -601,12 +636,25 @@ impl ChainRule {
         }
         let joined = parts.join(".");
         let key = self.case.map_or(joined.clone(), |case| case.apply(&joined));
-        Outcome::Fact(ContractFact {
-            key: contract_key(&self.kind, None, &key, None),
-            role: self.role,
-            line,
-            via: pack.to_owned(),
-        })
+        named(&self.kind, self.role, &key, line, pack)
+    }
+}
+
+impl ImportRule {
+    /// Whether the rule reads the names imported from the package `spec`.
+    pub fn reads(&self, spec: &str) -> bool {
+        self.from.iter().any(|from| from == spec)
+    }
+
+    /// What this rule makes of `name`, which the file takes from a package it reads: the exported name, not the local one. A name the rule excepts names nothing.
+    pub fn apply(&self, pack: &str, name: &str, line: Line) -> Outcome {
+        if name.is_empty() || self.except.iter().any(|except| except == name) {
+            return Outcome::Skip;
+        }
+        let key = self
+            .case
+            .map_or_else(|| name.to_owned(), |case| case.apply(name));
+        named(&self.kind, self.role, &key, line, pack)
     }
 }
 
@@ -904,6 +952,50 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn imports_name_the_exported_name_unless_the_rule_excepts_it() {
+        let prisma: ImportRule = serde_json::from_value(serde_json::json!({
+            "from": "@prisma/client", "kind": "table", "role": "calls",
+            "except": ["Prisma", "PrismaClient"],
+        }))
+        .unwrap();
+        assert!(prisma.reads("@prisma/client"));
+        assert!(!prisma.reads("@prisma/client/edge") && !prisma.reads("prisma"));
+        assert_eq!(
+            key(prisma.apply("prisma", "BookingItem", 3)),
+            "table bookingitem"
+        );
+        assert_eq!(prisma.apply("prisma", "Prisma", 3), Outcome::Skip);
+        assert_eq!(prisma.apply("prisma", "", 3), Outcome::Skip);
+
+        let models: ImportRule = serde_json::from_value(serde_json::json!({
+            "from": ["models", "@org/models"], "kind": "graphql", "role": "calls", "case": "upper-first",
+        }))
+        .unwrap();
+        assert!(models.reads("@org/models"));
+        assert_eq!(key(models.apply("orm", "booking", 1)), "graphql Booking");
+
+        let typo =
+            serde_json::json!({ "from": "x", "kind": "table", "role": "calls", "exept": [] });
+        assert!(serde_json::from_value::<ImportRule>(typo).is_err());
+    }
+
+    #[test]
+    fn a_chain_rule_may_list_root_types() {
+        let chain =
+            |value: serde_json::Value| -> ChainRule { serde_json::from_value(value).unwrap() };
+        let typed = chain(serde_json::json!({
+            "root": "tx", "root_types": ["PrismaClient", "Prisma.TransactionClient"],
+            "kind": "table", "role": "calls",
+        }));
+        assert_eq!(
+            typed.root_types,
+            ["PrismaClient", "Prisma.TransactionClient"]
+        );
+        let plain = chain(serde_json::json!({ "root": "tx", "kind": "table", "role": "calls" }));
+        assert_eq!(plain.root_types, Vec::<String>::new());
     }
 
     struct FakeSite;

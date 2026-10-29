@@ -256,7 +256,7 @@ The crate SHALL generate draft-07 JSON Schemas of the config and of a pack file.
 
 #### Scenario: A pack file has a schema
 - **WHEN** the pack schema is generated
-- **THEN** it describes `name`, `language`, `detect` and the five kinds of rules, and refuses unknown keys
+- **THEN** it describes `name`, `language`, `detect` and the six kinds of rules, and refuses unknown keys
 
 #### Scenario: No schema offers null
 - **WHEN** a module's options have a field that may be left out

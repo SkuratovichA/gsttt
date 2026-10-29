@@ -1,0 +1,1 @@
+{ "name": "prisma-this-alias", "dependencies": { "@prisma/client": "^6.0.0" } }
