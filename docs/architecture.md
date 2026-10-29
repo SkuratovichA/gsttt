@@ -44,7 +44,7 @@ A panic is caught around every connector call: per file for `parse`, `resolve` a
 
 `<state dir>/snapshot.gsttt` holds:
 
-- a 24-byte prefix: the magic `GSTTSNAP`, a `u32` layout version (`LAYOUT`, now 4, bumped by hand whenever the prefix, the header or the body changes shape, or the index in the body comes out of another rule, because a stored index answers as it is), a `u32` header length and the xxh3_64 checksum of the body as a `u64`;
+- a 24-byte prefix: the magic `GSTTSNAP`, a `u32` layout version (`LAYOUT`, now 5, bumped by hand whenever the prefix, the header or the body changes shape, or the index in the body comes out of another rule, because a stored index answers as it is), a `u32` header length and the xxh3_64 checksum of the body as a `u64`;
 - a JSON header: `built_by`, `built_at` (RFC 3339), `head`, `dirty`, `files`, the connectors that ran and a one-line coverage summary;
 - padding to 16 bytes and the rkyv body (`Index`, the per-file records of step 12, the config and registry fingerprints).
 
