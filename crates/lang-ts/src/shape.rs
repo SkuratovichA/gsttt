@@ -233,6 +233,16 @@ pub(crate) fn dotted(names: &[Option<String>]) -> Option<String> {
     parts.map(|parts| parts.join("."))
 }
 
+/// The name that `expr` writes when it is a name or a chain of names, `Base` for `Base` and `ns.Base` for `ns.Base`, with `None` for anything else. A single name is borrowed from the source, so that the common case allocates nothing.
+pub(crate) fn dotted_name<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+    if let Expression::Identifier(name) = expr.get_inner_expression() {
+        return Some(Cow::Borrowed(name.name.as_str()));
+    }
+    chain_of(expr)
+        .and_then(|names| dotted(&names))
+        .map(Cow::Owned)
+}
+
 fn push_chain(expr: &Expression<'_>, names: &mut Vec<Option<String>>) -> bool {
     match expr.get_inner_expression() {
         Expression::Identifier(identifier) => {

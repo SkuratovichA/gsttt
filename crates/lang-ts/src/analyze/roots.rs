@@ -1,4 +1,4 @@
-//! The names of a file that start a chain without being written as the root of a rule: `self` after `const self = this`, and `reader` or `this.db` when their declared type is one the rules list as a root type. A name counts only when every binding of it in the file is of that kind, so `self` bound to `this` in one method and to a mock in another function is neither.
+//! The names of a file that start a chain without being written as the root of a rule: `self` after `const self = this`, and `reader` or `this.db` when their declared type, or the class they are made of with `new`, is one the rules list as a root type. A name counts only when every binding of it in the file is of that kind, so `self` bound to `this` in one method and to a mock in another function is neither.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,7 +13,7 @@ use oxc_ast::ast::{
 use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::ScopeFlags;
 
-use crate::shape::{field_name, this_key};
+use crate::shape::{dotted_name, field_name, this_key};
 
 /// The generic types that keep the members of their first type argument: `Pick<PrismaClient, 'tenant'>` is a client with fewer models.
 const WRAPPERS: [&str; 6] = [
@@ -139,17 +139,21 @@ impl<'p, 'a> Collector<'p, 'a> {
         }
     }
 
-    /// Binds each of `names` to the type `annotation` when it stands for some name at its head, and to something else when it does not.
+    /// Binds each of `names` to its type when that stands for some name at its head, and to something else when it does not. The type is the annotation or, when there is none, the class that the initializer constructs with `new`.
     fn bind(
         &mut self,
         names: impl IntoIterator<Item = Name<'a>>,
         annotation: Option<&TSTypeAnnotation<'a>>,
+        init: Option<&Expression<'a>>,
     ) {
         let start = self.heads.len();
-        if let Some(annotation) = annotation.filter(|_| self.reads_types) {
-            heads(&annotation.type_annotation, &mut |head| {
-                self.heads.push(head);
-            });
+        if self.reads_types {
+            match annotation {
+                Some(annotation) => heads(&annotation.type_annotation, &mut |head| {
+                    self.heads.push(head);
+                }),
+                None => self.heads.extend(init.and_then(constructed)),
+            }
         }
         let rows = start..self.heads.len();
         if rows.is_empty() {
@@ -271,7 +275,11 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
             }) {
                 self.this_bound.insert(name);
             } else {
-                self.bind([Name::Local(name)], it.type_annotation.as_deref());
+                self.bind(
+                    [Name::Local(name)],
+                    it.type_annotation.as_deref(),
+                    it.init.as_ref(),
+                );
             }
         } else {
             self.visit_binding_pattern(&it.id);
@@ -290,6 +298,7 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
             self.bind(
                 std::iter::once(Name::Local(name)).chain(property),
                 it.type_annotation.as_deref(),
+                it.initializer.as_deref(),
             );
         } else {
             self.visit_binding_pattern(&it.pattern);
@@ -304,7 +313,11 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
 
     fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
         if let Some(name) = field_name(it) {
-            self.bind([Name::Property(name)], it.type_annotation.as_deref());
+            self.bind(
+                [Name::Property(name)],
+                it.type_annotation.as_deref(),
+                it.value.as_ref(),
+            );
         }
         walk::walk_property_definition(self, it);
     }
@@ -344,6 +357,14 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
             self.declare_type(id.name.as_str());
         }
         walk::walk_class(self, it);
+    }
+}
+
+/// The class that `init` constructs: `PrismaClient` for `new PrismaClient({ log: ['query'] })`, and nothing for a call or any other expression.
+fn constructed<'a>(init: &Expression<'a>) -> Option<Cow<'a, str>> {
+    match init.get_inner_expression() {
+        Expression::NewExpression(new) => dotted_name(&new.callee),
+        _ => None,
     }
 }
 

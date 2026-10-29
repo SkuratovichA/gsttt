@@ -161,6 +161,21 @@ fn a_name_declared_with_another_type_is_no_root() -> Result<(), Box<dyn Error>> 
 }
 
 #[test]
+#[scenario("typescript", "A binding made with new has the type it constructs")]
+fn a_binding_made_with_new_has_the_type_it_constructs() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-constructed-clients")?;
+    assert_eq!(contracts(&json, "src/seed.ts"), ["calls table tenant @6"]);
+    assert_eq!(contracts(&json, "src/alone.ts"), ["calls table booking @6"]);
+    assert_eq!(
+        contracts(&json, "src/members.ts"),
+        ["calls table invoice @7", "calls table payment @12"]
+    );
+    assert_eq!(contracts(&json, "src/other.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A signature without a body binds nothing")]
 fn a_signature_without_a_body_binds_nothing() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-signatures")?;

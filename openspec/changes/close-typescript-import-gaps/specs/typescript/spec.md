@@ -84,7 +84,7 @@ A chain rule MAY list root types. A parameter, a variable or a class property de
 - **AND** the call on `this.plain` names no table, because a constructor parameter without a modifier is no property
 
 ### Requirement: A root needs every binding to agree
-A name or a property that the file also declares anywhere in it with another type, or with none, SHALL start no chain, because a root holds for the whole file and not for one scope.
+A name or a property that the file also declares anywhere in it with another type SHALL start no chain, because a root holds for the whole file and not for one scope. A declaration has the type it is annotated with and, when it has no annotation, the class that its initializer constructs with `new <Name>(…)`; a declaration with neither has no type, which is another type than any root type.
 
 #### Scenario: A name declared with another type is no root
 - **WHEN** `src/names.ts` has a function with the parameter `tx2: Pick<Prisma.TransactionClient, 'tenant'>` and a function with the parameter `tx2: { tenant: { findFirst(): void } }`, and both call `tx2.tenant.findFirst()`
@@ -93,6 +93,14 @@ A name or a property that the file also declares anywhere in it with another typ
 - **AND** `src/earlier.ts` has a function with the parameter `tx2` and no type before a function with the parameter `tx2: PrismaClient`, and a class with the property `client = makeClient()` before a class with the property `client: PrismaClient`, and each of them calls `.tenant.findFirst()` on its name
 - **THEN** `src/names.ts`, `src/properties.ts` and `src/earlier.ts` call no table
 - **AND** `src/consistent.ts` calls `table tenant` at line 4 and `table booking` at line 8
+
+#### Scenario: A binding made with new has the type it constructs
+- **WHEN** `src/seed.ts` has `const client = new PrismaClient()` and a function with the parameter `client: PrismaClient` that calls `client.tenant.createMany()` on line 6
+- **AND** `src/alone.ts` has `const client = new PrismaClient({ log: ['query'] })` and a function that calls `client.booking.count()` on line 6
+- **AND** `src/members.ts` has a class with the property `store = new PrismaClient()` whose method calls `this.store.invoice.findFirst()` on line 7, and a function with the parameter `reader = new PrismaClient()` that calls `reader.payment.count()` on line 12
+- **AND** `src/other.ts` has `const client = new Map()` and a function with the parameter `client: PrismaClient` that calls `client.tenant.findFirst()`
+- **THEN** `src/seed.ts` calls `table tenant` at line 6, `src/alone.ts` calls `table booking` at line 6, and `src/members.ts` calls `table invoice` at line 7 and `table payment` at line 12
+- **AND** `src/other.ts` calls no table
 
 ### Requirement: Signatures bind nothing
 A parameter of a signature without a body SHALL bind no name, so that it is neither a root nor a reason for another declaration of its name to be no root. These are the method, call and construct signatures of an interface or a type literal, a function type, a constructor type, an overload, an abstract method and a `declare function`. A function type SHALL bind none wherever it is written, and so SHALL the name of a type parameter.
