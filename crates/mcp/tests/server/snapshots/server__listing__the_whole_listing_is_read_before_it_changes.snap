@@ -6,7 +6,7 @@ expression: tools
   {
     "name": "impact",
     "title": "Impact of a change",
-    "description": "Lists the files that a change to some files can break: the files that import them, directly or through other files, and the files that share a contract with them (an HTTP route, a GraphQL operation, a gRPC method, a table, a queue or an environment variable). Tests the change reaches are listed apart. Call it before changing a file that other code may use, and with `changed` set to true before finishing a task, to see what your edits reach. The answer ends with what the index covered and how fresh it is.",
+    "description": "Lists the files that a change to some files can break: the files that import them, directly or through other files, and the files that share a contract with them (an HTTP route, a GraphQL operation, a gRPC method, a table, a queue or an environment variable). Tests the change reaches are listed apart. Call it before changing a file that other code may use, and with `changed` set to true before finishing a task, to see what your edits reach. A question about one function, class, method or variable is asked with its name in `names`, beside the file that declares it in `paths`: the answer then lists its direct callers, the declarations that refer to it and the lines they start on, so ask again about a caller to go further. The answer ends with what the index covered and how fresh it is.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -32,13 +32,21 @@ expression: tools
           ]
         },
         "depth": {
-          "description": "Stop the walk after this many hops from a changed file. Leave it out to follow every hop.",
+          "description": "Stop the walk after this many hops from a changed file. Leave it out to follow every hop, or, with `names`, to take one: the direct callers.",
           "type": [
             "integer",
             "null"
           ],
           "format": "uint32",
           "minimum": 0
+        },
+        "names": {
+          "description": "With `paths`: ask about these names, each a function, class, method or variable that the files declare, instead of about the files as a whole. A method is written `Class.method`. The answer lists the direct callers of the names, the declarations that refer to them, each with the line it starts on, so ask again about a caller to go further. A name that a file does not declare is said so in the answer and reaches nothing. It cannot go with `changed`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         },
         "all": {
           "description": "Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.",

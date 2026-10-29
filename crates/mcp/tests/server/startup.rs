@@ -34,6 +34,12 @@ async fn initialize_carries_instructions() {
         instructions
             .contains("when coverage names a gap, say so instead of assuming nothing is affected")
     );
+    assert!(instructions.contains(
+        "A question about one function, class, method or variable goes to impact with its name in names"
+    ));
+    assert!(
+        instructions.contains("its direct callers, and asking again about a caller goes further")
+    );
     // The words are part of the contract with the model, so a change to them is read before it is accepted.
     insta::assert_snapshot!(instructions);
 }

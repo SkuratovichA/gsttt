@@ -35,6 +35,11 @@ pub(crate) enum ToolError {
     #[error("impact: pass either `paths` or `changed`, not both")]
     PathsAndChanged,
     #[error(
+        "impact: `names` needs `paths`; name the file that declares them in `paths`, or leave `names` out to ask \
+         about the files as a whole"
+    )]
+    NamesWithoutPaths,
+    #[error(
         "impact: name the files to ask about in `paths`, or set `changed` to true to ask about the files that differ \
          from HEAD"
     )]

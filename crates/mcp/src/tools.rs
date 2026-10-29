@@ -75,7 +75,10 @@ impl ToolName {
                  through other files, and the files that share a contract with them (an HTTP route, a GraphQL \
                  operation, a gRPC method, a table, a queue or an environment variable). Tests the change reaches \
                  are listed apart. Call it before changing a file that other code may use, and with `changed` set \
-                 to true before finishing a task, to see what your edits reach. The answer ends with what the index \
+                 to true before finishing a task, to see what your edits reach. A question about one function, \
+                 class, method or variable is asked with its name in `names`, beside the file that declares it in \
+                 `paths`: the answer then lists its direct callers, the declarations that refer to it and the lines \
+                 they start on, so ask again about a caller to go further. The answer ends with what the index \
                  covered and how fresh it is."
             }
             Self::Dependents => {

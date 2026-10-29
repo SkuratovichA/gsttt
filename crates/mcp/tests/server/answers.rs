@@ -3,7 +3,7 @@
 use gsttt_core::Freshness;
 use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::query::{self, Answer, Entries, ImpactRequest};
-use gsttt_core::testing::Tree;
+use gsttt_core::testing::{Code, Tree};
 use gsttt_core::text::thousands;
 use gsttt_mcp::BUDGET;
 use gsttt_scenario::scenario;
@@ -481,6 +481,157 @@ async fn depth_limits_the_walk() {
     assert_eq!(near.text, impact_text(&source, &one_hop, Entries::Capped));
     assert_eq!(far.text, impact_text(&source, &every_hop, Entries::Capped));
     assert_ne!(near.text, far.text);
+}
+
+/// `a.ts` declares `foo`, which `b.ts` uses in `run`.
+fn called_by_run() -> Fake {
+    Fake::over(
+        Tree::new()
+            .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+            .exports("a.ts", &["foo"])
+            .imports_names("b.ts", "a.ts", &["foo"])
+            .symbols("b.ts", Code::new().declaration("run", (3, 5), &["foo"]))
+            .exports("b.ts", &["run"])
+            .build(),
+    )
+}
+
+#[scenario("mcp", "impact takes names")]
+#[tokio::test]
+async fn impact_takes_names_and_answers_as_the_command_line_does() {
+    let source = called_by_run();
+    let session = Session::start(source.clone()).await;
+
+    let reply = session
+        .call("impact", json!({ "paths": ["a.ts"], "names": ["foo"] }))
+        .await;
+
+    assert!(!reply.is_error, "{}", reply.text);
+    let request = ImpactRequest {
+        files: vec!["a.ts".to_owned()],
+        names: vec!["foo".to_owned()],
+        ..ImpactRequest::default()
+    };
+    assert_eq!(reply.text, impact_text(&source, &request, Entries::Capped));
+    assert!(
+        reply
+            .text
+            .starts_with("impact of foo in a.ts, within 1 hop\n"),
+        "{}",
+        reply.text
+    );
+    assert!(
+        reply
+            .text
+            .contains("b.ts  distance 1  imports foo from a.ts; in run (line 3)\n"),
+        "{}",
+        reply.text
+    );
+}
+
+#[tokio::test]
+async fn a_name_the_file_does_not_declare_is_an_answer_with_a_note() {
+    let session = Session::start(called_by_run()).await;
+
+    let reply = session
+        .call("impact", json!({ "paths": ["a.ts"], "names": ["fooo"] }))
+        .await;
+
+    assert!(!reply.is_error, "{}", reply.text);
+    assert!(
+        reply.text.contains("note: a.ts declares no fooo\n"),
+        "{}",
+        reply.text
+    );
+}
+
+#[tokio::test]
+async fn depth_goes_further_than_the_direct_callers_of_a_name() {
+    let source = Fake::over(
+        Tree::new()
+            .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+            .exports("a.ts", &["foo"])
+            .imports_names("b.ts", "a.ts", &["foo"])
+            .symbols("b.ts", Code::new().declaration("run", (3, 5), &["foo"]))
+            .exports("b.ts", &["run"])
+            .imports_names("c.ts", "b.ts", &["run"])
+            .symbols("c.ts", Code::new().declaration("main", (1, 3), &["run"]))
+            .exports("c.ts", &[])
+            .build(),
+    );
+    let session = Session::start(source).await;
+
+    let near = session
+        .call("impact", json!({ "paths": ["a.ts"], "names": ["foo"] }))
+        .await;
+    let far = session
+        .call(
+            "impact",
+            json!({ "paths": ["a.ts"], "names": ["foo"], "depth": 2 }),
+        )
+        .await;
+
+    assert!(!near.text.contains("c.ts"), "{}", near.text);
+    assert!(
+        near.text
+            .contains("the walk stopped with callers left to follow"),
+        "{}",
+        near.text
+    );
+    assert!(
+        far.text
+            .contains("c.ts  distance 2  imports run from b.ts; in main (line 1)\n"),
+        "{}",
+        far.text
+    );
+}
+
+#[tokio::test]
+async fn an_answer_with_many_callers_is_cut_to_the_budget() {
+    let callers = (0..2_000_u32).fold(Code::new(), |code, number| {
+        code.declaration(
+            &format!("caller{number:04}"),
+            (number * 3 + 1, number * 3 + 2),
+            &["foo"],
+        )
+    });
+    let source = Fake::over(
+        Tree::new()
+            .symbols("lib.ts", Code::new().declaration("foo", (1, 2), &[]))
+            .exports("lib.ts", &["foo"])
+            .imports_names("many.ts", "lib.ts", &["foo"])
+            .symbols("many.ts", callers)
+            .exports("many.ts", &[])
+            .build(),
+    );
+    let session = Session::start(source.clone()).await;
+    let request = ImpactRequest {
+        files: vec!["lib.ts".to_owned()],
+        names: vec!["foo".to_owned()],
+        ..ImpactRequest::default()
+    };
+
+    let reply = session
+        .call(
+            "impact",
+            json!({ "paths": ["lib.ts"], "names": ["foo"], "all": true }),
+        )
+        .await;
+
+    assert!(!reply.is_error, "{}", reply.text);
+    assert!(
+        size(&impact_text(&source, &request, Entries::All)) > BUDGET,
+        "the callers alone are longer than the budget"
+    );
+    assert!(size(&reply.text) <= BUDGET, "{}", size(&reply.text));
+    assert!(reply.text.starts_with("cut: "), "{}", reply.text);
+    assert!(
+        reply.text.contains(
+            "many.ts  distance 1  imports foo from lib.ts; in caller0000 (line 1), caller0001 (line 4), caller0002 (line 7) and 1,997 more\n"
+        ),
+        "{}",
+        reply.text
+    );
 }
 
 #[scenario("mcp", "A file the index does not hold is a tool error")]
