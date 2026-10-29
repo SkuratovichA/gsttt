@@ -8,8 +8,8 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::process::CommandExt as _;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, bail, ensure};
@@ -40,24 +40,41 @@ fn is_executable(file: &Path) -> bool {
     fs::metadata(file).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
 }
 
-/// Ctrl-C and `kill` on the task. A process the task waits for is in a group of its own, so the signal reaches the task alone and leaves that process running. Once the signals are caught, the wait ends the process and stops the task with an error instead.
+/// Ctrl-C and `kill` on the task. A process the task waits for is in a group of its own, so the signal reaches the task alone and leaves that process running. Once the signals are caught, the wait ends the process and stops the task with an error instead; a second signal ends the task on the spot, for the wait that does not end.
 #[derive(Clone, Debug, Default)]
-pub(super) struct Stop(Arc<AtomicUsize>);
+pub(super) struct Stop {
+    /// The number of the signal that arrived, or 0.
+    signal: Arc<AtomicUsize>,
+    /// Set by the first signal, and read by the handler that runs the default action of the second.
+    arrived: Arc<AtomicBool>,
+}
+
+/// What the signals of this process are caught into. A handler cannot be taken back, so the handlers are registered once, whatever the number of calls to [`Stop::catch`].
+static CAUGHT: Mutex<Option<Stop>> = Mutex::new(None);
 
 impl Stop {
-    /// Catches SIGINT and SIGTERM for the rest of the task, in place of ending it on the spot. A signal that comes between two waits is seen by the next.
+    /// Catches SIGINT and SIGTERM for the rest of the task, in place of ending it on the spot. The first call registers the handlers and every call returns the same `Stop`. A signal that comes between two waits is seen by the next, and a second signal ends the task at once.
     pub(super) fn catch() -> anyhow::Result<Self> {
+        let mut caught = CAUGHT.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(stop) = caught.as_ref() {
+            return Ok(stop.clone());
+        }
         let stop = Self::default();
         for signal in [SIGINT, SIGTERM] {
-            flag::register_usize(signal, Arc::clone(&stop.0), usize::try_from(signal)?)
+            // The handlers run in the order they are registered: the first signal finds `arrived` unset, and sets it after the default action has declined to run, and the second finds it set.
+            let number = usize::try_from(signal)?;
+            flag::register_conditional_default(signal, Arc::clone(&stop.arrived))
+                .and_then(|_| flag::register(signal, Arc::clone(&stop.arrived)))
+                .and_then(|_| flag::register_usize(signal, Arc::clone(&stop.signal), number))
                 .with_context(|| format!("cannot catch signal {signal}"))?;
         }
+        *caught = Some(stop.clone());
         Ok(stop)
     }
 
     /// Fails, naming the signal, when one has arrived.
     fn check(&self) -> anyhow::Result<()> {
-        let number = self.0.load(Ordering::Relaxed);
+        let number = self.signal.load(Ordering::Relaxed);
         if number == 0 {
             return Ok(());
         }
@@ -73,7 +90,7 @@ impl Stop {
     /// Makes `signal` arrive, for the tests that stop a wait.
     #[cfg(test)]
     pub(super) fn raise(&self, signal: i32) {
-        self.0
+        self.signal
             .store(usize::try_from(signal).unwrap(), Ordering::Relaxed);
     }
 }
@@ -710,5 +727,47 @@ mod tests {
             ours, theirs,
             "the copy of has_exited has drifted from crates/config/src/external/process.rs"
         );
+    }
+
+    #[test]
+    fn two_calls_to_catch_share_what_they_caught() {
+        let first = Stop::catch().unwrap();
+        let second = Stop::catch().unwrap();
+        assert!(Arc::ptr_eq(&first.signal, &second.signal));
+        assert!(Arc::ptr_eq(&first.arrived, &second.arrived));
+        first.raise(SIGINT);
+        assert!(second.check().is_err(), "one holds what the other caught");
+        // The signal is process-wide, so it is not left for the next test of this process.
+        first.signal.store(0, Ordering::Relaxed);
+    }
+
+    /// The test runs itself again as a child that catches SIGTERM, raises it twice and says what it saw: the first is caught and the second ends the process.
+    #[test]
+    fn a_second_signal_ends_the_task_at_once() {
+        use std::os::unix::process::ExitStatusExt as _;
+
+        const CHILD: &str = "GSTTT_TEST_STOP_TWICE";
+        if std::env::var_os(CHILD).is_some() {
+            let stop = Stop::catch().unwrap();
+            low_level::raise(SIGTERM).unwrap();
+            assert!(stop.check().is_err());
+            println!("the first signal was caught");
+            low_level::raise(SIGTERM).unwrap();
+            println!("the second signal was caught too");
+            return;
+        }
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "agents::process::tests::a_second_signal_ends_the_task_at_once",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&output.stdout);
+        assert!(said.contains("the first signal was caught"), "{said}");
+        assert!(!said.contains("too"), "{said}");
+        assert_eq!(output.status.signal(), Some(SIGTERM), "{said}");
     }
 }
