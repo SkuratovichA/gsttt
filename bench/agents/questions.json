@@ -9,7 +9,7 @@
       "file": "packages/vite/src/node/utils.ts",
       "name": "moduleListContains",
       "line": 146,
-      "prompt": "In this repository, the function `moduleListContains` is exported from `packages/vite/src/node/utils.ts`. List every other file under `packages/vite` that refers to `moduleListContains` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, the function `moduleListContains` is exported from `packages/vite/src/node/utils.ts`. List every other TypeScript file under `packages/vite` that refers to `moduleListContains` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/vite/src/node/optimizer/rolldownDepPlugin.ts",
         "packages/vite/src/node/optimizer/scan.ts",
@@ -26,7 +26,7 @@
       "file": "packages/vite/src/node/plugins/oxc.ts",
       "name": "transformWithOxc",
       "line": 120,
-      "prompt": "In this repository, the function `transformWithOxc` is exported from `packages/vite/src/node/plugins/oxc.ts`. List every other file under `packages/vite` that refers to `transformWithOxc` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, the function `transformWithOxc` is exported from `packages/vite/src/node/plugins/oxc.ts`. List every other TypeScript file under `packages/vite` that refers to `transformWithOxc` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/vite/src/node/__tests__/plugins/importGlob/fixture.spec.ts",
         "packages/vite/src/node/__tests__/plugins/oxc.spec.ts",
@@ -44,7 +44,7 @@
       "file": "packages/vite/src/node/utils.ts",
       "name": "getHash",
       "line": 1191,
-      "prompt": "In this repository, the function `getHash` is exported from `packages/vite/src/node/utils.ts`. List every other file under `packages/vite` that refers to `getHash` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, the function `getHash` is exported from `packages/vite/src/node/utils.ts`. List every other TypeScript file under `packages/vite` that refers to `getHash` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/vite/src/node/__tests__/optimizer/lockfileHash.spec.ts",
         "packages/vite/src/node/__tests__/utils.spec.ts",
@@ -66,7 +66,7 @@
       "file": "packages/vite/src/node/plugins/asset.ts",
       "name": "fileToUrl",
       "line": 432,
-      "prompt": "In this repository, the function `fileToUrl` is exported from `packages/vite/src/node/plugins/asset.ts`. List every other file under `packages/vite` that refers to `fileToUrl` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, the function `fileToUrl` is exported from `packages/vite/src/node/plugins/asset.ts`. List every other TypeScript file under `packages/vite` that refers to `fileToUrl` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/vite/src/node/plugins/assetImportMetaUrl.ts",
         "packages/vite/src/node/plugins/css.ts",
@@ -98,71 +98,6 @@
       "repository": "vite",
       "kind": "tests",
       "scope": "packages/vite",
-      "file": "packages/vite/src/node/server/middlewares/transform.ts",
-      "name": "cachedTransformMiddleware",
-      "line": 80,
-      "prompt": "In this repository, suppose the function `cachedTransformMiddleware` in `packages/vite/src/node/server/middlewares/transform.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
-      "answer": [
-        "packages/vite/src/node/__tests__/dev.spec.ts",
-        "packages/vite/src/node/__tests__/environment.spec.ts",
-        "packages/vite/src/node/__tests__/http.spec.ts",
-        "packages/vite/src/node/__tests__/optimizer/customExtensionBundleClose.spec.ts",
-        "packages/vite/src/node/__tests__/optimizer/discoverBeforeListen.spec.ts",
-        "packages/vite/src/node/__tests__/plugins/cssPreprocessorTeardown.spec.ts",
-        "packages/vite/src/node/__tests__/plugins/hooks.spec.ts",
-        "packages/vite/src/node/__tests__/plugins/index.spec.ts",
-        "packages/vite/src/node/__tests__/resolve.spec.ts",
-        "packages/vite/src/node/__tests__/scan.spec.ts",
-        "packages/vite/src/node/__tests__/shortcuts.spec.ts",
-        "packages/vite/src/node/server/__tests__/hmr.spec.ts",
-        "packages/vite/src/node/server/__tests__/watcher.spec.ts",
-        "packages/vite/src/node/server/middlewares/__tests__/indexHtml.spec.ts",
-        "packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts",
-        "packages/vite/src/node/ssr/__tests__/ssrStacktrace.spec.ts",
-        "packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-hmr.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-no-hmr.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-source-maps.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.invoke.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.spec.ts"
-      ],
-      "ignored": [
-        "packages/create-vite/__tests__/cli.spec.ts"
-      ]
-    },
-    {
-      "id": "vite-tests-3",
-      "repository": "vite",
-      "kind": "tests",
-      "scope": "packages/vite",
-      "file": "packages/vite/src/node/plugins/oxc.ts",
-      "name": "transformWithOxc",
-      "line": 120,
-      "prompt": "In this repository, suppose the function `transformWithOxc` in `packages/vite/src/node/plugins/oxc.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
-      "answer": [
-        "packages/vite/src/node/__tests__/plugins/importGlob/fixture.spec.ts",
-        "packages/vite/src/node/__tests__/plugins/index.spec.ts",
-        "packages/vite/src/node/__tests__/plugins/oxc.spec.ts",
-        "packages/vite/src/node/__tests__/runnerImport.spec.ts",
-        "packages/vite/src/node/__tests__/scan.spec.ts",
-        "packages/vite/src/node/server/middlewares/__tests__/indexHtml.spec.ts",
-        "packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-hmr.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-source-maps.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.invoke.spec.ts",
-        "packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.spec.ts"
-      ],
-      "ignored": [
-        "packages/create-vite/__tests__/cli.spec.ts"
-      ]
-    },
-    {
-      "id": "vite-tests-4",
-      "repository": "vite",
-      "kind": "tests",
-      "scope": "packages/vite",
       "file": "packages/vite/src/node/ssr/ssrModuleLoader.ts",
       "name": "ssrLoadModule",
       "line": 19,
@@ -179,6 +114,59 @@
       ]
     },
     {
+      "id": "vite-tests-3",
+      "repository": "vite",
+      "kind": "tests",
+      "scope": "packages/vite",
+      "file": "packages/vite/src/node/utils.ts",
+      "name": "getHash",
+      "line": 1191,
+      "prompt": "In this repository, suppose the function `getHash` in `packages/vite/src/node/utils.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "answer": [
+        "packages/vite/src/node/__tests__/environment.spec.ts",
+        "packages/vite/src/node/__tests__/optimizer/customExtensionBundleClose.spec.ts",
+        "packages/vite/src/node/__tests__/optimizer/discoverBeforeListen.spec.ts",
+        "packages/vite/src/node/__tests__/optimizer/lockfileHash.spec.ts",
+        "packages/vite/src/node/__tests__/plugins/cssPreprocessorTeardown.spec.ts",
+        "packages/vite/src/node/__tests__/plugins/hooks.spec.ts",
+        "packages/vite/src/node/__tests__/plugins/import.spec.ts",
+        "packages/vite/src/node/__tests__/resolve.spec.ts",
+        "packages/vite/src/node/__tests__/scan.spec.ts",
+        "packages/vite/src/node/__tests__/shortcuts.spec.ts",
+        "packages/vite/src/node/__tests__/utils.spec.ts",
+        "packages/vite/src/node/server/__tests__/hmr.spec.ts",
+        "packages/vite/src/node/server/__tests__/pluginContainer.spec.ts",
+        "packages/vite/src/node/server/__tests__/watcher.spec.ts",
+        "packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts",
+        "packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts",
+        "packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts",
+        "packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.invoke.spec.ts",
+        "packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.spec.ts"
+      ],
+      "ignored": [
+        "packages/create-vite/__tests__/cli.spec.ts"
+      ]
+    },
+    {
+      "id": "vite-tests-4",
+      "repository": "vite",
+      "kind": "tests",
+      "scope": "packages/vite",
+      "file": "packages/vite/src/shared/ssrTransform.ts",
+      "name": "analyzeImportedModDifference",
+      "line": 23,
+      "prompt": "In this repository, suppose the function `analyzeImportedModDifference` in `packages/vite/src/shared/ssrTransform.ts` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `pnpm exec vitest run` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "answer": [
+        "packages/vite/src/node/__tests__/environment.spec.ts",
+        "packages/vite/src/node/__tests__/resolve.spec.ts",
+        "packages/vite/src/node/__tests__/runnerImport.spec.ts",
+        "packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts"
+      ],
+      "ignored": [
+        "packages/create-vite/__tests__/cli.spec.ts"
+      ]
+    },
+    {
       "id": "excalidraw-users-1",
       "repository": "excalidraw",
       "kind": "users",
@@ -186,7 +174,7 @@
       "file": "packages/excalidraw/element/typeChecks.ts",
       "name": "isExcalidrawElement",
       "line": 212,
-      "prompt": "In this repository, the function `isExcalidrawElement` is exported from `packages/excalidraw/element/typeChecks.ts`. List every other file of the repository that refers to `isExcalidrawElement` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, the function `isExcalidrawElement` is exported from `packages/excalidraw/element/typeChecks.ts`. List every other TypeScript file of the repository that refers to `isExcalidrawElement` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/excalidraw/actions/actionStyles.ts",
         "packages/excalidraw/element/index.ts",
@@ -202,7 +190,7 @@
       "file": "packages/excalidraw/scene/comparisons.ts",
       "name": "hasBackground",
       "line": 3,
-      "prompt": "In this repository, the function `hasBackground` is exported from `packages/excalidraw/scene/comparisons.ts`. List every other file of the repository that refers to `hasBackground` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, the function `hasBackground` is exported from `packages/excalidraw/scene/comparisons.ts`. List every other TypeScript file of the repository that refers to `hasBackground` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/excalidraw/components/Actions.tsx",
         "packages/excalidraw/components/App.tsx",
@@ -218,7 +206,7 @@
       "file": "packages/excalidraw/data/image.ts",
       "name": "encodePngMetadata",
       "line": 23,
-      "prompt": "In this repository, the function `encodePngMetadata` is exported from `packages/excalidraw/data/image.ts`. List every other file of the repository that refers to `encodePngMetadata` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, the function `encodePngMetadata` is exported from `packages/excalidraw/data/image.ts`. List every other TypeScript file of the repository that refers to `encodePngMetadata` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "packages/excalidraw/data/index.ts",
         "packages/excalidraw/tests/export.test.tsx",
@@ -234,7 +222,7 @@
       "file": "packages/excalidraw/analytics.ts",
       "name": "trackEvent",
       "line": 5,
-      "prompt": "In this repository, the function `trackEvent` is exported from `packages/excalidraw/analytics.ts`. List every other file of the repository that refers to `trackEvent` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "prompt": "In this repository, the function `trackEvent` is exported from `packages/excalidraw/analytics.ts`. List every other TypeScript file of the repository that refers to `trackEvent` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
       "answer": [
         "excalidraw-app/App.tsx",
         "excalidraw-app/collab/Portal.tsx",
