@@ -847,6 +847,49 @@ touch "$d/finished"
         assert_eq!(bed.calls(), 1, "the task stopped at that run");
     }
 
+    /// The versions `started()` records, with the version of gsttt as given.
+    fn tools(version: &str) -> Vec<ToolVersion> {
+        vec![ToolVersion {
+            tool: "gsttt".to_owned(),
+            version: version.to_owned(),
+        }]
+    }
+
+    /// A results file written for the questions and the tools of `started()`.
+    fn written() -> (TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("agents.json");
+        // The model and the version of Claude Code are the ones of the first init event.
+        let mut results = started();
+        results.accept(&expected(Setup::Plain)).unwrap();
+        results.write(&out, &[]).unwrap();
+        (dir, out)
+    }
+
+    #[test]
+    fn results_of_the_same_questions_and_tools_are_continued() {
+        let (_dir, out) = written();
+        let results = open(&out, &"a".repeat(64), tools("1.0.0")).unwrap();
+        assert!(results.runs.is_empty());
+    }
+
+    #[test]
+    fn results_of_other_questions_are_not_continued() {
+        let (_dir, out) = written();
+        let error = open(&out, &"b".repeat(64), tools("1.0.0")).unwrap_err();
+        assert!(error.to_string().contains("other questions"), "{error}");
+    }
+
+    #[test]
+    fn results_of_another_version_of_a_tool_are_not_continued() {
+        let (_dir, out) = written();
+        let error = open(&out, &"a".repeat(64), tools("2.0.0")).unwrap_err();
+        assert!(
+            error.to_string().contains("other versions of the tools"),
+            "{error}"
+        );
+    }
+
     #[gsttt_scenario::scenario("agent-benchmarks", "The setups take turns")]
     #[test]
     fn the_setups_take_turns() {
