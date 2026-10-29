@@ -1,6 +1,7 @@
 //! The init event of a run, and the check that the run loaded what its setup gives it and nothing else: the tools, the MCP servers, the plugins, and the skills, commands and agents.
 
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -98,22 +99,27 @@ pub(super) fn check(setup: Setup, init: &Init, user: &UserEntries) -> anyhow::Re
         );
     }
 
-    // The plugins Claude Code ships are part of it; every other one was given to the run or found on the machine.
+    // The plugins Claude Code ships are part of it; every other one was given to the run or found on the machine. The one that was given is known by its source as well as its name: a plugin of the same name from a marketplace is another plugin.
     let loaded = init
         .plugins
         .iter()
         .filter(|plugin| !plugin.source.ends_with("@builtin"));
+    let given = setup.plugin().zip(setup.plugin_source());
     for plugin in loaded.clone() {
         ensure!(
-            Some(plugin.name.as_str()) == setup.plugin(),
+            given
+                .as_ref()
+                .is_some_and(|(name, source)| { plugin.name == *name && plugin.source == *source }),
             "a `{setup}` run loaded the plugin `{}`",
             plugin.source
         );
     }
-    if let Some(name) = setup.plugin() {
+    if let Some((name, source)) = &given {
         ensure!(
-            loaded.clone().any(|plugin| plugin.name == name),
-            "a `{setup}` run did not load its plugin `{name}`"
+            loaded
+                .clone()
+                .any(|plugin| plugin.name == *name && plugin.source == *source),
+            "a `{setup}` run did not load its plugin `{name}` from `{source}`"
         );
     }
 
@@ -137,11 +143,11 @@ pub(super) fn check(setup: Setup, init: &Init, user: &UserEntries) -> anyhow::Re
     Ok(())
 }
 
-/// The directory Claude Code keeps the configuration of the user in: where `CLAUDE_CONFIG_DIR` says, else `~/.claude`.
-pub(super) fn config_dir() -> Option<PathBuf> {
-    std::env::var_os("CLAUDE_CONFIG_DIR")
+/// The directory Claude Code keeps the configuration of the user in: where `CLAUDE_CONFIG_DIR` says, else `~/.claude`. `host` answers for a variable of the environment of this task.
+pub(super) fn config_dir(host: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    host("CLAUDE_CONFIG_DIR")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
+        .or_else(|| host("HOME").map(|home| PathBuf::from(home).join(".claude")))
 }
 
 /// The names of the skills, commands and agents in `config`.
@@ -203,10 +209,10 @@ pub(super) fn expected(setup: Setup) -> Init {
             status: "connected".to_owned(),
         });
     }
-    if let Some(name) = setup.plugin() {
+    if let (Some(name), Some(source)) = (setup.plugin(), setup.plugin_source()) {
         plugins.push(Plugin {
             name: name.to_owned(),
-            source: format!("{name}@inline"),
+            source,
         });
     }
     if setup == Setup::Gsttt {
@@ -309,6 +315,52 @@ mod tests {
             error.contains("`cbm`") && error.contains("superpowers"),
             "{error}"
         );
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A plugin from another source stops the task")]
+    #[test]
+    fn a_plugin_of_the_right_name_from_another_source_stops_the_task() {
+        for setup in [Setup::Lsp, Setup::Gsttt] {
+            let name = setup.plugin().unwrap();
+            let other = format!("{name}@claude-plugins-official");
+            let mut init = expected(setup);
+            for plugin in &mut init.plugins {
+                if plugin.name == name {
+                    plugin.source.clone_from(&other);
+                }
+            }
+            let error = refused(setup, &init);
+            assert!(
+                error.contains(&format!("`{setup}`")) && error.contains(&other),
+                "{error}"
+            );
+        }
+
+        // The plugin given with `--plugin-dir` and one of the name from elsewhere together are refused too.
+        let mut init = expected(Setup::Gsttt);
+        init.plugins.push(Plugin {
+            name: "gsttt".to_owned(),
+            source: "gsttt@claude-plugins-official".to_owned(),
+        });
+        assert!(refused(Setup::Gsttt, &init).contains("gsttt@claude-plugins-official"));
+    }
+
+    #[test]
+    fn the_configuration_directory_is_where_the_host_says_or_dot_claude_in_the_home() {
+        let host = |name: &str| -> Option<OsString> {
+            match name {
+                "CLAUDE_CONFIG_DIR" => Some("/elsewhere/claude".into()),
+                "HOME" => Some("/home/quincy".into()),
+                _ => None,
+            }
+        };
+        assert_eq!(config_dir(&host), Some(PathBuf::from("/elsewhere/claude")));
+        let home_only = |name: &str| (name == "HOME").then(|| OsString::from("/home/quincy"));
+        assert_eq!(
+            config_dir(&home_only),
+            Some(PathBuf::from("/home/quincy/.claude"))
+        );
+        assert_eq!(config_dir(&|_| None), None);
     }
 
     #[test]

@@ -26,12 +26,12 @@ sha2.workspace = true
 signal-hook.workspace = true
 syn = { workspace = true, features = ["visit"] }
 tar.workspace = true
+tempfile.workspace = true
 toml.workspace = true
 xshell.workspace = true
 
 [dev-dependencies]
 gsttt-scenario.workspace = true
-tempfile.workspace = true
 
 [lints]
 workspace = true

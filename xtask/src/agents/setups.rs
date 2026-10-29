@@ -9,6 +9,7 @@ use anyhow::{Context as _, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::checkout::with_canonical_names;
 use crate::bench::pins::Tool;
 use crate::bench::plan::Programs;
 
@@ -24,7 +25,6 @@ const KEEP: &[&str] = &[
     "USER",
     "LOGNAME",
     "SHELL",
-    "TMPDIR",
     "LANG",
     "LC_ALL",
     "TERM",
@@ -105,6 +105,11 @@ impl Setup {
             Self::Plain | Self::Cbm => None,
         }
     }
+
+    /// Where Claude Code says the plugin of the setup came from in its init event: a plugin given with `--plugin-dir` is `<name>@inline`, and one of the same name from a marketplace is another plugin.
+    pub(super) fn plugin_source(self) -> Option<String> {
+        self.plugin().map(|name| format!("{name}@inline"))
+    }
 }
 
 impl fmt::Display for Setup {
@@ -116,6 +121,8 @@ impl fmt::Display for Setup {
 /// The files the setups are started with, written once per task.
 #[derive(Debug)]
 pub(super) struct Files {
+    /// The directory the files are in.
+    pub(super) dir: PathBuf,
     /// An MCP config with no server, for the setups that have none of their own.
     pub(super) no_servers: PathBuf,
     /// An MCP config with codebase-memory-mcp alone.
@@ -127,6 +134,7 @@ pub(super) struct Files {
 /// Writes the files of the setups under `work`: the MCP configs and the manifest of the plugin of the language server.
 pub(super) fn write_files(work: &Path, programs: &Programs) -> anyhow::Result<Files> {
     let files = Files {
+        dir: work.to_path_buf(),
         no_servers: work.join("mcp-empty.json"),
         cbm: work.join("mcp-cbm.json"),
         lsp_plugin: work.join("lsp-plugin"),
@@ -201,14 +209,30 @@ fn lsp_manifest(programs: &Programs) -> Value {
 
 /// Copies the binary under test into `dir`, alone and called `gsttt`. A `gsttt` run puts `dir` first on its PATH, and the same copy indexes the checkouts, so the index is the one of the binary under test. Returns the path of the copy.
 pub(super) fn place_binary(binary: &Path, dir: &Path) -> anyhow::Result<PathBuf> {
-    if dir.exists() {
-        fs::remove_dir_all(dir).with_context(|| format!("cannot clear {}", dir.display()))?;
-    }
-    fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    fresh_dir(dir)?;
     let copy = dir.join("gsttt");
     fs::copy(binary, &copy)
         .with_context(|| format!("cannot copy {} to {}", binary.display(), copy.display()))?;
     Ok(copy)
+}
+
+/// Links `node` alone into `dir`, called `node`. The PATH of every run takes `node` from `dir` and not from the directory `node` was found in, which holds every program installed beside it (`npm`, `pnpm`, and on some machines a `claude`). Returns the link.
+pub(super) fn place_node(node: &Path, dir: &Path) -> anyhow::Result<PathBuf> {
+    let program =
+        fs::canonicalize(node).with_context(|| format!("cannot resolve {}", node.display()))?;
+    fresh_dir(dir)?;
+    let link = dir.join("node");
+    std::os::unix::fs::symlink(&program, &link)
+        .with_context(|| format!("cannot link {} to {}", link.display(), program.display()))?;
+    Ok(link)
+}
+
+/// Makes `dir` a directory with nothing in it: what it held is removed.
+pub(super) fn fresh_dir(dir: &Path) -> anyhow::Result<()> {
+    if dir.exists() {
+        fs::remove_dir_all(dir).with_context(|| format!("cannot clear {}", dir.display()))?;
+    }
+    fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))
 }
 
 /// What the command line of a run depends on besides its setup.
@@ -223,8 +247,21 @@ pub(super) struct Context<'a> {
     pub(super) files: &'a Files,
     /// The directory that holds the binary under test and nothing else.
     pub(super) bin: &'a Path,
-    /// The directory of `node`, which the language server needs.
+    /// The directory that holds a link to `node` and nothing else, which the language server needs.
     pub(super) node: &'a Path,
+    /// The directory that holds [`bin`](Self::bin) and the directory of [`files`](Self::files), and nothing else: the runs that must not find the binary under test are denied it.
+    pub(super) task: &'a Path,
+    /// The directories that no run may read: this repository, and the configuration directory of Claude Code.
+    pub(super) private: &'a [PathBuf],
+}
+
+/// The directories one run is made in.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct RunDirs<'a> {
+    /// The checkout the run is made in.
+    pub(super) checkout: &'a Path,
+    /// The temporary directory the run is given.
+    pub(super) tmp: &'a Path,
 }
 
 /// How a run of one setup is started: the arguments of `claude`, and its whole environment, PATH included.
@@ -236,10 +273,11 @@ pub(super) struct Invocation {
 
 /// The invocation of `setup`. `host` answers for a variable of the environment of this task.
 ///
-/// Every run gets the same flags: the pinned model; the stream as JSON; no session kept; no permission asked; only the settings of the project, so that no settings, hooks, memory or CLAUDE.md of the user are read; only the tools of the setup; and the limit of turns. The MCP servers of the machine are dropped by a strict config in every setup but `gsttt`, whose server comes from its plugin and would be dropped with them.
+/// Every run gets the same flags: the pinned model; the stream as JSON; no session kept; no permission asked; only the settings of the project, so that no settings, hooks, memory or CLAUDE.md of the user are read; only the tools of the setup; the limit of turns; and the sandbox and the Read rules of [`settings`]. The MCP servers of the machine are dropped by a strict config in every setup but `gsttt`, whose server comes from its plugin and would be dropped with them.
 pub(super) fn invocation(
     setup: Setup,
     ctx: &Context,
+    run: RunDirs,
     host: &dyn Fn(&str) -> Option<OsString>,
 ) -> anyhow::Result<Invocation> {
     let mut args: Vec<OsString> = [
@@ -260,6 +298,20 @@ pub(super) fn invocation(
     .to_vec();
     args.push(setup.tools().join(",").into());
     args.extend(["--max-turns".into(), ctx.turns.to_string().into()]);
+    // The run that has the binary under test starts it from the directory beside the files of the setups, so it is denied the files and not the directory; every other run is denied both.
+    let hidden = if setup == Setup::Gsttt {
+        ctx.files.dir.as_path()
+    } else {
+        ctx.task
+    };
+    let denied: Vec<&Path> = ctx
+        .private
+        .iter()
+        .map(PathBuf::as_path)
+        .chain([hidden])
+        .collect();
+    let settings = settings(&[run.checkout, run.tmp], &denied)?;
+    args.extend(["--settings".into(), settings.to_string().into()]);
     match setup {
         Setup::Plain | Setup::Lsp => args.extend(strict(&ctx.files.no_servers)),
         Setup::Cbm => args.extend(strict(&ctx.files.cbm)),
@@ -277,11 +329,49 @@ pub(super) fn invocation(
     }
     path.push(ctx.node.to_path_buf());
     path.extend(SYSTEM_PATH.map(PathBuf::from));
-    if setup != Setup::Gsttt {
-        ensure_out_of_reach(setup, &path)?;
-    }
-    let env = environment(host, &path)?;
+    ensure_out_of_reach(setup, &path)?;
+    let env = environment(host, &path, run.tmp)?;
     Ok(Invocation { args, env })
+}
+
+/// The settings of a run, as the JSON that `--settings` takes: the sandbox of the Bash tool, which may write in `writable` and read nothing in `denied`, and the rules that keep the Read tool out of `denied` too, since the sandbox confines the commands of the Bash tool and not the tools of Claude Code itself. A run whose sandbox is not available does not start, instead of going on without it.
+fn settings(writable: &[&Path], denied: &[&Path]) -> anyhow::Result<Value> {
+    let writable = names(writable)?;
+    let denied = names(denied)?;
+    // Two slashes at the start make the path of a rule absolute; one makes it relative to the project.
+    let rules: Vec<String> = denied
+        .iter()
+        .map(|dir| format!("Read(/{dir}/**)"))
+        .collect();
+    Ok(json!({
+        "sandbox": {
+            "enabled": true,
+            "failIfUnavailable": true,
+            "allowUnsandboxedCommands": false,
+            "autoAllowBashIfSandboxed": true,
+            "filesystem": { "allowWrite": writable, "denyRead": denied },
+        },
+        "permissions": { "deny": rules },
+    }))
+}
+
+/// `dirs` by every name a process may open them by: the one given and the canonical one, since the temporary directory of macOS is behind a link and the sandbox matches the path that is opened. A path that is not absolute is an error: a rule of the Read tool would take it for one relative to the project.
+fn names(dirs: &[&Path]) -> anyhow::Result<Vec<String>> {
+    for dir in dirs {
+        ensure!(
+            dir.is_absolute(),
+            "{} is not an absolute path",
+            dir.display()
+        );
+    }
+    let mut names: Vec<String> = Vec::new();
+    for name in with_canonical_names(dirs.iter().map(|&dir| dir.to_path_buf())) {
+        let name = name.to_string_lossy().into_owned();
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
 fn strict(config: &Path) -> [OsString; 3] {
@@ -296,22 +386,39 @@ fn plugin_dir(dir: &Path) -> [OsString; 2] {
     ["--plugin-dir".into(), dir.as_os_str().to_owned()]
 }
 
-/// Fails when a directory of the PATH of a run that must not have gsttt holds a program called `gsttt`.
+/// The programs a run must not find on its PATH: the ones that start another Claude Code or one of the tools under test, which a run reaches through its own configuration or not at all. `gsttt` is out of reach of every setup but the one given the binary under test.
+const OUT_OF_REACH: [&str; 5] = [
+    "gsttt",
+    "claude",
+    "codebase-memory-mcp",
+    "typescript-language-server",
+    "tsc",
+];
+
+/// Fails when a directory of the PATH of a run holds a program the run must not find.
 fn ensure_out_of_reach(setup: Setup, path: &[PathBuf]) -> anyhow::Result<()> {
-    for dir in path {
-        ensure!(
-            !dir.join("gsttt").exists(),
-            "{} holds a program called gsttt, which a `{setup}` run would find on its PATH",
-            dir.display()
-        );
+    let hidden = OUT_OF_REACH
+        .iter()
+        .filter(|&&name| name != "gsttt" || setup != Setup::Gsttt);
+    for name in hidden {
+        for dir in path {
+            ensure!(
+                !dir.join(name).exists(),
+                "{} holds a program called {name}, which a `{setup}` run would find on its PATH",
+                dir.display()
+            );
+        }
     }
     Ok(())
 }
 
-/// The environment of a run: what [`KEEP`] names from the environment of this task, the PATH, and the two variables that switch off memory and the connectors of claude.ai.
+/// The environment of a run: what [`KEEP`] names from the environment of this task, the PATH, the temporary directory of the run, and the variables that switch off memory, the connectors of claude.ai and the updater of Claude Code.
+///
+/// `TMPDIR` is where the process of Claude Code puts its compile cache and `CLAUDE_CODE_TMPDIR` where it puts its temporary directory and its sockets. Neither moves the `TMPDIR` of the Bash tool, which is `/tmp/claude-<uid>` whatever they say (measured, see the design).
 fn environment(
     host: &dyn Fn(&str) -> Option<OsString>,
     path: &[PathBuf],
+    tmp: &Path,
 ) -> anyhow::Result<Vec<(String, OsString)>> {
     let mut env: Vec<(String, OsString)> = KEEP
         .iter()
@@ -321,14 +428,17 @@ fn environment(
         "PATH".to_owned(),
         std::env::join_paths(path).context("a directory of the PATH of a run holds a colon")?,
     ));
+    env.push(("TMPDIR".to_owned(), tmp.as_os_str().to_owned()));
+    env.push(("CLAUDE_CODE_TMPDIR".to_owned(), tmp.as_os_str().to_owned()));
     env.push(("CLAUDE_CODE_DISABLE_AUTO_MEMORY".to_owned(), "1".into()));
+    env.push(("DISABLE_AUTOUPDATER".to_owned(), "1".into()));
     env.push(("ENABLE_CLAUDEAI_MCP_SERVERS".to_owned(), "false".into()));
     Ok(env)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::*;
 
@@ -339,26 +449,42 @@ mod tests {
         bin: PathBuf,
         node: PathBuf,
         plugin: PathBuf,
+        task: PathBuf,
+        /// The repository and the configuration directory of Claude Code.
+        private: Vec<PathBuf>,
+        checkout: PathBuf,
+        tmp: PathBuf,
     }
 
     fn layout(dir: &Path) -> Layout {
-        let bin = dir.join("bin");
+        let task = dir.join("task");
+        let bin = task.join(".bin");
         let node = dir.join("node-bin");
         let plugin = dir.join("plugin");
-        fs::create_dir_all(&node).unwrap();
-        fs::create_dir_all(&plugin).unwrap();
+        let private = vec![dir.join("repository"), dir.join("config")];
+        let checkout = dir.join("checkout");
+        let tmp = dir.join("tmp");
+        for made in [&plugin, &checkout, &tmp].into_iter().chain(&private) {
+            fs::create_dir_all(made).unwrap();
+        }
+        fs::write(dir.join("installed-node"), "node").unwrap();
+        place_node(&dir.join("installed-node"), &node).unwrap();
         let copy = place_binary(&dir.join("built-gsttt"), &bin);
         assert!(copy.is_err(), "there is no binary to copy yet");
         fs::write(dir.join("built-gsttt"), "binary").unwrap();
         let copy = place_binary(&dir.join("built-gsttt"), &bin).unwrap();
         let programs = Programs::new(&dir.join("tools"), &copy);
-        let files = write_files(&dir.join("work"), &programs).unwrap();
+        let files = write_files(&task.join(".setups"), &programs).unwrap();
         Layout {
             programs,
             files,
             bin,
             node,
             plugin,
+            task,
+            private,
+            checkout,
+            tmp,
         }
     }
 
@@ -372,7 +498,11 @@ mod tests {
         std::env::split_paths(value).collect()
     }
 
-    fn invoke(layout: &Layout, setup: Setup) -> anyhow::Result<Invocation> {
+    fn invoke_with(
+        layout: &Layout,
+        setup: Setup,
+        host: &dyn Fn(&str) -> Option<OsString>,
+    ) -> anyhow::Result<Invocation> {
         let ctx = Context {
             model: "sonnet",
             turns: 80,
@@ -380,8 +510,18 @@ mod tests {
             files: &layout.files,
             bin: &layout.bin,
             node: &layout.node,
+            task: &layout.task,
+            private: &layout.private,
         };
-        invocation(setup, &ctx, &|_| None)
+        let run = RunDirs {
+            checkout: &layout.checkout,
+            tmp: &layout.tmp,
+        };
+        invocation(setup, &ctx, run, host)
+    }
+
+    fn invoke(layout: &Layout, setup: Setup) -> anyhow::Result<Invocation> {
+        invoke_with(layout, setup, &|_| None)
     }
 
     fn args(invocation: &Invocation) -> Vec<String> {
@@ -395,6 +535,24 @@ mod tests {
     fn after<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
         let at = args.iter().position(|arg| arg == flag)?;
         args.get(at + 1).map(String::as_str)
+    }
+
+    /// The strings of an array in the settings.
+    fn strings(value: &Value) -> BTreeSet<String> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// `dir` by the name it has and by its canonical name.
+    fn forms(dir: &Path) -> Vec<String> {
+        [dir.to_path_buf(), fs::canonicalize(dir).unwrap()]
+            .iter()
+            .map(|name| name.to_string_lossy().into_owned())
+            .collect()
     }
 
     #[test]
@@ -427,6 +585,7 @@ mod tests {
                 "--setting-sources",
                 "--no-session-persistence",
                 "--permission-mode",
+                "--settings",
             ] {
                 assert!(args.iter().any(|arg| arg == flag), "{setup} lacks {flag}");
             }
@@ -528,6 +687,76 @@ mod tests {
         );
     }
 
+    #[gsttt_scenario::scenario("agent-benchmarks", "A run is confined by the sandbox")]
+    #[test]
+    fn a_run_is_confined_by_the_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = layout(dir.path());
+        for setup in Setup::ALL {
+            let args = args(&invoke(&layout, setup).unwrap());
+            let settings: Value =
+                serde_json::from_str(after(&args, "--settings").unwrap()).unwrap();
+            let sandbox = &settings["sandbox"];
+            assert_eq!(sandbox["enabled"], true, "{setup}");
+            assert_eq!(sandbox["failIfUnavailable"], true, "{setup}");
+            assert_eq!(sandbox["allowUnsandboxedCommands"], false, "{setup}");
+            assert_eq!(sandbox["autoAllowBashIfSandboxed"], true, "{setup}");
+
+            // Writes: the checkout and the temporary directory of the run, by both names of each, and nothing else.
+            let writable: BTreeSet<String> = [&layout.checkout, &layout.tmp]
+                .into_iter()
+                .flat_map(|dir| forms(dir))
+                .collect();
+            assert_eq!(
+                strings(&sandbox["filesystem"]["allowWrite"]),
+                writable,
+                "{setup}"
+            );
+
+            // Reads: the repository, the configuration directory of Claude Code and the files of the task, for the Bash tool and for the Read tool alike. The run that has the binary under test starts it from its directory, so it is denied the files of the setups beside it and not the directory.
+            let hidden = if setup == Setup::Gsttt {
+                &layout.files.dir
+            } else {
+                &layout.task
+            };
+            let denied: BTreeSet<String> = layout
+                .private
+                .iter()
+                .chain([hidden])
+                .flat_map(|dir| forms(dir))
+                .collect();
+            let rules: BTreeSet<String> = denied
+                .iter()
+                .map(|name| format!("Read(/{name}/**)"))
+                .collect();
+            assert_eq!(
+                strings(&sandbox["filesystem"]["denyRead"]),
+                denied,
+                "{setup}"
+            );
+            assert_eq!(strings(&settings["permissions"]["deny"]), rules, "{setup}");
+            assert!(
+                rules.iter().all(|rule| rule.starts_with("Read(//")),
+                "a rule with one slash is relative to the project: {rules:?}"
+            );
+            let bin = forms(&layout.bin);
+            assert!(
+                !denied.iter().any(|name| bin.contains(name)),
+                "no run is denied the binary under test itself: {setup}"
+            );
+            let task = forms(&layout.task);
+            assert_eq!(
+                denied.iter().any(|name| task.contains(name)),
+                setup != Setup::Gsttt,
+                "only the gsttt run may read in the directory of the binary: {setup}"
+            );
+        }
+
+        // A path a rule would take for one relative to the project is refused.
+        assert!(settings(&[], &[Path::new("relative/dir")]).is_err());
+        assert!(settings(&[Path::new("relative/dir")], &[]).is_err());
+    }
+
     #[gsttt_scenario::scenario("agent-benchmarks", "gsttt is out of reach of the other setups")]
     #[test]
     fn gsttt_is_out_of_reach_of_the_other_setups() {
@@ -557,12 +786,87 @@ mod tests {
 
         // A gsttt that is already on the way to node is a leak, and the setup refuses to start.
         fs::write(layout.node.join("gsttt"), "installed").unwrap();
-        let error = invoke(&layout, Setup::Plain).unwrap_err().to_string();
-        assert!(
-            error.contains("`plain`") && error.contains("gsttt"),
-            "{error}"
-        );
+        for setup in [Setup::Plain, Setup::Lsp, Setup::Cbm] {
+            let error = invoke(&layout, setup).unwrap_err().to_string();
+            assert!(
+                error.contains(&format!("`{setup}`")) && error.contains("called gsttt"),
+                "{error}"
+            );
+        }
         invoke(&layout, Setup::Gsttt).unwrap();
+        fs::remove_file(layout.node.join("gsttt")).unwrap();
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "Claude Code and the tools are out of reach of every setup"
+    )]
+    #[test]
+    fn claude_code_and_the_tools_are_out_of_reach_of_every_setup() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = layout(dir.path());
+        for setup in Setup::ALL {
+            invoke(&layout, setup).unwrap();
+        }
+        // The programs that start another Claude Code or one of the tools under test, the gsttt setup included.
+        for name in OUT_OF_REACH.into_iter().filter(|&name| name != "gsttt") {
+            fs::write(layout.node.join(name), "installed").unwrap();
+            for setup in Setup::ALL {
+                let error = invoke(&layout, setup).unwrap_err().to_string();
+                assert!(
+                    error.contains(&format!("`{setup}`"))
+                        && error.contains(&format!("called {name}")),
+                    "{error}"
+                );
+            }
+            fs::remove_file(layout.node.join(name)).unwrap();
+        }
+        // The names the task refuses are these and no others.
+        assert_eq!(
+            OUT_OF_REACH,
+            [
+                "gsttt",
+                "claude",
+                "codebase-memory-mcp",
+                "typescript-language-server",
+                "tsc"
+            ]
+        );
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "The directory of node holds node alone")]
+    #[test]
+    fn the_directory_of_node_holds_node_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        // The directory `node` was found in holds the programs installed beside it.
+        let installed = dir.path().join("installed");
+        fs::create_dir_all(&installed).unwrap();
+        for name in ["node", "npm", "pnpm", "claude"] {
+            fs::write(installed.join(name), name).unwrap();
+        }
+        let only = dir.path().join("only-node");
+        let link = place_node(&installed.join("node"), &only).unwrap();
+        // A second call replaces what the first made.
+        place_node(&installed.join("node"), &only).unwrap();
+        let names: Vec<_> = fs::read_dir(&only)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["node"]);
+        assert_eq!(fs::read_to_string(&link).unwrap(), "node");
+
+        // A run takes `node` from a directory like that one and from no other.
+        let layout = layout(dir.path());
+        for setup in Setup::ALL {
+            let path = path_of(&invoke(&layout, setup).unwrap());
+            assert!(path.contains(&layout.node), "{setup}");
+            assert!(!path.contains(&installed), "{setup}");
+        }
+        let names: Vec<_> = fs::read_dir(&layout.node)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["node"]);
     }
 
     #[test]
@@ -572,20 +876,13 @@ mod tests {
         let host = |name: &str| -> Option<OsString> {
             match name {
                 "HOME" => Some("/home/quincy".into()),
+                "TMPDIR" => Some("/var/folders/quincy/T".into()),
                 "CLAUDE_CONFIG_DIR" => Some("/home/quincy/.claude-other".into()),
                 "CLAUDE_CODE_ENTRYPOINT" | "ANTHROPIC_MODEL" | "CLAUDECODE" => Some("x".into()),
                 _ => None,
             }
         };
-        let ctx = Context {
-            model: "sonnet",
-            turns: 80,
-            plugin: &layout.plugin,
-            files: &layout.files,
-            bin: &layout.bin,
-            node: &layout.node,
-        };
-        let env: BTreeMap<String, OsString> = invocation(Setup::Plain, &ctx, &host)
+        let env: BTreeMap<String, OsString> = invoke_with(&layout, Setup::Plain, &host)
             .unwrap()
             .env
             .into_iter()
@@ -595,14 +892,21 @@ mod tests {
             names,
             [
                 "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+                "CLAUDE_CODE_TMPDIR",
                 "CLAUDE_CONFIG_DIR",
+                "DISABLE_AUTOUPDATER",
                 "ENABLE_CLAUDEAI_MCP_SERVERS",
                 "HOME",
-                "PATH"
+                "PATH",
+                "TMPDIR"
             ]
         );
         assert_eq!(env["ENABLE_CLAUDEAI_MCP_SERVERS"], "false");
         assert_eq!(env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1");
+        assert_eq!(env["DISABLE_AUTOUPDATER"], "1");
+        // The temporary directory is the one of the run and not the one of the session.
+        assert_eq!(env["TMPDIR"], layout.tmp.as_os_str());
+        assert_eq!(env["CLAUDE_CODE_TMPDIR"], layout.tmp.as_os_str());
         let path: Vec<PathBuf> = std::env::split_paths(&env["PATH"]).collect();
         assert_eq!(path[0], layout.node);
         assert_eq!(path.len(), 5);

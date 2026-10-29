@@ -1,6 +1,7 @@
 //! `cargo xtask agents run`: every question asked in every setup, one run at a time, with the results written after each run.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs;
 use std::io::{ErrorKind, Write as _};
 use std::path::{Component, Path, PathBuf};
@@ -19,7 +20,7 @@ use super::process::{Stop, which};
 use super::questions::{Question, Questions};
 use super::results::{Outcome, Results, Run, ToolVersion};
 use super::score::{Score, last_files_block, normalize, score};
-use super::setups::{self, Context, Invocation, Setup};
+use super::setups::{self, Context, Invocation, RunDirs, Setup};
 use super::stream::{self, End, Observed};
 use super::table;
 use super::{QUESTIONS, RESULTS, asking};
@@ -108,6 +109,15 @@ fn judge(
     }
 }
 
+/// How the command line of a run is made once the directories of the run are known: the sandbox of a run names its checkout and its temporary directory, so it cannot be made before them.
+struct Invoke<'a>(&'a dyn Fn(Setup, RunDirs<'_>) -> anyhow::Result<Invocation>);
+
+impl fmt::Debug for Invoke<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Invoke").finish_non_exhaustive()
+    }
+}
+
 /// What the runs of a task share.
 #[derive(Debug)]
 struct Session<'a> {
@@ -115,7 +125,10 @@ struct Session<'a> {
     questions: &'a [&'a Question],
     repeats: u32,
     checkouts: &'a BTreeMap<String, Checkout>,
-    invocations: &'a BTreeMap<Setup, Invocation>,
+    /// Makes the command line of a run.
+    invoke: Invoke<'a>,
+    /// The directory the temporary directory of every run is made in.
+    tmp_root: &'a Path,
     user: &'a UserEntries,
     /// The wall-clock limit of one run.
     limit: Duration,
@@ -181,10 +194,22 @@ impl Session<'_> {
             .checkouts
             .get(&question.repository)
             .with_context(|| format!("`{}` has no checkout", question.repository))?;
-        let invocation = self
-            .invocations
-            .get(&setup)
-            .with_context(|| format!("the `{setup}` setup has no invocation"))?;
+        // The temporary directory of the run is removed when this function returns, whatever became of the run.
+        let tmp = tempfile::Builder::new()
+            .prefix("r-")
+            .tempdir_in(self.tmp_root)
+            .with_context(|| {
+                format!(
+                    "cannot make a temporary directory in {}",
+                    self.tmp_root.display()
+                )
+            })?;
+        let dirs = RunDirs {
+            checkout: &checkout.dir,
+            tmp: tmp.path(),
+        };
+        let invocation = (self.invoke.0)(setup, dirs)
+            .with_context(|| format!("cannot make the command line of {what}"))?;
         let transcript = self
             .transcripts
             .join(format!("{}-{setup}-{repeat}.jsonl", question.id));
@@ -192,8 +217,9 @@ impl Session<'_> {
         let guard = Guard::new(&checkout.dir)?;
         let launch = Launch {
             claude: self.claude,
-            invocation,
+            invocation: &invocation,
             dir: &checkout.dir,
+            tmp: tmp.path(),
             prompt: &question.prompt,
             transcript: &transcript,
             limit: self.limit,
@@ -416,21 +442,33 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
 
     let path = std::env::var_os("PATH").unwrap_or_default();
     let claude = which("claude", &path).context("`claude` is not on the PATH")?;
-    let node = which("node", &path)
-        .and_then(|node| node.parent().map(Path::to_path_buf))
-        .context(
-            "`node` is not on the PATH, and the language server of the `lsp` setup needs it",
-        )?;
+    let node = which("node", &path).context(
+        "`node` is not on the PATH, and the language server of the `lsp` setup needs it",
+    )?;
     let runs_root = checkout::root(Purpose::Runs);
     if let Some(file) = checkout::claude_md_above(&runs_root) {
         bail!(
-            "{} is a CLAUDE.md above the checkouts of the runs, and every run would read it",
+            "{} is a CLAUDE.md or an AGENTS.md above the checkouts of the runs, and every run would read it",
             file.display()
         );
     }
 
-    let bin = runs_root.join(".bin");
+    // What the task keeps for itself is beside the checkouts and not in them, where a run could list it from the parent directory of its checkout.
+    let task_dir = checkout::task_dir();
+    let bin = task_dir.join(".bin");
     let copy = setups::place_binary(&binary, &bin)?;
+    let node_dir = checkout::node_dir();
+    setups::place_node(&node, &node_dir)?;
+    let tmp_root = checkout::tmp_root();
+    setups::fresh_dir(&tmp_root)?;
+    // Where earlier versions of the task kept the copy of the binary and the files of the setups: in the directory of the checkouts.
+    for earlier in [".bin", ".setups"] {
+        let earlier = runs_root.join(earlier);
+        if earlier.exists() {
+            fs::remove_dir_all(&earlier)
+                .with_context(|| format!("cannot remove {}", earlier.display()))?;
+        }
+    }
     let programs = Programs::new(&root.join("bench/tools"), &copy);
     setup::node_tools(&programs, &pins)?;
     setup::install(&programs, &pins, &BTreeSet::from([Tool::CodebaseMemory]))?;
@@ -438,20 +476,32 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     let digest = sha256_hex(all.render()?.as_bytes());
     let mut results = open(&out, &digest, tools)?;
 
-    let files = setups::write_files(&runs_root.join(".setups"), &programs)?;
+    let files = setups::write_files(&task_dir.join(".setups"), &programs)?;
     let plugin = root.join("plugin");
+    let host = |name: &str| std::env::var_os(name);
+    let config = init::config_dir(&host).context(
+        "neither CLAUDE_CONFIG_DIR nor HOME is set, so the directory of the configuration of Claude Code, which no run may read, is not known",
+    )?;
+    // What no run may read: this repository, which holds the sources of the tool under test, and the configuration of the user.
+    let private = vec![root.clone(), config.clone()];
     let context = Context {
         model: &pins.agents.model,
         turns: pins.agents.turns,
         plugin: &plugin,
         files: &files,
         bin: &bin,
-        node: &node,
+        node: &node_dir,
+        task: &task_dir,
+        private: &private,
     };
-    let host = |name: &str| std::env::var_os(name);
-    let mut invocations = BTreeMap::new();
+    let invoke = |setup: Setup, dirs: RunDirs<'_>| setups::invocation(setup, &context, dirs, &host);
+    // Every setup is tried once before the first run: a PATH that holds a program no run may find stops the task before it spends anything.
     for setup in Setup::ALL {
-        invocations.insert(setup, setups::invocation(setup, &context, &host)?);
+        let dirs = RunDirs {
+            checkout: &runs_root,
+            tmp: &tmp_root,
+        };
+        invoke(setup, dirs)?;
     }
 
     let mut checkouts = BTreeMap::new();
@@ -480,9 +530,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         );
     }
 
-    let user = init::config_dir()
-        .map(|dir| init::user_entries(&dir))
-        .unwrap_or_default();
+    let user = init::user_entries(&config);
     let local = local_paths(&root, &checkouts);
     // Ctrl-C is caught from here, where the first run starts: before it, a signal ends the task at once, as it always did.
     let stop = Stop::catch()?;
@@ -491,7 +539,8 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         questions: &questions,
         repeats,
         checkouts: &checkouts,
-        invocations: &invocations,
+        invoke: Invoke(&invoke),
+        tmp_root: &tmp_root,
         user: &user,
         limit: Duration::from_secs(pins.agents.seconds),
         stop: &stop,
@@ -546,7 +595,10 @@ mod tests {
         dir: TempDir,
         _repo: TempDir,
         checkouts: BTreeMap<String, Checkout>,
-        invocations: BTreeMap<Setup, Invocation>,
+        /// The directory the temporary directories of the runs are made in.
+        tmp_root: PathBuf,
+        /// The checkout and the temporary directory each run was given, in order.
+        seen: std::cell::RefCell<Vec<(PathBuf, PathBuf)>>,
         questions: Vec<Question>,
         claude: PathBuf,
         local: Vec<String>,
@@ -562,6 +614,8 @@ mod tests {
 cat > /dev/null
 echo x >> "$d/calls"
 n=$(wc -l < "$d/calls" | tr -d ' ')
+echo "$TMPDIR" >> "$d/tmpdirs"
+touch "$TMPDIR/inside"
 cat "$d/init-$2.json"
 if [ -f "$d/hold" ]; then sleep 30; fi
 if [ -f "$d/dirty" ]; then rm "$d/dirty"; echo notes > notes.md; fi
@@ -572,21 +626,15 @@ touch "$d/finished"
                 dir.path().display()
             );
             let claude = fake_claude(dir.path(), &script);
-            let mut invocations = BTreeMap::new();
             for setup in Setup::ALL {
                 fs::write(
                     dir.path().join(format!("init-{setup}.json")),
                     format!("{}\n", event_of(&expected(setup))),
                 )
                 .unwrap();
-                invocations.insert(
-                    setup,
-                    Invocation {
-                        args: vec!["--setup".into(), setup.name().into()],
-                        env: vec![("PATH".to_owned(), "/usr/bin:/bin".into())],
-                    },
-                );
             }
+            let tmp_root = dir.path().join("tmp");
+            fs::create_dir_all(&tmp_root).unwrap();
             let bed = Self {
                 dir,
                 _repo: repo_guard,
@@ -597,7 +645,8 @@ touch "$d/finished"
                         dir: checkout,
                     },
                 )]),
-                invocations,
+                tmp_root,
+                seen: std::cell::RefCell::default(),
                 questions: vec![question("repo-users-1", Kind::Users)],
                 claude,
                 local: Vec::new(),
@@ -661,12 +710,26 @@ touch "$d/finished"
             let transcripts = self.dir.path().join("results/agents");
             fs::create_dir_all(&transcripts).unwrap();
             let user = UserEntries::default();
+            // Every setup is given the directories of its run, which the stand-in finds in `TMPDIR`.
+            let invoke = |setup: Setup, dirs: RunDirs<'_>| -> anyhow::Result<Invocation> {
+                self.seen
+                    .borrow_mut()
+                    .push((dirs.checkout.to_path_buf(), dirs.tmp.to_path_buf()));
+                Ok(Invocation {
+                    args: vec!["--setup".into(), setup.name().into()],
+                    env: vec![
+                        ("PATH".to_owned(), "/usr/bin:/bin".into()),
+                        ("TMPDIR".to_owned(), dirs.tmp.as_os_str().to_owned()),
+                    ],
+                })
+            };
             Session {
                 claude: &self.claude,
                 questions: &questions,
                 repeats: 1,
                 checkouts: &self.checkouts,
-                invocations: &self.invocations,
+                invoke: Invoke(&invoke),
+                tmp_root: &self.tmp_root,
                 user: &user,
                 limit,
                 stop,
@@ -999,6 +1062,59 @@ touch "$d/finished"
                 .iter()
                 .all(|run| run.outcome == Outcome::Answered)
         );
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "A run has a temporary directory of its own")]
+    #[test]
+    fn a_run_has_a_temporary_directory_of_its_own() {
+        let bed = Bed::answering(ANSWER);
+        let mut results = started();
+        assert_eq!(bed.run(&mut results).unwrap(), 4);
+
+        // Each of the four runs was given a directory of its own, made in the root of the temporary directories and outside the checkout, and the stand-in found it in `TMPDIR` and made a file in it.
+        let seen = bed.seen.borrow().clone();
+        assert_eq!(seen.len(), 4);
+        let given: BTreeSet<&PathBuf> = seen.iter().map(|(_, tmp)| tmp).collect();
+        assert_eq!(given.len(), 4, "a directory was shared by two runs");
+        for (checkout, tmp) in &seen {
+            assert_eq!(checkout, bed.checkout());
+            assert_eq!(tmp.parent(), Some(bed.tmp_root.as_path()));
+            assert!(!tmp.starts_with(checkout) && !checkout.starts_with(tmp));
+        }
+        let recorded = fs::read_to_string(bed.dir.path().join("tmpdirs")).unwrap();
+        let recorded: BTreeSet<String> = recorded.lines().map(str::to_owned).collect();
+        let given: BTreeSet<String> = given.iter().map(|tmp| tmp.display().to_string()).collect();
+        assert_eq!(recorded, given);
+
+        // Every one of them is gone once its run is over, and nothing is left in the root.
+        assert_eq!(fs::read_dir(&bed.tmp_root).unwrap().count(), 0);
+
+        // Also after a run that failed.
+        let bed = Bed::new(&lines(&[result("error_during_execution", true, "boom")]));
+        let mut results = started();
+        bed.run(&mut results).unwrap_err();
+        assert_eq!(bed.seen.borrow().len(), 1);
+        assert!(bed.dir.path().join("tmpdirs").exists());
+        assert_eq!(fs::read_dir(&bed.tmp_root).unwrap().count(), 0);
+
+        // And after a run that was stopped while it worked.
+        let bed = Bed::answering(ANSWER);
+        bed.mark("hold");
+        let stop = Stop::default();
+        let raiser = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(2));
+                stop.raise(signal_hook::consts::SIGINT);
+            })
+        };
+        let mut results = started();
+        bed.go_until(&mut results, Duration::from_secs(60), &stop)
+            .unwrap_err();
+        raiser.join().unwrap();
+        assert_eq!(bed.seen.borrow().len(), 1);
+        assert!(bed.dir.path().join("tmpdirs").exists());
+        assert_eq!(fs::read_dir(&bed.tmp_root).unwrap().count(), 0);
     }
 
     #[test]

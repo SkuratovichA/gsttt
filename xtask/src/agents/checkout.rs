@@ -43,14 +43,46 @@ pub(crate) fn scratch(name: &str) -> PathBuf {
     root(Purpose::Draw).join(format!("{name}-draw"))
 }
 
-/// The first CLAUDE.md in `dir` or in a directory above it. Claude Code reads one in every parent directory of the directory it runs in, so one found here would reach every run.
+/// The directory of the files that every run of the task shares and that a run has no use for: the copy of the binary under test and the files of the setups. It is beside the checkouts and not in them, so that a run cannot find it by looking at the parent directory of its checkout.
+pub(crate) fn task_dir() -> PathBuf {
+    std::env::temp_dir().join("gsttt-agents-task")
+}
+
+/// The directory of the link to `node`, which is all it holds. A run that is denied [`task_dir`] still needs `node`, so the link is beside that directory and not in it.
+pub(crate) fn node_dir() -> PathBuf {
+    std::env::temp_dir().join("gsttt-agents-node")
+}
+
+/// The directory the temporary directory of every run is made in, one directory per run.
+pub(crate) fn tmp_root() -> PathBuf {
+    std::env::temp_dir().join("gsttt-agents-tmp")
+}
+
+/// Every directory the task makes itself and in which it may end processes: the directories of the checkouts and the temporary directories of the runs. A directory that is not below one of them is not the task's to sweep.
+pub(crate) fn made_by_the_task() -> [PathBuf; 3] {
+    [root(Purpose::Draw), root(Purpose::Runs), tmp_root()]
+}
+
+/// `dirs` by the name each is given and by its canonical name, when it has one. The temporary directory of macOS is behind a link, and a process may open, report or match either name of a directory in it.
+pub(super) fn with_canonical_names(dirs: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    dirs.into_iter()
+        .flat_map(|dir| {
+            let canonical = fs::canonicalize(&dir).ok();
+            [Some(dir), canonical].into_iter().flatten()
+        })
+        .collect()
+}
+
+/// The first CLAUDE.md or AGENTS.md in `dir` or in a directory above it. Claude Code reads a CLAUDE.md in every parent directory of the directory it runs in, and it ships a plugin, `cc-plugin-agents-md`, that reads an AGENTS.md, so either found here would reach every run.
 pub(crate) fn claude_md_above(dir: &Path) -> Option<PathBuf> {
-    const NAMES: [&str; 3] = ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"];
-    // The temporary directory of macOS is behind a link, and a run may see either name of it.
-    let canonical = fs::canonicalize(dir).ok();
-    [Some(dir.to_path_buf()), canonical]
+    const NAMES: [&str; 4] = [
+        "CLAUDE.md",
+        "CLAUDE.local.md",
+        ".claude/CLAUDE.md",
+        "AGENTS.md",
+    ];
+    with_canonical_names([dir.to_path_buf()])
         .into_iter()
-        .flatten()
         .flat_map(|dir| dir.ancestors().map(Path::to_path_buf).collect::<Vec<_>>())
         .flat_map(|ancestor| NAMES.map(|name| ancestor.join(name)))
         .find(|file| file.is_file())
@@ -140,5 +172,47 @@ mod tests {
             claude_md_above(&runs),
             Some(dir.path().join("a/b/runs/CLAUDE.md"))
         );
+    }
+
+    #[test]
+    fn an_agents_md_above_the_checkouts_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let runs = dir.path().join("a/b/runs");
+        fs::create_dir_all(&runs).unwrap();
+        assert_eq!(claude_md_above(&runs), None);
+        fs::write(dir.path().join("a/AGENTS.md"), "").unwrap();
+        assert_eq!(claude_md_above(&runs), Some(dir.path().join("a/AGENTS.md")));
+        // The nearest one wins, here too, and the directory itself counts.
+        fs::write(runs.join("AGENTS.md"), "").unwrap();
+        assert_eq!(claude_md_above(&runs), Some(runs.join("AGENTS.md")));
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The binary and the files of the setups are outside the checkouts"
+    )]
+    #[test]
+    fn what_the_task_keeps_for_itself_is_beside_the_checkouts_and_not_in_them() {
+        let all = [
+            task_dir(),
+            node_dir(),
+            tmp_root(),
+            root(Purpose::Draw),
+            root(Purpose::Runs),
+        ];
+        for dir in &all {
+            for other in &all {
+                assert!(
+                    dir == other || !dir.starts_with(other),
+                    "{} is in {}",
+                    dir.display(),
+                    other.display()
+                );
+            }
+        }
+        // Every one of them is a place the sweep of the task may end processes in, bar the two the runs are not made in.
+        let made = made_by_the_task();
+        assert!(made.contains(&tmp_root()) && made.contains(&root(Purpose::Runs)));
+        assert!(!made.contains(&task_dir()) && !made.contains(&node_dir()));
     }
 }

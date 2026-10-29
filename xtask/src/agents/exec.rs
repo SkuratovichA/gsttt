@@ -20,6 +20,8 @@ pub(super) struct Launch<'a> {
     pub(super) invocation: &'a Invocation,
     /// The checkout the run is made in.
     pub(super) dir: &'a Path,
+    /// The temporary directory of the run, which is removed when it ends: what still works in it then is ended with the run, as what works in the checkout is.
+    pub(super) tmp: &'a Path,
     pub(super) prompt: &'a str,
     /// Where the stream goes; the standard error goes beside it, with the extension `stderr`.
     pub(super) transcript: &'a Path,
@@ -41,7 +43,7 @@ pub(super) fn stderr_tail(transcript: &Path, chars: usize) -> String {
     tail.into_iter().rev().collect()
 }
 
-/// Runs the process of `launch`. `on_init` gets the init event once, and an error from it stops the process and is returned. The process is ended when its result is written and it has not exited five seconds later, and the checkout is the one directory whose other processes are ended with it.
+/// Runs the process of `launch`. `on_init` gets the init event once, and an error from it stops the process and is returned. The process is ended when its result is written and it has not exited five seconds later, and the checkout and the temporary directory of the run are the directories whose other processes are ended with it.
 pub(super) fn execute(
     launch: &Launch,
     on_init: &mut dyn FnMut(&Init) -> anyhow::Result<()>,
@@ -70,7 +72,7 @@ pub(super) fn execute(
         Job {
             command,
             input: Some(launch.prompt),
-            dirs: &[launch.dir],
+            dirs: &[launch.dir, launch.tmp],
             limit: launch.limit,
             stop: launch.stop,
         },
@@ -180,6 +182,7 @@ mod tests {
             claude,
             invocation,
             dir,
+            tmp: dir,
             prompt: "the question",
             transcript,
             limit,

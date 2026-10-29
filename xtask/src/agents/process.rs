@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{ErrorKind, Write as _};
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::process::CommandExt as _;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,6 +20,8 @@ use rustix::process::{
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::{flag, low_level};
 use xshell::Shell;
+
+use super::checkout::{self, with_canonical_names};
 
 /// How often a running process is looked at while it is waited for.
 pub(super) const POLL: Duration = Duration::from_millis(50);
@@ -91,7 +93,7 @@ pub(super) struct Job<'a> {
     pub(super) command: Command,
     /// Written to the standard input, which is then closed.
     pub(super) input: Option<&'a str>,
-    /// The directories whose processes are ended with the group: the Bash tool of Claude Code starts every command in a session of its own, which a signal to the group does not reach, but it leaves the working directory of the run.
+    /// The directories whose processes are ended with the group: the Bash tool of Claude Code starts every command in a session of its own, which a signal to the group does not reach, but it leaves the working directory of the run. Each is below a directory the task made itself, or the job is refused before it starts.
     pub(super) dirs: &'a [&'a Path],
     /// The wall-clock limit.
     pub(super) limit: Duration,
@@ -215,11 +217,23 @@ fn end(child: &mut Child, dirs: &[&Path]) -> anyhow::Result<ExitStatus> {
 }
 
 /// Kills every process whose working directory is one of `dirs` or below one, except this process and its parents: the shell the task was started from may stand in a directory of the sweep.
+///
+/// A directory that is not absolute, or is not below a directory the task made itself ([`checkout::made_by_the_task`]), is refused before any process is listed or killed: an empty path, `/` or the home directory would otherwise end every process of the user.
 fn sweep(dirs: &[&Path]) -> anyhow::Result<()> {
-    let dirs: Vec<PathBuf> = dirs
-        .iter()
-        .map(|dir| fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
-        .collect();
+    sweep_below(dirs, &sweep_roots())
+}
+
+/// The directories the task may end processes in: those it made, by the name it gave them and by their canonical name. The tests make theirs in the temporary directory of the system, which is no place for the task itself.
+fn sweep_roots() -> Vec<PathBuf> {
+    let made = checkout::made_by_the_task();
+    #[cfg(test)]
+    let made = made.into_iter().chain([std::env::temp_dir()]);
+    with_canonical_names(made)
+}
+
+/// [`sweep`] with the directories it may end processes in given.
+fn sweep_below(dirs: &[&Path], roots: &[PathBuf]) -> anyhow::Result<()> {
+    let dirs = sweepable_dirs(dirs, roots)?;
     let keep = ancestry()?;
     for (pid, directory) in working_directories()? {
         if keep.contains(&pid) || !dirs.iter().any(|dir| directory.starts_with(dir)) {
@@ -237,6 +251,31 @@ fn sweep(dirs: &[&Path]) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// `dirs` in the form that working directories are read in, or an error naming the first one that is not the task's to sweep. Every directory is looked at before the first process is, so one wrong directory ends nothing.
+fn sweepable_dirs(dirs: &[&Path], roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
+    dirs.iter()
+        .map(|&dir| {
+            let canonical = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+            // The name as given must be absolute too: a relative one is read against the directory this process stands in.
+            ensure!(
+                dir.is_absolute() && sweepable(&canonical, roots),
+                "will not end the processes working in `{}`: it is not below a directory this task made",
+                dir.display()
+            );
+            Ok(canonical)
+        })
+        .collect()
+}
+
+/// Whether `dir` is absolute, has no `..` in it, and is below one of `roots` and not one of them: ending the processes of a whole root would end those of the other runs and of the draw.
+fn sweepable(dir: &Path, roots: &[PathBuf]) -> bool {
+    dir.is_absolute()
+        && !dir.components().any(|part| part == Component::ParentDir)
+        && roots
+            .iter()
+            .any(|root| root.is_absolute() && dir != root && dir.starts_with(root))
 }
 
 /// This process and its parents, by the table of `ps`.
@@ -523,6 +562,105 @@ mod tests {
         assert!(bystander.try_wait().unwrap().is_none(), "it was killed");
         bystander.kill().unwrap();
         bystander.wait().unwrap();
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A sweep refuses a directory the task did not make"
+    )]
+    #[test]
+    fn a_sweep_refuses_a_directory_the_task_did_not_make() {
+        let made = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let roots = with_canonical_names([made.path().to_path_buf()]);
+        let run = made.path().join("run");
+        fs::create_dir_all(&run).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), made.path().join("link")).unwrap();
+        let home =
+            std::env::var_os("HOME").map_or_else(|| PathBuf::from("/home/nobody"), Into::into);
+        let beside = PathBuf::from(format!("{}x", made.path().display()));
+        let escaping = run.join("../../..");
+
+        // Only the checks are run here: a sweep of `/` or of the home directory that was not refused would end the processes of the machine.
+        let refused = [
+            Path::new(""),
+            Path::new("/"),
+            home.as_path(),
+            Path::new("run"),
+            Path::new("."),
+            Path::new(".."),
+            elsewhere.path(),
+            // The directory the task made is not one to sweep as a whole, and a name that only starts like it is another directory.
+            made.path(),
+            beside.as_path(),
+            // Behind a link, or behind `..`, the directory is another one.
+            &made.path().join("link"),
+            &escaping,
+            &made.path().join("../x"),
+        ];
+        for dir in refused {
+            let error = sweepable_dirs(&[dir], &roots).unwrap_err().to_string();
+            assert!(
+                error.contains(&format!("`{}`", dir.display())) && error.contains("this task made"),
+                "{error}"
+            );
+        }
+
+        // One directory the task did not make refuses the whole sweep, and the ones below the directories it made are taken in their canonical form.
+        let canonical = fs::canonicalize(&run).unwrap();
+        assert_eq!(sweepable_dirs(&[&run], &roots).unwrap(), [canonical]);
+        let error = sweepable_dirs(&[&run, elsewhere.path()], &roots).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(&elsewhere.path().display().to_string())
+        );
+        assert!(!sweepable(Path::new("/a/bc"), &[PathBuf::from("/a/b")]));
+        assert!(sweepable(Path::new("/a/b/c"), &[PathBuf::from("/a/b")]));
+        assert!(!sweepable(Path::new("/a/b"), &[PathBuf::from("/a/b")]));
+        assert!(!sweepable(Path::new("/a/b/c"), &[]));
+
+        // The roots of the task are the directories it makes for the checkouts and for the runs, and the home directory, `/`, and the directories of its binary and of `node` are none of them.
+        let sweep_roots = sweep_roots();
+        let real = with_canonical_names(checkout::made_by_the_task());
+        for dir in &real {
+            assert!(sweep_roots.contains(dir), "{}", dir.display());
+        }
+        assert!(!sweepable(&home, &real) && !sweepable(Path::new("/"), &real));
+        assert!(!sweepable(&checkout::task_dir(), &real));
+        assert!(!sweepable(&checkout::node_dir(), &real));
+        let runs_checkout = checkout::directory(checkout::Purpose::Runs, "vite");
+        assert!(sweepable(&runs_checkout, &real));
+        assert!(sweepable(&checkout::tmp_root().join("r-abc"), &real));
+    }
+
+    #[test]
+    fn a_refused_sweep_ends_nothing() {
+        let made = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let roots = with_canonical_names([made.path().to_path_buf()]);
+        let run = made.path().join("run");
+        fs::create_dir_all(&run).unwrap();
+        let mut inside = Command::new("sleep")
+            .arg("30")
+            .current_dir(&run)
+            .spawn()
+            .unwrap();
+        let mut outside = Command::new("sleep")
+            .arg("30")
+            .current_dir(elsewhere.path())
+            .spawn()
+            .unwrap();
+        // The directory that is the task's is first, and still nothing is ended.
+        assert!(sweep_below(&[&run, elsewhere.path()], &roots).is_err());
+        assert!(inside.try_wait().unwrap().is_none(), "it was killed");
+        assert!(outside.try_wait().unwrap().is_none(), "it was killed");
+        // Without the other directory the same sweep ends what works in `run` and leaves the rest.
+        sweep_below(&[&run], &roots).unwrap();
+        assert!(inside.wait().is_ok_and(|status| !status.success()));
+        assert!(outside.try_wait().unwrap().is_none(), "it was killed");
+        outside.kill().unwrap();
+        outside.wait().unwrap();
     }
 
     #[test]
