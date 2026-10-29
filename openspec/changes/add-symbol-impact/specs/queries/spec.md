@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Impact by name
-Asked about names declared in a file, `impact` SHALL list their direct callers: the declarations that refer to them, in the file itself, which is then listed too, and in the files that import them, through re-exports, which add no hop. Each entry SHALL name its callers with the lines they start on, in byte order and cut like the names of an edge. A name the file does not declare SHALL be named in a note and reach nothing.
+Asked about names declared in a file, `impact` SHALL list their direct callers: the declarations that refer to them, in the file itself, which is then listed too, and in the files that import them, through re-exports and through imports exported again, which add no hop. Each entry SHALL name its callers with the lines they start on, in byte order and cut like the names of an edge. A name the file does not declare SHALL be named in a note and reach nothing.
 
 #### Scenario: Only the direct callers are listed
 - **WHEN** `a.ts` declares `foo` and `bar`, `b.ts` imports both and uses `foo` in `run` and `bar` in `stop`, `c.ts` imports `run` from `b.ts` and uses it in `main`, and impact is asked about `foo` in `a.ts`
@@ -17,6 +17,10 @@ Asked about names declared in a file, `impact` SHALL list their direct callers: 
 #### Scenario: A barrel adds no hop
 - **WHEN** `index.ts` has `export { foo as bar } from './a'`, `page.ts` imports `bar` from `index.ts` and uses it in `render`, and impact is asked about `foo` in `a.ts`
 - **THEN** impact lists `index.ts` at distance 1 with the reason `re-exports foo as bar from a.ts`, and `page.ts` at distance 1 with the reason `imports bar from index.ts` and the caller `render`
+
+#### Scenario: A name imported and exported again adds no hop
+- **WHEN** `mid.ts` has `import { foo } from './a'` and `export { foo }`, `page.ts` imports `foo` from `mid.ts` and uses it in `render`, and impact is asked about `foo` in `a.ts`
+- **THEN** impact lists `mid.ts` at distance 1 with the reason `imports foo from a.ts` and no callers, and `page.ts` at distance 1 with the reason `imports foo from mid.ts` and the caller `render`
 
 #### Scenario: A name the file does not declare reaches nothing
 - **WHEN** `a.ts` declares `foo`, `b.ts` uses it in `run`, and impact is asked about `fooo` in `a.ts`
@@ -80,9 +84,9 @@ A file whose connector records no declarations SHALL be followed whole: asked ab
 - **THEN** impact lists `b.ts` at distance 1 without callers and `c.ts` at distance 2 with the caller `main`
 
 ### Requirement: Contracts of a declaration
-A contract site SHALL belong to the declaration whose lines hold it, and to the load of its file when none does. A declaration reached by name SHALL cross the contracts of its own sites, as a file affected in all its names crosses all of its, and no other contract of its file.
+A contract site SHALL belong to the narrowest declaration whose lines hold it, a member before its class, and to the load of its file when none does. A declaration reached by name SHALL cross the contracts of its own sites, as a file affected in all its names crosses all of its, and no other contract of its file. Across a contract the walk SHALL reach the declaration each site of the other side belongs to, or the load of its file.
 
 #### Scenario: A declaration crosses only its own contracts
-- **WHEN** `api.ts` declares `listUsers`, which serves `http GET /users`, and `health`, which serves `http GET /health`, `users.ts` calls `http GET /users`, `ping.ts` calls `http GET /health`, and impact is asked about `listUsers` in `api.ts`
-- **THEN** impact lists `users.ts` at distance 1 with the reason `calls http GET /users`
+- **WHEN** `api.ts` declares `listUsers`, which serves `http GET /users`, and `health`, which serves `http GET /health`, `users.ts` calls `http GET /users` in `fetchUsers`, `ping.ts` calls `http GET /health`, and impact is asked about `listUsers` in `api.ts`
+- **THEN** impact lists `users.ts` at distance 1 with the reason `calls http GET /users` and the caller `fetchUsers`
 - **AND** it does not list `ping.ts`
