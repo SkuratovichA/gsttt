@@ -131,6 +131,13 @@ Every run SHALL pass `--settings` with a sandbox that makes the run fail at star
 - **WHEN** the directories no run may read are planned from a linked worktree, and from the main worktree itself
 - **THEN** the first list holds the linked worktree, the configuration directory and the main worktree, and the second holds the main worktree once
 
+### Requirement: One task at a time
+`cargo xtask agents questions` and `cargo xtask agents run` SHALL take an exclusive lock on one file in the temporary directory of the system before they do anything else and hold it to their end. A second one SHALL be refused with a message that names the file, because the directories they empty and the processes they end are shared. `table` SHALL take none.
+
+#### Scenario: A second task is refused while one holds the lock
+- **WHEN** a task holds the lock and another is started
+- **THEN** the second is refused with a message that names the lock file and says that another task holds it, and a task started once the first has let go is not refused
+
 ### Requirement: The directories of a run
 A run SHALL have a temporary directory of its own, made new for it and removed when it ends, and SHALL find `node` in a directory that holds nothing else. When a run ends, whatever became of it, the directory Claude Code made for its session in the temporary root that every session of the user shares SHALL be removed, and nothing else in that root.
 
@@ -181,7 +188,7 @@ After every run, whatever became of it, HEAD and its form (a branch, or a detach
 - **THEN** the task fails naming the checkout
 
 ### Requirement: The indexes of the runs
-The index of gsttt in each checkout and the cache of codebase-memory-mcp SHALL be kept aside when they are made. After a run of the setup that reads one, the index SHALL be put back as it was when it differs, and the run SHALL be marked. What the tool writes into its index on its own SHALL NOT count as a change.
+The index of gsttt in each checkout and the cache of codebase-memory-mcp SHALL be kept aside when they are made. After a run of the setup that reads one, the index SHALL be put back as it was when it differs, and the run SHALL be marked. What the tool writes into its index on its own SHALL NOT count as a change. A copy that is missing for the setup that reads an index SHALL be an error.
 
 #### Scenario: A run that changes an index is marked and the index is put back
 - **WHEN** a run of the `gsttt` setup changes the index of its checkout, or a run of the `cbm` setup the cache of codebase-memory-mcp
@@ -190,6 +197,21 @@ The index of gsttt in each checkout and the cache of codebase-memory-mcp SHALL b
 #### Scenario: What a tool writes into its index on its own is not a change
 - **WHEN** the server of codebase-memory-mcp writes its activity database and its logs while it answers
 - **THEN** the run is not marked, and those files are left as they are
+
+#### Scenario: A missing copy of an index is an error
+- **WHEN** a run of the `gsttt` or the `cbm` setup ends and no copy of its index was kept
+- **THEN** putting the index back fails with an error that names the repository and the setup, while the `plain` and `lsp` setups, which have no index, are not asked for a copy
+
+### Requirement: The daemon of codebase-memory-mcp
+The daemon of codebase-memory-mcp keeps its index open, so it SHALL be stopped, in the environment the tool runs with, before its cache is thrown away and before the cache is put back. A stop that fails SHALL stop the task.
+
+#### Scenario: The daemon is stopped before its cache is thrown away
+- **WHEN** the task throws the cache of codebase-memory-mcp away
+- **THEN** `daemon stop` has run with the cache of the task while the cache still held its files
+
+#### Scenario: The daemon is stopped before its cache is put back
+- **WHEN** a run of the `cbm` setup ends and the cache is put back
+- **THEN** `daemon stop` has run with the cache of the task while the cache still held what the run left in it
 
 ### Requirement: Answers and scores
 The prompt SHALL ask for the answer as a fenced block marked `files`, one path per line, and the answer SHALL be the last such block of the final message. Paths SHALL be made relative to the checkout and kept once, and one outside the checkout or the question's scope counts as wrong. A run SHALL be scored by precision, recall and F1, and a run without an answer by zeros. A test file the question ignores SHALL count as neither right nor wrong.
