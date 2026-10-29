@@ -106,6 +106,17 @@ impl Setup {
         }
     }
 
+    /// Whether the setup adds `tool` to the base tools, which is what makes a call of it a call of the setup's own: `LSP` by its whole name, since a name that only begins with it is another tool, and the tools of the MCP server by the start of their names, which ends in `__` for the same reason. `plain` adds none.
+    pub(super) fn adds(self, tool: &str) -> bool {
+        match self {
+            Self::Lsp => self.own_prefix() == Some(tool),
+            Self::Cbm | Self::Gsttt => self
+                .mcp_prefix()
+                .is_some_and(|prefix| tool.starts_with(prefix)),
+            Self::Plain => false,
+        }
+    }
+
     /// The arms a question is asked in: `plain` has no tools to tell about.
     pub(super) fn arms(self) -> &'static [Arm] {
         match self {
@@ -660,6 +671,39 @@ mod tests {
                 assert!(args.iter().any(|arg| arg == flag), "{setup} lacks {flag}");
             }
             assert_eq!(after(&args, "--setting-sources"), Some("project"));
+        }
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A name that only begins like a tool of a setup is not one of its tools"
+    )]
+    #[test]
+    fn a_setup_adds_the_tool_it_is_named_for_and_no_other() {
+        // The tool, and the setups that add it.
+        let cases: [(&str, &[Setup]); 12] = [
+            ("LSP", &[Setup::Lsp]),
+            ("LSPx", &[]),
+            ("LS", &[]),
+            ("mcp__codebase-memory-mcp__search_graph", &[Setup::Cbm]),
+            ("mcp__plugin_gsttt_gsttt__impact", &[Setup::Gsttt]),
+            // The prefix and a name that only begins like it.
+            ("mcp__plugin_gsttt_gsttt__", &[Setup::Gsttt]),
+            ("mcp__plugin_gsttt_gsttt", &[]),
+            ("mcp__plugin_gsttt_gsttt2__impact", &[]),
+            ("mcp__codebase-memory-mcp-x__search_graph", &[]),
+            // The base tools are every setup's, so none adds them.
+            ("Bash", &[]),
+            ("Read", &[]),
+            ("ToolSearch", &[]),
+        ];
+        for (tool, adding) in cases {
+            let added_by: Vec<Setup> = Setup::ALL
+                .iter()
+                .copied()
+                .filter(|setup| setup.adds(tool))
+                .collect();
+            assert_eq!(added_by, adding, "{tool}");
         }
     }
 

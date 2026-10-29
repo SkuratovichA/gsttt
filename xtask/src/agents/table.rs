@@ -80,7 +80,7 @@ fn row<S: AsRef<str>>(cells: &[S]) -> String {
     format!("| {} |", cells.join(" | "))
 }
 
-/// The means over the `runs` of one setup in one arm, written the way the table shows them: the scores to two decimals, the tokens and the seconds whole, the turns and the calls of the setup's own tools to one decimal, the cost to three. The own tools are the ones whose names start with the prefix of the setup, so `plain` has none and shows a dash for them.
+/// The means over the `runs` of one setup in one arm, written the way the table shows them: the scores to two decimals, the tokens and the seconds whole, the turns and the calls of the setup's own tools to one decimal, the cost to three. The own tools are the ones the setup adds (`Setup::adds`), so `plain` has none and shows a dash for them.
 fn cells(setup: Setup, arm: Arm, runs: &[&Run]) -> Vec<String> {
     let mean_of =
         |value: fn(&Run) -> f64| mean(&runs.iter().map(|run| value(run)).collect::<Vec<_>>());
@@ -94,16 +94,15 @@ fn cells(setup: Setup, arm: Arm, runs: &[&Run]) -> Vec<String> {
         .iter()
         .filter(|run| run.outcome != Outcome::Answered)
         .count();
-    let (own_calls, called_them) = match setup.own_prefix() {
-        Some(prefix) => {
-            let calls: Vec<u32> = runs.iter().map(|run| own_calls(run, prefix)).collect();
-            let floats: Vec<f64> = calls.iter().map(|&calls| float(calls)).collect();
-            (
-                format!("{:.1}", mean(&floats)),
-                calls.iter().filter(|&&calls| calls > 0).count().to_string(),
-            )
-        }
-        None => ("-".to_owned(), "-".to_owned()),
+    let (own_calls, called_them) = if setup == Setup::Plain {
+        ("-".to_owned(), "-".to_owned())
+    } else {
+        let calls: Vec<u32> = runs.iter().map(|run| own_calls(run, setup)).collect();
+        let floats: Vec<f64> = calls.iter().map(|&calls| float(calls)).collect();
+        (
+            format!("{:.1}", mean(&floats)),
+            calls.iter().filter(|&&calls| calls > 0).count().to_string(),
+        )
     };
     let changed = runs.iter().filter(|run| run.changed_checkout).count();
     vec![
@@ -131,11 +130,11 @@ fn label(setup: Setup, arm: Arm) -> String {
     }
 }
 
-/// How many times `run` called the tools whose names start with `prefix`.
-fn own_calls(run: &Run, prefix: &str) -> u32 {
+/// How many times `run` called the tools `setup` adds.
+fn own_calls(run: &Run, setup: Setup) -> u32 {
     run.tool_calls
         .iter()
-        .filter(|(name, _)| name.starts_with(prefix))
+        .filter(|(name, _)| setup.adds(name))
         .fold(0, |sum, (_, &calls)| sum.saturating_add(calls))
 }
 
@@ -302,6 +301,7 @@ mod tests {
     #[test]
     fn only_the_tools_of_a_setup_count_as_its_own_calls() {
         let gsttt = "mcp__plugin_gsttt_gsttt__impact";
+        let cbm = "mcp__codebase-memory-mcp__search_graph";
         let mut results = started();
         results.runs.extend([
             // Four calls of the built-in tool, whatever else the run read and searched for.
@@ -310,12 +310,25 @@ mod tests {
                 Arm::Installed,
                 &[("LSP", 4), ("Read", 6), ("ToolSearch", 1)],
             ),
-            calling(Setup::Lsp, Arm::Installed, &[("Read", 1)]),
-            // The `LSP` call of a run in the gsttt setup is not a call of a tool of gsttt.
+            // A name that only begins with `LSP` is no call of the tool.
+            calling(Setup::Lsp, Arm::Installed, &[("LSPx", 1), ("Read", 1)]),
+            // The `LSP` call of a run in the gsttt setup is not a call of a tool of gsttt, nor is a call of a tool of another setup, or of a server whose name begins like that of gsttt.
             calling(
                 Setup::Gsttt,
                 Arm::Told,
-                &[(gsttt, 2), ("LSP", 1), ("Read", 3), ("ToolSearch", 1)],
+                &[
+                    (gsttt, 2),
+                    ("LSP", 1),
+                    (cbm, 1),
+                    ("mcp__plugin_gsttt_gsttt2__impact", 1),
+                    ("Read", 3),
+                    ("ToolSearch", 1),
+                ],
+            ),
+            calling(
+                Setup::Cbm,
+                Arm::Installed,
+                &[(cbm, 3), (gsttt, 1), ("LSP", 1)],
             ),
             calling(Setup::Plain, Arm::Installed, &[("LSP", 9), ("Read", 2)]),
         ]);
@@ -331,6 +344,7 @@ mod tests {
         // The mean over the two runs of the setup, and the runs that called one of its tools.
         assert_eq!(last_three("lsp"), ["2.0", "1", "0"], "{table}");
         assert_eq!(last_three("gsttt, told"), ["1.0", "1", "1"], "{table}");
+        assert_eq!(last_three("cbm"), ["3.0", "1", "0"], "{table}");
         // A setup with no tools of its own has nothing to count.
         assert_eq!(last_three("plain"), ["-", "-", "0"], "{table}");
     }

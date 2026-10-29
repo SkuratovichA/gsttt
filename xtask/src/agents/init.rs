@@ -64,8 +64,7 @@ pub(super) fn check(setup: Setup, init: &Init, user: &UserEntries) -> anyhow::Re
     let own = setup.tools();
     let prefix = setup.mcp_prefix();
     for tool in &init.tools {
-        let allowed =
-            own.contains(&tool.as_str()) || prefix.is_some_and(|prefix| tool.starts_with(prefix));
+        let allowed = own.contains(&tool.as_str()) || setup.adds(tool);
         ensure!(allowed, "a `{setup}` run loaded the tool `{tool}`");
     }
     for tool in &own {
