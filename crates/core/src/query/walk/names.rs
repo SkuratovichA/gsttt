@@ -418,13 +418,7 @@ impl Local<'_> {
     fn refers(&self, used: &str) -> bool {
         match self.member {
             None => belongs_to(used, self.name),
-            Some(member) => {
-                used == self.name
-                    || used
-                        .strip_prefix(self.name)
-                        .and_then(|rest| rest.strip_prefix(MEMBER_SEPARATOR))
-                        == Some(member)
-            }
+            Some(member) => used == self.name || member_in(used, self.name) == Some(member),
         }
     }
 }
@@ -622,7 +616,7 @@ impl<'w, 'a> Step<'w, 'a> {
             .iter()
             .filter_map(|&index| symbols.declaration(index))
         {
-            let (local, member) = match decl.name().split_once(MEMBER_SEPARATOR) {
+            let (local, member) = match split_member(decl.name()) {
                 Some((class, member)) => (class, Some(member)),
                 None => (decl.name(), None),
             };
@@ -1025,15 +1019,24 @@ fn refers(names: &[&str], classes: &[&str], owner: Option<&str>, used: &str) -> 
         || class_of(used).is_some_and(|class| holds(names, &class) && outside(class))
 }
 
+/// `Class` and `member` for the member `Class.member`.
+fn split_member(name: &str) -> Option<(&str, &str)> {
+    name.split_once(MEMBER_SEPARATOR)
+}
+
 /// `Class` for the member `Class.member`.
 fn class_of(name: &str) -> Option<&str> {
-    name.split_once(MEMBER_SEPARATOR).map(|(class, _)| class)
+    split_member(name).map(|(class, _)| class)
+}
+
+/// `member` for the name `class.member`, when `name` is one.
+fn member_in<'n>(name: &'n str, class: &str) -> Option<&'n str> {
+    name.strip_prefix(class)?.strip_prefix(MEMBER_SEPARATOR)
 }
 
 /// Whether `name` is a member of `class`.
 fn member_of(name: &str, class: &str) -> bool {
-    name.strip_prefix(class)
-        .is_some_and(|rest| rest.starts_with(MEMBER_SEPARATOR))
+    member_in(name, class).is_some()
 }
 
 /// Whether `name` is `class` or one of its members.
