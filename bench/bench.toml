@@ -43,7 +43,7 @@ language = "typescript"
 tsconfig = "packages/hoppscotch-backend/tsconfig.json"
 speed = false
 
-# What the agent runs ask about hoppscotch: only questions of the kind `clients`, over `packages`. The `users` questions are not asked: the language service refuses the client packages (they import a `./graphql` that code generation writes and git does not track), so the oracle of `clients` reads the TypeScript below the tsconfig only, and takes the GraphQL documents from the whole scope. The resolvers are classes under packages/hoppscotch-backend and 124 of their callees are methods of other classes; 112 of those are served by a field that between 1 and 30 files select, which are the candidates of the draw. There is no install: the oracle reads the sources.
+# What the agent runs ask about hoppscotch: only questions of the kind `clients`, over `packages`. The `users` questions are not asked: the language service refuses the client packages (they import a `./graphql` that code generation writes and git does not track), so the oracle of `clients` reads the TypeScript below the tsconfig only, and takes the GraphQL documents from the whole scope. The resolvers are classes under packages/hoppscotch-backend and 124 of their callees are methods of other classes; 112 of those are served by a field that between 1 and 30 files select, which are the candidates of the draw (counted on 2026.10.0 with `clients.mjs`; none of them has a field that is served under two root types). There is no install: the oracle reads the sources.
 [repository.agents]
 scope = "packages"
 clients = 6
