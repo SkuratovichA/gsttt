@@ -1274,6 +1274,46 @@ fn what_lies_across_a_contract_takes_the_fewest_hops_through_code_of_its_servers
 }
 
 #[test]
+fn from_one_file_contracts_come_in_key_order_whatever_the_hops_through_code_of_the_declarations() {
+    // `a` of `f.ts` is reached by an import, with one hop through code, and `b` across a contract, with none. Each serves a contract that `x.ts` calls, so `x.ts` is reached from `f.ts` twice at distance 2, and the first contract by key gives the reason, whichever declaration was expanded first.
+    let index = Tree::new()
+        .symbols("lib.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("lib.ts", &["foo"])
+        .site("lib.ts", "http GET /k", Role::Serves, 1)
+        .imports_names("f.ts", "lib.ts", &["foo"])
+        .symbols(
+            "f.ts",
+            Code::new()
+                .declaration("a", (1, 5), &["foo"])
+                .declaration("b", (6, 10), &[]),
+        )
+        .exports("f.ts", &["a", "b"])
+        .site("f.ts", "http GET /c1", Role::Serves, 3)
+        .site("f.ts", "http GET /k", Role::Calls, 8)
+        .site("f.ts", "http GET /c2", Role::Serves, 9)
+        .symbols(
+            "x.ts",
+            Code::new()
+                .declaration("xc1", (1, 3), &[])
+                .declaration("xc2", (4, 6), &[]),
+        )
+        .exports("x.ts", &[])
+        .site("x.ts", "http GET /c1", Role::Calls, 2)
+        .site("x.ts", "http GET /c2", Role::Calls, 5)
+        .build();
+
+    let answer = ask(&index, "lib.ts", &["foo"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("f.ts", 1, "imports foo from lib.ts", &["a", "b"]),
+            row("x.ts", 2, "calls http GET /c1", &["xc1", "xc2"]),
+        ]
+    );
+}
+
+#[test]
 fn a_namespace_import_is_a_use_of_every_name_by_what_uses_the_namespace() {
     let index = Tree::new()
         .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))

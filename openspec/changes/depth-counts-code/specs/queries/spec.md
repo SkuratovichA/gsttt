@@ -23,6 +23,14 @@ The depth of `impact` SHALL bound the hops through code: imports, uses of a name
 - **WHEN** `ch.ts` serves `http GET /y`, `a.ts` imports `ch.ts` and serves `http GET /x`, `b.ts` calls `http GET /y` and serves `http GET /x`, `c.ts` calls `http GET /x`, `d.ts` imports `c.ts`, and `ch.ts` changes with depth 1
 - **THEN** impact lists `a.ts` and `b.ts` at distance 1, `c.ts` at distance 2 and `d.ts` at distance 3
 
+#### Scenario: An import found second gives the fewer hops through code, over files
+- **WHEN** `r.ts` serves `http GET /x`, `a.ts` imports `r.ts`, `z.ts` calls `http GET /x`, `m.ts` imports `a.ts` and `z.ts`, `n.ts` imports `m.ts`, and `r.ts` changes with depth 2
+- **THEN** impact lists `a.ts` and `z.ts` at distance 1, `m.ts` at distance 2 with the reason `imports a.ts`, and `n.ts` at distance 3
+
+#### Scenario: An import found after a contract gives the fewer hops through code, over files
+- **WHEN** `r.ts` serves `http GET /x`, `b0.ts` imports `r.ts`, `b.ts` imports `b0.ts` and serves `http GET /y`, `z1.ts` calls `http GET /x` and serves `http GET /w`, `z2.ts` calls `http GET /w`, `x.ts` calls `http GET /y` and imports `z2.ts`, `w.ts` imports `x.ts`, `v.ts` imports `w.ts`, and `r.ts` changes with depth 3
+- **THEN** impact lists `x.ts` at distance 3 with the reason `calls http GET /y`, `w.ts` at distance 4 and `v.ts` at distance 5
+
 ### Requirement: Tests left out of an impact answer
 `impact` SHALL leave the tests out of its answer when asked to: it walks as it does otherwise, lists no tests, and says how many test files it left out, as `N test files left out` in the text and as a count beside the empty list of tests in the JSON. The coverage line SHALL still cover every file the walk reached, and an answer whose walk reached only tests SHALL NOT say that nothing is affected.
 
@@ -39,7 +47,7 @@ The depth of `impact` SHALL bound the hops through code: imports, uses of a name
 ## MODIFIED Requirements
 
 ### Requirement: Impact through imports
-`impact` SHALL return every file that reaches a changed file through import edges followed backwards to a fixpoint, with its distance in hops and its first reason; where the edges name what the importer takes, the change SHALL go only as far as the names allow, per the requirements on names below. An edge whose only kind is a Rust `mod` declaration SHALL NOT carry impact. A depth limit SHALL stop the walk at that many hops through code. The changed files SHALL NOT be listed as affected.
+`impact` SHALL return every file that reaches a changed file through import edges followed backwards to a fixpoint, with its distance in hops and the first reason it was reached; where the edges name what the importer takes, the change SHALL go only as far as the names allow, per the requirements on names below. An edge whose only kind is a Rust `mod` declaration SHALL NOT carry impact. A depth SHALL stop the walk at that many hops through code. The changed files SHALL NOT be listed as affected.
 
 #### Scenario: A change reaches importers of importers
 - **WHEN** `c.ts` imports `b.ts`, `b.ts` imports `a.ts`, and `a.ts` changes
