@@ -14,7 +14,7 @@ use oxc_ast::ast::{
 use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::ScopeFlags;
 
-use crate::shape::{dotted_name, field_name, this_key};
+use crate::shape::{dotted_name, field_name, is_parameter_property, this_key};
 
 /// The generic types that keep the members of their first type argument: `Pick<PrismaClient, 'tenant'>` is a client with fewer models.
 const WRAPPERS: [&str; 6] = [
@@ -293,8 +293,7 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
         if let BindingPattern::BindingIdentifier(id) = &it.pattern {
             let name = id.name.as_str();
             // `constructor(private readonly db: PrismaService)` declares the property `this.db` as well.
-            let property =
-                (it.accessibility.is_some() || it.readonly).then_some(Name::Property(name));
+            let property = is_parameter_property(it).then_some(Name::Property(name));
             self.bind(
                 std::iter::once(Name::Local(name)).chain(property),
                 it.type_annotation.as_deref(),
@@ -377,7 +376,7 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
 }
 
 /// The class that `init` constructs: `PrismaClient` for `new PrismaClient({ log: ['query'] })`, and nothing for a call or any other expression.
-fn constructed<'a>(init: &Expression<'a>) -> Option<Cow<'a, str>> {
+pub(super) fn constructed<'a>(init: &Expression<'a>) -> Option<Cow<'a, str>> {
     match init.get_inner_expression() {
         Expression::NewExpression(new) => dotted_name(&new.callee),
         _ => None,
@@ -385,7 +384,7 @@ fn constructed<'a>(init: &Expression<'a>) -> Option<Cow<'a, str>> {
 }
 
 /// Calls `found` with the name of every type that `ty` stands for at its head: a reference is its own name, a union or an intersection is each of its members, and a wrapper such as `Pick<T, …>` is what it wraps.
-fn heads<'a>(ty: &TSType<'a>, found: &mut impl FnMut(Cow<'a, str>)) {
+pub(super) fn heads<'a>(ty: &TSType<'a>, found: &mut impl FnMut(Cow<'a, str>)) {
     match ty {
         TSType::TSParenthesizedType(inner) => heads(&inner.type_annotation, found),
         TSType::TSUnionType(union) => {

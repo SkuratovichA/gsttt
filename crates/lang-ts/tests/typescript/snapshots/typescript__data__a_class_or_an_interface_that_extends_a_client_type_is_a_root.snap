@@ -240,7 +240,9 @@ expression: json
             "end": 14,
             "line": 12,
             "name": "TenantRepository.find",
-            "uses": []
+            "uses": [
+              "PrismaService"
+            ]
           }
         ],
         "exports": [],

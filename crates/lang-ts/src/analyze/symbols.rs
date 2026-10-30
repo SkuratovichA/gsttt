@@ -8,15 +8,16 @@ use std::collections::HashMap;
 use gsttt_core::fact::{Declared, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
-    ChainElement, Class, ClassElement, Declaration, ExportDefaultDeclaration,
+    BindingPattern, ChainElement, Class, ClassElement, Declaration, ExportDefaultDeclaration,
     ExportDefaultDeclarationKind, Expression, ImportDeclaration, ImportDeclarationSpecifier,
-    Program, PropertyKey, SimpleAssignmentTarget, Statement, TSModuleReference,
-    VariableDeclaration,
+    MethodDefinitionKind, Program, PropertyKey, SimpleAssignmentTarget, Statement,
+    TSModuleReference, VariableDeclaration,
 };
 use oxc_span::{GetSpan, Span};
 
+use super::roots::{constructed, heads};
 use crate::extra::{Export, ExportTarget};
-use crate::shape::property_str;
+use crate::shape::{is_parameter_property, property_str};
 
 /// The methods that change what a collection, a map or an array holds: a function that calls one on a top-level variable writes it.
 const WRITERS: [&str; 12] = [
@@ -127,6 +128,8 @@ pub(super) struct Recorder<'a> {
     names: HashMap<&'a str, usize>,
     /// The members of top-level classes: the class, whether the name is private, and the name.
     members: HashMap<(usize, bool, &'a str), usize>,
+    /// The names at the head of the type of each field of a top-level class, keyed like `members`. They are resolved when `this.<field>` is read, because the file may declare a type after the class.
+    fields: HashMap<(usize, bool, &'a str), Vec<Cow<'a, str>>>,
     entries: Vec<Entry<'a>>,
     groups: Vec<Group>,
     group_members: Vec<usize>,
@@ -313,6 +316,7 @@ impl<'a> Recorder<'a> {
         let group = self.group(&[entry]);
         let mut members = Vec::with_capacity(class.body.body.len());
         for element in &class.body.body {
+            self.field_types(entry, element);
             let member = self.member(entry, element, index);
             members.push(member.map(|member| self.group(&[member])));
         }
@@ -323,6 +327,47 @@ impl<'a> Recorder<'a> {
             members,
         });
         self.regions.push((class.span.start, Region::Class(plan)));
+    }
+
+    /// The names at the head of the type of each field that `element` declares: a property with an annotation or a `new` initializer, and the parameter properties of a constructor.
+    fn field_types(&mut self, class: usize, element: &ClassElement<'a>) {
+        match element {
+            ClassElement::PropertyDefinition(field) if !field.computed => {
+                let (name, private) = match &field.key {
+                    PropertyKey::PrivateIdentifier(identifier) => (identifier.name.as_str(), true),
+                    other => match property_str(other) {
+                        Some(name) => (name, false),
+                        None => return,
+                    },
+                };
+                let found = self.fields.entry((class, private, name)).or_default();
+                match field.type_annotation.as_deref() {
+                    Some(annotation) => {
+                        heads(&annotation.type_annotation, &mut |head| found.push(head));
+                    }
+                    None => found.extend(field.value.as_ref().and_then(constructed)),
+                }
+            }
+            ClassElement::MethodDefinition(method)
+                if method.kind == MethodDefinitionKind::Constructor =>
+            {
+                for parameter in &method.value.params.items {
+                    let (Some(annotation), BindingPattern::BindingIdentifier(id)) =
+                        (parameter.type_annotation.as_deref(), &parameter.pattern)
+                    else {
+                        continue;
+                    };
+                    if is_parameter_property(parameter) {
+                        let found = self
+                            .fields
+                            .entry((class, false, id.name.as_str()))
+                            .or_default();
+                        heads(&annotation.type_annotation, &mut |head| found.push(head));
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// The entry of a member of `class` with a name written in the source. A computed key, a static block and an index signature declare none, so their code belongs to the class.
@@ -581,7 +626,7 @@ impl<'a> Recorder<'a> {
         }
     }
 
-    /// A chain of member accesses from a name or `this`, `C.s` or `this.m`. The name at its base is a use, and so is the member of a class.
+    /// A chain of member accesses from a name or `this`, `C.s` or `this.m`. The name at its base is a use, and so is the member of a class; `this.field` also uses the names the type of the field stands for.
     pub(super) fn chain(&mut self, names: &[Option<String>]) {
         let Some(Some(root)) = names.first() else {
             return;
@@ -595,6 +640,7 @@ impl<'a> Recorder<'a> {
                 .map(|plan| plan.entry);
             if let (Some(class), Some(member)) = (class, second) {
                 self.member_use(class, false, member);
+                self.field_use(class, false, member);
             }
             return;
         }
@@ -616,6 +662,24 @@ impl<'a> Recorder<'a> {
             .map(|plan| plan.entry);
         if let Some(class) = class {
             self.member_use(class, true, name);
+            self.field_use(class, true, name);
+        }
+    }
+
+    /// The names at the head of the type of the field `name` of `class` that the file declares or binds. A qualified head resolves through its first segment.
+    fn field_use(&mut self, class: usize, private: bool, name: &str) {
+        let Some(types) = self.fields.get(&(class, private, name)) else {
+            return;
+        };
+        let bindings: Vec<usize> = types
+            .iter()
+            .filter_map(|head| {
+                let root = head.split_once('.').map_or(head.as_ref(), |(root, _)| root);
+                self.names.get(root).copied()
+            })
+            .collect();
+        for binding in bindings {
+            self.note(binding);
         }
     }
 

@@ -141,6 +141,7 @@ expression: json
             "line": 6,
             "name": "Repository.find",
             "uses": [
+              "PrismaClient",
               "Repository.store"
             ]
           },

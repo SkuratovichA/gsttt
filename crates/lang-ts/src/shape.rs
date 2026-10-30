@@ -5,8 +5,8 @@ use std::num::NonZeroU32;
 
 use gsttt_core::rules::Site;
 use oxc_ast::ast::{
-    Argument, ChainElement, Expression, MemberExpression, ObjectPropertyKind, PropertyDefinition,
-    PropertyKey, TemplateLiteral,
+    Argument, ChainElement, Expression, FormalParameter, MemberExpression, ObjectPropertyKind,
+    PropertyDefinition, PropertyKey, TemplateLiteral,
 };
 use oxc_syntax::operator::BinaryOperator;
 
@@ -141,6 +141,11 @@ pub(crate) fn field_name<'a>(field: &PropertyDefinition<'a>) -> Option<&'a str> 
         return None;
     }
     property_str(&field.key)
+}
+
+/// Whether a constructor parameter also declares a property of its class: `constructor(private readonly db: Db)` does, and `constructor(db: Db)` does not.
+pub(crate) fn is_parameter_property(parameter: &FormalParameter<'_>) -> bool {
+    parameter.accessibility.is_some() || parameter.readonly
 }
 
 /// The name under which a chain that starts at the property `name` of `this` is looked up: `this.db` for the property `db`.
