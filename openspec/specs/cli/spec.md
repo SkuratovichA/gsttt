@@ -340,3 +340,18 @@ The test suite SHALL index a copy of this repository's committed tree with the b
 #### Scenario: The release build runs the packaged binary
 - **WHEN** the CI workflow is read
 - **THEN** the build entries for `x86_64-unknown-linux-musl` and `aarch64-apple-darwin` run the packaged binary with `--version`, `index` and `impact`, and the other build entries do not
+
+### Requirement: Names on the command line
+`gsttt impact` SHALL take `--name <NAME>`, which may be repeated, with paths and never with `--changed`, SHALL refuse a blank name, and SHALL ask the query about those names in every path it is given.
+
+#### Scenario: --name asks about a name
+- **WHEN** `b.ts` uses `foo` of `a.ts` in `run`, and `gsttt impact a.ts --name foo` runs
+- **THEN** the answer lists `b.ts` with the caller `run`
+
+#### Scenario: --name with --changed exits 2
+- **WHEN** `gsttt impact --changed --name foo` runs
+- **THEN** stderr says `--name` needs paths and the exit code is 2
+
+#### Scenario: A blank --name exits 2
+- **WHEN** `gsttt impact a.ts --name ""` runs
+- **THEN** stderr says `--name` needs a name, nothing is indexed, and the exit code is 2
