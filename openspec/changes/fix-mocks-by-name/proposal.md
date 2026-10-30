@@ -9,7 +9,7 @@ On a repository whose tests mock their modules, an answer by name fills with suc
 ## What Changes
 
 - A new import kind, `mock`: the calls of Vitest and Jest that mock a module, stop mocking it, or make or set a mock for it. `vi.importActual` and `jest.requireActual` stay dynamic imports, because they load the module as it is. `dependents` labels a mock `mock`, and the walk over files follows it as it followed the dynamic import before.
-- The TypeScript connector records a member read by name from `await import('x')` or from `require('x')` as the name that import takes.
+- The TypeScript connector records a member read by name from `await import('x')` or from `require('x')` as the name that import takes. A destructuring of a loaded module with a rest element or a computed key also takes the module itself, so that what the rest takes is not lost.
 - Asked about names, `impact` takes no name through a mock. A mock of a file followed whole is a caller where it is written, as an import for side effects is, and a file reached at load reaches the files that mock it, because a mock made without a factory loads the module to mock it.
 - Asked about names, a dynamic import or a `require` that names what it takes takes those names and no others. The walk over files keeps taking every name through them, because what they hand back is the whole module.
 - Asked about names, an import type outside every declaration reaches nothing, because a type does not run as the file loads.

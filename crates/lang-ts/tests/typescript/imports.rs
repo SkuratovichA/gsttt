@@ -194,8 +194,11 @@ fn a_member_read_from_a_loaded_module_is_the_name_it_takes() -> Result<(), Box<d
     Ok(())
 }
 
-/// Not a scenario of its own: a destructuring that may take more than it names is the module itself, so that a walk by name does not leave out what a rest element or a computed key takes.
 #[test]
+#[scenario(
+    "typescript",
+    "A destructuring that may take more than it names takes the module"
+)]
 fn a_destructuring_that_may_take_more_than_it_names_takes_the_module() -> Result<(), Box<dyn Error>>
 {
     let json = run("loaded-open")?;

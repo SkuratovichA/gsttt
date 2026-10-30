@@ -48,8 +48,12 @@ The connector SHALL read the first argument of `jest.setMock`, `jest.createMockF
 - **THEN** each of the five calls is a mock of `./lib` at its line, with no names, resolving to `src/lib.ts`
 
 ### Requirement: Members read from a loaded module
-A member read by name from `await import('x')` or from `require('x')` SHALL be the name that import takes. `import('x')` without `await` hands back a promise, so a member read from it SHALL name nothing.
+A member read by name from `await import('x')` or from `require('x')` SHALL be the name that import takes. `import('x')` without `await` hands back a promise, so a member read from it SHALL name nothing. A pattern that destructures a loaded module with a rest element or a computed key SHALL also take the module itself, `*` for an import and `default` for a `require`, because it may take more than it names.
 
 #### Scenario: A member read from a loaded module is the name it takes
 - **WHEN** `src/use.ts` has `(await import('./lib')).helper()` on line 1, `require('./lib').other` on line 2 and `import('./lib').then(start)` on line 3, and `src/lib.ts` exists
 - **THEN** the file has a dynamic import of `./lib` naming `helper` at line 1, a `require` of it naming `other` at line 2, and a dynamic import of it with no names at line 3
+
+#### Scenario: A destructuring that may take more than it names takes the module
+- **WHEN** `src/open.ts` has `const { a, ...rest } = await import('./lib')` on line 1, `const { [key]: b } = await import('./lib')` on line 2 and `const { c } = require('./lib')` on line 3, and `src/lib.ts` exists
+- **THEN** the file has a dynamic import of `./lib` naming `a` and the namespace `*` at line 1, a dynamic import of it naming only the namespace at line 2, and a `require` of it naming `c` at line 3
