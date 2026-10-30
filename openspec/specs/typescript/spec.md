@@ -560,14 +560,36 @@ A member read by name from a loaded module, `await import('x')`, `await vi.impor
 - **THEN** the file has a dynamic import of `./lib` naming `helper` at line 1, `other` at line 2 and `third` at line 3, and one with no names at line 4
 - **AND** line 5 is neither an import nor an unread site
 
-### Requirement: Fields of a declared type
-Inside a class, a declaration that reads `this.<field>` SHALL also use the names the field's type stands for at its head, read as for root types, when the file declares or binds them. A field is a constructor parameter with `private`, `protected`, `public` or `readonly`, or a property with a type annotation or a `new` initializer, so a method that calls an injected service uses the class of the service.
+### Requirement: Members read through a field of a declared type
+Inside a class, a declaration that reads `this.<field>.<member>`, or `this.#<field>.<member>`, SHALL use `<Type>.<member>` for each name `<Type>` the field's type stands for at its head, spelled as the type writes it, when the file declares or binds `<Type>`. Any other read of the field SHALL use `<Type>` alone. A field is a constructor parameter with `private`, `protected`, `public` or `readonly`, or a property with a type annotation or a `new` initializer.
 
-#### Scenario: A method that calls an injected service uses its class
+#### Scenario: A method that calls an injected service uses the member it calls
 - **WHEN** `src/invoices.resolver.ts` imports `InvoiceService`, `MailQueue` and `JobQueue` from `./services` and declares `class InvoiceResolver { private readonly mail: MailQueue; private jobs = new JobQueue(); constructor(private readonly invoices: InvoiceService, plain: InvoiceService) {} issue() { this.invoices.issue(); this.mail.push(); this.jobs.add() } other() { return this.plain } }`
-- **THEN** `InvoiceResolver.issue` uses `InvoiceService`, `MailQueue` and `JobQueue`
+- **THEN** `InvoiceResolver.issue` uses `InvoiceService.issue`, `MailQueue.push` and `JobQueue.add`
 - **AND** `InvoiceResolver.other` uses none of them, because a constructor parameter without a modifier is no field
 
-#### Scenario: A field is read in its own class
+#### Scenario: A field read as a value uses its class
+- **WHEN** `src/invoices.resolver.ts` declares the class of the previous scenario with the method `all() { return this.invoices }`
+- **THEN** `InvoiceResolver.all` uses `InvoiceService` and not a member of it
+
+#### Scenario: A member of a field is read in its own class
 - **WHEN** `src/jobs.ts` imports `InvoiceService` and `MailQueue` from `./services` and declares `class Billing { constructor(private readonly svc: InvoiceService) {} }` and `class Mailer { constructor(private readonly svc: MailQueue) {} send() { this.svc.push() } }`
-- **THEN** `Mailer.send` uses `MailQueue` and not `InvoiceService`
+- **THEN** `Mailer.send` uses `MailQueue.push` and neither `InvoiceService` nor a member of it
+- **AND** `Billing` uses nothing, because no method of it reads the field
+
+#### Scenario: A member of a private field is read through the field
+- **WHEN** `src/mailer.ts` imports `JobQueue` and `MailQueue` from `./services` and declares `class Mailer { #queue: MailQueue; #jobs = new JobQueue(); queue = 0; send() { this.#queue.push() } later() { this.#jobs.add() } count() { return this.queue } }`
+- **THEN** `Mailer.send` uses `MailQueue.push` and `Mailer.#queue`, and `Mailer.later` uses `JobQueue.add` and `Mailer.#jobs`
+- **AND** `Mailer.count` does not use `MailQueue`, because `queue` and `#queue` are two fields and only the private one has a type
+
+#### Scenario: A member is used as the type of the field is written
+- **WHEN** `src/notifier.ts` imports `* as services` from `./services` and `JobQueue` and `MailQueue` from `./queues`, declares `class Local { run() {} stop() {} }`, and declares `class Notifier` with the fields `mail: services.MailQueue`, `either: MailQueue | JobQueue` and `local: Local`, whose methods `qualified`, `union`, `declared`, `undeclared`, `nested` and `indexed` read `this.mail.push()`, `this.either.send()`, `this.local.run()`, `this.local.start()`, `this.mail.items.push()` and `this.mail[key]`
+- **THEN** `qualified` uses `services.MailQueue.push` and `union` uses `JobQueue.send` and `MailQueue.send`
+- **AND** `declared` uses `Local.run` and `undeclared` uses `Local.start`, though `Local` declares no `start`
+- **AND** `nested` uses `services.MailQueue.items`, because only the first member read from the field is the member, and `indexed` uses `services`, because a computed key names no member
+
+#### Scenario: A member is used however the field is spelled
+- **WHEN** `src/spellings.ts` imports `Left`, `MailQueue`, `Right` and `Special` from `./queues` and declares `class Spellings` with the private field `#queue: MailQueue` and the parameter properties `mail: MailQueue` and `both: Left & Right`, whose methods read `this.mail?.push()`, `this.mail!.push()`, `(this.mail as Special).push()`, `this['mail'].push()`, `this.mail.push.bind(null)`, `const { push } = this.mail`, `const queue = this.mail`, `this.both.send()`, `(this.#queue as Special).push()` and `this.#queue!.push()`
+- **THEN** the methods that read `push` through the field use `MailQueue.push`, and the two that cast it also use `Special`
+- **AND** the methods that take the field as a value use `MailQueue`, and the one that reads `send` uses `Left.send` and `Right.send`
+- **AND** the two that read `#queue` also use `Spellings.#queue`
