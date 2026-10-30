@@ -47,7 +47,7 @@ pub struct LocalExport { pub name: String, pub local: String }
 
 ## What a TypeScript declaration is and uses
 
-- Declarations: top-level `function`, `class`, each name of a variable declarator, destructuring included, `enum`, `interface`, `type`, `namespace` and `module`, `export default` of an expression as `default`, and every member of a class as `Class.member`: methods, accessors, fields, `constructor`, private `#names`. Overloads and merged declarations are joined by name, with the lines of the first and the end of the last. A static block belongs to the class.
+- Declarations: top-level `function`, `class`, each name of a variable declarator, destructuring included, `enum`, `interface`, `type`, `namespace` and `module`, `import x = …` in both its forms, so that `import x = require('./a')` is declared as `const x = require('./a')` is, `export default` of an expression as `default`, and every member of a class as `Class.member`: methods, accessors, fields, `constructor`, private `#names`. Overloads and merged declarations are joined by name, with the lines of the first and the end of the last. A static block belongs to the class.
 - Uses: every identifier reference that names a top-level declaration or an import binding of the file, JSX tag names, type references and `typeof` included. Shadowing is ignored, which can only add uses. `this.m` and `this.#m` inside class `C` are uses of `C.m`; `C.s` anywhere in the file is a use of `C.s` and of `C`. An export specifier is not a use. A declaration does not list itself.
 - Writes: a top-level variable lists as uses the declarations that assign it, update it (`x++`), assign a member of it (`x.y = …`), `delete` from it, or call one of `set`, `add`, `delete`, `clear`, `push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse` and `fill` on it. Vite keeps 30 caches in module-level `Map` and `Set` objects, and a function that fills one affects the functions that read it.
 - At load: everything a top-level statement that is not a declaration refers to, nested callbacks included, and, inside a declaration, what is referred to under a call, `new`, a tagged template or a decorator that is evaluated at load: in a variable initializer, a static field or block, a computed key, a decorator and `extends`. Function bodies, parameter defaults and instance field initializers run later and do not count. `const x = f()` puts `f` both at load and in the uses of `x`; `const y = f` puts it only in the uses of `y`. A callback given to a call in an initializer is a use of the declaration only, even when the call runs it at once, as `map` does: counted at load, every `memo(() => …)` and `forwardRef(…)` of a React file would be code at load, and every file that loads it a caller.
@@ -81,7 +81,7 @@ The MCP `impact` tool takes `names`, a list of strings, and `gsttt impact` takes
 
 ## Speed
 
-Recording uses adds work to every TypeScript file. The analyzer already visits every node once; uses are collected in the same visit, against a table of the file's top-level bindings built before it, and stored once per declaration. The cold index of vite was 95 ms with the release of `6a8a111` (`cargo xtask bench --gsttt <binary> --repository vite`), and the change must keep it within a few milliseconds of that.
+Recording uses adds work to every TypeScript file. The analyzer already visits every node once; uses are collected in the same visit, against a table of the file's top-level bindings built before it, and stored once per declaration. The cold index of vite was 95 ms with the release of `6a8a111` (`cargo xtask bench --gsttt <binary> --repository vite`), and the change must keep it within a few milliseconds of that. With the change, 15 runs on the same machine gave 87 ms cold and 37 ms warm, against 88 ms and 36 ms for the release of `6a8a111`.
 
 ## Measured with the change
 
@@ -102,6 +102,7 @@ Every failing test is reached by name at some depth, so no edge on the way to th
 - Mutation of another module's state through an import, and names reached through `globalThis`, `eval` or a computed key, are not followed. The walk over files misses them too.
 - Inside a class, `super.m`, a `this.m` that a base class declares, `this` kept in a variable (`const self = this`) and a computed `this[key]` are not resolved to members, so a method reached only so is missed. Constructor parameter properties, `constructor(private x: X)`, are not members.
 - Writes are followed for top-level variables only: a member written through `this.x = …`, a static member written through its class (`C.items.push(x)`), a variable written by `Object.assign(cache, …)`, and a write made by a top-level statement do not make the variable list the writer.
+- A value kept in a top-level variable adds a hop: after `const runner = new Runner()`, the declarations that call `runner.start()` are callers of `runner`, one hop behind `Runner`.
 - Python and Rust are followed per file.
 
 ## Not in this change
