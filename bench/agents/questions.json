@@ -243,6 +243,91 @@
         "packages/excalidraw/components/main-menu/DefaultItems.tsx"
       ],
       "ignored": []
+    },
+    {
+      "id": "hoppscotch-clients-1",
+      "repository": "hoppscotch",
+      "kind": "clients",
+      "scope": "packages",
+      "file": "packages/hoppscotch-backend/src/team-collection/team-collection.service.ts",
+      "name": "TeamCollectionService.updateCollectionOrder",
+      "line": 884,
+      "prompt": "In this repository, the method `TeamCollectionService.updateCollectionOrder` is defined in `packages/hoppscotch-backend/src/team-collection/team-collection.service.ts`. Which files under `packages` hold a GraphQL operation that selects a field whose resolver calls `TeamCollectionService.updateCollectionOrder` directly? A resolver is a method of a class decorated with `@Resolver` that is itself decorated with `@Query`, `@Mutation` or `@Subscription`, and it serves the field its decorator names with `name` or with a string argument, else the field of its own name. A file holds an operation when it is a `.graphql` or `.gql` file, or has a `gql` or `graphql` template, with the operation in it; the operation selects the field at its top level, by its name, under an alias or through a fragment. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "answer": [
+        "packages/hoppscotch-common/src/helpers/backend/gql/mutations/UpdateCollectionOrder.graphql"
+      ],
+      "ignored": []
+    },
+    {
+      "id": "hoppscotch-clients-2",
+      "repository": "hoppscotch",
+      "kind": "clients",
+      "scope": "packages",
+      "file": "packages/hoppscotch-backend/src/team-collection/team-collection.service.ts",
+      "name": "TeamCollectionService.deleteCollection",
+      "line": 615,
+      "prompt": "In this repository, the method `TeamCollectionService.deleteCollection` is defined in `packages/hoppscotch-backend/src/team-collection/team-collection.service.ts`. Which files under `packages` hold a GraphQL operation that selects a field whose resolver calls `TeamCollectionService.deleteCollection` directly? A resolver is a method of a class decorated with `@Resolver` that is itself decorated with `@Query`, `@Mutation` or `@Subscription`, and it serves the field its decorator names with `name` or with a string argument, else the field of its own name. A file holds an operation when it is a `.graphql` or `.gql` file, or has a `gql` or `graphql` template, with the operation in it; the operation selects the field at its top level, by its name, under an alias or through a fragment. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "answer": [
+        "packages/hoppscotch-common/src/helpers/backend/gql/mutations/DeleteCollection.graphql"
+      ],
+      "ignored": []
+    },
+    {
+      "id": "hoppscotch-clients-3",
+      "repository": "hoppscotch",
+      "kind": "clients",
+      "scope": "packages",
+      "file": "packages/hoppscotch-backend/src/user-collection/user-collection.service.ts",
+      "name": "UserCollectionService.importCollectionsFromJSON",
+      "line": 1126,
+      "prompt": "In this repository, the method `UserCollectionService.importCollectionsFromJSON` is defined in `packages/hoppscotch-backend/src/user-collection/user-collection.service.ts`. Which files under `packages` hold a GraphQL operation that selects a field whose resolver calls `UserCollectionService.importCollectionsFromJSON` directly? A resolver is a method of a class decorated with `@Resolver` that is itself decorated with `@Query`, `@Mutation` or `@Subscription`, and it serves the field its decorator names with `name` or with a string argument, else the field of its own name. A file holds an operation when it is a `.graphql` or `.gql` file, or has a `gql` or `graphql` template, with the operation in it; the operation selects the field at its top level, by its name, under an alias or through a fragment. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "answer": [
+        "packages/hoppscotch-common/src/helpers/backend/gql/mutations/ImportUserCollectionsFromJSON.graphql",
+        "packages/hoppscotch-selfhost-web/src/api/mutations/ImportUserCollectionsFromJSON.graphql"
+      ],
+      "ignored": []
+    },
+    {
+      "id": "hoppscotch-clients-4",
+      "repository": "hoppscotch",
+      "kind": "clients",
+      "scope": "packages",
+      "file": "packages/hoppscotch-backend/src/team-invitation/team-invitation.service.ts",
+      "name": "TeamInvitationService.revokeInvitation",
+      "line": 173,
+      "prompt": "In this repository, the method `TeamInvitationService.revokeInvitation` is defined in `packages/hoppscotch-backend/src/team-invitation/team-invitation.service.ts`. Which files under `packages` hold a GraphQL operation that selects a field whose resolver calls `TeamInvitationService.revokeInvitation` directly? A resolver is a method of a class decorated with `@Resolver` that is itself decorated with `@Query`, `@Mutation` or `@Subscription`, and it serves the field its decorator names with `name` or with a string argument, else the field of its own name. A file holds an operation when it is a `.graphql` or `.gql` file, or has a `gql` or `graphql` template, with the operation in it; the operation selects the field at its top level, by its name, under an alias or through a fragment. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "answer": [
+        "packages/hoppscotch-common/src/helpers/backend/gql/mutations/RevokeTeamInvitation.graphql"
+      ],
+      "ignored": []
+    },
+    {
+      "id": "hoppscotch-clients-5",
+      "repository": "hoppscotch",
+      "kind": "clients",
+      "scope": "packages",
+      "file": "packages/hoppscotch-backend/src/mock-server/mock-server.service.ts",
+      "name": "MockServerService.getTeamMockServers",
+      "line": 138,
+      "prompt": "In this repository, the method `MockServerService.getTeamMockServers` is defined in `packages/hoppscotch-backend/src/mock-server/mock-server.service.ts`. Which files under `packages` hold a GraphQL operation that selects a field whose resolver calls `MockServerService.getTeamMockServers` directly? A resolver is a method of a class decorated with `@Resolver` that is itself decorated with `@Query`, `@Mutation` or `@Subscription`, and it serves the field its decorator names with `name` or with a string argument, else the field of its own name. A file holds an operation when it is a `.graphql` or `.gql` file, or has a `gql` or `graphql` template, with the operation in it; the operation selects the field at its top level, by its name, under an alias or through a fragment. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "answer": [
+        "packages/hoppscotch-common/src/helpers/backend/gql/queries/GetTeamMockServers.graphql"
+      ],
+      "ignored": []
+    },
+    {
+      "id": "hoppscotch-clients-6",
+      "repository": "hoppscotch",
+      "kind": "clients",
+      "scope": "packages",
+      "file": "packages/hoppscotch-backend/src/team-invitation/team-invitation.service.ts",
+      "name": "TeamInvitationService.getInvitation",
+      "line": 53,
+      "prompt": "In this repository, the method `TeamInvitationService.getInvitation` is defined in `packages/hoppscotch-backend/src/team-invitation/team-invitation.service.ts`. Which files under `packages` hold a GraphQL operation that selects a field whose resolver calls `TeamInvitationService.getInvitation` directly? A resolver is a method of a class decorated with `@Resolver` that is itself decorated with `@Query`, `@Mutation` or `@Subscription`, and it serves the field its decorator names with `name` or with a string argument, else the field of its own name. A file holds an operation when it is a `.graphql` or `.gql` file, or has a `gql` or `graphql` template, with the operation in it; the operation selects the field at its top level, by its name, under an alias or through a fragment. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
+      "answer": [
+        "packages/hoppscotch-common/src/helpers/backend/gql/queries/GetInviteDetails.graphql"
+      ],
+      "ignored": []
     }
   ]
 }

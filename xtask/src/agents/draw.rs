@@ -318,6 +318,62 @@ mod tests {
         assert!(error.contains("the pins ask for 2"), "{error}");
     }
 
+    /// A method with `clients` files that send an operation its resolvers serve.
+    fn method(name: &str, clients: usize) -> Candidate {
+        Candidate {
+            clients: (0..clients).map(|n| format!("client/c{n}.ts")).collect(),
+            ..candidate("src/service.ts", name, 0)
+        }
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A method with no client or too many clients is not drawn"
+    )]
+    #[test]
+    fn only_a_method_with_one_to_thirty_clients_becomes_a_question_about_clients() {
+        let candidates = [
+            method("S.none", 0),
+            method("S.one", 1),
+            method("S.thirty", 30),
+            method("S.many", 31),
+        ];
+        let order = order("seed", "hoppscotch", &candidates);
+        let questions = clients("hoppscotch", "packages", 2, &order).unwrap();
+        let mut names: Vec<&str> = questions.iter().map(|q| q.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["S.one", "S.thirty"]);
+        let question = questions.iter().find(|q| q.name == "S.one").unwrap();
+        assert_eq!(question.kind, Kind::Clients);
+        assert_eq!(question.answer, ["client/c0.ts"]);
+        assert_eq!(question.ignored, Vec::<String>::new());
+        assert!(question.id.starts_with("hoppscotch-clients-"));
+
+        // Asking for more than qualify fails and says why the others were passed over.
+        let error = clients("hoppscotch", "packages", 3, &order)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("1 too few clients") && error.contains("1 too many clients"),
+            "{error}"
+        );
+        assert!(error.contains("the kind `clients`"), "{error}");
+    }
+
+    #[test]
+    fn the_clients_of_a_method_are_listed_once_and_in_byte_order() {
+        let mut twice = method("S.twice", 0);
+        twice.clients = ["b.graphql", "a.ts", "b.graphql"]
+            .map(str::to_owned)
+            .to_vec();
+        let candidates = [twice];
+        let order = order("seed", "hoppscotch", &candidates);
+        let questions = clients("hoppscotch", ".", 1, &order).unwrap();
+        let question = questions.first().unwrap();
+        assert_eq!(question.answer, ["a.ts", "b.graphql"]);
+        assert!(question.prompt.contains("of the repository"));
+    }
+
     #[test]
     fn the_count_of_candidates_found_is_a_plural_unless_it_is_one() {
         let candidates = [candidate("a.ts", "few", 2)];
