@@ -242,7 +242,7 @@ fn name_asks_about_a_name() {
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
         text.stdout
-            .starts_with("impact of foo in src/a.ts, within 1 hop\n"),
+            .starts_with("impact of foo in src/a.ts, within 1 hop through code\n"),
         "{text:?}"
     );
     assert!(
@@ -497,7 +497,7 @@ fn name_asks_about_a_member_of_a_class() {
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
         text.stdout
-            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop\n"),
+            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop through code\n"),
         "{text:?}"
     );
     assert!(
