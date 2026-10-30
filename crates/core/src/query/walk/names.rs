@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::contract::Role;
-use crate::fact::{Import, ImportKind, Line};
+use crate::fact::{Import, ImportKind, Line, MEMBER_SEPARATOR};
 use crate::graph::{ContractSite, Declaration, Edge, FileSymbols, Graph};
 use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
@@ -908,13 +908,13 @@ fn narrowest(symbols: FileSymbols<'_>, line: Line) -> Vec<usize> {
 
 /// `Class` for the member `Class.member`.
 fn class_of(name: &str) -> Option<&str> {
-    name.split_once('.').map(|(class, _)| class)
+    name.split_once(MEMBER_SEPARATOR).map(|(class, _)| class)
 }
 
 /// Whether `name` is a member of `class`.
 fn member_of(name: &str, class: &str) -> bool {
     name.strip_prefix(class)
-        .is_some_and(|rest| rest.starts_with('.'))
+        .is_some_and(|rest| rest.starts_with(MEMBER_SEPARATOR))
 }
 
 /// Whether `name` is `class` or one of its members.
