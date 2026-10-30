@@ -262,6 +262,24 @@ fn a_recoverable_error_keeps_the_imports() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn a_member_is_read_from_a_load_through_wrappers_and_not_through_a_promise()
+-> Result<(), Box<dyn Error>> {
+    let json = run("loaded-member-forms")?;
+    assert_eq!(
+        imports(&json, "src/forms.ts"),
+        [
+            "./lib dynamic @1 [a] -> file src/lib.ts",
+            "./lib dynamic @2 [b] -> file src/lib.ts",
+            "./lib require @3 [c] -> file src/lib.ts",
+            "./lib dynamic @4 -> file src/lib.ts",
+            "./lib dynamic @5 -> file src/lib.ts",
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 fn every_import_form_can_lead_to_a_file() -> Result<(), Box<dyn Error>> {
     let json = run("import-forms-resolved")?;
     let lines = imports(&json, "src/forms.ts");
