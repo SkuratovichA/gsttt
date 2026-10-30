@@ -12,7 +12,7 @@ use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
 use crate::query::cross::{Crossed, Crossing, Direction, sites_of};
 
-use super::{Cause, Reached};
+use super::{Cause, Reached, holds};
 
 /// What the answer says about the walk beside the files it reached.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -346,32 +346,25 @@ fn merge(cause: &mut Cause, other: &Cause) -> bool {
                 file: same,
                 names: more,
             },
-        ) if file == same => {
-            names.extend_from_slice(more);
-            names.sort_unstable();
-            names.dedup();
-            true
-        }
+        ) if file == same => union(names, more),
         (
             Cause::ReExports { file, names },
             Cause::ReExports {
                 file: same,
                 names: more,
             },
-        ) if file == same => {
-            names.extend_from_slice(more);
-            names.sort_unstable();
-            names.dedup();
-            true
-        }
-        (Cause::Declares { names }, Cause::Declares { names: more }) => {
-            names.extend_from_slice(more);
-            names.sort_unstable();
-            names.dedup();
-            true
-        }
-        _ => false,
+        ) if file == same => union(names, more),
+        (Cause::Declares { names }, Cause::Declares { names: more }) => union(names, more),
+        _ => return false,
     }
+    true
+}
+
+/// Adds `more` to the sorted `names`, each once.
+fn union<T: Ord + Clone>(names: &mut Vec<T>, more: &[T]) {
+    names.extend_from_slice(more);
+    names.sort_unstable();
+    names.dedup();
 }
 
 /// What one importer takes from a file, collected over its imports of it.
@@ -530,7 +523,7 @@ impl<'w, 'a> Step<'w, 'a> {
         }
         let mut found = false;
         for (index, decl) in symbols.declarations().enumerate() {
-            let refers = decl.uses().any(|used| holds(&names, used))
+            let refers = decl.uses().any(|used| holds(&names, &used))
                 || classes.iter().any(|class| {
                     decl.uses().any(|used| used == *class) && !belongs_to(decl.name(), class)
                 });
@@ -540,7 +533,7 @@ impl<'w, 'a> Step<'w, 'a> {
         }
         if symbols
             .on_load()
-            .any(|used| holds(&names, used) || holds(&classes, used))
+            .any(|used| holds(&names, &used) || holds(&classes, &used))
         {
             found |= self.unit(file, Part::Load);
         }
@@ -929,11 +922,6 @@ fn belongs_to(name: &str, class: &str) -> bool {
     name == class || member_of(name, class)
 }
 
-/// Whether `name` is among `sorted`.
-fn holds(sorted: &[&str], name: &str) -> bool {
-    sorted.binary_search(&name).is_ok()
-}
-
 #[cfg(test)]
 mod tests {
     use crate::index::Index;
@@ -1021,8 +1009,8 @@ mod tests {
     #[test]
     fn a_name_is_found_in_a_sorted_list() {
         let sorted = ["a", "b", "c"];
-        assert!(holds(&sorted, "b"));
-        assert!(!holds(&sorted, "d"));
-        assert!(!holds(&[], "a"));
+        assert!(holds(&sorted, &"b"));
+        assert!(!holds(&sorted, &"d"));
+        assert!(!holds(&[], &"a"));
     }
 }

@@ -279,7 +279,7 @@ impl Walk<'_> {
 
     /// Whether an importer of `file` that takes `name`, to use it or to pass it on, meets the names `fresh` that `file` gained: it is one of them, or `file` does not export it, because the import may be the very thing the change breaks or mends. A file whose exports are unknown could lose any name, so none is ruled out. X(file) is only worked out when `name` is not among `fresh`.
     fn reaches(&mut self, file: FileId, fresh: &[NameId], name: NameId) -> bool {
-        holds(fresh, name) || self.exported_by(file).is_none_or(|all| !holds(all, name))
+        holds(fresh, &name) || self.exported_by(file).is_none_or(|all| !holds(all, &name))
     }
 
     /// X(file), worked out once.
@@ -310,7 +310,7 @@ impl Walk<'_> {
     }
 }
 
-/// Whether `name` is among `sorted`.
-fn holds(sorted: &[NameId], name: NameId) -> bool {
-    sorted.binary_search(&name).is_ok()
+/// Whether `item` is among `sorted`.
+fn holds<T: Ord>(sorted: &[T], item: &T) -> bool {
+    sorted.binary_search(item).is_ok()
 }
