@@ -265,8 +265,9 @@ mod tests {
         // Every install adds a line to a file beside the checkout.
         let agents = RepositoryAgents {
             scope: ".".to_owned(),
-            users: 1,
+            users: Some(1),
             tests: None,
+            clients: None,
             install: Some(
                 [
                     "sh",

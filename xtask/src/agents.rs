@@ -1,6 +1,6 @@
 //! `cargo xtask agents`: the agent benchmarks, which ask Claude Code questions about a repository in four setups and score the answers. Specified in `openspec/changes/add-agent-benchmarks/`.
 //!
-//! `questions` draws them from the repositories that ask for them in `bench/bench.toml` and writes `bench/agents/questions.json`, the file the runs read. The answers come from the TypeScript language service for the users of a function and from Vitest's own report for the tests it breaks, so no tool under test marks its own work.
+//! `questions` draws them from the repositories that ask for them in `bench/bench.toml` and writes `bench/agents/questions.json`, the file the runs read. The answers come from the TypeScript language service for the users of a function, from it and the `graphql` package for the clients of a method a resolver calls, and from Vitest's own report for the tests a function breaks, so no tool under test marks its own work.
 //!
 //! `run` asks them, one run at a time, and writes `bench/results/agents.json` after every run. `table` prints the means of a results file.
 
@@ -36,7 +36,7 @@ use self::functions::Candidate;
 use self::oracle::Oracle;
 use self::process::Stop;
 use self::questions::{Question, Questions};
-use crate::bench::pins::{Pins, Repository};
+use crate::bench::pins::{Pins, Repository, RepositoryAgents};
 use crate::bench::plan::Programs;
 use crate::bench::results::write_atomically;
 use crate::bench::{select, setup};
@@ -100,7 +100,7 @@ fn draw(args: &[String]) -> anyhow::Result<ExitCode> {
     // The Node tools come first: a missing pnpm should fail before the first clone.
     let programs = Programs::new(&root.join("bench/tools"), Path::new(""));
     setup::node_tools(&programs, &pins)?;
-    let script = root.join("bench/agents/functions.mjs");
+    let scripts = root.join("bench/agents");
 
     let mut questions = Vec::new();
     for repository in repositories {
@@ -108,7 +108,7 @@ fn draw(args: &[String]) -> anyhow::Result<ExitCode> {
             &pins.agents.seed,
             repository,
             &programs,
-            &script,
+            &scripts,
         )?);
     }
     let questions = Questions {
@@ -155,12 +155,12 @@ fn asking<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec<&'a Reposi
     Ok(asking)
 }
 
-/// The questions about one repository: its checkout is prepared, its functions are listed, and the users questions and then the tests questions are drawn.
+/// The questions about one repository: its checkout is prepared, and the questions of each kind it asks for are drawn, `users` first, then `tests`, then `clients`.
 fn questions_of(
     seed: &str,
     repository: &Repository,
     programs: &Programs,
-    script: &Path,
+    scripts: &Path,
 ) -> anyhow::Result<Vec<Question>> {
     let name = repository.name.as_str();
     let agents = repository
@@ -172,33 +172,65 @@ fn questions_of(
         .as_deref()
         .with_context(|| format!("`{name}` has no tsconfig"))?;
     let checkout = checkout::prepare(repository, agents, Purpose::Draw)?;
-    let candidates = functions::list(script, &programs.node, &checkout, &agents.scope, tsconfig)?;
-    say(&format!(
-        "{name}: {} exported functions under {}",
-        candidates.len(),
-        agents.scope
-    ))?;
 
-    let order = draw::order(seed, name, &candidates);
-    let mut questions = draw::users(name, &agents.scope, agents.users, &order)?;
-    if agents.tests() == 0 {
-        return Ok(questions);
+    let mut questions = Vec::new();
+    if agents.users() > 0 || agents.tests() > 0 {
+        let script = scripts.join("functions.mjs");
+        let candidates =
+            functions::list(&script, &programs.node, &checkout, &agents.scope, tsconfig)?;
+        say(&format!(
+            "{name}: {} exported functions under {}",
+            candidates.len(),
+            agents.scope
+        ))?;
+        let order = draw::order(seed, name, &candidates);
+        if agents.users() > 0 {
+            questions.extend(draw::users(name, &agents.scope, agents.users(), &order)?);
+        }
+        if agents.tests() > 0 {
+            questions.extend(tests_questions(name, agents, &checkout, &order)?);
+        }
     }
+    if agents.clients() > 0 {
+        let script = scripts.join("clients.mjs");
+        let methods = functions::list(&script, &programs.node, &checkout, &agents.scope, tsconfig)?;
+        say(&format!(
+            "{name}: {} methods that a resolver calls under {}",
+            methods.len(),
+            agents.scope
+        ))?;
+        let order = draw::order(seed, name, &methods);
+        questions.extend(draw::clients(
+            name,
+            &agents.scope,
+            agents.clients(),
+            &order,
+        )?);
+    }
+    Ok(questions)
+}
 
+/// The questions about the tests the functions in `order` break, which the oracle finds by running the tests of the checkout with a throw in each.
+fn tests_questions(
+    name: &str,
+    agents: &RepositoryAgents,
+    checkout: &Path,
+    order: &[&Candidate],
+) -> anyhow::Result<Vec<Question>> {
     let test = agents.test.as_deref().with_context(|| {
         format!("`{name}` asks for questions about tests and names no test command")
     })?;
     // Ctrl-C is caught from the first wait on: before it, a signal ends the task at once, as it always did.
     let stop = Stop::catch()?;
     let work = checkout::scratch(name);
-    let oracle = Oracle::new(&checkout, agents.build.as_deref(), test, &work, &stop)?;
+    let oracle = Oracle::new(checkout, agents.build.as_deref(), test, &work, &stop)?;
     say(&format!("{name}: {}", oracle.describe()))?;
     let with_body: Vec<&Candidate> = order
         .iter()
         .copied()
         .filter(|candidate| candidate.body_offset.is_some())
         .collect();
-    questions.extend(draw::tests(
+    draw::tests(
         name,
         &agents.scope,
         agents.tests(),
@@ -217,8 +249,7 @@ fn questions_of(
             ))?;
             Ok(verdict)
         },
-    )?);
-    Ok(questions)
+    )
 }
 
 #[cfg(test)]

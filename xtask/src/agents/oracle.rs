@@ -621,6 +621,7 @@ printf '{{"testResults":[{{"name":"%s/a.spec.ts","status":"%s"}}]}}' "$(pwd -P)"
             line: 1,
             body_offset: Some(21),
             users: Vec::new(),
+            clients: Vec::new(),
         }
     }
 

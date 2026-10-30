@@ -148,6 +148,8 @@ pub(crate) struct Tools {
     /// The language server of the `lsp` setup of the agent benchmarks, installed beside TypeScript.
     #[serde(rename = "typescript-language-server")]
     pub(crate) typescript_language_server: Version,
+    /// The parser of GraphQL documents of the oracle of the questions about clients, installed beside TypeScript.
+    pub(crate) graphql: Version,
     pub(crate) grimp: Version,
     #[serde(rename = "codebase-memory-mcp")]
     pub(crate) codebase_memory: Cbm,
@@ -166,7 +168,7 @@ impl Tools {
     }
 
     /// The packages pnpm installs into `bench/tools/node`, each with its version. TypeScript is there so that the other tools find their parser.
-    pub(crate) fn node_packages(&self) -> [(&'static str, &str); 4] {
+    pub(crate) fn node_packages(&self) -> [(&'static str, &str); 5] {
         [
             ("dependency-cruiser", &self.dependency_cruiser.version),
             ("madge", &self.madge.version),
@@ -175,6 +177,7 @@ impl Tools {
                 "typescript-language-server",
                 &self.typescript_language_server.version,
             ),
+            ("graphql", &self.graphql.version),
         ]
     }
 }
@@ -329,6 +332,9 @@ version = "1.0.0"
 version = "1.0.0"
 
 [tools.typescript-language-server]
+version = "1.0.0"
+
+[tools.graphql]
 version = "1.0.0"
 
 [tools.grimp]

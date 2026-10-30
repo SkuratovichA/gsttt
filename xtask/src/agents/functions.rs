@@ -1,4 +1,4 @@
-//! The exported functions of a scope and the files that refer to each, as `bench/agents/functions.mjs` lists them.
+//! The candidates of a scope that the scripts of `bench/agents/` list: the exported functions with the files that refer to each (`functions.mjs`), and the methods that a resolver calls with the files that send an operation it serves (`clients.mjs`).
 
 use std::path::Path;
 use std::process::Command;
@@ -9,28 +9,34 @@ use serde::Deserialize;
 /// How many lines of what the script printed to its standard error an error carries.
 const ERROR_LINES: usize = 40;
 
-/// A function a file of the scope exports, which a question can be about.
+/// A function a file of the scope exports, or a method a resolver calls, which a question can be about.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Candidate {
-    /// The file that exports it, relative to the checkout.
+    /// The file that exports the function, or defines the class of the method, relative to the checkout.
     pub(super) file: String,
+    /// The name of the function, or `Class.method`.
     pub(super) name: String,
     /// The line of its name, from 1.
     pub(super) line: u32,
     /// The offset in bytes just after the opening brace of its body; absent when the body is an expression, and for a generator, whose body runs at its first `next()` and not when it is called.
     pub(super) body_offset: Option<usize>,
-    /// The other files of the scope that refer to it, as the language service finds them.
+    /// The other files of the scope that refer to a function, as the language service finds them; absent for a method.
+    #[serde(default)]
     pub(super) users: Vec<String>,
+    /// The files of the scope that hold an operation whose resolver calls a method; absent for a function.
+    #[serde(default)]
+    pub(super) clients: Vec<String>,
 }
 
-/// What the script prints; it also prints the version of TypeScript and the number of files, which are for readers.
+/// What a script prints: `functions.mjs` lists `functions` and `clients.mjs` lists `methods`; they also print the versions of their tools and the number of files, which are for readers.
 #[derive(Debug, Deserialize)]
 struct Listing {
+    #[serde(alias = "methods")]
     functions: Vec<Candidate>,
 }
 
-/// Runs the script with the `node` on the PATH and the TypeScript installed in `tools`, over the tracked files of `scope` in `checkout`.
+/// Runs the script with the `node` on the PATH and the tools installed in `tools`, over the tracked files of `scope` in `checkout`.
 pub(super) fn list(
     script: &Path,
     tools: &Path,
@@ -58,7 +64,7 @@ pub(super) fn list(
             .join("\n")
     );
     let listing: Listing = serde_json::from_slice(&output.stdout)
-        .with_context(|| format!("{} printed no list of functions", script.display()))?;
+        .with_context(|| format!("{} printed no list of candidates", script.display()))?;
     Ok(listing.functions)
 }
 
