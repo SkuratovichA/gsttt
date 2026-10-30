@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::coverage::ConnectorCoverage;
 use crate::ids::FileId;
 use crate::index::{Freshness, Index};
-use crate::text::{comma_summary, join_and, noun, percent, short, thousands};
+use crate::text::{comma_summary, join_and, noun, percent, short, summary, thousands};
 
 /// How many entries of a list the text of an answer shows unless every entry is asked for.
 pub const LIST_CAP: usize = 30;
@@ -292,6 +292,14 @@ pub(super) fn name_list(names: &[String], entries: Entries) -> String {
     }
 }
 
+/// The names of a sentence, written as [`join_and`] writes them: `a`, `a and b`, `a, b and c`. With `entries` capped, or cut to the first rows of a list, the first [`NAMES_SHOWN`](crate::text::NAMES_SHOWN) are followed by `and N more` when there are more of them, as [`name_list`] cuts a line.
+pub(super) fn name_sentence(names: &[String], entries: Entries) -> String {
+    match entries {
+        Entries::Capped | Entries::First(_) => summary(names),
+        Entries::All => join_and(names),
+    }
+}
+
 /// Writes `heading` with the count of `items`, then one line per item as `each` writes it, then `… N more` for the items `entries` leaves out. An empty list writes nothing.
 pub(super) fn list<T>(
     f: &mut fmt::Formatter<'_>,
@@ -366,6 +374,33 @@ mod tests {
             "four, one, three and 1 more"
         );
         assert_eq!(name_list(&names(4), Entries::All), "four, one, three, two");
+    }
+
+    #[test]
+    fn the_names_of_a_sentence_are_cut_after_three_unless_every_entry_is_asked_for() {
+        assert_eq!(name_sentence(&names(0), Entries::Capped), "");
+        assert_eq!(name_sentence(&names(1), Entries::Capped), "four");
+        assert_eq!(name_sentence(&names(2), Entries::Capped), "four and one");
+        assert_eq!(
+            name_sentence(&names(3), Entries::Capped),
+            "four, one and three"
+        );
+        assert_eq!(
+            name_sentence(&names(4), Entries::Capped),
+            "four, one, three and 1 more"
+        );
+        assert_eq!(
+            name_sentence(&names(4), Entries::All),
+            "four, one, three and two"
+        );
+        // A cut to rows cuts the names as a cap does.
+        for shown in [0, 2, LIST_CAP] {
+            assert_eq!(
+                name_sentence(&names(4), Entries::First(shown)),
+                name_sentence(&names(4), Entries::Capped),
+                "{shown} rows"
+            );
+        }
     }
 
     #[test]

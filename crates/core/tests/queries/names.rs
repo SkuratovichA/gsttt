@@ -34,6 +34,11 @@ fn ask(index: &Index, path: &str, names: &[&str], depth: Option<u32>) -> Impact 
     ask_in(index, &[path], names, depth)
 }
 
+/// The notes of an answer, each whole, as the JSON of the answer holds it.
+fn notes(answer: &Impact) -> Vec<String> {
+    answer.notes.iter().map(ToString::to_string).collect()
+}
+
 /// What a reader of the answer sees of an entry: its path, distance and reason, the names of its callers and the distance of its load when it is reached.
 type Row<'a> = (&'a str, u32, String, Vec<&'a str>, Option<u32>);
 
@@ -202,7 +207,7 @@ fn a_name_the_file_does_not_declare_reaches_nothing() {
     let answer = ask(&index, "a.ts", &["fooo"], None);
 
     assert!(answer.affected.is_empty() && answer.tests.is_empty());
-    assert_eq!(answer.notes, ["a.ts declares no fooo"]);
+    assert_eq!(notes(&answer), ["a.ts declares no fooo"]);
     assert!(
         answer
             .text(Entries::Capped)
@@ -316,11 +321,137 @@ fn callers_of_a_member_are_found_through_this_and_through_its_class() {
         ]
     );
     assert_eq!(
-        answer.notes,
+        notes(&answer),
         [
             "callers of Runner.start through a value are found through the declarations that refer to Runner"
         ]
     );
+    let text = answer.text(Entries::Capped);
+    assert!(
+        text.contains(
+            "\nnote: callers of Runner.start through a value are found through the declarations that refer to Runner\n"
+        ),
+        "{text}"
+    );
+}
+
+/// What a note about members reached through their classes says after the members, which stand for many classes at once.
+const THROUGH_THEIR_CLASSES: &str =
+    "through a value are found through the declarations that refer to their classes";
+
+/// `runner.ts` declares the class `Runner` with the methods `methods`, and `app.ts` has a `main` that refers to the class.
+fn runner(methods: &[&str]) -> Index {
+    let mut code = Code::new().declaration("Runner", (1, 99), &[]);
+    for (number, method) in methods.iter().enumerate() {
+        let line = u32::try_from(number).unwrap() * 3 + 2;
+        code = code.declaration(&format!("Runner.{method}"), (line, line + 1), &[]);
+    }
+    Tree::new()
+        .symbols("runner.ts", code)
+        .exports("runner.ts", &["Runner"])
+        .imports_names("app.ts", "runner.ts", &["Runner"])
+        .symbols(
+            "app.ts",
+            Code::new().declaration("main", (1, 3), &["Runner"]),
+        )
+        .exports("app.ts", &[])
+        .build()
+}
+
+/// Asks about the methods `methods` of the class `Runner` in `runner.ts`, with the depth of a walk by name left to its default.
+fn ask_runner(index: &Index, methods: &[&str]) -> Impact {
+    let asked: Vec<String> = methods
+        .iter()
+        .map(|method| format!("Runner.{method}"))
+        .collect();
+    let asked: Vec<&str> = asked.iter().map(String::as_str).collect();
+    ask(index, "runner.ts", &asked, None)
+}
+
+#[test]
+fn members_reached_through_their_classes_are_one_note() {
+    let index = Tree::new()
+        .symbols(
+            "runner.ts",
+            Code::new()
+                .declaration("ModuleRunner", (1, 4), &[])
+                .declaration("ModuleRunner.import", (2, 3), &[])
+                .declaration("Runner", (5, 12), &[])
+                .declaration("Runner.start", (6, 7), &[])
+                .declaration("Runner.stop", (8, 9), &[]),
+        )
+        .exports("runner.ts", &["ModuleRunner", "Runner"])
+        .imports_names("app.ts", "runner.ts", &["Runner"])
+        .symbols(
+            "app.ts",
+            Code::new().declaration("main", (1, 3), &["Runner"]),
+        )
+        .exports("app.ts", &[])
+        .build();
+
+    let answer = ask(
+        &index,
+        "runner.ts",
+        &["Runner.start", "Runner.stop", "ModuleRunner.import"],
+        None,
+    );
+
+    assert_eq!(paths(&answer.affected), ["app.ts"]);
+    let note = format!(
+        "callers of ModuleRunner.import, Runner.start and Runner.stop {THROUGH_THEIR_CLASSES}"
+    );
+    assert_eq!(notes(&answer), [note.as_str()]);
+    let text = answer.text(Entries::Capped);
+    assert!(text.contains(&format!("\nnote: {note}\n")), "{text}");
+    assert_eq!(text.matches("\nnote: ").count(), 1, "{text}");
+}
+
+#[test]
+fn the_members_of_the_note_are_cut_after_three_unless_all_are_asked_for() {
+    let methods = ["start", "stop", "pause", "resume", "reset"];
+    let answer = ask_runner(&runner(&methods), &methods);
+
+    assert_eq!(answer.notes.len(), 1, "{:?}", notes(&answer));
+    let capped = format!(
+        "\nnote: callers of Runner.pause, Runner.reset, Runner.resume and 2 more {THROUGH_THEIR_CLASSES}\n"
+    );
+    // A text cut to rows cuts the names of a note as a cap does.
+    for entries in [Entries::Capped, Entries::First(0), Entries::First(3)] {
+        let text = answer.text(entries);
+        assert!(text.contains(&capped), "{entries:?}: {text}");
+    }
+    let whole =
+        "callers of Runner.pause, Runner.reset, Runner.resume, Runner.start and Runner.stop";
+    let text = answer.text(Entries::All);
+    assert!(
+        text.contains(&format!("\nnote: {whole} {THROUGH_THEIR_CLASSES}\n")),
+        "{text}"
+    );
+    // The JSON holds the note whole whatever the text cuts, and as a string like every other note.
+    assert_eq!(
+        to_value(&answer).unwrap()["notes"],
+        json!([format!("{whole} {THROUGH_THEIR_CLASSES}")])
+    );
+}
+
+#[test]
+fn members_of_one_class_are_one_note_that_says_their_classes() {
+    let answer = ask_runner(&runner(&["start", "stop"]), &["start", "stop"]);
+
+    assert_eq!(
+        notes(&answer),
+        [format!(
+            "callers of Runner.start and Runner.stop {THROUGH_THEIR_CLASSES}"
+        )]
+    );
+}
+
+#[test]
+fn a_name_that_is_no_member_adds_no_note_about_classes() {
+    let answer = ask(&runner(&["start"]), "runner.ts", &["Runner"], None);
+
+    assert_eq!(paths(&answer.affected), ["app.ts"]);
+    assert!(answer.notes.is_empty(), "{:?}", notes(&answer));
 }
 
 #[scenario("queries", "A test that calls a name is a direct caller")]
@@ -492,7 +623,7 @@ fn the_answer_says_when_the_walk_stopped_at_the_callers() {
     let answer = ask(&chain(), "a.ts", &["foo"], None);
 
     assert_eq!(paths(&answer.affected), ["b.ts"]);
-    assert_eq!(answer.notes, [STOPPED]);
+    assert_eq!(notes(&answer), [STOPPED]);
     assert!(
         answer
             .text(Entries::Capped)
@@ -514,7 +645,7 @@ fn a_walk_that_runs_out_says_nothing_about_stopping() {
     let answer = ask(&index, "a.ts", &["foo"], None);
 
     assert_eq!(paths(&answer.affected), ["b.ts"]);
-    assert!(answer.notes.is_empty(), "{:?}", answer.notes);
+    assert!(answer.notes.is_empty(), "{:?}", notes(&answer));
 }
 
 #[scenario("queries", "A Python file asked about by name is followed whole")]
@@ -532,11 +663,11 @@ fn a_python_file_asked_about_by_name_is_followed_whole() {
 
     assert_eq!(paths(&answer.affected), ["user.py"]);
     assert!(
-        answer.notes.contains(
+        notes(&answer).contains(
             &"lib.py is followed whole because its connector records no declarations".to_owned()
         ),
         "{:?}",
-        answer.notes
+        notes(&answer)
     );
 }
 
@@ -963,7 +1094,7 @@ fn several_names_in_several_files_are_one_question() {
     );
     // Names apply to every path of the request, so each path that lacks one gets a note for it.
     assert_eq!(
-        answer.notes,
+        notes(&answer),
         [
             "a.ts declares no nothing",
             "a.ts declares no zed",
@@ -1034,7 +1165,7 @@ fn a_depth_of_zero_lists_nothing_and_says_the_walk_stopped() {
     let answer = ask(&chain(), "a.ts", &["foo"], Some(0));
 
     assert_eq!(paths(&answer.affected), NONE);
-    assert_eq!(answer.notes, [STOPPED]);
+    assert_eq!(notes(&answer), [STOPPED]);
     assert!(
         answer
             .text(Entries::Capped)

@@ -634,6 +634,60 @@ async fn an_answer_with_many_callers_is_cut_to_the_budget() {
     );
 }
 
+#[tokio::test]
+async fn an_answer_reaching_many_members_through_their_class_is_cut_to_the_budget() {
+    // Every method of `Runner` uses `foo`, so a walk of two hops asks about each of them in its second.
+    let methods = (0..2_000_u32).fold(
+        Code::new().declaration("Runner", (1, 6_002), &[]),
+        |code, number| {
+            code.declaration(
+                &format!("Runner.method{number:04}"),
+                (number * 3 + 2, number * 3 + 3),
+                &["foo"],
+            )
+        },
+    );
+    let source = Fake::over(
+        Tree::new()
+            .symbols("lib.ts", Code::new().declaration("foo", (1, 2), &[]))
+            .exports("lib.ts", &["foo"])
+            .imports_names("runner.ts", "lib.ts", &["foo"])
+            .symbols("runner.ts", methods)
+            .exports("runner.ts", &["Runner"])
+            .build(),
+    );
+    let session = Session::start(source.clone()).await;
+    let request = ImpactRequest {
+        files: vec!["lib.ts".to_owned()],
+        names: vec!["foo".to_owned()],
+        depth: Some(2),
+        ..ImpactRequest::default()
+    };
+
+    let reply = session
+        .call(
+            "impact",
+            json!({ "paths": ["lib.ts"], "names": ["foo"], "depth": 2, "all": true }),
+        )
+        .await;
+
+    assert!(!reply.is_error, "{}", reply.text);
+    assert!(
+        size(&impact_text(&source, &request, Entries::All)) > BUDGET,
+        "the answer is longer than the budget"
+    );
+    assert!(size(&reply.text) <= BUDGET, "{}", size(&reply.text));
+    assert!(reply.text.starts_with("cut: "), "{}", reply.text);
+    assert_eq!(reply.text.matches("\nnote: ").count(), 1, "{}", reply.text);
+    assert!(
+        reply.text.contains(
+            "\nnote: callers of Runner.method0000, Runner.method0001, Runner.method0002 and 1,997 more through a value are found through the declarations that refer to their classes\n"
+        ),
+        "{}",
+        reply.text
+    );
+}
+
 #[scenario("mcp", "A file the index does not hold is a tool error")]
 #[tokio::test]
 async fn a_file_the_index_does_not_hold_is_a_tool_error() {

@@ -21,8 +21,8 @@ pub(in crate::query) enum Note {
     Undeclared { file: FileId, name: String },
     /// The connector of `file` records no declarations, so the walk follows the file whole.
     NoDeclarations { file: FileId },
-    /// A call through a value names no class, so the callers of `member` are found through the declarations that refer to its `class`.
-    ThroughClass { member: String, class: String },
+    /// A call through a value names no class, so the callers of these members are found through the declarations that refer to their classes. Each is a member with its class, in byte order of the member.
+    ThroughClass { members: Vec<(String, String)> },
     /// The depth ended the walk while callers were left to follow.
     Stopped,
 }
@@ -75,6 +75,7 @@ pub(in crate::query) fn reach_names(
         graph: &index.graph,
         crossing,
         files: BTreeMap::new(),
+        through_class: BTreeSet::new(),
     };
     let mut crossed = Crossed::new(Direction::ToCallers, &index.graph);
     let mut notes = BTreeSet::new();
@@ -86,7 +87,7 @@ pub(in crate::query) fn reach_names(
     while !frontier.is_empty() && distance < depth {
         let layer = Step::new(&walk, &mut crossed).expand(&frontier);
         distance += 1;
-        frontier = walk.apply(layer, distance, &mut notes);
+        frontier = walk.apply(layer, distance);
     }
     // The depth ended the walk here. One more layer, which nothing records, tells whether it left callers behind.
     if !frontier.is_empty()
@@ -97,8 +98,15 @@ pub(in crate::query) fn reach_names(
     {
         notes.insert(Note::Stopped);
     }
+    let hits = walk.hits();
+    // One note for every member, so that the answer can cut the list of them as it cuts every list of names.
+    if !walk.through_class.is_empty() {
+        notes.insert(Note::ThroughClass {
+            members: walk.through_class.into_iter().collect(),
+        });
+    }
     Walked {
-        hits: walk.hits(),
+        hits,
         notes: notes.into_iter().collect(),
     }
 }
@@ -159,12 +167,13 @@ struct Candidate {
     cause: Cause,
 }
 
-/// What one layer found: the parts of files it reached, and the ways into the files.
+/// What one layer found: the parts of files it reached, the ways into the files, and the members of classes it looked for the callers of.
 #[derive(Default)]
 struct Layer {
     units: BTreeSet<Unit>,
     candidates: Vec<Candidate>,
-    notes: BTreeSet<Note>,
+    /// Each member with its class.
+    through_class: BTreeSet<(String, String)>,
 }
 
 struct Walk<'a> {
@@ -172,6 +181,8 @@ struct Walk<'a> {
     graph: &'a Graph,
     crossing: &'a Crossing<'a>,
     files: BTreeMap<FileId, Touch>,
+    /// The members of classes the walk looked for the callers of through their class, each with its class.
+    through_class: BTreeSet<(String, String)>,
 }
 
 impl Walk<'_> {
@@ -244,8 +255,8 @@ impl Walk<'_> {
     }
 
     /// Records what the layer found at `distance`, and returns the parts of files it reached, which are the next layer's frontier.
-    fn apply(&mut self, layer: Layer, distance: u32, notes: &mut BTreeSet<Note>) -> Vec<Unit> {
-        notes.extend(layer.notes);
+    fn apply(&mut self, layer: Layer, distance: u32) -> Vec<Unit> {
+        self.through_class.extend(layer.through_class);
         // A stable sort keeps the order the layer found the ways in, which is contract order within one file.
         let mut candidates = layer.candidates;
         candidates
@@ -512,10 +523,9 @@ impl<'w, 'a> Step<'w, 'a> {
         classes.dedup();
         for member in &names {
             if let Some(class) = class_of(member) {
-                self.layer.notes.insert(Note::ThroughClass {
-                    member: (*member).to_owned(),
-                    class: class.to_owned(),
-                });
+                self.layer
+                    .through_class
+                    .insert(((*member).to_owned(), class.to_owned()));
             }
         }
         let mut found = false;

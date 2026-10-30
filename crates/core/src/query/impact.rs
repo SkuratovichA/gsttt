@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::contract::Role;
 use crate::fact::FileTags;
@@ -15,8 +15,10 @@ use crate::text::{noun, summary};
 
 use super::cross::Crossing;
 use super::lookup::{Miss, find, possible_misses};
-use super::render::{Answer, Entries, Footer, Searched, display_as_text, list, name_list};
-use super::walk::{Cause, Hit, Note, reach, reach_names};
+use super::render::{
+    Answer, Entries, Footer, Searched, display_as_text, list, name_list, name_sentence,
+};
+use super::walk::{self, Cause, Hit, reach, reach_names};
 
 /// What a change is asked about.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -49,9 +51,9 @@ pub struct Impact {
     pub deleted: Vec<Deleted>,
     /// The paths the index does not hold that nobody reported deleted.
     pub unknown: Vec<String>,
-    /// What a walk by name has to say beside the files it reached: a name a file does not declare, a file followed whole, callers of a member found through its class, a walk the depth stopped. Left out when there is nothing to say.
+    /// What a walk by name has to say beside the files it reached: a name a file does not declare, a file followed whole, the members whose callers are found through their classes, all in one note, a walk the depth stopped. Left out when there is nothing to say. The JSON holds each as a sentence, with every member of the note about classes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub notes: Vec<String>,
+    pub notes: Vec<Note>,
     /// When the change reaches nothing: the unresolved imports that may have meant a changed file.
     pub possible_misses: Vec<Miss>,
     /// What an answer that finds nothing searched.
@@ -175,6 +177,50 @@ pub struct Deleted {
     pub possible_misses: Vec<Miss>,
 }
 
+/// What a walk by name has to say beside the files it reached.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Note {
+    /// A sentence of its own: a name a file does not declare, a file followed whole, a walk the depth stopped.
+    Said(String),
+    /// A call through a value names no class, so the callers of these members are found through the declarations that refer to their classes. Each is a member with its class, in byte order of the member. The members stay a list until the note is written, so that the text of an answer cuts them as it cuts every list of names, and the JSON of an answer holds them all.
+    ThroughClass(Vec<(String, String)>),
+}
+
+impl Note {
+    /// The note as a sentence. One member names its class, and several say `their classes`: `callers of Runner.start through a value are found through the declarations that refer to Runner`. The members are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
+        match self {
+            Self::Said(text) => f.write_str(text),
+            Self::ThroughClass(members) => {
+                let names: Vec<String> = members.iter().map(|(member, _)| member.clone()).collect();
+                let classes = match members.as_slice() {
+                    [(_, class)] => class.as_str(),
+                    _ => "their classes",
+                };
+                write!(
+                    f,
+                    "callers of {} through a value are found through the declarations that refer to {classes}",
+                    name_sentence(&names, entries)
+                )
+            }
+        }
+    }
+}
+
+/// The note whole, which is what the JSON of an answer holds.
+impl fmt::Display for Note {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write(f, Entries::All)
+    }
+}
+
+/// A note is a sentence in JSON.
+impl Serialize for Note {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 /// Which files a change to `request.files` affects, through imports followed backwards and through the contracts the files share.
 pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> Impact {
     let graph = &index.graph;
@@ -209,7 +255,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
             names.push(name.clone());
         }
     }
-    let (hits, notes, depth): (Vec<Hit>, Vec<Note>, Option<u32>) = if names.is_empty() {
+    let (hits, notes, depth): (Vec<Hit>, Vec<walk::Note>, Option<u32>) = if names.is_empty() {
         let reached = reach(graph, &crossing, &changed, request.depth);
         (
             reached.into_iter().map(Hit::from).collect(),
@@ -284,7 +330,10 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         tests,
         deleted,
         unknown,
-        notes: notes.iter().map(|note| note_text(graph, note)).collect(),
+        notes: notes
+            .into_iter()
+            .map(|walked| note(graph, walked))
+            .collect(),
         possible_misses: misses,
         searched: Searched::of(index),
     }
@@ -321,24 +370,24 @@ fn callers(graph: &Graph, hit: &Hit) -> Vec<Caller> {
         .collect()
 }
 
-/// What a walk by name says beside the files it reached, in a sentence. A file the graph holds no path for is left empty, as in a reason.
-fn note_text(graph: &Graph, note: &Note) -> String {
+/// What a walk by name says beside the files it reached. A file the graph holds no path for is left empty, as in a reason.
+fn note(graph: &Graph, walked: walk::Note) -> Note {
     let path = |file: FileId| {
         graph
             .path(file)
             .map(ToString::to_string)
             .unwrap_or_default()
     };
-    match note {
-        Note::Undeclared { file, name } => format!("{} declares no {name}", path(*file)),
-        Note::NoDeclarations { file } => format!(
+    match walked {
+        walk::Note::Undeclared { file, name } => {
+            Note::Said(format!("{} declares no {name}", path(file)))
+        }
+        walk::Note::NoDeclarations { file } => Note::Said(format!(
             "{} is followed whole because its connector records no declarations",
-            path(*file)
-        ),
-        Note::ThroughClass { member, class } => format!(
-            "callers of {member} through a value are found through the declarations that refer to {class}"
-        ),
-        Note::Stopped => "the walk stopped with callers left to follow; ask about a caller by name, or with a larger depth, to go on".to_owned(),
+            path(file)
+        )),
+        walk::Note::ThroughClass { members } => Note::ThroughClass(members),
+        walk::Note::Stopped => Note::Said("the walk stopped with callers left to follow; ask about a caller by name, or with a larger depth, to go on".to_owned()),
     }
 }
 
@@ -432,7 +481,9 @@ impl Answer for Impact {
             writeln!(f, "{path} is not in the index")?;
         }
         for note in &self.notes {
-            writeln!(f, "note: {note}")?;
+            f.write_str("note: ")?;
+            note.write(f, entries)?;
+            f.write_str("\n")?;
         }
         if !self.changed.is_empty() && self.affected.is_empty() && self.tests.is_empty() {
             let subject = if self.names.is_empty() {
