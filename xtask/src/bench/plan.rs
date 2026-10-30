@@ -284,6 +284,7 @@ mod tests {
             language,
             tsconfig: tsconfig.map(str::to_owned),
             packages: strings(packages),
+            speed: true,
             agents: None,
         }
     }

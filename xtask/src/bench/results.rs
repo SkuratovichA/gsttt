@@ -208,6 +208,7 @@ mod tests {
             language: Language::Typescript,
             tsconfig: Some("tsconfig.json".to_owned()),
             packages: Vec::new(),
+            speed: true,
             agents: None,
         };
         let tools = plan(&repository, &programs)

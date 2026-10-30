@@ -39,7 +39,7 @@ use self::questions::{Question, Questions};
 use crate::bench::pins::{Pins, Repository, RepositoryAgents};
 use crate::bench::plan::Programs;
 use crate::bench::results::write_atomically;
-use crate::bench::{select, setup};
+use crate::bench::{pinned, setup};
 use crate::root::repository_root;
 
 const USAGE: &str = "usage:
@@ -134,7 +134,7 @@ fn draw(args: &[String]) -> anyhow::Result<ExitCode> {
 
 /// The repositories that ask for questions: the named ones, or every one that has an `agents` table.
 fn asking<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec<&'a Repository>> {
-    let chosen = select(pins, names)?;
+    let chosen = pinned(pins, names)?;
     if let Some(repository) = chosen
         .iter()
         .find(|repository| !names.is_empty() && repository.agents.is_none())
@@ -254,7 +254,7 @@ fn tests_questions(
 
 #[cfg(test)]
 mod tests {
-    use super::one_task;
+    use super::{Pins, asking, one_task, repository_root};
 
     #[gsttt_scenario::scenario(
         "agent-benchmarks",
@@ -272,5 +272,22 @@ mod tests {
 
         drop(first);
         one_task(dir.path()).unwrap();
+    }
+
+    #[test]
+    fn the_agent_benchmarks_ask_about_a_repository_the_speed_benchmark_leaves_out() {
+        let pins = Pins::load(&repository_root().unwrap()).unwrap();
+        let asking_names: Vec<&str> = asking(&pins, &[])
+            .unwrap()
+            .iter()
+            .map(|repository| repository.name.as_str())
+            .collect();
+        assert!(asking_names.contains(&"hoppscotch"), "{asking_names:?}");
+
+        // A repository without an `agents` table cannot be named, and says so.
+        let error = asking(&pins, &["django".to_owned()])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("`django`"), "{error}");
     }
 }

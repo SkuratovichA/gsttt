@@ -260,6 +260,7 @@ mod tests {
             language: Language::Typescript,
             tsconfig: Some("tsconfig.json".to_owned()),
             packages: Vec::new(),
+            speed: true,
             agents: None,
         };
         // Every install adds a line to a file beside the checkout.

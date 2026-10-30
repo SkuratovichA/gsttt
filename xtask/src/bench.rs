@@ -16,7 +16,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{Context as _, ensure};
+use anyhow::{Context as _, bail, ensure};
 
 use self::pins::{Pins, Repository, Tool};
 use self::plan::{Programs, Run};
@@ -94,8 +94,8 @@ pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// The pinned repositories to measure, in the order of the pins: the ones named, or all of them when none is named.
-pub(crate) fn select<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec<&'a Repository>> {
+/// The pinned repositories, in the order of the pins: the ones named, or all of them when none is named.
+pub(crate) fn pinned<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec<&'a Repository>> {
     for name in names {
         ensure!(
             pins.repository
@@ -113,6 +113,24 @@ pub(crate) fn select<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec
         .repository
         .iter()
         .filter(|repository| names.is_empty() || names.contains(&repository.name))
+        .collect())
+}
+
+/// The pinned repositories the speed benchmark measures, in the order of the pins: the ones named, or all that are measured when none is named. A repository that only the agent benchmarks ask about (`speed = false`) is not measured, and naming it is an error.
+pub(crate) fn select<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec<&'a Repository>> {
+    let chosen = pinned(pins, names)?;
+    if let Some(repository) = chosen
+        .iter()
+        .find(|repository| !names.is_empty() && !repository.speed)
+    {
+        bail!(
+            "`{}` is not measured for speed: bench/bench.toml sets `speed = false` for it",
+            repository.name
+        );
+    }
+    Ok(chosen
+        .into_iter()
+        .filter(|repository| repository.speed)
         .collect())
 }
 
@@ -198,4 +216,48 @@ fn time_run(
         warm_ms,
         command,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(repositories: &[&Repository]) -> Vec<String> {
+        repositories
+            .iter()
+            .map(|repository| repository.name.clone())
+            .collect()
+    }
+
+    #[gsttt_scenario::scenario(
+        "benchmarks",
+        "A repository that only the agent benchmarks ask about is left out of the speed benchmark"
+    )]
+    #[test]
+    fn the_speed_benchmark_leaves_out_a_repository_the_agents_alone_ask_about() {
+        let pins = Pins::load(&repository_root().unwrap()).unwrap();
+        let all = names(&pinned(&pins, &[]).unwrap());
+        let measured = names(&select(&pins, &[]).unwrap());
+        assert!(all.iter().any(|name| name == "hoppscotch"), "{all:?}");
+        assert!(measured.iter().any(|name| name == "vite"), "{measured:?}");
+        assert!(
+            !measured.iter().any(|name| name == "hoppscotch"),
+            "{measured:?}"
+        );
+        assert_eq!(measured.len() + 1, all.len(), "only hoppscotch is left out");
+
+        // Naming it is an error and says why, and the pinned repositories can still be named by the agents.
+        let error = select(&pins, &["hoppscotch".to_owned()])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("`hoppscotch`") && error.contains("speed = false"),
+            "{error}"
+        );
+        assert_eq!(
+            names(&pinned(&pins, &["hoppscotch".to_owned()]).unwrap()),
+            ["hoppscotch"]
+        );
+        assert!(select(&pins, &["nowhere".to_owned()]).is_err());
+    }
 }
