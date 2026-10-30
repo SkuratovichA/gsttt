@@ -521,3 +521,25 @@ fn a_type_written_in_a_member_chain_is_a_use() -> Result<(), Box<dyn Error>> {
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+fn export_default_interface_exports_the_interface_by_its_name() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-default-interface")?;
+    let path = "src/shape.ts";
+    assert_eq!(declared(&json, path), ["Foo @1-3"]);
+    assert_eq!(
+        local_exports(&json, path),
+        ["default from Foo"],
+        "the export `default` has the interface for its local, as it has a named class or function"
+    );
+
+    let importer = "src/consumer.ts";
+    assert_eq!(
+        imports(&json, importer),
+        ["./shape static @1 [default] -> file src/shape.ts"]
+    );
+    assert_eq!(local_names(&json, importer), ["./shape Foo"]);
+    assert_eq!(edges(&json, importer), ["make -> Foo"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

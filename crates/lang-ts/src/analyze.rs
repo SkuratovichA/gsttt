@@ -748,6 +748,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 .id
                 .as_ref()
                 .map_or_else(|| "default".to_owned(), |id| id.name.as_str().to_owned()),
+            ExportDefaultDeclarationKind::TSInterfaceDeclaration(interface) => {
+                interface.id.name.as_str().to_owned()
+            }
             other => {
                 if let Some(Expression::CallExpression(call)) =
                     other.as_expression().map(Expression::get_inner_expression)
