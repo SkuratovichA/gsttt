@@ -39,6 +39,12 @@ pub(crate) enum ToolError {
          about the files as a whole"
     )]
     NamesWithoutPaths,
+    /// The refusal of [`Self::NamesWithoutPaths`] for a call that also sets `changed`. A model told only to name the file in `paths` keeps `changed` and is refused again, so this one says to leave `changed` out too.
+    #[error(
+        "impact: `names` needs `paths`; name the file that declares them in `paths` and leave `changed` out, or leave \
+         `names` out to ask about the files that differ from HEAD"
+    )]
+    NamesWithChanged,
     #[error(
         "impact: name the files to ask about in `paths`, or set `changed` to true to ask about the files that differ \
          from HEAD"
@@ -48,6 +54,12 @@ pub(crate) enum ToolError {
         "impact: `base` goes with `changed`; set `changed` to true to compare against `base`, or leave `base` out"
     )]
     BaseWithoutChanged,
+    /// A name that is empty or only whitespace declares nothing, so the walk by it reaches nothing, which a model reads as a name that has no callers.
+    #[error(
+        "impact: `names` holds a blank name; write each name as the file declares it, for example \"getHash\" or \
+         \"Runner.start\""
+    )]
+    BlankName,
     /// The question names a file the index does not hold. The text is the answer's own, the one the command line prints on stderr when it fails for the same reason.
     #[error("{0}")]
     NotInIndex(String),

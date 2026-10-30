@@ -198,9 +198,13 @@ impl TryFrom<ImpactArguments> for ImpactCall {
         } = arguments;
         let subject = match (paths.is_empty(), changed) {
             (false, true) => return Err(ToolError::PathsAndChanged),
+            (true, true) if !names.is_empty() => return Err(ToolError::NamesWithChanged),
             (true, _) if !names.is_empty() => return Err(ToolError::NamesWithoutPaths),
             (true, false) => return Err(ToolError::NothingAsked),
             (false, false) if base.is_some() => return Err(ToolError::BaseWithoutChanged),
+            (false, false) if names.iter().any(|name| name.trim().is_empty()) => {
+                return Err(ToolError::BlankName);
+            }
             (false, false) => Subject::Paths { paths, names },
             (true, true) => Subject::Changed { base },
         };
@@ -425,7 +429,7 @@ mod tests {
         );
         assert!(matches!(
             read(json!({ "changed": true, "names": ["foo"] })),
-            Err(ToolError::NamesWithoutPaths)
+            Err(ToolError::NamesWithChanged)
         ));
         assert!(matches!(
             read(json!({ "names": ["foo"] })),
@@ -541,12 +545,12 @@ mod tests {
         }
 
         #[test]
-        fn well_typed_arguments_conflict_exactly_when_the_four_rules_say(
+        fn well_typed_arguments_conflict_exactly_when_the_rules_say(
             paths in prop::collection::vec("[a-z/.]{1,12}", 0..4),
             changed in any::<bool>(),
             base in proptest::option::of("[a-z]{1,8}"),
             depth in proptest::option::of(any::<u32>()),
-            names in prop::collection::vec("[A-Za-z_.#]{1,12}", 0..3),
+            names in prop::collection::vec(prop_oneof!["[A-Za-z_.#]{1,12}", "[ \t]{0,3}"], 0..3),
             all in any::<bool>(),
         ) {
             let arguments = object(json!({
@@ -554,15 +558,21 @@ mod tests {
             }));
 
             let read = Call::read(ToolName::Impact, Some(arguments));
+            let blank = names.iter().any(|name| name.chars().all(|letter| matches!(letter, ' ' | '\t')));
 
-            match (paths.is_empty(), changed, base.is_some(), names.is_empty()) {
+            // A blank name is the last rule, so each of the others wins over it when it applies.
+            match (paths.is_empty(), changed, base.is_some(), names.is_empty(), blank) {
                 (false, true, ..) => prop_assert!(matches!(read, Err(ToolError::PathsAndChanged)), "{read:?}"),
-                (true, _, _, false) => prop_assert!(matches!(read, Err(ToolError::NamesWithoutPaths)), "{read:?}"),
+                (true, true, _, false, _) => prop_assert!(matches!(read, Err(ToolError::NamesWithChanged)), "{read:?}"),
+                (true, false, _, false, _) => prop_assert!(matches!(read, Err(ToolError::NamesWithoutPaths)), "{read:?}"),
                 (true, false, ..) => prop_assert!(matches!(read, Err(ToolError::NothingAsked)), "{read:?}"),
-                (false, false, true, _) => {
+                (false, false, true, ..) => {
                     prop_assert!(matches!(read, Err(ToolError::BaseWithoutChanged)), "{read:?}");
                 }
-                (false, false, false, _) => {
+                (false, false, false, _, true) => {
+                    prop_assert!(matches!(read, Err(ToolError::BlankName)), "{read:?}");
+                }
+                (false, false, false, _, false) => {
                     let Ok(Call::Impact(call)) = read else {
                         return Err(TestCaseError::fail(format!("expected named paths, got {read:?}")));
                     };

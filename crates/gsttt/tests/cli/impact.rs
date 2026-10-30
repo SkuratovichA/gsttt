@@ -157,6 +157,57 @@ fn names_go_to_the_query_for_every_path_and_a_walk_by_name_takes_one_hop_unless_
     assert_eq!(whole["depth"], Value::Null);
 }
 
+#[scenario("cli", "A blank --name exits 2")]
+#[test]
+fn a_blank_name_exits_2() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+
+    for args in [
+        &["impact", "lib/util.ts", "--name", ""][..],
+        &["impact", "lib/util.ts", "--name", "  "][..],
+        &[
+            "--json",
+            "impact",
+            "lib/util.ts",
+            "--name",
+            "util",
+            "--name",
+            " ",
+        ][..],
+    ] {
+        let run = sandbox.run_in(&repo, args);
+        assert_eq!(run.code, Some(2), "{args:?}: {run:?}");
+        assert_eq!(run.stdout, "", "{args:?}");
+        assert!(
+            run.stderr.contains("`--name` needs a name"),
+            "{args:?}: {run:?}"
+        );
+        assert!(run.stderr.contains("--name getHash"), "{args:?}: {run:?}");
+    }
+    assert!(is_empty(sandbox.cache.path()), "nothing was indexed");
+}
+
+#[test]
+fn a_blank_name_does_not_hide_the_argument_errors_that_came_first() {
+    let sandbox = Sandbox::new();
+
+    for (args, said) in [
+        (
+            &["impact", "--changed", "--name", ""][..],
+            "`--name` needs paths",
+        ),
+        (
+            &["impact", "--base", "main", "lib/util.ts", "--name", ""][..],
+            "`--base` needs `--changed`",
+        ),
+    ] {
+        let run = sandbox.run(args);
+        assert_eq!(run.code, Some(2), "{args:?}: {run:?}");
+        assert!(run.stderr.contains(said), "{args:?}: {run:?}");
+    }
+}
+
 #[scenario("cli", "--name asks about a name")]
 #[test]
 fn name_asks_about_a_name() {

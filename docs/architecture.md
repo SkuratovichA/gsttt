@@ -111,7 +111,7 @@ gsttt init                          write .gsttt/config.toml and the JSON Schema
 gsttt config check | show           evaluate the config; print errors or the effective setup
 ```
 
-Global flags: `-C <dir>`, `--json`, `--all`, `--no-refresh`. `--changed` takes the files git reports as modified, added or untracked; `--base <rev>` adds the files changed since the merge base with `<rev>`; deleted files are listed and not traced. `--name <name>` may be repeated and asks the paths about the names they declare; it is refused with `--changed`. Exit codes: 0 answered, 1 error, 2 usage. The CLI's text is English; the binary is the only crate that writes to the terminal, and it renders errors with `miette`.
+Global flags: `-C <dir>`, `--json`, `--all`, `--no-refresh`. `--changed` takes the files git reports as modified, added or untracked; `--base <rev>` adds the files changed since the merge base with `<rev>`; deleted files are listed and not traced. `--name <name>` may be repeated and asks the paths about the names they declare; it is refused with `--changed`, and so is a blank name. Exit codes: 0 answered, 1 error, 2 usage. The CLI's text is English; the binary is the only crate that writes to the terminal, and it renders errors with `miette`.
 
 **MCP** (`gsttt mcp`, `rmcp` over stdio). Tools: `impact` (which takes `names` beside `paths`), `dependents`, `dependencies`, `path`, `contract`, `coverage`, `index_status`. `initialize` answers without touching the repository; each tool call refreshes, then returns the same text the CLI prints. A failure is a tool error with the message, never a protocol error. The crate depends on core only: the binary hands it an `IndexSource` that refreshes and returns the index.
 

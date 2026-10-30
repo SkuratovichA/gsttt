@@ -100,6 +100,13 @@ pub(crate) enum CliError {
     ))]
     NameNeedsPaths,
 
+    /// A blank name declares nothing, so the walk by that name reaches nothing, which reads as a name that has no callers.
+    #[error("`--name` needs a name, and one of them is blank")]
+    #[diagnostic(help(
+        "name a declaration of the file: `gsttt impact path/to/file.ts --name getHash`"
+    ))]
+    BlankName,
+
     #[error("`index` always refreshes the index, so it cannot run with `--no-refresh`")]
     #[diagnostic(help("drop `--no-refresh`"))]
     NoRefreshWithIndex,
@@ -151,6 +158,7 @@ impl CliError {
             | Self::EmptyQuery
             | Self::BaseNeedsChanged
             | Self::NameNeedsPaths
+            | Self::BlankName
             | Self::NoRefreshWithIndex
             | Self::TrustNeedsTerminal
             | Self::McpTakesNoFlag { .. } => Outcome::Usage,
