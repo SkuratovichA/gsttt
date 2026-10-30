@@ -940,10 +940,11 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 MemberExpression::StaticMemberExpression(member) => {
                     let property = member.property.name.as_str();
                     self.member_of_load(&member.object, property);
-                    // `this.#field.member` reads a member of the type of the field, so the field is not read as a value.
+                    // `this.#field.member` reads a member of the type of the field, so the field is not read as a value. The types written around the field are still walked, as for `this.field.member`.
                     if let Expression::PrivateFieldExpression(field) =
                         member.object.get_inner_expression()
                     {
+                        self.walk_spine(&member.object);
                         self.symbols
                             .private(field.field.name.as_str(), Some(property));
                         self.visit_expression(&field.object);

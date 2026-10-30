@@ -1,0 +1,204 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "Left",
+            "MailQueue",
+            "Right",
+            "Special"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Left",
+            "MailQueue",
+            "Right",
+            "Special"
+          ],
+          "spec": "./queues",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        }
+      ],
+      "path": "src/spellings.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 41,
+            "line": 3,
+            "name": "Spellings",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Spellings.#queue",
+            "uses": [
+              "MailQueue"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 5,
+            "name": "Spellings.constructor",
+            "uses": [
+              "Left",
+              "MailQueue",
+              "Right"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 9,
+            "name": "Spellings.optional",
+            "uses": [
+              "MailQueue.push"
+            ]
+          },
+          {
+            "end": 14,
+            "line": 12,
+            "name": "Spellings.nonNull",
+            "uses": [
+              "MailQueue.push"
+            ]
+          },
+          {
+            "end": 17,
+            "line": 15,
+            "name": "Spellings.cast",
+            "uses": [
+              "MailQueue.push",
+              "Special"
+            ]
+          },
+          {
+            "end": 20,
+            "line": 18,
+            "name": "Spellings.quoted",
+            "uses": [
+              "MailQueue.push"
+            ]
+          },
+          {
+            "end": 23,
+            "line": 21,
+            "name": "Spellings.bound",
+            "uses": [
+              "MailQueue.push"
+            ]
+          },
+          {
+            "end": 27,
+            "line": 24,
+            "name": "Spellings.destructured",
+            "uses": [
+              "MailQueue"
+            ]
+          },
+          {
+            "end": 31,
+            "line": 28,
+            "name": "Spellings.alias",
+            "uses": [
+              "MailQueue"
+            ]
+          },
+          {
+            "end": 34,
+            "line": 32,
+            "name": "Spellings.intersection",
+            "uses": [
+              "Left.send",
+              "Right.send"
+            ]
+          },
+          {
+            "end": 37,
+            "line": 35,
+            "name": "Spellings.privateCast",
+            "uses": [
+              "MailQueue.push",
+              "Special",
+              "Spellings.#queue"
+            ]
+          },
+          {
+            "end": 40,
+            "line": 38,
+            "name": "Spellings.privateNonNull",
+            "uses": [
+              "MailQueue.push",
+              "Spellings.#queue"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

@@ -33,3 +33,9 @@ Inside a class, a declaration that reads `this.<field>.<member>`, or `this.#<fie
 - **THEN** `qualified` uses `services.MailQueue.push` and `union` uses `JobQueue.send` and `MailQueue.send`
 - **AND** `declared` uses `Local.run` and `undeclared` uses `Local.start`, though `Local` declares no `start`
 - **AND** `nested` uses `services.MailQueue.items`, because only the first member read from the field is the member, and `indexed` uses `services`, because a computed key names no member
+
+#### Scenario: A member is used however the field is spelled
+- **WHEN** `src/spellings.ts` imports `Left`, `MailQueue`, `Right` and `Special` from `./queues` and declares `class Spellings` with the private field `#queue: MailQueue` and the parameter properties `mail: MailQueue` and `both: Left & Right`, whose methods read `this.mail?.push()`, `this.mail!.push()`, `(this.mail as Special).push()`, `this['mail'].push()`, `this.mail.push.bind(null)`, `const { push } = this.mail`, `const queue = this.mail`, `this.both.send()`, `(this.#queue as Special).push()` and `this.#queue!.push()`
+- **THEN** the methods that read `push` through the field use `MailQueue.push`, and the two that cast it also use `Special`
+- **AND** the methods that take the field as a value use `MailQueue`, and the one that reads `send` uses `Left.send` and `Right.send`
+- **AND** the two that read `#queue` also use `Spellings.#queue`

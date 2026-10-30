@@ -661,3 +661,42 @@ fn a_member_is_used_as_the_type_of_the_field_is_written() -> Result<(), Box<dyn 
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A member is used however the field is spelled")]
+fn a_member_is_used_however_the_field_is_spelled() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-field-spellings")?;
+    let path = "src/spellings.ts";
+    let of = |name: &str| uses(&json, path, &format!("Spellings.{name}"));
+    for name in ["optional", "nonNull", "quoted", "bound"] {
+        assert_eq!(of(name), Some(vec!["MailQueue.push"]), "{name}");
+    }
+    assert_eq!(
+        of("cast"),
+        Some(vec!["MailQueue.push", "Special"]),
+        "the type of a cast is a use, as in any chain"
+    );
+    for name in ["destructured", "alias"] {
+        assert_eq!(
+            of(name),
+            Some(vec!["MailQueue"]),
+            "{name}: a field taken as a value is read through no member"
+        );
+    }
+    assert_eq!(
+        of("intersection"),
+        Some(vec!["Left.send", "Right.send"]),
+        "each type of an intersection has the member"
+    );
+    assert_eq!(
+        of("privateCast"),
+        Some(vec!["MailQueue.push", "Special", "Spellings.#queue"]),
+        "the type of a cast around a private field is a use too"
+    );
+    assert_eq!(
+        of("privateNonNull"),
+        Some(vec!["MailQueue.push", "Spellings.#queue"])
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
