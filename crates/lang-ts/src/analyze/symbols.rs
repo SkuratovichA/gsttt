@@ -4,6 +4,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use gsttt_core::fact::{Declared, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
 use gsttt_core::text::LineIndex;
@@ -129,9 +130,9 @@ pub(super) struct Recorder<'a> {
     /// The members of top-level classes: the class, whether the name is private, and the name.
     members: HashMap<(usize, bool, &'a str), usize>,
     /// The names at the head of the type of each field of a top-level class, keyed like `members`. They are resolved when `this.<field>` is read, because the file may declare a type after the class.
-    fields: HashMap<(usize, bool, &'a str), Vec<Cow<'a, str>>>,
-    /// The entry that stands for `Type.member`, by that name, for a member read through a field whose type the file does not declare as a class with that member. It declares nothing: it has no lines, and only its name is kept.
-    typed: HashMap<String, usize>,
+    fields: HashMap<(usize, bool, &'a str), Rc<Vec<Cow<'a, str>>>>,
+    /// The entry that stands for `Type.member`, by the type and the member, for a member read through a field whose type the file does not declare as a class with that member. It declares nothing: it has no lines, and only its name is kept.
+    typed: HashMap<String, HashMap<String, usize>>,
     entries: Vec<Entry<'a>>,
     groups: Vec<Group>,
     group_members: Vec<usize>,
@@ -338,7 +339,7 @@ impl<'a> Recorder<'a> {
                 let Some((name, private)) = member_key(&field.key) else {
                     return;
                 };
-                let found = self.fields.entry((class, private, name)).or_default();
+                let found = Rc::make_mut(self.fields.entry((class, private, name)).or_default());
                 match field.type_annotation.as_deref() {
                     Some(annotation) => {
                         heads(&annotation.type_annotation, &mut |head| found.push(head));
@@ -356,10 +357,11 @@ impl<'a> Recorder<'a> {
                         continue;
                     };
                     if is_parameter_property(parameter) {
-                        let found = self
-                            .fields
-                            .entry((class, false, id.name.as_str()))
-                            .or_default();
+                        let found = Rc::make_mut(
+                            self.fields
+                                .entry((class, false, id.name.as_str()))
+                                .or_default(),
+                        );
                         heads(&annotation.type_annotation, &mut |head| found.push(head));
                     }
                 }
@@ -409,8 +411,7 @@ impl<'a> Recorder<'a> {
             .entries
             .get(class)
             .map_or("", |entry| entry.name.as_ref());
-        let hash = if private { "#" } else { "" };
-        let display = format!("{owner}{MEMBER_SEPARATOR}{hash}{name}");
+        let display = member_name(owner, private, name);
         let found = self.push(Cow::Owned(display), Kind::Other, Some(lines));
         self.members.insert((class, private, name), found);
         if let Some(entry) = self.entries.get_mut(class) {
@@ -662,48 +663,44 @@ impl<'a> Recorder<'a> {
         }
     }
 
-    /// The names at the head of the type of the field `name` of `class` that the file declares or binds, each spelled as the type writes it. A qualified head resolves through its first segment. A field read for one of its `member`s uses that member of each, and a field read as a value uses the type alone.
+    /// The names at the head of the type of the field `name` of `class` that the file declares or binds, each spelled as the type writes it. A qualified head resolves through its first segment. A field read for one of its `member`s uses that member of each, and a field read as a value uses the type alone. A class of the file that declares the member is used through that member; any other type through an entry made for `Type.member`.
     fn field_use(&mut self, class: usize, private: bool, name: &str, member: Option<&str>) {
-        let Some(types) = self.fields.get(&(class, private, name)) else {
+        let Some(types) = self.fields.get(&(class, private, name)).map(Rc::clone) else {
             return;
         };
-        let heads: Vec<(usize, Cow<'a, str>)> = types
-            .iter()
-            .filter_map(|head| {
-                let root = head.split_once('.').map_or(head.as_ref(), |(root, _)| root);
-                Some((self.names.get(root).copied()?, head.clone()))
-            })
-            .collect();
-        for (binding, head) in heads {
-            match member {
-                Some(member) => self.typed_member(binding, &head, member),
-                None => self.note(binding),
-            }
+        for head in types.iter() {
+            let (root, qualified) = match head.split_once('.') {
+                Some((root, _)) => (root, true),
+                None => (head.as_ref(), false),
+            };
+            let Some(&binding) = self.names.get(root) else {
+                continue;
+            };
+            let Some(member) = member else {
+                self.note(binding);
+                continue;
+            };
+            let declared = if qualified {
+                None
+            } else {
+                self.member_entry(binding, false, member)
+            };
+            let used = declared.unwrap_or_else(|| self.typed_entry(head, member));
+            self.note(used);
         }
-    }
-
-    /// Uses `member` of the type `head`, which `binding` names. A class of the file that declares the member is used through that member; any other type through an entry made for `head.member`.
-    fn typed_member(&mut self, binding: usize, head: &str, member: &str) {
-        let declared = if head == self.name(binding) {
-            self.member_entry(binding, false, member)
-        } else {
-            None
-        };
-        let found = match declared {
-            Some(found) => found,
-            None => self.typed_entry(head, member),
-        };
-        self.note(found);
     }
 
     /// The entry for `head.member`, made once.
     fn typed_entry(&mut self, head: &str, member: &str) -> usize {
-        let display = format!("{head}{MEMBER_SEPARATOR}{member}");
-        if let Some(&found) = self.typed.get(&display) {
+        if let Some(&found) = self.typed.get(head).and_then(|members| members.get(member)) {
             return found;
         }
-        let found = self.push(Cow::Owned(display.clone()), Kind::Other, None);
-        self.typed.insert(display, found);
+        let display = member_name(head, false, member);
+        let found = self.push(Cow::Owned(display), Kind::Other, None);
+        self.typed
+            .entry(head.to_owned())
+            .or_default()
+            .insert(member.to_owned(), found);
         found
     }
 
@@ -828,6 +825,12 @@ impl<'a> Recorder<'a> {
 fn line_pair(index: &LineIndex, span: Span) -> (Line, Line) {
     let last = span.end.saturating_sub(1).max(span.start);
     (index.line(span.start), index.line(last))
+}
+
+/// The name a declaration lists a member under: `Class.member`, and `Class.#member` for a private one.
+fn member_name(class: &str, private: bool, name: &str) -> String {
+    let hash = if private { "#" } else { "" };
+    format!("{class}{MEMBER_SEPARATOR}{hash}{name}")
 }
 
 /// The name a member of a class is declared under and whether it is private, which is how `members` and `fields` key it: `#cache` is `cache`, private. A key with no name written in the source has none.
