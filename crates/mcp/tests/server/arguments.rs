@@ -93,6 +93,7 @@ async fn names_with_changed_are_told_to_leave_changed_out_and_names_alone_are_no
     assert!(!alone.text.contains("`changed`"), "{}", alone.text);
 }
 
+#[scenario("mcp", "A blank name is a tool error")]
 #[tokio::test]
 async fn a_blank_name_is_a_tool_error_that_says_how_to_write_one() {
     let source = Fake::small();

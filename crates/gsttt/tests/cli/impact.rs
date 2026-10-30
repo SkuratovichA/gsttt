@@ -157,6 +157,7 @@ fn names_go_to_the_query_for_every_path_and_a_walk_by_name_takes_one_hop_unless_
     assert_eq!(whole["depth"], Value::Null);
 }
 
+#[scenario("cli", "A blank --name exits 2")]
 #[test]
 fn a_blank_name_exits_2() {
     let sandbox = Sandbox::new();

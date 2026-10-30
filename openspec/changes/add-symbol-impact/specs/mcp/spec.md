@@ -21,7 +21,7 @@ The server SHALL offer the tools `impact` (`paths`, `changed`, `base`, `depth`, 
 ## ADDED Requirements
 
 ### Requirement: Impact by name over MCP
-`impact` SHALL take `names`, the names to ask about in its `paths`, and answer as the query does for them; `names` with `changed` SHALL be a tool error. The description of `impact` and the server instructions SHALL say that a question about one function, class, method or variable is asked with its name, and that the answer lists its direct callers.
+`impact` SHALL take `names`, the names to ask about in its `paths`, and answer as the query does for them; `names` with `changed`, and a blank entry of `names`, SHALL be a tool error. The description of `impact` and the server instructions SHALL say that a question about one function, class, method or variable is asked with its name, and that the answer lists its direct callers.
 
 #### Scenario: impact takes names
 - **WHEN** `b.ts` uses `foo` of `a.ts` in `run`, and `impact` is called with `paths` set to `["a.ts"]` and `names` set to `["foo"]`
@@ -30,6 +30,10 @@ The server SHALL offer the tools `impact` (`paths`, `changed`, `base`, `depth`, 
 #### Scenario: names with changed is a tool error
 - **WHEN** `impact` is called with `changed` set to true and `names` set to `["foo"]`
 - **THEN** the result has `isError` set and says that `names` needs `paths`
+
+#### Scenario: A blank name is a tool error
+- **WHEN** `impact` is called with `paths` set to `["a.ts"]` and `names` set to `[""]`
+- **THEN** the result has `isError` set, says how to write a name, and the index is not asked
 
 #### Scenario: The description of impact speaks of names
 - **WHEN** a client sends `tools/list`
