@@ -414,6 +414,66 @@ fn a_barrel_passes_on_within_the_depth_only_the_names_that_got_there_within_it()
     );
 }
 
+/// `f.ts` is a barrel that is reached whole by an import of `long`, which is one hop through code from the changed `c.ts`, and reached in `n` by `short`, which calls what `c.ts` serves and so is none, in the same layer.
+fn a_barrel_met_by_a_long_way_and_a_short_one(long: &str, short: &str) -> Tree {
+    Tree::new()
+        .serves("c.ts", "http GET /x")
+        .imports(long, "c.ts")
+        .exports(long, &["x"])
+        .calls(short, "http GET /x")
+        .exports(short, &["n"])
+        .imports_names("f.ts", long, &["x"])
+        .re_exports("f.ts", short, &[("n", "n")])
+        .exports("f.ts", &["n"])
+        .imports_names("j.ts", "f.ts", &["n"])
+}
+
+#[test]
+fn a_name_passed_to_a_barrel_by_the_shorter_way_survives_the_barrel_made_whole_by_the_longer_one_first()
+ {
+    // The barrel is whole at one hop through code from `s2.ts`, which is the way `j.ts` is within the depth of 2 by.
+    let index = a_barrel_met_by_a_long_way_and_a_short_one("s1.ts", "s2.ts").build();
+    let request = ImpactRequest {
+        depth: Some(2),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "imports c.ts".to_owned()),
+            ("s2.ts", 1, "calls http GET /x".to_owned()),
+            ("f.ts", 2, "imports x from s1.ts".to_owned()),
+            ("j.ts", 3, "imports n from f.ts".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn a_name_passed_to_a_barrel_by_the_shorter_way_survives_the_barrel_made_whole_by_the_longer_one_second()
+ {
+    let index = a_barrel_met_by_a_long_way_and_a_short_one("s2.ts", "s1.ts").build();
+    let request = ImpactRequest {
+        depth: Some(2),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    // The barrel is found first by the re-export of `s1.ts`, which keeps its reason.
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "calls http GET /x".to_owned()),
+            ("s2.ts", 1, "imports c.ts".to_owned()),
+            ("f.ts", 2, "re-exports n from s1.ts".to_owned()),
+            ("j.ts", 3, "imports n from f.ts".to_owned()),
+        ]
+    );
+}
+
 #[scenario(
     "queries",
     "An import found second gives the fewer hops through code, over files"

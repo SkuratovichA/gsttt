@@ -262,11 +262,6 @@ impl Walk<'_> {
             self.take_all(importer, Cause::Imports { file, names }, fewest + 1);
             return;
         }
-        // Only a way that makes the importer whole can change a file that is whole already.
-        if self.whole.contains(importer) {
-            return;
-        }
-
         // The names it passes on, which affect it only in those names, each with the name it has in `file` and the hops through code it was reached by.
         let mut passed: Vec<(NameId, NameId, u32)> = Vec::new();
         for &(exported_as, taken) in binding.passes {
@@ -314,6 +309,13 @@ impl Walk<'_> {
             .min()
             .unwrap_or(code)
             + 1;
+        // Only a way that makes the importer whole can change a file that is whole already, and then only the hops through code it took in this layer. Only a walk with a depth gets here, because `gains_from` lets no other way into a whole importer.
+        if self.whole.contains(importer) {
+            if let Some(known) = self.fresh.get_mut(&importer) {
+                *known = (*known).min(fewest);
+            }
+            return;
+        }
         let names: Vec<(NameId, NameId)> = passed
             .iter()
             .map(|&(taken, exported_as, _)| (taken, exported_as))
@@ -346,8 +348,8 @@ impl Walk<'_> {
         }
     }
 
-    /// Makes `file` affected in all its names, reached by `code` hops through code. A file already reached in some names keeps the distance and cause it first had, and a file made whole in this layer by another way keeps the fewer hops through code.
-    fn take_all(&mut self, file: FileId, cause: Cause, code: u32) {
+    /// Makes `file` affected in all its names, reached by `code` hops through code. A file already reached in some names keeps the distance and cause it first had, and a file made whole in this layer by another way, or reached in a name by a way with fewer hops through code, keeps the fewer.
+    fn take_all(&mut self, file: FileId, cause: Cause, mut code: u32) {
         if !self.whole.insert(file) {
             if let Some(known) = self.fresh.get_mut(&file) {
                 *known = (*known).min(code);
@@ -360,8 +362,12 @@ impl Walk<'_> {
                 distance: self.distance,
                 cause,
             });
-        } else {
-            self.held.remove(&file);
+        } else if let Some(held) = self.held.remove(&file) {
+            // A name the file gained in this layer by a way that took fewer hops through code lowers them.
+            code = held
+                .growth
+                .values()
+                .fold(code, |fewest, &gained| fewest.min(gained));
         }
         self.fresh.insert(file, code);
     }
