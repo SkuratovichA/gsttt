@@ -17,3 +17,7 @@ Grepping a transcript of `cargo xtask agents run` for `gsttt` counted every Bash
 ## openspec validate --strict failed on a requirement that had grown
 
 A sentence added to a requirement of a delta took its text past 500 characters, and `openspec validate --strict` turns that warning into a failure. Fix: a new behaviour gets a requirement of its own with its scenario, rather than one more sentence in a requirement that already holds several.
+
+## openspec validate rejected a MODIFIED requirement that dropped scenarios
+
+A MODIFIED requirement in a delta must carry every scenario the requirement has in the current spec, so one whose scenarios were renamed or split failed `openspec validate`. Fix: REMOVE the old requirement with its `**Reason**:` and `**Migration**:` lines and ADD the new ones under new names, keeping word for word the name of every scenario that stays; rename in the same change every test that names a scenario of the removed requirement, because `cargo xtask spec` fails on it.
