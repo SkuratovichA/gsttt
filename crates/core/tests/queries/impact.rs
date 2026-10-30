@@ -148,6 +148,81 @@ fn depth_zero_reaches_nothing() {
     assert_eq!(paths(&answer.affected), NONE);
 }
 
+/// `b.ts` is a barrel over the changed `a.ts`, and `i.ts` imports from the barrel.
+fn a_barrel_over_a_changed_file() -> Tree {
+    Tree::new()
+        .exports("a.ts", &["x"])
+        .re_exports("b.ts", "a.ts", &[("x", "x")])
+        .exports("b.ts", &["x"])
+        .imports_names("i.ts", "b.ts", &["x"])
+}
+
+#[test]
+fn depth_zero_reaches_neither_a_barrel_nor_its_importers() {
+    let index = a_barrel_over_a_changed_file().build();
+    let limited = ImpactRequest {
+        depth: Some(0),
+        ..request(&["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &limited);
+
+    assert_eq!(paths(&answer.affected), NONE);
+}
+
+#[test]
+fn depth_one_reaches_a_barrel_and_not_its_importers() {
+    let index = a_barrel_over_a_changed_file().build();
+    let limited = ImpactRequest {
+        depth: Some(1),
+        ..request(&["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &limited);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("b.ts", 1, "re-exports x from a.ts".to_owned())]
+    );
+}
+
+#[test]
+fn depth_zero_reaches_across_a_contract_and_no_barrel() {
+    let index = a_barrel_over_a_server_and_a_caller().build();
+    let limited = ImpactRequest {
+        depth: Some(0),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &limited);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("s2.ts", 1, "calls http GET /x".to_owned())]
+    );
+}
+
+#[test]
+fn depth_one_reaches_the_barrel_by_the_name_that_took_no_hop_through_code_and_not_its_importers() {
+    let index = a_barrel_over_a_server_and_a_caller().build();
+    let limited = ImpactRequest {
+        depth: Some(1),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &limited);
+
+    // `s1.ts` is one hop through code from `c.ts`, which a depth of one does not follow further, so only `y` reaches the barrel, by one hop, and the walk stops there.
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "imports c.ts".to_owned()),
+            ("s2.ts", 1, "calls http GET /x".to_owned()),
+            ("b.ts", 2, "re-exports y from s2.ts".to_owned()),
+        ]
+    );
+}
+
 #[scenario("queries", "Import cycles terminate")]
 #[test]
 fn import_cycles_terminate() {
