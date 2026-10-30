@@ -180,6 +180,7 @@ impl<'g> FileSymbols<'g> {
         self.span.decl_count as usize
     }
 
+    /// Whether the file has no declarations.
     pub fn is_empty(self) -> bool {
         self.span.decl_count == 0
     }
