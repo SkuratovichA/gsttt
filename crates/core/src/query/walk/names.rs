@@ -35,10 +35,10 @@ pub(in crate::query) struct Hit {
     pub(in crate::query) distance: u32,
     /// The first way the walk found, chosen as in the walk over files: of the equally near ways the one from the file with the smallest path, and from that file an import before a contract.
     pub(in crate::query) cause: Cause,
-    /// The declarations of the file the walk reached, as indices among those of its symbols, in byte order of their names. The declarations asked about are not among them.
-    pub(in crate::query) callers: Vec<usize>,
-    /// Whether the code that runs as the file loads was reached.
-    pub(in crate::query) load: bool,
+    /// The declarations of the file the walk reached, each as its index among those of the symbols of the file and its hops from the nearest declaration asked about, in byte order of their names. The declarations asked about are not among them.
+    pub(in crate::query) callers: Vec<(usize, u32)>,
+    /// The hops from the nearest declaration asked about to the code that runs as the file loads, `None` when the walk did not reach it.
+    pub(in crate::query) load: Option<u32>,
 }
 
 impl From<Reached> for Hit {
@@ -49,7 +49,7 @@ impl From<Reached> for Hit {
             distance: reached.distance,
             cause: reached.cause,
             callers: Vec::new(),
-            load: false,
+            load: None,
         }
     }
 }
@@ -146,7 +146,8 @@ struct Touch {
     listed: Option<(u32, Cause)>,
     /// The declarations reached, as indices among those of the file, each with its distance. Those asked about are at 0.
     decls: BTreeMap<usize, u32>,
-    load: bool,
+    /// The distance of the code that runs as the file loads, once the walk reaches it.
+    load: Option<u32>,
     whole: bool,
 }
 
@@ -221,7 +222,7 @@ impl Walk<'_> {
             .get(&unit.file)
             .is_some_and(|touch| match unit.part {
                 Part::Decl(index) => touch.decls.contains_key(&index),
-                Part::Load => touch.load,
+                Part::Load => touch.load.is_some(),
                 Part::Whole => touch.whole,
             })
     }
@@ -272,7 +273,9 @@ impl Walk<'_> {
                 Part::Decl(index) => {
                     touch.decls.entry(index).or_insert(distance);
                 }
-                Part::Load => touch.load = true,
+                Part::Load => {
+                    touch.load.get_or_insert(distance);
+                }
                 Part::Whole => touch.whole = true,
             }
         }
@@ -292,13 +295,13 @@ impl Walk<'_> {
                         .and_then(|symbols| symbols.declaration(index))
                         .map(Declaration::name)
                 };
-                let mut callers: Vec<usize> = touch
+                let mut callers: Vec<(usize, u32)> = touch
                     .decls
                     .iter()
                     .filter(|&(_, &distance)| distance > 0)
-                    .map(|(&index, _)| index)
+                    .map(|(&index, &distance)| (index, distance))
                     .collect();
-                callers.sort_by(|&left, &right| name(left).cmp(&name(right)));
+                callers.sort_by(|&(left, _), &(right, _)| name(left).cmp(&name(right)));
                 Some(Hit {
                     file,
                     distance,

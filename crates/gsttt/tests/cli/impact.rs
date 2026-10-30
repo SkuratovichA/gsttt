@@ -184,7 +184,7 @@ fn name_asks_about_a_name() {
     assert_eq!(paths(&answer["affected"]), ["src/b.ts"]);
     assert_eq!(
         answer["affected"][0]["callers"],
-        value!([{ "name": "run", "line": 2 }])
+        value!([{ "name": "run", "line": 2, "distance": 1 }])
     );
 
     let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--name", "foo"]);

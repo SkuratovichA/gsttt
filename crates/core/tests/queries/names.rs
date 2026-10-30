@@ -1,13 +1,13 @@
 //! `impact` asked about names: the direct callers of a declaration, and the callers of callers when a depth is asked.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use gsttt_core::VERSION;
 use gsttt_core::contract::Role;
 use gsttt_core::engine::snapshot::{Header, Snapshot, Stored, now, write};
 use gsttt_core::fact::{FileTags, Import, ImportFlags, ImportKind};
 use gsttt_core::index::{Freshness, Index};
-use gsttt_core::query::{Affected, Answer, Entries, Impact, ImpactRequest, impact};
+use gsttt_core::query::{Affected, Answer, Caller, Entries, Impact, ImpactRequest, Load, impact};
 use gsttt_core::testing::{Code, Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
@@ -34,8 +34,8 @@ fn ask(index: &Index, path: &str, names: &[&str], depth: Option<u32>) -> Impact 
     ask_in(index, &[path], names, depth)
 }
 
-/// What a reader of the answer sees of an entry: its path, distance and reason, the names of its callers and whether its load is reached.
-type Row<'a> = (&'a str, u32, String, Vec<&'a str>, bool);
+/// What a reader of the answer sees of an entry: its path, distance and reason, the names of its callers and the distance of its load when it is reached.
+type Row<'a> = (&'a str, u32, String, Vec<&'a str>, Option<u32>);
 
 fn rows(list: &[Affected]) -> Vec<Row<'_>> {
     list.iter()
@@ -49,7 +49,7 @@ fn rows(list: &[Affected]) -> Vec<Row<'_>> {
                     .iter()
                     .map(|caller| caller.name.as_str())
                     .collect(),
-                entry.load,
+                entry.load.as_ref().map(|load| load.distance),
             )
         })
         .collect()
@@ -57,7 +57,7 @@ fn rows(list: &[Affected]) -> Vec<Row<'_>> {
 
 /// A row of an entry reached through declarations only.
 fn row<'a>(path: &'a str, distance: u32, reason: &str, callers: &[&'a str]) -> Row<'a> {
-    (path, distance, reason.to_owned(), callers.to_vec(), false)
+    (path, distance, reason.to_owned(), callers.to_vec(), None)
 }
 
 fn paths(list: &[Affected]) -> Vec<&str> {
@@ -240,7 +240,10 @@ fn the_answer_names_the_callers_and_their_lines() {
     let json = to_value(&answer).unwrap();
     assert_eq!(
         json["affected"][0]["callers"],
-        json!([{ "name": "run", "line": 3 }, { "name": "stop", "line": 7 }])
+        json!([
+            { "name": "run", "line": 3, "distance": 1 },
+            { "name": "stop", "line": 7, "distance": 1 }
+        ])
     );
 }
 
@@ -342,8 +345,13 @@ fn a_test_that_calls_a_name_is_a_direct_caller() {
             1,
             "imports foo from a.ts".to_owned(),
             Vec::new(),
-            true
+            Some(1)
         )]
+    );
+    let text = answer.text(Entries::Capped);
+    assert!(
+        text.contains("a.test.ts  distance 1  imports foo from a.ts; at load\n"),
+        "{text}"
     );
 }
 
@@ -389,14 +397,14 @@ fn a_file_reached_at_load_reaches_the_files_that_load_it() {
                 1,
                 "imports load from a.ts".to_owned(),
                 vec!["config"],
-                true
+                Some(1)
             ),
             (
                 "app.ts",
                 2,
                 "imports config.ts".to_owned(),
                 Vec::new(),
-                true
+                Some(2)
             ),
         ]
     );
@@ -415,6 +423,67 @@ fn a_larger_depth_follows_the_callers_of_callers() {
         ]
     );
     assert_eq!(answer.depth, Some(2));
+}
+
+#[test]
+fn each_caller_and_the_load_carry_the_distance_they_were_reached_at() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .symbols(
+            "b.ts",
+            Code::new()
+                .declaration("inner", (1, 3), &["foo"])
+                .declaration("outer", (5, 7), &["inner"])
+                .on_load(&["inner"]),
+        )
+        .exports("b.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], Some(2));
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    let entry = &answer.affected[0];
+    assert_eq!(entry.distance, 1);
+    assert_eq!(
+        entry.callers,
+        [
+            Caller {
+                name: "inner".to_owned(),
+                line: 1,
+                distance: 1
+            },
+            Caller {
+                name: "outer".to_owned(),
+                line: 5,
+                distance: 2
+            },
+        ]
+    );
+    assert_eq!(entry.load, Some(Load { distance: 2 }));
+    let text = answer.text(Entries::Capped);
+    assert!(
+        text.contains(
+            "b.ts  distance 1  imports foo from a.ts; in inner (line 1), outer (line 5, distance 2); at load (distance 2)\n"
+        ),
+        "{text}"
+    );
+    let json = to_value(&answer).unwrap();
+    assert_eq!(
+        json["affected"][0]["callers"],
+        json!([
+            { "name": "inner", "line": 1, "distance": 1 },
+            { "name": "outer", "line": 5, "distance": 2 }
+        ])
+    );
+    assert_eq!(json["affected"][0]["load"], json!({ "distance": 2 }));
+    // One hop reaches `inner` and not yet the load, and reads as it did before distances were said.
+    let near = ask(&index, "a.ts", &["foo"], Some(1)).text(Entries::Capped);
+    assert!(
+        near.contains("b.ts  distance 1  imports foo from a.ts; in inner (line 1)\n"),
+        "{near}"
+    );
 }
 
 #[scenario("queries", "The answer says when the walk stopped at the callers")]
@@ -705,7 +774,13 @@ fn a_dynamic_import_is_a_use_by_the_declaration_that_holds_its_line_or_by_the_lo
         rows(&answer.affected),
         [
             row("inside.ts", 1, "imports a.ts", &["lazy"]),
-            ("outside.ts", 1, "imports a.ts".to_owned(), Vec::new(), true),
+            (
+                "outside.ts",
+                1,
+                "imports a.ts".to_owned(),
+                Vec::new(),
+                Some(1)
+            ),
         ]
     );
 }
@@ -747,7 +822,7 @@ fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line
                 1,
                 "imports foo from a.ts".to_owned(),
                 Vec::new(),
-                true
+                Some(1)
             ),
             row("module.ts", 1, "imports a.ts", &["Shape"]),
             row("named.ts", 1, "imports foo from a.ts", &["Alias"]),
@@ -780,8 +855,8 @@ fn a_side_effect_import_uses_no_name_but_loads_the_file() {
     assert_eq!(
         rows(&by_name.affected),
         [
-            ("a.ts", 1, "declares foo".to_owned(), Vec::new(), true),
-            ("b.ts", 2, "imports a.ts".to_owned(), Vec::new(), true),
+            ("a.ts", 1, "declares foo".to_owned(), Vec::new(), Some(1)),
+            ("b.ts", 2, "imports a.ts".to_owned(), Vec::new(), Some(2)),
         ]
     );
 }
@@ -828,7 +903,7 @@ fn a_site_outside_every_declaration_belongs_to_the_load() {
             1,
             "calls http GET /inner".to_owned(),
             Vec::new(),
-            true
+            Some(1)
         )]
     );
 }
@@ -847,21 +922,21 @@ fn a_file_reached_at_load_crosses_all_its_contracts() {
                 1,
                 "imports foo from a.ts".to_owned(),
                 Vec::new(),
-                true
+                Some(1)
             ),
             (
                 "client.ts",
                 2,
                 "calls http GET /top".to_owned(),
                 vec!["fetchTop"],
-                false
+                None
             ),
             (
                 "other.ts",
                 2,
                 "calls http GET /inner".to_owned(),
                 Vec::new(),
-                true
+                Some(2)
             ),
         ]
     );
@@ -1026,9 +1101,9 @@ fn an_index_read_from_a_snapshot_answers_by_name_as_it_did() {
     assert_eq!(after, before);
     assert_eq!(
         before["affected"][1]["callers"],
-        json!([{ "name": "run", "line": 3 }])
+        json!([{ "name": "run", "line": 3, "distance": 1 }])
     );
-    assert_eq!(before["affected"][1]["load"], json!(true));
+    assert_eq!(before["affected"][1]["load"], json!({ "distance": 1 }));
 }
 
 /// How many files a random tree has.
@@ -1103,8 +1178,8 @@ fn random_tree(modules: &[Module]) -> Index {
     tree.build()
 }
 
-/// What a reader of the answer sees of each entry: its path with its distance, its callers and whether its load is reached.
-type Seen = BTreeMap<String, (u32, BTreeSet<String>, bool)>;
+/// What a reader of the answer sees of each entry: its path with its distance, its callers each with its distance, and the distance of its load when it is reached.
+type Seen = BTreeMap<String, (u32, BTreeMap<String, u32>, Option<u32>)>;
 
 fn seen(answer: &Impact) -> Seen {
     answer
@@ -1112,17 +1187,24 @@ fn seen(answer: &Impact) -> Seen {
         .iter()
         .chain(&answer.tests)
         .map(|entry| {
-            let callers = entry.callers.iter().map(|caller| caller.name.clone());
+            let callers = entry
+                .callers
+                .iter()
+                .map(|caller| (caller.name.clone(), caller.distance));
             (
                 entry.path.clone(),
-                (entry.distance, callers.collect(), entry.load),
+                (
+                    entry.distance,
+                    callers.collect(),
+                    entry.load.as_ref().map(|load| load.distance),
+                ),
             )
         })
         .collect()
 }
 
 proptest! {
-    /// On any tree, a larger depth keeps what a smaller one found, each file at the same distance, lists nothing beyond the depth, lists nearest first and gives the same answer twice.
+    /// On any tree, a larger depth keeps what a smaller one found, each file, caller and load at the same distance, lists nothing beyond the depth, lists nearest first, puts no caller or load nearer than the entry that holds it, and gives the same answer twice.
     #[test]
     fn a_larger_depth_keeps_what_a_smaller_one_found(modules in prop::collection::vec(module(), FILES)) {
         let index = random_tree(&modules);
@@ -1143,13 +1225,22 @@ proptest! {
                             .collect();
                         prop_assert!(order.is_sorted(), "{order:?}");
                         prop_assert!(order.iter().all(|&(distance, _)| (1..=depth).contains(&distance)), "{order:?}");
+                        for entry in list {
+                            let loads = entry.load.iter().map(|load| load.distance);
+                            let hops = entry.callers.iter().map(|caller| caller.distance).chain(loads);
+                            for hop in hops {
+                                prop_assert!((entry.distance..=depth).contains(&hop), "{} at {} holds a part at {hop}", entry.path, entry.distance);
+                            }
+                        }
                     }
                     let now = seen(&answer);
                     for (file, (distance, callers, load)) in &nearer {
                         let (later, more, loaded) = &now[file];
                         prop_assert_eq!(later, distance);
-                        prop_assert!(callers.is_subset(more), "{file}");
-                        prop_assert!(!load || *loaded, "{file}");
+                        for (caller, hops) in callers {
+                            prop_assert_eq!(more.get(caller), Some(hops), "{} in {}", caller, file);
+                        }
+                        prop_assert!(load.is_none() || loaded == load, "{file}");
                     }
                     nearer = now;
                 }

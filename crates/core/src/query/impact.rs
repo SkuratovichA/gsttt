@@ -70,9 +70,9 @@ pub struct Affected {
     /// A walk by name: the declarations of the file that the walk reached, which are the callers of what it came from, in byte order of their names. Those asked about are not among them. Left out when there are none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub callers: Vec<Caller>,
-    /// A walk by name: whether the code that runs as the file loads was reached. Left out when it was not.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub load: bool,
+    /// A walk by name: the code that runs as the file loads, when the walk reached it. Left out when it did not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load: Option<Load>,
 }
 
 /// A declaration the walk by name reached.
@@ -82,23 +82,43 @@ pub struct Caller {
     pub name: String,
     /// The line the declaration starts on.
     pub line: u32,
+    /// Hops from the nearest declaration asked about. The file that holds it is listed at this distance or at a nearer one.
+    pub distance: u32,
+}
+
+/// The code that runs as a file loads, which the walk by name reached.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Load {
+    /// Hops from the nearest declaration asked about. The file is listed at this distance or at a nearer one.
+    pub distance: u32,
 }
 
 impl Affected {
-    /// `; in run (line 3), stop (line 7)` for the callers of an entry the walk by name reached, then `; at load` when its load was reached. Callers are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    /// `; in run (line 3), stop (line 7)` for the callers of an entry the walk by name reached, then `; at load` when its load was reached. A caller or a load farther from the declarations asked about than the entry says so: `outer (line 5, distance 2)`, `; at load (distance 2)`. Callers are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
     fn write_callers(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         if !self.callers.is_empty() {
             let callers: Vec<String> = self
                 .callers
                 .iter()
-                .map(|caller| format!("{} (line {})", caller.name, caller.line))
+                .map(|caller| match self.further(caller.distance) {
+                    Some(distance) => format!("{} (line {}, {distance})", caller.name, caller.line),
+                    None => format!("{} (line {})", caller.name, caller.line),
+                })
                 .collect();
             write!(f, "; in {}", name_list(&callers, entries))?;
         }
-        if self.load {
+        if let Some(load) = &self.load {
             f.write_str("; at load")?;
+            if let Some(distance) = self.further(load.distance) {
+                write!(f, " ({distance})")?;
+            }
         }
         Ok(())
+    }
+
+    /// `distance 2` for a caller or a load that is not at the distance of its entry, because the line of the entry has said that one already.
+    fn further(&self, distance: u32) -> Option<String> {
+        (distance != self.distance).then(|| format!("distance {distance}"))
     }
 }
 
@@ -214,7 +234,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
             distance: hit.distance,
             reason: reason(graph, &hit.cause),
             callers: callers(graph, hit),
-            load: hit.load,
+            load: hit.load.map(|distance| Load { distance }),
         };
         if graph.tags(hit.file).contains(FileTags::TEST) {
             tests.push(entry);
@@ -283,17 +303,20 @@ fn in_asked_order(absent: BTreeMap<String, (usize, bool)>) -> Vec<(String, bool)
         .collect()
 }
 
-/// The declarations a walk by name reached in the file of `hit`, each with the line it starts on.
+/// The declarations a walk by name reached in the file of `hit`, each with the line it starts on and its distance.
 fn callers(graph: &Graph, hit: &Hit) -> Vec<Caller> {
     let Some(symbols) = graph.symbols(hit.file).filter(|_| !hit.callers.is_empty()) else {
         return Vec::new();
     };
     hit.callers
         .iter()
-        .filter_map(|&index| symbols.declaration(index))
-        .map(|declaration| Caller {
-            name: declaration.name().to_owned(),
-            line: declaration.line(),
+        .filter_map(|&(index, distance)| {
+            let declaration = symbols.declaration(index)?;
+            Some(Caller {
+                name: declaration.name().to_owned(),
+                line: declaration.line(),
+                distance,
+            })
         })
         .collect()
 }
