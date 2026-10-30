@@ -22,6 +22,12 @@ curl -fsSL https://raw.githubusercontent.com/SkuratovichA/gsttt/main/install.sh 
 
 The installer checks the SHA-256 of what it downloads and puts `gsttt` in `~/.local/bin`, or in `GSTTT_INSTALL_DIR` when that is set. Linux and macOS, on x86-64 and arm64.
 
+To update, run `gsttt update`. It installs the newest release over the `gsttt` that runs and updates the [Claude Code plugin](plugin/README.md) to match. `gsttt update 0.1.42` installs that version instead and leaves the plugin as it is, because the plugin follows the newest release.
+
+```sh
+gsttt update
+```
+
 Without the installer, each release is also a container image on ghcr.io, for CI pipelines and for MCP clients that start their servers through `docker run`:
 
 ```sh

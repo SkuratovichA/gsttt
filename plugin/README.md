@@ -19,6 +19,12 @@ This plugin gives Claude Code the gsttt MCP server, a skill that says when to as
    /plugin install gsttt@gsttt
    ```
 
+3. Update both later with one command. `gsttt update` installs the newest release of the binary and updates this plugin in every Claude Code config on the machine that has it. Claude Code sessions that are running keep the plugin they loaded, so restart them.
+
+   ```sh
+   gsttt update
+   ```
+
 ## What is in it
 
 | Path | What it is |

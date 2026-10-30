@@ -3,7 +3,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/SkuratovichA/gsttt/main/install.sh | sh
 #
-# The package is downloaded with gh when gh is installed and signed in, and with curl otherwise.
+# The package is downloaded with gh when gh is installed and signed in, and with curl otherwise. A gsttt of the version to install that is already in the install directory is left as it is, and nothing is downloaded, which is what makes `gsttt update` cheap when there is nothing new.
 #
 # GSTTT_VERSION      The version to install, such as 0.1.42. The latest release when unset.
 # GSTTT_INSTALL_DIR  Where the binary goes. ~/.local/bin when unset.
@@ -98,6 +98,17 @@ sha256_of() {
   fi
 }
 
+# Says how to put the directory $1 on PATH, unless it is there already. A slash at the end of either spelling names the same directory.
+path_hint() {
+  case ":${PATH:-}:" in
+    *":$1:"* | *":$1/:"*) ;;
+    *)
+      printf '%s is not in your PATH. To run gsttt by name, add this line to your shell profile:\n' "$1"
+      printf '  export PATH="%s:%s"\n' "$1" "\$PATH"
+      ;;
+  esac
+}
+
 main() {
   # Everything the install depends on is looked for before anything is downloaded or made.
   have sha256sum || have shasum || die "sha256sum or shasum is needed to check the download"
@@ -131,6 +142,16 @@ main() {
     install_dir="$HOME/.local/bin"
   else
     die "HOME is not set: set GSTTT_INSTALL_DIR"
+  fi
+
+  # A slash at the end of either spelling names the same directory.
+  directory="${install_dir%/}"
+
+  # The version is known before anything is downloaded, so a gsttt that already is this version costs no download. Nothing was made yet, so there is nothing to clean up.
+  if [ -x "$directory/gsttt" ] && [ "$("$directory/gsttt" --version 2> /dev/null)" = "gsttt $version" ]; then
+    printf 'gsttt %s is already installed at %s/gsttt\n' "$version" "$directory"
+    path_hint "$directory"
+    exit 0
   fi
 
   archive="gsttt-${version}-${target}.tar.gz"
@@ -168,16 +189,8 @@ main() {
     die "could not install gsttt into $install_dir"
   fi
 
-  # A slash at the end of either spelling names the same directory.
-  directory="${install_dir%/}"
   printf 'Installed gsttt %s to %s/gsttt\n' "$version" "$directory"
-  case ":${PATH:-}:" in
-    *":$directory:"* | *":$directory/:"*) ;;
-    *)
-      printf '%s is not in your PATH. To run gsttt by name, add this line to your shell profile:\n' "$directory"
-      printf '  export PATH="%s:%s"\n' "$directory" "\$PATH"
-      ;;
-  esac
+  path_hint "$directory"
 }
 
 main

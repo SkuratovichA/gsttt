@@ -18,4 +18,5 @@ mod root;
 mod schema;
 mod support;
 mod trust;
+mod update;
 mod usage;
