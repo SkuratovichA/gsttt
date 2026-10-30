@@ -175,7 +175,7 @@ Under `--json`, `gsttt index` SHALL print an object with `files`, `parsed`, `reu
 
 ### Requirement: The impact command
 
-`gsttt impact` SHALL take either paths or `--changed`, never both. A named path that is not on disk SHALL be passed as deleted. `--changed` SHALL take the files that differ from `HEAD`, or from the best common ancestor of `HEAD` and `<rev>` with `--base <rev>`, as `Engine::changed_files` lists them: modified, added and untracked files as changed, and deleted files as deleted. `--depth N` SHALL limit how far the answer follows dependents.
+`gsttt impact` SHALL take either paths or `--changed`, never both. A named path that is not on disk SHALL be passed as deleted. `--changed` SHALL take the files that differ from `HEAD`, or from the best common ancestor of `HEAD` and `<rev>` with `--base <rev>`, as `Engine::changed_files` lists them: modified, added and untracked files as changed, and deleted files as deleted. `--depth N` SHALL limit the hops through code the answer follows, and `--no-tests` SHALL leave the tests out of it.
 
 #### Scenario: --changed includes untracked files
 - **WHEN** a new file is created and not added to git, and `gsttt impact --changed` runs
@@ -196,6 +196,11 @@ Under `--json`, `gsttt index` SHALL print an object with `files`, `parsed`, `reu
 #### Scenario: --changed outside git exits 2
 - **WHEN** `gsttt impact --changed` runs in a directory outside any git repository
 - **THEN** stderr says `--changed` needs a git repository and the exit code is 2
+
+#### Scenario: --no-tests leaves the tests out
+- **WHEN** `a.ts` is imported by `b.ts` and by the test files `a.test.ts` and `b.test.ts`, and `gsttt impact a.ts --no-tests` runs
+- **THEN** the answer lists `b.ts`, lists no tests, and says it left out 2 test files
+- **AND** `gsttt --json impact a.ts --no-tests` has an empty `tests` and a `tests_left_out` of 2
 
 ### Requirement: The registry
 
