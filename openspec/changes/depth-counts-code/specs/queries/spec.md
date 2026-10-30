@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: A hop across a contract is no hop through code
-The depth of `impact` SHALL bound the hops through code: imports, uses of a name, loads and mocks. A hop across a contract SHALL count toward the distance of a file and not toward the depth, so a file reached across a contract is followed through code as far as any other, in the walk by name and in the walk over files. The first line of an impact answer SHALL say `within N hop(s) through code`.
+The depth of `impact` SHALL bound the hops through code: imports, uses of a name, loads and mocks. A hop across a contract SHALL count toward the distance of a file and not toward the depth, so a file reached across a contract is followed through code as far as any other, in the walk by name and in the walk over files, and it carries the fewest hops through code of the files that reach it. The first line of an impact answer SHALL say `within N hop(s) through code`.
 
 #### Scenario: A client of a route a caller serves is reached within the default depth
 - **WHEN** `db.ts` declares `rows`, `api.ts` imports it and uses it in `listUsers`, which serves `http GET /users`, `users.ts` calls `http GET /users` in `fetchUsers`, `page.ts` imports `fetchUsers` and uses it in `Page`, and impact is asked about `rows` in `db.ts` without a depth
@@ -14,6 +14,14 @@ The depth of `impact` SHALL bound the hops through code: imports, uses of a name
 - **WHEN** a controller serves `http GET /bookings/{}`, `api.ts` calls it, `page.tsx` imports `api.ts`, `app.tsx` imports `page.tsx`, and the controller changes with depth 1
 - **THEN** impact lists `api.ts` at distance 1 and `page.tsx` at distance 2
 - **AND** it does not list `app.tsx`
+
+#### Scenario: A contract is crossed with the fewest hops through code of the servers, by name
+- **WHEN** `lib.ts` declares `foo`, which serves `http GET /y`, `a.ts` imports `foo` and serves `http GET /x` in `pa`, `b.ts` calls `http GET /y` and serves `http GET /x` in `qb`, `c.ts` calls `http GET /x` in `cc`, `d.ts` imports `cc` from `c.ts` and uses it in `dd`, and impact is asked about `foo` in `lib.ts` without a depth
+- **THEN** impact lists `a.ts` and `b.ts` at distance 1, `c.ts` at distance 2 with the caller `cc`, and `d.ts` at distance 3 with the caller `dd`
+
+#### Scenario: A contract is crossed with the fewest hops through code of the servers, over files
+- **WHEN** `ch.ts` serves `http GET /y`, `a.ts` imports `ch.ts` and serves `http GET /x`, `b.ts` calls `http GET /y` and serves `http GET /x`, `c.ts` calls `http GET /x`, `d.ts` imports `c.ts`, and `ch.ts` changes with depth 1
+- **THEN** impact lists `a.ts` and `b.ts` at distance 1, `c.ts` at distance 2 and `d.ts` at distance 3
 
 ### Requirement: Tests left out of an impact answer
 `impact` SHALL leave the tests out of its answer when asked to: it walks as it does otherwise, lists no tests, and says how many test files it left out, as `N test files left out` in the text and as a count beside the empty list of tests in the JSON. The coverage line SHALL still cover every file the walk reached, and an answer whose walk reached only tests SHALL NOT say that nothing is affected.

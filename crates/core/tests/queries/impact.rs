@@ -276,6 +276,65 @@ fn contract_and_import_hops_chain() {
     );
 }
 
+#[scenario("queries", "A file reached across a contract is followed through code")]
+#[test]
+fn a_hop_across_a_contract_does_not_count_toward_the_depth() {
+    let index = Tree::new()
+        .serves("bookings.controller.ts", "http GET /bookings/{}")
+        .calls("api.ts", "http GET /bookings/{}")
+        .imports("page.tsx", "api.ts")
+        .imports("app.tsx", "page.tsx")
+        .build();
+    let request = ImpactRequest {
+        depth: Some(1),
+        ..request(&["bookings.controller.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("api.ts", 1, "calls http GET /bookings/{}".to_owned()),
+            ("page.tsx", 2, "imports api.ts".to_owned())
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A contract is crossed with the fewest hops through code of the servers, over files"
+)]
+#[test]
+fn what_lies_across_a_contract_takes_the_fewest_hops_through_code_of_its_servers() {
+    // `a.ts` and `b.ts` both serve `http GET /x` and are reached at distance 1: `a.ts`, which comes first, by an import, so with one hop through code, and `b.ts` across a contract, so with none.
+    let index = Tree::new()
+        .serves("ch.ts", "http GET /y")
+        .imports("a.ts", "ch.ts")
+        .serves("a.ts", "http GET /x")
+        .calls("b.ts", "http GET /y")
+        .serves("b.ts", "http GET /x")
+        .calls("c.ts", "http GET /x")
+        .imports("d.ts", "c.ts")
+        .build();
+    let request = ImpactRequest {
+        depth: Some(1),
+        ..request(&["ch.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("a.ts", 1, "imports ch.ts".to_owned()),
+            ("b.ts", 1, "calls http GET /y".to_owned()),
+            ("c.ts", 2, "calls http GET /x".to_owned()),
+            ("d.ts", 3, "imports c.ts".to_owned()),
+        ]
+    );
+}
+
 #[test]
 fn a_declared_contract_is_reached_through_an_import_of_its_schema() {
     let index = Tree::new()
@@ -312,6 +371,60 @@ fn tests_are_listed_apart() {
     let affected = text.find("affected files (1):").unwrap();
     let tests = text.find("tests (1):").unwrap();
     assert!(affected < tests && text.contains("a.test.ts  distance 1  imports a.ts"));
+}
+
+#[scenario("queries", "The tests are counted and not listed")]
+#[test]
+fn tests_can_be_left_out_and_counted() {
+    let index = Tree::new()
+        .imports("b.ts", "a.ts")
+        .read_by("extra", "a.test.ts")
+        .imports("a.test.ts", "a.ts")
+        .imports("b.test.ts", "a.ts")
+        .tag("a.test.ts", FileTags::TEST)
+        .tag("b.test.ts", FileTags::TEST)
+        .build();
+    let request = ImpactRequest {
+        no_tests: true,
+        ..request(&["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(paths(&answer.tests), NONE);
+    assert_eq!(answer.tests_left_out, 2);
+    let text = answer.to_string();
+    assert!(text.contains("2 test files left out\n"), "{text}");
+    assert!(!text.contains("a.test.ts"), "{text}");
+    // The footer covers every file the walk reached, the tests it left out included.
+    assert!(text.contains("extra read 1 of 1 files"), "{text}");
+    let json = to_value(&answer).unwrap();
+    assert_eq!(json["tests"], json!([]));
+    assert_eq!(json["tests_left_out"], json!(2));
+    // Asked for them, the answer lists the tests and counts none.
+    let listed = run(&index, &["a.ts"]);
+    assert_eq!(paths(&listed.tests), ["a.test.ts", "b.test.ts"]);
+    assert_eq!(listed.tests_left_out, 0);
+    assert!(to_value(&listed).unwrap().get("tests_left_out").is_none());
+}
+
+#[scenario("queries", "Only tests reached is not nothing")]
+#[test]
+fn an_answer_that_reached_only_tests_does_not_say_nothing_is_affected() {
+    let index = Tree::new()
+        .imports("a.test.ts", "a.ts")
+        .tag("a.test.ts", FileTags::TEST)
+        .build();
+    let request = ImpactRequest {
+        no_tests: true,
+        ..request(&["a.ts"])
+    };
+
+    let text = impact(&index, Freshness::Fresh, &request).to_string();
+
+    assert!(text.contains("1 test file left out\n"), "{text}");
+    assert!(!text.contains("nothing is affected"), "{text}");
 }
 
 #[test]
