@@ -371,6 +371,7 @@ fn ask_runner(index: &Index, methods: &[&str]) -> Impact {
     ask(index, "runner.ts", &asked, None)
 }
 
+#[scenario("queries", "Members of several classes are one note")]
 #[test]
 fn members_reached_through_their_classes_are_one_note() {
     let index = Tree::new()
@@ -559,6 +560,7 @@ fn a_larger_depth_follows_the_callers_of_callers() {
     assert_eq!(answer.depth, Some(2));
 }
 
+#[scenario("queries", "A caller reached farther than its file says its distance")]
 #[test]
 fn each_caller_and_the_load_carry_the_distance_they_were_reached_at() {
     let index = Tree::new()

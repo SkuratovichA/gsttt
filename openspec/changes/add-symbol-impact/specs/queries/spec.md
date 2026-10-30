@@ -32,7 +32,7 @@ Asked about names declared in a file, `impact` SHALL list their direct callers: 
 - **AND** the JSON entry of `b.ts` has the callers `run` at line 3 and `stop` at line 7
 
 ### Requirement: Members of a class
-A member of a class SHALL be a declaration of its own, `Class.member`, so that a name used in one method affects that method and not its class. Asked about a member, `impact` SHALL list the members that use it through `this` and, because a call through a value names no class, the declarations that refer to the class, with a note that says so.
+A member of a class SHALL be a declaration of its own, `Class.member`, so that a name used in one method affects that method and not its class. Asked about a member, `impact` SHALL list the members that use it through `this` and, because a call through a value names no class, the declarations that refer to the class, with a note that says so, one for all such members of the answer.
 
 #### Scenario: A name used in a method affects that method
 - **WHEN** `runner.ts` declares the class `Runner` with the method `start`, which calls `foo` imported from `a.ts`, and the method `stop`, `app.ts` imports `Runner` and uses it in `main`, and impact is asked about `foo` in `a.ts`
@@ -43,6 +43,11 @@ A member of a class SHALL be a declaration of its own, `Class.member`, so that a
 - **WHEN** `Runner.stop` calls `this.start()`, `app.ts` imports `Runner` and uses it in `main`, and impact is asked about `Runner.start` in `runner.ts`
 - **THEN** impact lists `runner.ts` with the caller `Runner.stop` and `app.ts` with the caller `main`
 - **AND** a note says that callers of `Runner.start` through a value are found through the declarations that refer to `Runner`
+
+#### Scenario: Members of several classes are one note
+- **WHEN** `runner.ts` declares the class `Runner` with the methods `start` and `stop` and the class `ModuleRunner` with the method `import`, `app.ts` imports `Runner` and uses it in `main`, and impact is asked about `Runner.start`, `Runner.stop` and `ModuleRunner.import` in `runner.ts`
+- **THEN** impact lists only `app.ts`
+- **AND** the answer has one note, that callers of `ModuleRunner.import`, `Runner.start` and `Runner.stop` through a value are found through the declarations that refer to their classes
 
 ### Requirement: Callers at load
 Code that runs as a file loads SHALL be a caller of what it refers to. A file whose load uses an asked name SHALL be listed as reached at load, a test file among the tests. A hop from a file reached at load SHALL reach at load every file that loads it, which a type-only import does not, and that file SHALL cross all its contracts.
@@ -57,11 +62,17 @@ Code that runs as a file loads SHALL be a caller of what it refers to. A file wh
 - **AND** it does not list `types.ts`
 
 ### Requirement: Depth by name
-Asked about names, `impact` SHALL take one hop unless the request gives a depth. Each further hop SHALL go from the declarations reached to the declarations that refer to them, by the rules of the first. When the depth stops the walk with callers left to follow, the answer SHALL say so, and that asking about a caller or with a larger depth goes on.
+Asked about names, `impact` SHALL take one hop unless the request gives a depth. Each further hop SHALL go from the declarations reached to the declarations that refer to them, by the rules of the first. A file SHALL be listed once, at the distance the walk first reached it, and a caller or a load of it that the walk reached farther SHALL say its own distance. When the depth stops the walk with callers left to follow, the answer SHALL say so, and that asking about a caller or with a larger depth goes on.
 
 #### Scenario: A larger depth follows the callers of callers
 - **WHEN** `b.ts` uses `foo` of `a.ts` in `run`, `c.ts` imports `run` from `b.ts` and uses it in `main`, and impact is asked about `foo` in `a.ts` with depth 2
 - **THEN** impact lists `b.ts` at distance 1 with the caller `run` and `c.ts` at distance 2 with the reason `imports run from b.ts` and the caller `main`
+
+#### Scenario: A caller reached farther than its file says its distance
+- **WHEN** `b.ts` uses `foo` of `a.ts` in `inner`, which starts at line 1, `outer`, which starts at line 5, uses `inner`, the load of `b.ts` uses `inner`, and impact is asked about `foo` in `a.ts` with depth 2
+- **THEN** impact lists `b.ts  distance 1  imports foo from a.ts; in inner (line 1), outer (line 5, distance 2); at load (distance 2)`
+- **AND** the JSON entry of `b.ts` has the callers `inner` at distance 1 and `outer` at distance 2, and its load at distance 2
+- **AND** asked with depth 1, impact lists `b.ts  distance 1  imports foo from a.ts; in inner (line 1)`
 
 #### Scenario: The answer says when the walk stopped at the callers
 - **WHEN** `b.ts` uses `foo` of `a.ts` in `run`, `c.ts` uses `run` in `main`, and impact is asked about `foo` in `a.ts` without a depth
