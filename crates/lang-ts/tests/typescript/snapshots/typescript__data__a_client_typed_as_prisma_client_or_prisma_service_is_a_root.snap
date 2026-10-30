@@ -101,6 +101,7 @@ expression: json
             "name": "InvoiceRepo.constructor",
             "uses": [
               "InvoiceRepo.client",
+              "PrismaClient",
               "PrismaService"
             ]
           },
@@ -108,14 +109,17 @@ expression: json
             "end": 13,
             "line": 11,
             "name": "InvoiceRepo.all",
-            "uses": []
+            "uses": [
+              "PrismaService"
+            ]
           },
           {
             "end": 17,
             "line": 15,
             "name": "InvoiceRepo.one",
             "uses": [
-              "InvoiceRepo.client"
+              "InvoiceRepo.client",
+              "PrismaClient"
             ]
           },
           {

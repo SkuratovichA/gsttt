@@ -169,7 +169,8 @@ expression: json
             "line": 22,
             "name": "Later.find",
             "uses": [
-              "Later.client"
+              "Later.client",
+              "PrismaClient"
             ]
           }
         ],
@@ -281,6 +282,7 @@ expression: json
             "line": 6,
             "name": "Reads.find",
             "uses": [
+              "PrismaClient",
               "Reads.client"
             ]
           },

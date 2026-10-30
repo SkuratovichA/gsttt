@@ -543,3 +543,55 @@ fn export_default_interface_exports_the_interface_by_its_name() -> Result<(), Bo
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A method that calls an injected service uses its class")]
+fn a_method_that_calls_an_injected_service_uses_its_class() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-injected-fields")?;
+    let path = "src/invoices.resolver.ts";
+    let issue = uses(&json, path, "InvoiceResolver.issue").ok_or("no InvoiceResolver.issue")?;
+    for class in ["InvoiceService", "MailQueue", "JobQueue"] {
+        assert!(issue.contains(&class), "issue uses {class}: {issue:?}");
+    }
+    let other = uses(&json, path, "InvoiceResolver.other").ok_or("no InvoiceResolver.other")?;
+    for class in ["InvoiceService", "MailQueue", "JobQueue"] {
+        assert!(
+            !other.contains(&class),
+            "a parameter without a modifier is no field, so other does not use {class}: {other:?}"
+        );
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A field is read in its own class")]
+fn a_field_is_read_in_its_own_class() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-field-own-class")?;
+    let send = uses(&json, "src/jobs.ts", "Mailer.send").ok_or("no Mailer.send")?;
+    assert!(send.contains(&"MailQueue"), "{send:?}");
+    assert!(!send.contains(&"InvoiceService"), "{send:?}");
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+fn a_method_that_reads_a_private_field_uses_its_type() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-private-fields")?;
+    let path = "src/mailer.ts";
+    let send = uses(&json, path, "Mailer.send").ok_or("no Mailer.send")?;
+    assert!(
+        send.contains(&"MailQueue") && !send.contains(&"JobQueue"),
+        "{send:?}"
+    );
+    let later = uses(&json, path, "Mailer.later").ok_or("no Mailer.later")?;
+    assert!(
+        later.contains(&"JobQueue") && !later.contains(&"MailQueue"),
+        "{later:?}"
+    );
+    // `queue` and `#queue` are two fields, and only the private one has a type.
+    let count = uses(&json, path, "Mailer.count").ok_or("no Mailer.count")?;
+    assert!(!count.contains(&"MailQueue"), "{count:?}");
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

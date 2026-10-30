@@ -330,6 +330,60 @@ fn name_lists_the_callers_of_a_name_and_not_the_tests_that_mock_it_or_read_anoth
 }
 
 #[test]
+fn name_crosses_the_contract_from_a_method_of_an_injected_service() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "package.json",
+        "{ \"dependencies\": { \"@nestjs/graphql\": \"^12.0.0\", \"graphql-tag\": \"^2.12.0\" } }\n",
+    );
+    write(
+        &repo,
+        "src/invoice.service.ts",
+        "export class InvoiceService {\n  issue() {}\n}\n",
+    );
+    // The resolver names the service only in its constructor, so issueInvoice is a caller by the type of the field.
+    write(
+        &repo,
+        "src/invoice.resolver.ts",
+        "import { Mutation, Resolver } from '@nestjs/graphql';\nimport { InvoiceService } from './invoice.service';\n\n@Resolver()\nexport class InvoiceResolver {\n  constructor(private readonly invoices: InvoiceService) {}\n\n  @Mutation()\n  issueInvoice() {\n    return this.invoices.issue();\n  }\n}\n",
+    );
+    write(
+        &repo,
+        "src/client.ts",
+        "import gql from 'graphql-tag';\n\nexport const ISSUE = gql`mutation Issue { issueInvoice }`;\n",
+    );
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/invoice.service.ts",
+            "--name",
+            "InvoiceService.issue",
+            "--depth",
+            "2",
+        ],
+    ));
+    assert_eq!(
+        paths(&answer["affected"]),
+        ["src/invoice.resolver.ts", "src/client.ts"],
+        "{answer}"
+    );
+    assert_eq!(answer["affected"][0]["distance"], 1, "{answer}");
+    let callers = answer["affected"][0]["callers"].to_string();
+    assert!(callers.contains("InvoiceResolver.issueInvoice"), "{answer}");
+    assert_eq!(answer["affected"][1]["distance"], 2, "{answer}");
+    assert_eq!(
+        answer["affected"][1]["reason"],
+        value!({ "via": "contract", "role": "calls", "key": "graphql Mutation.issueInvoice" }),
+        "{answer}"
+    );
+}
+
+#[test]
 fn name_asks_about_a_member_of_a_class() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();
