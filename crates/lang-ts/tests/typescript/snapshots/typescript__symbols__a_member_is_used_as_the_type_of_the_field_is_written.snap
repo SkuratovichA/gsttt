@@ -1,0 +1,192 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "services"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "*"
+          ],
+          "spec": "./services",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "exported": [
+            "JobQueue",
+            "MailQueue"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "JobQueue",
+            "MailQueue"
+          ],
+          "spec": "./queues",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        }
+      ],
+      "path": "src/notifier.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 7,
+            "line": 4,
+            "name": "Local",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Local.run",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "Local.stop",
+            "uses": []
+          },
+          {
+            "end": 33,
+            "line": 9,
+            "name": "Notifier",
+            "uses": []
+          },
+          {
+            "end": 14,
+            "line": 10,
+            "name": "Notifier.constructor",
+            "uses": [
+              "JobQueue",
+              "Local",
+              "MailQueue",
+              "services"
+            ]
+          },
+          {
+            "end": 17,
+            "line": 15,
+            "name": "Notifier.qualified",
+            "uses": [
+              "services.MailQueue.push"
+            ]
+          },
+          {
+            "end": 20,
+            "line": 18,
+            "name": "Notifier.union",
+            "uses": [
+              "JobQueue.send",
+              "MailQueue.send"
+            ]
+          },
+          {
+            "end": 23,
+            "line": 21,
+            "name": "Notifier.declared",
+            "uses": [
+              "Local.run"
+            ]
+          },
+          {
+            "end": 26,
+            "line": 24,
+            "name": "Notifier.undeclared",
+            "uses": [
+              "Local.start"
+            ]
+          },
+          {
+            "end": 29,
+            "line": 27,
+            "name": "Notifier.nested",
+            "uses": [
+              "services.MailQueue.items"
+            ]
+          },
+          {
+            "end": 32,
+            "line": 30,
+            "name": "Notifier.indexed",
+            "uses": [
+              "services"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

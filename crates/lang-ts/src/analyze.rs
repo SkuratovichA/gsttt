@@ -935,10 +935,21 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         let Some(names) = member_chain(it) else {
             match it {
                 MemberExpression::PrivateFieldExpression(member) => {
-                    self.symbols.private(member.field.name.as_str());
+                    self.symbols.private(member.field.name.as_str(), None);
                 }
                 MemberExpression::StaticMemberExpression(member) => {
-                    self.member_of_load(&member.object, member.property.name.as_str());
+                    let property = member.property.name.as_str();
+                    self.member_of_load(&member.object, property);
+                    // `this.#field.member` reads a member of the type of the field, so the field is not read as a value. The types written around the field are still walked, as for `this.field.member`.
+                    if let Expression::PrivateFieldExpression(field) =
+                        member.object.get_inner_expression()
+                    {
+                        self.walk_spine(&member.object);
+                        self.symbols
+                            .private(field.field.name.as_str(), Some(property));
+                        self.visit_expression(&field.object);
+                        return;
+                    }
                 }
                 MemberExpression::ComputedMemberExpression(_) => {}
             }
@@ -1113,7 +1124,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_private_in_expression(&mut self, it: &PrivateInExpression<'a>) {
-        self.symbols.private(it.left.name.as_str());
+        self.symbols.private(it.left.name.as_str(), None);
         walk::walk_private_in_expression(self, it);
     }
 }

@@ -384,6 +384,62 @@ fn name_crosses_the_contract_from_a_method_of_an_injected_service() {
 }
 
 #[test]
+fn name_crosses_only_the_contract_of_the_method_that_calls_the_member() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "package.json",
+        "{ \"dependencies\": { \"@nestjs/graphql\": \"^12.0.0\", \"graphql-tag\": \"^2.12.0\" } }\n",
+    );
+    write(
+        &repo,
+        "src/invoice.service.ts",
+        "export class InvoiceService {\n  issue() {}\n  cancel() {}\n}\n",
+    );
+    // Both resolver methods read the same injected field, and each serves a mutation of its own.
+    write(
+        &repo,
+        "src/invoice.resolver.ts",
+        "import { Mutation, Resolver } from '@nestjs/graphql';\nimport { InvoiceService } from './invoice.service';\n\n@Resolver()\nexport class InvoiceResolver {\n  constructor(private readonly invoices: InvoiceService) {}\n\n  @Mutation()\n  issueInvoice() {\n    return this.invoices.issue();\n  }\n\n  @Mutation()\n  cancelInvoice() {\n    return this.invoices.cancel();\n  }\n}\n",
+    );
+    write(
+        &repo,
+        "src/issue.client.ts",
+        "import gql from 'graphql-tag';\n\nexport const ISSUE = gql`mutation Issue { issueInvoice }`;\n",
+    );
+    write(
+        &repo,
+        "src/cancel.client.ts",
+        "import gql from 'graphql-tag';\n\nexport const CANCEL = gql`mutation Cancel { cancelInvoice }`;\n",
+    );
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/invoice.service.ts",
+            "--name",
+            "InvoiceService.issue",
+            "--depth",
+            "2",
+        ],
+    ));
+    assert_eq!(
+        paths(&answer["affected"]),
+        ["src/invoice.resolver.ts", "src/issue.client.ts"],
+        "{answer}"
+    );
+    let callers = answer["affected"][0]["callers"].to_string();
+    assert!(callers.contains("InvoiceResolver.issueInvoice"), "{answer}");
+    assert!(
+        !callers.contains("InvoiceResolver.cancelInvoice"),
+        "{answer}"
+    );
+}
+
+#[test]
 fn name_asks_about_a_member_of_a_class() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();

@@ -132,16 +132,40 @@ struct Unit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Name<'a> {
     Is(&'a str),
+    /// A member of the class exported as the first name, which is what the walk reached of it. The class is the name that imports take; the member is what an importer's declarations use as `Local.member`, where a use of `Local` alone is a use of every member.
+    Member(&'a str, &'a str),
     /// Every name of the file: the file is followed whole, or exports its declarations under names that cannot be listed.
     Any,
 }
 
-impl Name<'_> {
-    /// Whether an import that takes `taken` from the file gets this name. A namespace takes every name.
-    fn takes(self, taken: &str) -> bool {
+impl<'a> Name<'a> {
+    /// The name the file exports, `None` for every name.
+    fn exported(self) -> Option<&'a str> {
         match self {
-            Self::Any => true,
-            Self::Is(name) => taken == "*" || taken == name,
+            Self::Is(name) | Self::Member(name, _) => Some(name),
+            Self::Any => None,
+        }
+    }
+
+    /// Whether an import that takes `taken` from the file gets this name. A namespace takes every name, and a member gets the import of its class.
+    fn takes(self, taken: &str) -> bool {
+        self.exported()
+            .is_none_or(|name| taken == "*" || taken == name)
+    }
+
+    /// The member an import that takes `taken` is about. A namespace holds the class under a name of its own, so a use of the namespace is not named after the member.
+    fn member_taken(self, taken: &str) -> Option<&'a str> {
+        match self {
+            Self::Member(_, member) if taken != "*" => Some(member),
+            _ => None,
+        }
+    }
+
+    /// This name for `member` of the class it names. `Any` stays whatever the member.
+    fn with(self, member: Option<&'a str>) -> Self {
+        match (self, member) {
+            (Self::Is(class), Some(member)) => Self::Member(class, member),
+            _ => self,
         }
     }
 }
@@ -371,7 +395,7 @@ struct Via<'a> {
     /// The names of the file it takes that the walk reached, for the reason it is listed with.
     taken: Taken,
     /// The names it binds them under, which is what its declarations refer to.
-    locals: Vec<&'a str>,
+    locals: Vec<Local<'a>>,
     /// What it passes on as a named re-export, as the name it takes and the name it exports.
     passes: Vec<(NameId, NameId)>,
     /// Whether it uses a name beyond its locals: it exports one again, takes names by a dynamic import, a `require` or an import type, or calls a file followed whole where it mocks it.
@@ -380,6 +404,23 @@ struct Via<'a> {
     barrel: bool,
     /// Whether it must be followed whole.
     whole: bool,
+}
+
+/// A name an importer binds, with the member of it that the walk reached when it reached one.
+#[derive(Clone, Copy)]
+struct Local<'a> {
+    name: &'a str,
+    member: Option<&'a str>,
+}
+
+impl Local<'_> {
+    /// Whether a declaration that uses `used` refers to what the local stands for. A use of the local alone is a use of every member of it, and `Local.member` is a use of that member only.
+    fn refers(&self, used: &str) -> bool {
+        match self.member {
+            None => belongs_to(used, self.name),
+            Some(member) => used == self.name || member_in(used, self.name) == Some(member),
+        }
+    }
 }
 
 /// The names an importer takes from a file.
@@ -525,7 +566,7 @@ impl<'w, 'a> Step<'w, 'a> {
         };
     }
 
-    /// The declarations of `file` that refer to the `declared` ones reached, and its load when it does. A member `Class.member` is also referred to by the declarations outside `Class` that refer to the class, because a call through a value names no class.
+    /// The declarations of `file` that refer to the `declared` ones reached, and its load when it does. A member `Class.member` is also referred to by the declarations outside `Class` that refer to the class, because a call through a value names no class. A class is referred to by the declarations outside it that use one of its members, `Class.other` as well as `Class.member`.
     fn callers_in(&mut self, file: FileId, symbols: FileSymbols<'a>, declared: &[usize]) {
         let mut names: Vec<&'a str> = declared
             .iter()
@@ -546,17 +587,16 @@ impl<'w, 'a> Step<'w, 'a> {
         }
         let mut found = false;
         for (index, decl) in symbols.declarations().enumerate() {
-            let refers = decl.uses().any(|used| holds(&names, &used))
-                || classes.iter().any(|class| {
-                    decl.uses().any(|used| used == *class) && !belongs_to(decl.name(), class)
-                });
-            if refers {
+            if decl
+                .uses()
+                .any(|used| refers(&names, &classes, Some(decl.name()), used))
+            {
                 found |= self.unit(file, Part::Decl(index));
             }
         }
         if symbols
             .on_load()
-            .any(|used| holds(&names, &used) || holds(&classes, &used))
+            .any(|used| refers(&names, &classes, None, used))
         {
             found |= self.unit(file, Part::Load);
         }
@@ -576,13 +616,26 @@ impl<'w, 'a> Step<'w, 'a> {
             .iter()
             .filter_map(|&index| symbols.declaration(index))
         {
-            let name = decl.name();
-            for local in [Some(name), class_of(name)].into_iter().flatten() {
-                exported.extend(self.exported_as(file, symbols, local));
-            }
+            let (local, member) = match split_member(decl.name()) {
+                Some((class, member)) => (class, Some(member)),
+                None => (decl.name(), None),
+            };
+            let names = self.exported_as(file, symbols, local);
+            exported.extend(names.into_iter().map(|name| name.with(member)));
         }
         if exported.contains(&Name::Any) {
             exported = BTreeSet::from([Name::Any]);
+        } else {
+            // A class reached as a whole is reached in every member.
+            let whole: Vec<&str> = exported
+                .iter()
+                .filter_map(|name| match name {
+                    Name::Is(class) => Some(*class),
+                    _ => None,
+                })
+                .collect();
+            exported
+                .retain(|name| !matches!(name, Name::Member(class, _) if whole.contains(class)));
         }
         self.flow(file, exported);
     }
@@ -727,6 +780,7 @@ impl<'w, 'a> Step<'w, 'a> {
                         continue;
                     }
                     via.taken.name(graph, taken);
+                    let member = name.member_taken(taken);
                     if re_export {
                         via.barrel = true;
                         if let (Some(source), Some(target)) =
@@ -734,21 +788,24 @@ impl<'w, 'a> Step<'w, 'a> {
                         {
                             via.passes.push((source, target));
                         }
-                        work.push_back((importer, Name::Is(bound)));
+                        work.push_back((importer, Name::Is(bound).with(member)));
                         continue;
                     }
-                    via.locals.push(bound);
+                    via.locals.push(Local {
+                        name: bound,
+                        member,
+                    });
                     for exported in self.exported_as(importer, symbols, bound) {
                         via.used = true;
-                        work.push_back((importer, exported));
+                        work.push_back((importer, exported.with(member)));
                     }
                 }
             }
             ImportKind::ReExportAll => {
                 // `export *` never forwards `default`.
-                if name != Name::Is("default") {
+                if name.exported() != Some("default") {
                     via.barrel = true;
-                    if let Name::Is(exported) = name
+                    if let Some(exported) = name.exported()
                         && let Some(id) = graph.name_id(exported)
                     {
                         via.passes.push((id, id));
@@ -785,17 +842,18 @@ impl<'w, 'a> Step<'w, 'a> {
     }
 
     /// The declarations of `importer` that refer to one of `locals`, and its load when it does. Says whether any is new.
-    fn users(&mut self, importer: FileId, symbols: FileSymbols<'a>, locals: &[&str]) -> bool {
+    fn users(&mut self, importer: FileId, symbols: FileSymbols<'a>, locals: &[Local]) -> bool {
         if locals.is_empty() {
             return false;
         }
+        let refers = |used: &str| locals.iter().any(|local| local.refers(used));
         let mut found = false;
         for (index, decl) in symbols.declarations().enumerate() {
-            if decl.uses().any(|used| locals.contains(&used)) {
+            if decl.uses().any(refers) {
                 found |= self.unit(importer, Part::Decl(index));
             }
         }
-        if symbols.on_load().any(|used| locals.contains(&used)) {
+        if symbols.on_load().any(refers) {
             found |= self.unit(importer, Part::Load);
         }
         found
@@ -891,7 +949,7 @@ fn takes_module(import: &Import) -> bool {
 fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<'_>) {
     match import.kind {
         ImportKind::ReExportAll => {
-            if name != Name::Is("default") {
+            if name.exported() != Some("default") {
                 via.taken = Taken::Everything;
                 via.whole = true;
             }
@@ -953,15 +1011,32 @@ fn narrowest<'g>(symbols: FileSymbols<'g>, line: Line) -> impl Iterator<Item = u
         .map(|(index, _)| index)
 }
 
+/// Whether code that uses `used` refers to one of the `names` of the declarations reached, or to a member of them. `classes` are the classes of the reached names that are members. A use of such a class alone is a use of every member of it, and a use of `Class.member` is a use of that member and of `Class`. The code of `owner` belongs to a class it is a member of, which it does not refer to by being in it. The load of a file has no owner.
+fn refers(names: &[&str], classes: &[&str], owner: Option<&str>, used: &str) -> bool {
+    let outside = |class: &str| owner.is_none_or(|owner| !belongs_to(owner, class));
+    holds(names, &used)
+        || (holds(classes, &used) && outside(used))
+        || class_of(used).is_some_and(|class| holds(names, &class) && outside(class))
+}
+
+/// `Class` and `member` for the member `Class.member`.
+fn split_member(name: &str) -> Option<(&str, &str)> {
+    name.split_once(MEMBER_SEPARATOR)
+}
+
 /// `Class` for the member `Class.member`.
 fn class_of(name: &str) -> Option<&str> {
-    name.split_once(MEMBER_SEPARATOR).map(|(class, _)| class)
+    split_member(name).map(|(class, _)| class)
+}
+
+/// `member` for the name `class.member`, when `name` is one.
+fn member_in<'n>(name: &'n str, class: &str) -> Option<&'n str> {
+    name.strip_prefix(class)?.strip_prefix(MEMBER_SEPARATOR)
 }
 
 /// Whether `name` is a member of `class`.
 fn member_of(name: &str, class: &str) -> bool {
-    name.strip_prefix(class)
-        .is_some_and(|rest| rest.starts_with(MEMBER_SEPARATOR))
+    member_in(name, class).is_some()
 }
 
 /// Whether `name` is `class` or one of its members.

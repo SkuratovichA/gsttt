@@ -15,4 +15,7 @@ class InvoiceResolver {
   other() {
     return this.plain;
   }
+  all() {
+    return this.invoices;
+  }
 }

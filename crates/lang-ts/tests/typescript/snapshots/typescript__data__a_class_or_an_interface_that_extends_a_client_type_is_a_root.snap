@@ -241,7 +241,7 @@ expression: json
             "line": 12,
             "name": "TenantRepository.find",
             "uses": [
-              "PrismaService"
+              "PrismaService.tenant"
             ]
           }
         ],

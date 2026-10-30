@@ -23,19 +23,21 @@ expression: json
       "imports": [
         {
           "exported": [
-            "InvoiceService",
+            "Left",
             "MailQueue",
-            "JobQueue"
+            "Right",
+            "Special"
           ],
           "flags": 0,
           "kind": "static",
           "line": 1,
           "names": [
-            "InvoiceService",
+            "Left",
             "MailQueue",
-            "JobQueue"
+            "Right",
+            "Special"
           ],
-          "spec": "./services",
+          "spec": "./queues",
           "to": {
             "unresolved": {
               "reason": "not-found"
@@ -43,7 +45,7 @@ expression: json
           }
         }
       ],
-      "path": "src/invoices.resolver.ts",
+      "path": "src/spellings.ts",
       "project": "ts .",
       "status": {
         "status": "ok"
@@ -51,52 +53,113 @@ expression: json
       "symbols": {
         "declared": [
           {
-            "end": 18,
+            "end": 41,
             "line": 3,
-            "name": "InvoiceResolver",
+            "name": "Spellings",
             "uses": []
           },
           {
             "end": 4,
             "line": 4,
-            "name": "InvoiceResolver.mail",
+            "name": "Spellings.#queue",
             "uses": [
               "MailQueue"
             ]
           },
           {
-            "end": 5,
+            "end": 8,
             "line": 5,
-            "name": "InvoiceResolver.jobs",
+            "name": "Spellings.constructor",
             "uses": [
-              "JobQueue"
+              "Left",
+              "MailQueue",
+              "Right"
             ]
           },
           {
-            "end": 9,
-            "line": 6,
-            "name": "InvoiceResolver.constructor",
+            "end": 11,
+            "line": 9,
+            "name": "Spellings.optional",
             "uses": [
-              "InvoiceService"
+              "MailQueue.push"
             ]
           },
           {
             "end": 14,
-            "line": 10,
-            "name": "InvoiceResolver.issue",
+            "line": 12,
+            "name": "Spellings.nonNull",
             "uses": [
-              "InvoiceResolver.jobs",
-              "InvoiceResolver.mail",
-              "InvoiceService",
-              "JobQueue",
-              "MailQueue"
+              "MailQueue.push"
             ]
           },
           {
             "end": 17,
             "line": 15,
-            "name": "InvoiceResolver.other",
-            "uses": []
+            "name": "Spellings.cast",
+            "uses": [
+              "MailQueue.push",
+              "Special"
+            ]
+          },
+          {
+            "end": 20,
+            "line": 18,
+            "name": "Spellings.quoted",
+            "uses": [
+              "MailQueue.push"
+            ]
+          },
+          {
+            "end": 23,
+            "line": 21,
+            "name": "Spellings.bound",
+            "uses": [
+              "MailQueue.push"
+            ]
+          },
+          {
+            "end": 27,
+            "line": 24,
+            "name": "Spellings.destructured",
+            "uses": [
+              "MailQueue"
+            ]
+          },
+          {
+            "end": 31,
+            "line": 28,
+            "name": "Spellings.alias",
+            "uses": [
+              "MailQueue"
+            ]
+          },
+          {
+            "end": 34,
+            "line": 32,
+            "name": "Spellings.intersection",
+            "uses": [
+              "Left.send",
+              "Right.send"
+            ]
+          },
+          {
+            "end": 37,
+            "line": 35,
+            "name": "Spellings.privateCast",
+            "uses": [
+              "MailQueue.push",
+              "Special",
+              "Spellings.#queue"
+            ]
+          },
+          {
+            "end": 40,
+            "line": 38,
+            "name": "Spellings.privateNonNull",
+            "uses": [
+              "MailQueue.push",
+              "Spellings.#queue"
+            ]
           }
         ],
         "exports": [],

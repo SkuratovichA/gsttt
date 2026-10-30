@@ -24,14 +24,16 @@ expression: json
         {
           "exported": [
             "InvoiceService",
-            "MailQueue"
+            "MailQueue",
+            "JobQueue"
           ],
           "flags": 0,
           "kind": "static",
           "line": 1,
           "names": [
             "InvoiceService",
-            "MailQueue"
+            "MailQueue",
+            "JobQueue"
           ],
           "spec": "./services",
           "to": {
@@ -41,7 +43,7 @@ expression: json
           }
         }
       ],
-      "path": "src/jobs.ts",
+      "path": "src/invoices.resolver.ts",
       "project": "ts .",
       "status": {
         "status": "ok"
@@ -49,39 +51,59 @@ expression: json
       "symbols": {
         "declared": [
           {
-            "end": 5,
+            "end": 21,
             "line": 3,
-            "name": "Billing",
+            "name": "InvoiceResolver",
             "uses": []
           },
           {
             "end": 4,
             "line": 4,
-            "name": "Billing.constructor",
+            "name": "InvoiceResolver.mail",
+            "uses": [
+              "MailQueue"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "InvoiceResolver.jobs",
+            "uses": [
+              "JobQueue"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 6,
+            "name": "InvoiceResolver.constructor",
             "uses": [
               "InvoiceService"
             ]
           },
           {
-            "end": 12,
-            "line": 7,
-            "name": "Mailer",
-            "uses": []
-          },
-          {
-            "end": 8,
-            "line": 8,
-            "name": "Mailer.constructor",
+            "end": 14,
+            "line": 10,
+            "name": "InvoiceResolver.issue",
             "uses": [
-              "MailQueue"
+              "InvoiceResolver.jobs",
+              "InvoiceResolver.mail",
+              "InvoiceService.issue",
+              "JobQueue.add",
+              "MailQueue.push"
             ]
           },
           {
-            "end": 11,
-            "line": 9,
-            "name": "Mailer.send",
+            "end": 17,
+            "line": 15,
+            "name": "InvoiceResolver.other",
+            "uses": []
+          },
+          {
+            "end": 20,
+            "line": 18,
+            "name": "InvoiceResolver.all",
             "uses": [
-              "MailQueue"
+              "InvoiceService"
             ]
           }
         ],
