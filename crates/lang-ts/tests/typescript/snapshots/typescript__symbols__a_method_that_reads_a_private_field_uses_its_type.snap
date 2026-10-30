@@ -81,7 +81,7 @@ expression: json
             "line": 7,
             "name": "Mailer.send",
             "uses": [
-              "MailQueue",
+              "MailQueue.push",
               "Mailer.#queue"
             ]
           },
@@ -90,7 +90,7 @@ expression: json
             "line": 10,
             "name": "Mailer.later",
             "uses": [
-              "JobQueue",
+              "JobQueue.add",
               "Mailer.#jobs"
             ]
           },

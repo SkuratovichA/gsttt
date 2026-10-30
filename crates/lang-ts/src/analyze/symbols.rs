@@ -130,6 +130,8 @@ pub(super) struct Recorder<'a> {
     members: HashMap<(usize, bool, &'a str), usize>,
     /// The names at the head of the type of each field of a top-level class, keyed like `members`. They are resolved when `this.<field>` is read, because the file may declare a type after the class.
     fields: HashMap<(usize, bool, &'a str), Vec<Cow<'a, str>>>,
+    /// The entry that stands for `Type.member`, by that name, for a member read through a field whose type the file does not declare as a class with that member. It declares nothing: it has no lines, and only its name is kept.
+    typed: HashMap<String, usize>,
     entries: Vec<Entry<'a>>,
     groups: Vec<Group>,
     group_members: Vec<usize>,
@@ -619,7 +621,7 @@ impl<'a> Recorder<'a> {
         }
     }
 
-    /// A chain of member accesses from a name or `this`, `C.s` or `this.m`. The name at its base is a use, and so is the member of a class; `this.field` also uses the names the type of the field stands for.
+    /// A chain of member accesses from a name or `this`, `C.s` or `this.m`. The name at its base is a use, and so is the member of a class; `this.field` also uses the names the type of the field stands for, and `this.field.member` the member of each.
     pub(super) fn chain(&mut self, names: &[Option<String>]) {
         let Some(Some(root)) = names.first() else {
             return;
@@ -633,7 +635,8 @@ impl<'a> Recorder<'a> {
                 .map(|plan| plan.entry);
             if let (Some(class), Some(member)) = (class, second) {
                 self.member_use(class, false, member);
-                self.field_use(class, false, member);
+                let read = names.get(2).and_then(Option::as_deref);
+                self.field_use(class, false, member, read);
             }
             return;
         }
@@ -646,8 +649,8 @@ impl<'a> Recorder<'a> {
         }
     }
 
-    /// `this.#name` or `other.#name` inside a top-level class: a private name belongs to the class body that declares it.
-    pub(super) fn private(&mut self, name: &str) {
+    /// `this.#name` or `other.#name` inside a top-level class: a private name belongs to the class body that declares it. `member` is the member read from the field, as in `this.#name.member`.
+    pub(super) fn private(&mut self, name: &str, member: Option<&str>) {
         let class = self
             .place
             .class
@@ -655,36 +658,67 @@ impl<'a> Recorder<'a> {
             .map(|plan| plan.entry);
         if let Some(class) = class {
             self.member_use(class, true, name);
-            self.field_use(class, true, name);
+            self.field_use(class, true, name, member);
         }
     }
 
-    /// The names at the head of the type of the field `name` of `class` that the file declares or binds. A qualified head resolves through its first segment.
-    fn field_use(&mut self, class: usize, private: bool, name: &str) {
+    /// The names at the head of the type of the field `name` of `class` that the file declares or binds, each spelled as the type writes it. A qualified head resolves through its first segment. A field read for one of its `member`s uses that member of each, and a field read as a value uses the type alone.
+    fn field_use(&mut self, class: usize, private: bool, name: &str, member: Option<&str>) {
         let Some(types) = self.fields.get(&(class, private, name)) else {
             return;
         };
-        let bindings: Vec<usize> = types
+        let heads: Vec<(usize, Cow<'a, str>)> = types
             .iter()
             .filter_map(|head| {
                 let root = head.split_once('.').map_or(head.as_ref(), |(root, _)| root);
-                self.names.get(root).copied()
+                Some((self.names.get(root).copied()?, head.clone()))
             })
             .collect();
-        for binding in bindings {
-            self.note(binding);
+        for (binding, head) in heads {
+            match member {
+                Some(member) => self.typed_member(binding, &head, member),
+                None => self.note(binding),
+            }
         }
     }
 
+    /// Uses `member` of the type `head`, which `binding` names. A class of the file that declares the member is used through that member; any other type through an entry made for `head.member`.
+    fn typed_member(&mut self, binding: usize, head: &str, member: &str) {
+        let declared = if head == self.name(binding) {
+            self.member_entry(binding, false, member)
+        } else {
+            None
+        };
+        let found = match declared {
+            Some(found) => found,
+            None => self.typed_entry(head, member),
+        };
+        self.note(found);
+    }
+
+    /// The entry for `head.member`, made once.
+    fn typed_entry(&mut self, head: &str, member: &str) -> usize {
+        let display = format!("{head}{MEMBER_SEPARATOR}{member}");
+        if let Some(&found) = self.typed.get(&display) {
+            return found;
+        }
+        let found = self.push(Cow::Owned(display.clone()), Kind::Other, None);
+        self.typed.insert(display, found);
+        found
+    }
+
     fn member_use(&mut self, class: usize, private: bool, name: &str) {
-        if self
-            .entries
-            .get(class)
-            .is_some_and(|entry| entry.has_members)
-            && let Some(&member) = self.members.get(&(class, private, name))
-        {
+        if let Some(member) = self.member_entry(class, private, name) {
             self.note(member);
         }
+    }
+
+    /// The entry of the member `name` of `class`, when the class is one of the file with members.
+    fn member_entry(&self, class: usize, private: bool, name: &str) -> Option<usize> {
+        self.entries
+            .get(class)
+            .filter(|entry| entry.has_members)
+            .and_then(|_| self.members.get(&(class, private, name)).copied())
     }
 
     /// The declaration being walked writes the top-level variable `base`.

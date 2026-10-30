@@ -545,53 +545,119 @@ fn export_default_interface_exports_the_interface_by_its_name() -> Result<(), Bo
 }
 
 #[test]
-#[scenario("typescript", "A method that calls an injected service uses its class")]
-fn a_method_that_calls_an_injected_service_uses_its_class() -> Result<(), Box<dyn Error>> {
+#[scenario(
+    "typescript",
+    "A method that calls an injected service uses the member it calls"
+)]
+fn a_method_that_calls_an_injected_service_uses_the_member_it_calls() -> Result<(), Box<dyn Error>>
+{
     let json = run("symbols-injected-fields")?;
     let path = "src/invoices.resolver.ts";
-    let issue = uses(&json, path, "InvoiceResolver.issue").ok_or("no InvoiceResolver.issue")?;
-    for class in ["InvoiceService", "MailQueue", "JobQueue"] {
-        assert!(issue.contains(&class), "issue uses {class}: {issue:?}");
-    }
-    let other = uses(&json, path, "InvoiceResolver.other").ok_or("no InvoiceResolver.other")?;
-    for class in ["InvoiceService", "MailQueue", "JobQueue"] {
-        assert!(
-            !other.contains(&class),
-            "a parameter without a modifier is no field, so other does not use {class}: {other:?}"
-        );
-    }
+    assert_eq!(
+        uses(&json, path, "InvoiceResolver.issue"),
+        Some(vec![
+            "InvoiceResolver.jobs",
+            "InvoiceResolver.mail",
+            "InvoiceService.issue",
+            "JobQueue.add",
+            "MailQueue.push",
+        ]),
+        "`this.invoices.issue()` uses `issue` of the class of the field, and not the class"
+    );
+    assert_eq!(
+        uses(&json, path, "InvoiceResolver.other"),
+        Some(vec![]),
+        "a parameter without a modifier is no field, so other uses none of them"
+    );
     insta::assert_json_snapshot!(json);
     Ok(())
 }
 
 #[test]
-#[scenario("typescript", "A field is read in its own class")]
-fn a_field_is_read_in_its_own_class() -> Result<(), Box<dyn Error>> {
+#[scenario("typescript", "A field read as a value uses its class")]
+fn a_field_read_as_a_value_uses_its_class() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-injected-fields")?;
+    assert_eq!(
+        uses(&json, "src/invoices.resolver.ts", "InvoiceResolver.all"),
+        Some(vec!["InvoiceService"])
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A member of a field is read in its own class")]
+fn a_member_of_a_field_is_read_in_its_own_class() -> Result<(), Box<dyn Error>> {
     let json = run("symbols-field-own-class")?;
-    let send = uses(&json, "src/jobs.ts", "Mailer.send").ok_or("no Mailer.send")?;
-    assert!(send.contains(&"MailQueue"), "{send:?}");
-    assert!(!send.contains(&"InvoiceService"), "{send:?}");
+    let path = "src/jobs.ts";
+    assert_eq!(
+        uses(&json, path, "Mailer.send"),
+        Some(vec!["MailQueue.push"])
+    );
+    assert_eq!(
+        uses(&json, path, "Billing"),
+        Some(vec![]),
+        "a field that no method reads uses nothing"
+    );
     insta::assert_json_snapshot!(json);
     Ok(())
 }
 
 #[test]
+#[scenario("typescript", "A member of a private field is read through the field")]
 fn a_method_that_reads_a_private_field_uses_its_type() -> Result<(), Box<dyn Error>> {
     let json = run("symbols-private-fields")?;
     let path = "src/mailer.ts";
-    let send = uses(&json, path, "Mailer.send").ok_or("no Mailer.send")?;
-    assert!(
-        send.contains(&"MailQueue") && !send.contains(&"JobQueue"),
-        "{send:?}"
+    assert_eq!(
+        uses(&json, path, "Mailer.send"),
+        Some(vec!["MailQueue.push", "Mailer.#queue"])
     );
-    let later = uses(&json, path, "Mailer.later").ok_or("no Mailer.later")?;
-    assert!(
-        later.contains(&"JobQueue") && !later.contains(&"MailQueue"),
-        "{later:?}"
+    assert_eq!(
+        uses(&json, path, "Mailer.later"),
+        Some(vec!["JobQueue.add", "Mailer.#jobs"])
     );
     // `queue` and `#queue` are two fields, and only the private one has a type.
     let count = uses(&json, path, "Mailer.count").ok_or("no Mailer.count")?;
     assert!(!count.contains(&"MailQueue"), "{count:?}");
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A member is used as the type of the field is written")]
+fn a_member_is_used_as_the_type_of_the_field_is_written() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-field-members")?;
+    let path = "src/notifier.ts";
+    let of = |name| uses(&json, path, name);
+    assert_eq!(
+        of("Notifier.qualified"),
+        Some(vec!["services.MailQueue.push"]),
+        "a qualified type keeps its qualifier"
+    );
+    assert_eq!(
+        of("Notifier.union"),
+        Some(vec!["JobQueue.send", "MailQueue.send"]),
+        "each type of a union has the member"
+    );
+    assert_eq!(
+        of("Notifier.declared"),
+        Some(vec!["Local.run"]),
+        "a class of the file with the member is used through it"
+    );
+    assert_eq!(
+        of("Notifier.undeclared"),
+        Some(vec!["Local.start"]),
+        "a member the class does not declare is used by its name all the same"
+    );
+    assert_eq!(
+        of("Notifier.nested"),
+        Some(vec!["services.MailQueue.items"]),
+        "only the first member read from the field is the member"
+    );
+    assert_eq!(
+        of("Notifier.indexed"),
+        Some(vec!["services"]),
+        "a computed key names no member, so the field is read as a value"
+    );
     insta::assert_json_snapshot!(json);
     Ok(())
 }

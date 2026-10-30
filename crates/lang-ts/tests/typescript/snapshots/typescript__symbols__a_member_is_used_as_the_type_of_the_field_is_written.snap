@@ -23,17 +23,13 @@ expression: json
       "imports": [
         {
           "exported": [
-            "InvoiceService",
-            "MailQueue",
-            "JobQueue"
+            "services"
           ],
           "flags": 0,
           "kind": "static",
           "line": 1,
           "names": [
-            "InvoiceService",
-            "MailQueue",
-            "JobQueue"
+            "*"
           ],
           "spec": "./services",
           "to": {
@@ -41,9 +37,28 @@ expression: json
               "reason": "not-found"
             }
           }
+        },
+        {
+          "exported": [
+            "JobQueue",
+            "MailQueue"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "JobQueue",
+            "MailQueue"
+          ],
+          "spec": "./queues",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
         }
       ],
-      "path": "src/invoices.resolver.ts",
+      "path": "src/notifier.ts",
       "project": "ts .",
       "status": {
         "status": "ok"
@@ -51,52 +66,88 @@ expression: json
       "symbols": {
         "declared": [
           {
-            "end": 18,
-            "line": 3,
-            "name": "InvoiceResolver",
-            "uses": []
-          },
-          {
-            "end": 4,
+            "end": 7,
             "line": 4,
-            "name": "InvoiceResolver.mail",
-            "uses": [
-              "MailQueue"
-            ]
+            "name": "Local",
+            "uses": []
           },
           {
             "end": 5,
             "line": 5,
-            "name": "InvoiceResolver.jobs",
-            "uses": [
-              "JobQueue"
-            ]
+            "name": "Local.run",
+            "uses": []
           },
           {
-            "end": 9,
+            "end": 6,
             "line": 6,
-            "name": "InvoiceResolver.constructor",
-            "uses": [
-              "InvoiceService"
-            ]
+            "name": "Local.stop",
+            "uses": []
+          },
+          {
+            "end": 33,
+            "line": 9,
+            "name": "Notifier",
+            "uses": []
           },
           {
             "end": 14,
             "line": 10,
-            "name": "InvoiceResolver.issue",
+            "name": "Notifier.constructor",
             "uses": [
-              "InvoiceResolver.jobs",
-              "InvoiceResolver.mail",
-              "InvoiceService",
               "JobQueue",
-              "MailQueue"
+              "Local",
+              "MailQueue",
+              "services"
             ]
           },
           {
             "end": 17,
             "line": 15,
-            "name": "InvoiceResolver.other",
-            "uses": []
+            "name": "Notifier.qualified",
+            "uses": [
+              "services.MailQueue.push"
+            ]
+          },
+          {
+            "end": 20,
+            "line": 18,
+            "name": "Notifier.union",
+            "uses": [
+              "JobQueue.send",
+              "MailQueue.send"
+            ]
+          },
+          {
+            "end": 23,
+            "line": 21,
+            "name": "Notifier.declared",
+            "uses": [
+              "Local.run"
+            ]
+          },
+          {
+            "end": 26,
+            "line": 24,
+            "name": "Notifier.undeclared",
+            "uses": [
+              "Local.start"
+            ]
+          },
+          {
+            "end": 29,
+            "line": 27,
+            "name": "Notifier.nested",
+            "uses": [
+              "services.MailQueue.items"
+            ]
+          },
+          {
+            "end": 32,
+            "line": 30,
+            "name": "Notifier.indexed",
+            "uses": [
+              "services"
+            ]
           }
         ],
         "exports": [],
