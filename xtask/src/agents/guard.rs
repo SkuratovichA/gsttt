@@ -65,6 +65,17 @@ impl Guard {
 
     /// Whether the run changed the checkout. When it did, HEAD is put back where it was, then the refs, the tracked files are reset, and what the run added, ignored files and empty directories included, is removed; it fails when the checkout is still not as it was.
     pub(super) fn finish(self) -> anyhow::Result<bool> {
+        // Claude Code makes an empty `.claude` in each directory its Bash tool runs a command in, and no agent wrote it, so it goes without marking the run.
+        let made_by_claude_code: Vec<Entry> = status(&self.dir)?
+            .difference(&self.before)
+            .filter(|entry| is_claude_code_directory(entry))
+            .cloned()
+            .collect();
+        let made_by_claude_code: Vec<&str> = made_by_claude_code
+            .iter()
+            .map(|(_, path)| path.as_str())
+            .collect();
+        remove(&self.dir, &made_by_claude_code, &self.before)?;
         let moved = Head::read(&self.dir)? != self.head;
         if !moved && refs(&self.dir)? == self.refs && status(&self.dir)? == self.before {
             return Ok(false);
@@ -106,6 +117,11 @@ impl Guard {
         }
         Ok(())
     }
+}
+
+/// Whether `entry` is an empty `.claude` directory that is new or ignored, which Claude Code makes in each directory its Bash tool runs a command in.
+fn is_claude_code_directory((code, path): &Entry) -> bool {
+    (code == "??" || code == "!!") && (path == ".claude/" || path.ends_with("/.claude/"))
 }
 
 /// Removes `added`, the paths relative to `dir`, and the directories that are empty without them, but not one that `before` lists: it was empty and there when the run began, and the run put a file in it. A directory with anything else in it stays, so nothing that was there before the run goes with what the run added.
@@ -461,6 +477,38 @@ mod tests {
             dir.join("keep").is_dir(),
             "the directory of the preparation stays"
         );
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "An empty .claude directory does not mark the run"
+    )]
+    #[test]
+    fn an_empty_claude_directory_does_not_mark_the_run() {
+        let (_guard, dir) = repo();
+        fs::create_dir(dir.join("src")).unwrap();
+        fs::write(dir.join("src/b.ts"), "export {}\n").unwrap();
+        git(&dir, &["add", "."]).unwrap();
+        commit(&dir, "src");
+        let guard = Guard::new(&dir).unwrap();
+        fs::create_dir(dir.join(".claude")).unwrap();
+        fs::create_dir(dir.join("src/.claude")).unwrap();
+
+        assert!(!guard.finish().unwrap(), "the run is not marked");
+        assert!(!dir.join(".claude").exists());
+        assert!(!dir.join("src/.claude").exists());
+        assert!(dir.join("src/b.ts").exists());
+    }
+
+    #[test]
+    fn a_claude_directory_holding_a_file_marks_the_run_and_is_removed() {
+        let (_guard, dir) = repo();
+        let guard = Guard::new(&dir).unwrap();
+        fs::create_dir(dir.join(".claude")).unwrap();
+        fs::write(dir.join(".claude/settings.json"), "{}\n").unwrap();
+
+        assert!(guard.finish().unwrap(), "the run is marked");
+        assert!(!dir.join(".claude").exists());
     }
 
     #[gsttt_scenario::scenario(
