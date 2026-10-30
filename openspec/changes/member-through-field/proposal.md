@@ -2,7 +2,7 @@
 
 ## Why
 
-Asked about one method of a service, `impact` lists every method of every class that holds the service in a field, not the ones that call the method. `this.invoices.issue()` uses `InvoiceService`, the name at the head of the type of the field, and the walk by name reads a use of a class as a use of every member of it. On a NestJS service with fourteen reads of one injected field, about ten callers are listed where two call the method.
+Asked about one method of a service, `impact` lists every method of every class that holds the service in a field, not the ones that call the method. `this.invoices.issue()` uses `InvoiceService`, the name at the head of the type of the field, and the walk by name reads a use of a class as a use of every member of it. On a service whose injected field is read in many methods, every one of those methods is listed, however few of them call the method.
 
 Each wrong caller also costs more than a row. The walk goes on across the contracts of the callers, so a resolver method that never calls `issue` brings the clients of the GraphQL operation or the route it serves into the answer.
 
