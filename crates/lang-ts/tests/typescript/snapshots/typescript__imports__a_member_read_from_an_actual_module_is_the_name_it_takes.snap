@@ -20,7 +20,8 @@ expression: json
       "contracts": [],
       "embedded": [],
       "exports": [
-        "lib"
+        "helper",
+        "other"
       ],
       "imports": [],
       "path": "src/lib.ts",
@@ -33,7 +34,13 @@ expression: json
           {
             "end": 1,
             "line": 1,
-            "name": "lib",
+            "name": "helper",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "other",
             "uses": []
           }
         ],
@@ -52,7 +59,9 @@ expression: json
           "flags": 0,
           "kind": "dynamic",
           "line": 1,
-          "names": [],
+          "names": [
+            "helper"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"
@@ -62,7 +71,9 @@ expression: json
           "flags": 0,
           "kind": "dynamic",
           "line": 2,
-          "names": [],
+          "names": [
+            "other"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"
@@ -72,7 +83,9 @@ expression: json
           "flags": 0,
           "kind": "dynamic",
           "line": 3,
-          "names": [],
+          "names": [
+            "third"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"
@@ -87,105 +100,22 @@ expression: json
           "to": {
             "file": "src/lib.ts"
           }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 5,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 6,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 7,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 8,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 9,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 10,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 11,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 12,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
-        },
-        {
-          "flags": 0,
-          "kind": "dynamic",
-          "line": 13,
-          "names": [],
-          "spec": "./lib",
-          "to": {
-            "file": "src/lib.ts"
-          }
         }
       ],
-      "path": "src/runners.test.ts",
+      "path": "src/members.test.ts",
       "project": "ts .",
       "status": {
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "third",
+            "uses": []
+          }
+        ],
         "exports": [],
         "on_load": []
       },

@@ -257,6 +257,79 @@ fn name_asks_about_a_name() {
 }
 
 #[test]
+fn name_lists_the_callers_of_a_name_and_not_the_tests_that_mock_it_or_read_another_member() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/api.ts",
+        "export function fetchUser() {\n  return 1;\n}\nexport function other() {\n  return 2;\n}\n",
+    );
+    write(
+        &repo,
+        "src/index.ts",
+        "export { fetchUser, other } from './api';\n",
+    );
+    // The only real caller reaches `fetchUser` through the barrel.
+    write(
+        &repo,
+        "src/page.ts",
+        "import { fetchUser } from './index';\nexport function render() {\n  return fetchUser();\n}\n",
+    );
+    // A test that mocks the barrel and imports nothing from it runs what replaces the module.
+    write(
+        &repo,
+        "src/barrel.test.ts",
+        "vi.mock('./index', () => ({ fetchUser: vi.fn() }));\n",
+    );
+    // A partial mock names the module as a type, which does not run.
+    write(
+        &repo,
+        "src/partial.test.ts",
+        "vi.mock('./api', async (importOriginal) => ({\n  ...(await importOriginal<typeof import('./api')>()),\n}));\n",
+    );
+    // A member read from a loaded module takes that member only.
+    write(
+        &repo,
+        "src/reader.test.ts",
+        "test('other', async () => {\n  expect((await import('./api')).other()).toBe(2);\n});\n",
+    );
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/api.ts",
+            "--name",
+            "fetchUser",
+            "--depth",
+            "2",
+        ],
+    ));
+
+    assert_eq!(paths(&answer["affected"]), ["src/index.ts", "src/page.ts"]);
+    assert_eq!(paths(&answer["tests"]), Vec::<&str>::new());
+    let page = answer["affected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == "src/page.ts")
+        .unwrap();
+    assert_eq!(
+        page["callers"],
+        value!([{ "name": "render", "line": 2, "distance": 1 }])
+    );
+
+    // The member the reader calls is `other`, so it is the one name that reaches it.
+    let other = json(&sandbox.run_in(
+        &repo,
+        &["--json", "impact", "src/api.ts", "--name", "other"],
+    ));
+    assert_eq!(paths(&other["tests"]), ["src/reader.test.ts"]);
+}
+
+#[test]
 fn name_asks_about_a_member_of_a_class() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();

@@ -72,6 +72,14 @@ fn paths(list: &[Affected]) -> Vec<&str> {
     list.iter().map(|entry| entry.path.as_str()).collect()
 }
 
+/// An import of `a.ts` of the given `kind` on `line` that takes `names`.
+fn loading(kind: ImportKind, names: &[&str], line: u32) -> Import {
+    Import {
+        names: names.iter().map(|&name| name.to_owned()).collect(),
+        ..Import::new("a.ts", kind, line)
+    }
+}
+
 /// `a.ts`, which declares `foo` and `bar`, and `b.ts`, which imports both and uses `foo` in `run` and `bar` in `stop`.
 fn library() -> Tree {
     Tree::new()
@@ -545,6 +553,41 @@ fn a_file_reached_at_load_reaches_the_files_that_load_it() {
     );
 }
 
+#[scenario("queries", "A file reached at load reaches the files that mock it")]
+#[test]
+fn a_file_reached_at_load_reaches_the_files_that_mock_it() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("load", (1, 3), &[]))
+        .exports("a.ts", &["load"])
+        .imports_names("config.ts", "a.ts", &["load"])
+        .symbols(
+            "config.ts",
+            Code::new()
+                .declaration("config", (1, 1), &["load"])
+                .on_load(&["load"]),
+        )
+        .exports("config.ts", &["config"])
+        .mocks("config.test.ts", "config.ts", 1)
+        .symbols("config.test.ts", Code::new())
+        .exports("config.test.ts", &[])
+        .tag("config.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = ask(&index, "a.ts", &["load"], Some(2));
+
+    assert_eq!(paths(&answer.affected), ["config.ts"]);
+    assert_eq!(
+        rows(&answer.tests),
+        [(
+            "config.test.ts",
+            2,
+            "imports config.ts".to_owned(),
+            Vec::new(),
+            Some(2)
+        )]
+    );
+}
+
 #[scenario("queries", "A larger depth follows the callers of callers")]
 #[test]
 fn a_larger_depth_follows_the_callers_of_callers() {
@@ -698,6 +741,100 @@ fn an_importer_without_declarations_is_followed_whole() {
             row("c.ts", 2, "imports bar from b.ts", &["main"]),
         ]
     );
+}
+
+#[scenario("queries", "A mock takes no name")]
+#[test]
+fn a_mock_takes_no_name() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .mocks("a.test.ts", "a.ts", 1)
+        .symbols("a.test.ts", Code::new())
+        .exports("a.test.ts", &[])
+        .tag("a.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], Some(2));
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert_eq!(paths(&answer.tests), NONE);
+}
+
+#[scenario("queries", "A mock of a file followed whole is a caller")]
+#[test]
+fn a_mock_of_a_file_followed_whole_is_a_caller() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .recovered("b.ts", 1, 3)
+        .mocks("b.test.ts", "b.ts", 1)
+        .symbols("b.test.ts", Code::new())
+        .exports("b.test.ts", &[])
+        .tag("b.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], Some(2));
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(
+        rows(&answer.tests),
+        [(
+            "b.test.ts",
+            2,
+            "imports b.ts".to_owned(),
+            Vec::new(),
+            Some(2)
+        )]
+    );
+}
+
+#[test]
+fn a_mock_in_a_file_without_declarations_is_followed_whole_only_when_the_mocked_file_is() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .recovered("b.ts", 1, 3)
+        .mocks("a.test.ts", "a.ts", 1)
+        .recovered("a.test.ts", 1, 3)
+        .tag("a.test.ts", FileTags::TEST)
+        .mocks("b.test.ts", "b.ts", 1)
+        .recovered("b.test.ts", 1, 3)
+        .tag("b.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], Some(2));
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(paths(&answer.tests), ["b.test.ts"]);
+}
+
+#[test]
+fn a_load_in_a_file_without_declarations_is_followed_whole_only_when_it_names_what_is_asked() {
+    for kind in [ImportKind::Dynamic, ImportKind::Require] {
+        let index = Tree::new()
+            .symbols(
+                "a.ts",
+                Code::new()
+                    .declaration("foo", (1, 2), &[])
+                    .declaration("bar", (4, 5), &[]),
+            )
+            .exports("a.ts", &["foo", "bar"])
+            .import("b.ts", loading(kind, &["foo"], 1), file("a.ts"))
+            .build();
+
+        let foo = ask(&index, "a.ts", &["foo"], None);
+        let bar = ask(&index, "a.ts", &["bar"], None);
+
+        assert_eq!(
+            rows(&foo.affected),
+            [row("b.ts", 1, "imports foo from a.ts", &[])],
+            "{kind:?}"
+        );
+        assert_eq!(paths(&bar.affected), NONE, "{kind:?}");
+    }
 }
 
 #[scenario("queries", "A declaration crosses only its own contracts")]
@@ -922,7 +1059,7 @@ fn a_dynamic_import_is_a_use_by_the_declaration_that_holds_its_line_or_by_the_lo
 }
 
 #[test]
-fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line_or_in_the_load() {
+fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line() {
     let index = Tree::new()
         .symbols(
             "a.ts",
@@ -942,9 +1079,6 @@ fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line
         .imports_type("module.ts", "a.ts", &["*"], 6)
         .symbols("module.ts", Code::new().declaration("Shape", (5, 8), &[]))
         .exports("module.ts", &[])
-        .imports_type("loose.ts", "a.ts", &["foo"], 20)
-        .symbols("loose.ts", Code::new().declaration("Alias", (5, 8), &[]))
-        .exports("loose.ts", &[])
         .build();
 
     let foo = ask(&index, "a.ts", &["foo"], None);
@@ -953,13 +1087,6 @@ fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line
     assert_eq!(
         rows(&foo.affected),
         [
-            (
-                "loose.ts",
-                1,
-                "imports foo from a.ts".to_owned(),
-                Vec::new(),
-                Some(1)
-            ),
             row("module.ts", 1, "imports a.ts", &["Shape"]),
             row("named.ts", 1, "imports foo from a.ts", &["Alias"]),
         ]
@@ -969,6 +1096,115 @@ fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line
         rows(&bar.affected),
         [row("module.ts", 1, "imports a.ts", &["Shape"])]
     );
+}
+
+#[scenario("queries", "A load takes the names read from it")]
+#[test]
+fn a_load_takes_the_names_read_from_it() {
+    let load = |names: &[&str], line| loading(ImportKind::Dynamic, names, line);
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("bar", (4, 5), &[]),
+        )
+        .exports("a.ts", &["foo", "bar"])
+        .import("b.ts", load(&["bar"], 2), file("a.ts"))
+        .symbols("b.ts", Code::new().declaration("load", (1, 3), &[]))
+        .exports("b.ts", &[])
+        .import("c.ts", load(&["foo"], 1), file("a.ts"))
+        .symbols("c.ts", Code::new())
+        .exports("c.ts", &[])
+        .import("d.ts", load(&["*"], 2), file("a.ts"))
+        .symbols("d.ts", Code::new().declaration("start", (1, 3), &[]))
+        .exports("d.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            (
+                "c.ts",
+                1,
+                "imports foo from a.ts".to_owned(),
+                Vec::new(),
+                Some(1)
+            ),
+            row("d.ts", 1, "imports a.ts", &["start"]),
+        ]
+    );
+}
+
+#[test]
+fn a_require_of_the_default_takes_every_name_and_one_that_names_a_member_takes_that_name() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("bar", (4, 5), &[]),
+        )
+        .exports("a.ts", &["foo", "bar"])
+        // `const lib = require('./a')` records the name `default`.
+        .import(
+            "whole.ts",
+            loading(ImportKind::Require, &["default"], 2),
+            file("a.ts"),
+        )
+        .symbols("whole.ts", Code::new().declaration("load", (1, 3), &[]))
+        .exports("whole.ts", &[])
+        // `require('./a').foo` records the name `foo`.
+        .import(
+            "member.ts",
+            loading(ImportKind::Require, &["foo"], 2),
+            file("a.ts"),
+        )
+        .symbols("member.ts", Code::new().declaration("start", (1, 3), &[]))
+        .exports("member.ts", &[])
+        .build();
+
+    let foo = ask(&index, "a.ts", &["foo"], None);
+    let bar = ask(&index, "a.ts", &["bar"], None);
+
+    assert_eq!(
+        rows(&foo.affected),
+        [
+            row("member.ts", 1, "imports foo from a.ts", &["start"]),
+            row("whole.ts", 1, "imports a.ts", &["load"]),
+        ]
+    );
+    assert_eq!(
+        rows(&bar.affected),
+        [row("whole.ts", 1, "imports a.ts", &["load"])]
+    );
+}
+
+#[scenario("queries", "An import type outside every declaration reaches nothing")]
+#[test]
+fn an_import_type_outside_every_declaration_reaches_nothing() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .mocks("a.test.ts", "a.ts", 1)
+        .imports_type("a.test.ts", "a.ts", &["*"], 2)
+        .symbols("a.test.ts", Code::new())
+        .exports("a.test.ts", &[])
+        .tag("a.test.ts", FileTags::TEST)
+        .imports_type("types.ts", "a.ts", &["*"], 1)
+        .symbols("types.ts", Code::new().declaration("Api", (1, 1), &[]))
+        .exports("types.ts", &["Api"])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("types.ts", 1, "imports a.ts", &["Api"])]
+    );
+    assert_eq!(paths(&answer.tests), NONE);
 }
 
 #[test]
@@ -1462,7 +1698,12 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
             let taken: &[&str] = match take {
                 Take::Named(names) => names,
                 Take::Namespace => &["*"],
-                Take::Plain | Take::ReExport(_) | Take::Star => &[],
+                Take::Plain
+                | Take::ReExport(_)
+                | Take::Star
+                | Take::Mock
+                | Take::Dynamic(_)
+                | Take::Require(_) => &[],
             };
             taken
                 .iter()
@@ -1554,6 +1795,9 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
             Take::Named(_) | Take::Namespace => tree.imports_as(&from, &to, &binds),
             Take::ReExport(pairs) => tree.re_exports(&from, &to, pairs),
             Take::Star => tree.re_exports_all(&from, &to),
+            Take::Mock => tree.mocks(&from, &to, 1),
+            Take::Dynamic(names) => tree.imports_dynamically(&from, &to, names),
+            Take::Require(names) => tree.requires(&from, &to, names),
         };
     }
     let asked = declared[case.changed]
@@ -1595,11 +1839,15 @@ fn names_to_ask(asked: &[String]) -> Vec<String> {
     }
 }
 
-/// The tree of `case` as a connector that records declarations reads it. Such a connector records the names every import takes, so no file with declarations has a plain import. The walk by name follows a plain import whole, as it follows a file reached at load, which reaches every file that loads it through the barrels in between, where the walk per file passes on only the names a barrel can (design.md, "The walk by name").
+/// The tree of `case` as a connector that records declarations reads it. Such a connector records the names every import takes, so no file with declarations has a plain import. The walk by name follows a plain import whole, as it follows a file reached at load, which reaches every file that loads it through the barrels in between, where the walk per file passes on only the names a barrel can (design.md, "The walk by name"). A mock, a dynamic import and a `require` in such a file are written outside every declaration here, so they are used by the load of the file and fall under the same rule.
 fn recorded(mut case: Case) -> Case {
     let own = case.own.clone();
-    case.edges
-        .retain(|(importer, _, take)| !matches!(take, Take::Plain) || own[*importer].is_none());
+    case.edges.retain(|(importer, _, take)| {
+        !matches!(
+            take,
+            Take::Plain | Take::Mock | Take::Dynamic(_) | Take::Require(_)
+        ) || own[*importer].is_none()
+    });
     case
 }
 
@@ -1609,6 +1857,7 @@ fn recorded(mut case: Case) -> Case {
 /// - The walk per file reaches an importer of a name its target does not export, because the import may be what the change breaks. The walk by name has no name to follow, so every name that is imported is exported.
 /// - A star reaches its importer even when the file has nothing to pass on, and `export *` never forwards `default`, so a file with a star importer exports a name besides `default`.
 /// - A side-effect import uses nothing by name, so a file reached by name does not reach the file that imports it for its effects, where the walk per file does (design.md, "A side-effect import uses nothing by name"). `Take` has no such import, and it must not get one while this property takes its trees from it.
+/// - A mock takes no name, so a file reached by name does not reach the files that mock the changed file, where the walk per file does. No mock of the changed file is left in the case.
 fn complete(mut case: Case) -> Case {
     let own = case.own.clone();
     case.edges.retain(|(importer, _, take)| {
@@ -1617,13 +1866,13 @@ fn complete(mut case: Case) -> Case {
     let exports = exported(&case);
     for (_, target, take) in &case.edges {
         let taken: Vec<&'static str> = match take {
-            Take::Named(names) => names.clone(),
+            Take::Named(names) | Take::Dynamic(names) | Take::Require(names) => names.clone(),
             Take::ReExport(pairs) => pairs
                 .iter()
                 .map(|&(_, source)| source)
                 .filter(|&source| source != "*")
                 .collect(),
-            Take::Plain | Take::Namespace | Take::Star => Vec::new(),
+            Take::Plain | Take::Namespace | Take::Star | Take::Mock => Vec::new(),
         };
         // A file whose exports are unknown cannot be told to lack a name.
         if let (Some(own), Some(known)) = (&mut case.own[*target], &exports[*target]) {
@@ -1639,6 +1888,8 @@ fn complete(mut case: Case) -> Case {
         case.edges
             .retain(|(_, target, take)| *target != changed || !matches!(take, Take::Star));
     }
+    case.edges
+        .retain(|(_, target, take)| *target != changed || !matches!(take, Take::Mock));
     case
 }
 

@@ -136,10 +136,12 @@ pub enum ImportKind {
     Module,
     /// `include!("a.rs")`, `include_str!("a.sql")`.
     Include,
+    /// `vi.mock("a")`, `jest.mock("a")`: a test mocks the module, stops mocking it, or makes or sets a mock for it.
+    Mock,
 }
 
 impl ImportKind {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Static,
         Self::ReExport,
         Self::ReExportAll,
@@ -149,6 +151,7 @@ impl ImportKind {
         Self::Reference,
         Self::Module,
         Self::Include,
+        Self::Mock,
     ];
 
     pub const fn bit(self) -> u16 {

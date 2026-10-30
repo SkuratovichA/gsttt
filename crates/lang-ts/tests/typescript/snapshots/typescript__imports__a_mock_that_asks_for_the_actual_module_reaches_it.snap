@@ -50,7 +50,7 @@ expression: json
       "imports": [
         {
           "flags": 0,
-          "kind": "dynamic",
+          "kind": "mock",
           "line": 1,
           "names": [],
           "spec": "./lib",
@@ -82,7 +82,7 @@ expression: json
         },
         {
           "flags": 0,
-          "kind": "dynamic",
+          "kind": "mock",
           "line": 5,
           "names": [],
           "spec": "./editor",

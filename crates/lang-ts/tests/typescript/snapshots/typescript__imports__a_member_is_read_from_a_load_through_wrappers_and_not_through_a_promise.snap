@@ -19,40 +19,15 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
-      "exports": [
-        "lib"
-      ],
-      "imports": [],
-      "path": "src/lib.ts",
-      "project": "ts .",
-      "status": {
-        "status": "ok"
-      },
-      "symbols": {
-        "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "lib",
-            "uses": []
-          }
-        ],
-        "exports": [],
-        "on_load": []
-      },
-      "tags": 0,
-      "unresolved": []
-    },
-    {
-      "contracts": [],
-      "embedded": [],
       "exports": [],
       "imports": [
         {
           "flags": 0,
           "kind": "dynamic",
           "line": 1,
-          "names": [],
+          "names": [
+            "a"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"
@@ -62,7 +37,9 @@ expression: json
           "flags": 0,
           "kind": "dynamic",
           "line": 2,
-          "names": [],
+          "names": [
+            "b"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"
@@ -70,9 +47,11 @@ expression: json
         },
         {
           "flags": 0,
-          "kind": "dynamic",
+          "kind": "require",
           "line": 3,
-          "names": [],
+          "names": [
+            "c"
+          ],
           "spec": "./lib",
           "to": {
             "file": "src/lib.ts"
@@ -99,7 +78,7 @@ expression: json
           }
         }
       ],
-      "path": "src/made.test.ts",
+      "path": "src/forms.ts",
       "project": "ts .",
       "status": {
         "status": "ok"
@@ -109,7 +88,62 @@ expression: json
         "exports": [],
         "on_load": []
       },
-      "tags": 1,
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "a",
+        "b",
+        "c",
+        "e",
+        "f"
+      ],
+      "imports": [],
+      "path": "src/lib.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "a",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "b",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "c",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "e",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "f",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
       "unresolved": []
     }
   ],

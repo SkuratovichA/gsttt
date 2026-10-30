@@ -95,6 +95,7 @@ pub(super) const fn kind_label(kind: ImportKind) -> &'static str {
         ImportKind::Reference => "reference",
         ImportKind::Module => "mod declaration",
         ImportKind::Include => "include",
+        ImportKind::Mock => "mock",
     }
 }
 
