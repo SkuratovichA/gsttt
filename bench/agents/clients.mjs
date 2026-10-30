@@ -5,10 +5,10 @@
 // The answers come from the TypeScript language service (`service.mjs`, the same program as `functions.mjs` reads) and from the `graphql` package, not from gsttt, so that no tool under test marks its own work. Both are the ones installed in `--tools`.
 // A resolver is a method of a class decorated with `@Resolver` that carries `@Query`, `@Mutation` or `@Subscription`, the three decorators of `@nestjs/graphql` by the name the file imports them under. It serves the field the decorator names with its `name` option or its string argument, else the field of the method's name, of the root type of the decorator.
 // A candidate is a method with a body of a top-level class of the scope that is not a resolver, in a file that is not a test or a declaration file. It counts a resolver as calling it when a reference to it (`findReferences`) lies in the text of the resolver's method. Its clients are the tracked files of the scope that hold a GraphQL document (a `.graphql` or `.gql` file, or a `gql` or `graphql` tagged template of a TypeScript or JavaScript file) with an operation of the root type that selects that field at its top level: an alias selects the field it aliases, and a fragment spread or an inline fragment at the top level selects what it selects.
-// The program is the TypeScript below the directory of the tsconfig, since the clients live in packages the tsconfig of the resolvers does not describe; the documents are looked for in the whole scope. A document that does not parse, a fragment spread of a fragment no document defines, or a name a decorator gives that is not a string, stops the script: an answer built without them would be wrong.
+// The program is the TypeScript below the directory of the tsconfig, since the clients live in packages the tsconfig of the resolvers does not describe; the documents are looked for in the whole scope. A document that does not parse, a fragment spread of a fragment no document defines, a decorator argument that could name a field and that the script cannot read (not a function, a string or an object literal without a spread, or a name that is not a string), or `@nestjs/graphql` imported as a namespace, stops the script: an answer built without them would be wrong.
 // Prints one JSON object on standard output, sorted so that the same checkout gives the same bytes:
-//   { typescript, graphql, files, methods: [{ file, name, line, clients }] }
-// `name` is `Class.method`; only methods that some resolver calls are listed, and `clients` may still be empty when no document selects the field.
+//   { typescript, graphql, files, methods: [{ file, name, line, clients, ambiguous }] }
+// `name` is `Class.method`; only methods that some resolver calls are listed, and `clients` may still be empty when no document selects the field. `ambiguous` is true when a field that such a resolver serves is also served under another root type by some resolver (`Query foo` and `Mutation foo`), so that the name of the field alone does not tell which operations are meant.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -28,7 +28,8 @@ function nestImports(source) {
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== '@nestjs/graphql') continue
     const bindings = statement.importClause?.namedBindings
-    if (!bindings || !ts.isNamedImports(bindings)) continue
+    if (bindings && ts.isNamespaceImport(bindings)) throw new Error(`${where(statement)}: \`@nestjs/graphql\` is imported as the namespace \`${bindings.name.text}\`, so the script cannot tell which of its decorators the file uses`)
+    if (!bindings) continue
     for (const element of bindings.elements) names.set(element.name.text, (element.propertyName ?? element.name).text)
   }
   return names
@@ -60,18 +61,24 @@ function stringOf(expression) {
   throw new Error(`${where(expression)}: the name in the decorator is not a string the script can read`)
 }
 
-/** The field a resolver method serves: the `name` of an options object or a string as the first argument, else the name of the method. */
+/** The field a resolver method serves: the `name` of an options object or a string as the first argument, else the name of the method. An argument that could hide the name from the script stops it, since the method name would then be the wrong field. */
 function fieldOf(decorator, method) {
+  let field
   for (const [index, arg] of decorator.args.entries()) {
-    if (ts.isObjectLiteralExpression(arg)) {
+    if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) continue
+    if (index === 0 && ts.isStringLiteralLike(arg)) {
+      field ??= arg.text
+    } else if (ts.isObjectLiteralExpression(arg)) {
       for (const property of arg.properties) {
-        if (ts.isShorthandPropertyAssignment(property) && property.name.text === 'name') return stringOf(property.name)
-        if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === 'name') return stringOf(property.initializer)
+        if (ts.isSpreadAssignment(property)) throw new Error(`${where(property)}: the options of @${decorator.name} have a spread, which the script cannot read the name from`)
+        if (ts.isShorthandPropertyAssignment(property) && property.name.text === 'name') field ??= stringOf(property.name)
+        if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === 'name') field ??= stringOf(property.initializer)
       }
-    } else if (index === 0 && ts.isStringLiteralLike(arg)) {
-      return arg.text
+    } else {
+      throw new Error(`${where(arg)}: the argument \`${arg.getText()}\` of @${decorator.name} is neither a function, a string as the first argument nor an object literal, so the script cannot tell the field it serves`)
     }
   }
+  if (field !== undefined) return field
   if (!ts.isIdentifier(method.name)) throw new Error(`${where(method)}: a resolver whose name is not an identifier and is not given`)
   return method.name.text
 }
@@ -123,9 +130,12 @@ function selectedAt(set, file, fragments) {
 
 /** The GraphQL documents a file holds, as `{ text, line }` with the line the text starts on: the whole file for `.graphql` and `.gql`, each `gql` or `graphql` tagged template for a script. An expression in a template is dropped, which keeps the fragments it names for the documents that define them. */
 function documentsOf(file) {
+  // The name decides before the read: a tracked symlink to nothing or a submodule path is not a document and is never opened.
+  const isDocument = /\.(graphql|gql)$/.test(file)
+  if (!isDocument && !/\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(file)) return []
   const text = fs.readFileSync(absolute(file), 'utf8')
-  if (/\.(graphql|gql)$/.test(file)) return [{ text, line: 1 }]
-  if (!/\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(file) || !/\b(gql|graphql)\s*`/.test(text)) return []
+  if (isDocument) return [{ text, line: 1 }]
+  if (!/\b(gql|graphql)\s*`/.test(text)) return []
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
   const found = []
   const visit = (node) => {
@@ -168,22 +178,27 @@ for (const { file, root, node } of operations) {
   }
 }
 
+// The root types that serve each field name over all resolvers: two make a method that calls either of them ambiguous.
+const rootsOf = new Map()
+for (const served of [...resolvers.values()].flat()) rootsOf.set(served.field, (rootsOf.get(served.field) ?? new Set()).add(served.root))
+
 const resolverText = [...resolvers.keys()].map((file) => program.getSourceFile(absolute(file)).text).join('\n')
 const methods = []
 for (const { file, source, name, identifier } of candidates) {
   // A reference to a method has its name in the text, so a name no resolver file holds needs no search.
   if (!resolverText.includes(identifier.text)) continue
-  const served = new Set()
+  const served = new Map()
   for (const symbol of service.findReferences(absolute(file), identifier.getStart(source)) ?? []) {
     for (const reference of symbol.references) {
       for (const resolver of resolvers.get(relative(reference.fileName)) ?? []) {
-        if (resolver.start <= reference.textSpan.start && reference.textSpan.start < resolver.end) served.add(`${resolver.root} ${resolver.field}`)
+        if (resolver.start <= reference.textSpan.start && reference.textSpan.start < resolver.end) served.set(`${resolver.root} ${resolver.field}`, resolver)
       }
     }
   }
   if (served.size === 0) continue
-  const clients = new Set([...served].flatMap((key) => [...(clientsOf.get(key) ?? [])]))
-  methods.push({ file, name, line: source.getLineAndCharacterOfPosition(identifier.getStart(source)).line + 1, clients: [...clients].sort(compare) })
+  const clients = new Set([...served.keys()].flatMap((key) => [...(clientsOf.get(key) ?? [])]))
+  const ambiguous = [...served.values()].some((resolver) => rootsOf.get(resolver.field).size > 1)
+  methods.push({ file, name, line: source.getLineAndCharacterOfPosition(identifier.getStart(source)).line + 1, clients: [...clients].sort(compare), ambiguous })
 }
 methods.sort((a, b) => compare(a.file, b.file) || compare(a.name, b.name) || a.line - b.line)
 

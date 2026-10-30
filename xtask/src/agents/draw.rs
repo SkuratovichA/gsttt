@@ -33,6 +33,7 @@ const TOO_FEW_USERS: &str = "too few users";
 const TOO_MANY_USERS: &str = "too many users";
 const TOO_FEW_CLIENTS: &str = "too few clients";
 const TOO_MANY_CLIENTS: &str = "too many clients";
+const AMBIGUOUS_FIELD: &str = "a field served by two root types";
 
 /// The SHA-256 of the seed, the repository, the file and the name, separated by NUL bytes, as 64 lower-case hexadecimal digits.
 fn hash(seed: &str, repository: &str, candidate: &Candidate) -> String {
@@ -161,8 +162,11 @@ fn users_answer(candidate: &Candidate) -> Verdict {
     sized(&candidate.users, &USERS, TOO_FEW_USERS, TOO_MANY_USERS)
 }
 
-/// The answer of a question about the clients of `candidate`, or why it is not drawn: 1 to 30 files must send an operation that a resolver calling it serves.
+/// The answer of a question about the clients of `candidate`, or why it is not drawn: 1 to 30 files must send an operation that a resolver calling it serves, and none of the fields those resolvers serve may be served under another root type too, since the prompt names a field and not its root type.
 fn clients_answer(candidate: &Candidate) -> Verdict {
+    if candidate.ambiguous {
+        return Err(AMBIGUOUS_FIELD);
+    }
     sized(
         &candidate.clients,
         &CLIENTS,
@@ -287,6 +291,7 @@ mod tests {
             body_offset: Some(10),
             users: (0..users).map(|n| format!("users/u{n}.ts")).collect(),
             clients: Vec::new(),
+            ambiguous: false,
         }
     }
 
@@ -358,6 +363,26 @@ mod tests {
             "{error}"
         );
         assert!(error.contains("the kind `clients`"), "{error}");
+    }
+
+    #[test]
+    fn a_method_whose_field_is_served_by_two_root_types_is_not_drawn() {
+        // The name of the field alone does not tell `Query foo` from `Mutation foo`, so no question is about a method that has such a field.
+        let mut shared = method("S.shared", 3);
+        shared.ambiguous = true;
+        let candidates = [shared, method("S.plain", 3)];
+        let order = order("seed", "hoppscotch", &candidates);
+        let questions = clients("hoppscotch", "packages", 1, &order).unwrap();
+        let names: Vec<&str> = questions.iter().map(|q| q.name.as_str()).collect();
+        assert_eq!(names, ["S.plain"]);
+
+        let error = clients("hoppscotch", "packages", 2, &order)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("1 a field served by two root types"),
+            "{error}"
+        );
     }
 
     #[test]

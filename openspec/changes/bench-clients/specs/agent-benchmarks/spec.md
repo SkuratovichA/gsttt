@@ -7,7 +7,7 @@ Agent benchmarks are the comparison of the README and the site of what Claude Co
 ## ADDED Requirements
 
 ### Requirement: Questions about clients
-A question of the kind `clients` SHALL name a method with a body of a class of the scope that is not a resolver, and its answer SHALL be every tracked file of the scope that holds a GraphQL operation selecting, at its top level, a field that a resolver calling the method directly serves. A resolver is a method decorated with `@Query`, `@Mutation` or `@Subscription` of `@nestjs/graphql` in a class decorated with `@Resolver`. A method SHALL be drawn only when 1 to 30 files make its answer.
+A question of the kind `clients` SHALL name a method with a body of a class that is no resolver, in TypeScript below the tsconfig's directory. Its answer SHALL be every tracked file of the scope with a GraphQL operation selecting, at its top level, a field that a resolver calling the method directly serves. A resolver is a `@Resolver` class method with `@Query`, `@Mutation` or `@Subscription`. A method SHALL be drawn only with 1 to 30 files in its answer and no such field under two root types.
 
 #### Scenario: A method with no client or too many clients is not drawn
 - **WHEN** the candidates are a method with no client, one with 1, one with 30 and one with 31
@@ -18,7 +18,7 @@ A question of the kind `clients` SHALL name a method with a body of a class of t
 - **THEN** it names the method and the file that defines it, says what a resolver and an operation are, and ends as the prompt of a question about users does
 
 ### Requirement: The answer of a question about clients
-The clients of a method SHALL be computed without gsttt. A resolver calls the method when the TypeScript language service finds a reference to it in the text of that resolver. Documents are read by the `graphql` package from `.graphql` and `.gql` files and from `gql` and `graphql` tagged templates, and an operation selects a field of the root type of its kind. A document that does not parse SHALL stop the draw.
+The clients of a method SHALL be computed without gsttt. A resolver calls the method when the TypeScript language service finds a reference to it in the text of that resolver. Documents are read by the `graphql` package from `.graphql` and `.gql` files and `gql` and `graphql` templates, and an operation selects a field of the root type of its kind. A document that does not parse, a decorator argument that hides the field name and a namespace import of `@nestjs/graphql` SHALL stop the draw.
 
 #### Scenario: The clients of a method are the files that select the field of a resolver that calls it
 - **WHEN** a resolver that serves a mutation calls a method, a query of the same name is selected by another file, and an alias and a fragment select the fields of two other resolvers

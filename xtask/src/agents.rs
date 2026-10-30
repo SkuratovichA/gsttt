@@ -196,7 +196,7 @@ fn questions_of(
     if agents.users() > 0 || agents.tests() > 0 {
         let script = scripts.join("functions.mjs");
         let candidates =
-            functions::list(&script, &programs.node, &checkout, &agents.scope, tsconfig)?;
+            functions::list_functions(&script, &programs.node, &checkout, &agents.scope, tsconfig)?;
         say(&format!(
             "{name}: {} exported functions under {}",
             candidates.len(),
@@ -212,7 +212,8 @@ fn questions_of(
     }
     if agents.clients() > 0 {
         let script = scripts.join("clients.mjs");
-        let methods = functions::list(&script, &programs.node, &checkout, &agents.scope, tsconfig)?;
+        let methods =
+            functions::list_methods(&script, &programs.node, &checkout, &agents.scope, tsconfig)?;
         say(&format!(
             "{name}: {} methods that a resolver calls under {}",
             methods.len(),
@@ -294,7 +295,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn the_tools_task_takes_no_argument_and_the_usage_names_it() {
         let error = run(&["tools".to_owned(), "--out".to_owned()])
             .unwrap_err()
@@ -303,6 +303,7 @@ mod tests {
         assert!(USAGE.contains("cargo xtask agents tools"));
     }
 
+    #[test]
     fn the_agent_benchmarks_ask_about_a_repository_the_speed_benchmark_leaves_out() {
         let pins = Pins::load(&repository_root().unwrap()).unwrap();
         let asking_names: Vec<&str> = asking(&pins, &[])
