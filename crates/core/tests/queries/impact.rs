@@ -717,7 +717,7 @@ const NAMES: &[&str] = &["a", "b", "c", "default"];
 
 /// How a generated file takes from another: every form of import the walk tells apart.
 #[derive(Clone, Debug)]
-enum Take {
+pub(super) enum Take {
     /// `import 'to'`: everything the file exports.
     Plain,
     /// `import * as ns from 'to'`.
@@ -732,15 +732,15 @@ enum Take {
 
 /// A tree of `FILES` files with random exports and imports, and the file that changes.
 #[derive(Clone, Debug)]
-struct Case {
+pub(super) struct Case {
     /// The names each file exports itself, `None` when they are unknown.
-    own: Vec<Option<BTreeSet<&'static str>>>,
+    pub(super) own: Vec<Option<BTreeSet<&'static str>>>,
     /// The importer, the target, and how the first takes from the second.
-    edges: Vec<(usize, usize, Take)>,
-    changed: usize,
+    pub(super) edges: Vec<(usize, usize, Take)>,
+    pub(super) changed: usize,
 }
 
-fn case() -> impl Strategy<Value = Case> {
+pub(super) fn case() -> impl Strategy<Value = Case> {
     let name = || prop::sample::select(NAMES);
     // An import of everything makes its importer whole at once, which hides what the names do, so the others weigh more.
     let take = prop_oneof![
@@ -776,7 +776,7 @@ fn case() -> impl Strategy<Value = Case> {
         })
 }
 
-fn file_path(number: usize) -> String {
+pub(super) fn file_path(number: usize) -> String {
     format!("f{number}.ts")
 }
 
@@ -805,7 +805,7 @@ impl Case {
     }
 
     /// The same files and the same edges with every name taken out, so that each import brings in everything: the walk over files.
-    fn by_file(&self) -> Index {
+    pub(super) fn by_file(&self) -> Index {
         let mut tree = Tree::new();
         for number in 0..FILES {
             tree = tree.read_by("ts", &file_path(number));
@@ -840,7 +840,7 @@ impl Reach {
 }
 
 /// X of each file: what it exports itself and through its `export *` lines, which never forward `default`; `None` when that is unknown.
-fn exported(case: &Case) -> Vec<Option<BTreeSet<&'static str>>> {
+pub(super) fn exported(case: &Case) -> Vec<Option<BTreeSet<&'static str>>> {
     let mut all = case.own.clone();
     loop {
         let before = all.clone();

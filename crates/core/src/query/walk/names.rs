@@ -594,6 +594,8 @@ impl<'w, 'a> Step<'w, 'a> {
     }
 
     /// Follows the `names` of `file` to the files that import them. A barrel that passes a name on, and a file that imports a name and exports it again, are listed and pass the name to their own importers within the same hop.
+    ///
+    /// The walk over files decides the same things in `follow`, `take_all`, `reaches` and `exported_by` of `crates/core/src/query/walk.rs`, and in `known`, `exported` and `visit_stars` of `crates/core/src/query/walk/exports.rs`. This is a second copy because it follows one name at a time, through the local an import binds it to so as to find the declarations that use it, which the edges of the graph do not record, and because a star hands a name on in the same hop, so it never works out X(file). The properties `a_walk_by_name_lists_no_file_the_walk_per_file_does_not` and `a_walk_by_every_name_lists_what_the_walk_per_file_does_when_every_import_is_used` in `crates/core/tests/queries/names.rs` hold the two against each other, on the trees where the design lets them agree.
     fn flow(&mut self, file: FileId, names: BTreeSet<Name<'a>>) {
         let graph = self.walk.graph;
         let mut seen = BTreeSet::new();

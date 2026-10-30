@@ -1,6 +1,7 @@
 //! `impact` asked about names: the direct callers of a declaration, and the callers of callers when a depth is asked.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 use gsttt_core::VERSION;
 use gsttt_core::contract::Role;
@@ -12,6 +13,8 @@ use gsttt_core::testing::{Code, Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
 use serde_json::{json, to_value};
+
+use super::impact::{Case, Take, case, exported, file_path};
 
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];
@@ -1377,5 +1380,318 @@ proptest! {
                 }
             }
         }
+    }
+}
+
+/// What the code of the files of a generated tree refers to.
+#[derive(Clone, Copy)]
+enum Uses {
+    /// The declarations of a file refer to some of what the file declares and imports, and no code runs as the file loads.
+    InDeclarations,
+    /// As [`Uses::InDeclarations`], and the code that runs as the file loads refers to some of the same.
+    AlsoAtLoad,
+    /// Only the code that runs as the file loads refers to anything, and it refers to every import of the file.
+    EveryImportAtLoad,
+}
+
+/// A generated tree, written the way a TypeScript connector records it.
+struct Written {
+    index: Index,
+    /// The names the file that changes declares, which is what a walk by name asks about.
+    asked: Vec<String>,
+    /// The code of every file and what every import binds, for a failure to be read.
+    shown: String,
+}
+
+/// The names `file` re-exports, which it exports without declaring them.
+fn reexported(case: &Case, file: usize) -> BTreeSet<&'static str> {
+    case.edges
+        .iter()
+        .filter(|&&(importer, target, _)| importer == file && target != file)
+        .filter_map(|(_, _, take)| match take {
+            Take::ReExport(pairs) => Some(pairs),
+            _ => None,
+        })
+        .flatten()
+        .map(|&(exported, _)| exported)
+        .collect()
+}
+
+/// The files of `case` with the declarations, exports and imports a connector would record for them. `choices` settles what the case leaves open: which exported names are declared under another name, which imports bind a name under another, and what each declaration, and the code that runs as the file loads, refers to.
+fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
+    let mut cycle = choices.iter().copied().cycle();
+    let mut flip = move || cycle.next() == Some(true);
+    let files = case.own.len();
+
+    // Each name a file exports and declares, with the declaration that holds it: the name itself, or `<name>_impl` exported as `<name>`.
+    let declared: Vec<Vec<(&str, String)>> = (0..files)
+        .map(|file| {
+            let reexported = reexported(case, file);
+            case.own[file]
+                .iter()
+                .flatten()
+                .filter(|&&name| !reexported.contains(name))
+                .map(|&name| {
+                    let declaration = if flip() {
+                        format!("{name}_impl")
+                    } else {
+                        name.to_owned()
+                    };
+                    (name, declaration)
+                })
+                .collect()
+        })
+        .collect();
+
+    // What each import binds, as the name it takes and the local it binds it to. A name keeps its own when nothing else in the file has it; `default` and a namespace cannot.
+    let mut scope: Vec<BTreeSet<String>> = declared
+        .iter()
+        .map(|file| {
+            file.iter()
+                .map(|(_, declaration)| declaration.clone())
+                .collect()
+        })
+        .collect();
+    let bindings: Vec<Vec<(&str, String)>> = case
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(edge, (importer, _, take))| {
+            let taken: &[&str] = match take {
+                Take::Named(names) => names,
+                Take::Namespace => &["*"],
+                Take::Plain | Take::ReExport(_) | Take::Star => &[],
+            };
+            taken
+                .iter()
+                .enumerate()
+                .map(|(at, &name)| {
+                    let keeps = name != "default"
+                        && name != "*"
+                        && !flip()
+                        && scope[*importer].insert(name.to_owned());
+                    let local = if keeps {
+                        name.to_owned()
+                    } else {
+                        format!("{}_{edge}_{at}", name.replace('*', "ns"))
+                    };
+                    scope[*importer].insert(local.clone());
+                    (name, local)
+                })
+                .collect()
+        })
+        .collect();
+
+    let mut shown = String::new();
+    let mut tree = Tree::new();
+    for (file, (declares, own)) in declared.iter().zip(&case.own).enumerate() {
+        let path = file_path(file);
+        tree = tree.read_by("ts", &path);
+        let Some(own) = own else {
+            writeln!(
+                shown,
+                "{path} records no declarations and does not list its exports"
+            )
+            .unwrap();
+            continue;
+        };
+        let locals: Vec<&str> = case
+            .edges
+            .iter()
+            .zip(&bindings)
+            .filter(|((importer, _, _), _)| *importer == file)
+            .flat_map(|(_, bound)| bound.iter().map(|(_, local)| local.as_str()))
+            .collect();
+        let names: Vec<&str> = declares
+            .iter()
+            .map(|(_, declaration)| declaration.as_str())
+            .chain(locals.iter().copied())
+            .collect();
+        let mut code = Code::new();
+        for (at, (exported, declaration)) in declares.iter().enumerate() {
+            let refers: Vec<&str> = match uses {
+                Uses::EveryImportAtLoad => Vec::new(),
+                Uses::InDeclarations | Uses::AlsoAtLoad => names
+                    .iter()
+                    .copied()
+                    .filter(|&other| other != declaration && flip())
+                    .collect(),
+            };
+            let line = 10 + 3 * u32::try_from(at).unwrap();
+            code = code.declaration(declaration, (line, line + 1), &refers);
+            if declaration != exported {
+                code = code.exports_from(exported, declaration);
+            }
+        }
+        code = match uses {
+            Uses::InDeclarations => code,
+            Uses::AlsoAtLoad => {
+                let loads: Vec<&str> = names.iter().copied().filter(|_| flip()).collect();
+                code.on_load(&loads)
+            }
+            Uses::EveryImportAtLoad => code.on_load(&locals),
+        };
+        let exports: Vec<&str> = own.iter().copied().collect();
+        writeln!(shown, "{path} exports {exports:?}: {code:?}").unwrap();
+        tree = tree.symbols(&path, code).exports(&path, &exports);
+    }
+    for ((importer, target, take), bound) in case.edges.iter().zip(&bindings) {
+        let (from, to) = (file_path(*importer), file_path(*target));
+        writeln!(shown, "{from} -> {to}: {take:?} binds {bound:?}").unwrap();
+        let binds: Vec<(&str, &str)> = bound
+            .iter()
+            .map(|(name, local)| (*name, local.as_str()))
+            .collect();
+        tree = match take {
+            Take::Plain => tree.imports(&from, &to),
+            // A file whose connector records no declarations records the names an import takes and binds none.
+            Take::Named(_) | Take::Namespace if case.own[*importer].is_none() => {
+                let taken: Vec<&str> = binds.iter().map(|&(name, _)| name).collect();
+                tree.imports_names(&from, &to, &taken)
+            }
+            Take::Named(_) | Take::Namespace => tree.imports_as(&from, &to, &binds),
+            Take::ReExport(pairs) => tree.re_exports(&from, &to, pairs),
+            Take::Star => tree.re_exports_all(&from, &to),
+        };
+    }
+    let asked = declared[case.changed]
+        .iter()
+        .map(|(_, declaration)| declaration.clone())
+        .collect();
+    Written {
+        index: tree.build(),
+        asked,
+        shown,
+    }
+}
+
+/// Every file an answer lists.
+fn listed(answer: &Impact) -> BTreeSet<String> {
+    answer
+        .affected
+        .iter()
+        .chain(&answer.tests)
+        .map(|entry| entry.path.clone())
+        .collect()
+}
+
+/// The files that `by_name` lists when asked about `names` of `changed`, with no limit on the depth, and that `per_file` does not list when asked about `changed`. The file itself is left out, because the walk by name lists it when its own code refers to the names.
+fn only_by_name(by_name: &Index, per_file: &Index, changed: &str, names: &[String]) -> Vec<String> {
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let mut by_name = listed(&ask(by_name, changed, &names, Some(u32::MAX)));
+    by_name.remove(changed);
+    let per_file = listed(&ask(per_file, changed, &NONE, None));
+    by_name.difference(&per_file).cloned().collect()
+}
+
+/// The names an `unknown` file can be asked about: it declares none that a connector would record, so the walk follows it whole whatever it is asked.
+fn names_to_ask(asked: &[String]) -> Vec<String> {
+    if asked.is_empty() {
+        vec!["a".to_owned()]
+    } else {
+        asked.to_vec()
+    }
+}
+
+/// The tree of `case` as a connector that records declarations reads it. Such a connector records the names every import takes, so no file with declarations has a plain import. The walk by name follows a plain import whole, as it follows a file reached at load, which reaches every file that loads it through the barrels in between, where the walk per file passes on only the names a barrel can (design.md, "The walk by name").
+fn recorded(mut case: Case) -> Case {
+    let own = case.own.clone();
+    case.edges
+        .retain(|(importer, _, take)| !matches!(take, Take::Plain) || own[*importer].is_none());
+    case
+}
+
+/// The tree of `case` as the next property needs it, where the two walks list the same files. What the design makes the two walks do differently is taken out of it:
+///
+/// - A barrel that lists its exports passes a name on narrowly, where a file reached at load reaches every file that loads it, whatever name that file takes (design.md, "The walk by name"). So a file that re-exports lists no exports and records no declarations, and the walk by name follows it whole. The file that changes is not one, because it has declarations to ask about.
+/// - The walk per file reaches an importer of a name its target does not export, because the import may be what the change breaks. The walk by name has no name to follow, so every name that is imported is exported.
+/// - A star reaches its importer even when the file has nothing to pass on, and `export *` never forwards `default`, so a file with a star importer exports a name besides `default`.
+/// - A side-effect import uses nothing by name, so a file reached by name does not reach the file that imports it for its effects, where the walk per file does (design.md, "A side-effect import uses nothing by name"). `Take` has no such import, and it must not get one while this property takes its trees from it.
+fn complete(mut case: Case) -> Case {
+    let own = case.own.clone();
+    case.edges.retain(|(importer, _, take)| {
+        !matches!(take, Take::ReExport(_) | Take::Star) || own[*importer].is_none()
+    });
+    let exports = exported(&case);
+    for (_, target, take) in &case.edges {
+        let taken: Vec<&'static str> = match take {
+            Take::Named(names) => names.clone(),
+            Take::ReExport(pairs) => pairs
+                .iter()
+                .map(|&(_, source)| source)
+                .filter(|&source| source != "*")
+                .collect(),
+            Take::Plain | Take::Namespace | Take::Star => Vec::new(),
+        };
+        // A file whose exports are unknown cannot be told to lack a name.
+        if let (Some(own), Some(known)) = (&mut case.own[*target], &exports[*target]) {
+            own.extend(taken.into_iter().filter(|name| !known.contains(name)));
+        }
+    }
+    let changed = case.changed;
+    if !case.own[changed]
+        .iter()
+        .flatten()
+        .any(|&name| name != "default")
+    {
+        case.edges
+            .retain(|(_, target, take)| *target != changed || !matches!(take, Take::Star));
+    }
+    case
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1024))]
+
+    /// On a tree where names narrow what a barrel passes on, every import of a file with declarations says what it takes, and no code runs as a file loads, a walk by name asked about names of the changed file with no limit on the depth lists no file that the walk per file does not list.
+    #[test]
+    fn a_walk_by_name_lists_no_file_the_walk_per_file_does_not(
+        case in case(),
+        choices in prop::collection::vec(any::<bool>(), 256),
+    ) {
+        let case = recorded(case);
+        let written = written(&case, Uses::InDeclarations, &choices);
+        let extra = only_by_name(
+            &written.index,
+            &written.index,
+            &file_path(case.changed),
+            &names_to_ask(&written.asked),
+        );
+        prop_assert!(extra.is_empty(), "listed by name and not per file: {extra:?}\n{case:?}\n{}", written.shown);
+    }
+
+    /// With code that runs as a file loads, a walk by name lists no file that the walk over files with every name taken out does not list: it follows imports, and only imports, however it narrows them. It may list a file the walk per file leaves out, because a file reached at load reaches every file that loads it whatever name that file takes, where the walk per file stops at a barrel that lists what it exports.
+    #[test]
+    fn a_walk_by_name_lists_no_file_a_walk_over_whole_files_does_not(
+        case in case(),
+        choices in prop::collection::vec(any::<bool>(), 256),
+    ) {
+        let written = written(&case, Uses::AlsoAtLoad, &choices);
+        let extra = only_by_name(
+            &written.index,
+            &case.by_file(),
+            &file_path(case.changed),
+            &names_to_ask(&written.asked),
+        );
+        prop_assert!(extra.is_empty(), "listed by name and not over whole files: {extra:?}\n{case:?}\n{}", written.shown);
+    }
+
+    /// When every file uses, as it loads, every name it imports, a file that is reached is reached at load, and a file reached at load reaches every file that loads it. A walk by name asked about every name the changed file declares, with no limit on the depth, then lists the files the walk per file lists. The changed file is left out, because the walk by name lists it when a cycle leads back to it.
+    #[test]
+    fn a_walk_by_every_name_lists_what_the_walk_per_file_does_when_every_import_is_used(
+        case in case(),
+        choices in prop::collection::vec(any::<bool>(), 256),
+    ) {
+        let case = complete(case);
+        let written = written(&case, Uses::EveryImportAtLoad, &choices);
+        if written.asked.is_empty() {
+            return Ok(());
+        }
+        let changed = file_path(case.changed);
+        let names: Vec<&str> = written.asked.iter().map(String::as_str).collect();
+        let mut by_name = listed(&ask(&written.index, &changed, &names, Some(u32::MAX)));
+        by_name.remove(&changed);
+        let per_file = listed(&ask(&written.index, &changed, &NONE, None));
+        prop_assert_eq!(by_name, per_file, "\n{:?}\n{}", case, written.shown);
     }
 }
