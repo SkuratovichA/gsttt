@@ -2,7 +2,6 @@
 //!
 //! A hop goes from the declarations the walk has reached in a file to the declarations that refer to them, in the file itself and in the files that import them under the names the file exports them as. A barrel on the way, and a file that imports a name and exports it again, are listed and add no hop. Code that runs as a file loads is a caller of what it refers to, and a file reached at load reaches the files that load it. A file whose connector records no declarations is followed whole, as the walk over files follows every file.
 
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::contract::Role;
@@ -493,11 +492,11 @@ impl<'w, 'a> Step<'w, 'a> {
 
     /// The declarations that hold `line` most narrowly, or the load of the file when none does. Says whether any part is new.
     fn place(&mut self, file: FileId, symbols: FileSymbols<'a>, line: Line) -> bool {
-        let owners = narrowest(symbols, line);
-        if owners.is_empty() {
+        let mut owners = narrowest(symbols, line).peekable();
+        if owners.peek().is_none() {
             return self.unit(file, Part::Load);
         }
-        owners.into_iter().fold(false, |found, index| {
+        owners.fold(false, |found, index| {
             self.unit(file, Part::Decl(index)) | found
         })
     }
@@ -800,11 +799,7 @@ impl<'w, 'a> Step<'w, 'a> {
         let graph = self.walk.graph;
         for &contract in graph.contracts_of(file) {
             let mut roles: Vec<Role> = sites_of(graph.sites(contract), file)
-                .filter(|site| {
-                    narrowest(symbols, site.line)
-                        .iter()
-                        .any(|owner| declared.contains(owner))
-                })
+                .filter(|site| narrowest(symbols, site.line).any(|owner| declared.contains(&owner)))
                 .map(|site| site.role)
                 .collect();
             roles.sort_unstable();
@@ -881,29 +876,26 @@ fn loads(edge: Edge) -> bool {
         .any(|kind| edge.has(kind))
 }
 
-/// The declarations that hold `line` most narrowly, as indices. A member holds a line more narrowly than its class, also when both span the same lines. None when no declaration holds it.
-fn narrowest(symbols: FileSymbols<'_>, line: Line) -> Vec<usize> {
-    let mut best: Vec<(usize, &str)> = Vec::new();
-    let mut width = Line::MAX;
-    for (index, decl) in symbols.declarations().enumerate() {
-        if line < decl.line() || decl.end() < line {
-            continue;
-        }
-        let span = decl.end().saturating_sub(decl.line());
-        match span.cmp(&width) {
-            Ordering::Less => {
-                width = span;
-                best.clear();
-                best.push((index, decl.name()));
-            }
-            Ordering::Equal => best.push((index, decl.name())),
-            Ordering::Greater => {}
-        }
-    }
-    best.iter()
-        .filter(|&&(_, name)| !best.iter().any(|&(_, other)| member_of(other, name)))
-        .map(|&(index, _)| index)
-        .collect()
+/// The declarations that hold `line` most narrowly, as indices in the order of the declarations. A member holds a line more narrowly than its class, also when both span the same lines. Nothing when no declaration holds it. Nothing is collected, because a contract site asks this of every site of every contract of a file, so the declarations are visited again instead.
+fn narrowest<'g>(symbols: FileSymbols<'g>, line: Line) -> impl Iterator<Item = usize> + 'g {
+    let holds_line = move |decl: Declaration<'g>| decl.line() <= line && line <= decl.end();
+    let span = |decl: Declaration<'g>| decl.end().saturating_sub(decl.line());
+    let width = symbols
+        .declarations()
+        .filter(|&decl| holds_line(decl))
+        .map(span)
+        .min();
+    let is_narrowest = move |decl: Declaration<'g>| holds_line(decl) && Some(span(decl)) == width;
+    symbols
+        .declarations()
+        .enumerate()
+        .filter(move |&(_, decl)| {
+            is_narrowest(decl)
+                && !symbols
+                    .declarations()
+                    .any(|other| is_narrowest(other) && member_of(other.name(), decl.name()))
+        })
+        .map(|(index, _)| index)
 }
 
 /// `Class` for the member `Class.member`.
@@ -949,7 +941,6 @@ mod tests {
         let file = index.graph.file_id("lib.ts").unwrap();
         let symbols = index.graph.symbols(file).unwrap();
         narrowest(symbols, line)
-            .into_iter()
             .map(|at| symbols.declaration(at).unwrap().name().to_owned())
             .collect()
     }
