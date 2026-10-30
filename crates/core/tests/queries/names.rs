@@ -72,6 +72,14 @@ fn paths(list: &[Affected]) -> Vec<&str> {
     list.iter().map(|entry| entry.path.as_str()).collect()
 }
 
+/// An import of `a.ts` of the given `kind` on `line` that takes `names`.
+fn loading(kind: ImportKind, names: &[&str], line: u32) -> Import {
+    Import {
+        names: names.iter().map(|&name| name.to_owned()).collect(),
+        ..Import::new("a.ts", kind, line)
+    }
+}
+
 /// `a.ts`, which declares `foo` and `bar`, and `b.ts`, which imports both and uses `foo` in `run` and `bar` in `stop`.
 fn library() -> Tree {
     Tree::new()
@@ -803,6 +811,32 @@ fn a_mock_in_a_file_without_declarations_is_followed_whole_only_when_the_mocked_
     assert_eq!(paths(&answer.tests), ["b.test.ts"]);
 }
 
+#[test]
+fn a_load_in_a_file_without_declarations_is_followed_whole_only_when_it_names_what_is_asked() {
+    for kind in [ImportKind::Dynamic, ImportKind::Require] {
+        let index = Tree::new()
+            .symbols(
+                "a.ts",
+                Code::new()
+                    .declaration("foo", (1, 2), &[])
+                    .declaration("bar", (4, 5), &[]),
+            )
+            .exports("a.ts", &["foo", "bar"])
+            .import("b.ts", loading(kind, &["foo"], 1), file("a.ts"))
+            .build();
+
+        let foo = ask(&index, "a.ts", &["foo"], None);
+        let bar = ask(&index, "a.ts", &["bar"], None);
+
+        assert_eq!(
+            rows(&foo.affected),
+            [row("b.ts", 1, "imports foo from a.ts", &[])],
+            "{kind:?}"
+        );
+        assert_eq!(paths(&bar.affected), NONE, "{kind:?}");
+    }
+}
+
 #[scenario("queries", "A declaration crosses only its own contracts")]
 #[test]
 fn a_declaration_crosses_only_its_own_contracts() {
@@ -1067,10 +1101,7 @@ fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line
 #[scenario("queries", "A load takes the names read from it")]
 #[test]
 fn a_load_takes_the_names_read_from_it() {
-    let load = |names: &[&str], line| Import {
-        names: names.iter().map(|&name| name.to_owned()).collect(),
-        ..Import::new("a.ts", ImportKind::Dynamic, line)
-    };
+    let load = |names: &[&str], line| loading(ImportKind::Dynamic, names, line);
     let index = Tree::new()
         .symbols(
             "a.ts",
@@ -1104,6 +1135,50 @@ fn a_load_takes_the_names_read_from_it() {
             ),
             row("d.ts", 1, "imports a.ts", &["start"]),
         ]
+    );
+}
+
+#[test]
+fn a_require_of_the_default_takes_every_name_and_one_that_names_a_member_takes_that_name() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("bar", (4, 5), &[]),
+        )
+        .exports("a.ts", &["foo", "bar"])
+        // `const lib = require('./a')` records the name `default`.
+        .import(
+            "whole.ts",
+            loading(ImportKind::Require, &["default"], 2),
+            file("a.ts"),
+        )
+        .symbols("whole.ts", Code::new().declaration("load", (1, 3), &[]))
+        .exports("whole.ts", &[])
+        // `require('./a').foo` records the name `foo`.
+        .import(
+            "member.ts",
+            loading(ImportKind::Require, &["foo"], 2),
+            file("a.ts"),
+        )
+        .symbols("member.ts", Code::new().declaration("start", (1, 3), &[]))
+        .exports("member.ts", &[])
+        .build();
+
+    let foo = ask(&index, "a.ts", &["foo"], None);
+    let bar = ask(&index, "a.ts", &["bar"], None);
+
+    assert_eq!(
+        rows(&foo.affected),
+        [
+            row("member.ts", 1, "imports foo from a.ts", &["start"]),
+            row("whole.ts", 1, "imports a.ts", &["load"]),
+        ]
+    );
+    assert_eq!(
+        rows(&bar.affected),
+        [row("whole.ts", 1, "imports a.ts", &["load"])]
     );
 }
 

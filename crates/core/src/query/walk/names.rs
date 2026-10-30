@@ -801,7 +801,7 @@ impl<'w, 'a> Step<'w, 'a> {
         found
     }
 
-    /// Every file that loads `file`, reached at load: a static import that is not type-only, a re-export, a side-effect import, a dynamic import, `require` and a mock, because a mock made without a factory loads the module to mock it.
+    /// Every file that loads `file`, reached at load: a static import that is not type-only, a re-export, a side-effect import, a dynamic import and `require`, and every mock, because the index does not record whether a mock has a factory and one made without a factory loads the module to mock it.
     fn loaders(&mut self, file: FileId) {
         let graph = self.walk.graph;
         for &(importer, edge) in graph.dependents(file) {
@@ -880,9 +880,11 @@ fn take_names(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<'_>)
 
 /// Whether a dynamic import or a `require` takes the module itself, so every name of it: it names nothing, or names the namespace, which is `*` and for a `require` also the `default` that `const lib = require('./a')` binds.
 fn takes_module(import: &Import) -> bool {
-    let namespace =
-        |name: &String| name == "*" || (import.kind == ImportKind::Require && name == "default");
-    import.names.is_empty() || import.names.iter().any(namespace)
+    import.names.is_empty()
+        || import
+            .names
+            .iter()
+            .any(|name| name == "*" || (import.kind == ImportKind::Require && name == "default"))
 }
 
 /// An import of a file that records no declarations takes the file whole when it takes the name, and by its edge alone when it names nothing. A mock takes it whole only when the file is followed whole.
