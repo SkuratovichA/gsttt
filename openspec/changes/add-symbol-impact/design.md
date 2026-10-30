@@ -43,14 +43,14 @@ pub struct Declared {
 pub struct LocalExport { pub name: String, pub local: String }
 ```
 
-`Import.exported` of a static import, type-only included, carries the local name of every entry of `names`, in the same order, when the file has symbols: `[React]` for `import React from 'react'` (names `[default]`), `[ns]` for `import * as ns` (names `[*]`), `[b]` for `import { a as b }`. The field already allows "the name the file binds an entry as", and the graph reads it today only for a re-export, whose meaning does not change. `FACT_FORMAT` goes from 2 to 3, so every cached fact is read again.
+`Import.exported` of a static import, type-only included, carries the local name of every entry of `names`, in the same order, when the file has symbols: `[React]` for `import React from 'react'` (names `[default]`), `[ns]` for `import * as ns` (names `[*]`), `[b]` for `import { a as b }`. The field already allows "the name the file binds an entry as", and the graph reads it today only for a re-export, whose meaning does not change. An import type, `import('./a').T`, binds no name and gets no `exported`: the walk takes what it names as used by the declaration whose lines hold it, or by the load when none does, as it takes a dynamic import. `FACT_FORMAT` goes from 2 to 3, so every cached fact is read again.
 
 ## What a TypeScript declaration is and uses
 
 - Declarations: top-level `function`, `class`, each name of a variable declarator, destructuring included, `enum`, `interface`, `type`, `namespace` and `module`, `export default` of an expression as `default`, and every member of a class as `Class.member`: methods, accessors, fields, `constructor`, private `#names`. Overloads and merged declarations are joined by name, with the lines of the first and the end of the last. A static block belongs to the class.
 - Uses: every identifier reference that names a top-level declaration or an import binding of the file, JSX tag names, type references and `typeof` included. Shadowing is ignored, which can only add uses. `this.m` and `this.#m` inside class `C` are uses of `C.m`; `C.s` anywhere in the file is a use of `C.s` and of `C`. An export specifier is not a use. A declaration does not list itself.
 - Writes: a top-level variable lists as uses the declarations that assign it, update it (`x++`), assign a member of it (`x.y = …`), `delete` from it, or call one of `set`, `add`, `delete`, `clear`, `push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse` and `fill` on it. Vite keeps 30 caches in module-level `Map` and `Set` objects, and a function that fills one affects the functions that read it.
-- At load: everything a top-level statement that is not a declaration refers to, nested callbacks included, and, inside a declaration, what is referred to under a call, `new`, a tagged template or a decorator that is evaluated at load: in a variable initializer, a static field or block, a computed key, a decorator and `extends`. Function bodies, parameter defaults and instance field initializers run later and do not count. `const x = f()` puts `f` both at load and in the uses of `x`; `const y = f` puts it only in the uses of `y`.
+- At load: everything a top-level statement that is not a declaration refers to, nested callbacks included, and, inside a declaration, what is referred to under a call, `new`, a tagged template or a decorator that is evaluated at load: in a variable initializer, a static field or block, a computed key, a decorator and `extends`. Function bodies, parameter defaults and instance field initializers run later and do not count. `const x = f()` puts `f` both at load and in the uses of `x`; `const y = f` puts it only in the uses of `y`. A callback given to a call in an initializer is a use of the declaration only, even when the call runs it at once, as `map` does: counted at load, every `memo(() => …)` and `forwardRef(…)` of a React file would be code at load, and every file that loads it a caller.
 
 ## The walk by name
 
@@ -64,7 +64,7 @@ The walk keeps, for each file, whether its load is reached and which of its decl
   - the contracts whose sites lie within the lines of a declaration in `D`, crossed as a file affected in all its names crosses them today. A site belongs to the narrowest declaration whose lines hold it, a member before its class, and to the load of its file when none does. Across a contract the walk reaches, on the other side, the declaration each site belongs to, or the load of its file, at `d + 1`, and a file without symbols whole.
 - **One hop from a file `F` reached at load, at distance `d`:** every file that loads `F` is reached at load at `d + 1`: a static import that is not type-only, a re-export, a side-effect import, a dynamic import and `require`. `F` crosses all its contracts, as a whole file does today.
 - **Files without symbols** reached on the way are followed whole from there, as today, and so is every edge into a file whose exports are unknown.
-- **Depth.** With names, the walk stops after one hop unless the request gives a depth. When it stops with callers left to follow, the answer says so and how to go on.
+- **Depth.** With names, the walk stops after one hop unless the request gives a depth. When it stops with callers left to follow, the answer says so and how to go on. One more layer, which nothing records, tells whether callers are left: a barrel in it is not a caller, and the importers behind the barrel that use the name are.
 - **Without names** the walk is today's, unchanged: same files, distances, reasons and snapshots.
 
 ## The answer
@@ -83,10 +83,25 @@ The MCP `impact` tool takes `names`, a list of strings, and `gsttt impact` takes
 
 Recording uses adds work to every TypeScript file. The analyzer already visits every node once; uses are collected in the same visit, against a table of the file's top-level bindings built before it, and stored once per declaration. The cold index of vite was 95 ms with the release of `6a8a111` (`cargo xtask bench --gsttt <binary> --repository vite`), and the change must keep it within a few milliseconds of that.
 
+## Measured with the change
+
+On the same tree and scope, with the release of the change, `impact <file> --name <name> --depth <d> --all`:
+
+| question | tests that fail | per file: tests listed | by name at depth 1: files, callers, tests (of them failing) | depth that lists every failing test | tests listed there |
+| --- | --- | --- | --- | --- | --- |
+| vite-tests-1 | 2 | 201 | 4, 4, 0 (0) | 6 | 48 |
+| vite-tests-2 | 5 | 201 | 1, 1, 0 (0) | 3 | 34 |
+| vite-tests-3 | 19 | 201 | 8, 14, 2 (2) | 5 | 61 |
+| vite-tests-4 | 4 | 203 | 1, 1, 0 (0) | 5 | 58 |
+
+Every failing test is reached by name at some depth, so no edge on the way to them is lost. The direct callers hold few of them, because vite's tests reach these functions through three to six calls, from `createServer` and the optimizer down. With no limit on the depth the walk by name lists 192 to 194 tests, close to the 201 of the walk per file: what code can reach is far more than what a test runs.
+
 ## Gaps, said in the answer or here
 
 - A call through a value is not resolved to a member: callers of `C.m` outside `C` are taken as the declarations that refer to `C`, which can miss a declaration that gets an instance without naming the class.
 - Mutation of another module's state through an import, and names reached through `globalThis`, `eval` or a computed key, are not followed. The walk over files misses them too.
+- Inside a class, `super.m`, a `this.m` that a base class declares, `this` kept in a variable (`const self = this`) and a computed `this[key]` are not resolved to members, so a method reached only so is missed. Constructor parameter properties, `constructor(private x: X)`, are not members.
+- Writes are followed for top-level variables only: a member written through `this.x = …`, a static member written through its class (`C.items.push(x)`), a variable written by `Object.assign(cache, …)`, and a write made by a top-level statement do not make the variable list the writer.
 - Python and Rust are followed per file.
 
 ## Not in this change
