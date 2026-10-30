@@ -102,7 +102,7 @@ pub struct ImpactArgs {
     #[arg(long, value_name = "N")]
     pub depth: Option<u32>,
 
-    /// Leave the tests out of the answer, and say how many files it left out
+    /// Leave the tests out of the answer, and say how many test files it left out
     #[arg(long)]
     pub no_tests: bool,
 
