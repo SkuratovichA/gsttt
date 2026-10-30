@@ -1907,6 +1907,17 @@ fn as_used(name: &str, flip: &mut impl FnMut() -> bool) -> String {
     }
 }
 
+/// The `names` that `flip` picks, but `skip`, each as `as_used` writes it.
+fn chosen(names: &[&str], skip: Option<&str>, flip: &mut impl FnMut() -> bool) -> Vec<String> {
+    let mut picked = Vec::new();
+    for &name in names {
+        if skip != Some(name) && flip() {
+            picked.push(as_used(name, flip));
+        }
+    }
+    picked
+}
+
 /// The files of `case` with the declarations, exports and imports a connector would record for them. `choices` settles what the case leaves open: which exported names are declared under another name, which imports bind a name under another, and what each declaration, and the code that runs as the file loads, refers to.
 fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
     let mut cycle = choices.iter().copied().cycle();
@@ -2006,13 +2017,9 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
         for (at, (exported, declaration)) in declares.iter().enumerate() {
             let refers: Vec<String> = match uses {
                 Uses::EveryImportAtLoad => Vec::new(),
-                Uses::InDeclarations | Uses::AlsoAtLoad => names
-                    .iter()
-                    .copied()
-                    .filter_map(|other| {
-                        (other != declaration && flip()).then(|| as_used(other, &mut flip))
-                    })
-                    .collect(),
+                Uses::InDeclarations | Uses::AlsoAtLoad => {
+                    chosen(&names, Some(declaration.as_str()), &mut flip)
+                }
             };
             let refers: Vec<&str> = refers.iter().map(String::as_str).collect();
             let line = 10 + 3 * u32::try_from(at).unwrap();
@@ -2024,11 +2031,7 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
         code = match uses {
             Uses::InDeclarations => code,
             Uses::AlsoAtLoad => {
-                let loads: Vec<String> = names
-                    .iter()
-                    .copied()
-                    .filter_map(|name| flip().then(|| as_used(name, &mut flip)))
-                    .collect();
+                let loads = chosen(&names, None, &mut flip);
                 let loads: Vec<&str> = loads.iter().map(String::as_str).collect();
                 code.on_load(&loads)
             }
