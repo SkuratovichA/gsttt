@@ -333,12 +333,8 @@ impl<'a> Recorder<'a> {
     fn field_types(&mut self, class: usize, element: &ClassElement<'a>) {
         match element {
             ClassElement::PropertyDefinition(field) if !field.computed => {
-                let (name, private) = match &field.key {
-                    PropertyKey::PrivateIdentifier(identifier) => (identifier.name.as_str(), true),
-                    other => match property_str(other) {
-                        Some(name) => (name, false),
-                        None => return,
-                    },
+                let Some((name, private)) = member_key(&field.key) else {
+                    return;
                 };
                 let found = self.fields.entry((class, private, name)).or_default();
                 match field.type_annotation.as_deref() {
@@ -398,10 +394,7 @@ impl<'a> Recorder<'a> {
         if computed {
             return None;
         }
-        let (name, private) = match key {
-            PropertyKey::PrivateIdentifier(identifier) => (identifier.name.as_str(), true),
-            other => (property_str(other)?, false),
-        };
+        let (name, private) = member_key(key)?;
         let start = decorators
             .first()
             .map_or(span.start, |decorator| decorator.span.start.min(span.start));
@@ -801,6 +794,14 @@ impl<'a> Recorder<'a> {
 fn line_pair(index: &LineIndex, span: Span) -> (Line, Line) {
     let last = span.end.saturating_sub(1).max(span.start);
     (index.line(span.start), index.line(last))
+}
+
+/// The name a member of a class is declared under and whether it is private, which is how `members` and `fields` key it: `#cache` is `cache`, private. A key with no name written in the source has none.
+fn member_key<'a>(key: &PropertyKey<'a>) -> Option<(&'a str, bool)> {
+    match key {
+        PropertyKey::PrivateIdentifier(identifier) => Some((identifier.name.as_str(), true)),
+        other => property_str(other).map(|name| (name, false)),
+    }
 }
 
 /// The name an assignment target or a chain of accesses starts from: `cache` for `cache`, `cache.size` and `cache[key].items`.

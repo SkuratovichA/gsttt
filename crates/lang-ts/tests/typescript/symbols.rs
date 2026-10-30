@@ -549,11 +549,11 @@ fn export_default_interface_exports_the_interface_by_its_name() -> Result<(), Bo
 fn a_method_that_calls_an_injected_service_uses_its_class() -> Result<(), Box<dyn Error>> {
     let json = run("symbols-injected-fields")?;
     let path = "src/invoices.resolver.ts";
-    let issue = uses(&json, path, "InvoiceResolver.issue").unwrap_or_default();
+    let issue = uses(&json, path, "InvoiceResolver.issue").ok_or("no InvoiceResolver.issue")?;
     for class in ["InvoiceService", "MailQueue", "JobQueue"] {
         assert!(issue.contains(&class), "issue uses {class}: {issue:?}");
     }
-    let other = uses(&json, path, "InvoiceResolver.other").unwrap_or_default();
+    let other = uses(&json, path, "InvoiceResolver.other").ok_or("no InvoiceResolver.other")?;
     for class in ["InvoiceService", "MailQueue", "JobQueue"] {
         assert!(
             !other.contains(&class),
@@ -568,7 +568,7 @@ fn a_method_that_calls_an_injected_service_uses_its_class() -> Result<(), Box<dy
 #[scenario("typescript", "A field is read in its own class")]
 fn a_field_is_read_in_its_own_class() -> Result<(), Box<dyn Error>> {
     let json = run("symbols-field-own-class")?;
-    let send = uses(&json, "src/jobs.ts", "Mailer.send").unwrap_or_default();
+    let send = uses(&json, "src/jobs.ts", "Mailer.send").ok_or("no Mailer.send")?;
     assert!(send.contains(&"MailQueue"), "{send:?}");
     assert!(!send.contains(&"InvoiceService"), "{send:?}");
     insta::assert_json_snapshot!(json);

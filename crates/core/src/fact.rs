@@ -337,7 +337,7 @@ pub struct Declared {
     pub line: Line,
     /// The line it ends on, from 1.
     pub end: Line,
-    /// The names it refers to, sorted, once each, never its own: other declarations of the file, `Class.member` for `this.member` inside the class, the class that the type of `this.field` stands for, and the local names the file's imports bind. A top-level variable also lists the declarations that write it.
+    /// The names it refers to, sorted, once each, never its own: other declarations of the file, `Class.member` for `this.member` inside the class, the names at the head of the type of `this.field`, and the local names the file's imports bind. A top-level variable also lists the declarations that write it.
     pub uses: Vec<String>,
 }
 
