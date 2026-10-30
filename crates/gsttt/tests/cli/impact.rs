@@ -1,4 +1,4 @@
-//! `impact` takes paths or `--changed`, passes what is gone as deleted, and follows dependents as far as `--depth` lets it.
+//! `impact` takes paths or `--changed`, passes what is gone as deleted, follows dependents as far as `--depth` lets it, and with `--name` lists the callers of a name.
 
 use std::fs;
 
@@ -155,6 +155,54 @@ fn names_go_to_the_query_for_every_path_and_a_walk_by_name_takes_one_hop_unless_
     let whole = json(&sandbox.run_in(&repo, &["--json", "impact", "lib/util.ts"]));
     assert!(whole.get("names").is_none(), "{whole}");
     assert_eq!(whole["depth"], Value::Null);
+}
+
+#[scenario("cli", "--name asks about a name")]
+#[test]
+fn name_asks_about_a_name() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/a.ts",
+        "export function foo() {\n  return 1;\n}\nexport function bar() {\n  return 2;\n}\n",
+    );
+    // b.ts calls foo in run; c.ts imports the same file and calls only bar.
+    write(
+        &repo,
+        "src/b.ts",
+        "import { foo, bar } from './a';\nexport function run() {\n  return foo();\n}\nexport function stop() {\n  return bar();\n}\n",
+    );
+    write(
+        &repo,
+        "src/c.ts",
+        "import { bar } from './a';\nexport const c = bar();\n",
+    );
+
+    let answer = json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.ts", "--name", "foo"]));
+    assert_eq!(answer["names"], value!(["foo"]));
+    assert_eq!(paths(&answer["affected"]), ["src/b.ts"]);
+    assert_eq!(
+        answer["affected"][0]["callers"],
+        value!([{ "name": "run", "line": 2 }])
+    );
+
+    let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--name", "foo"]);
+    assert_eq!(text.code, Some(0), "{text:?}");
+    assert!(
+        text.stdout
+            .starts_with("impact of foo in src/a.ts, within 1 hop\n"),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout
+            .contains("\nsrc/b.ts  distance 1  imports foo from src/a.ts; in run (line 2)\n"),
+        "{text:?}"
+    );
+
+    // Asked about the whole file, c.ts is affected too, so it is the name that leaves it out.
+    let whole = json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.ts"]));
+    assert_eq!(paths(&whole["affected"]), ["src/b.ts", "src/c.ts"]);
 }
 
 #[test]
