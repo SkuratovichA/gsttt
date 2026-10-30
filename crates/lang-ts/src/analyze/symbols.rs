@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use gsttt_core::fact::{Declared, Line, LocalExport, Symbols};
+use gsttt_core::fact::{Declared, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     ChainElement, Class, ClassElement, Declaration, ExportDefaultDeclaration,
@@ -369,11 +369,8 @@ impl<'a> Recorder<'a> {
             .entries
             .get(class)
             .map_or("", |entry| entry.name.as_ref());
-        let display = if private {
-            format!("{owner}.#{name}")
-        } else {
-            format!("{owner}.{name}")
-        };
+        let hash = if private { "#" } else { "" };
+        let display = format!("{owner}{MEMBER_SEPARATOR}{hash}{name}");
         let found = self.push(Cow::Owned(display), Kind::Other, Some(lines));
         self.members.insert((class, private, name), found);
         if let Some(entry) = self.entries.get_mut(class) {
