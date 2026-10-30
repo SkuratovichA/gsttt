@@ -559,11 +559,7 @@ fn a_file_reached_at_load_reaches_the_files_that_mock_it() {
                 .on_load(&["load"]),
         )
         .exports("config.ts", &["config"])
-        .import(
-            "config.test.ts",
-            Import::new("config.ts", ImportKind::Mock, 1),
-            file("config.ts"),
-        )
+        .mocks("config.test.ts", "config.ts", 1)
         .symbols("config.test.ts", Code::new())
         .exports("config.test.ts", &[])
         .tag("config.test.ts", FileTags::TEST)
@@ -745,11 +741,7 @@ fn a_mock_takes_no_name() {
     let index = Tree::new()
         .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
         .exports("a.ts", &["foo"])
-        .import(
-            "a.test.ts",
-            Import::new("a.ts", ImportKind::Mock, 1),
-            file("a.ts"),
-        )
+        .mocks("a.test.ts", "a.ts", 1)
         .symbols("a.test.ts", Code::new())
         .exports("a.test.ts", &[])
         .tag("a.test.ts", FileTags::TEST)
@@ -769,11 +761,7 @@ fn a_mock_of_a_file_followed_whole_is_a_caller() {
         .exports("a.ts", &["foo"])
         .imports_names("b.ts", "a.ts", &["foo"])
         .recovered("b.ts", 1, 3)
-        .import(
-            "b.test.ts",
-            Import::new("b.ts", ImportKind::Mock, 1),
-            file("b.ts"),
-        )
+        .mocks("b.test.ts", "b.ts", 1)
         .symbols("b.test.ts", Code::new())
         .exports("b.test.ts", &[])
         .tag("b.test.ts", FileTags::TEST)
@@ -801,18 +789,10 @@ fn a_mock_in_a_file_without_declarations_is_followed_whole_only_when_the_mocked_
         .exports("a.ts", &["foo"])
         .imports_names("b.ts", "a.ts", &["foo"])
         .recovered("b.ts", 1, 3)
-        .import(
-            "a.test.ts",
-            Import::new("a.ts", ImportKind::Mock, 1),
-            file("a.ts"),
-        )
+        .mocks("a.test.ts", "a.ts", 1)
         .recovered("a.test.ts", 1, 3)
         .tag("a.test.ts", FileTags::TEST)
-        .import(
-            "b.test.ts",
-            Import::new("b.ts", ImportKind::Mock, 1),
-            file("b.ts"),
-        )
+        .mocks("b.test.ts", "b.ts", 1)
         .recovered("b.test.ts", 1, 3)
         .tag("b.test.ts", FileTags::TEST)
         .build();
@@ -1133,11 +1113,7 @@ fn an_import_type_outside_every_declaration_reaches_nothing() {
     let index = Tree::new()
         .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
         .exports("a.ts", &["foo"])
-        .import(
-            "a.test.ts",
-            Import::new("a.ts", ImportKind::Mock, 1),
-            file("a.ts"),
-        )
+        .mocks("a.test.ts", "a.ts", 1)
         .imports_type("a.test.ts", "a.ts", &["*"], 2)
         .symbols("a.test.ts", Code::new())
         .exports("a.test.ts", &[])

@@ -317,6 +317,11 @@ impl Tree {
         self.import(from, Import::new(to, ImportKind::SideEffect, 1), file(to))
     }
 
+    /// `from` mocks the file `to` on `line`, as `vi.mock('to')` does: a mock the walk by name takes no name through.
+    pub fn mocks(self, from: &str, to: &str, line: u32) -> Self {
+        self.import(from, Import::new(to, ImportKind::Mock, line), file(to))
+    }
+
     /// `from` re-exports names of the file `to`, as `export { source as exported } from 'to'` does, one `(exported, source)` pair per name. `("ns", "*")` is `export * as ns from 'to'`.
     pub fn re_exports(self, from: &str, to: &str, pairs: &[(&str, &str)]) -> Self {
         let import = Import {
