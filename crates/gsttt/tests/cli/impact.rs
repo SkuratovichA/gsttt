@@ -206,6 +206,87 @@ fn name_asks_about_a_name() {
 }
 
 #[test]
+fn name_asks_about_a_member_of_a_class() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    // stop calls start through this; main gets an instance of the class, so what it calls is found by the class it names.
+    write(
+        &repo,
+        "src/runner.ts",
+        "export class Runner {\n  start() {}\n  stop() {\n    this.start();\n  }\n}\n",
+    );
+    write(
+        &repo,
+        "src/app.ts",
+        "import { Runner } from './runner';\nexport function main() {\n  new Runner().start();\n}\n",
+    );
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/runner.ts",
+            "--name",
+            "Runner.start",
+        ],
+    ));
+    assert_eq!(answer["names"], value!(["Runner.start"]));
+    assert_eq!(paths(&answer["affected"]), ["src/app.ts", "src/runner.ts"]);
+    assert_eq!(
+        answer["affected"][0]["reason"],
+        value!({ "via": "imports", "file": "src/runner.ts", "names": ["Runner"] })
+    );
+    assert_eq!(
+        answer["affected"][0]["callers"],
+        value!([{ "name": "main", "line": 2, "distance": 1 }])
+    );
+    assert_eq!(
+        answer["affected"][1]["reason"],
+        value!({ "via": "declares", "names": ["Runner.start"] })
+    );
+    assert_eq!(
+        answer["affected"][1]["callers"],
+        value!([{ "name": "Runner.stop", "line": 3, "distance": 1 }])
+    );
+    assert_eq!(
+        answer["notes"],
+        value!([
+            "callers of Runner.start through a value are found through the declarations that refer to Runner"
+        ])
+    );
+
+    let text = sandbox.run_in(
+        &repo,
+        &["impact", "src/runner.ts", "--name", "Runner.start"],
+    );
+    assert_eq!(text.code, Some(0), "{text:?}");
+    assert!(
+        text.stdout
+            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop\n"),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout.contains(
+            "\nsrc/app.ts  distance 1  imports Runner from src/runner.ts; in main (line 2)\n"
+        ),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout.contains(
+            "\nsrc/runner.ts  distance 1  declares Runner.start; in Runner.stop (line 3)\n"
+        ),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout.contains(
+            "\nnote: callers of Runner.start through a value are found through the declarations that refer to Runner\n"
+        ),
+        "{text:?}"
+    );
+}
+
+#[test]
 fn a_path_the_index_does_not_hold_does_not_fail_the_others() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();
