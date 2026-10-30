@@ -32,7 +32,7 @@ expression: tools
           ]
         },
         "depth": {
-          "description": "Stop the walk after this many hops from a changed file. Leave it out to follow every hop, or, with `names`, to take one: the direct callers.",
+          "description": "Stop the walk after this many hops through code from a changed file: the imports, and with `names` the uses of a name. A hop across a contract does not count, so the walk goes on to the clients of every contract it comes to. Leave it out to follow every hop, or, with `names`, to take one: the direct callers.",
           "type": [
             "integer",
             "null"
@@ -52,6 +52,11 @@ expression: tools
           "description": "Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.",
           "type": "boolean",
           "default": false
+        },
+        "tests": {
+          "description": "Whether to list the files tagged as tests, which is what happens when this is left out. False leaves them out of the answer and says how many it left out, to save context when they do not matter; the walk is the same.",
+          "type": "boolean",
+          "default": true
         }
       },
       "type": "object"

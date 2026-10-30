@@ -124,9 +124,11 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
         subject,
         depth,
         all,
+        tests,
     } = call;
     let mut request = ImpactRequest {
         depth,
+        no_tests: !tests,
         ..ImpactRequest::default()
     };
     match subject {

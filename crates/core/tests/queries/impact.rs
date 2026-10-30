@@ -132,7 +132,7 @@ fn depth_limits_the_walk() {
     assert!(
         answer
             .to_string()
-            .contains("impact of a.ts, within 1 hop\n")
+            .contains("impact of a.ts, within 1 hop through code\n")
     );
 }
 
@@ -146,6 +146,81 @@ fn depth_zero_reaches_nothing() {
     let answer = impact(&chain(), Freshness::Fresh, &limited);
 
     assert_eq!(paths(&answer.affected), NONE);
+}
+
+/// `b.ts` is a barrel over the changed `a.ts`, and `i.ts` imports from the barrel.
+fn a_barrel_over_a_changed_file() -> Tree {
+    Tree::new()
+        .exports("a.ts", &["x"])
+        .re_exports("b.ts", "a.ts", &[("x", "x")])
+        .exports("b.ts", &["x"])
+        .imports_names("i.ts", "b.ts", &["x"])
+}
+
+#[test]
+fn depth_zero_reaches_neither_a_barrel_nor_its_importers() {
+    let index = a_barrel_over_a_changed_file().build();
+    let limited = ImpactRequest {
+        depth: Some(0),
+        ..request(&["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &limited);
+
+    assert_eq!(paths(&answer.affected), NONE);
+}
+
+#[test]
+fn depth_one_reaches_a_barrel_and_not_its_importers() {
+    let index = a_barrel_over_a_changed_file().build();
+    let limited = ImpactRequest {
+        depth: Some(1),
+        ..request(&["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &limited);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("b.ts", 1, "re-exports x from a.ts".to_owned())]
+    );
+}
+
+#[test]
+fn depth_zero_reaches_across_a_contract_and_no_barrel() {
+    let index = a_barrel_over_a_server_and_a_caller().build();
+    let limited = ImpactRequest {
+        depth: Some(0),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &limited);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("s2.ts", 1, "calls http GET /x".to_owned())]
+    );
+}
+
+#[test]
+fn depth_one_reaches_the_barrel_by_the_name_that_took_no_hop_through_code_and_not_its_importers() {
+    let index = a_barrel_over_a_server_and_a_caller().build();
+    let limited = ImpactRequest {
+        depth: Some(1),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &limited);
+
+    // `s1.ts` is one hop through code from `c.ts`, which a depth of one does not follow further, so only `y` reaches the barrel, by one hop, and the walk stops there.
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "imports c.ts".to_owned()),
+            ("s2.ts", 1, "calls http GET /x".to_owned()),
+            ("b.ts", 2, "re-exports y from s2.ts".to_owned()),
+        ]
+    );
 }
 
 #[scenario("queries", "Import cycles terminate")]
@@ -276,6 +351,278 @@ fn contract_and_import_hops_chain() {
     );
 }
 
+#[scenario("queries", "A file reached across a contract is followed through code")]
+#[test]
+fn a_hop_across_a_contract_does_not_count_toward_the_depth() {
+    let index = Tree::new()
+        .serves("bookings.controller.ts", "http GET /bookings/{}")
+        .calls("api.ts", "http GET /bookings/{}")
+        .imports("page.tsx", "api.ts")
+        .imports("app.tsx", "page.tsx")
+        .build();
+    let request = ImpactRequest {
+        depth: Some(1),
+        ..request(&["bookings.controller.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("api.ts", 1, "calls http GET /bookings/{}".to_owned()),
+            ("page.tsx", 2, "imports api.ts".to_owned())
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A contract is crossed with the fewest hops through code of the servers, over files"
+)]
+#[test]
+fn what_lies_across_a_contract_takes_the_fewest_hops_through_code_of_its_servers() {
+    // `a.ts` and `b.ts` both serve `http GET /x` and are reached at distance 1: `a.ts`, which comes first, by an import, so with one hop through code, and `b.ts` across a contract, so with none.
+    let index = Tree::new()
+        .serves("ch.ts", "http GET /y")
+        .imports("a.ts", "ch.ts")
+        .serves("a.ts", "http GET /x")
+        .calls("b.ts", "http GET /y")
+        .serves("b.ts", "http GET /x")
+        .calls("c.ts", "http GET /x")
+        .imports("d.ts", "c.ts")
+        .build();
+    let request = ImpactRequest {
+        depth: Some(1),
+        ..request(&["ch.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("a.ts", 1, "imports ch.ts".to_owned()),
+            ("b.ts", 1, "calls http GET /y".to_owned()),
+            ("c.ts", 2, "calls http GET /x".to_owned()),
+            ("d.ts", 3, "imports c.ts".to_owned()),
+        ]
+    );
+}
+
+/// `b.ts` is a barrel over `s1.ts`, which imports the changed `c.ts` and so is one hop through code from it, and over `s2.ts`, which calls what `c.ts` serves and so is none. The barrel gains `x` with two hops through code and `y` with one, in the same layer, and `i.ts` and `b2.ts` take both from it.
+fn a_barrel_over_a_server_and_a_caller() -> Tree {
+    Tree::new()
+        .serves("c.ts", "http GET /x")
+        .imports("s1.ts", "c.ts")
+        .exports("s1.ts", &["x"])
+        .calls("s2.ts", "http GET /x")
+        .exports("s2.ts", &["y"])
+        .re_exports("b.ts", "s1.ts", &[("x", "x")])
+        .re_exports("b.ts", "s2.ts", &[("y", "y")])
+        .exports("b.ts", &["x", "y"])
+        .imports_names("i.ts", "b.ts", &["x", "y"])
+        .re_exports("b2.ts", "b.ts", &[("x", "x"), ("y", "y")])
+        .exports("b2.ts", &["x", "y"])
+}
+
+#[test]
+fn a_barrel_gaining_names_with_different_hops_through_code_gives_one_reason_without_a_depth() {
+    let index = a_barrel_over_a_server_and_a_caller().build();
+
+    let answer = run(&index, &["c.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "imports c.ts".to_owned()),
+            ("s2.ts", 1, "calls http GET /x".to_owned()),
+            ("b.ts", 2, "re-exports x from s1.ts".to_owned()),
+            ("b2.ts", 3, "re-exports x, y from b.ts".to_owned()),
+            ("i.ts", 3, "imports x, y from b.ts".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn a_barrel_gaining_names_with_different_hops_through_code_gives_one_reason_within_the_depth() {
+    let index = a_barrel_over_a_server_and_a_caller().build();
+    let request = ImpactRequest {
+        depth: Some(3),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "imports c.ts".to_owned()),
+            ("s2.ts", 1, "calls http GET /x".to_owned()),
+            ("b.ts", 2, "re-exports x from s1.ts".to_owned()),
+            ("b2.ts", 3, "re-exports x, y from b.ts".to_owned()),
+            ("i.ts", 3, "imports x, y from b.ts".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn a_barrel_passes_on_within_the_depth_only_the_names_that_got_there_within_it() {
+    let index = a_barrel_over_a_server_and_a_caller().build();
+    let request = ImpactRequest {
+        depth: Some(2),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    // `x` reached the barrel by two hops through code, which the depth does not follow further, and `y` by one.
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "imports c.ts".to_owned()),
+            ("s2.ts", 1, "calls http GET /x".to_owned()),
+            ("b.ts", 2, "re-exports x from s1.ts".to_owned()),
+            ("b2.ts", 3, "re-exports y from b.ts".to_owned()),
+            ("i.ts", 3, "imports y from b.ts".to_owned()),
+        ]
+    );
+}
+
+/// `f.ts` is a barrel that is reached whole by an import of `long`, which is one hop through code from the changed `c.ts`, and reached in `n` by `short`, which calls what `c.ts` serves and so is none, in the same layer.
+fn a_barrel_met_by_a_long_way_and_a_short_one(long: &str, short: &str) -> Tree {
+    Tree::new()
+        .serves("c.ts", "http GET /x")
+        .imports(long, "c.ts")
+        .exports(long, &["x"])
+        .calls(short, "http GET /x")
+        .exports(short, &["n"])
+        .imports_names("f.ts", long, &["x"])
+        .re_exports("f.ts", short, &[("n", "n")])
+        .exports("f.ts", &["n"])
+        .imports_names("j.ts", "f.ts", &["n"])
+}
+
+#[test]
+fn a_name_passed_to_a_barrel_by_the_shorter_way_survives_the_barrel_made_whole_by_the_longer_one_first()
+ {
+    // The barrel is whole at one hop through code from `s2.ts`, which is the way `j.ts` is within the depth of 2 by.
+    let index = a_barrel_met_by_a_long_way_and_a_short_one("s1.ts", "s2.ts").build();
+    let request = ImpactRequest {
+        depth: Some(2),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "imports c.ts".to_owned()),
+            ("s2.ts", 1, "calls http GET /x".to_owned()),
+            ("f.ts", 2, "imports x from s1.ts".to_owned()),
+            ("j.ts", 3, "imports n from f.ts".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn a_name_passed_to_a_barrel_by_the_shorter_way_survives_the_barrel_made_whole_by_the_longer_one_second()
+ {
+    let index = a_barrel_met_by_a_long_way_and_a_short_one("s2.ts", "s1.ts").build();
+    let request = ImpactRequest {
+        depth: Some(2),
+        ..request(&["c.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    // The barrel is found first by the re-export of `s1.ts`, which keeps its reason.
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("s1.ts", 1, "calls http GET /x".to_owned()),
+            ("s2.ts", 1, "imports c.ts".to_owned()),
+            ("f.ts", 2, "re-exports n from s1.ts".to_owned()),
+            ("j.ts", 3, "imports n from f.ts".to_owned()),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "An import found second gives the fewer hops through code, over files"
+)]
+#[test]
+fn an_import_found_second_gives_the_fewer_hops_through_code() {
+    // `m.ts` is reached at distance 2 by an import of `a.ts`, which is one hop through code from `r.ts`, and by an import of `z.ts`, which is none: it calls what `r.ts` serves. `a.ts` comes first, so the reason is its import, and `n.ts` is still within the depth of 2 because `m.ts` took one hop.
+    let index = Tree::new()
+        .serves("r.ts", "http GET /x")
+        .imports("a.ts", "r.ts")
+        .calls("z.ts", "http GET /x")
+        .imports("m.ts", "a.ts")
+        .imports("m.ts", "z.ts")
+        .imports("n.ts", "m.ts")
+        .build();
+    let request = ImpactRequest {
+        depth: Some(2),
+        ..request(&["r.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("a.ts", 1, "imports r.ts".to_owned()),
+            ("z.ts", 1, "calls http GET /x".to_owned()),
+            ("m.ts", 2, "imports a.ts".to_owned()),
+            ("n.ts", 3, "imports m.ts".to_owned()),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "An import found after a contract gives the fewer hops through code, over files"
+)]
+#[test]
+fn an_import_found_after_a_contract_gives_the_fewer_hops_through_code() {
+    // `x.ts` is reached at distance 3 by a contract of `b.ts`, which is two hops through code from `r.ts`, and by an import of `z2.ts`, which is none: it is the last of a chain of callers. `b.ts` comes first, so the reason is its contract, and the files past `x.ts` are followed with the one hop that the import took.
+    let index = Tree::new()
+        .serves("r.ts", "http GET /x")
+        .imports("b0.ts", "r.ts")
+        .imports("b.ts", "b0.ts")
+        .serves("b.ts", "http GET /y")
+        .calls("z1.ts", "http GET /x")
+        .serves("z1.ts", "http GET /w")
+        .calls("z2.ts", "http GET /w")
+        .calls("x.ts", "http GET /y")
+        .imports("x.ts", "z2.ts")
+        .imports("w.ts", "x.ts")
+        .imports("v.ts", "w.ts")
+        .build();
+    let request = ImpactRequest {
+        depth: Some(3),
+        ..request(&["r.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            ("b0.ts", 1, "imports r.ts".to_owned()),
+            ("z1.ts", 1, "calls http GET /x".to_owned()),
+            ("b.ts", 2, "imports b0.ts".to_owned()),
+            ("z2.ts", 2, "calls http GET /w".to_owned()),
+            ("x.ts", 3, "calls http GET /y".to_owned()),
+            ("w.ts", 4, "imports x.ts".to_owned()),
+            ("v.ts", 5, "imports w.ts".to_owned()),
+        ]
+    );
+}
+
 #[test]
 fn a_declared_contract_is_reached_through_an_import_of_its_schema() {
     let index = Tree::new()
@@ -312,6 +659,60 @@ fn tests_are_listed_apart() {
     let affected = text.find("affected files (1):").unwrap();
     let tests = text.find("tests (1):").unwrap();
     assert!(affected < tests && text.contains("a.test.ts  distance 1  imports a.ts"));
+}
+
+#[scenario("queries", "The tests are counted and not listed")]
+#[test]
+fn tests_can_be_left_out_and_counted() {
+    let index = Tree::new()
+        .imports("b.ts", "a.ts")
+        .read_by("extra", "a.test.ts")
+        .imports("a.test.ts", "a.ts")
+        .imports("b.test.ts", "a.ts")
+        .tag("a.test.ts", FileTags::TEST)
+        .tag("b.test.ts", FileTags::TEST)
+        .build();
+    let request = ImpactRequest {
+        no_tests: true,
+        ..request(&["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(paths(&answer.tests), NONE);
+    assert_eq!(answer.tests_left_out, 2);
+    let text = answer.to_string();
+    assert!(text.contains("2 test files left out\n"), "{text}");
+    assert!(!text.contains("a.test.ts"), "{text}");
+    // The footer covers every file the walk reached, the tests it left out included.
+    assert!(text.contains("extra read 1 of 1 files"), "{text}");
+    let json = to_value(&answer).unwrap();
+    assert_eq!(json["tests"], json!([]));
+    assert_eq!(json["tests_left_out"], json!(2));
+    // Asked for them, the answer lists the tests and counts none.
+    let listed = run(&index, &["a.ts"]);
+    assert_eq!(paths(&listed.tests), ["a.test.ts", "b.test.ts"]);
+    assert_eq!(listed.tests_left_out, 0);
+    assert!(to_value(&listed).unwrap().get("tests_left_out").is_none());
+}
+
+#[scenario("queries", "Only tests reached is not nothing")]
+#[test]
+fn an_answer_that_reached_only_tests_does_not_say_nothing_is_affected() {
+    let index = Tree::new()
+        .imports("a.test.ts", "a.ts")
+        .tag("a.test.ts", FileTags::TEST)
+        .build();
+    let request = ImpactRequest {
+        no_tests: true,
+        ..request(&["a.ts"])
+    };
+
+    let text = impact(&index, Freshness::Fresh, &request).to_string();
+
+    assert!(text.contains("1 test file left out\n"), "{text}");
+    assert!(!text.contains("nothing is affected"), "{text}");
 }
 
 #[test]

@@ -27,10 +27,12 @@ pub struct ImpactRequest {
     pub files: Vec<String>,
     /// The paths the caller knows were deleted. One the index still holds is traced like any changed file; one it no longer holds is listed, with the unresolved imports that may have pointed at it, and not traced.
     pub deleted: Vec<String>,
-    /// Stop the walk after this many hops from a changed file. A walk by name takes one hop when this is `None`.
+    /// Stop the walk after this many hops through code from a changed file: the imports, and with `names` the uses of a name, the loads and the mocks. A hop across a contract is not one of them, so the walk crosses every contract it comes to. A walk by name takes one hop through code when this is `None`.
     pub depth: Option<u32>,
     /// Declarations of the files in `files` to ask about instead of the files: a function, class, method (`Class.method`) or variable. The answer lists their direct callers, declaration by declaration. A name a file does not declare reaches nothing and goes into a note.
     pub names: Vec<String>,
+    /// Leave the tests out of the answer, and count them instead. The walk is the same, so the footer still covers the tests it reached.
+    pub no_tests: bool,
 }
 
 /// The files a change affects.
@@ -41,12 +43,15 @@ pub struct Impact {
     /// The names asked about in those files, each once, in the order asked. Left out when the files were asked about whole.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
-    /// The hops the walk was allowed, `None` when it ran to a fixpoint. A walk by name always has one.
+    /// The hops through code the walk was allowed, `None` when it ran to a fixpoint. A walk by name always has one.
     pub depth: Option<u32>,
     /// The files the change reaches, nearest first and then by path, without the tests.
     pub affected: Vec<Affected>,
-    /// The files tagged as tests that the change reaches, in the same order.
+    /// The files tagged as tests that the change reaches, in the same order. Empty when the request left the tests out.
     pub tests: Vec<Affected>,
+    /// How many files tagged as tests the change reaches that the request left out. Left out when there are none.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub tests_left_out: u32,
     /// The paths reported deleted that the index no longer holds.
     pub deleted: Vec<Deleted>,
     /// The paths the index does not hold that nobody reported deleted.
@@ -221,6 +226,15 @@ impl Serialize for Note {
     }
 }
 
+/// Whether a count is zero, for a key of the answer that is left out when there is nothing to count.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde hands `skip_serializing_if` a reference to the field"
+)]
+fn is_zero(count: &u32) -> bool {
+    *count == 0
+}
+
 /// Which files a change to `request.files` affects, through imports followed backwards and through the contracts the files share.
 pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> Impact {
     let graph = &index.graph;
@@ -270,6 +284,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     };
     let mut affected = Vec::new();
     let mut tests = Vec::new();
+    let mut tests_left_out = 0;
     for hit in &hits {
         // A file without a path cannot be named in the answer, so it is the only one the walk reaches and the answer leaves out.
         let Some(path) = graph.path(hit.file) else {
@@ -282,10 +297,12 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
             callers: callers(graph, hit),
             load: hit.load.map(|distance| Load { distance }),
         };
-        if graph.tags(hit.file).contains(FileTags::TEST) {
-            tests.push(entry);
-        } else {
+        if !graph.tags(hit.file).contains(FileTags::TEST) {
             affected.push(entry);
+        } else if request.no_tests {
+            tests_left_out += 1;
+        } else {
+            tests.push(entry);
         }
     }
 
@@ -328,6 +345,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         ),
         affected,
         tests,
+        tests_left_out,
         deleted,
         unknown,
         notes: notes
@@ -459,7 +477,7 @@ impl Answer for Impact {
             write!(f, "impact of {} in {files}", summary(&self.names))?;
         }
         if let Some(depth) = self.depth {
-            write!(f, ", within {}", noun(depth, "hop"))?;
+            write!(f, ", within {} through code", noun(depth, "hop"))?;
         }
         f.write_str("\n")?;
 
@@ -470,6 +488,9 @@ impl Answer for Impact {
         };
         list(f, "affected files", &self.affected, entries, affected_line)?;
         list(f, "tests", &self.tests, entries, affected_line)?;
+        if self.tests_left_out > 0 {
+            writeln!(f, "{} left out", noun(self.tests_left_out, "test file"))?;
+        }
         for deleted in &self.deleted {
             writeln!(f, "{} is deleted, so it is not traced", deleted.path)?;
             let heading = format!("possible misses for {}", deleted.path);
@@ -485,7 +506,11 @@ impl Answer for Impact {
             note.write(f, entries)?;
             f.write_str("\n")?;
         }
-        if !self.changed.is_empty() && self.affected.is_empty() && self.tests.is_empty() {
+        if !self.changed.is_empty()
+            && self.affected.is_empty()
+            && self.tests.is_empty()
+            && self.tests_left_out == 0
+        {
             let subject = if self.names.is_empty() {
                 summary(&self.changed)
             } else {

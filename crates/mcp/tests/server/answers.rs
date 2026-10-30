@@ -2,6 +2,7 @@
 
 use gsttt_core::Freshness;
 use gsttt_core::engine::changes::ChangeKind;
+use gsttt_core::fact::FileTags;
 use gsttt_core::query::{self, Answer, Entries, ImpactRequest};
 use gsttt_core::testing::{Code, Tree};
 use gsttt_core::text::thousands;
@@ -516,7 +517,7 @@ async fn impact_takes_names_and_answers_as_the_command_line_does() {
     assert!(
         reply
             .text
-            .starts_with("impact of foo in a.ts, within 1 hop\n"),
+            .starts_with("impact of foo in a.ts, within 1 hop through code\n"),
         "{}",
         reply.text
     );
@@ -527,6 +528,45 @@ async fn impact_takes_names_and_answers_as_the_command_line_does() {
         "{}",
         reply.text
     );
+}
+
+#[scenario("mcp", "impact leaves the tests out")]
+#[tokio::test]
+async fn impact_with_tests_false_leaves_the_tests_out_as_the_command_line_does() {
+    let source = Fake::over(
+        Tree::new()
+            .imports("b.ts", "a.ts")
+            .imports("a.test.ts", "a.ts")
+            .tag("a.test.ts", FileTags::TEST)
+            .build(),
+    );
+    let session = Session::start(source.clone()).await;
+
+    let reply = session
+        .call("impact", json!({ "paths": ["a.ts"], "tests": false }))
+        .await;
+
+    assert!(!reply.is_error, "{}", reply.text);
+    let request = ImpactRequest {
+        files: vec!["a.ts".to_owned()],
+        no_tests: true,
+        ..ImpactRequest::default()
+    };
+    assert_eq!(reply.text, impact_text(&source, &request, Entries::Capped));
+    assert!(reply.text.contains("b.ts  distance 1"), "{}", reply.text);
+    assert!(
+        reply.text.contains("1 test file left out\n"),
+        "{}",
+        reply.text
+    );
+    assert!(!reply.text.contains("a.test.ts"), "{}", reply.text);
+
+    let listed = session
+        .call("impact", json!({ "paths": ["a.ts"] }))
+        .await
+        .text;
+    assert!(listed.contains("a.test.ts  distance 1"), "{listed}");
+    assert!(!listed.contains("left out"), "{listed}");
 }
 
 #[tokio::test]

@@ -30,6 +30,7 @@ fn request(session: &Session<'_>, args: &ImpactArgs) -> Result<ImpactRequest, Cl
     let mut request = ImpactRequest {
         depth: args.depth,
         names: args.names.clone(),
+        no_tests: args.no_tests,
         ..ImpactRequest::default()
     };
     if args.changed {

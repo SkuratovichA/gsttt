@@ -246,7 +246,7 @@ fn the_answer_names_the_callers_and_their_lines() {
 
     let text = answer.text(Entries::Capped);
     assert!(
-        text.starts_with("impact of foo in a.ts, within 1 hop\n"),
+        text.starts_with("impact of foo in a.ts, within 1 hop through code\n"),
         "{text}"
     );
     assert!(
@@ -1163,6 +1163,156 @@ fn a_declaration_crosses_only_its_own_contracts() {
     );
 }
 
+/// `db.ts` declares `rows`, `api.ts` uses it in `listUsers`, which serves `http GET /users`, `users.ts` calls the route in `fetchUsers`, and `page.ts` uses `fetchUsers` in `Page`.
+fn rows_behind_a_route() -> Index {
+    Tree::new()
+        .symbols("db.ts", Code::new().declaration("rows", (1, 2), &[]))
+        .exports("db.ts", &["rows"])
+        .imports_names("api.ts", "db.ts", &["rows"])
+        .symbols(
+            "api.ts",
+            Code::new().declaration("listUsers", (1, 5), &["rows"]),
+        )
+        .exports("api.ts", &["listUsers"])
+        .site("api.ts", "http GET /users", Role::Serves, 3)
+        .symbols(
+            "users.ts",
+            Code::new().declaration("fetchUsers", (1, 4), &[]),
+        )
+        .exports("users.ts", &["fetchUsers"])
+        .site("users.ts", "http GET /users", Role::Calls, 2)
+        .imports_names("page.ts", "users.ts", &["fetchUsers"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("Page", (1, 4), &["fetchUsers"]),
+        )
+        .exports("page.ts", &[])
+        .build()
+}
+
+#[scenario(
+    "queries",
+    "A client of a route a caller serves is reached within the default depth"
+)]
+#[test]
+fn a_hop_across_a_contract_does_not_use_up_the_default_depth() {
+    let answer = ask(&rows_behind_a_route(), "db.ts", &["rows"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("api.ts", 1, "imports rows from db.ts", &["listUsers"]),
+            row("users.ts", 2, "calls http GET /users", &["fetchUsers"]),
+        ]
+    );
+    assert_eq!(notes(&answer), [STOPPED]);
+}
+
+#[test]
+fn the_distance_keeps_counting_a_hop_across_a_contract() {
+    let answer = ask(&rows_behind_a_route(), "db.ts", &["rows"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("api.ts", 1, "imports rows from db.ts", &["listUsers"]),
+            row("users.ts", 2, "calls http GET /users", &["fetchUsers"]),
+            row("page.ts", 3, "imports fetchUsers from users.ts", &["Page"]),
+        ]
+    );
+    assert_eq!(notes(&answer), Vec::<String>::new());
+}
+
+#[test]
+fn a_depth_of_zero_still_crosses_the_contracts_of_the_declaration_asked_about() {
+    let answer = ask(&rows_behind_a_route(), "api.ts", &["listUsers"], Some(0));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("users.ts", 1, "calls http GET /users", &["fetchUsers"])]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A contract is crossed with the fewest hops through code of the servers, by name"
+)]
+#[test]
+fn what_lies_across_a_contract_takes_the_fewest_hops_through_code_of_its_servers() {
+    // `a.ts` and `b.ts` both serve `http GET /x` and are reached at distance 1: `a.ts`, which comes first, by an import, so with one hop through code, and `b.ts` across a contract, so with none.
+    let index = Tree::new()
+        .symbols("lib.ts", Code::new().declaration("foo", (1, 5), &[]))
+        .exports("lib.ts", &["foo"])
+        .site("lib.ts", "http GET /y", Role::Serves, 2)
+        .imports_names("a.ts", "lib.ts", &["foo"])
+        .symbols("a.ts", Code::new().declaration("pa", (1, 5), &["foo"]))
+        .exports("a.ts", &["pa"])
+        .site("a.ts", "http GET /x", Role::Serves, 2)
+        .symbols("b.ts", Code::new().declaration("qb", (1, 5), &[]))
+        .exports("b.ts", &["qb"])
+        .site("b.ts", "http GET /y", Role::Calls, 2)
+        .site("b.ts", "http GET /x", Role::Serves, 3)
+        .symbols("c.ts", Code::new().declaration("cc", (1, 4), &[]))
+        .exports("c.ts", &["cc"])
+        .site("c.ts", "http GET /x", Role::Calls, 2)
+        .imports_names("d.ts", "c.ts", &["cc"])
+        .symbols("d.ts", Code::new().declaration("dd", (1, 3), &["cc"]))
+        .exports("d.ts", &[])
+        .build();
+
+    let answer = ask(&index, "lib.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("a.ts", 1, "imports foo from lib.ts", &["pa"]),
+            row("b.ts", 1, "calls http GET /y", &["qb"]),
+            row("c.ts", 2, "calls http GET /x", &["cc"]),
+            row("d.ts", 3, "imports cc from c.ts", &["dd"]),
+        ]
+    );
+}
+
+#[test]
+fn from_one_file_contracts_come_in_key_order_whatever_the_hops_through_code_of_the_declarations() {
+    // `a` of `f.ts` is reached by an import, with one hop through code, and `b` across a contract, with none. Each serves a contract that `x.ts` calls, so `x.ts` is reached from `f.ts` twice at distance 2, and the first contract by key gives the reason, whichever declaration was expanded first.
+    let index = Tree::new()
+        .symbols("lib.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("lib.ts", &["foo"])
+        .site("lib.ts", "http GET /k", Role::Serves, 1)
+        .imports_names("f.ts", "lib.ts", &["foo"])
+        .symbols(
+            "f.ts",
+            Code::new()
+                .declaration("a", (1, 5), &["foo"])
+                .declaration("b", (6, 10), &[]),
+        )
+        .exports("f.ts", &["a", "b"])
+        .site("f.ts", "http GET /c1", Role::Serves, 3)
+        .site("f.ts", "http GET /k", Role::Calls, 8)
+        .site("f.ts", "http GET /c2", Role::Serves, 9)
+        .symbols(
+            "x.ts",
+            Code::new()
+                .declaration("xc1", (1, 3), &[])
+                .declaration("xc2", (4, 6), &[]),
+        )
+        .exports("x.ts", &[])
+        .site("x.ts", "http GET /c1", Role::Calls, 2)
+        .site("x.ts", "http GET /c2", Role::Calls, 5)
+        .build();
+
+    let answer = ask(&index, "lib.ts", &["foo"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("f.ts", 1, "imports foo from lib.ts", &["a", "b"]),
+            row("x.ts", 2, "calls http GET /c1", &["xc1", "xc2"]),
+        ]
+    );
+}
+
 #[test]
 fn a_namespace_import_is_a_use_of_every_name_by_what_uses_the_namespace() {
     let index = Tree::new()
@@ -1637,11 +1787,9 @@ fn several_names_in_several_files_are_one_question() {
             "z.ts declares no nothing"
         ]
     );
-    assert!(
-        answer
-            .text(Entries::Capped)
-            .starts_with("impact of foo, zed and nothing in a.ts and z.ts, within 1 hop\n")
-    );
+    assert!(answer.text(Entries::Capped).starts_with(
+        "impact of foo, zed and nothing in a.ts and z.ts, within 1 hop through code\n"
+    ));
 }
 
 #[test]
@@ -1704,7 +1852,7 @@ fn a_depth_of_zero_lists_nothing_and_says_the_walk_stopped() {
     assert!(
         answer
             .text(Entries::Capped)
-            .starts_with("impact of foo in a.ts, within 0 hops\n")
+            .starts_with("impact of foo in a.ts, within 0 hops through code\n")
     );
 }
 

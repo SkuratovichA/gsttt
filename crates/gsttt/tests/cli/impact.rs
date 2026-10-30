@@ -1,6 +1,7 @@
 //! `impact` takes paths or `--changed`, passes what is gone as deleted, follows dependents as far as `--depth` lets it, and with `--name` lists the callers of a name.
 
 use std::fs;
+use std::path::PathBuf;
 
 use gsttt_scenario::scenario;
 use serde_json::{Value, json as value};
@@ -242,7 +243,7 @@ fn name_asks_about_a_name() {
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
         text.stdout
-            .starts_with("impact of foo in src/a.ts, within 1 hop\n"),
+            .starts_with("impact of foo in src/a.ts, within 1 hop through code\n"),
         "{text:?}"
     );
     assert!(
@@ -329,9 +330,8 @@ fn name_lists_the_callers_of_a_name_and_not_the_tests_that_mock_it_or_read_anoth
     assert_eq!(paths(&other["tests"]), ["src/reader.test.ts"]);
 }
 
-#[test]
-fn name_crosses_the_contract_from_a_method_of_an_injected_service() {
-    let sandbox = Sandbox::new();
+/// A repository in which a method of a resolver calls a service on an injected field and serves a GraphQL mutation that a client calls.
+fn graphql_through_an_injected_service(sandbox: &Sandbox) -> PathBuf {
     let repo = sandbox.repository();
     write(
         &repo,
@@ -354,19 +354,11 @@ fn name_crosses_the_contract_from_a_method_of_an_injected_service() {
         "src/client.ts",
         "import gql from 'graphql-tag';\n\nexport const ISSUE = gql`mutation Issue { issueInvoice }`;\n",
     );
+    repo
+}
 
-    let answer = json(&sandbox.run_in(
-        &repo,
-        &[
-            "--json",
-            "impact",
-            "src/invoice.service.ts",
-            "--name",
-            "InvoiceService.issue",
-            "--depth",
-            "2",
-        ],
-    ));
+/// What `impact` of `InvoiceService.issue` lists: the resolver, a hop through code from the service, and the client of the mutation its method serves, a hop across a contract further.
+fn assert_the_client_of_the_mutation_is_reached(answer: &Value) {
     assert_eq!(
         paths(&answer["affected"]),
         ["src/invoice.resolver.ts", "src/client.ts"],
@@ -381,6 +373,48 @@ fn name_crosses_the_contract_from_a_method_of_an_injected_service() {
         value!({ "via": "contract", "role": "calls", "key": "graphql Mutation.issueInvoice" }),
         "{answer}"
     );
+}
+
+#[test]
+fn name_crosses_the_contract_from_a_method_of_an_injected_service() {
+    let sandbox = Sandbox::new();
+    let repo = graphql_through_an_injected_service(&sandbox);
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/invoice.service.ts",
+            "--name",
+            "InvoiceService.issue",
+            "--depth",
+            "2",
+        ],
+    ));
+
+    assert_the_client_of_the_mutation_is_reached(&answer);
+}
+
+#[test]
+fn name_crosses_the_contract_from_a_method_of_an_injected_service_without_a_depth() {
+    let sandbox = Sandbox::new();
+    let repo = graphql_through_an_injected_service(&sandbox);
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/invoice.service.ts",
+            "--name",
+            "InvoiceService.issue",
+        ],
+    ));
+
+    // The hop across the contract is no hop through code, so the depth of one the walk takes by name is enough.
+    assert_the_client_of_the_mutation_is_reached(&answer);
+    assert_eq!(answer["depth"], 1, "{answer}");
 }
 
 #[test]
@@ -437,6 +471,53 @@ fn name_crosses_only_the_contract_of_the_method_that_calls_the_member() {
         !callers.contains("InvoiceResolver.cancelInvoice"),
         "{answer}"
     );
+}
+
+#[scenario("cli", "--no-tests leaves the tests out")]
+#[test]
+fn no_tests_leaves_the_tests_out_and_counts_them() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(&repo, "src/a.ts", "export const a = 1;\n");
+    write(
+        &repo,
+        "src/b.ts",
+        "import { a } from './a';\nexport const b = a;\n",
+    );
+    for test in ["a", "b"] {
+        write(
+            &repo,
+            &format!("src/{test}.test.ts"),
+            "import { a } from './a';\ntest('a', () => expect(a).toBe(1));\n",
+        );
+    }
+
+    let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--no-tests"]);
+    assert_eq!(text.code, Some(0), "{text:?}");
+    assert!(
+        text.stdout
+            .contains("\nsrc/b.ts  distance 1  imports a from src/a.ts\n"),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout.contains("\n2 test files left out\n"),
+        "{text:?}"
+    );
+    assert!(!text.stdout.contains(".test.ts"), "{text:?}");
+
+    let answer = json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.ts", "--no-tests"]));
+    assert_eq!(paths(&answer["affected"]), ["src/b.ts"], "{answer}");
+    assert_eq!(answer["tests"], value!([]), "{answer}");
+    assert_eq!(answer["tests_left_out"], 2, "{answer}");
+
+    // The tests are listed unless the question leaves them out.
+    let listed = json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.ts"]));
+    assert_eq!(
+        paths(&listed["tests"]),
+        ["src/a.test.ts", "src/b.test.ts"],
+        "{listed}"
+    );
+    assert!(listed.get("tests_left_out").is_none(), "{listed}");
 }
 
 #[test]
@@ -497,7 +578,7 @@ fn name_asks_about_a_member_of_a_class() {
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
         text.stdout
-            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop\n"),
+            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop through code\n"),
         "{text:?}"
     );
     assert!(
