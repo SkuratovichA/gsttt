@@ -23,3 +23,8 @@ A use of `Type.member` SHALL refer to that member only, where a use of `Type` al
 #### Scenario: A namespace import takes every member of its class
 - **WHEN** `page.ts` has `import * as res from './resolver'` and declares `Page.open`, which uses `res.InvoiceResolver.issueInvoice`, `Page.close`, which uses `res.InvoiceResolver.cancelInvoice`, and `Page.all`, which uses `res`, and impact is asked about `InvoiceService.issue` in `service.ts` with depth 2
 - **THEN** impact lists `page.ts` at distance 2, imports `resolver.ts`, with the callers `Page.all`, `Page.close` and `Page.open`
+
+#### Scenario: A member a subclass inherits reaches the callers of the subclass
+- **WHEN** `audit.ts` imports `InvoiceService` from `service.ts` and declares `AuditedService`, which uses `InvoiceService`, `page.ts` imports `AuditedService` and declares `Page.open`, which uses `AuditedService.issue`, and `Page.idle`, which uses nothing, and impact is asked about `InvoiceService.issue` in `service.ts` with depth 2
+- **THEN** impact lists `audit.ts` at distance 1 with the caller `AuditedService`, and `page.ts` at distance 2 with the caller `Page.open` and not `Page.idle`
+

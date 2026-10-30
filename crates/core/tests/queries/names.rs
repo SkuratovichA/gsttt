@@ -449,18 +449,17 @@ fn invoices() -> Tree {
         .exports("resolver.ts", &["InvoiceResolver"])
 }
 
-/// `page.ts` imports the resolver as `InvoiceResolver` and calls its methods through an injected field, as `this.resolver.issueInvoice()` does. `all` reads the field as a value.
-fn page(tree: Tree, import: &[(&str, &str)], used: [&str; 3]) -> Tree {
-    tree.imports_as("page.ts", "resolver.ts", import)
-        .symbols(
-            "page.ts",
-            Code::new()
-                .declaration("Page", (1, 12), &[])
-                .declaration("Page.open", (2, 4), &[used[0]])
-                .declaration("Page.close", (5, 7), &[used[1]])
-                .declaration("Page.all", (8, 10), &[used[2]]),
-        )
-        .exports("page.ts", &[])
+/// `page.ts` calls the methods of the resolver through an injected field, as `this.resolver.issueInvoice()` does, under the names `used` gives. `all` reads the field as a value. What it imports is left to the test, because where it imports the resolver from is what the test is about.
+fn page(tree: Tree, used: [&str; 3]) -> Tree {
+    tree.symbols(
+        "page.ts",
+        Code::new()
+            .declaration("Page", (1, 12), &[])
+            .declaration("Page.open", (2, 4), &[used[0]])
+            .declaration("Page.close", (5, 7), &[used[1]])
+            .declaration("Page.all", (8, 10), &[used[2]]),
+    )
+    .exports("page.ts", &[])
 }
 
 #[scenario("queries", "A call through a field names the member")]
@@ -507,8 +506,11 @@ fn asked_about_the_class_a_call_of_any_member_is_listed() {
 #[test]
 fn a_member_goes_on_to_the_files_that_import_its_class() {
     let index = page(
-        invoices(),
-        &[("InvoiceResolver", "InvoiceResolver")],
+        invoices().imports_as(
+            "page.ts",
+            "resolver.ts",
+            &[("InvoiceResolver", "InvoiceResolver")],
+        ),
         [
             "InvoiceResolver.issueInvoice",
             "InvoiceResolver.cancelInvoice",
@@ -549,11 +551,9 @@ fn a_member_goes_on_under_the_name_a_barrel_exports_its_class_by() {
         .symbols("index.ts", Code::new())
         .exports("index.ts", &["Res"]);
     let index = page(
-        tree,
-        &[("Res", "Res")],
+        tree.imports_as("page.ts", "index.ts", &[("Res", "Res")]),
         ["Res.issueInvoice", "Res.cancelInvoice", "Res"],
     )
-    .imports_names("page.ts", "index.ts", &["Res"])
     .build();
 
     let answer = ask(&index, "service.ts", &["InvoiceService.issue"], Some(2));
@@ -590,8 +590,7 @@ fn a_member_goes_on_under_the_name_a_barrel_exports_its_class_by() {
 #[test]
 fn a_namespace_import_takes_every_member_of_its_class() {
     let index = page(
-        invoices(),
-        &[("*", "res")],
+        invoices().imports_as("page.ts", "resolver.ts", &[("*", "res")]),
         [
             "res.InvoiceResolver.issueInvoice",
             "res.InvoiceResolver.cancelInvoice",
@@ -659,6 +658,58 @@ fn a_load_that_uses_a_member_is_a_caller_of_that_member_and_of_the_class() {
     assert_eq!(loaded("InvoiceService.issue"), Some(Some(1)));
     assert_eq!(loaded("InvoiceService"), Some(Some(1)));
     assert_eq!(loaded("InvoiceService.cancel"), None);
+}
+
+/// `audit.ts` declares `AuditedService` over `InvoiceService`, which is a use of the class, and `page.ts` calls `issue` through a field of that type, so it uses `AuditedService.issue`, a member the subclass inherits. The walk does not know what a class inherits, so the subclass is reached as a whole and the member that `page.ts` uses is a caller of it.
+#[scenario(
+    "queries",
+    "A member a subclass inherits reaches the callers of the subclass"
+)]
+#[test]
+fn a_member_a_subclass_inherits_reaches_the_callers_of_the_subclass() {
+    let index = invoices()
+        .imports_names("audit.ts", "service.ts", &["InvoiceService"])
+        .symbols(
+            "audit.ts",
+            Code::new().declaration("AuditedService", (1, 4), &["InvoiceService"]),
+        )
+        .exports("audit.ts", &["AuditedService"])
+        .imports_names("page.ts", "audit.ts", &["AuditedService"])
+        .symbols(
+            "page.ts",
+            Code::new()
+                .declaration("Page", (1, 9), &[])
+                .declaration("Page.open", (2, 4), &["AuditedService.issue"])
+                .declaration("Page.idle", (5, 7), &[]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let answer = ask(&index, "service.ts", &["InvoiceService.issue"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row(
+                "audit.ts",
+                1,
+                "imports InvoiceService from service.ts",
+                &["AuditedService"]
+            ),
+            row(
+                "resolver.ts",
+                1,
+                "imports InvoiceService from service.ts",
+                &["InvoiceResolver.all", "InvoiceResolver.issueInvoice"]
+            ),
+            row(
+                "page.ts",
+                2,
+                "imports AuditedService from audit.ts",
+                &["Page.open"]
+            ),
+        ]
+    );
 }
 
 #[test]
@@ -1880,6 +1931,8 @@ struct Written {
     index: Index,
     /// The names the file that changes declares, which is what a walk by name asks about.
     asked: Vec<String>,
+    /// The member `m` that the file that changes declares for each of those, with the files that use it, or its class alone, through an import of the class. A walk by name asked about the member must list at least those.
+    members: BTreeMap<String, BTreeSet<String>>,
     /// The code of every file and what every import binds, for a failure to be read.
     shown: String,
 }
@@ -1916,6 +1969,11 @@ fn chosen(names: &[&str], skip: Option<&str>, flip: &mut impl FnMut() -> bool) -
         }
     }
     picked
+}
+
+/// Every one of `names`, each as `as_used` writes it.
+fn chosen_all(names: &[&str], flip: &mut impl FnMut() -> bool) -> Vec<String> {
+    names.iter().map(|name| as_used(name, flip)).collect()
 }
 
 /// The files of `case` with the declarations, exports and imports a connector would record for them. `choices` settles what the case leaves open: which exported names are declared under another name, which imports bind a name under another, and what each declaration, and the code that runs as the file loads, refers to.
@@ -1990,6 +2048,8 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
 
     let mut shown = String::new();
     let mut tree = Tree::new();
+    // Everything the declarations and the load of each file use, as written.
+    let mut used: Vec<BTreeSet<String>> = vec![BTreeSet::new(); files];
     for (file, (declares, own)) in declared.iter().zip(&case.own).enumerate() {
         let path = file_path(file);
         tree = tree.read_by("ts", &path);
@@ -2021,21 +2081,30 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
                     chosen(&names, Some(declaration.as_str()), &mut flip)
                 }
             };
+            used[file].extend(refers.iter().cloned());
             let refers: Vec<&str> = refers.iter().map(String::as_str).collect();
             let line = 10 + 3 * u32::try_from(at).unwrap();
             code = code.declaration(declaration, (line, line + 1), &refers);
+            // The file that changes gives each of its declarations a member to ask about.
+            if file == case.changed {
+                code = code.declaration(&format!("{declaration}.m"), (line + 1, line + 1), &[]);
+            }
             if declaration != exported {
                 code = code.exports_from(exported, declaration);
             }
         }
+        let loads = match uses {
+            Uses::InDeclarations => Vec::new(),
+            Uses::AlsoAtLoad => chosen(&names, None, &mut flip),
+            Uses::EveryImportAtLoad => chosen_all(&locals, &mut flip),
+        };
+        used[file].extend(loads.iter().cloned());
         code = match uses {
             Uses::InDeclarations => code,
-            Uses::AlsoAtLoad => {
-                let loads = chosen(&names, None, &mut flip);
+            Uses::AlsoAtLoad | Uses::EveryImportAtLoad => {
                 let loads: Vec<&str> = loads.iter().map(String::as_str).collect();
                 code.on_load(&loads)
             }
-            Uses::EveryImportAtLoad => code.on_load(&locals),
         };
         let exports: Vec<&str> = own.iter().copied().collect();
         writeln!(shown, "{path} exports {exports:?}: {code:?}").unwrap();
@@ -2067,9 +2136,37 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
         .iter()
         .map(|(_, declaration)| declaration.clone())
         .collect();
+    let mut members: BTreeMap<String, BTreeSet<String>> = declared[case.changed]
+        .iter()
+        .map(|(_, declaration)| (format!("{declaration}.m"), BTreeSet::new()))
+        .collect();
+    for ((importer, target, take), bound) in case.edges.iter().zip(&bindings) {
+        let imports = matches!(take, Take::Named(_) | Take::Namespace);
+        if !imports || *target != case.changed || *importer == case.changed {
+            continue;
+        }
+        if case.own[*importer].is_none() {
+            continue;
+        }
+        for (name, local) in bound {
+            let uses = &used[*importer];
+            if !uses.contains(local) && !uses.contains(&format!("{local}.m")) {
+                continue;
+            }
+            for (exported, declaration) in &declared[case.changed] {
+                if *name == "*" || name == exported {
+                    members
+                        .entry(format!("{declaration}.m"))
+                        .or_default()
+                        .insert(file_path(*importer));
+                }
+            }
+        }
+    }
     Written {
         index: tree.build(),
         asked,
+        members,
         shown,
     }
 }
@@ -2091,6 +2188,30 @@ fn only_by_name(by_name: &Index, per_file: &Index, changed: &str, names: &[Strin
     by_name.remove(changed);
     let per_file = listed(&ask(per_file, changed, &NONE, None));
     by_name.difference(&per_file).cloned().collect()
+}
+
+/// A walk by name asked about each member `m` the changed file declares, with no limit on the depth, lists every file that uses that member, or its class alone, through an import of the class, and no file that `over` does not list when asked about the changed file. A file that uses another member of the class is not asked of: other paths may reach it.
+fn asked_about_members(
+    written: &Written,
+    over: &Index,
+    changed: &str,
+) -> Result<(), TestCaseError> {
+    for (member, importers) in &written.members {
+        let answer = listed(&ask(&written.index, changed, &[member], Some(u32::MAX)));
+        let missing: Vec<&String> = importers.difference(&answer).collect();
+        prop_assert!(
+            missing.is_empty(),
+            "asked about {member}, not listed though they use it: {missing:?}\n{}",
+            written.shown
+        );
+        let extra = only_by_name(&written.index, over, changed, std::slice::from_ref(member));
+        prop_assert!(
+            extra.is_empty(),
+            "asked about {member}, listed by name and not by the walk over files: {extra:?}\n{}",
+            written.shown
+        );
+    }
+    Ok(())
 }
 
 /// The names an `unknown` file can be asked about: it declares none that a connector would record, so the walk follows it whole whatever it is asked.
@@ -2174,6 +2295,7 @@ proptest! {
             &names_to_ask(&written.asked),
         );
         prop_assert!(extra.is_empty(), "listed by name and not per file: {extra:?}\n{case:?}\n{}", written.shown);
+        asked_about_members(&written, &written.index, &file_path(case.changed))?;
     }
 
     /// With code that runs as a file loads, a walk by name lists no file that the walk over files with every name taken out does not list: it follows imports, and only imports, however it narrows them. It may list a file the walk per file leaves out, because a file reached at load reaches every file that loads it whatever name that file takes, where the walk per file stops at a barrel that lists what it exports.
@@ -2190,6 +2312,7 @@ proptest! {
             &names_to_ask(&written.asked),
         );
         prop_assert!(extra.is_empty(), "listed by name and not over whole files: {extra:?}\n{case:?}\n{}", written.shown);
+        asked_about_members(&written, &case.by_file(), &file_path(case.changed))?;
     }
 
     /// When every file uses, as it loads, every name it imports, a file that is reached is reached at load, and a file reached at load reaches every file that loads it. A walk by name asked about every name the changed file declares, with no limit on the depth, then lists the files the walk per file lists. The changed file is left out, because the walk by name lists it when a cycle leads back to it.
@@ -2208,6 +2331,11 @@ proptest! {
         let mut by_name = listed(&ask(&written.index, &changed, &names, Some(u32::MAX)));
         by_name.remove(&changed);
         let per_file = listed(&ask(&written.index, &changed, &NONE, None));
-        prop_assert_eq!(by_name, per_file, "\n{:?}\n{}", case, written.shown);
+        prop_assert_eq!(&by_name, &per_file, "\n{:?}\n{}", case, written.shown);
+        // Each import is used as `Local` or `Local.m`, both of which are uses of the member `m` that the changed file declares for each name.
+        let members: Vec<&str> = written.members.keys().map(String::as_str).collect();
+        let mut by_member = listed(&ask(&written.index, &changed, &members, Some(u32::MAX)));
+        by_member.remove(&changed);
+        prop_assert_eq!(by_member, per_file, "asked about the members\n{:?}\n{}", case, written.shown);
     }
 }
