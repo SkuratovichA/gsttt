@@ -109,7 +109,7 @@ fn count_source_files(listing: &str, language: Language) -> u64 {
     u64::try_from(files.count()).unwrap_or(u64::MAX)
 }
 
-/// Installs dependency-cruiser, madge, typescript-language-server and the TypeScript they read with, side by side, with pnpm.
+/// Installs dependency-cruiser, madge, typescript-language-server, graphql and the TypeScript they read with, side by side, with pnpm.
 pub(crate) fn node_tools(programs: &Programs, pins: &Pins) -> anyhow::Result<()> {
     let packages = pins.tools.node_packages();
     if packages

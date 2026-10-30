@@ -16,6 +16,9 @@ const USERS: RangeInclusive<usize> = 3..=30;
 /// How many test files may break with a function that a question about tests is drawn for.
 pub(super) const BROKEN: RangeInclusive<usize> = 1..=30;
 
+/// How many files may send an operation served by resolvers that call a method that a question about clients is drawn for. One is enough, since the answer of most methods is a single document, and 30 is as many paths as an agent is asked to list for a question about users.
+const CLIENTS: RangeInclusive<usize> = 1..=30;
+
 /// What a function that is drawn for adds up to: the paths of its answer, and the test files that count as neither right nor wrong for this function alone.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct Answer {
@@ -28,6 +31,9 @@ pub(super) type Verdict = Result<Answer, &'static str>;
 
 const TOO_FEW_USERS: &str = "too few users";
 const TOO_MANY_USERS: &str = "too many users";
+const TOO_FEW_CLIENTS: &str = "too few clients";
+const TOO_MANY_CLIENTS: &str = "too many clients";
+const AMBIGUOUS_FIELD: &str = "a field served by two root types";
 
 /// The SHA-256 of the seed, the repository, the file and the name, separated by NUL bytes, as 64 lower-case hexadecimal digits.
 fn hash(seed: &str, repository: &str, candidate: &Candidate) -> String {
@@ -131,19 +137,42 @@ fn found(repository: &str, kind: Kind, wanted: u32, taken: &Taken<'_>) -> anyhow
     Ok(())
 }
 
-/// The answer of a question about the users of `candidate`, or why it is not drawn: 3 to 30 other files must refer to it.
-fn users_answer(candidate: &Candidate) -> Verdict {
-    let mut users = candidate.users.clone();
-    users.sort();
-    users.dedup();
-    match users.len() {
-        count if count < *USERS.start() => Err(TOO_FEW_USERS),
-        count if count > *USERS.end() => Err(TOO_MANY_USERS),
+/// The answer of a question whose answer is `files`, or why it is not drawn: their count must be in `range`.
+fn sized(
+    files: &[String],
+    range: &RangeInclusive<usize>,
+    few: &'static str,
+    many: &'static str,
+) -> Verdict {
+    let mut files = files.to_vec();
+    files.sort();
+    files.dedup();
+    match files.len() {
+        count if count < *range.start() => Err(few),
+        count if count > *range.end() => Err(many),
         _ => Ok(Answer {
-            files: users,
+            files,
             ignored: Vec::new(),
         }),
     }
+}
+
+/// The answer of a question about the users of `candidate`, or why it is not drawn: 3 to 30 other files must refer to it.
+fn users_answer(candidate: &Candidate) -> Verdict {
+    sized(&candidate.users, &USERS, TOO_FEW_USERS, TOO_MANY_USERS)
+}
+
+/// The answer of a question about the clients of `candidate`, or why it is not drawn: 1 to 30 files must send an operation that a resolver calling it serves, and none of the fields those resolvers serve may be served under another root type too, since the prompt names a field and not its root type.
+fn clients_answer(candidate: &Candidate) -> Verdict {
+    if candidate.ambiguous {
+        return Err(AMBIGUOUS_FIELD);
+    }
+    sized(
+        &candidate.clients,
+        &CLIENTS,
+        TOO_FEW_CLIENTS,
+        TOO_MANY_CLIENTS,
+    )
 }
 
 /// The questions of `kind`, numbered from 1 in the order they were taken. Each ignores the `ignored` of the repository and its own, once each and in byte order.
@@ -179,6 +208,27 @@ fn questions(
         .collect()
 }
 
+/// The questions of `kind` whose answer is a list of files the candidate carries: the first `count` candidates in `order` that `answer` gives an answer for.
+fn by_files(
+    kind: Kind,
+    answer: fn(&Candidate) -> Verdict,
+    repository: &str,
+    scope: &str,
+    count: u32,
+    order: &[&Candidate],
+) -> anyhow::Result<Vec<Question>> {
+    let taken = take(order, count, |candidate| Ok(answer(candidate)))?;
+    found(repository, kind, count, &taken)?;
+    Ok(questions(
+        kind,
+        repository,
+        scope,
+        &[],
+        &BTreeSet::new(),
+        &taken.picked,
+    ))
+}
+
 /// The questions about the users of functions: the first `count` candidates in `order` that 3 to 30 other files refer to.
 pub(super) fn users(
     repository: &str,
@@ -186,16 +236,24 @@ pub(super) fn users(
     count: u32,
     order: &[&Candidate],
 ) -> anyhow::Result<Vec<Question>> {
-    let taken = take(order, count, |candidate| Ok(users_answer(candidate)))?;
-    found(repository, Kind::Users, count, &taken)?;
-    Ok(questions(
-        Kind::Users,
+    by_files(Kind::Users, users_answer, repository, scope, count, order)
+}
+
+/// The questions about the clients of methods: the first `count` candidates in `order` that 1 to 30 files send an operation for, which a resolver that calls the method serves.
+pub(super) fn clients(
+    repository: &str,
+    scope: &str,
+    count: u32,
+    order: &[&Candidate],
+) -> anyhow::Result<Vec<Question>> {
+    by_files(
+        Kind::Clients,
+        clients_answer,
         repository,
         scope,
-        &[],
-        &BTreeSet::new(),
-        &taken.picked,
-    ))
+        count,
+        order,
+    )
 }
 
 /// The questions about the tests a function breaks: the first `count` candidates in `order` that `judge` gives an answer for. `ignored` are the test files that fail without any throw, which every question ignores; `judge` adds the ones of one function.
@@ -232,6 +290,8 @@ mod tests {
             line: 1,
             body_offset: Some(10),
             users: (0..users).map(|n| format!("users/u{n}.ts")).collect(),
+            clients: Vec::new(),
+            ambiguous: false,
         }
     }
 
@@ -261,6 +321,82 @@ mod tests {
             "{error}"
         );
         assert!(error.contains("the pins ask for 2"), "{error}");
+    }
+
+    /// A method with `clients` files that send an operation its resolvers serve.
+    fn method(name: &str, clients: usize) -> Candidate {
+        Candidate {
+            clients: (0..clients).map(|n| format!("client/c{n}.ts")).collect(),
+            ..candidate("src/service.ts", name, 0)
+        }
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A method with no client or too many clients is not drawn"
+    )]
+    #[test]
+    fn only_a_method_with_one_to_thirty_clients_becomes_a_question_about_clients() {
+        let candidates = [
+            method("S.none", 0),
+            method("S.one", 1),
+            method("S.thirty", 30),
+            method("S.many", 31),
+        ];
+        let order = order("seed", "hoppscotch", &candidates);
+        let questions = clients("hoppscotch", "packages", 2, &order).unwrap();
+        let mut names: Vec<&str> = questions.iter().map(|q| q.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["S.one", "S.thirty"]);
+        let question = questions.iter().find(|q| q.name == "S.one").unwrap();
+        assert_eq!(question.kind, Kind::Clients);
+        assert_eq!(question.answer, ["client/c0.ts"]);
+        assert_eq!(question.ignored, Vec::<String>::new());
+        assert!(question.id.starts_with("hoppscotch-clients-"));
+
+        // Asking for more than qualify fails and says why the others were passed over.
+        let error = clients("hoppscotch", "packages", 3, &order)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("1 too few clients") && error.contains("1 too many clients"),
+            "{error}"
+        );
+        assert!(error.contains("the kind `clients`"), "{error}");
+    }
+
+    #[test]
+    fn a_method_whose_field_is_served_by_two_root_types_is_not_drawn() {
+        // The name of the field alone does not tell `Query foo` from `Mutation foo`, so no question is about a method that has such a field.
+        let mut shared = method("S.shared", 3);
+        shared.ambiguous = true;
+        let candidates = [shared, method("S.plain", 3)];
+        let order = order("seed", "hoppscotch", &candidates);
+        let questions = clients("hoppscotch", "packages", 1, &order).unwrap();
+        let names: Vec<&str> = questions.iter().map(|q| q.name.as_str()).collect();
+        assert_eq!(names, ["S.plain"]);
+
+        let error = clients("hoppscotch", "packages", 2, &order)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("1 a field served by two root types"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_clients_of_a_method_are_listed_once_and_in_byte_order() {
+        let mut twice = method("S.twice", 0);
+        twice.clients = ["b.graphql", "a.ts", "b.graphql"]
+            .map(str::to_owned)
+            .to_vec();
+        let candidates = [twice];
+        let order = order("seed", "hoppscotch", &candidates);
+        let questions = clients("hoppscotch", ".", 1, &order).unwrap();
+        let question = questions.first().unwrap();
+        assert_eq!(question.answer, ["a.ts", "b.graphql"]);
+        assert!(question.prompt.contains("of the repository"));
     }
 
     #[test]

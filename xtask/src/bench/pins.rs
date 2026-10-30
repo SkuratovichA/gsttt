@@ -105,8 +105,16 @@ pub(crate) struct Repository {
     /// The packages grimp reads.
     #[serde(default)]
     pub(crate) packages: Vec<String>,
+    /// Whether the speed benchmark measures this repository; `false` for one that only the agent benchmarks ask about, which then needs an `agents` table.
+    #[serde(default = "measured")]
+    pub(crate) speed: bool,
     /// What the agent benchmarks ask about this repository; absent when they ask nothing.
     pub(crate) agents: Option<RepositoryAgents>,
+}
+
+/// The default of `speed`: a repository is measured unless it says it is not.
+fn measured() -> bool {
+    true
 }
 
 /// A tool that is pinned by its version alone.
@@ -148,6 +156,8 @@ pub(crate) struct Tools {
     /// The language server of the `lsp` setup of the agent benchmarks, installed beside TypeScript.
     #[serde(rename = "typescript-language-server")]
     pub(crate) typescript_language_server: Version,
+    /// The parser of GraphQL documents of the oracle of the questions about clients, installed beside TypeScript.
+    pub(crate) graphql: Version,
     pub(crate) grimp: Version,
     #[serde(rename = "codebase-memory-mcp")]
     pub(crate) codebase_memory: Cbm,
@@ -166,7 +176,7 @@ impl Tools {
     }
 
     /// The packages pnpm installs into `bench/tools/node`, each with its version. TypeScript is there so that the other tools find their parser.
-    pub(crate) fn node_packages(&self) -> [(&'static str, &str); 4] {
+    pub(crate) fn node_packages(&self) -> [(&'static str, &str); 5] {
         [
             ("dependency-cruiser", &self.dependency_cruiser.version),
             ("madge", &self.madge.version),
@@ -175,6 +185,7 @@ impl Tools {
                 "typescript-language-server",
                 &self.typescript_language_server.version,
             ),
+            ("graphql", &self.graphql.version),
         ]
     }
 }
@@ -234,6 +245,10 @@ impl Pins {
                     "the tsconfig of `{name}` must be a path inside a TypeScript checkout"
                 );
             }
+            ensure!(
+                repository.speed || repository.agents.is_some(),
+                "`{name}` is left out of the speed benchmark and has no `agents` table: nothing uses it"
+            );
             if let Some(agents) = &repository.agents {
                 agents.validate(repository)?;
             }
@@ -331,6 +346,9 @@ version = "1.0.0"
 [tools.typescript-language-server]
 version = "1.0.0"
 
+[tools.graphql]
+version = "1.0.0"
+
 [tools.grimp]
 version = "1.0"
 
@@ -366,6 +384,22 @@ users = 4
 tests = 4
 install = ["pnpm", "install"]
 test = ["pnpm", "exec", "vitest", "run"]
+"#;
+
+    /// A repository that only the agent benchmarks ask about, and only about clients, to be added to the minimal pins.
+    const HOPPSCOTCH: &str = r#"
+[[repository]]
+name = "hoppscotch"
+url = "https://example.test/hoppscotch"
+tag = "2026.10.0"
+commit = "39d25650bdb4e86464b2cd69174c567b86f57892"
+language = "typescript"
+tsconfig = "packages/hoppscotch-backend/tsconfig.json"
+speed = false
+
+[repository.agents]
+scope = "packages"
+clients = 6
 "#;
 
     /// The pins as they are committed.
@@ -435,6 +469,7 @@ test = ["pnpm", "exec", "vitest", "run"]
         assert!(agents.seconds >= 60);
         assert!(agents.turns >= 1);
         assert!(is_version(&pins.tools.typescript_language_server.version));
+        assert!(is_version(&pins.tools.graphql.version));
         assert!(
             pins.repository
                 .iter()
@@ -518,6 +553,66 @@ test = ["pnpm", "exec", "vitest", "run"]
             Pins::parse(&rust).is_err(),
             "only a TypeScript repository asks agent questions"
         );
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A repository can ask only about the clients of methods"
+    )]
+    #[test]
+    fn a_repository_can_ask_only_about_clients() {
+        let pins = Pins::parse(&format!("{MINIMAL}{HOPPSCOTCH}")).unwrap();
+        let agents = pins
+            .repository
+            .iter()
+            .find_map(|repository| repository.agents.as_ref())
+            .unwrap();
+        assert_eq!(
+            (agents.users(), agents.tests(), agents.clients()),
+            (0, 0, 6)
+        );
+
+        for (from, to, message) in [
+            ("clients = 6", "clients = 0", "no question about clients"),
+            ("clients = 6\n", "", "asks for no question"),
+        ] {
+            let text = format!("{MINIMAL}{}", HOPPSCOTCH.replace(from, to));
+            let error = Pins::parse(&text).unwrap_err().to_string();
+            assert!(
+                error.contains(message) && error.contains("`hoppscotch`"),
+                "{to}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_repository_is_measured_for_speed_unless_it_says_it_is_not() {
+        let pins = Pins::parse(&format!("{MINIMAL}{HOPPSCOTCH}")).unwrap();
+        let measured: Vec<(&str, bool)> = pins
+            .repository
+            .iter()
+            .map(|repository| (repository.name.as_str(), repository.speed))
+            .collect();
+        assert_eq!(measured, [("ripgrep", true), ("hoppscotch", false)]);
+
+        // Left out of the speed benchmark and asked nothing, a repository is used by nothing.
+        let unused = HOPPSCOTCH.split("[repository.agents]").next().unwrap();
+        let error = Pins::parse(&format!("{MINIMAL}{unused}"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("`hoppscotch`") && error.contains("speed benchmark"),
+            "{error}"
+        );
+
+        // The committed pins leave out only repositories that the agents ask about.
+        for repository in committed().repository {
+            assert!(
+                repository.speed || repository.agents.is_some(),
+                "{}",
+                repository.name
+            );
+        }
     }
 
     #[test]

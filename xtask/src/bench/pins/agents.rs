@@ -52,10 +52,12 @@ impl Agents {
 pub(crate) struct RepositoryAgents {
     /// The directory the questions are about, relative to the checkout: `.` for all of it.
     pub(crate) scope: String,
-    /// How many questions about the files that refer to a function are drawn.
-    pub(crate) users: u32,
+    /// How many questions about the files that refer to a function are drawn; none when absent.
+    pub(crate) users: Option<u32>,
     /// How many questions about the test files that break with a function are drawn; none when absent.
     pub(crate) tests: Option<u32>,
+    /// How many questions about the files that send a GraphQL operation whose resolver calls a method are drawn; none when absent. The scope holds the resolvers and their clients, which are packages of their own, and the language service reads only what the tsconfig of the repository describes.
+    pub(crate) clients: Option<u32>,
     /// The command that installs the checkout, as a program and its arguments.
     pub(crate) install: Option<Vec<String>>,
     /// The command that builds what the unit tests import, for a repository whose tests start only from a built package or import their own build output: the draw runs it once after the install, and the oracle runs it from the tree as it is right before every run of the test command, a run with a `throw` included, so that the tests read a build that holds the throw.
@@ -65,9 +67,19 @@ pub(crate) struct RepositoryAgents {
 }
 
 impl RepositoryAgents {
+    /// How many questions about users are drawn.
+    pub(crate) fn users(&self) -> u32 {
+        self.users.unwrap_or(0)
+    }
+
     /// How many questions about tests are drawn.
     pub(crate) fn tests(&self) -> u32 {
         self.tests.unwrap_or(0)
+    }
+
+    /// How many questions about clients are drawn.
+    pub(crate) fn clients(&self) -> u32 {
+        self.clients.unwrap_or(0)
     }
 
     pub(super) fn validate(&self, repository: &Repository) -> anyhow::Result<()> {
@@ -81,15 +93,21 @@ impl RepositoryAgents {
             "the scope `{}` of `{name}` is not a directory inside the checkout",
             self.scope
         );
-        ensure!(
-            self.users >= 1,
-            "`{name}` must ask for at least one question about users"
-        );
-        if let Some(tests) = self.tests {
+        for (kind, count) in [
+            ("users", self.users),
+            ("tests", self.tests),
+            ("clients", self.clients),
+        ] {
             ensure!(
-                tests >= 1,
-                "`{name}` asks for no question about tests; leave `tests` out instead"
+                count != Some(0),
+                "`{name}` asks for no question about {kind}; leave `{kind}` out instead"
             );
+        }
+        ensure!(
+            self.users.is_some() || self.tests.is_some() || self.clients.is_some(),
+            "`{name}` has an `agents` table and asks for no question"
+        );
+        if self.tests.is_some() {
             ensure!(
                 self.test.is_some(),
                 "`{name}` asks for questions about tests and names no test command"

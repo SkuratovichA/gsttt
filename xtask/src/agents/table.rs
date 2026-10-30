@@ -252,6 +252,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_questions_about_clients_have_a_table_after_those_about_tests() {
+        let mut results = started();
+        for (question, kind) in [
+            ("hoppscotch-clients-1", Kind::Clients),
+            ("vite-tests-1", Kind::Tests),
+            ("vite-users-1", Kind::Users),
+        ] {
+            results.runs.push(sample(question, kind, Setup::Plain, 1));
+        }
+        let table = render(&results);
+        let places: Vec<Option<usize>> = ["### users", "### tests", "### clients"]
+            .iter()
+            .map(|title| table.find(title))
+            .collect();
+        assert!(places.iter().all(Option::is_some), "{table}");
+        assert!(places.is_sorted(), "{table}");
+        assert!(cells_of(&table, "clients", "plain").is_some(), "{table}");
+    }
+
     #[gsttt_scenario::scenario("agent-benchmarks", "Results without a run print no table")]
     #[test]
     fn results_without_a_run_render_to_nothing_and_not_to_an_empty_line() {

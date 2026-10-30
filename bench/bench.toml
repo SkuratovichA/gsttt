@@ -33,6 +33,21 @@ tsconfig = "tsconfig.json"
 scope = "."
 users = 4
 
+# hoppscotch, a TypeScript monorepo whose backend is NestJS with code-first GraphQL resolvers and whose client packages send GraphQL documents: the repository the agent questions of the kind `clients` are drawn from. It is MIT-licensed. amplication was the other candidate: its server and its client are both there, but its licence is mixed and a folder of it (`ee`) is under another one. The tsconfig is the backend's; hoppscotch has none at its root. It is left out of the speed benchmark (`speed = false`): that one measures the same repositories release after release, and a new one would change what it measures and needs runs of gsttt, madge and dependency-cruiser that nobody has tried.
+[[repository]]
+name = "hoppscotch"
+url = "https://github.com/hoppscotch/hoppscotch"
+tag = "2026.10.0"
+commit = "39d25650bdb4e86464b2cd69174c567b86f57892"
+language = "typescript"
+tsconfig = "packages/hoppscotch-backend/tsconfig.json"
+speed = false
+
+# What the agent runs ask about hoppscotch: only questions of the kind `clients`, over `packages`. The `users` questions are not asked: the language service refuses the client packages (they import a `./graphql` that code generation writes and git does not track), so the oracle of `clients` reads the TypeScript below the tsconfig only, and takes the GraphQL documents from the whole scope. The resolvers are classes under packages/hoppscotch-backend and 124 of their callees are methods of other classes; 112 of those are served by a field that between 1 and 30 files select, which are the candidates of the draw (counted on 2026.10.0 with `clients.mjs`; none of them has a field that is served under two root types). There is no install: the oracle reads the sources.
+[repository.agents]
+scope = "packages"
+clients = 6
+
 # django, a Python project whose package grimp reads.
 [[repository]]
 name = "django"
@@ -73,6 +88,10 @@ version = "5.9.3"
 # typescript-language-server, installed beside TypeScript; 6.0.2 is what the TypeScript plugin of Claude Code runs on the machine this was pinned on, and it runs with the TypeScript above when it is told where its tsserver is (`initializationOptions.tsserver.path`).
 [tools.typescript-language-server]
 version = "6.0.2"
+
+# graphql, installed beside TypeScript; the oracle of the questions of the kind `clients` parses the GraphQL documents of a checkout with it, 17.0.2 being the newest release on 30.10.2026.
+[tools.graphql]
+version = "17.0.2"
 
 # grimp, installed by uv into the virtual environment bench/tools/python.
 [tools.grimp]

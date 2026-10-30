@@ -15,6 +15,8 @@ pub(crate) enum Kind {
     Users,
     /// Which test files fail when a function throws.
     Tests,
+    /// Which files send a GraphQL operation whose resolver calls a method.
+    Clients,
 }
 
 impl Kind {
@@ -23,6 +25,7 @@ impl Kind {
         match self {
             Self::Users => "users",
             Self::Tests => "tests",
+            Self::Clients => "clients",
         }
     }
 }
@@ -37,8 +40,9 @@ pub(crate) struct Question {
     pub(crate) kind: Kind,
     /// The directory the question is about, relative to the checkout; `.` for all of it.
     pub(crate) scope: String,
-    /// The file that exports the function, relative to the checkout.
+    /// The file that exports the function, or defines the class of the method, relative to the checkout.
     pub(crate) file: String,
+    /// The name of the function, or `Class.method` for a method.
     pub(crate) name: String,
     /// The line of the name in the file, from 1.
     pub(crate) line: u32,
@@ -46,7 +50,7 @@ pub(crate) struct Question {
     pub(crate) prompt: String,
     /// The paths the agent should list, relative to the checkout, sorted.
     pub(crate) answer: Vec<String>,
-    /// The test files that are neither right nor wrong in an answer, sorted: the ones that failed before the throw, and the ones that failed in only one of the two runs with it. Empty for the kind `users`.
+    /// The test files that are neither right nor wrong in an answer, sorted: the ones that failed before the throw, and the ones that failed in only one of the two runs with it. Empty for the kinds `users` and `clients`.
     pub(crate) ignored: Vec<String>,
 }
 
@@ -55,7 +59,7 @@ pub(crate) struct Question {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Questions {
     pub(crate) seed: String,
-    /// Repository by repository in pin order, the kind `users` before the kind `tests`, each in draw order.
+    /// Repository by repository in pin order, the kinds in the order `users`, `tests`, `clients`, each in draw order.
     pub(crate) questions: Vec<Question>,
 }
 
@@ -93,7 +97,9 @@ impl Questions {
                 if last == repository {
                     ensure!(
                         kind <= question.kind,
-                        "{id}: a question about users follows one about tests of the same repository"
+                        "{id}: a question of the kind `{}` follows one of the kind `{}` in `{repository}`",
+                        question.kind.name(),
+                        kind.name()
                     );
                 } else {
                     finished.insert(last);
@@ -115,7 +121,7 @@ impl Questions {
             );
             ensure!(
                 question.kind == Kind::Tests || question.ignored.is_empty(),
-                "{id}: a question about users ignores no file"
+                "{id}: only a question about tests ignores files"
             );
             if let Some(path) = question
                 .answer
@@ -135,23 +141,37 @@ impl Questions {
     }
 }
 
-/// What the agent is asked about the function `name` of `file`: the files of `scope` that refer to it, or the test files, of the unit tests that `test` runs, that fail when the function fails every time it is called: by throwing an error or, for an async function, by returning a promise that rejects with one.
+/// How every prompt that asks for files ends.
+const CLOSING: &str = "Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.";
+
+/// Where a question looks for files: all of the repository, or the directory of its scope.
+fn place(scope: &str) -> String {
+    if scope == "." {
+        "of the repository".to_owned()
+    } else {
+        format!("under `{scope}`")
+    }
+}
+
+/// What the agent is asked about the function or method `name` of `file`: the files of `scope` that refer to the function, the test files, of the unit tests that `test` runs, that fail when the function fails every time it is called: by throwing an error or, for an async function, by returning a promise that rejects with one, or the files of `scope` that hold a GraphQL operation whose resolver calls the method.
 pub(crate) fn prompt(kind: Kind, name: &str, file: &str, scope: &str, test: &[String]) -> String {
     match kind {
         Kind::Users => {
-            let place = if scope == "." {
-                "of the repository".to_owned()
-            } else {
-                format!("under `{scope}`")
-            };
+            let place = place(scope);
             format!(
-                "In this repository, the function `{name}` is exported from `{file}`. List every other TypeScript file {place} that refers to `{name}` by name: a file that imports it, re-exports it by name, or uses it. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else."
+                "In this repository, the function `{name}` is exported from `{file}`. List every other TypeScript file {place} that refers to `{name}` by name: a file that imports it, re-exports it by name, or uses it. {CLOSING}"
             )
         }
         Kind::Tests => format!(
             "In this repository, suppose the function `{name}` in `{file}` failed every time it is called, by throwing an error or, if it is an async function, by returning a promise that rejects with one. Which test files of the unit tests that `{}` runs from the repository root would fail? Do not change any file and do not run any tests. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else.",
             test.join(" ")
         ),
+        Kind::Clients => {
+            let place = place(scope);
+            format!(
+                "In this repository, the method `{name}` is defined in `{file}`. Which files {place} hold a GraphQL operation that selects a field whose resolver calls `{name}` directly? A resolver is a method of a class decorated with `@Resolver` that is itself decorated with `@Query`, `@Mutation` or `@Subscription`, and it serves the field its decorator names with `name` or with a string argument, else the field of its own name. A file holds an operation when it is a `.graphql` or `.gql` file, or has a `gql` or `graphql` template, with the operation in it; the operation selects the field at its top level, by its name, under an alias or through a fragment. {CLOSING}"
+            )
+        }
     }
 }
 
@@ -207,6 +227,30 @@ mod tests {
             ),
             "{whole}"
         );
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "The prompt asks which files send an operation")]
+    #[test]
+    fn the_prompt_about_clients_is_word_for_word() {
+        let command = prompt(
+            Kind::Clients,
+            "AdminService.addUserToTeam",
+            "packages/hoppscotch-backend/src/admin/admin.service.ts",
+            "packages",
+            &[],
+        );
+        assert_eq!(
+            command,
+            "In this repository, the method `AdminService.addUserToTeam` is defined in `packages/hoppscotch-backend/src/admin/admin.service.ts`. Which files under `packages` hold a GraphQL operation that selects a field whose resolver calls `AdminService.addUserToTeam` directly? A resolver is a method of a class decorated with `@Resolver` that is itself decorated with `@Query`, `@Mutation` or `@Subscription`, and it serves the field its decorator names with `name` or with a string argument, else the field of its own name. A file holds an operation when it is a `.graphql` or `.gql` file, or has a `gql` or `graphql` template, with the operation in it; the operation selects the field at its top level, by its name, under an alias or through a fragment. Do not change any file. End your reply with a fenced code block marked `files` that lists one path per line, relative to the repository root, and nothing else."
+        );
+        let whole = prompt(Kind::Clients, "A.b", "a.ts", ".", &[]);
+        assert!(
+            whole.contains("Which files of the repository hold"),
+            "{whole}"
+        );
+        // Every prompt that asks for files ends the same way.
+        let users = prompt(Kind::Users, "f", "a.ts", ".", &[]);
+        assert!(users.ends_with(CLOSING) && whole.ends_with(CLOSING));
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "The prompt says how the function fails")]
@@ -269,15 +313,77 @@ mod tests {
         if let Some(first) = ignored_users.questions.first_mut() {
             first.ignored.push("x.spec.ts".to_owned());
         }
+        let mut ignored_clients = clients_after_tests();
+        if let Some(last) = ignored_clients.questions.last_mut() {
+            last.ignored.push("x.spec.ts".to_owned());
+        }
         for (what, questions) in [
             ("numbers", wrong_number),
             ("kinds", users_after_tests),
+            ("ignored clients", ignored_clients),
             ("repositories", split),
             ("sorting", unsorted),
             ("ignored users", ignored_users),
         ] {
             assert!(questions.render().is_err(), "{what}");
         }
+    }
+
+    #[test]
+    fn the_committed_questions_are_valid_and_hold_the_clients_of_hoppscotch() {
+        let root = crate::root::repository_root().unwrap();
+        let questions = Questions::load(&root.join(crate::agents::QUESTIONS)).unwrap();
+        let kinds: Vec<(&str, Kind)> = questions
+            .questions
+            .iter()
+            .map(|question| (question.repository.as_str(), question.kind))
+            .collect();
+        assert!(kinds.contains(&("hoppscotch", Kind::Clients)));
+        assert!(kinds.contains(&("vite", Kind::Tests)));
+        for question in questions
+            .questions
+            .iter()
+            .filter(|question| question.kind == Kind::Clients)
+        {
+            assert!(!question.answer.is_empty() && question.answer.len() <= 30);
+            assert!(question.prompt.contains(&format!("`{}`", question.name)));
+        }
+    }
+
+    /// The sample with the questions about clients of `vite` after the ones about tests.
+    fn clients_after_tests() -> Questions {
+        let mut questions = sample();
+        questions
+            .questions
+            .insert(3, question("vite", Kind::Clients, 1));
+        questions
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "Questions about clients come after the others of their repository"
+    )]
+    #[test]
+    fn questions_about_clients_follow_those_about_users_and_tests() {
+        let questions = clients_after_tests();
+        let text = questions.render().unwrap();
+        assert!(text.contains("\"kind\": \"clients\""), "{text}");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("questions.json");
+        fs::write(&path, &text).unwrap();
+        assert_eq!(Questions::load(&path).unwrap(), questions);
+        assert!(Kind::Users < Kind::Tests && Kind::Tests < Kind::Clients);
+
+        // Between the questions about users and tests of a repository, or before them, they are refused.
+        let mut between = sample();
+        between
+            .questions
+            .insert(2, question("vite", Kind::Clients, 1));
+        let error = between.render().unwrap_err().to_string();
+        assert!(
+            error.contains("`tests` follows one of the kind `clients`"),
+            "{error}"
+        );
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "A file is never right and ignored at once")]
