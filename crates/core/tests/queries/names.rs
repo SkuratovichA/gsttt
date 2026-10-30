@@ -794,6 +794,35 @@ fn a_mock_of_a_file_followed_whole_is_a_caller() {
     );
 }
 
+#[test]
+fn a_mock_in_a_file_without_declarations_is_followed_whole_only_when_the_mocked_file_is() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .recovered("b.ts", 1, 3)
+        .import(
+            "a.test.ts",
+            Import::new("a.ts", ImportKind::Mock, 1),
+            file("a.ts"),
+        )
+        .recovered("a.test.ts", 1, 3)
+        .tag("a.test.ts", FileTags::TEST)
+        .import(
+            "b.test.ts",
+            Import::new("b.ts", ImportKind::Mock, 1),
+            file("b.ts"),
+        )
+        .recovered("b.test.ts", 1, 3)
+        .tag("b.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], Some(2));
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(paths(&answer.tests), ["b.test.ts"]);
+}
+
 #[scenario("queries", "A declaration crosses only its own contracts")]
 #[test]
 fn a_declaration_crosses_only_its_own_contracts() {
