@@ -128,10 +128,15 @@ pub(crate) fn select<'a>(pins: &'a Pins, names: &[String]) -> anyhow::Result<Vec
             repository.name
         );
     }
-    Ok(chosen
+    let measured: Vec<&Repository> = chosen
         .into_iter()
         .filter(|repository| repository.speed)
-        .collect())
+        .collect();
+    ensure!(
+        !measured.is_empty(),
+        "no repository is measured for speed: every pinned repository has `speed = false` in bench/bench.toml"
+    );
+    Ok(measured)
 }
 
 /// Asks every tool for its version and fails when a pinned tool is not at its pin.
@@ -244,7 +249,19 @@ mod tests {
             !measured.iter().any(|name| name == "hoppscotch"),
             "{measured:?}"
         );
-        assert_eq!(measured.len() + 1, all.len(), "only hoppscotch is left out");
+        assert!(
+            measured.iter().all(|name| all.contains(name)),
+            "{measured:?} are not all pinned: {all:?}"
+        );
+        // Whatever the pins say, a repository is measured exactly when it is not `speed = false`.
+        for repository in &pins.repository {
+            assert_eq!(
+                measured.contains(&repository.name),
+                repository.speed,
+                "{}",
+                repository.name
+            );
+        }
 
         // Naming it is an error and says why, and the pinned repositories can still be named by the agents.
         let error = select(&pins, &["hoppscotch".to_owned()])
@@ -259,5 +276,18 @@ mod tests {
             ["hoppscotch"]
         );
         assert!(select(&pins, &["nowhere".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn a_speed_benchmark_of_no_repository_is_refused() {
+        let mut pins = Pins::load(&repository_root().unwrap()).unwrap();
+        for repository in &mut pins.repository {
+            repository.speed = false;
+        }
+        let error = select(&pins, &[]).unwrap_err().to_string();
+        assert!(
+            error.contains("no repository") && error.contains("speed = false"),
+            "{error}"
+        );
     }
 }
