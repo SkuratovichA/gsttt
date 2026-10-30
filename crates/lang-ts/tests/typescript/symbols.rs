@@ -574,3 +574,24 @@ fn a_field_is_read_in_its_own_class() -> Result<(), Box<dyn Error>> {
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+fn a_method_that_reads_a_private_field_uses_its_type() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-private-fields")?;
+    let path = "src/mailer.ts";
+    let send = uses(&json, path, "Mailer.send").ok_or("no Mailer.send")?;
+    assert!(
+        send.contains(&"MailQueue") && !send.contains(&"JobQueue"),
+        "{send:?}"
+    );
+    let later = uses(&json, path, "Mailer.later").ok_or("no Mailer.later")?;
+    assert!(
+        later.contains(&"JobQueue") && !later.contains(&"MailQueue"),
+        "{later:?}"
+    );
+    // `queue` and `#queue` are two fields, and only the private one has a type.
+    let count = uses(&json, path, "Mailer.count").ok_or("no Mailer.count")?;
+    assert!(!count.contains(&"MailQueue"), "{count:?}");
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
