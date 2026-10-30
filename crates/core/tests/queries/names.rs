@@ -418,6 +418,249 @@ fn members_reached_through_their_classes_are_one_note() {
     assert_eq!(text.matches("\nnote: ").count(), 1, "{text}");
 }
 
+/// `service.ts` declares `InvoiceService` with the methods `issue` and `cancel`, and `resolver.ts` a resolver whose methods call them through an injected field, as `this.invoices.issue()` does. `all` reads the field as a value.
+fn invoices() -> Tree {
+    Tree::new()
+        .symbols(
+            "service.ts",
+            Code::new()
+                .declaration("InvoiceService", (1, 9), &[])
+                .declaration("InvoiceService.issue", (2, 3), &[])
+                .declaration("InvoiceService.cancel", (5, 6), &[]),
+        )
+        .exports("service.ts", &["InvoiceService"])
+        .imports_names("resolver.ts", "service.ts", &["InvoiceService"])
+        .symbols(
+            "resolver.ts",
+            Code::new()
+                .declaration("InvoiceResolver", (1, 12), &[])
+                .declaration(
+                    "InvoiceResolver.issueInvoice",
+                    (2, 4),
+                    &["InvoiceService.issue"],
+                )
+                .declaration(
+                    "InvoiceResolver.cancelInvoice",
+                    (5, 7),
+                    &["InvoiceService.cancel"],
+                )
+                .declaration("InvoiceResolver.all", (8, 10), &["InvoiceService"]),
+        )
+        .exports("resolver.ts", &["InvoiceResolver"])
+}
+
+/// `page.ts` imports the resolver as `InvoiceResolver` and calls its methods through an injected field, as `this.resolver.issueInvoice()` does. `all` reads the field as a value.
+fn page(tree: Tree, import: &[(&str, &str)], used: [&str; 3]) -> Tree {
+    tree.imports_as("page.ts", "resolver.ts", import)
+        .symbols(
+            "page.ts",
+            Code::new()
+                .declaration("Page", (1, 12), &[])
+                .declaration("Page.open", (2, 4), &[used[0]])
+                .declaration("Page.close", (5, 7), &[used[1]])
+                .declaration("Page.all", (8, 10), &[used[2]]),
+        )
+        .exports("page.ts", &[])
+}
+
+#[scenario("queries", "A call through a field names the member")]
+#[test]
+fn a_call_through_a_field_names_the_member() {
+    let index = invoices().build();
+
+    let answer = ask(&index, "service.ts", &["InvoiceService.issue"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row(
+            "resolver.ts",
+            1,
+            "imports InvoiceService from service.ts",
+            &["InvoiceResolver.all", "InvoiceResolver.issueInvoice"]
+        )]
+    );
+}
+
+#[scenario("queries", "Asked about the class, a call of any member is listed")]
+#[test]
+fn asked_about_the_class_a_call_of_any_member_is_listed() {
+    let index = invoices().build();
+
+    let answer = ask(&index, "service.ts", &["InvoiceService"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row(
+            "resolver.ts",
+            1,
+            "imports InvoiceService from service.ts",
+            &[
+                "InvoiceResolver.all",
+                "InvoiceResolver.cancelInvoice",
+                "InvoiceResolver.issueInvoice"
+            ]
+        )]
+    );
+}
+
+#[scenario("queries", "A member goes on to the files that import its class")]
+#[test]
+fn a_member_goes_on_to_the_files_that_import_its_class() {
+    let index = page(
+        invoices(),
+        &[("InvoiceResolver", "InvoiceResolver")],
+        [
+            "InvoiceResolver.issueInvoice",
+            "InvoiceResolver.cancelInvoice",
+            "InvoiceResolver",
+        ],
+    )
+    .build();
+
+    let answer = ask(&index, "service.ts", &["InvoiceService.issue"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row(
+                "resolver.ts",
+                1,
+                "imports InvoiceService from service.ts",
+                &["InvoiceResolver.all", "InvoiceResolver.issueInvoice"]
+            ),
+            row(
+                "page.ts",
+                2,
+                "imports InvoiceResolver from resolver.ts",
+                &["Page.all", "Page.open"]
+            ),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A member goes on under the name a barrel exports its class by"
+)]
+#[test]
+fn a_member_goes_on_under_the_name_a_barrel_exports_its_class_by() {
+    let tree = invoices()
+        .re_exports("index.ts", "resolver.ts", &[("Res", "InvoiceResolver")])
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &["Res"]);
+    let index = page(
+        tree,
+        &[("Res", "Res")],
+        ["Res.issueInvoice", "Res.cancelInvoice", "Res"],
+    )
+    .imports_names("page.ts", "index.ts", &["Res"])
+    .build();
+
+    let answer = ask(&index, "service.ts", &["InvoiceService.issue"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected)
+            .into_iter()
+            .map(|(path, distance, reason, callers, _)| (path, distance, reason, callers))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "resolver.ts",
+                1,
+                "imports InvoiceService from service.ts".to_owned(),
+                vec!["InvoiceResolver.all", "InvoiceResolver.issueInvoice"]
+            ),
+            (
+                "index.ts",
+                2,
+                "re-exports InvoiceResolver as Res from resolver.ts".to_owned(),
+                vec![]
+            ),
+            (
+                "page.ts",
+                2,
+                "imports Res from index.ts".to_owned(),
+                vec!["Page.all", "Page.open"]
+            ),
+        ]
+    );
+}
+
+#[scenario("queries", "A namespace import takes every member of its class")]
+#[test]
+fn a_namespace_import_takes_every_member_of_its_class() {
+    let index = page(
+        invoices(),
+        &[("*", "res")],
+        [
+            "res.InvoiceResolver.issueInvoice",
+            "res.InvoiceResolver.cancelInvoice",
+            "res",
+        ],
+    )
+    .build();
+
+    let answer = ask(&index, "service.ts", &["InvoiceService.issue"], Some(2));
+
+    assert_eq!(
+        rows(&answer.affected).last(),
+        Some(&row(
+            "page.ts",
+            2,
+            "imports resolver.ts",
+            &["Page.all", "Page.close", "Page.open"]
+        ))
+    );
+}
+
+#[test]
+fn a_declaration_beside_the_class_that_uses_a_member_is_a_caller_of_the_class() {
+    let index = Tree::new()
+        .symbols(
+            "runner.ts",
+            Code::new()
+                .declaration("Runner", (1, 12), &[])
+                .declaration("Runner.start", (2, 5), &[])
+                .declaration("Runner.stop", (7, 10), &["Runner.start"])
+                .declaration("helper", (14, 16), &["Runner.start"]),
+        )
+        .exports("runner.ts", &["Runner"])
+        .build();
+
+    let class = ask(&index, "runner.ts", &["Runner"], None);
+    let stop = ask(&index, "runner.ts", &["Runner.stop"], None);
+
+    assert_eq!(
+        rows(&class.affected),
+        [row("runner.ts", 1, "declares Runner", &["helper"])]
+    );
+    assert_eq!(
+        paths(&stop.affected),
+        NONE,
+        "`Runner.stop` is no caller of itself, and `helper` calls `start`"
+    );
+}
+
+#[test]
+fn a_load_that_uses_a_member_is_a_caller_of_that_member_and_of_the_class() {
+    let index = invoices()
+        .imports_names("boot.ts", "service.ts", &["InvoiceService"])
+        .symbols("boot.ts", Code::new().on_load(&["InvoiceService.issue"]))
+        .exports("boot.ts", &[])
+        .build();
+    let loaded = |name| {
+        let answer = ask(&index, "service.ts", &[name], None);
+        rows(&answer.affected)
+            .iter()
+            .find(|row| row.0 == "boot.ts")
+            .map(|row| row.4)
+    };
+
+    assert_eq!(loaded("InvoiceService.issue"), Some(Some(1)));
+    assert_eq!(loaded("InvoiceService"), Some(Some(1)));
+    assert_eq!(loaded("InvoiceService.cancel"), None);
+}
+
 #[test]
 fn the_members_of_the_note_are_cut_after_three_unless_all_are_asked_for() {
     let methods = ["start", "stop", "pause", "resume", "reset"];
@@ -1655,6 +1898,15 @@ fn reexported(case: &Case, file: usize) -> BTreeSet<&'static str> {
         .collect()
 }
 
+/// `name` as code uses it: by itself, or for one of its members, `name.m`, as a call through a field of the type does.
+fn as_used(name: &str, flip: &mut impl FnMut() -> bool) -> String {
+    if flip() {
+        format!("{name}.m")
+    } else {
+        name.to_owned()
+    }
+}
+
 /// The files of `case` with the declarations, exports and imports a connector would record for them. `choices` settles what the case leaves open: which exported names are declared under another name, which imports bind a name under another, and what each declaration, and the code that runs as the file loads, refers to.
 fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
     let mut cycle = choices.iter().copied().cycle();
@@ -1752,14 +2004,17 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
             .collect();
         let mut code = Code::new();
         for (at, (exported, declaration)) in declares.iter().enumerate() {
-            let refers: Vec<&str> = match uses {
+            let refers: Vec<String> = match uses {
                 Uses::EveryImportAtLoad => Vec::new(),
                 Uses::InDeclarations | Uses::AlsoAtLoad => names
                     .iter()
                     .copied()
-                    .filter(|&other| other != declaration && flip())
+                    .filter_map(|other| {
+                        (other != declaration && flip()).then(|| as_used(other, &mut flip))
+                    })
                     .collect(),
             };
+            let refers: Vec<&str> = refers.iter().map(String::as_str).collect();
             let line = 10 + 3 * u32::try_from(at).unwrap();
             code = code.declaration(declaration, (line, line + 1), &refers);
             if declaration != exported {
@@ -1769,7 +2024,12 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
         code = match uses {
             Uses::InDeclarations => code,
             Uses::AlsoAtLoad => {
-                let loads: Vec<&str> = names.iter().copied().filter(|_| flip()).collect();
+                let loads: Vec<String> = names
+                    .iter()
+                    .copied()
+                    .filter_map(|name| flip().then(|| as_used(name, &mut flip)))
+                    .collect();
+                let loads: Vec<&str> = loads.iter().map(String::as_str).collect();
                 code.on_load(&loads)
             }
             Uses::EveryImportAtLoad => code.on_load(&locals),
