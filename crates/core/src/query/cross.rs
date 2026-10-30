@@ -64,6 +64,50 @@ impl Crossed {
     }
 }
 
+/// The roles a file takes in a contract, in role order.
+const ROLES: [Role; 3] = [Role::Declares, Role::Serves, Role::Calls];
+
+/// The fewest hops through code of the files of one layer of a walk that leave each contract, by the role they leave it in. A contract is crossed once, from the first file of the layer that leaves it, and the files across are as few hops through code from the walk's start as the fewest of those that reach them.
+#[derive(Debug)]
+pub(super) struct Leavers {
+    direction: Direction,
+    fewest: BTreeMap<(ContractId, Role), u32>,
+}
+
+impl Leavers {
+    pub(super) fn new(direction: Direction) -> Self {
+        Self {
+            direction,
+            fewest: BTreeMap::new(),
+        }
+    }
+
+    /// Notes that a file leaves `contract` by the sites in `roles`, which are in role order, with `code` hops through code.
+    pub(super) fn add(&mut self, contract: ContractId, roles: &[Role], code: u32) {
+        let Some(leaving) = self.direction.leaving(roles) else {
+            return;
+        };
+        self.fewest
+            .entry((contract, leaving))
+            .and_modify(|known| *known = (*known).min(code))
+            .or_insert(code);
+    }
+
+    /// The fewest hops through code of the files that leave `contract` in a role that reaches a site in `to`, none when no file was noted for it.
+    pub(super) fn reaching(&self, contract: ContractId, to: Role) -> Option<u32> {
+        ROLES
+            .into_iter()
+            .filter(|&from| self.direction.reaches(from, to))
+            .filter_map(|from| self.fewest.get(&(contract, from)).copied())
+            .min()
+    }
+
+    /// Forgets the files of the layer that ended.
+    pub(super) fn clear(&mut self) {
+        self.fewest.clear();
+    }
+}
+
 /// Finds the contracts whose sites join a key's, under the HTTP prefixes of one index.
 #[derive(Debug)]
 pub(super) struct Crossing<'a> {
@@ -191,8 +235,8 @@ pub(super) fn roles_of(sites: &[ContractSite], file: FileId) -> Vec<Role> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::Id as _;
 
-    const ROLES: [Role; 3] = [Role::Declares, Role::Serves, Role::Calls];
     const DIRECTIONS: [Direction; 2] = [Direction::ToCallers, Direction::ToDeclarers];
 
     #[test]
@@ -234,5 +278,22 @@ mod tests {
         assert_eq!(Direction::ToCallers.leaving(&roles), Some(Role::Serves));
         assert_eq!(Direction::ToDeclarers.leaving(&roles), Some(Role::Calls));
         assert_eq!(Direction::ToCallers.leaving(&[]), None);
+    }
+
+    #[test]
+    fn a_site_gets_the_fewest_hops_of_the_files_that_leave_in_a_role_that_reaches_it() {
+        let contract = ContractId::from_index(0);
+        let mut leavers = Leavers::new(Direction::ToCallers);
+        leavers.add(contract, &[Role::Serves], 3);
+        leavers.add(contract, &[Role::Serves, Role::Calls], 1);
+        leavers.add(contract, &[Role::Declares], 5);
+        leavers.add(contract, &[Role::Calls], 0);
+
+        // A caller is reached from a declarer and from both servers, and a server only from the declarer. A caller leaves nothing behind it, so its hops count for no one, though it is noted.
+        assert_eq!(leavers.reaching(contract, Role::Calls), Some(1));
+        assert_eq!(leavers.reaching(contract, Role::Serves), Some(5));
+        assert_eq!(leavers.reaching(contract, Role::Declares), None);
+        leavers.clear();
+        assert_eq!(leavers.reaching(contract, Role::Calls), None);
     }
 }

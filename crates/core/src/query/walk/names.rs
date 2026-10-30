@@ -11,7 +11,7 @@ use crate::fact::{Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR};
 use crate::graph::{ContractSite, Declaration, Edge, FileSymbols, Graph};
 use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
-use crate::query::cross::{Crossed, Crossing, Direction, sites_of};
+use crate::query::cross::{Crossed, Crossing, Direction, Leavers, roles_of, sites_of};
 
 use super::{Cause, Reached, holds};
 
@@ -534,6 +534,8 @@ struct Step<'w, 'a> {
     walk: &'w Walk<'a>,
     crossed: &'w mut Crossed,
     layer: Layer,
+    /// The fewest hops through code of the parts of the frontier that leave each contract, when they differ.
+    leavers: Leavers,
     /// The hops through code of the parts the step reaches now: one more than the part they come from after a hop through code, as many after a hop across a contract.
     hops: u32,
 }
@@ -544,16 +546,34 @@ impl<'w, 'a> Step<'w, 'a> {
             walk,
             crossed,
             layer: Layer::default(),
+            leavers: Leavers::new(Direction::ToCallers),
             hops: 0,
         }
     }
 
     /// What the `frontier`, which is sorted by file, then by hops through code, reaches one hop further.
     fn expand(mut self, frontier: &[Front]) -> Layer {
+        self.note_leavers(frontier);
         self.each_file(frontier, |step, file, code, group| {
             step.file(file, code, group);
         });
         self.layer
+    }
+
+    /// Notes how many hops through code the parts of a frontier that leave each contract took, when the frontier holds parts that took different numbers. A contract is crossed from the first of them in file order, and the parts across it are as far in hops through code as the fewest of those that reach them, whichever comes first. With equal ones the first has the fewest.
+    fn note_leavers(&mut self, frontier: &[Front]) {
+        let Some(first) = frontier.first() else {
+            return;
+        };
+        if frontier.iter().all(|front| front.code == first.code) {
+            return;
+        }
+        self.each_file(frontier, |step, file, code, group| {
+            let parts = step.parts(file, group);
+            for (contract, roles) in step.leaving(file, &parts) {
+                step.leavers.add(contract, &roles, code);
+            }
+        });
     }
 
     /// What the parts of the `frontier`, which are sorted as for [`Step::expand`], reach by one hop through code that the depth does not let the walk take, and across no contract.
@@ -613,12 +633,9 @@ impl<'w, 'a> Step<'w, 'a> {
             self.hops = code + 1;
             self.through_code(file, &parts);
         }
-        self.hops = code;
-        if let Some(symbols) = parts.symbols {
-            self.declared_contracts(file, symbols, &parts.declared);
-        }
-        if parts.load || parts.whole {
-            self.all_contracts(file);
+        for (contract, roles) in self.leaving(file, &parts) {
+            let crossed = self.walk.crossing.cross_as(self.crossed, &roles, contract);
+            self.arrive(file, contract, code, &crossed);
         }
     }
 
@@ -1006,36 +1023,47 @@ impl<'w, 'a> Step<'w, 'a> {
         }
     }
 
-    /// The contracts of the `declared` ones, crossed from the sites that belong to them and no others.
-    fn declared_contracts(&mut self, file: FileId, symbols: FileSymbols<'a>, declared: &[usize]) {
+    /// The contracts the `parts` of one file are crossed from, each with the roles of the sites they leave it by, in role order: those of the declarations among them, which are the sites that belong to them and no others, and then every contract of the file when its load or the whole of it is among them, as a file affected in all its names crosses them.
+    fn leaving(&self, file: FileId, parts: &Parts<'a>) -> Vec<(ContractId, Vec<Role>)> {
         let graph = self.walk.graph;
-        for &contract in graph.contracts_of(file) {
-            let mut roles: Vec<Role> = sites_of(graph.sites(contract), file)
-                .filter(|site| narrowest(symbols, site.line).any(|owner| declared.contains(&owner)))
-                .map(|site| site.role)
-                .collect();
-            roles.sort_unstable();
-            roles.dedup();
-            if roles.is_empty() {
-                continue;
+        let mut leaving = Vec::new();
+        if let Some(symbols) = parts.symbols {
+            for &contract in graph.contracts_of(file) {
+                let mut roles: Vec<Role> = sites_of(graph.sites(contract), file)
+                    .filter(|site| {
+                        narrowest(symbols, site.line).any(|owner| parts.declared.contains(&owner))
+                    })
+                    .map(|site| site.role)
+                    .collect();
+                roles.sort_unstable();
+                roles.dedup();
+                if !roles.is_empty() {
+                    leaving.push((contract, roles));
+                }
             }
-            let crossed = self.walk.crossing.cross_as(self.crossed, &roles, contract);
-            self.arrive(file, &crossed);
         }
+        if parts.load || parts.whole {
+            leaving.extend(
+                graph
+                    .contracts_of(file)
+                    .iter()
+                    .map(|&contract| (contract, roles_of(graph.sites(contract), file))),
+            );
+        }
+        leaving
     }
 
-    /// Every contract of `file`, as a file affected in all its names crosses them.
-    fn all_contracts(&mut self, file: FileId) {
-        for &contract in self.walk.graph.contracts_of(file) {
-            let crossed = self.walk.crossing.cross(self.crossed, file, contract);
-            self.arrive(file, &crossed);
-        }
-    }
-
-    /// The part of each file across a contract that its site belongs to, or the whole file when it records no declarations.
-    fn arrive(&mut self, from: FileId, sites: &[(ContractId, &'a ContractSite)]) {
-        for &(contract, site) in sites {
+    /// The part of each file across `contract` that its site belongs to, or the whole file when it records no declarations. A part across it has the hops through code of the parts of the frontier that leave `contract` and reach it, `code` when they were not told apart.
+    fn arrive(
+        &mut self,
+        from: FileId,
+        contract: ContractId,
+        code: u32,
+        sites: &[(ContractId, &'a ContractSite)],
+    ) {
+        for &(meeting, site) in sites {
             let file = site.file;
+            self.hops = self.leavers.reaching(contract, site.role).unwrap_or(code);
             let found = match self.walk.graph.symbols(file) {
                 Some(symbols) => self.place(file, symbols, site.line),
                 None => self.unit(file, Part::Whole),
@@ -1043,7 +1071,7 @@ impl<'w, 'a> Step<'w, 'a> {
             if found {
                 let cause = Cause::Contract {
                     role: site.role,
-                    contract,
+                    contract: meeting,
                 };
                 self.list(file, from, cause);
             }

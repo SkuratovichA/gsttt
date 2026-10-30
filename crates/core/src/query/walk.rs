@@ -12,7 +12,7 @@ use crate::contract::Role;
 use crate::graph::{Edge, Graph, Uses};
 use crate::ids::{ContractId, FileId, IdSet, NameId};
 
-use super::cross::{Crossed, Crossing, Direction};
+use super::cross::{Crossed, Crossing, Direction, Leavers, roles_of};
 
 pub(super) use names::{Hit, Note, reach_names};
 
@@ -84,6 +84,7 @@ pub(super) fn reach(
         graph,
         crossing,
         crossed: Crossed::new(Direction::ToCallers, graph),
+        leavers: Leavers::new(Direction::ToCallers),
         seen: IdSet::with_universe(graph.file_count()),
         whole: IdSet::with_universe(graph.file_count()),
         held: HashMap::default(),
@@ -111,6 +112,7 @@ pub(super) fn reach(
         .collect();
     while !frontier.is_empty() {
         walk.distance += 1;
+        walk.note_leavers(&frontier);
         for front in &frontier {
             walk.expand(front);
         }
@@ -126,6 +128,8 @@ struct Walk<'a> {
     crossing: &'a Crossing<'a>,
     /// The contracts crossed so far, from declarers and servers towards callers.
     crossed: Crossed,
+    /// The fewest hops through code of the files of the layer being expanded that leave each contract.
+    leavers: Leavers,
     /// The files reached in at least one name, and the changed files.
     seen: IdSet<FileId>,
     /// The files reached in every name: the changed files, and those that use an affected name or sit across a contract. Only these cross contracts.
@@ -149,6 +153,29 @@ struct Walk<'a> {
 }
 
 impl Walk<'_> {
+    /// Notes how many hops through code the files of a layer that leave each contract took, when the layer holds files that took different numbers. A contract is crossed from the first of them in file order, and the files across it are as far in hops through code as the fewest of those that reach them, whichever comes first. With no depth the hops through code bound nothing, and with equal ones the first file has the fewest.
+    fn note_leavers(&mut self, frontier: &[Front]) {
+        self.leavers.clear();
+        let mut whole = frontier
+            .iter()
+            .filter(|front| matches!(front.delta, Delta::All));
+        let Some(first) = whole.next() else {
+            return;
+        };
+        if self.depth.is_none() || whole.all(|front| front.code == first.code) {
+            return;
+        }
+        for front in frontier
+            .iter()
+            .filter(|front| matches!(front.delta, Delta::All))
+        {
+            for &contract in self.graph.contracts_of(front.file) {
+                let roles = roles_of(self.graph.sites(contract), front.file);
+                self.leavers.add(contract, &roles, front.code);
+            }
+        }
+    }
+
     fn expand(&mut self, front: &Front) {
         let (file, delta, code) = (front.file, &front.delta, front.code);
         let graph = self.graph;
@@ -189,7 +216,8 @@ impl Walk<'_> {
                         role: site.role,
                         contract: meeting,
                     };
-                    self.take_all(site.file, cause, code);
+                    let arrival = self.leavers.reaching(contract, site.role).unwrap_or(code);
+                    self.take_all(site.file, cause, arrival);
                 }
             }
         }
