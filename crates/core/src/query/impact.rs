@@ -227,6 +227,10 @@ impl Serialize for Note {
 }
 
 /// Whether a count is zero, for a key of the answer that is left out when there is nothing to count.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde hands `skip_serializing_if` a reference to the field"
+)]
 fn is_zero(count: &u32) -> bool {
     *count == 0
 }
