@@ -777,6 +777,11 @@ mod tests {
                 everything.clone(),
             ),
             (
+                "a mock, which the walk over files follows as it followed a dynamic import",
+                plain(ImportKind::Mock, none),
+                everything.clone(),
+            ),
+            (
                 "a mod declaration, whose names are a path attribute",
                 named(ImportKind::Module, &["renamed.rs"], &[]),
                 everything.clone(),
