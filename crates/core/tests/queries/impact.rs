@@ -132,7 +132,7 @@ fn depth_limits_the_walk() {
     assert!(
         answer
             .to_string()
-            .contains("impact of a.ts, within 1 hop\n")
+            .contains("impact of a.ts, within 1 hop through code\n")
     );
 }
 

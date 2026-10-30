@@ -4,7 +4,7 @@ mod exports;
 mod names;
 
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use foldhash::fast::RandomState;
 
@@ -42,6 +42,14 @@ pub(super) struct Reached {
     pub(super) cause: Cause,
 }
 
+/// A file to expand, with the names of it that the walk meets for the first time in a layer and the hops through code of the way they came by.
+struct Front {
+    file: FileId,
+    delta: Delta,
+    /// The hops of the way through code, which the depth bounds. A hop across a contract is not one.
+    code: u32,
+}
+
 /// The names of a file that the walk meets for the first time in a layer, which is what its importers are measured against.
 enum Delta {
     /// Every name: the file is changed, or the walk has just found it affected in all its names.
@@ -55,13 +63,15 @@ enum Delta {
 struct Held {
     /// A(file): every name of the barrel that the change may reach.
     names: BTreeSet<NameId>,
-    /// The names that joined `names` since the layer was cut, in the order they came.
-    growth: Vec<NameId>,
+    /// The names that joined `names` since the layer was cut, each with the fewest hops through code of the ways that brought it in that layer.
+    growth: BTreeMap<NameId, u32>,
 }
 
-/// Every file that reaches one of `changed` within `depth` hops, ordered by distance and then by file.
+/// Every file that reaches one of `changed` within `depth` hops through code, ordered by distance and then by file.
 ///
 /// A hop goes from a file to the files that import it, except where the import is only a Rust `mod` declaration, which owns the child file and uses nothing from it; or across a contract: a file that declares one reaches the files that serve or call it, and a file that serves one reaches the files that call it. The changed files are never reached.
+///
+/// The depth bounds the hops through code, which are the imports. A hop across a contract is a hop in the distance and not in the depth: every file the walk reaches crosses its contracts, and the file across carries the hops through code of the file it came from. Each file, and each batch of names that reaches a barrel, carries the hops through code of the way it was first reached by, the fewest of the equally near ways found in one layer, and takes a hop through code only while they are fewer than the depth.
 ///
 /// An import that records names is followed by name. A file that uses a name the change can reach is reached in all its names. A file that only re-exports is reached in the names it passes on, and passes on those and no others, so an `export *` barrel stops fanning out to importers of names the change cannot touch. A star re-export always reaches its importer, and holds it with no names when there is nothing to pass on. A file whose names do not grow is not visited again.
 pub(super) fn reach(
@@ -80,8 +90,10 @@ pub(super) fn reach(
         exported: HashMap::default(),
         default: graph.name_id("default"),
         star: graph.name_id("*"),
+        depth,
         distance: 0,
         reached: Vec::new(),
+        fresh: BTreeMap::new(),
         next: Vec::new(),
     };
     let mut changed = changed.to_vec();
@@ -89,12 +101,18 @@ pub(super) fn reach(
     changed.dedup();
     walk.seen.extend(changed.iter().copied());
     walk.whole.extend(changed.iter().copied());
-    let mut frontier: Vec<(FileId, Delta)> =
-        changed.into_iter().map(|file| (file, Delta::All)).collect();
-    while !frontier.is_empty() && depth.is_none_or(|limit| walk.distance < limit) {
+    let mut frontier: Vec<Front> = changed
+        .into_iter()
+        .map(|file| Front {
+            file,
+            delta: Delta::All,
+            code: 0,
+        })
+        .collect();
+    while !frontier.is_empty() {
         walk.distance += 1;
-        for (file, delta) in &frontier {
-            walk.expand(*file, delta);
+        for front in &frontier {
+            walk.expand(front);
         }
         frontier = walk.cut();
     }
@@ -119,19 +137,30 @@ struct Walk<'a> {
     /// The ids of the names `export *` never forwards and `export * as ns` takes, when the graph holds them.
     default: Option<NameId>,
     star: Option<NameId>,
+    /// The hops through code a file may be reached by before the walk takes no more, none when there is no limit.
+    depth: Option<u32>,
     /// The distance of the files being reached now.
     distance: u32,
     reached: Vec<Reached>,
-    /// The files to expand in the next layer: those that were reached in some names for the first time or whose names grew in this layer, and those that became whole.
-    next: Vec<FileId>,
+    /// The files that became whole in this layer, each with the fewest hops through code of the ways that made it whole.
+    fresh: BTreeMap<FileId, u32>,
+    /// The barrels that were reached in some names for the first time or whose names grew in this layer, each time with the hops through code of the way. A barrel that became whole in this layer is in `fresh`.
+    next: Vec<(FileId, u32)>,
 }
 
 impl Walk<'_> {
-    fn expand(&mut self, file: FileId, delta: &Delta) {
+    fn expand(&mut self, front: &Front) {
+        let (file, delta, code) = (front.file, &front.delta, front.code);
         let graph = self.graph;
         // Whether the exports of `file` are known, which every importer of it that is not plain asks when the walk reaches the file whole. The answer is the same for all of them, so it is worked out once, and not at all when none asks.
         let mut known = None;
-        for &(importer, edge) in graph.dependents(file) {
+        // The depth stops the hops through code and not the crossing of a contract.
+        let importers = if self.depth.is_none_or(|limit| code < limit) {
+            graph.dependents(file)
+        } else {
+            &[]
+        };
+        for &(importer, edge) in importers {
             if edge.is_structural() || self.whole.contains(importer) {
                 continue;
             }
@@ -146,9 +175,10 @@ impl Walk<'_> {
                         file,
                         names: Vec::new(),
                     },
+                    code + 1,
                 );
             } else {
-                self.follow(importer, file, edge, delta);
+                self.follow(importer, file, edge, delta, code + 1);
             }
         }
         // A file reached in some names only has not been shown to touch its contracts.
@@ -159,14 +189,14 @@ impl Walk<'_> {
                         role: site.role,
                         contract: meeting,
                     };
-                    self.take_all(site.file, cause);
+                    self.take_all(site.file, cause, code);
                 }
             }
         }
     }
 
-    /// What the importer gets from the new names of `file` over `edge`. A use comes before a pass, so the first way a file is found over one edge is the import.
-    fn follow(&mut self, importer: FileId, file: FileId, edge: Edge, delta: &Delta) {
+    /// What the importer gets from the new names of `file` over `edge`, reached by `code` hops through code. A use comes before a pass, so the first way a file is found over one edge is the import.
+    fn follow(&mut self, importer: FileId, file: FileId, edge: Edge, delta: &Delta, code: u32) {
         let graph = self.graph;
         let binding = graph.binding(edge);
 
@@ -188,7 +218,7 @@ impl Walk<'_> {
             }
         };
         if uses_all || !used.is_empty() {
-            self.take_all(importer, Cause::Imports { file, names: used });
+            self.take_all(importer, Cause::Imports { file, names: used }, code);
             return;
         }
 
@@ -232,6 +262,7 @@ impl Walk<'_> {
                     file,
                     names: passed,
                 },
+                code,
             );
             return;
         }
@@ -240,7 +271,10 @@ impl Walk<'_> {
         let before = held.growth.len();
         for &(_, exported_as) in &passed {
             if held.names.insert(exported_as) {
-                held.growth.push(exported_as);
+                held.growth.insert(exported_as, code);
+            } else if let Some(known) = held.growth.get_mut(&exported_as) {
+                // A name that joined in this layer by another way keeps the fewer hops through code.
+                *known = (*known).min(code);
             }
         }
         let grew = held.growth.len() > before;
@@ -256,13 +290,16 @@ impl Walk<'_> {
         }
         // A barrel met for the first time is expanded once, with whatever it holds, even if that is nothing.
         if first || grew {
-            self.next.push(importer);
+            self.next.push((importer, code));
         }
     }
 
-    /// Makes `file` affected in all its names. A file already reached in some names keeps the distance and cause it first had.
-    fn take_all(&mut self, file: FileId, cause: Cause) {
+    /// Makes `file` affected in all its names, reached by `code` hops through code. A file already reached in some names keeps the distance and cause it first had, and a file made whole in this layer by another way keeps the fewer hops through code.
+    fn take_all(&mut self, file: FileId, cause: Cause, code: u32) {
         if !self.whole.insert(file) {
+            if let Some(known) = self.fresh.get_mut(&file) {
+                *known = (*known).min(code);
+            }
             return;
         }
         if self.seen.insert(file) {
@@ -274,7 +311,7 @@ impl Walk<'_> {
         } else {
             self.held.remove(&file);
         }
-        self.next.push(file);
+        self.fresh.insert(file, code);
     }
 
     /// Whether an importer of `file` that takes `name`, to use it or to pass it on, meets the names `fresh` that `file` gained: it is one of them, or `file` does not export it, because the import may be the very thing the change breaks or mends. A file whose exports are unknown could lose any name, so none is ruled out. X(file) is only worked out when `name` is not among `fresh`.
@@ -291,21 +328,43 @@ impl Walk<'_> {
             .as_deref()
     }
 
-    /// Ends the layer: the files that grew, in file order, with what each gained. The gain is fixed here and not when the file is expanded, so a file that becomes whole while its layer is expanded is still met with the names it had when the layer began and its importers sit one hop further out.
-    fn cut(&mut self) -> Vec<(FileId, Delta)> {
+    /// Ends the layer: the files that grew, in file order, with what each gained. The gain is fixed here and not when the file is expanded, so a file that becomes whole while its layer is expanded is still met with the names it had when the layer began and its importers sit one hop further out. A barrel that gained names by ways with different hops through code is met once for each, so that each name is followed as far as its own way allows.
+    fn cut(&mut self) -> Vec<Front> {
+        let mut frontier: Vec<Front> = std::mem::take(&mut self.fresh)
+            .into_iter()
+            .map(|(file, code)| Front {
+                file,
+                delta: Delta::All,
+                code,
+            })
+            .collect();
         let mut grown = std::mem::take(&mut self.next);
+        // The first entry of a file has the fewest hops through code.
         grown.sort_unstable();
-        grown.dedup();
-        let mut frontier = Vec::with_capacity(grown.len());
-        for file in grown {
-            if self.whole.contains(file) {
-                frontier.push((file, Delta::All));
-            } else if let Some(held) = self.held.get_mut(&file) {
-                let mut gained = std::mem::take(&mut held.growth);
-                gained.sort_unstable();
-                frontier.push((file, Delta::Names(gained)));
+        grown.dedup_by_key(|&mut (file, _)| file);
+        for (file, first) in grown {
+            let Some(held) = self
+                .held
+                .get_mut(&file)
+                .filter(|_| !self.whole.contains(file))
+            else {
+                continue;
+            };
+            let mut gained: BTreeMap<u32, Vec<NameId>> = BTreeMap::new();
+            for (name, code) in std::mem::take(&mut held.growth) {
+                gained.entry(code).or_default().push(name);
             }
+            // A barrel met for the first time is expanded once, with whatever it holds, even if that is nothing.
+            if gained.keys().next().is_none_or(|&fewest| first < fewest) {
+                gained.entry(first).or_default();
+            }
+            frontier.extend(gained.into_iter().map(|(code, names)| Front {
+                file,
+                delta: Delta::Names(names),
+                code,
+            }));
         }
+        frontier.sort_unstable_by_key(|front| (front.file, front.code));
         frontier
     }
 }

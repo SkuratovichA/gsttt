@@ -246,7 +246,7 @@ fn the_answer_names_the_callers_and_their_lines() {
 
     let text = answer.text(Entries::Capped);
     assert!(
-        text.starts_with("impact of foo in a.ts, within 1 hop\n"),
+        text.starts_with("impact of foo in a.ts, within 1 hop through code\n"),
         "{text}"
     );
     assert!(
@@ -1637,11 +1637,9 @@ fn several_names_in_several_files_are_one_question() {
             "z.ts declares no nothing"
         ]
     );
-    assert!(
-        answer
-            .text(Entries::Capped)
-            .starts_with("impact of foo, zed and nothing in a.ts and z.ts, within 1 hop\n")
-    );
+    assert!(answer.text(Entries::Capped).starts_with(
+        "impact of foo, zed and nothing in a.ts and z.ts, within 1 hop through code\n"
+    ));
 }
 
 #[test]
@@ -1704,7 +1702,7 @@ fn a_depth_of_zero_lists_nothing_and_says_the_walk_stopped() {
     assert!(
         answer
             .text(Entries::Capped)
-            .starts_with("impact of foo in a.ts, within 0 hops\n")
+            .starts_with("impact of foo in a.ts, within 0 hops through code\n")
     );
 }
 

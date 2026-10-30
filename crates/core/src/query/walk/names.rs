@@ -1,6 +1,8 @@
 //! The walk behind `impact` asked about names: the declarations that refer to what a change reaches, hop by hop, in place of the files that import it.
 //!
 //! A hop goes from the declarations the walk has reached in a file to the declarations that refer to them, in the file itself and in the files that import them under the names the file exports them as. A barrel on the way, and a file that imports a name and exports it again, are listed and add no hop. Code that runs as a file loads is a caller of what it refers to, and a file reached at load reaches the files that load it. A file whose connector records no declarations is followed whole, as the walk over files follows every file.
+//!
+//! The depth bounds the hops through code: the declarations that refer to a name, the loads and the mocks. A hop across a contract counts in the distance and not in the depth, so every part the walk reaches crosses its contracts, and the part across carries the hops through code of the part it came from.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -61,7 +63,7 @@ pub(in crate::query) struct Walked {
     pub(in crate::query) notes: Vec<Note>,
 }
 
-/// Every file that holds a declaration, or the load, that refers to the `names` of the declarations of `changed` within `depth` hops, with the callers in each. The files of `changed` are listed only when their own code refers to the names.
+/// Every file that holds a declaration, or the load, that refers to the `names` of the declarations of `changed` within `depth` hops through code, with the callers in each. The files of `changed` are listed only when their own code refers to the names.
 pub(in crate::query) fn reach_names(
     index: &Index,
     crossing: &Crossing<'_>,
@@ -73,6 +75,7 @@ pub(in crate::query) fn reach_names(
         index,
         graph: &index.graph,
         crossing,
+        depth,
         files: BTreeMap::new(),
         through_class: BTreeSet::new(),
     };
@@ -83,17 +86,16 @@ pub(in crate::query) fn reach_names(
     asked.dedup();
     let mut frontier = walk.start(&asked, names, &mut notes);
     let mut distance = 0;
-    while !frontier.is_empty() && distance < depth {
+    while !frontier.is_empty() {
         let layer = Step::new(&walk, &mut crossed).expand(&frontier);
         distance += 1;
         frontier = walk.apply(layer, distance);
     }
-    // The depth ended the walk here. One more layer, which nothing records, tells whether it left callers behind.
-    if !frontier.is_empty()
-        && !Step::new(&walk, &mut crossed)
-            .expand(&frontier)
-            .units
-            .is_empty()
+    // The parts at the depth took no hop through code. One more hop from them, which nothing records, tells whether the depth left callers behind.
+    if !Step::new(&walk, &mut crossed)
+        .beyond(&walk.at_depth())
+        .units
+        .is_empty()
     {
         notes.insert(Note::Stopped);
     }
@@ -126,6 +128,29 @@ enum Part {
 struct Unit {
     file: FileId,
     part: Part,
+}
+
+/// How far a part of a file is from the declarations asked about, by the way the walk first found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Hops {
+    /// Every hop of the way, a contract crossing included, which is the distance the answer gives.
+    distance: u32,
+    /// The hops of the way through code, which the depth bounds.
+    code: u32,
+}
+
+/// The hops of a declaration asked about, which the walk starts from.
+const START: Hops = Hops {
+    distance: 0,
+    code: 0,
+};
+
+/// A part of a file the walk has just reached.
+#[derive(Clone, Copy, Debug)]
+struct Front {
+    unit: Unit,
+    /// The hops through code of the way it was reached by.
+    code: u32,
 }
 
 /// A name a file exports that the walk has reached.
@@ -175,11 +200,23 @@ impl<'a> Name<'a> {
 struct Touch {
     /// The hops to the first way found into the file, and that way. A file the walk started from has none until its own code refers to the names.
     listed: Option<(u32, Cause)>,
-    /// The declarations reached, as indices among those of the file, each with its distance. Those asked about are at 0.
-    decls: BTreeMap<usize, u32>,
-    /// The distance of the code that runs as the file loads, once the walk reaches it.
-    load: Option<u32>,
-    whole: bool,
+    /// The declarations reached, as indices among those of the file, each with its hops. Those asked about are at distance 0.
+    decls: BTreeMap<usize, Hops>,
+    /// The hops to the code that runs as the file loads, once the walk reaches it.
+    load: Option<Hops>,
+    /// The hops to the file as a whole, once the walk reaches it.
+    whole: Option<Hops>,
+}
+
+impl Touch {
+    /// The parts reached with their hops, in the order of [`Part`].
+    fn parts(&self) -> impl Iterator<Item = (Part, Hops)> + '_ {
+        self.decls
+            .iter()
+            .map(|(&index, &hops)| (Part::Decl(index), hops))
+            .chain(self.load.map(|hops| (Part::Load, hops)))
+            .chain(self.whole.map(|hops| (Part::Whole, hops)))
+    }
 }
 
 /// A way into a file that one layer found, in the order the layer found it.
@@ -193,7 +230,8 @@ struct Candidate {
 /// What one layer found: the parts of files it reached, the ways into the files, and the members of classes it looked for the callers of.
 #[derive(Default)]
 struct Layer {
-    units: BTreeSet<Unit>,
+    /// Each part with the fewest hops through code of the ways the layer found it by.
+    units: BTreeMap<Unit, u32>,
     candidates: Vec<Candidate>,
     /// Each member with its class.
     through_class: BTreeSet<(String, String)>,
@@ -203,6 +241,8 @@ struct Walk<'a> {
     index: &'a Index,
     graph: &'a Graph,
     crossing: &'a Crossing<'a>,
+    /// The hops through code a part may be reached by before the walk takes no more.
+    depth: u32,
     files: BTreeMap<FileId, Touch>,
     /// The members of classes the walk looked for the callers of through their class, each with its class.
     through_class: BTreeSet<(String, String)>,
@@ -215,13 +255,13 @@ impl Walk<'_> {
         changed: &[FileId],
         names: &[String],
         notes: &mut BTreeSet<Note>,
-    ) -> Vec<Unit> {
+    ) -> Vec<Front> {
         let mut started = BTreeSet::new();
         for &file in changed {
             let touch = self.files.entry(file).or_default();
             let Some(symbols) = self.graph.symbols(file) else {
                 notes.insert(Note::NoDeclarations { file });
-                touch.whole = true;
+                touch.whole = Some(START);
                 started.insert(Unit {
                     file,
                     part: Part::Whole,
@@ -233,7 +273,7 @@ impl Walk<'_> {
                 for (index, decl) in symbols.declarations().enumerate() {
                     if decl.name() == name {
                         declared = true;
-                        touch.decls.insert(index, 0);
+                        touch.decls.insert(index, START);
                         started.insert(Unit {
                             file,
                             part: Part::Decl(index),
@@ -248,7 +288,10 @@ impl Walk<'_> {
                 }
             }
         }
-        started.into_iter().collect()
+        started
+            .into_iter()
+            .map(|unit| Front { unit, code: 0 })
+            .collect()
     }
 
     fn reached(&self, unit: Unit) -> bool {
@@ -257,8 +300,24 @@ impl Walk<'_> {
             .is_some_and(|touch| match unit.part {
                 Part::Decl(index) => touch.decls.contains_key(&index),
                 Part::Load => touch.load.is_some(),
-                Part::Whole => touch.whole,
+                Part::Whole => touch.whole.is_some(),
             })
+    }
+
+    /// The parts reached by `depth` hops through code, which take no more of them.
+    fn at_depth(&self) -> Vec<Front> {
+        self.files
+            .iter()
+            .flat_map(|(&file, touch)| {
+                touch
+                    .parts()
+                    .filter(|&(_, hops)| hops.code == self.depth)
+                    .map(move |(part, hops)| Front {
+                        unit: Unit { file, part },
+                        code: hops.code,
+                    })
+            })
+            .collect()
     }
 
     /// The names of the declarations of `file` the walk started from, in byte order.
@@ -269,7 +328,7 @@ impl Walk<'_> {
         let mut names: Vec<String> = touch
             .decls
             .iter()
-            .filter(|&(_, &distance)| distance == 0)
+            .filter(|&(_, hops)| hops.distance == 0)
             .filter_map(|(&index, _)| symbols.declaration(index))
             .map(|decl| decl.name().to_owned())
             .collect();
@@ -278,7 +337,7 @@ impl Walk<'_> {
     }
 
     /// Records what the layer found at `distance`, and returns the parts of files it reached, which are the next layer's frontier.
-    fn apply(&mut self, layer: Layer, distance: u32) -> Vec<Unit> {
+    fn apply(&mut self, layer: Layer, distance: u32) -> Vec<Front> {
         self.through_class.extend(layer.through_class);
         // A stable sort keeps the order the layer found the ways in, which is contract order within one file.
         let mut candidates = layer.candidates;
@@ -301,19 +360,28 @@ impl Walk<'_> {
                 touch.listed = Some((distance, way.cause));
             }
         }
-        for unit in &layer.units {
+        for (unit, &code) in &layer.units {
             let touch = self.files.entry(unit.file).or_default();
+            let hops = Hops { distance, code };
             match unit.part {
                 Part::Decl(index) => {
-                    touch.decls.entry(index).or_insert(distance);
+                    touch.decls.entry(index).or_insert(hops);
                 }
                 Part::Load => {
-                    touch.load.get_or_insert(distance);
+                    touch.load.get_or_insert(hops);
                 }
-                Part::Whole => touch.whole = true,
+                Part::Whole => {
+                    touch.whole.get_or_insert(hops);
+                }
             }
         }
-        layer.units.into_iter().collect()
+        let mut frontier: Vec<Front> = layer
+            .units
+            .into_iter()
+            .map(|(unit, code)| Front { unit, code })
+            .collect();
+        frontier.sort_unstable_by_key(|front| (front.unit.file, front.code, front.unit.part));
+        frontier
     }
 
     /// The files the walk listed, nearest first and then by file.
@@ -332,8 +400,8 @@ impl Walk<'_> {
                 let mut callers: Vec<(usize, u32)> = touch
                     .decls
                     .iter()
-                    .filter(|&(_, &distance)| distance > 0)
-                    .map(|(&index, &distance)| (index, distance))
+                    .filter(|&(_, hops)| hops.distance > 0)
+                    .map(|(&index, hops)| (index, hops.distance))
                     .collect();
                 callers.sort_by(|&(left, _), &(right, _)| name(left).cmp(&name(right)));
                 Some(Hit {
@@ -341,7 +409,7 @@ impl Walk<'_> {
                     distance,
                     cause,
                     callers,
-                    load: touch.load,
+                    load: touch.load.map(|hops| hops.distance),
                 })
             })
             .collect();
@@ -451,11 +519,23 @@ impl Taken {
     }
 }
 
+/// The parts of one file at the frontier.
+struct Parts<'a> {
+    /// The declarations, as indices among those of the file.
+    declared: Vec<usize>,
+    /// The symbols of the file, when a declaration of it is among the parts.
+    symbols: Option<FileSymbols<'a>>,
+    load: bool,
+    whole: bool,
+}
+
 /// One layer of the walk: the parts of files it was given, and what they reach.
 struct Step<'w, 'a> {
     walk: &'w Walk<'a>,
     crossed: &'w mut Crossed,
     layer: Layer,
+    /// The hops through code of the parts the step reaches now: one more than the part they come from after a hop through code, as many after a hop across a contract.
+    hops: u32,
 }
 
 impl<'w, 'a> Step<'w, 'a> {
@@ -464,65 +544,110 @@ impl<'w, 'a> Step<'w, 'a> {
             walk,
             crossed,
             layer: Layer::default(),
+            hops: 0,
         }
     }
 
-    /// What the `frontier`, which is sorted, reaches one hop further.
-    fn expand(mut self, frontier: &[Unit]) -> Layer {
-        let mut rest = frontier;
-        while let Some(first) = rest.first() {
-            let file = first.file;
-            let end = rest.partition_point(|unit| unit.file == file);
-            let Some((group, tail)) = rest.split_at_checked(end) else {
-                break;
-            };
-            self.file(file, group);
-            rest = tail;
-        }
+    /// What the `frontier`, which is sorted by file, then by hops through code, reaches one hop further.
+    fn expand(mut self, frontier: &[Front]) -> Layer {
+        self.each_file(frontier, |step, file, code, group| {
+            step.file(file, code, group);
+        });
         self.layer
     }
 
-    /// The parts of one file that sit at the frontier. Imports come before contracts, as in the walk over files.
-    fn file(&mut self, file: FileId, group: &[Unit]) {
-        let mut declared = Vec::new();
-        let (mut load, mut whole) = (false, false);
-        for unit in group {
-            match unit.part {
-                Part::Decl(index) => declared.push(index),
-                Part::Load => load = true,
-                Part::Whole => whole = true,
+    /// What the parts of the `frontier`, which are sorted as for [`Step::expand`], reach by one hop through code that the depth does not let the walk take, and across no contract.
+    fn beyond(mut self, frontier: &[Front]) -> Layer {
+        self.each_file(frontier, |step, file, _, group| {
+            let parts = step.parts(file, group);
+            step.through_code(file, &parts);
+        });
+        self.layer
+    }
+
+    /// Calls `visit` with the parts of each file of the `frontier` that were reached by the same hops through code, the file and those hops.
+    fn each_file(
+        &mut self,
+        frontier: &[Front],
+        mut visit: impl FnMut(&mut Self, FileId, u32, &[Front]),
+    ) {
+        let mut rest = frontier;
+        while let Some(first) = rest.first() {
+            let (file, code) = (first.unit.file, first.code);
+            let end = rest.partition_point(|front| (front.unit.file, front.code) == (file, code));
+            let Some((group, tail)) = rest.split_at_checked(end) else {
+                break;
+            };
+            visit(self, file, code, group);
+            rest = tail;
+        }
+    }
+
+    fn parts(&self, file: FileId, group: &[Front]) -> Parts<'a> {
+        let mut parts = Parts {
+            declared: Vec::new(),
+            symbols: None,
+            load: false,
+            whole: false,
+        };
+        for front in group {
+            match front.unit.part {
+                Part::Decl(index) => parts.declared.push(index),
+                Part::Load => parts.load = true,
+                Part::Whole => parts.whole = true,
             }
         }
-        let symbols = self
+        parts.symbols = self
             .walk
             .graph
             .symbols(file)
-            .filter(|_| !declared.is_empty());
-        if let Some(symbols) = symbols {
-            self.callers_in(file, symbols, &declared);
-            self.exports(file, symbols, &declared);
+            .filter(|_| !parts.declared.is_empty());
+        parts
+    }
+
+    /// The parts of one file that sit at the frontier with `code` hops through code. Imports come before contracts, as in the walk over files.
+    fn file(&mut self, file: FileId, code: u32, group: &[Front]) {
+        let parts = self.parts(file, group);
+        // The depth stops the hops through code and not the crossing of a contract, which keeps the hops through code of the part it leaves.
+        if code < self.walk.depth {
+            self.hops = code + 1;
+            self.through_code(file, &parts);
         }
-        if load {
-            self.loaders(file);
+        self.hops = code;
+        if let Some(symbols) = parts.symbols {
+            self.declared_contracts(file, symbols, &parts.declared);
         }
-        if whole {
-            self.flow(file, BTreeSet::from([Name::Any]));
-        }
-        if let Some(symbols) = symbols {
-            self.declared_contracts(file, symbols, &declared);
-        }
-        if load || whole {
+        if parts.load || parts.whole {
             self.all_contracts(file);
         }
     }
 
-    /// Reaches a part of a file and says whether it is new.
+    /// The hop through code from the `parts` of one file: the declarations that refer to them, the files that import them and the files that load it.
+    fn through_code(&mut self, file: FileId, parts: &Parts<'a>) {
+        if let Some(symbols) = parts.symbols {
+            self.callers_in(file, symbols, &parts.declared);
+            self.exports(file, symbols, &parts.declared);
+        }
+        if parts.load {
+            self.loaders(file);
+        }
+        if parts.whole {
+            self.flow(file, BTreeSet::from([Name::Any]));
+        }
+    }
+
+    /// Reaches a part of a file and says whether it is new. A part found again in the layer by a way with fewer hops through code keeps the fewer.
     fn unit(&mut self, file: FileId, part: Part) -> bool {
         let unit = Unit { file, part };
         if self.walk.reached(unit) {
             return false;
         }
-        self.layer.units.insert(unit);
+        let hops = self.hops;
+        self.layer
+            .units
+            .entry(unit)
+            .and_modify(|known| *known = (*known).min(hops))
+            .or_insert(hops);
         true
     }
 
