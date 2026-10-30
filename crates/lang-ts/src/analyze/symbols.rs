@@ -225,17 +225,17 @@ impl<'a> Recorder<'a> {
             Declaration::TSNamespaceDeclaration(namespace) => {
                 self.single(Some(namespace.id.name.as_str()), lines, Load::Static)
             }
+            // `import x = require('y')` declares `x` over the lines of the require, as `const x = require('y')` does, and the require is a call that runs as the file loads. `import A = B.C` only names something else of the file.
             Declaration::TSImportEqualsDeclaration(import) => {
-                let name = import.id.name.as_str();
-                if matches!(
+                let load = if matches!(
                     import.module_reference,
                     TSModuleReference::ExternalModuleReference(_)
                 ) {
-                    self.entry(name, Kind::Import, None);
-                    Plan::Skip
+                    Load::Called
                 } else {
-                    self.single(Some(name), lines, Load::Later)
-                }
+                    Load::Later
+                };
+                self.single(Some(import.id.name.as_str()), lines, load)
             }
             // `declare module 'x' {}` and `declare global {}` declare no name of the file, and what they refer to is kept as code that runs.
             Declaration::TSExternalModuleDeclaration(_) | Declaration::TSGlobalDeclaration(_) => {

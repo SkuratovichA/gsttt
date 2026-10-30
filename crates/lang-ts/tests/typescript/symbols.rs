@@ -457,3 +457,40 @@ fn ambient_blocks_and_import_aliases_are_recorded_conservatively() -> Result<(),
     assert_eq!(local_names(&json, path), ["./lib use"]);
     Ok(())
 }
+
+#[test]
+fn import_equals_require_declares_its_name_as_const_require_does() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-import-equals")?;
+    let path = "src/equals.ts";
+    assert_eq!(
+        declared(&json, path),
+        ["x @1", "run @3-5"],
+        "the name holds the lines of the require, which is how the walk gives the require to `x`"
+    );
+    assert_eq!(
+        import_line(&json, path, "./lib"),
+        Some(1),
+        "the require lies within the lines of `x`"
+    );
+    assert_eq!(
+        edges(&json, path),
+        ["run -> x"],
+        "`run` uses `x`, and `x` uses nothing, itself included"
+    );
+    assert_eq!(
+        on_load(&json, path),
+        Some(vec![]),
+        "the require refers to no name of the file"
+    );
+
+    let same = "src/const.ts";
+    assert_eq!(declared(&json, path), declared(&json, same));
+    assert_eq!(edges(&json, path), edges(&json, same));
+    assert_eq!(
+        on_load(&json, path),
+        on_load(&json, same),
+        "`const x = require('./lib')` gives the same facts"
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
