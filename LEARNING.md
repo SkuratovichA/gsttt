@@ -13,3 +13,7 @@ Mistakes made in this repository and what fixed them.
 ## gsttt use in agent transcripts was counted too high
 
 Grepping a transcript of `cargo xtask agents run` for `gsttt` counted every Bash command that names a path in the checkout the agent works in, because that path holds the word. Fix: count the calls of the gsttt MCP tools by their names, and a Bash command only when the program it runs is `gsttt`.
+
+## openspec validate --strict failed on a requirement that had grown
+
+A sentence added to a requirement of a delta took its text past 500 characters, and `openspec validate --strict` turns that warning into a failure. Fix: a new behaviour gets a requirement of its own with its scenario, rather than one more sentence in a requirement that already holds several.
