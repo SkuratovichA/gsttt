@@ -39,6 +39,12 @@ pub(crate) enum ToolError {
          about the files as a whole"
     )]
     NamesWithoutPaths,
+    /// The refusal of [`Self::NamesWithoutPaths`] for a call that also sets `changed`. A model told only to name the file in `paths` keeps `changed` and is refused again, so this one says to leave `changed` out too.
+    #[error(
+        "impact: `names` needs `paths`; name the file that declares them in `paths` and leave `changed` out, or leave \
+         `names` out to ask about the files that differ from HEAD"
+    )]
+    NamesWithChanged,
     #[error(
         "impact: name the files to ask about in `paths`, or set `changed` to true to ask about the files that differ \
          from HEAD"

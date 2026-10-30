@@ -68,7 +68,7 @@ async fn names_with_changed_are_a_tool_error_that_asks_for_paths() {
 }
 
 #[tokio::test]
-async fn names_without_paths_say_the_same() {
+async fn names_with_changed_are_told_to_leave_changed_out_and_names_alone_are_not() {
     let session = Session::start(Fake::small()).await;
 
     let with_changed = session
@@ -76,8 +76,21 @@ async fn names_without_paths_say_the_same() {
         .await;
     let alone = session.call("impact", json!({ "names": ["foo"] })).await;
 
+    assert!(with_changed.is_error);
     assert!(alone.is_error);
-    assert_eq!(alone.text, with_changed.text);
+    for reply in [&with_changed, &alone] {
+        assert!(
+            reply.text.starts_with("impact: `names` needs `paths`"),
+            "{}",
+            reply.text
+        );
+    }
+    assert!(
+        with_changed.text.contains("leave `changed` out"),
+        "{}",
+        with_changed.text
+    );
+    assert!(!alone.text.contains("`changed`"), "{}", alone.text);
 }
 
 #[tokio::test]

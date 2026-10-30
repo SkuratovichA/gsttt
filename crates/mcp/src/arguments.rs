@@ -198,6 +198,7 @@ impl TryFrom<ImpactArguments> for ImpactCall {
         } = arguments;
         let subject = match (paths.is_empty(), changed) {
             (false, true) => return Err(ToolError::PathsAndChanged),
+            (true, true) if !names.is_empty() => return Err(ToolError::NamesWithChanged),
             (true, _) if !names.is_empty() => return Err(ToolError::NamesWithoutPaths),
             (true, false) => return Err(ToolError::NothingAsked),
             (false, false) if base.is_some() => return Err(ToolError::BaseWithoutChanged),
@@ -428,7 +429,7 @@ mod tests {
         );
         assert!(matches!(
             read(json!({ "changed": true, "names": ["foo"] })),
-            Err(ToolError::NamesWithoutPaths)
+            Err(ToolError::NamesWithChanged)
         ));
         assert!(matches!(
             read(json!({ "names": ["foo"] })),
@@ -562,7 +563,8 @@ mod tests {
             // A blank name is the last rule, so each of the others wins over it when it applies.
             match (paths.is_empty(), changed, base.is_some(), names.is_empty(), blank) {
                 (false, true, ..) => prop_assert!(matches!(read, Err(ToolError::PathsAndChanged)), "{read:?}"),
-                (true, _, _, false, _) => prop_assert!(matches!(read, Err(ToolError::NamesWithoutPaths)), "{read:?}"),
+                (true, true, _, false, _) => prop_assert!(matches!(read, Err(ToolError::NamesWithChanged)), "{read:?}"),
+                (true, false, _, false, _) => prop_assert!(matches!(read, Err(ToolError::NamesWithoutPaths)), "{read:?}"),
                 (true, false, ..) => prop_assert!(matches!(read, Err(ToolError::NothingAsked)), "{read:?}"),
                 (false, false, true, ..) => {
                     prop_assert!(matches!(read, Err(ToolError::BaseWithoutChanged)), "{read:?}");
