@@ -9,3 +9,7 @@ Mistakes made in this repository and what fixed them.
 ## Builds in several worktrees at once failed with errors the code did not have
 
 `CARGO_TARGET_DIR` is set in the environment to the `target` of the main checkout, so every worktree builds there and not into its own `target`. Two worktrees with different sources of the same crates rebuilt each other's artifacts and got "unresolved import" errors that neither tree had. Fix: when more than one worktree builds at a time, give each its own with `CARGO_TARGET_DIR=<worktree>/target` on the command.
+
+## gsttt use in agent transcripts was counted too high
+
+Grepping a transcript of `cargo xtask agents run` for `gsttt` counted every Bash command that names a path in the checkout the agent works in, because that path holds the word. Fix: count the calls of the gsttt MCP tools by their names, and a Bash command only when the program it runs is `gsttt`.
