@@ -100,11 +100,11 @@ fn a_nested_import_type_is_read_at_the_line_of_its_specifier() -> Result<(), Box
 }
 
 #[test]
-#[scenario("typescript", "A mocked or actual module is a dynamic import")]
-fn a_mocked_or_actual_module_is_a_dynamic_import() -> Result<(), Box<dyn Error>> {
+#[scenario("typescript", "A mocked module is a mock")]
+fn a_mocked_module_is_a_mock() -> Result<(), Box<dyn Error>> {
     let json = run("mocked-modules")?;
-    let expected: Vec<String> = (1..=13)
-        .map(|line| format!("./lib dynamic @{line} -> file src/lib.ts"))
+    let expected: Vec<String> = (1..=11)
+        .map(|line| format!("./lib mock @{line} -> file src/lib.ts"))
         .collect();
     assert_eq!(imports(&json, "src/runners.test.ts"), expected);
     insta::assert_json_snapshot!(json);
@@ -112,14 +112,23 @@ fn a_mocked_or_actual_module_is_a_dynamic_import() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-#[scenario(
-    "typescript",
-    "A mock made from a module or set for it is a dynamic import"
-)]
-fn a_mock_made_from_a_module_or_set_for_it_is_a_dynamic_import() -> Result<(), Box<dyn Error>> {
+#[scenario("typescript", "An actual module is a dynamic import")]
+fn an_actual_module_is_a_dynamic_import() -> Result<(), Box<dyn Error>> {
+    let json = run("actual-modules")?;
+    let expected: Vec<String> = (1..=2)
+        .map(|line| format!("./lib dynamic @{line} -> file src/lib.ts"))
+        .collect();
+    assert_eq!(imports(&json, "src/actual.test.ts"), expected);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A mock made from a module or set for it is a mock")]
+fn a_mock_made_from_a_module_or_set_for_it_is_a_mock() -> Result<(), Box<dyn Error>> {
     let json = run("mocks-from-modules")?;
     let expected: Vec<String> = (1..=5)
-        .map(|line| format!("./lib dynamic @{line} -> file src/lib.ts"))
+        .map(|line| format!("./lib mock @{line} -> file src/lib.ts"))
         .collect();
     assert_eq!(imports(&json, "src/made.test.ts"), expected);
     insta::assert_json_snapshot!(json);
@@ -155,11 +164,47 @@ fn a_mock_that_asks_for_the_actual_module_reaches_it() -> Result<(), Box<dyn Err
     assert_eq!(
         imports(&json, "src/lib.test.ts"),
         [
-            "./lib dynamic @1 -> file src/lib.ts",
+            "./lib mock @1 -> file src/lib.ts",
             "./lib dynamic @2 -> file src/lib.ts",
             "./lib static @2 type-only [*] -> file src/lib.ts",
-            "./editor dynamic @5 -> file src/editor.ts",
+            "./editor mock @5 -> file src/editor.ts",
             "./editor static @6 type-only [*] -> file src/editor.ts",
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read from a loaded module is the name it takes"
+)]
+fn a_member_read_from_a_loaded_module_is_the_name_it_takes() -> Result<(), Box<dyn Error>> {
+    let json = run("loaded-members")?;
+    assert_eq!(
+        imports(&json, "src/use.ts"),
+        [
+            "./lib dynamic @1 [helper] -> file src/lib.ts",
+            "./lib require @2 [other] -> file src/lib.ts",
+            "./lib dynamic @3 -> file src/lib.ts",
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+/// Not a scenario of its own: a destructuring that may take more than it names is the module itself, so that a walk by name does not leave out what a rest element or a computed key takes.
+#[test]
+fn a_destructuring_that_may_take_more_than_it_names_takes_the_module() -> Result<(), Box<dyn Error>>
+{
+    let json = run("loaded-open")?;
+    assert_eq!(
+        imports(&json, "src/open.ts"),
+        [
+            "./lib dynamic @1 [a,*] -> file src/lib.ts",
+            "./lib dynamic @2 [*] -> file src/lib.ts",
+            "./lib require @3 [c] -> file src/lib.ts",
         ]
     );
     insta::assert_json_snapshot!(json);
