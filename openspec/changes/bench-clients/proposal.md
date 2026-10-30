@@ -10,6 +10,7 @@ The agent benchmarks ask about functions and the tests that break with them, whi
 - The language service that `functions.mjs` builds moves to `bench/agents/service.mjs`, so that the two scripts cannot read a checkout differently. The output of `functions.mjs` does not change.
 - `bench/bench.toml` pins `graphql` among the Node tools and hoppscotch (MIT, a NestJS server with code-first GraphQL resolvers and client packages with GraphQL documents) as a repository that asks only questions of the kind `clients`. `users` becomes optional beside `tests` and `clients`.
 - A repository can say `speed = false`: the speed benchmark does not measure it. hoppscotch does, so that this change adds no repository to what the speed benchmark measures.
+- `cargo xtask agents tools` installs the Node tools of the pins and nothing else. CI runs it before the tests: the tests that run the scripts end early where the tools are missing, and a scenario they prove must not pass without having run, so in CI they fail instead.
 - `bench/agents/questions.json` gets the new questions after the existing ones, which stay as they were. Scoring, results and the tables treat the kind like `users`.
 
 ## Impact

@@ -43,6 +43,7 @@ use crate::bench::{pinned, setup};
 use crate::root::repository_root;
 
 const USAGE: &str = "usage:
+  cargo xtask agents tools
   cargo xtask agents questions [--repository <name>]... [--out <file>]
   cargo xtask agents run --gsttt <binary> [--repository <name>]... [--question <id>]... [--repeats <n>] [--out <file>]
   cargo xtask agents table [<results file>]";
@@ -59,9 +60,14 @@ fn say(text: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Runs `cargo xtask agents <task>`. `questions` and `run` hold the lock of [`one_task`] to their end; `table` only reads and takes none.
+/// Runs `cargo xtask agents <task>`. `tools`, `questions` and `run` hold the lock of [`one_task`] to their end; `table` only reads and takes none.
 pub(crate) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     match args.split_first() {
+        Some((task, rest)) if task == "tools" => {
+            ensure!(rest.is_empty(), "`agents tools` takes no argument");
+            let _held = one_task(&std::env::temp_dir())?;
+            tools()
+        }
         Some((task, rest)) if task == "questions" => {
             let _held = one_task(&std::env::temp_dir())?;
             draw(rest)
@@ -90,6 +96,19 @@ fn one_task(dir: &Path) -> anyhow::Result<File> {
     }
 }
 
+/// The programs of the Node tools in `bench/tools`, which the scripts of `bench/agents/` and their tests read; no binary under test.
+fn node_programs(root: &Path) -> Programs {
+    Programs::new(&root.join("bench/tools"), Path::new(""))
+}
+
+/// Installs the Node tools of the pins into `bench/tools/node` and nothing else, so that CI and the tests that run the scripts have them without a clone or a draw.
+fn tools() -> anyhow::Result<ExitCode> {
+    let root = repository_root()?;
+    let pins = Pins::load(&root)?;
+    setup::node_tools(&node_programs(&root), &pins)?;
+    Ok(ExitCode::SUCCESS)
+}
+
 /// Draws the questions of the repositories that ask for them and writes them.
 fn draw(args: &[String]) -> anyhow::Result<ExitCode> {
     let args = args::parse(Task::Questions, args)?;
@@ -98,7 +117,7 @@ fn draw(args: &[String]) -> anyhow::Result<ExitCode> {
     let repositories = asking(&pins, &args.repositories)?;
 
     // The Node tools come first: a missing pnpm should fail before the first clone.
-    let programs = Programs::new(&root.join("bench/tools"), Path::new(""));
+    let programs = node_programs(&root);
     setup::node_tools(&programs, &pins)?;
     let scripts = root.join("bench/agents");
 
@@ -254,7 +273,7 @@ fn tests_questions(
 
 #[cfg(test)]
 mod tests {
-    use super::{Pins, asking, one_task, repository_root};
+    use super::{Pins, USAGE, asking, one_task, repository_root, run};
 
     #[gsttt_scenario::scenario(
         "agent-benchmarks",
@@ -275,6 +294,15 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn the_tools_task_takes_no_argument_and_the_usage_names_it() {
+        let error = run(&["tools".to_owned(), "--out".to_owned()])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("takes no argument"), "{error}");
+        assert!(USAGE.contains("cargo xtask agents tools"));
+    }
+
     fn the_agent_benchmarks_ask_about_a_repository_the_speed_benchmark_leaves_out() {
         let pins = Pins::load(&repository_root().unwrap()).unwrap();
         let asking_names: Vec<&str> = asking(&pins, &[])

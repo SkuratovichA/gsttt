@@ -46,6 +46,9 @@ jobs:
       - name: Clippy
         if: ${{ !cancelled() }}
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Node tools
+        if: ${{ !cancelled() }}
+        run: cargo xtask agents tools
       - name: Tests
         if: ${{ !cancelled() }}
         env:
