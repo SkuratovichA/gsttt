@@ -48,6 +48,12 @@ pub(crate) enum ToolError {
         "impact: `base` goes with `changed`; set `changed` to true to compare against `base`, or leave `base` out"
     )]
     BaseWithoutChanged,
+    /// A name that is empty or only whitespace declares nothing, so the walk by it reaches nothing, which a model reads as a name that has no callers.
+    #[error(
+        "impact: `names` holds a blank name; write each name as the file declares it, for example \"getHash\" or \
+         \"Runner.start\""
+    )]
+    BlankName,
     /// The question names a file the index does not hold. The text is the answer's own, the one the command line prints on stderr when it fails for the same reason.
     #[error("{0}")]
     NotInIndex(String),

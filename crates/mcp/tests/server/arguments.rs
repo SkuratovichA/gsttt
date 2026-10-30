@@ -81,6 +81,26 @@ async fn names_without_paths_say_the_same() {
 }
 
 #[tokio::test]
+async fn a_blank_name_is_a_tool_error_that_says_how_to_write_one() {
+    let source = Fake::small();
+    let session = Session::start(source.clone()).await;
+
+    for names in [json!([""]), json!(["foo", " "])] {
+        let reply = session
+            .call("impact", json!({ "paths": ["src/a.ts"], "names": names }))
+            .await;
+
+        assert!(reply.is_error, "{names}");
+        assert_eq!(
+            reply.text,
+            "impact: `names` holds a blank name; write each name as the file declares it, for example \"getHash\" or \"Runner.start\"",
+            "{names}"
+        );
+    }
+    assert_eq!(source.calls(), 0);
+}
+
+#[tokio::test]
 async fn impact_without_paths_or_changed_says_what_to_pass() {
     let session = Session::start(Fake::small()).await;
 
