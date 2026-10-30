@@ -29,6 +29,21 @@ async fn a_malformed_argument_is_a_tool_error_that_names_it() {
     );
 }
 
+#[scenario("mcp", "A tests argument that is not a boolean is a tool error")]
+#[tokio::test]
+async fn a_tests_argument_that_is_not_a_boolean_is_a_tool_error_that_names_it() {
+    let source = Fake::small();
+    let session = Session::start(source.clone()).await;
+
+    let reply = session
+        .call("impact", json!({ "paths": ["src/a.ts"], "tests": "no" }))
+        .await;
+
+    assert!(reply.is_error);
+    assert_eq!(reply.text, "impact: `tests` must be true or false");
+    assert_eq!(source.calls(), 0);
+}
+
 #[scenario("mcp", "Conflicting arguments are a tool error")]
 #[tokio::test]
 async fn paths_together_with_changed_are_a_tool_error() {

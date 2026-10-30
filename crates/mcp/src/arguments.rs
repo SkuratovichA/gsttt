@@ -64,7 +64,7 @@ pub(crate) struct ImpactArguments {
     pub(crate) changed: bool,
     /// With `changed`: compare against the best common ancestor of HEAD and this git revision, such as a branch name, instead of against HEAD.
     pub(crate) base: Option<String>,
-    /// Stop the walk after this many hops from a changed file. Leave it out to follow every hop, or, with `names`, to take one: the direct callers.
+    /// Stop the walk after this many hops through code from a changed file: the imports, and with `names` the uses of a name. A hop across a contract does not count, so the walk goes on to the clients of every contract it comes to. Leave it out to follow every hop, or, with `names`, to take one: the direct callers.
     pub(crate) depth: Option<u32>,
     /// With `paths`: ask about these names, each a function, class, method or variable that the files declare, instead of about the files as a whole. A method is written `Class.method`. The answer lists the direct callers of the names, the declarations that refer to them, each with the line it starts on, so ask again about a caller to go further. A name that a file does not declare is said so in the answer and reaches nothing. It cannot go with `changed`.
     #[serde(default)]
@@ -72,6 +72,14 @@ pub(crate) struct ImpactArguments {
     /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
+    /// Whether to list the files tagged as tests, which is what happens when this is left out. False leaves them out of the answer and says how many it left out, to save context when they do not matter; the walk is the same.
+    #[serde(default = "listed")]
+    pub(crate) tests: bool,
+}
+
+/// What a flag that is on unless the call turns it off reads when it is left out.
+fn listed() -> bool {
+    true
 }
 
 impl Arguments for ImpactArguments {
@@ -82,6 +90,7 @@ impl Arguments for ImpactArguments {
         Field::optional("depth", "a whole number, for example 2"),
         Field::optional("names", NAMES),
         Field::optional("all", FLAG),
+        Field::optional("tests", FLAG),
     ];
 }
 
@@ -182,6 +191,7 @@ pub(crate) struct ImpactCall {
     pub(crate) subject: Subject,
     pub(crate) depth: Option<u32>,
     pub(crate) all: bool,
+    pub(crate) tests: bool,
 }
 
 impl TryFrom<ImpactArguments> for ImpactCall {
@@ -195,6 +205,7 @@ impl TryFrom<ImpactArguments> for ImpactCall {
             depth,
             names,
             all,
+            tests,
         } = arguments;
         let subject = match (paths.is_empty(), changed) {
             (false, true) => return Err(ToolError::PathsAndChanged),
@@ -212,6 +223,7 @@ impl TryFrom<ImpactArguments> for ImpactCall {
             subject,
             depth,
             all,
+            tests,
         })
     }
 }
@@ -403,6 +415,7 @@ mod tests {
             subject: Subject::Changed { base: None },
             depth: None,
             all: false,
+            tests: true,
         })) = call
         else {
             panic!("expected changed files with no base and no depth, got {call:?}");
@@ -517,6 +530,7 @@ mod tests {
             not_a_count().prop_map(|value| ("depth", value)),
             not_paths().prop_map(|value| ("names", value)),
             not_a_flag().prop_map(|value| ("all", value)),
+            not_a_flag().prop_map(|value| ("tests", value)),
         ]
     }
 
@@ -531,10 +545,11 @@ mod tests {
                     Just("depth".to_owned()),
                     Just("names".to_owned()),
                     Just("all".to_owned()),
+                    Just("tests".to_owned()),
                     "[a-z]{1,6}",
                 ],
                 any_json(),
-                0..6,
+                0..7,
             ),
         ) {
             let arguments: JsonObject = entries.into_iter().collect();
@@ -552,9 +567,10 @@ mod tests {
             depth in proptest::option::of(any::<u32>()),
             names in prop::collection::vec(prop_oneof!["[A-Za-z_.#]{1,12}", "[ \t]{0,3}"], 0..3),
             all in any::<bool>(),
+            tests in any::<bool>(),
         ) {
             let arguments = object(json!({
-                "paths": paths, "changed": changed, "base": base, "depth": depth, "names": names, "all": all,
+                "paths": paths, "changed": changed, "base": base, "depth": depth, "names": names, "all": all, "tests": tests,
             }));
 
             let read = Call::read(ToolName::Impact, Some(arguments));
@@ -581,7 +597,7 @@ mod tests {
                     };
                     prop_assert_eq!(named, &paths);
                     prop_assert_eq!(asked, &names);
-                    prop_assert_eq!((call.depth, call.all), (depth, all));
+                    prop_assert_eq!((call.depth, call.all, call.tests), (depth, all, tests));
                 }
                 (true, true, ..) => {
                     let Ok(Call::Impact(call)) = read else {
@@ -591,7 +607,7 @@ mod tests {
                         return Err(TestCaseError::fail(format!("expected changed files, got {:?}", call.subject)));
                     };
                     prop_assert_eq!(asked, &base);
-                    prop_assert_eq!((call.depth, call.all), (depth, all));
+                    prop_assert_eq!((call.depth, call.all, call.tests), (depth, all, tests));
                 }
             }
         }
