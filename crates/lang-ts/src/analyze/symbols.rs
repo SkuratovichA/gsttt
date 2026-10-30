@@ -195,7 +195,7 @@ impl<'a> Recorder<'a> {
         span: Span,
         index: &LineIndex,
     ) -> Plan {
-        let lines = lines(index, span);
+        let lines = line_pair(index, span);
         match declaration {
             Declaration::VariableDeclaration(variables) => {
                 self.variables(variables, span, index);
@@ -250,7 +250,7 @@ impl<'a> Recorder<'a> {
         span: Span,
         index: &LineIndex,
     ) -> Plan {
-        let lines = lines(index, span);
+        let lines = line_pair(index, span);
         match &export.declaration {
             ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
                 let name = function
@@ -286,7 +286,7 @@ impl<'a> Recorder<'a> {
     fn variables(&mut self, variables: &VariableDeclaration<'a>, span: Span, index: &LineIndex) {
         let alone = variables.declarations.len() == 1;
         for declarator in &variables.declarations {
-            let lines = lines(index, if alone { span } else { declarator.span });
+            let lines = line_pair(index, if alone { span } else { declarator.span });
             let declared: Vec<usize> = declarator
                 .id
                 .get_binding_identifiers()
@@ -308,7 +308,7 @@ impl<'a> Recorder<'a> {
         let entry = self.entry(
             name,
             Kind::Other,
-            Some(lines(index, Span::new(start, span.end))),
+            Some(line_pair(index, Span::new(start, span.end))),
         );
         let group = self.group(&[entry]);
         let mut members = Vec::with_capacity(class.body.body.len());
@@ -360,7 +360,7 @@ impl<'a> Recorder<'a> {
         let start = decorators
             .first()
             .map_or(span.start, |decorator| decorator.span.start.min(span.start));
-        let lines = lines(index, Span::new(start, span.end));
+        let lines = line_pair(index, Span::new(start, span.end));
         if let Some(&found) = self.members.get(&(class, private, name)) {
             self.widen(found, lines);
             return Some(found);
@@ -737,7 +737,7 @@ impl<'a> Recorder<'a> {
 }
 
 /// The lines a span starts and ends on.
-fn lines(index: &LineIndex, span: Span) -> (Line, Line) {
+fn line_pair(index: &LineIndex, span: Span) -> (Line, Line) {
     let last = span.end.saturating_sub(1).max(span.start);
     (index.line(span.start), index.line(last))
 }
