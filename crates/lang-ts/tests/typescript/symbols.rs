@@ -494,3 +494,30 @@ fn import_equals_require_declares_its_name_as_const_require_does() -> Result<(),
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+fn a_type_written_in_a_member_chain_is_a_use() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-chain-types")?;
+    let path = "src/chains.ts";
+    assert_eq!(
+        edges(&json, path),
+        [
+            "viaAs -> AsType",
+            "viaSatisfies -> SatisfiesType",
+            "viaAssertion -> AssertionType",
+            "viaInstantiation -> InstantiatedType, make",
+            "viaBoth -> InnerType, OuterType",
+            "viaNonNull -> NonNullType",
+            "viaLongChain -> DeepType",
+            "viaRoot -> RootType, root",
+        ],
+        "a cast, `satisfies`, an assertion and an instantiation keep their type whatever wraps them and however long the chain is, and the chain still goes through them: `root` is a use, a parameter is not"
+    );
+    assert_eq!(
+        on_load(&json, path),
+        Some(vec![]),
+        "a function waits for a call"
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

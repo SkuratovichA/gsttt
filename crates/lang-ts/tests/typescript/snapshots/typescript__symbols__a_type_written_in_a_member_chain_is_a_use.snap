@@ -1,0 +1,213 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "viaAs",
+        "viaAssertion",
+        "viaBoth",
+        "viaInstantiation",
+        "viaLongChain",
+        "viaNonNull",
+        "viaRoot",
+        "viaSatisfies"
+      ],
+      "imports": [],
+      "path": "src/chains.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "AsType",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "SatisfiesType",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "AssertionType",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "InstantiatedType",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "OuterType",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "InnerType",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "NonNullType",
+            "uses": []
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "DeepType",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "RootType",
+            "uses": []
+          },
+          {
+            "end": 11,
+            "line": 11,
+            "name": "root",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 12,
+            "name": "make",
+            "uses": []
+          },
+          {
+            "end": 16,
+            "line": 14,
+            "name": "viaAs",
+            "uses": [
+              "AsType"
+            ]
+          },
+          {
+            "end": 20,
+            "line": 18,
+            "name": "viaSatisfies",
+            "uses": [
+              "SatisfiesType"
+            ]
+          },
+          {
+            "end": 24,
+            "line": 22,
+            "name": "viaAssertion",
+            "uses": [
+              "AssertionType"
+            ]
+          },
+          {
+            "end": 28,
+            "line": 26,
+            "name": "viaInstantiation",
+            "uses": [
+              "InstantiatedType",
+              "make"
+            ]
+          },
+          {
+            "end": 32,
+            "line": 30,
+            "name": "viaBoth",
+            "uses": [
+              "InnerType",
+              "OuterType"
+            ]
+          },
+          {
+            "end": 36,
+            "line": 34,
+            "name": "viaNonNull",
+            "uses": [
+              "NonNullType"
+            ]
+          },
+          {
+            "end": 40,
+            "line": 38,
+            "name": "viaLongChain",
+            "uses": [
+              "DeepType"
+            ]
+          },
+          {
+            "end": 44,
+            "line": 42,
+            "name": "viaRoot",
+            "uses": [
+              "RootType",
+              "root"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

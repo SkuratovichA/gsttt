@@ -543,13 +543,31 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
-    /// Walks what is computed inside a chain of member accesses, `a[b()].c[d]`, and nothing else of it.
+    /// Walks what is computed inside a chain of member accesses, `a[b()].c[d]`, and the types written on the way down, `(a as T).c`, and nothing else of it. The chain itself goes through the wrappers, as `chain_of` reads it.
     fn walk_spine(&mut self, expr: &Expression<'a>) {
-        match expr.get_inner_expression() {
+        match expr {
             Expression::StaticMemberExpression(member) => self.walk_spine(&member.object),
             Expression::ComputedMemberExpression(member) => {
                 self.visit_expression(&member.expression);
                 self.walk_spine(&member.object);
+            }
+            Expression::ParenthesizedExpression(inner) => self.walk_spine(&inner.expression),
+            Expression::TSNonNullExpression(inner) => self.walk_spine(&inner.expression),
+            Expression::TSAsExpression(inner) => {
+                self.visit_ts_type(&inner.type_annotation);
+                self.walk_spine(&inner.expression);
+            }
+            Expression::TSSatisfiesExpression(inner) => {
+                self.visit_ts_type(&inner.type_annotation);
+                self.walk_spine(&inner.expression);
+            }
+            Expression::TSTypeAssertion(inner) => {
+                self.visit_ts_type(&inner.type_annotation);
+                self.walk_spine(&inner.expression);
+            }
+            Expression::TSInstantiationExpression(inner) => {
+                self.visit_ts_type_parameter_instantiation(&inner.type_arguments);
+                self.walk_spine(&inner.expression);
             }
             _ => {}
         }
