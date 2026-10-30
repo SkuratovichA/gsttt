@@ -62,17 +62,11 @@ Code that runs as a file loads SHALL be a caller of what it refers to. A file wh
 - **AND** it does not list `types.ts`
 
 ### Requirement: Depth by name
-Asked about names, `impact` SHALL take one hop unless the request gives a depth. Each further hop SHALL go from the declarations reached to the declarations that refer to them, by the rules of the first. A file SHALL be listed once, at the distance the walk first reached it, and a caller or a load of it that the walk reached farther SHALL say its own distance. When the depth stops the walk with callers left to follow, the answer SHALL say so, and that asking about a caller or with a larger depth goes on.
+Asked about names, `impact` SHALL take one hop unless the request gives a depth. Each further hop SHALL go from the declarations reached to the declarations that refer to them, by the rules of the first. When the depth stops the walk with callers left to follow, the answer SHALL say so, and that asking about a caller or with a larger depth goes on.
 
 #### Scenario: A larger depth follows the callers of callers
 - **WHEN** `b.ts` uses `foo` of `a.ts` in `run`, `c.ts` imports `run` from `b.ts` and uses it in `main`, and impact is asked about `foo` in `a.ts` with depth 2
 - **THEN** impact lists `b.ts` at distance 1 with the caller `run` and `c.ts` at distance 2 with the reason `imports run from b.ts` and the caller `main`
-
-#### Scenario: A caller reached farther than its file says its distance
-- **WHEN** `b.ts` uses `foo` of `a.ts` in `inner`, which starts at line 1, `outer`, which starts at line 5, uses `inner`, the load of `b.ts` uses `inner`, and impact is asked about `foo` in `a.ts` with depth 2
-- **THEN** impact lists `b.ts  distance 1  imports foo from a.ts; in inner (line 1), outer (line 5, distance 2); at load (distance 2)`
-- **AND** the JSON entry of `b.ts` has the callers `inner` at distance 1 and `outer` at distance 2, and its load at distance 2
-- **AND** asked with depth 1, impact lists `b.ts  distance 1  imports foo from a.ts; in inner (line 1)`
 
 #### Scenario: The answer says when the walk stopped at the callers
 - **WHEN** `b.ts` uses `foo` of `a.ts` in `run`, `c.ts` uses `run` in `main`, and impact is asked about `foo` in `a.ts` without a depth
@@ -81,6 +75,15 @@ Asked about names, `impact` SHALL take one hop unless the request gives a depth.
 #### Scenario: A walk that runs out says nothing about stopping
 - **WHEN** `b.ts` uses `foo` of `a.ts` in `run`, nothing refers to `run`, and impact is asked about `foo` in `a.ts`
 - **THEN** the answer lists `b.ts` and has no note about stopping
+
+### Requirement: Distance of a caller
+A file SHALL be listed once, at the distance the walk first reached it, and a caller or a load of it that the walk reached farther SHALL say its own distance, in the text and in the JSON.
+
+#### Scenario: A caller reached farther than its file says its distance
+- **WHEN** `b.ts` uses `foo` of `a.ts` in `inner`, which starts at line 1, `outer`, which starts at line 5, uses `inner`, the load of `b.ts` uses `inner`, and impact is asked about `foo` in `a.ts` with depth 2
+- **THEN** impact lists `b.ts  distance 1  imports foo from a.ts; in inner (line 1), outer (line 5, distance 2); at load (distance 2)`
+- **AND** the JSON entry of `b.ts` has the callers `inner` at distance 1 and `outer` at distance 2, and its load at distance 2
+- **AND** asked with depth 1, impact lists `b.ts  distance 1  imports foo from a.ts; in inner (line 1)`
 
 ### Requirement: Names in files without declarations
 A file whose connector records no declarations SHALL be followed whole: asked about a name in such a file, `impact` SHALL walk from it as it does without names and say so in a note, and an importer without declarations, like an edge into a file whose exports are unknown, SHALL be followed whole from there. Python and Rust record no declarations yet.
