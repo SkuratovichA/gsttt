@@ -16,6 +16,18 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Tenant",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -39,6 +51,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Tenant"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -56,6 +71,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Row",
+            "uses": [
+              "Tenant"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -67,6 +96,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Booking"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -83,6 +115,20 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Row",
+            "uses": [
+              "Booking"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

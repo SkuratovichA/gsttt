@@ -42,6 +42,7 @@ impl Field {
 }
 
 const PATHS: &str = "a list of paths, for example [\"src/a.ts\"]";
+const NAMES: &str = "a list of names, for example [\"getHash\", \"Runner.start\"]";
 const PATH: &str = "a path from the repository root, for example \"src/a.ts\"";
 const FLAG: &str = "true or false";
 
@@ -63,8 +64,11 @@ pub(crate) struct ImpactArguments {
     pub(crate) changed: bool,
     /// With `changed`: compare against the best common ancestor of HEAD and this git revision, such as a branch name, instead of against HEAD.
     pub(crate) base: Option<String>,
-    /// Stop the walk after this many hops from a changed file. Leave it out to follow every hop.
+    /// Stop the walk after this many hops from a changed file. Leave it out to follow every hop, or, with `names`, to take one: the direct callers.
     pub(crate) depth: Option<u32>,
+    /// With `paths`: ask about these names, each a function, class, method or variable that the files declare, instead of about the files as a whole. A method is written `Class.method`. The answer lists the direct callers of the names, the declarations that refer to them, each with the line it starts on, so ask again about a caller to go further. A name that a file does not declare is said so in the answer and reaches nothing. It cannot go with `changed`.
+    #[serde(default)]
+    pub(crate) names: Vec<String>,
     /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
@@ -76,6 +80,7 @@ impl Arguments for ImpactArguments {
         Field::optional("changed", FLAG),
         Field::optional("base", "a git revision, such as a branch name"),
         Field::optional("depth", "a whole number, for example 2"),
+        Field::optional("names", NAMES),
         Field::optional("all", FLAG),
     ];
 }
@@ -162,8 +167,11 @@ impl Arguments for NoArguments {
 /// What `impact` asks about: the files that were named, or the files that changed.
 #[derive(Debug)]
 pub(crate) enum Subject {
-    /// These paths, as the model wrote them.
-    Paths(Vec<String>),
+    /// These paths, as the model wrote them, and the names they declare that the question is about, none for the files as a whole. Only named files can come with names, because which declarations a diff changes is not derived.
+    Paths {
+        paths: Vec<String>,
+        names: Vec<String>,
+    },
     /// The files that differ from HEAD, or from the best common ancestor of HEAD and `base`.
     Changed { base: Option<String> },
 }
@@ -185,13 +193,19 @@ impl TryFrom<ImpactArguments> for ImpactCall {
             changed,
             base,
             depth,
+            names,
             all,
         } = arguments;
         let subject = match (paths.is_empty(), changed) {
             (false, true) => return Err(ToolError::PathsAndChanged),
+            (true, true) if !names.is_empty() => return Err(ToolError::NamesWithChanged),
+            (true, _) if !names.is_empty() => return Err(ToolError::NamesWithoutPaths),
             (true, false) => return Err(ToolError::NothingAsked),
             (false, false) if base.is_some() => return Err(ToolError::BaseWithoutChanged),
-            (false, false) => Subject::Paths(paths),
+            (false, false) if names.iter().any(|name| name.trim().is_empty()) => {
+                return Err(ToolError::BlankName);
+            }
+            (false, false) => Subject::Paths { paths, names },
             (true, true) => Subject::Changed { base },
         };
         Ok(Self {
@@ -395,6 +409,38 @@ mod tests {
         };
     }
 
+    #[test]
+    fn names_go_with_the_paths_they_are_declared_in() {
+        let read = |arguments: Value| Call::read(ToolName::Impact, Some(object(arguments)));
+
+        let Ok(Call::Impact(ImpactCall {
+            subject: Subject::Paths { paths, names },
+            ..
+        })) = read(json!({ "paths": ["a.ts"], "names": ["foo", "Runner.start"] }))
+        else {
+            panic!("expected named paths with names");
+        };
+        assert_eq!(
+            (paths, names),
+            (
+                vec!["a.ts".to_owned()],
+                vec!["foo".to_owned(), "Runner.start".to_owned()]
+            )
+        );
+        assert!(matches!(
+            read(json!({ "changed": true, "names": ["foo"] })),
+            Err(ToolError::NamesWithChanged)
+        ));
+        assert!(matches!(
+            read(json!({ "names": ["foo"] })),
+            Err(ToolError::NamesWithoutPaths)
+        ));
+        assert!(matches!(
+            read(json!({ "paths": ["a.ts"], "changed": true, "names": ["foo"] })),
+            Err(ToolError::PathsAndChanged)
+        ));
+    }
+
     /// Any JSON value, for the arguments of a client that sends what it likes.
     fn any_json() -> impl Strategy<Value = Value> {
         let leaf = prop_oneof![
@@ -469,6 +515,7 @@ mod tests {
             not_a_flag().prop_map(|value| ("changed", value)),
             not_text().prop_map(|value| ("base", value)),
             not_a_count().prop_map(|value| ("depth", value)),
+            not_paths().prop_map(|value| ("names", value)),
             not_a_flag().prop_map(|value| ("all", value)),
         ]
     }
@@ -482,6 +529,7 @@ mod tests {
                     Just("changed".to_owned()),
                     Just("base".to_owned()),
                     Just("depth".to_owned()),
+                    Just("names".to_owned()),
                     Just("all".to_owned()),
                     "[a-z]{1,6}",
                 ],
@@ -497,36 +545,45 @@ mod tests {
         }
 
         #[test]
-        fn well_typed_arguments_conflict_exactly_when_the_three_rules_say(
+        fn well_typed_arguments_conflict_exactly_when_the_rules_say(
             paths in prop::collection::vec("[a-z/.]{1,12}", 0..4),
             changed in any::<bool>(),
             base in proptest::option::of("[a-z]{1,8}"),
             depth in proptest::option::of(any::<u32>()),
+            names in prop::collection::vec(prop_oneof!["[A-Za-z_.#]{1,12}", "[ \t]{0,3}"], 0..3),
             all in any::<bool>(),
         ) {
             let arguments = object(json!({
-                "paths": paths, "changed": changed, "base": base, "depth": depth, "all": all,
+                "paths": paths, "changed": changed, "base": base, "depth": depth, "names": names, "all": all,
             }));
 
             let read = Call::read(ToolName::Impact, Some(arguments));
+            let blank = names.iter().any(|name| name.chars().all(|letter| matches!(letter, ' ' | '\t')));
 
-            match (paths.is_empty(), changed, base.is_some()) {
-                (false, true, _) => prop_assert!(matches!(read, Err(ToolError::PathsAndChanged)), "{read:?}"),
-                (true, false, _) => prop_assert!(matches!(read, Err(ToolError::NothingAsked)), "{read:?}"),
-                (false, false, true) => {
+            // A blank name is the last rule, so each of the others wins over it when it applies.
+            match (paths.is_empty(), changed, base.is_some(), names.is_empty(), blank) {
+                (false, true, ..) => prop_assert!(matches!(read, Err(ToolError::PathsAndChanged)), "{read:?}"),
+                (true, true, _, false, _) => prop_assert!(matches!(read, Err(ToolError::NamesWithChanged)), "{read:?}"),
+                (true, false, _, false, _) => prop_assert!(matches!(read, Err(ToolError::NamesWithoutPaths)), "{read:?}"),
+                (true, false, ..) => prop_assert!(matches!(read, Err(ToolError::NothingAsked)), "{read:?}"),
+                (false, false, true, ..) => {
                     prop_assert!(matches!(read, Err(ToolError::BaseWithoutChanged)), "{read:?}");
                 }
-                (false, false, false) => {
+                (false, false, false, _, true) => {
+                    prop_assert!(matches!(read, Err(ToolError::BlankName)), "{read:?}");
+                }
+                (false, false, false, _, false) => {
                     let Ok(Call::Impact(call)) = read else {
                         return Err(TestCaseError::fail(format!("expected named paths, got {read:?}")));
                     };
-                    let Subject::Paths(named) = &call.subject else {
+                    let Subject::Paths { paths: named, names: asked } = &call.subject else {
                         return Err(TestCaseError::fail(format!("expected named paths, got {:?}", call.subject)));
                     };
                     prop_assert_eq!(named, &paths);
+                    prop_assert_eq!(asked, &names);
                     prop_assert_eq!((call.depth, call.all), (depth, all));
                 }
-                (true, true, _) => {
+                (true, true, ..) => {
                     let Ok(Call::Impact(call)) = read else {
                         return Err(TestCaseError::fail(format!("expected changed files, got {read:?}")));
                     };

@@ -15,7 +15,7 @@ mod walk;
 
 pub use contracts::{ContractLookup, ContractLookupError, Found, Match, Site, contract};
 pub use http::HttpMatcher;
-pub use impact::{Affected, Deleted, Impact, ImpactRequest, Reason, impact};
+pub use impact::{Affected, Caller, Deleted, Impact, ImpactRequest, Load, Note, Reason, impact};
 pub use lookup::Miss;
 pub use neighbours::{Dependencies, Dependents, External, Neighbour, dependencies, dependents};
 pub use render::{Answer, ConnectorShare, Entries, Footer, LIST_CAP, Searched};

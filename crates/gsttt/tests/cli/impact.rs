@@ -1,4 +1,4 @@
-//! `impact` takes paths or `--changed`, passes what is gone as deleted, and follows dependents as far as `--depth` lets it.
+//! `impact` takes paths or `--changed`, passes what is gone as deleted, follows dependents as far as `--depth` lets it, and with `--name` lists the callers of a name.
 
 use std::fs;
 
@@ -114,6 +114,227 @@ fn a_named_path_on_disk_is_traced_and_depth_limits_the_walk() {
         json(&sandbox.run_in(&repo, &["--json", "impact", "--depth", "1", "lib/util.ts"]));
     assert_eq!(paths(&one_hop["affected"]), ["app/a.ts"]);
     assert_eq!(one_hop["depth"], 1);
+}
+
+#[test]
+fn names_go_to_the_query_for_every_path_and_a_walk_by_name_takes_one_hop_unless_a_depth_is_given() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+
+    let by_name = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "lib/util.ts",
+            "app/b.ts",
+            "--name",
+            "util",
+            "--name",
+            "other",
+        ],
+    ));
+    assert_eq!(by_name["changed"], value!(["lib/util.ts", "app/b.ts"]));
+    assert_eq!(by_name["names"], value!(["util", "other"]));
+    assert_eq!(by_name["depth"], 1);
+
+    let deeper = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "lib/util.ts",
+            "--name",
+            "util",
+            "--depth",
+            "3",
+        ],
+    ));
+    assert_eq!(deeper["depth"], 3);
+
+    let whole = json(&sandbox.run_in(&repo, &["--json", "impact", "lib/util.ts"]));
+    assert!(whole.get("names").is_none(), "{whole}");
+    assert_eq!(whole["depth"], Value::Null);
+}
+
+#[scenario("cli", "A blank --name exits 2")]
+#[test]
+fn a_blank_name_exits_2() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+
+    for args in [
+        &["impact", "lib/util.ts", "--name", ""][..],
+        &["impact", "lib/util.ts", "--name", "  "][..],
+        &[
+            "--json",
+            "impact",
+            "lib/util.ts",
+            "--name",
+            "util",
+            "--name",
+            " ",
+        ][..],
+    ] {
+        let run = sandbox.run_in(&repo, args);
+        assert_eq!(run.code, Some(2), "{args:?}: {run:?}");
+        assert_eq!(run.stdout, "", "{args:?}");
+        assert!(
+            run.stderr.contains("`--name` needs a name"),
+            "{args:?}: {run:?}"
+        );
+        assert!(run.stderr.contains("--name getHash"), "{args:?}: {run:?}");
+    }
+    assert!(is_empty(sandbox.cache.path()), "nothing was indexed");
+}
+
+#[test]
+fn a_blank_name_does_not_hide_the_argument_errors_that_came_first() {
+    let sandbox = Sandbox::new();
+
+    for (args, said) in [
+        (
+            &["impact", "--changed", "--name", ""][..],
+            "`--name` needs paths",
+        ),
+        (
+            &["impact", "--base", "main", "lib/util.ts", "--name", ""][..],
+            "`--base` needs `--changed`",
+        ),
+    ] {
+        let run = sandbox.run(args);
+        assert_eq!(run.code, Some(2), "{args:?}: {run:?}");
+        assert!(run.stderr.contains(said), "{args:?}: {run:?}");
+    }
+}
+
+#[scenario("cli", "--name asks about a name")]
+#[test]
+fn name_asks_about_a_name() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/a.ts",
+        "export function foo() {\n  return 1;\n}\nexport function bar() {\n  return 2;\n}\n",
+    );
+    // b.ts calls foo in run; c.ts imports the same file and calls only bar.
+    write(
+        &repo,
+        "src/b.ts",
+        "import { foo, bar } from './a';\nexport function run() {\n  return foo();\n}\nexport function stop() {\n  return bar();\n}\n",
+    );
+    write(
+        &repo,
+        "src/c.ts",
+        "import { bar } from './a';\nexport const c = bar();\n",
+    );
+
+    let answer = json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.ts", "--name", "foo"]));
+    assert_eq!(answer["names"], value!(["foo"]));
+    assert_eq!(paths(&answer["affected"]), ["src/b.ts"]);
+    assert_eq!(
+        answer["affected"][0]["callers"],
+        value!([{ "name": "run", "line": 2, "distance": 1 }])
+    );
+
+    let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--name", "foo"]);
+    assert_eq!(text.code, Some(0), "{text:?}");
+    assert!(
+        text.stdout
+            .starts_with("impact of foo in src/a.ts, within 1 hop\n"),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout
+            .contains("\nsrc/b.ts  distance 1  imports foo from src/a.ts; in run (line 2)\n"),
+        "{text:?}"
+    );
+
+    // Asked about the whole file, c.ts is affected too, so it is the name that leaves it out.
+    let whole = json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.ts"]));
+    assert_eq!(paths(&whole["affected"]), ["src/b.ts", "src/c.ts"]);
+}
+
+#[test]
+fn name_asks_about_a_member_of_a_class() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    // stop calls start through this; main gets an instance of the class, so what it calls is found by the class it names.
+    write(
+        &repo,
+        "src/runner.ts",
+        "export class Runner {\n  start() {}\n  stop() {\n    this.start();\n  }\n}\n",
+    );
+    write(
+        &repo,
+        "src/app.ts",
+        "import { Runner } from './runner';\nexport function main() {\n  new Runner().start();\n}\n",
+    );
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/runner.ts",
+            "--name",
+            "Runner.start",
+        ],
+    ));
+    assert_eq!(answer["names"], value!(["Runner.start"]));
+    assert_eq!(paths(&answer["affected"]), ["src/app.ts", "src/runner.ts"]);
+    assert_eq!(
+        answer["affected"][0]["reason"],
+        value!({ "via": "imports", "file": "src/runner.ts", "names": ["Runner"] })
+    );
+    assert_eq!(
+        answer["affected"][0]["callers"],
+        value!([{ "name": "main", "line": 2, "distance": 1 }])
+    );
+    assert_eq!(
+        answer["affected"][1]["reason"],
+        value!({ "via": "declares", "names": ["Runner.start"] })
+    );
+    assert_eq!(
+        answer["affected"][1]["callers"],
+        value!([{ "name": "Runner.stop", "line": 3, "distance": 1 }])
+    );
+    assert_eq!(
+        answer["notes"],
+        value!([
+            "callers of Runner.start through a value are found through the declarations that refer to Runner"
+        ])
+    );
+
+    let text = sandbox.run_in(
+        &repo,
+        &["impact", "src/runner.ts", "--name", "Runner.start"],
+    );
+    assert_eq!(text.code, Some(0), "{text:?}");
+    assert!(
+        text.stdout
+            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop\n"),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout.contains(
+            "\nsrc/app.ts  distance 1  imports Runner from src/runner.ts; in main (line 2)\n"
+        ),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout.contains(
+            "\nsrc/runner.ts  distance 1  declares Runner.start; in Runner.stop (line 3)\n"
+        ),
+        "{text:?}"
+    );
+    assert!(
+        text.stdout.contains(
+            "\nnote: callers of Runner.start through a value are found through the declarations that refer to Runner\n"
+        ),
+        "{text:?}"
+    );
 }
 
 #[test]

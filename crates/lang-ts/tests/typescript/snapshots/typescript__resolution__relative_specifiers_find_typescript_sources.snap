@@ -24,6 +24,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "util"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -36,6 +39,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "again"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -48,6 +54,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "Panel"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 3,
@@ -65,6 +74,22 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 5,
+            "name": "all",
+            "uses": [
+              "Panel",
+              "again",
+              "util"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -79,6 +104,18 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Panel",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []
@@ -95,6 +132,24 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "util",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "again",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

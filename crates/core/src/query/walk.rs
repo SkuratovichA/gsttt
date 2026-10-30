@@ -1,6 +1,7 @@
 //! The fixpoint behind `impact`: every file a change reaches, how many hops away, and the first way it got there.
 
 mod exports;
+mod names;
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
@@ -12,6 +13,8 @@ use crate::graph::{Edge, Graph, Uses};
 use crate::ids::{ContractId, FileId, IdSet, NameId};
 
 use super::cross::{Crossed, Crossing, Direction};
+
+pub(super) use names::{Hit, Note, reach_names};
 
 /// How the walk got to a file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +28,8 @@ pub(super) enum Cause {
     },
     /// The file has a site with `role` in `contract`, which joins a contract of the file the walk came from.
     Contract { role: Role, contract: ContractId },
+    /// A walk by name only: the file declares the names the walk came from, and its own declarations refer to them. `names` are the declarations asked about, in byte order.
+    Declares { names: Vec<String> },
 }
 
 /// A file the walk reached.
@@ -274,7 +279,7 @@ impl Walk<'_> {
 
     /// Whether an importer of `file` that takes `name`, to use it or to pass it on, meets the names `fresh` that `file` gained: it is one of them, or `file` does not export it, because the import may be the very thing the change breaks or mends. A file whose exports are unknown could lose any name, so none is ruled out. X(file) is only worked out when `name` is not among `fresh`.
     fn reaches(&mut self, file: FileId, fresh: &[NameId], name: NameId) -> bool {
-        holds(fresh, name) || self.exported_by(file).is_none_or(|all| !holds(all, name))
+        holds(fresh, &name) || self.exported_by(file).is_none_or(|all| !holds(all, &name))
     }
 
     /// X(file), worked out once.
@@ -305,7 +310,7 @@ impl Walk<'_> {
     }
 }
 
-/// Whether `name` is among `sorted`.
-fn holds(sorted: &[NameId], name: NameId) -> bool {
-    sorted.binary_search(&name).is_ok()
+/// Whether `item` is among `sorted`.
+fn holds<T: Ord>(sorted: &[T], item: &T) -> bool {
+    sorted.binary_search(item).is_ok()
 }

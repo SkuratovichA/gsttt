@@ -44,6 +44,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -56,6 +59,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "PrismaService"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 2,
@@ -73,6 +79,63 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 22,
+            "line": 4,
+            "name": "InvoiceRepo",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "InvoiceRepo.client",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 7,
+            "name": "InvoiceRepo.constructor",
+            "uses": [
+              "InvoiceRepo.client",
+              "PrismaService"
+            ]
+          },
+          {
+            "end": 13,
+            "line": 11,
+            "name": "InvoiceRepo.all",
+            "uses": []
+          },
+          {
+            "end": 17,
+            "line": 15,
+            "name": "InvoiceRepo.one",
+            "uses": [
+              "InvoiceRepo.client"
+            ]
+          },
+          {
+            "end": 21,
+            "line": 19,
+            "name": "InvoiceRepo.none",
+            "uses": []
+          },
+          {
+            "end": 26,
+            "line": 24,
+            "name": "count",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -84,6 +147,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -100,6 +166,20 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "PrismaService",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

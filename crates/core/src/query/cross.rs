@@ -123,9 +123,23 @@ impl<'a> Crossing<'a> {
         file: FileId,
         contract: ContractId,
     ) -> Vec<(ContractId, &'a ContractSite)> {
+        self.cross_as(
+            crossed,
+            &roles_of(self.graph.sites(contract), file),
+            contract,
+        )
+    }
+
+    /// [`Crossing::cross`] for a walk that leaves a file by some of its sites in `contract` and not all: `roles` are those of the sites it leaves by, in role order. A walk by name leaves a file by the sites of one declaration.
+    pub(super) fn cross_as(
+        &self,
+        crossed: &mut Crossed,
+        roles: &[Role],
+        contract: ContractId,
+    ) -> Vec<(ContractId, &'a ContractSite)> {
         let graph = self.graph;
         let direction = crossed.direction;
-        let Some(leaving) = direction.leaving(&roles_of(graph.sites(contract), file)) else {
+        let Some(leaving) = direction.leaving(roles) else {
             return Vec::new();
         };
         let first = if leaving == direction.widest() {

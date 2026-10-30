@@ -26,6 +26,11 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 1,
       "unresolved": []
     },
@@ -38,6 +43,11 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": []
       },
       "tags": 1,
       "unresolved": []
@@ -52,6 +62,11 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -64,6 +79,11 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": []
       },
       "tags": 1,
       "unresolved": []

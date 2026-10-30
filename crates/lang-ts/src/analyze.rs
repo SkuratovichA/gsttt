@@ -3,6 +3,7 @@
 mod makers;
 mod maps;
 mod roots;
+mod symbols;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -10,26 +11,32 @@ use std::num::NonZeroU32;
 
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
-    ContractFact, Embedded, Import, ImportFlags, ImportKind, Line, UnresolvedReason, UnresolvedSite,
+    ContractFact, Embedded, Import, ImportFlags, ImportKind, Line, Symbols, UnresolvedReason,
+    UnresolvedSite,
 };
 use gsttt_core::rules::{Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
-    AccessorProperty, Argument, AssignmentExpression, AssignmentTarget, BindingIdentifier,
-    BindingPattern, CallExpression, Class, Declaration, Decorator, ExportAllDeclaration,
-    ExportDeclaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind,
-    ExportFromDeclaration, ExportNamedDeclaration, Expression, ImportDeclaration,
-    ImportDeclarationSpecifier, ImportExpression, ImportOrExportKind, MemberExpression,
-    MethodDefinition, ModuleExportName, ObjectProperty, ObjectPropertyKind, Program,
-    PropertyDefinition, TSExportAssignment, TSImportEqualsDeclaration, TSImportType,
-    TSImportTypeQualifier, TSModuleBlock, TSModuleReference, TaggedTemplateExpression,
+    AccessorProperty, Argument, ArrowFunctionExpression, AssignmentExpression, AssignmentTarget,
+    AssignmentTargetPropertyIdentifier, BindingIdentifier, BindingPattern, CallExpression, Class,
+    ClassBody, Declaration, Decorator, ExportAllDeclaration, ExportDeclaration,
+    ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportFromDeclaration,
+    ExportNamedDeclaration, Expression, FormalParameter, Function, IdentifierReference,
+    ImportDeclaration, ImportDeclarationSpecifier, ImportExpression, ImportOrExportKind,
+    MemberExpression, MethodDefinition, ModuleExportName, NewExpression, ObjectProperty,
+    ObjectPropertyKind, PrivateInExpression, Program, PropertyDefinition, SimpleAssignmentTarget,
+    TSExportAssignment, TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier,
+    TSModuleBlock, TSModuleReference, TaggedTemplateExpression, UnaryExpression,
     VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
+use oxc_syntax::operator::UnaryOperator;
+use oxc_syntax::scope::ScopeFlags;
 
 use self::makers::Maker;
 use self::roots::Roots;
+use self::symbols::Recorder;
 use crate::extra::{Binding, Export, ExportTarget, Mount, MountTarget, Route, TsExtra};
 use crate::shape::{
     Shape, chain_of, dotted, dotted_name, field_name, literal_text, member_chain, property_name,
@@ -45,6 +52,8 @@ pub(crate) struct Analysis {
     pub(crate) unresolved: Vec<UnresolvedSite>,
     /// The names the file exports itself, sorted, once each, and without what an `export *` brings. `None` when its syntax does not list them: it assigns `module.exports` or `exports`, or has `export =`.
     pub(crate) exports: Option<Vec<String>>,
+    /// The declarations of the file, what each uses and what the file runs as it loads.
+    pub(crate) symbols: Option<Symbols>,
     pub(crate) extra: TsExtra,
 }
 
@@ -61,6 +70,7 @@ pub(crate) fn analyze(
         packs,
         makers: makers::collect(program, packs),
         roots: roots::collect(program, packs),
+        symbols: Recorder::collect(program, index),
         done: BTreeSet::new(),
         names: BTreeMap::new(),
         classes: Vec::new(),
@@ -80,7 +90,7 @@ struct ClassFrame {
     heritage: Option<String>,
 }
 
-struct Analyzer<'p> {
+struct Analyzer<'p, 'a> {
     text: &'p str,
     index: &'p LineIndex,
     packs: &'p [Pack],
@@ -88,6 +98,8 @@ struct Analyzer<'p> {
     makers: BTreeMap<String, Maker>,
     /// The aliases of `this` and the names declared with a root type, found before the walk because a class may use `self` above the method that binds it.
     roots: Roots<'p>,
+    /// The table of the top-level bindings, found before the walk, and what the walk finds against it: the declarations, what each uses and what the file runs as it loads.
+    symbols: Recorder<'a>,
     /// Starts of the calls whose meaning another visit already took, so they are read once.
     done: BTreeSet<u32>,
     /// The name a call is stored under, `appRouter` for `const appRouter = router({…})`, by the start of the call.
@@ -102,7 +114,7 @@ struct Analyzer<'p> {
     out: Analysis,
 }
 
-impl Analyzer<'_> {
+impl<'a> Analyzer<'_, 'a> {
     fn line(&self, offset: u32) -> Line {
         self.index.line(offset)
     }
@@ -531,13 +543,31 @@ impl Analyzer<'_> {
         }
     }
 
-    /// Walks what is computed inside a chain of member accesses, `a[b()].c[d]`, and nothing else of it.
-    fn walk_spine(&mut self, expr: &Expression<'_>) {
-        match expr.get_inner_expression() {
+    /// Walks what is computed inside a chain of member accesses, `a[b()].c[d]`, and the types written on the way down, `(a as T).c`, and nothing else of it. The chain itself goes through the wrappers, as `chain_of` reads it.
+    fn walk_spine(&mut self, expr: &Expression<'a>) {
+        match expr {
             Expression::StaticMemberExpression(member) => self.walk_spine(&member.object),
             Expression::ComputedMemberExpression(member) => {
                 self.visit_expression(&member.expression);
                 self.walk_spine(&member.object);
+            }
+            Expression::ParenthesizedExpression(inner) => self.walk_spine(&inner.expression),
+            Expression::TSNonNullExpression(inner) => self.walk_spine(&inner.expression),
+            Expression::TSAsExpression(inner) => {
+                self.visit_ts_type(&inner.type_annotation);
+                self.walk_spine(&inner.expression);
+            }
+            Expression::TSSatisfiesExpression(inner) => {
+                self.visit_ts_type(&inner.type_annotation);
+                self.walk_spine(&inner.expression);
+            }
+            Expression::TSTypeAssertion(inner) => {
+                self.visit_ts_type(&inner.type_annotation);
+                self.walk_spine(&inner.expression);
+            }
+            Expression::TSInstantiationExpression(inner) => {
+                self.visit_ts_type_parameter_instantiation(&inner.type_arguments);
+                self.walk_spine(&inner.expression);
             }
             _ => {}
         }
@@ -546,6 +576,7 @@ impl Analyzer<'_> {
     fn finish(self) -> Analysis {
         let Self {
             makers,
+            symbols,
             mut out,
             exports_unknown,
             ..
@@ -568,6 +599,7 @@ impl Analyzer<'_> {
         out.unresolved
             .dedup_by(|a, b| a.line == b.line && a.detail == b.detail);
         out.exports = (!exports_unknown).then(|| exported_names(&out.extra.exports));
+        out.symbols = Some(symbols.finish(&out.extra.exports));
         out
     }
 }
@@ -594,7 +626,7 @@ fn order(fact: &ContractFact) -> (Line, &str, &str, &str) {
     )
 }
 
-impl<'a> Visit<'a> for Analyzer<'_> {
+impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     fn visit_import_declaration(&mut self, it: &ImportDeclaration<'a>) {
         let Some(spec) = it.source.value.as_str() else {
             return;
@@ -627,6 +659,7 @@ impl<'a> Visit<'a> for Analyzer<'_> {
                 self.import_rules(spec, &name, line);
             }
             import.names.push(name);
+            import.exported.push(local.to_owned());
         }
         if matches!(it.import_kind, ImportOrExportKind::Type)
             || (all_type && !import.names.is_empty())
@@ -715,6 +748,9 @@ impl<'a> Visit<'a> for Analyzer<'_> {
                 .id
                 .as_ref()
                 .map_or_else(|| "default".to_owned(), |id| id.name.as_str().to_owned()),
+            ExportDefaultDeclarationKind::TSInterfaceDeclaration(interface) => {
+                interface.id.name.as_str().to_owned()
+            }
             other => {
                 if let Some(Expression::CallExpression(call)) =
                     other.as_expression().map(Expression::get_inner_expression)
@@ -741,6 +777,13 @@ impl<'a> Visit<'a> for Analyzer<'_> {
     }
 
     fn visit_ts_import_equals_declaration(&mut self, it: &TSImportEqualsDeclaration<'a>) {
+        // `import A = B.C` names something else of the file, which `A` then uses.
+        if !matches!(
+            it.module_reference,
+            TSModuleReference::ExternalModuleReference(_)
+        ) {
+            walk::walk_ts_import_equals_declaration(self, it);
+        }
         if let TSModuleReference::ExternalModuleReference(reference) = &it.module_reference
             && let Some(spec) = reference.expression.value.as_str()
         {
@@ -801,7 +844,9 @@ impl<'a> Visit<'a> for Analyzer<'_> {
                 self.resolver_map(object);
             }
         }
+        let outer = self.symbols.declarator(it.span.start);
         walk::walk_variable_declarator(self, it);
+        self.symbols.restore(outer);
     }
 
     fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
@@ -830,29 +875,40 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         let argument = it.arguments.first().and_then(Argument::as_expression);
         if is_require(it) {
             self.load(it.span, argument, ImportKind::Require, None);
-        } else if let Some(callee) = chain_of(&it.callee).and_then(|names| dotted(&names)) {
-            // A module named at run time is neither an import nor a blind spot, so only a literal one goes to `load`.
-            if is_module_call(&callee) && argument.and_then(literal_text).is_some() {
-                self.load(it.span, argument, ImportKind::Dynamic, None);
+        } else if let Some(names) = chain_of(&it.callee) {
+            self.symbols.call_write(&names);
+            if let Some(callee) = dotted(&names) {
+                // A module named at run time is neither an import nor a blind spot, so only a literal one goes to `load`.
+                if is_module_call(&callee) && argument.and_then(literal_text).is_some() {
+                    self.load(it.span, argument, ImportKind::Dynamic, None);
+                }
+                self.call(it, &callee);
             }
-            self.call(it, &callee);
         }
+        let outer = self.symbols.call(&it.callee);
         walk::walk_call_expression(self, it);
+        self.symbols.restore(outer);
     }
 
     fn visit_tagged_template_expression(&mut self, it: &TaggedTemplateExpression<'a>) {
         if let Some(tag) = chain_of(&it.tag).and_then(|names| dotted(&names)) {
             self.tagged(it, &tag);
         }
+        let outer = self.symbols.run();
         walk::walk_tagged_template_expression(self, it);
+        self.symbols.restore(outer);
     }
 
     fn visit_member_expression(&mut self, it: &MemberExpression<'a>) {
         let Some(names) = member_chain(it) else {
+            if let MemberExpression::PrivateFieldExpression(member) = it {
+                self.symbols.private(member.field.name.as_str());
+            }
             walk::walk_member_expression(self, it);
             return;
         };
         self.chain_rules(&names, it.span().start);
+        self.symbols.chain(&names);
         // The links below this one are parts of the same chain: only what is computed inside it is still to walk.
         match it {
             MemberExpression::StaticMemberExpression(member) => self.walk_spine(&member.object),
@@ -876,7 +932,9 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         let name = it.id.as_ref().map(|id| id.name.as_str().to_owned());
         self.classes.push(frame);
         self.decorators(&it.decorators, name.as_deref());
+        let outer = self.symbols.class_at(it.span.start);
         walk::walk_class(self, it);
+        self.symbols.restore(outer);
         self.classes.pop();
     }
 
@@ -896,7 +954,21 @@ impl<'a> Visit<'a> for Analyzer<'_> {
         if let (Some(name), Some(value)) = (member, &it.value) {
             self.assignment(name, value, it.span.start, true);
         }
-        walk::walk_property_definition(self, it);
+        if it.r#static {
+            walk::walk_property_definition(self, it);
+            return;
+        }
+        // The value of an instance field runs when the class is constructed, the rest when it is defined.
+        self.visit_decorators(&it.decorators);
+        self.visit_property_key(&it.key);
+        if let Some(type_annotation) = &it.type_annotation {
+            self.visit_ts_type_annotation(type_annotation);
+        }
+        if let Some(value) = &it.value {
+            let outer = self.symbols.later();
+            self.visit_expression(value);
+            self.symbols.restore(outer);
+        }
     }
 
     fn visit_accessor_property(&mut self, it: &AccessorProperty<'a>) {
@@ -906,7 +978,105 @@ impl<'a> Visit<'a> for Analyzer<'_> {
             property_name(&it.key)
         };
         self.decorators(&it.decorators, member.as_deref());
-        walk::walk_accessor_property(self, it);
+        if it.r#static {
+            walk::walk_accessor_property(self, it);
+            return;
+        }
+        self.visit_decorators(&it.decorators);
+        self.visit_property_key(&it.key);
+        if let Some(type_annotation) = &it.type_annotation {
+            self.visit_ts_type_annotation(type_annotation);
+        }
+        if let Some(value) = &it.value {
+            let outer = self.symbols.later();
+            self.visit_expression(value);
+            self.symbols.restore(outer);
+        }
+    }
+
+    fn visit_program(&mut self, it: &Program<'a>) {
+        for (position, statement) in it.body.iter().enumerate() {
+            self.symbols.statement(position);
+            self.visit_statement(statement);
+        }
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.symbols.reference(it.name.as_str());
+    }
+
+    fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
+        let outer = self.symbols.function();
+        walk::walk_function(self, it, flags);
+        self.symbols.restore(outer);
+    }
+
+    fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
+        let outer = self.symbols.parameter();
+        self.visit_decorators(&it.decorators);
+        self.symbols.restore(outer);
+        self.visit_binding_pattern(&it.pattern);
+        if let Some(type_annotation) = &it.type_annotation {
+            self.visit_ts_type_annotation(type_annotation);
+        }
+        if let Some(initializer) = &it.initializer {
+            self.visit_expression(initializer);
+        }
+    }
+
+    fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
+        let outer = self.symbols.function();
+        walk::walk_arrow_function_expression(self, it);
+        self.symbols.restore(outer);
+    }
+
+    fn visit_decorator(&mut self, it: &Decorator<'a>) {
+        let outer = self.symbols.run();
+        walk::walk_decorator(self, it);
+        self.symbols.restore(outer);
+    }
+
+    fn visit_new_expression(&mut self, it: &NewExpression<'a>) {
+        let outer = self.symbols.run();
+        walk::walk_new_expression(self, it);
+        self.symbols.restore(outer);
+    }
+
+    fn visit_class_body(&mut self, it: &ClassBody<'a>) {
+        for (position, element) in it.body.iter().enumerate() {
+            let outer = self.symbols.element(position);
+            self.visit_class_element(element);
+            self.symbols.restore(outer);
+        }
+    }
+
+    fn visit_simple_assignment_target(&mut self, it: &SimpleAssignmentTarget<'a>) {
+        if let Some(base) = symbols::target_base(it) {
+            self.symbols.write(base);
+        }
+        walk::walk_simple_assignment_target(self, it);
+    }
+
+    fn visit_assignment_target_property_identifier(
+        &mut self,
+        it: &AssignmentTargetPropertyIdentifier<'a>,
+    ) {
+        self.symbols.write(it.binding.name.as_str());
+        walk::walk_assignment_target_property_identifier(self, it);
+    }
+
+    fn visit_unary_expression(&mut self, it: &UnaryExpression<'a>) {
+        if it.operator == UnaryOperator::Delete
+            && let Some(base) = symbols::base_name(&it.argument)
+        {
+            self.symbols.write(base);
+        }
+        walk::walk_unary_expression(self, it);
+    }
+
+    fn visit_private_in_expression(&mut self, it: &PrivateInExpression<'a>) {
+        self.symbols.private(it.left.name.as_str());
+        walk::walk_private_in_expression(self, it);
     }
 }
 

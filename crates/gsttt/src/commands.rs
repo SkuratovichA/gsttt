@@ -4,9 +4,7 @@ use camino::Utf8PathBuf;
 use clap::CommandFactory;
 use gsttt_core::{Loaded, Target};
 
-use crate::cli::{
-    Cli, Command, ConfigCommand, ContractArgs, Flags, HookCommand, ImpactArgs, SchemaCommand,
-};
+use crate::cli::{Cli, Command, ConfigCommand, Flags, HookCommand, ImpactArgs, SchemaCommand};
 use crate::error::CliError;
 use crate::repository::Repository;
 use crate::streams::{Io, Outcome};
@@ -128,11 +126,20 @@ fn check_arguments(flags: &Flags, command: &Command) -> Result<(), CliError> {
             base: Some(_),
             ..
         }) => Err(CliError::BaseNeedsChanged),
-        Command::Contract(query) if is_blank(query) => Err(CliError::EmptyQuery),
+        Command::Impact(ImpactArgs {
+            changed: true,
+            names,
+            ..
+        }) if !names.is_empty() => Err(CliError::NameNeedsPaths),
+        Command::Impact(ImpactArgs { names, .. }) if names.iter().any(|name| is_blank(name)) => {
+            Err(CliError::BlankName)
+        }
+        Command::Contract(query) if is_blank(&query.text()) => Err(CliError::EmptyQuery),
         _ => Ok(()),
     }
 }
 
-fn is_blank(query: &ContractArgs) -> bool {
-    query.text().trim().is_empty()
+/// Whether `text` is empty or only whitespace, which names nothing to look up or to ask about.
+fn is_blank(text: &str) -> bool {
+    text.trim().is_empty()
 }

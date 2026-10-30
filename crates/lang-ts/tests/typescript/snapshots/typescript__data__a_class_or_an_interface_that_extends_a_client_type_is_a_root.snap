@@ -59,6 +59,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -75,6 +78,94 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Audited",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Logged",
+            "uses": [
+              "Audited"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "Narrow",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "Wide",
+            "uses": [
+              "Narrow"
+            ]
+          },
+          {
+            "end": 13,
+            "line": 11,
+            "name": "audited",
+            "uses": [
+              "Audited"
+            ]
+          },
+          {
+            "end": 17,
+            "line": 15,
+            "name": "logged",
+            "uses": [
+              "Logged"
+            ]
+          },
+          {
+            "end": 21,
+            "line": 19,
+            "name": "narrow",
+            "uses": [
+              "Narrow"
+            ]
+          },
+          {
+            "end": 25,
+            "line": 23,
+            "name": "wide",
+            "uses": [
+              "Wide"
+            ]
+          },
+          {
+            "end": 27,
+            "line": 27,
+            "name": "made",
+            "uses": [
+              "Logged"
+            ]
+          },
+          {
+            "end": 31,
+            "line": 29,
+            "name": "count",
+            "uses": [
+              "made"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Logged"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -95,6 +186,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -112,6 +206,46 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 7,
+            "line": 3,
+            "name": "PrismaService",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 4,
+            "name": "PrismaService.onModuleInit",
+            "uses": []
+          },
+          {
+            "end": 15,
+            "line": 9,
+            "name": "TenantRepository",
+            "uses": []
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "TenantRepository.constructor",
+            "uses": [
+              "PrismaService"
+            ]
+          },
+          {
+            "end": 14,
+            "line": 12,
+            "name": "TenantRepository.find",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
       "tags": 0,
       "unresolved": []
     },
@@ -127,6 +261,48 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "Base",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Cache",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "Shape",
+            "uses": [
+              "Base"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 9,
+            "name": "cached",
+            "uses": [
+              "Cache"
+            ]
+          },
+          {
+            "end": 15,
+            "line": 13,
+            "name": "shaped",
+            "uses": [
+              "Shape"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

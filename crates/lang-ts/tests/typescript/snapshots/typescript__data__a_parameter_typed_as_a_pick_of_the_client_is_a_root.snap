@@ -26,6 +26,20 @@ expression: json
       "status": {
         "status": "ok"
       },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "mockPrisma",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "mockPrisma"
+        ]
+      },
       "tags": 1,
       "unresolved": []
     },
@@ -51,6 +65,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Prisma"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -67,6 +84,26 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 7,
+            "line": 3,
+            "name": "load",
+            "uses": [
+              "Prisma"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 9,
+            "name": "pick",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

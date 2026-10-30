@@ -34,6 +34,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "gql"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -50,6 +53,28 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "unrelated",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Q",
+            "uses": [
+              "gql"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "gql"
+        ]
       },
       "tags": 0,
       "unresolved": []

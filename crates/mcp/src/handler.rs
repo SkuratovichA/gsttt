@@ -26,8 +26,10 @@ use crate::tools::{self, ToolName};
 const INSTRUCTIONS: &str = "gsttt answers what a change affects, from an index of imports and contracts (HTTP routes, \
 GraphQL operations, gRPC methods, tables, queues, env variables) across the repository. Call impact before changing a \
 file that others may use, or with changed=true before finishing a task; dependents before renaming or deleting; path \
-to learn how two files are connected; contract to find who serves and who calls an endpoint. Every answer ends with \
-what it covered and how fresh it is; when coverage names a gap, say so instead of assuming nothing is affected.";
+to learn how two files are connected; contract to find who serves and who calls an endpoint. A question about one \
+function, class, method or variable goes to impact with its name in names, beside the file in paths: the answer lists \
+its direct callers, and asking again about a caller goes further. Every answer ends with what it covered and how fresh \
+it is; when coverage names a gap, say so instead of assuming nothing is affected.";
 
 /// The server: it answers `initialize` and `tools/list` from itself, and every other question through the source.
 pub(crate) struct Server<S> {

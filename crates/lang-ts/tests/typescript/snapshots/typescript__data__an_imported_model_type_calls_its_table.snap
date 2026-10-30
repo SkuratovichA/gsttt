@@ -43,6 +43,12 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "Tenant",
+            "Branch",
+            "Prisma",
+            "PrismaClient"
+          ],
           "flags": 1,
           "kind": "static",
           "line": 1,
@@ -58,6 +64,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "BookingStatus"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 7,
@@ -74,6 +83,24 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 9,
+            "line": 9,
+            "name": "Pair",
+            "uses": [
+              "BookingStatus",
+              "Branch",
+              "Prisma",
+              "PrismaClient",
+              "Tenant"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
       },
       "tags": 0,
       "unresolved": []

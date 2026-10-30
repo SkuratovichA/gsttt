@@ -130,8 +130,8 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
         ..ImpactRequest::default()
     };
     match subject {
-        Subject::Paths(arguments) => {
-            for argument in &arguments {
+        Subject::Paths { paths, names } => {
+            for argument in &paths {
                 let target = source.path(argument)?;
                 let named = if target.on_disk {
                     &mut request.files
@@ -140,6 +140,7 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
                 };
                 named.push(target.path.into());
             }
+            request.names = names;
         }
         Subject::Changed { base } => {
             for change in source.changed(base.as_deref())? {

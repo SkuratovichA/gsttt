@@ -31,6 +31,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "PrismaClient"
+          ],
           "flags": 0,
           "kind": "static",
           "line": 1,
@@ -47,6 +50,30 @@ expression: json
       "project": "ts .",
       "status": {
         "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "prisma",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "all",
+            "uses": [
+              "prisma"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "PrismaClient"
+        ]
       },
       "tags": 0,
       "unresolved": []
