@@ -317,6 +317,24 @@ impl Tree {
         self.import(from, Import::new(to, ImportKind::SideEffect, 1), file(to))
     }
 
+    /// `from` loads the file `to` with `import()` and reads `names` from it, as `(await import('to')).a` does. No name is `await import('to')` used as it stands.
+    pub fn imports_dynamically(self, from: &str, to: &str, names: &[&str]) -> Self {
+        let import = Import {
+            names: owned(names),
+            ..Import::new(to, ImportKind::Dynamic, 1)
+        };
+        self.import(from, import, file(to))
+    }
+
+    /// `from` loads the file `to` with `require` and reads `names` from it, as `require('to').a` does. `["default"]` is `const lib = require('to')`.
+    pub fn requires(self, from: &str, to: &str, names: &[&str]) -> Self {
+        let import = Import {
+            names: owned(names),
+            ..Import::new(to, ImportKind::Require, 1)
+        };
+        self.import(from, import, file(to))
+    }
+
     /// `from` mocks the file `to` on `line`, as `vi.mock('to')` does: a mock the walk by name takes no name through.
     pub fn mocks(self, from: &str, to: &str, line: u32) -> Self {
         self.import(from, Import::new(to, ImportKind::Mock, line), file(to))

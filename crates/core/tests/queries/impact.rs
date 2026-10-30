@@ -728,6 +728,12 @@ pub(super) enum Take {
     ReExport(Vec<(&'static str, &'static str)>),
     /// `export * from 'to'`.
     Star,
+    /// `vi.mock('to')`.
+    Mock,
+    /// `(await import('to')).a`, one name per member read.
+    Dynamic(Vec<&'static str>),
+    /// `require('to').a`, one name per member read.
+    Require(Vec<&'static str>),
 }
 
 /// A tree of `FILES` files with random exports and imports, and the file that changes.
@@ -750,6 +756,9 @@ pub(super) fn case() -> impl Strategy<Value = Case> {
         5 => prop::collection::vec(name(), 1..3).prop_map(Take::Named),
         5 => prop::collection::vec(prop_oneof![(name(), name()), Just(("ns", "*"))], 1..3)
             .prop_map(Take::ReExport),
+        1 => Just(Take::Mock),
+        2 => prop::collection::vec(name(), 1..3).prop_map(Take::Dynamic),
+        2 => prop::collection::vec(name(), 1..3).prop_map(Take::Require),
     ];
     (
         prop::collection::vec(
@@ -799,6 +808,9 @@ impl Case {
                 Take::Named(names) => tree.imports_names(&importer, &target, names),
                 Take::ReExport(pairs) => tree.re_exports(&importer, &target, pairs),
                 Take::Star => tree.re_exports_all(&importer, &target),
+                Take::Mock => tree.mocks(&importer, &target, 1),
+                Take::Dynamic(names) => tree.imports_dynamically(&importer, &target, names),
+                Take::Require(names) => tree.requires(&importer, &target, names),
             };
         }
         tree.build()
@@ -884,7 +896,10 @@ fn through(
         Reach::In(names) => names.contains(name) || exports.is_none_or(|all| !all.contains(name)),
     };
     let passed: BTreeSet<&'static str> = match take {
-        Take::Plain | Take::Namespace => return Reach::All,
+        // The walk over files takes the whole module through a load and a mock, whatever they name.
+        Take::Plain | Take::Namespace | Take::Mock | Take::Dynamic(_) | Take::Require(_) => {
+            return Reach::All;
+        }
         Take::Named(names) => {
             return if names.iter().any(|&name| meets(name)) {
                 Reach::All

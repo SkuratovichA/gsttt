@@ -1698,7 +1698,12 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
             let taken: &[&str] = match take {
                 Take::Named(names) => names,
                 Take::Namespace => &["*"],
-                Take::Plain | Take::ReExport(_) | Take::Star => &[],
+                Take::Plain
+                | Take::ReExport(_)
+                | Take::Star
+                | Take::Mock
+                | Take::Dynamic(_)
+                | Take::Require(_) => &[],
             };
             taken
                 .iter()
@@ -1790,6 +1795,9 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
             Take::Named(_) | Take::Namespace => tree.imports_as(&from, &to, &binds),
             Take::ReExport(pairs) => tree.re_exports(&from, &to, pairs),
             Take::Star => tree.re_exports_all(&from, &to),
+            Take::Mock => tree.mocks(&from, &to, 1),
+            Take::Dynamic(names) => tree.imports_dynamically(&from, &to, names),
+            Take::Require(names) => tree.requires(&from, &to, names),
         };
     }
     let asked = declared[case.changed]
@@ -1831,11 +1839,15 @@ fn names_to_ask(asked: &[String]) -> Vec<String> {
     }
 }
 
-/// The tree of `case` as a connector that records declarations reads it. Such a connector records the names every import takes, so no file with declarations has a plain import. The walk by name follows a plain import whole, as it follows a file reached at load, which reaches every file that loads it through the barrels in between, where the walk per file passes on only the names a barrel can (design.md, "The walk by name").
+/// The tree of `case` as a connector that records declarations reads it. Such a connector records the names every import takes, so no file with declarations has a plain import. The walk by name follows a plain import whole, as it follows a file reached at load, which reaches every file that loads it through the barrels in between, where the walk per file passes on only the names a barrel can (design.md, "The walk by name"). A mock, a dynamic import and a `require` in such a file are written outside every declaration here, so they are used by the load of the file and fall under the same rule.
 fn recorded(mut case: Case) -> Case {
     let own = case.own.clone();
-    case.edges
-        .retain(|(importer, _, take)| !matches!(take, Take::Plain) || own[*importer].is_none());
+    case.edges.retain(|(importer, _, take)| {
+        !matches!(
+            take,
+            Take::Plain | Take::Mock | Take::Dynamic(_) | Take::Require(_)
+        ) || own[*importer].is_none()
+    });
     case
 }
 
@@ -1845,6 +1857,7 @@ fn recorded(mut case: Case) -> Case {
 /// - The walk per file reaches an importer of a name its target does not export, because the import may be what the change breaks. The walk by name has no name to follow, so every name that is imported is exported.
 /// - A star reaches its importer even when the file has nothing to pass on, and `export *` never forwards `default`, so a file with a star importer exports a name besides `default`.
 /// - A side-effect import uses nothing by name, so a file reached by name does not reach the file that imports it for its effects, where the walk per file does (design.md, "A side-effect import uses nothing by name"). `Take` has no such import, and it must not get one while this property takes its trees from it.
+/// - A mock takes no name, so a file reached by name does not reach the files that mock the changed file, where the walk per file does. No mock of the changed file is left in the case.
 fn complete(mut case: Case) -> Case {
     let own = case.own.clone();
     case.edges.retain(|(importer, _, take)| {
@@ -1853,13 +1866,13 @@ fn complete(mut case: Case) -> Case {
     let exports = exported(&case);
     for (_, target, take) in &case.edges {
         let taken: Vec<&'static str> = match take {
-            Take::Named(names) => names.clone(),
+            Take::Named(names) | Take::Dynamic(names) | Take::Require(names) => names.clone(),
             Take::ReExport(pairs) => pairs
                 .iter()
                 .map(|&(_, source)| source)
                 .filter(|&source| source != "*")
                 .collect(),
-            Take::Plain | Take::Namespace | Take::Star => Vec::new(),
+            Take::Plain | Take::Namespace | Take::Star | Take::Mock => Vec::new(),
         };
         // A file whose exports are unknown cannot be told to lack a name.
         if let (Some(own), Some(known)) = (&mut case.own[*target], &exports[*target]) {
@@ -1875,6 +1888,8 @@ fn complete(mut case: Case) -> Case {
         case.edges
             .retain(|(_, target, take)| *target != changed || !matches!(take, Take::Star));
     }
+    case.edges
+        .retain(|(_, target, take)| *target != changed || !matches!(take, Take::Mock));
     case
 }
 
