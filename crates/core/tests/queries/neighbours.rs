@@ -106,6 +106,7 @@ fn dependents_show_edge_kinds() {
             Import::new("./a", ImportKind::ReExportAll, 1),
             file("a.ts"),
         )
+        .mocks("d.test.ts", "a.ts", 1)
         .build();
 
     let answer = dependents(&index, Freshness::Fresh, "a.ts");
@@ -114,12 +115,14 @@ fn dependents_show_edge_kinds() {
         answer.files,
         [
             neighbour("b.ts", &[ImportKind::Static], false),
-            neighbour("c.ts", &[ImportKind::ReExportAll], false)
+            neighbour("c.ts", &[ImportKind::ReExportAll], false),
+            neighbour("d.test.ts", &[ImportKind::Mock], false)
         ]
     );
     let text = answer.to_string();
     assert!(text.contains("b.ts  static import\n"), "{text}");
     assert!(text.contains("c.ts  re-export of everything\n"), "{text}");
+    assert!(text.contains("d.test.ts  mock\n"), "{text}");
 }
 
 #[scenario("queries", "Neighbours show the names taken")]
