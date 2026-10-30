@@ -122,6 +122,9 @@ pub(super) struct Place {
     around: Load,
 }
 
+/// The names at the head of the type of a field, shared so that reading the field clones none of them.
+type Heads<'a> = Rc<Vec<Cow<'a, str>>>;
+
 /// The table of a file and what the walk has found against it.
 #[derive(Debug, Default)]
 pub(super) struct Recorder<'a> {
@@ -130,7 +133,7 @@ pub(super) struct Recorder<'a> {
     /// The members of top-level classes: the class, whether the name is private, and the name.
     members: HashMap<(usize, bool, &'a str), usize>,
     /// The names at the head of the type of each field of a top-level class, keyed like `members`. They are resolved when `this.<field>` is read, because the file may declare a type after the class.
-    fields: HashMap<(usize, bool, &'a str), Rc<Vec<Cow<'a, str>>>>,
+    fields: HashMap<(usize, bool, &'a str), Heads<'a>>,
     /// The entry that stands for `Type.member`, by the type and the member, for a member read through a field whose type the file does not declare as a class with that member. It declares nothing: it has no lines, and only its name is kept.
     typed: HashMap<String, HashMap<String, usize>>,
     entries: Vec<Entry<'a>>,
