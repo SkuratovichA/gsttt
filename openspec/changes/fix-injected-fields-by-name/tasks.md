@@ -7,7 +7,7 @@
 ## 2. TypeScript
 
 - [x] 2.1 The fields of a class with the names their types stand for at their head, read by the code that reads root types, and their use by a declaration that reads `this.<field>`, with the scenarios of `Fields of a declared type`
-- [ ] 2.2 The fact format one up, because the uses of a cached file change
+- [x] 2.2 The fact format one up, because the uses of a cached file change
 
 ## 3. End to end
 
