@@ -24,6 +24,7 @@
 - [x] 4.5 One task at a time: a lock on a file in the temporary directory of the system, taken by `questions` and `run`, refused to a second task
 - [x] 4.6 The daemon of codebase-memory-mcp stopped before its cache is thrown away or put back, and a missing copy of an index an error
 - [x] 4.7 What a run can reach: the state of the client, the other sessions and the worktrees listed before every run, the index of gsttt, no network, bash as the shell, and a path that a rule would take for a pattern stopping the task
+- [x] 4.8 An empty .claude directory that Claude Code makes is removed without marking the run
 
 ## 5. Proof
 

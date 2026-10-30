@@ -270,7 +270,7 @@ Each repository SHALL have one checkout for the runs, prepared once: cloned at i
 - **THEN** the install command runs again, and it did not run the time before, when `node_modules` and the record of the preparation were there
 
 ### Requirement: What a run leaves in the checkout
-After every run, whatever became of it, HEAD and its form (a branch, or a detached commit) SHALL be put back, the tracked files reset, and the untracked and ignored files and the empty directories compared one by one, and only what the run added SHALL be removed. A run that changed any of this SHALL be marked. The task SHALL stop when the checkout cannot be put back as it was, and SHALL NOT clean the whole tree.
+After every run, whatever became of it, HEAD and its form (a branch, or a detached commit) SHALL be put back, the tracked files reset, and the untracked and ignored files and the empty directories compared one by one, and only what the run added SHALL be removed. A run that changed any of this SHALL be marked. The task SHALL stop when the checkout cannot be put back as it was, and SHALL NOT clean the whole tree. An empty `.claude` directory the run added SHALL be removed without marking the run.
 
 #### Scenario: A run that writes into the checkout is marked and undone
 - **WHEN** a run leaves a new file in the checkout
@@ -295,6 +295,10 @@ After every run, whatever became of it, HEAD and its form (a branch, or a detach
 #### Scenario: A directory that was empty before the run stays
 - **WHEN** a run puts a file in a directory that was empty when it started
 - **THEN** the file is removed, and the directory is still there
+
+#### Scenario: An empty .claude directory does not mark the run
+- **WHEN** a run leaves an empty `.claude` directory at the root of the checkout and another in a directory below it, and changes nothing else
+- **THEN** the run is not marked, and both directories are gone before the next run
 
 ### Requirement: The refs of the checkout
 After every run, whatever became of it, every ref of the checkout, the stash included, SHALL be as it was: one the run added SHALL be deleted, and one it moved or deleted SHALL be set back. A run that changed one SHALL be marked. A symbolic ref the run made SHALL be deleted itself, and not the ref it points to.
