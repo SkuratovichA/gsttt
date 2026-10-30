@@ -330,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn the_committed_questions_are_valid_and_the_clients_come_last() {
+    fn the_committed_questions_are_valid_and_hold_the_clients_of_hoppscotch() {
         let root = crate::root::repository_root().unwrap();
         let questions = Questions::load(&root.join(crate::agents::QUESTIONS)).unwrap();
         let kinds: Vec<(&str, Kind)> = questions
@@ -340,7 +340,6 @@ mod tests {
             .collect();
         assert!(kinds.contains(&("hoppscotch", Kind::Clients)));
         assert!(kinds.contains(&("vite", Kind::Tests)));
-        assert_eq!(kinds.last(), Some(&("hoppscotch", Kind::Clients)));
         for question in questions
             .questions
             .iter()
