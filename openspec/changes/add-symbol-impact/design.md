@@ -70,10 +70,10 @@ The walk keeps, for each file, whether its load is reached and which of its decl
 ## The answer
 
 - Header: `impact of getHash in packages/vite/src/node/utils.ts, within 1 hop`.
-- An entry reached by name carries its callers, each a declaration and the line it starts on, and whether its load is reached: `packages/vite/src/node/optimizer/index.ts  distance 1  imports getHash from packages/vite/src/node/utils.ts; in getDepHash (line 1190), getOptimizerBrowserHash (line 1222)`, and `…; at load` for a file whose top-level code uses it. Callers are cut after three like every list of names, unless all entries are asked.
+- An entry reached by name carries its callers, each a declaration with the line it starts on and its own distance, and whether its load is reached, also with its distance: `packages/vite/src/node/optimizer/index.ts  distance 1  imports getHash from packages/vite/src/node/utils.ts; in getDepHash (line 1190), getOptimizerBrowserHash (line 1222)`, and `…; at load` for a file whose top-level code uses it. A file is listed once, at the distance of the first time the walk reached it, so a caller or a load that the walk reached farther from the declarations asked about says so, `outer (line 5, distance 2)` and `; at load (distance 2)`, and one at the distance of its entry says nothing. Callers are cut after three like every list of names, unless all entries are asked.
 - The asked file is listed when its own declarations call the names, with the reason `declares getHash`.
-- JSON: `Affected` gains `callers: [{ "name", "line" }]` and `load: true`, both left out when empty or false, so an answer without names serialises as today.
-- Notes: a name the file does not declare; a file followed whole because its connector records no declarations; callers of a member found through its class; the walk stopped at the depth.
+- JSON: `Affected` gains `callers: [{ "name", "line", "distance" }]` and `load: { "distance" }`, both left out when empty or when the load is not reached, so an answer without names serialises as today.
+- Notes: a name the file does not declare; a file followed whole because its connector records no declarations; callers of members found through their classes, which are one note for all the members of an answer, cut after three in the text like every list of names and whole in the JSON; the walk stopped at the depth.
 
 ## Arguments
 
