@@ -11,4 +11,4 @@
 
 ## 3. End to end
 
-- [ ] 3.1 An end-to-end test of `gsttt impact --name` with depth 2, from a method of a service through the resolver method that calls it on an injected field to the client of the GraphQL operation that method serves, and the sentence on what a declaration uses in `docs/architecture.md`
+- [x] 3.1 An end-to-end test of `gsttt impact --name` with depth 2, from a method of a service through the resolver method that calls it on an injected field to the client of the GraphQL operation that method serves, and the sentence on what a declaration uses in `docs/architecture.md`
