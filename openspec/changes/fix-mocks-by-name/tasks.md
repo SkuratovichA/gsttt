@@ -10,7 +10,7 @@
 
 ## 3. TypeScript
 
-- [x] 3.1 The mock calls as mocks, and `vi.importActual` and `jest.requireActual` as dynamic imports, with the scenarios of `Mocked modules` and `Mocks made from or set for a module`
+- [x] 3.1 The mock calls as mocks, and `vi.importActual` and `jest.requireActual` as dynamic imports, with the scenarios of `Mocks of a module`, `Actual modules` and `Mocks made or set for a module`
 - [x] 3.2 A member read by name from `await import('x')`, `await vi.importActual('x')`, `require('x')` or `jest.requireActual('x')`, and a destructuring of a loaded module that may take more than it names, with the scenarios of `Members read from a loaded module`
 
 ## 4. The walk by name

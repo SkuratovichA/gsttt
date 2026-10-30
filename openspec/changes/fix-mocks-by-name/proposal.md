@@ -18,4 +18,4 @@ On a repository whose tests mock their modules, an answer by name fills with suc
 
 - `crates/core`: `ImportKind::Mock` and its label, the fact format at 4 and the snapshot layout at 7, the walk by name.
 - `crates/lang-ts`: the mock calls, the members read from a loaded module, their fixtures and snapshots.
-- Specs: `typescript` (Mocked modules, Mocks made from or set for a module, Members read from a loaded module) and `queries` (Callers at load, Mocks by name, Loads that name what they take, Types outside declarations).
+- Specs: `typescript` (Mocks of a module, Actual modules, Mocks made or set for a module and Members read from a loaded module, replacing Mocked modules and Mocks made from or set for a module) and `queries` (Callers at load, Mocks by name, Loads that name what they take, Types outside declarations).
