@@ -231,55 +231,26 @@ impl<'a> Analyzer<'_, 'a> {
         self.out.imports.push(import);
     }
 
-    /// `(await import('y')).a` and `require('y').a` take the name `a` from `y`. `import('y')` without `await` hands back a promise, so a member read from it names nothing. The inner visit of the load reaches `load` with the same span and is skipped.
+    /// `(await import('y')).a`, `(await vi.importActual('y')).a`, `require('y').a` and `jest.requireActual('y').a` take the name `a` from `y`. A load that hands back a promise, such as `import('y')` without `await`, names nothing when a member is read from it. The inner visit of the load reaches `load` with the same span and is skipped.
     fn member_of_load(&mut self, object: &Expression<'_>, member: &str) {
-        match object.get_inner_expression() {
-            Expression::AwaitExpression(awaited) => {
-                if let Expression::ImportExpression(import) =
-                    awaited.argument.get_inner_expression()
-                {
-                    self.load(
-                        import.span,
-                        Some(&import.source),
-                        ImportKind::Dynamic,
-                        Taking::Member(member),
-                    );
-                }
-            }
-            Expression::CallExpression(call) if is_require(call) => {
-                let argument = call.arguments.first().and_then(Argument::as_expression);
-                self.load(
-                    call.span,
-                    argument,
-                    ImportKind::Require,
-                    Taking::Member(member),
-                );
-            }
-            _ => {}
+        let (awaited, inner) = match object.get_inner_expression() {
+            Expression::AwaitExpression(awaited) => (true, &awaited.argument),
+            other => (false, other),
+        };
+        if let Some(load) = load_of(inner).filter(|load| load.promise == awaited) {
+            self.load(load.span, load.argument, load.kind, Taking::Member(member));
         }
     }
 
     /// `const x = require('y')` and `const { a } = await import('y')`.
     fn load_declared(&mut self, init: &Expression<'_>, pattern: &BindingPattern<'_>) {
-        match init {
-            Expression::CallExpression(call) if is_require(call) => {
-                let argument = call.arguments.first().and_then(Argument::as_expression);
-                self.load(
-                    call.span,
-                    argument,
-                    ImportKind::Require,
-                    Taking::Declared(pattern),
-                );
-            }
-            Expression::ImportExpression(import) => {
-                self.load(
-                    import.span,
-                    Some(&import.source),
-                    ImportKind::Dynamic,
-                    Taking::Declared(pattern),
-                );
-            }
-            _ => {}
+        if let Some(load) = load_of(init) {
+            self.load(
+                load.span,
+                load.argument,
+                load.kind,
+                Taking::Declared(pattern),
+            );
         }
     }
 
@@ -938,10 +909,10 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             self.symbols.call_write(&names);
             if let Some(callee) = dotted(&names) {
                 // A module named at run time is neither an import nor a blind spot, so only a literal one goes to `load`.
-                if let Some(kind) = module_call(&callee)
+                if let Some(call) = module_call(&callee)
                     && argument.and_then(literal_text).is_some()
                 {
-                    self.load(it.span, argument, kind, Taking::Nothing);
+                    self.load(it.span, argument, call.kind(), Taking::Nothing);
                 }
                 self.call(it, &callee);
             }
@@ -1159,10 +1130,28 @@ fn is_require(call: &CallExpression<'_>) -> bool {
     matches!(&call.callee, Expression::Identifier(name) if name.name.as_str() == "require")
 }
 
-/// How a call of Vitest or Jest takes the module in its first argument: as a mock when it mocks the module, stops mocking it, or sets or makes a mock for it, and as a dynamic import when it loads the module as it is. `None` for any other call.
-fn module_call(callee: &str) -> Option<ImportKind> {
+/// How a call of Vitest or Jest takes the module in its first argument.
+enum ModuleCall {
+    /// It mocks the module, stops mocking it, or sets or makes a mock for it.
+    Mock,
+    /// It loads the module as it is: `jest.requireActual` hands the module back and `vi.importActual` a promise of it.
+    Actual { promise: bool },
+}
+
+impl ModuleCall {
+    fn kind(&self) -> ImportKind {
+        match self {
+            Self::Mock => ImportKind::Mock,
+            Self::Actual { .. } => ImportKind::Dynamic,
+        }
+    }
+}
+
+/// How the call named `callee` takes the module in its first argument, or `None` for any other call.
+fn module_call(callee: &str) -> Option<ModuleCall> {
     match callee {
-        "vi.importActual" | "jest.requireActual" => Some(ImportKind::Dynamic),
+        "jest.requireActual" => Some(ModuleCall::Actual { promise: false }),
+        "vi.importActual" => Some(ModuleCall::Actual { promise: true }),
         "vi.mock"
         | "vi.doMock"
         | "vi.unmock"
@@ -1177,7 +1166,47 @@ fn module_call(callee: &str) -> Option<ImportKind> {
         | "jest.createMockFromModule"
         | "jest.genMockFromModule"
         | "jest.unstable_mockModule"
-        | "jest.deepUnmock" => Some(ImportKind::Mock),
+        | "jest.deepUnmock" => Some(ModuleCall::Mock),
+        _ => None,
+    }
+}
+
+/// An expression that loads a module as it is: `require('x')` and `jest.requireActual('x')` hand the module back, `import('x')` and `vi.importActual('x')` a promise of it.
+struct Load<'e, 'a> {
+    span: Span,
+    argument: Option<&'e Expression<'a>>,
+    kind: ImportKind,
+    promise: bool,
+}
+
+/// The load that `expr` is, with parentheses and type assertions taken off. A module that `jest.requireActual` or `vi.importActual` names at run time is neither an import nor a blind spot, so such a call is no load, while `require(name)` and `import(name)` are loads that `Analyzer::load` records as unread.
+fn load_of<'e, 'a>(expr: &'e Expression<'a>) -> Option<Load<'e, 'a>> {
+    match expr.get_inner_expression() {
+        Expression::ImportExpression(import) => Some(Load {
+            span: import.span,
+            argument: Some(&import.source),
+            kind: ImportKind::Dynamic,
+            promise: true,
+        }),
+        Expression::CallExpression(call) => {
+            let argument = call.arguments.first().and_then(Argument::as_expression);
+            let (kind, promise) = if is_require(call) {
+                (ImportKind::Require, false)
+            } else {
+                let callee = dotted(&chain_of(&call.callee)?)?;
+                let ModuleCall::Actual { promise } = module_call(&callee)? else {
+                    return None;
+                };
+                argument.and_then(literal_text)?;
+                (ImportKind::Dynamic, promise)
+            };
+            Some(Load {
+                span: call.span,
+                argument,
+                kind,
+                promise,
+            })
+        }
         _ => None,
     }
 }

@@ -197,6 +197,27 @@ fn a_member_read_from_a_loaded_module_is_the_name_it_takes() -> Result<(), Box<d
 #[test]
 #[scenario(
     "typescript",
+    "A member read from an actual module is the name it takes"
+)]
+fn a_member_read_from_an_actual_module_is_the_name_it_takes() -> Result<(), Box<dyn Error>> {
+    let json = run("actual-members")?;
+    assert_eq!(
+        imports(&json, "src/members.test.ts"),
+        [
+            "./lib dynamic @1 [helper] -> file src/lib.ts",
+            "./lib dynamic @2 [other] -> file src/lib.ts",
+            "./lib dynamic @3 [third] -> file src/lib.ts",
+            "./lib dynamic @4 -> file src/lib.ts",
+        ]
+    );
+    assert_eq!(unread(&json, "src/members.test.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
     "A destructuring that may take more than it names takes the module"
 )]
 fn a_destructuring_that_may_take_more_than_it_names_takes_the_module() -> Result<(), Box<dyn Error>>
