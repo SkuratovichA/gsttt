@@ -11,7 +11,7 @@ use crate::fact::{Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR};
 use crate::graph::{ContractSite, Declaration, Edge, FileSymbols, Graph};
 use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
-use crate::query::cross::{Crossed, Crossing, Direction, Leavers, keep_fewest, roles_of, sites_of};
+use crate::query::cross::{Crossed, Crossing, Direction, Leavers, keep_fewest, sites_of};
 
 use super::{Cause, Reached, holds};
 
@@ -536,6 +536,15 @@ struct Leave {
     roles: Vec<(Role, u32)>,
 }
 
+/// The roles of some sites, each with the fewest hops through code of the sites in it, in role order.
+fn by_role(sites: impl Iterator<Item = (Role, u32)>) -> Vec<(Role, u32)> {
+    let mut roles: Vec<(Role, u32)> = sites.collect();
+    // The first of a role has the fewest hops.
+    roles.sort_unstable();
+    roles.dedup_by_key(|&mut (role, _)| role);
+    roles
+}
+
 /// The fronts of each file of a `frontier`, which is sorted by file.
 fn by_file(frontier: &[Front]) -> impl Iterator<Item = &[Front]> {
     frontier.chunk_by(|left, right| left.unit.file == right.unit.file)
@@ -1051,17 +1060,12 @@ impl<'w, 'a> Step<'w, 'a> {
         });
         if let Some(symbols) = symbols {
             for &contract in graph.contracts_of(file) {
-                let mut roles: Vec<(Role, u32)> = sites_of(graph.sites(contract), file)
-                    .filter_map(|site| {
-                        narrowest(symbols, site.line)
-                            .filter_map(declared)
-                            .min()
-                            .map(|code| (site.role, code))
-                    })
-                    .collect();
-                // The first of a role has the fewest hops.
-                roles.sort_unstable();
-                roles.dedup_by_key(|&mut (role, _)| role);
+                let roles = by_role(sites_of(graph.sites(contract), file).filter_map(|site| {
+                    narrowest(symbols, site.line)
+                        .filter_map(declared)
+                        .min()
+                        .map(|code| (site.role, code))
+                }));
                 if !roles.is_empty() {
                     leaving.push(Leave { contract, roles });
                 }
@@ -1073,14 +1077,9 @@ impl<'w, 'a> Step<'w, 'a> {
             .map(|front| front.code)
             .min();
         if let Some(code) = loaded {
-            leaving.extend(graph.contracts_of(file).iter().map(|&contract| {
-                Leave {
-                    contract,
-                    roles: roles_of(graph.sites(contract), file)
-                        .into_iter()
-                        .map(|role| (role, code))
-                        .collect(),
-                }
+            leaving.extend(graph.contracts_of(file).iter().map(|&contract| Leave {
+                contract,
+                roles: by_role(sites_of(graph.sites(contract), file).map(|site| (site.role, code))),
             }));
         }
         leaving

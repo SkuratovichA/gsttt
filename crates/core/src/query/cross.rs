@@ -91,6 +91,7 @@ impl Leavers {
     }
 
     /// Starts the notes of a layer whose files took `codes` hops through code, forgetting those of the layer before, and says whether the files took different numbers. With equal ones the first file to leave a contract has the fewest, so nothing needs noting and [`Leavers::arrival`] answers with the hops of the file that crosses.
+    #[must_use]
     pub(super) fn start(&mut self, codes: impl IntoIterator<Item = u32>) -> bool {
         self.fewest.clear();
         let mut codes = codes.into_iter();
@@ -173,11 +174,8 @@ impl<'a> Crossing<'a> {
         file: FileId,
         contract: ContractId,
     ) -> Vec<(ContractId, &'a ContractSite)> {
-        self.cross_as(
-            crossed,
-            roles_of(self.graph.sites(contract), file),
-            contract,
-        )
+        let roles = sites_of(self.graph.sites(contract), file).map(|site| site.role);
+        self.cross_as(crossed, roles, contract)
     }
 
     /// [`Crossing::cross`] for a walk that leaves a file by some of its sites in `contract` and not all: `roles` are those of the sites it leaves by. A walk by name leaves a file by the sites of the declarations it reached.
@@ -228,14 +226,6 @@ pub(super) fn sites_of(
         .unwrap_or_default()
         .iter()
         .take_while(move |site| site.file == file)
-}
-
-/// The roles a file takes in one contract, in role order.
-pub(super) fn roles_of(sites: &[ContractSite], file: FileId) -> Vec<Role> {
-    let mut roles: Vec<Role> = sites_of(sites, file).map(|site| site.role).collect();
-    roles.sort_unstable();
-    roles.dedup();
-    roles
 }
 
 #[cfg(test)]
@@ -299,7 +289,7 @@ mod tests {
         assert_eq!(leavers.arrival(contract, Role::Calls, 9), 1);
         assert_eq!(leavers.arrival(contract, Role::Serves, 9), 5);
         assert_eq!(leavers.arrival(contract, Role::Declares, 9), 9);
-        leavers.start([]);
+        assert!(!leavers.start([]));
         assert_eq!(leavers.arrival(contract, Role::Calls, 9), 9);
     }
 

@@ -12,7 +12,7 @@ use crate::contract::Role;
 use crate::graph::{Edge, Graph, Uses};
 use crate::ids::{ContractId, FileId, IdSet, NameId};
 
-use super::cross::{Crossed, Crossing, Direction, Leavers, keep_fewest, roles_of};
+use super::cross::{Crossed, Crossing, Direction, Leavers, keep_fewest, sites_of};
 
 pub(super) use names::{Hit, Note, reach_names};
 
@@ -165,8 +165,8 @@ impl Walk<'_> {
         }
         for front in whole() {
             for &contract in self.graph.contracts_of(front.file) {
-                for role in roles_of(self.graph.sites(contract), front.file) {
-                    self.leavers.add(contract, role, front.code);
+                for site in sites_of(self.graph.sites(contract), front.file) {
+                    self.leavers.add(contract, site.role, front.code);
                 }
             }
         }
@@ -184,7 +184,7 @@ impl Walk<'_> {
         // Whether the exports of `file` are known, which every importer of it that is not plain asks when the walk reaches the file whole. The answer is the same for all of them, so it is worked out once, and not at all when none asks.
         let mut known = None;
         // The depth stops the hops through code and not the crossing of a contract.
-        let importers = if self.depth.is_none_or(|limit| code < limit) {
+        let importers = if within(self.depth, code) {
             graph.dependents(file)
         } else {
             &[]
@@ -231,7 +231,6 @@ impl Walk<'_> {
         let binding = graph.binding(edge);
         let (delta, code) = (&front.delta, front.code);
         let depth = self.depth;
-        let within = |code: u32| depth.is_none_or(|limit| code < limit);
 
         // The names the importer uses itself, each with the hops through code it was reached by. One of them is enough to affect it in all of its names.
         let mut used: Vec<(NameId, u32)> = Vec::new();
@@ -243,8 +242,9 @@ impl Walk<'_> {
             }
             (Uses::Names(wanted), Delta::Names(fresh)) => {
                 for &name in wanted {
-                    if let Some(reached) =
-                        self.reaches(file, fresh, code, name).filter(|&c| within(c))
+                    if let Some(reached) = self
+                        .reaches(file, fresh, code, name)
+                        .filter(|&c| within(depth, c))
                     {
                         used.push((name, reached));
                     }
@@ -270,7 +270,7 @@ impl Walk<'_> {
                 Delta::Names(_) if Some(taken) == self.star => Some(code),
                 Delta::Names(fresh) => self
                     .reaches(file, fresh, code, taken)
-                    .filter(|&c| within(c)),
+                    .filter(|&c| within(depth, c)),
             };
             if let Some(reached) = reached {
                 passed.push((taken, exported_as, reached));
@@ -283,7 +283,7 @@ impl Walk<'_> {
                 Delta::Names(fresh) => passed.extend(
                     fresh
                         .iter()
-                        .filter(|&&(name, reached)| Some(name) != default && within(reached))
+                        .filter(|&&(name, reached)| Some(name) != default && within(depth, reached))
                         .map(|&(name, reached)| (name, name, reached)),
                 ),
                 Delta::All => passed.extend(
@@ -316,13 +316,22 @@ impl Walk<'_> {
             }
             return;
         }
-        let names: Vec<(NameId, NameId)> = passed
-            .iter()
-            .map(|&(taken, exported_as, _)| (taken, exported_as))
-            .collect();
+        let names = || -> Vec<(NameId, NameId)> {
+            passed
+                .iter()
+                .map(|&(taken, exported_as, _)| (taken, exported_as))
+                .collect()
+        };
         // An importer that does not list what it exports could pass on any of its names.
         if graph.exports(importer).is_none() {
-            self.take_all(importer, Cause::ReExports { file, names }, fewest);
+            self.take_all(
+                importer,
+                Cause::ReExports {
+                    file,
+                    names: names(),
+                },
+                fewest,
+            );
             return;
         }
         let first = self.seen.insert(importer);
@@ -339,7 +348,10 @@ impl Walk<'_> {
             self.reached.push(Reached {
                 file: importer,
                 distance: self.distance,
-                cause: Cause::ReExports { file, names },
+                cause: Cause::ReExports {
+                    file,
+                    names: names(),
+                },
             });
         }
         // A barrel met for the first time is expanded once, with whatever it holds, even if that is nothing.
@@ -431,6 +443,11 @@ impl Walk<'_> {
         frontier.sort_unstable_by_key(|front| front.file);
         frontier
     }
+}
+
+/// Whether a way that took `code` hops through code is still inside the `depth`, none when there is no limit.
+fn within(depth: Option<u32>, code: u32) -> bool {
+    depth.is_none_or(|limit| code < limit)
 }
 
 /// Whether `item` is among `sorted`.
