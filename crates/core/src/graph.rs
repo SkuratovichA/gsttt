@@ -176,7 +176,7 @@ fn len_u32(len: usize) -> u32 {
 /// Which names of the file an importer takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Uses<'g> {
-    /// Everything the file exports: a namespace, a side effect, a dynamic import, a `require`, or an import whose connector records no names.
+    /// Everything the file exports: a namespace, a side effect, a dynamic import, a `require`, a mock, or an import whose connector records no names.
     All,
     /// Only these names, sorted. The slice is empty for an importer that takes nothing by name, such as a named re-export.
     Names(&'g [NameId]),
@@ -452,7 +452,7 @@ impl GraphBuilder {
         number
     }
 
-    /// What `import` takes and passes on. A named re-export passes its names under the names it exports them as and uses nothing; `export *` re-exports everything and uses nothing; a static import that names what it takes, and not a namespace, uses those names; every other import takes everything. Dynamic imports and `require` take everything even when a connector names what is destructured from them, because what they hand back is the whole module.
+    /// What `import` takes and passes on. A named re-export passes its names under the names it exports them as and uses nothing; `export *` re-exports everything and uses nothing; a static import that names what it takes, and not a namespace, uses those names; every other import takes everything. Dynamic imports, `require` and mocks take everything even when a connector names what is destructured from them, because what they hand back is the whole module, and a mock is followed as the dynamic import was.
     fn taken(&mut self, import: &Import) -> Taken {
         let names = &import.names;
         match import.kind {

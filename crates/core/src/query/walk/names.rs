@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::contract::Role;
-use crate::fact::{Import, ImportKind, Line, MEMBER_SEPARATOR};
+use crate::fact::{Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR};
 use crate::graph::{ContractSite, Declaration, Edge, FileSymbols, Graph};
 use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
@@ -374,7 +374,7 @@ struct Via<'a> {
     locals: Vec<&'a str>,
     /// What it passes on as a named re-export, as the name it takes and the name it exports.
     passes: Vec<(NameId, NameId)>,
-    /// Whether it uses a name beyond its locals: it exports one again, takes every name by a dynamic import or a `require`, or takes names by an import type.
+    /// Whether it uses a name beyond its locals: it exports one again, takes names by a dynamic import, a `require` or an import type, or calls a file followed whole where it mocks it.
     used: bool,
     /// Whether it re-exports a name.
     barrel: bool,
@@ -490,15 +490,39 @@ impl<'w, 'a> Step<'w, 'a> {
         self.layer.candidates.push(Candidate { file, from, cause });
     }
 
+    /// The declarations that hold `line` most narrowly. Says whether any part is new, and `None` when no declaration holds the line.
+    fn holders(&mut self, file: FileId, symbols: FileSymbols<'a>, line: Line) -> Option<bool> {
+        let mut owners = narrowest(symbols, line).peekable();
+        owners.peek()?;
+        Some(owners.fold(false, |found, index| {
+            self.unit(file, Part::Decl(index)) | found
+        }))
+    }
+
     /// The declarations that hold `line` most narrowly, or the load of the file when none does. Says whether any part is new.
     fn place(&mut self, file: FileId, symbols: FileSymbols<'a>, line: Line) -> bool {
-        let mut owners = narrowest(symbols, line).peekable();
-        if owners.peek().is_none() {
-            return self.unit(file, Part::Load);
+        self.holders(file, symbols, line)
+            .unwrap_or_else(|| self.unit(file, Part::Load))
+    }
+
+    /// The names of `import` that `name` gets, used where the import is written. A type does not run as the file loads, so an import type outside every declaration reaches nothing, where any other import reaches the load of the file.
+    fn use_taken(
+        &mut self,
+        name: Name<'a>,
+        importer: FileId,
+        symbols: FileSymbols<'a>,
+        import: &Import,
+        via: &mut Via<'a>,
+    ) {
+        if !take_names(self.walk.graph, name, import, via) {
+            return;
         }
-        owners.fold(false, |found, index| {
-            self.unit(file, Part::Decl(index)) | found
-        })
+        via.used |= if import.flags.contains(ImportFlags::TYPE_ONLY) {
+            self.holders(importer, symbols, import.line)
+                .unwrap_or(false)
+        } else {
+            self.place(importer, symbols, import.line)
+        };
     }
 
     /// The declarations of `file` that refer to the `declared` ones reached, and its load when it does. A member `Class.member` is also referred to by the declarations outside `Class` that refer to the class, because a call through a value names no class.
@@ -683,17 +707,12 @@ impl<'w, 'a> Step<'w, 'a> {
         let graph = self.walk.graph;
         match import.kind {
             ImportKind::Static | ImportKind::ReExport => {
-                // An import type binds no local: `import('./a').foo` uses `foo` where it is written, in the declaration whose lines hold it or in the load, as a dynamic import does.
+                // An import type binds no local: `import('./a').foo` uses `foo` where it is written, in the declarations whose lines hold it, and outside every declaration it reaches nothing, because a type does not run as the file loads.
                 if import.kind == ImportKind::Static
                     && !import.names.is_empty()
                     && import.exported.is_empty()
                 {
-                    let mut takes = false;
-                    for taken in import.names.iter().filter(|taken| name.takes(taken)) {
-                        via.taken.name(graph, taken);
-                        takes = true;
-                    }
-                    via.used |= takes && self.place(importer, symbols, import.line);
+                    self.use_taken(name, importer, symbols, import, via);
                     return;
                 }
                 // An import that names what it takes binds each name; one that does not could use anything.
@@ -743,10 +762,20 @@ impl<'w, 'a> Step<'w, 'a> {
                     via.used |= self.unit(importer, Part::Load);
                 }
             }
-            // A use of every name, by the declaration whose lines hold the import, or by the load.
+            // A test that mocks a module runs what replaces it, not the code of the module, so a mock takes no name. A file followed whole is called where the mock is written, as an import for side effects calls it.
+            ImportKind::Mock => {
+                if name == Name::Any {
+                    via.used |= self.place(importer, symbols, import.line);
+                }
+            }
+            // A use of every name, by the declaration whose lines hold the import, or by the load, when it takes the module itself. One that names what it takes uses those names where it is written.
             ImportKind::Dynamic | ImportKind::Require => {
-                via.taken = Taken::Everything;
-                via.used |= self.place(importer, symbols, import.line);
+                if takes_module(import) {
+                    via.taken = Taken::Everything;
+                    via.used |= self.place(importer, symbols, import.line);
+                } else {
+                    self.use_taken(name, importer, symbols, import, via);
+                }
             }
             ImportKind::Reference | ImportKind::Module | ImportKind::Include => {
                 via.taken = Taken::Everything;
@@ -772,7 +801,7 @@ impl<'w, 'a> Step<'w, 'a> {
         found
     }
 
-    /// Every file that loads `file`, reached at load: a static import that is not type-only, a re-export, a side-effect import, a dynamic import and `require`.
+    /// Every file that loads `file`, reached at load: a static import that is not type-only, a re-export, a side-effect import, a dynamic import, `require` and a mock, because a mock made without a factory loads the module to mock it.
     fn loaders(&mut self, file: FileId) {
         let graph = self.walk.graph;
         for &(importer, edge) in graph.dependents(file) {
@@ -839,7 +868,24 @@ impl<'w, 'a> Step<'w, 'a> {
     }
 }
 
-/// An import of a file that records no declarations takes the file whole when it takes the name, and by its edge alone when it names nothing.
+/// Notes in `via` each name of `import` that `name` gets. Says whether there is one.
+fn take_names(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<'_>) -> bool {
+    let mut takes = false;
+    for taken in import.names.iter().filter(|taken| name.takes(taken)) {
+        via.taken.name(graph, taken);
+        takes = true;
+    }
+    takes
+}
+
+/// Whether a dynamic import or a `require` takes the module itself, so every name of it: it names nothing, or names the namespace, which is `*` and for a `require` also the `default` that `const lib = require('./a')` binds.
+fn takes_module(import: &Import) -> bool {
+    let namespace =
+        |name: &String| name == "*" || (import.kind == ImportKind::Require && name == "default");
+    import.names.is_empty() || import.names.iter().any(namespace)
+}
+
+/// An import of a file that records no declarations takes the file whole when it takes the name, and by its edge alone when it names nothing. A mock takes it whole only when the file is followed whole.
 fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<'_>) {
     match import.kind {
         ImportKind::ReExportAll => {
@@ -849,8 +895,14 @@ fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<
             }
         }
         ImportKind::Static | ImportKind::ReExport if !import.names.is_empty() => {
-            for taken in import.names.iter().filter(|taken| name.takes(taken)) {
-                via.taken.name(graph, taken);
+            via.whole |= take_names(graph, name, import, via);
+        }
+        ImportKind::Dynamic | ImportKind::Require if !takes_module(import) => {
+            via.whole |= take_names(graph, name, import, via);
+        }
+        ImportKind::Mock => {
+            if name == Name::Any {
+                via.taken = Taken::Everything;
                 via.whole = true;
             }
         }
@@ -871,6 +923,7 @@ fn loads(edge: Edge) -> bool {
             ImportKind::SideEffect,
             ImportKind::Dynamic,
             ImportKind::Require,
+            ImportKind::Mock,
         ]
         .into_iter()
         .any(|kind| edge.has(kind))

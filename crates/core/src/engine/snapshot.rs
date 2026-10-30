@@ -22,7 +22,7 @@ use crate::{VERSION, atomic};
 
 const MAGIC: &[u8; 8] = b"GSTTSNAP";
 /// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape, or the index in the body comes out of another rule, because a stored index answers as it is. [`VERSION`] cannot do that, because every development build has the same one, whatever commit of a branch it was built from.
-const LAYOUT: u32 = 6;
+const LAYOUT: u32 = 7;
 /// Magic, layout, header length and the hash of the body.
 const PREFIX: usize = 24;
 /// The body starts at a multiple of this, so the archived values in it sit where rkyv needs them.
