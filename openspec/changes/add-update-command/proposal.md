@@ -10,10 +10,13 @@ Updating gsttt means remembering how it was installed, and the Claude Code plugi
 - After a newest-release install it updates the plugin in every Claude Code config on the machine that has it, by running `claude`: the config of `CLAUDE_CONFIG_DIR` and every `~/.claude*` directory. It updates the marketplace, then each install in its scope, from the project of an install that has one. A named VERSION leaves the plugin alone, because Claude Code installs a plugin only at the newest commit of its marketplace.
 - `install.sh` downloads nothing when the gsttt in the install directory already is the version to install. This is what makes `gsttt update` cheap when there is nothing new.
 - A failed install ends the command with exit 1 and leaves the plugin alone. A failed plugin update, or a machine without `claude`, ends it with exit 1 after the other configs were updated, naming the ones that were not.
+- It says what it changed, not what it ran: for each install of the plugin the version before and after (`Updated the plugin in ~/.claude (user): 9b6517d98ed1 → 4c1f2aa3b5c6`, or that it already is the newest), read from `installed_plugins.json`. What `claude` prints is captured, and quoted (the last 5 lines) only in the note about a call that failed.
+- It has no answer, so it writes nothing to stdout in any outcome: its lines, the installer's lines and its notes go to stderr.
+- It asks for a restart of the running Claude Code sessions only when a binary was installed or a plugin version changed.
 
 ## Impact
 
 - `crates/gsttt`: the command, its arguments, the errors, and the `update` module with the installer step and the plugin step.
 - `install.sh`: the check for an installed version, and the `PATH` hint as a function.
-- Specs: `cli` (Commands, and two new requirements), `distribution` (a new requirement).
+- Specs: `cli` (Commands, and new requirements), `distribution` (a new requirement).
 - Docs: the install sections of `README.md` and `plugin/README.md`.

@@ -7,11 +7,12 @@ use std::fs;
 use std::io;
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::RESTART;
 use crate::error::CliError;
 use crate::streams::{Io, Outcome};
 
@@ -24,18 +25,26 @@ const CONFIG_VARIABLE: &str = "CLAUDE_CONFIG_DIR";
 /// What a person whose Claude Code has no gsttt plugin needs to add it.
 const HOW_TO_ADD: &str = "No Claude Code config on this machine has the gsttt plugin. To add it, run these in Claude Code:\n  /plugin marketplace add SkuratovichA/gsttt\n  /plugin install gsttt@gsttt\n";
 
-/// The last line after an update: a session that is running keeps the plugin it loaded when it started.
-const RESTART: &str =
-    "Restart the Claude Code sessions that are running to load the updated plugin.\n";
+/// How many of the last lines `claude` printed a note quotes when a call failed.
+const QUOTED_LINES: usize = 5;
 
 /// One place the plugin is installed, as `installed_plugins.json` records it. Fields it does not name are ignored.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct Install {
     /// `user`, or the scope of a project: `local`, `project`.
     scope: String,
     /// The project of an install that is not the user's.
     project_path: Option<PathBuf>,
+    /// The version of the plugin as the file writes it: the start of the commit of the marketplace.
+    version: Option<String>,
+}
+
+impl Install {
+    /// Whether `other` is this install, the same scope of the same project, whatever version each records.
+    fn is_where(&self, other: &Self) -> bool {
+        self.scope == other.scope && self.project_path == other.project_path
+    }
 }
 
 /// A Claude Code config directory that has the gsttt plugin.
@@ -158,6 +167,34 @@ fn find_configs(
     (configs, problems)
 }
 
+/// The version that `dir` records now for `install` of the plugin from `marketplace`: `None` when the file has no such install any more, or it has no version.
+fn recorded_version(
+    dir: &Path,
+    marketplace: &str,
+    install: &Install,
+) -> Result<Option<String>, ConfigError> {
+    let Some(config) = read_config(dir)? else {
+        return Ok(None);
+    };
+    Ok(config
+        .installs
+        .get(marketplace)
+        .and_then(|installs| installs.iter().find(|found| found.is_where(install)))
+        .and_then(|found| found.version.clone()))
+}
+
+/// What a call of `claude` is for.
+#[derive(Debug, PartialEq, Eq)]
+enum Step {
+    /// Refreshes what the marketplace has, so that the plugin is updated to its newest commit.
+    Marketplace(String),
+    /// Updates `install`, as the file recorded it before the run, of the plugin from `marketplace`.
+    Plugin {
+        marketplace: String,
+        install: Install,
+    },
+}
+
 /// One call of the `claude` command.
 #[derive(Debug, PartialEq, Eq)]
 struct Call {
@@ -167,10 +204,7 @@ struct Call {
     project: Option<PathBuf>,
     /// The arguments after `claude`.
     args: Vec<String>,
-    /// What the line before the call says it does.
-    what: String,
-    /// Whether the call updates the plugin, and not only the marketplace's list of what is new.
-    updates_plugin: bool,
+    step: Step,
 }
 
 impl Call {
@@ -202,11 +236,43 @@ impl Call {
         words.extend(self.args.iter().map(|arg| quoted(arg).into_owned()));
         words.join(" ")
     }
+
+    /// Where the call acts, for the lines about it: the config, and for the plugin its scope and, when it has one, its project.
+    fn place(&self, home: Option<&Path>) -> String {
+        let config = tilde(&self.config, home);
+        match (&self.step, &self.project) {
+            (Step::Marketplace(_), _) => config,
+            (Step::Plugin { install, .. }, Some(project)) => {
+                format!("{config} ({}, {})", install.scope, tilde(project, home))
+            }
+            (Step::Plugin { install, .. }, None) => format!("{config} ({})", install.scope),
+        }
+    }
+
+    /// What was left undone, for the note about a call that failed.
+    fn undone(&self, home: Option<&Path>) -> String {
+        let place = self.place(home);
+        match &self.step {
+            Step::Marketplace(name) => {
+                format!("the marketplace {name} in {place} was not refreshed")
+            }
+            Step::Plugin { .. } => format!("the plugin in {place} was not updated"),
+        }
+    }
 }
 
 /// Whether `config` is `~/.claude`, the config Claude Code uses when `CLAUDE_CONFIG_DIR` is unset.
 fn is_default(config: &Path, home: Option<&Path>) -> bool {
     home.is_some_and(|home| config == home.join(".claude"))
+}
+
+/// `path` for a person to read, the home directory written `~`. A line a shell runs keeps the whole path, because the shell does not expand a `~` it was given quoted.
+fn tilde(path: &Path, home: Option<&Path>) -> String {
+    match home.and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
 }
 
 /// `text` as one word of a shell line.
@@ -215,7 +281,7 @@ fn quoted(text: &str) -> Cow<'_, str> {
 }
 
 /// The calls that bring the plugin of `configs` up to date, and a note for each install that is left out. For each marketplace of a config the marketplace is updated first, so that the plugin is updated to its newest commit, and then each install is, in the scope it was made in. An install of a project that is not on disk any more is left out, as one that names no project is.
-fn plan(configs: &[Config]) -> (Vec<Call>, Vec<String>) {
+fn plan(configs: &[Config], home: Option<&Path>) -> (Vec<Call>, Vec<String>) {
     let mut calls = Vec::new();
     let mut left_out = Vec::new();
     for config in configs {
@@ -226,8 +292,7 @@ fn plan(configs: &[Config]) -> (Vec<Call>, Vec<String>) {
                 args: ["plugin", "marketplace", "update", marketplace]
                     .map(str::to_owned)
                     .to_vec(),
-                what: format!("the marketplace {marketplace}"),
-                updates_plugin: false,
+                step: Step::Marketplace(marketplace.clone()),
             });
             let id = format!("{PLUGIN}@{marketplace}");
             for install in installs {
@@ -244,17 +309,11 @@ fn plan(configs: &[Config]) -> (Vec<Call>, Vec<String>) {
                             );
                             left_out.push(format!(
                                 "left out the {scope} install of {id} in {}: {why}",
-                                config.dir.display()
+                                tilde(&config.dir, home)
                             ));
                             continue;
                         }
                     }
-                };
-                let what = match &project {
-                    Some(project) => {
-                        format!("{id}, {scope} scope, project {}", project.display())
-                    }
-                    None => format!("{id}, {scope} scope"),
                 };
                 calls.push(Call {
                     config: config.dir.clone(),
@@ -262,8 +321,10 @@ fn plan(configs: &[Config]) -> (Vec<Call>, Vec<String>) {
                     args: ["plugin", "update", &id, "--scope", scope]
                         .map(str::to_owned)
                         .to_vec(),
-                    what,
-                    updates_plugin: true,
+                    step: Step::Plugin {
+                        marketplace: marketplace.clone(),
+                        install: install.clone(),
+                    },
                 });
             }
         }
@@ -284,7 +345,7 @@ fn left_as_it_was(calls: &[Call], home: Option<&Path>) -> String {
     for call in calls {
         if previous != Some(&call.config) {
             configs += 1;
-            lines.push(format!("  {}", call.config.display()));
+            lines.push(format!("  {}", tilde(&call.config, home)));
             previous = Some(&call.config);
         }
         lines.push(format!("    {}", call.line(home)));
@@ -296,41 +357,139 @@ fn left_as_it_was(calls: &[Call], home: Option<&Path>) -> String {
     )
 }
 
-/// Updates the plugin in every Claude Code config that has it, by running `claude`, and says so when no config has it.
+/// The last `QUOTED_LINES` lines that `output` holds, the stdout and then the stderr, each indented under a line that says whose they are. Empty when `claude` printed nothing.
+fn printed(output: &Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<&str> = stdout
+        .lines()
+        .chain(stderr.lines())
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let last = lines.get(lines.len().saturating_sub(QUOTED_LINES)..);
+    let mut text = String::new();
+    for line in last.unwrap_or_default() {
+        text.push_str("\n    ");
+        text.push_str(line);
+    }
+    if text.is_empty() {
+        text
+    } else {
+        format!("\n  claude printed:{text}")
+    }
+}
+
+/// What came of a call.
+enum Effect {
+    /// It worked and changed nothing.
+    Nothing,
+    /// It worked and changed the version of the plugin.
+    Changed,
+    /// It failed, and was told.
+    Failed,
+    /// `claude` was not found.
+    NoClaude,
+}
+
+/// Runs `call`, captures what `claude` prints, and tells what the call did: for the plugin the version it was and the version it is, as `installed_plugins.json` records them, and for a call that failed what `claude` printed last.
+fn perform(call: &Call, home: Option<&Path>, io: &mut Io<'_>) -> Effect {
+    if let Step::Marketplace(name) = &call.step {
+        io.complain(
+            format!(
+                "Refreshing the marketplace {name} in {}\n",
+                call.place(home)
+            )
+            .as_bytes(),
+        );
+    }
+    let output = match call.command(home).output() {
+        Ok(output) => output,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Effect::NoClaude,
+        Err(error) => {
+            note(io, &format!("cannot run `{}`: {error}", call.line(home)));
+            return Effect::Failed;
+        }
+    };
+    if !output.status.success() {
+        note(
+            io,
+            &format!(
+                "{}: `{}` ended with {}{}",
+                call.undone(home),
+                call.line(home),
+                output.status,
+                printed(&output)
+            ),
+        );
+        return Effect::Failed;
+    }
+    let Step::Plugin {
+        marketplace,
+        install,
+    } = &call.step
+    else {
+        return Effect::Nothing;
+    };
+
+    let place = call.place(home);
+    let now = match recorded_version(&call.config, marketplace, install) {
+        Ok(Some(version)) => version,
+        Ok(None) => {
+            note(
+                io,
+                &format!(
+                    "the plugin in {place} has no version in plugins/installed_plugins.json after the update"
+                ),
+            );
+            return Effect::Failed;
+        }
+        Err(problem) => {
+            note(io, &problem.to_string());
+            return Effect::Failed;
+        }
+    };
+    match install.version.as_deref() {
+        Some(before) if before == now => {
+            io.complain(format!("The plugin in {place} is already the newest: {now}\n").as_bytes());
+            Effect::Nothing
+        }
+        Some(before) => {
+            io.complain(format!("Updated the plugin in {place}: {before} → {now}\n").as_bytes());
+            Effect::Changed
+        }
+        None => {
+            io.complain(format!("The plugin in {place} is at {now}\n").as_bytes());
+            Effect::Nothing
+        }
+    }
+}
+
+/// Updates the plugin in every Claude Code config that has it, by running `claude`, and says so when no config has it. `installed` is whether the binary was replaced by another version, which running sessions have to be restarted for as much as for a plugin that changed.
 ///
 /// A call that fails is told, and the calls after it still run; the run then ends with exit 1, as it does when `claude` is not found, which leaves the plugin out of step with the binary.
-pub(super) fn update(io: &mut Io<'_>) -> Result<Outcome, CliError> {
+pub(super) fn update(io: &mut Io<'_>, installed: bool) -> Result<Outcome, CliError> {
     let home = std::env::home_dir();
     let (configs, problems) = find_configs(std::env::var_os(CONFIG_VARIABLE), home.as_deref());
     let mut failed = !problems.is_empty();
     for problem in &problems {
         note(io, &problem.to_string());
     }
-    if configs.is_empty() {
-        if failed {
-            return Err(CliError::UpdatePlugin);
-        }
-        io.answer(HOW_TO_ADD.as_bytes())?;
-        return Ok(Outcome::Answered);
+    if configs.is_empty() && !failed {
+        io.complain(HOW_TO_ADD.as_bytes());
     }
 
-    let (calls, left_out) = plan(&configs);
+    let (calls, left_out) = plan(&configs, home.as_deref());
     for text in &left_out {
         note(io, text);
     }
-    let mut updated = 0;
+    let mut changed = installed;
     for (index, call) in calls.iter().enumerate() {
-        io.answer(format!("{}: updating {}\n", call.config.display(), call.what).as_bytes())?;
-        match call.command(home.as_deref()).status() {
-            Ok(status) if status.success() => updated += usize::from(call.updates_plugin),
-            Ok(status) => {
-                note(
-                    io,
-                    &format!("`{}` ended with {status}", call.line(home.as_deref())),
-                );
-                failed = true;
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+        match perform(call, home.as_deref(), io) {
+            Effect::Nothing => {}
+            Effect::Changed => changed = true,
+            Effect::Failed => failed = true,
+            Effect::NoClaude => {
                 note(
                     io,
                     &left_as_it_was(calls.get(index..).unwrap_or_default(), home.as_deref()),
@@ -338,17 +497,10 @@ pub(super) fn update(io: &mut Io<'_>) -> Result<Outcome, CliError> {
                 failed = true;
                 break;
             }
-            Err(error) => {
-                note(
-                    io,
-                    &format!("cannot run `{}`: {error}", call.line(home.as_deref())),
-                );
-                failed = true;
-            }
         }
     }
-    if updated > 0 {
-        io.answer(RESTART.as_bytes())?;
+    if changed {
+        io.complain(RESTART.as_bytes());
     }
     if failed {
         Err(CliError::UpdatePlugin)
@@ -365,6 +517,15 @@ mod tests {
         let file = dir.join(path);
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(file, text).unwrap();
+    }
+
+    /// An install as the file records it, `version` being what it says.
+    fn install(scope: &str, project: Option<&str>, version: Option<&str>) -> Install {
+        Install {
+            scope: scope.to_owned(),
+            project_path: project.map(PathBuf::from),
+            version: version.map(str::to_owned),
+        }
     }
 
     const INSTALLED: &str = r#"{"version":2,"plugins":{
@@ -386,14 +547,8 @@ mod tests {
             BTreeMap::from([(
                 "gsttt".to_owned(),
                 vec![
-                    Install {
-                        scope: "user".to_owned(),
-                        project_path: None
-                    },
-                    Install {
-                        scope: "local".to_owned(),
-                        project_path: Some("/work/app".into())
-                    },
+                    install("user", None, Some("9b6517d98ed1")),
+                    install("local", Some("/work/app"), Some("9b6517d98ed1")),
                 ]
             )])
         );
@@ -495,26 +650,20 @@ mod tests {
                 "gsttt".to_owned(),
                 vec![
                     Install {
-                        scope: "local".to_owned(),
                         project_path: Some(project.path().join("gone")),
+                        ..install("local", None, None)
                     },
+                    install("user", None, None),
                     Install {
-                        scope: "user".to_owned(),
-                        project_path: None,
-                    },
-                    Install {
-                        scope: "local".to_owned(),
                         project_path: Some(project.path().to_owned()),
+                        ..install("local", None, None)
                     },
-                    Install {
-                        scope: "project".to_owned(),
-                        project_path: None,
-                    },
+                    install("project", None, None),
                 ],
             )]),
         };
 
-        let (calls, left_out) = plan(&[config]);
+        let (calls, left_out) = plan(&[config], Some(Path::new("/home/ann")));
 
         let lines: Vec<_> = calls
             .iter()
@@ -537,6 +686,12 @@ mod tests {
         assert!(left_out.first().is_some_and(|text| text.contains("gone")));
         assert!(
             left_out
+                .iter()
+                .all(|text| text.contains("in ~/.claude-work:")),
+            "{left_out:?}"
+        );
+        assert!(
+            left_out
                 .last()
                 .is_some_and(|text| text.contains("names no project"))
         );
@@ -548,8 +703,7 @@ mod tests {
             config: "/home/ann/.claude".into(),
             project: None,
             args: vec!["plugin".to_owned()],
-            what: String::new(),
-            updates_plugin: false,
+            step: Step::Marketplace("gsttt".to_owned()),
         };
         let home = Some(Path::new("/home/ann"));
 
@@ -557,6 +711,110 @@ mod tests {
         assert_eq!(
             call.line(None),
             "CLAUDE_CONFIG_DIR=/home/ann/.claude claude plugin"
+        );
+    }
+
+    #[test]
+    fn the_home_directory_is_written_as_a_tilde_where_a_person_reads_it() {
+        let home = Some(Path::new("/home/ann"));
+        for (path, shown) in [
+            ("/home/ann", "~"),
+            ("/home/ann/.claude", "~/.claude"),
+            ("/home/ann/git/app", "~/git/app"),
+            ("/home/annabel/.claude", "/home/annabel/.claude"),
+            ("/srv/app", "/srv/app"),
+        ] {
+            assert_eq!(tilde(Path::new(path), home), shown, "{path}");
+        }
+        assert_eq!(
+            tilde(Path::new("/home/ann/.claude"), None),
+            "/home/ann/.claude"
+        );
+    }
+
+    #[test]
+    fn a_call_says_where_it_acts_and_what_was_left_undone_when_it_fails() {
+        let home = Some(Path::new("/home/ann"));
+        let marketplace = Call {
+            config: "/home/ann/.claude-work".into(),
+            project: None,
+            args: Vec::new(),
+            step: Step::Marketplace("gsttt".to_owned()),
+        };
+        let plugin = |scope: &str, project: Option<&str>| Call {
+            config: "/home/ann/.claude".into(),
+            project: project.map(PathBuf::from),
+            args: Vec::new(),
+            step: Step::Plugin {
+                marketplace: "gsttt".to_owned(),
+                install: install(scope, project, None),
+            },
+        };
+
+        assert_eq!(marketplace.place(home), "~/.claude-work");
+        assert_eq!(
+            marketplace.undone(home),
+            "the marketplace gsttt in ~/.claude-work was not refreshed"
+        );
+        assert_eq!(plugin("user", None).place(home), "~/.claude (user)");
+        assert_eq!(
+            plugin("local", Some("/home/ann/git/app")).place(home),
+            "~/.claude (local, ~/git/app)"
+        );
+        assert_eq!(
+            plugin("user", None).undone(home),
+            "the plugin in ~/.claude (user) was not updated"
+        );
+    }
+
+    #[test]
+    fn only_the_last_five_lines_that_claude_printed_are_quoted() {
+        let output = |stdout: &str, stderr: &str| Output {
+            status: std::process::ExitStatus::default(),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        };
+
+        assert_eq!(printed(&output("", "")), "");
+        assert_eq!(printed(&output("\n  \n", "")), "");
+        assert_eq!(
+            printed(&output("one\ntwo\n", "")),
+            "\n  claude printed:\n    one\n    two"
+        );
+        assert_eq!(
+            printed(&output("1\n2\n3\n4\n", "5\n\n6\n7  \n")),
+            "\n  claude printed:\n    3\n    4\n    5\n    6\n    7"
+        );
+    }
+
+    #[test]
+    fn an_install_is_found_again_by_its_scope_and_project_whatever_version_it_has_become() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "plugins/installed_plugins.json",
+            r#"{"plugins":{"gsttt@gsttt":[
+                {"scope":"user","version":"new"},
+                {"scope":"local","projectPath":"/work/a","version":"a"},
+                {"scope":"local","projectPath":"/work/b"}
+            ]}}"#,
+        );
+        let version = |install: &Install| recorded_version(dir.path(), "gsttt", install).unwrap();
+
+        assert_eq!(
+            version(&install("user", None, Some("old"))),
+            Some("new".to_owned())
+        );
+        assert_eq!(
+            version(&install("local", Some("/work/a"), None)),
+            Some("a".to_owned())
+        );
+        // An install without a version, one that is not there and a marketplace that is not there are all no version.
+        assert_eq!(version(&install("local", Some("/work/b"), None)), None);
+        assert_eq!(version(&install("local", Some("/work/c"), None)), None);
+        assert_eq!(
+            recorded_version(dir.path(), "other", &install("user", None, None)).unwrap(),
+            None
         );
     }
 }

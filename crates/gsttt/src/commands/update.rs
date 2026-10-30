@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::cli::{UpdateArgs, VERSION};
 use crate::error::CliError;
@@ -21,9 +21,12 @@ const INSTALL_DIRECTORY_VARIABLE: &str = "GSTTT_INSTALL_DIR";
 /// The version the installer installs, which `update` sets to the one it was given and removes otherwise, because an inherited one would pin the version silently.
 const VERSION_VARIABLE: &str = "GSTTT_VERSION";
 
+/// What `update` says last when it changed something: a session that is running keeps the binary and the plugin it started with.
+const RESTART: &str = "Restart running Claude Code sessions to load the plugin.\n";
+
 /// `gsttt update [VERSION]`: runs the installer over the running binary, then, unless a version was named, updates the plugin in every Claude Code config that has it.
 ///
-/// A version that is named leaves the plugin alone, because Claude Code installs a plugin only at the newest commit of its marketplace, so an older binary cannot get a plugin that matches it. It needs no repository, so it takes no session.
+/// A version that is named leaves the plugin alone, because Claude Code installs a plugin only at the newest commit of its marketplace, so an older binary cannot get a plugin that matches it. It needs no repository, so it takes no session. It has no answer, so all it says, and all the installer says, goes to stderr and stdout stays empty.
 pub(super) fn update(args: &UpdateArgs, io: &mut Io<'_>) -> Result<Outcome, CliError> {
     let directory = install_directory(
         std::env::var_os(INSTALL_DIRECTORY_VARIABLE),
@@ -34,20 +37,37 @@ pub(super) fn update(args: &UpdateArgs, io: &mut Io<'_>) -> Result<Outcome, CliE
         || "the newest release".to_owned(),
         |version| format!("gsttt {version}"),
     );
-    io.answer(
+    io.complain(
         format!(
             "Installing {installing} into {} (this is gsttt {VERSION})\n",
             directory.display()
         )
         .as_bytes(),
-    )?;
+    );
+    let before = installed_version(&directory);
     install(&directory, args.version.as_deref())?;
+    let installed = installed_version(&directory) != before;
 
     if args.version.is_some() {
-        io.answer(b"The plugin follows the newest release, so it is left as it is.\n")?;
+        io.complain(b"The plugin follows the newest release, so it is left as it is.\n");
+        if installed {
+            io.complain(RESTART.as_bytes());
+        }
         return Ok(Outcome::Answered);
     }
-    plugin::update(io)
+    plugin::update(io, installed)
+}
+
+/// What the `gsttt` in `directory` prints for `--version`, `None` when there is none or it does not run. The installer decides by the same line whether it has anything to install.
+fn installed_version(directory: &Path) -> Option<String> {
+    let output = Command::new(directory.join("gsttt"))
+        .arg("--version")
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 /// The directory the installer puts the binary in: the one `variable`, the value of `GSTTT_INSTALL_DIR`, names, or else the one the running binary is in, `exe` being its canonical path or why that is not known.
@@ -72,14 +92,15 @@ fn install_directory(
         })
 }
 
-/// Runs the installer to put `version`, or the newest release, in `directory`. Its output streams to ours, and so does its stdin.
+/// Runs the installer to put `version`, or the newest release, in `directory`. Its stderr is ours and so is its stdin, and its stdout goes to our stderr, because `update` has no answer to put on stdout.
 fn install(directory: &Path, version: Option<&str>) -> Result<(), CliError> {
     let mut installer = Command::new("sh");
     installer
         .arg("-c")
         .arg(INSTALLER)
         .arg("install.sh")
-        .env(INSTALL_DIRECTORY_VARIABLE, directory);
+        .env(INSTALL_DIRECTORY_VARIABLE, directory)
+        .stdout(Stdio::from(io::stderr()));
     match version {
         Some(version) => installer.env(VERSION_VARIABLE, version),
         None => installer.env_remove(VERSION_VARIABLE),

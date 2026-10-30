@@ -18,3 +18,10 @@
 ## 4. Docs
 
 - [x] 4.1 The install sections of `README.md` and `plugin/README.md`
+
+## 5. What the update says
+
+- [x] 5.1 The plugin lines say the version before and after for each install, and `claude`'s own output is captured and quoted only when a call failed
+- [x] 5.2 Everything `update` says, the installer's lines included, goes to stderr, and stdout stays empty
+- [x] 5.3 The restart line is said only after a binary was installed or a plugin version changed
+- [x] 5.4 The scenarios of `The update speaks on stderr`, `The plugin step says what changed` and `The restart is asked for after a change`
