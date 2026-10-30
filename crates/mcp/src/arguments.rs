@@ -73,12 +73,12 @@ pub(crate) struct ImpactArguments {
     #[serde(default)]
     pub(crate) all: bool,
     /// Whether to list the files tagged as tests, which is what happens when this is left out. False leaves them out of the answer and says how many it left out, to save context when they do not matter; the walk is the same.
-    #[serde(default = "listed")]
+    #[serde(default = "on_by_default")]
     pub(crate) tests: bool,
 }
 
 /// What a flag that is on unless the call turns it off reads when it is left out.
-fn listed() -> bool {
+fn on_by_default() -> bool {
     true
 }
 
