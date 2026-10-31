@@ -24,6 +24,7 @@ pub const PACKS: &[(&str, &str)] = &[
     ("fetch", include_str!("../packs/fetch.toml")),
     ("graphql", include_str!("../packs/graphql.toml")),
     ("nestjs", include_str!("../packs/nestjs.toml")),
+    ("nestjs-config", include_str!("../packs/nestjs-config.toml")),
     ("prisma", include_str!("../packs/prisma.toml")),
     ("trpc", include_str!("../packs/trpc.toml")),
     ("typeorm", include_str!("../packs/typeorm.toml")),

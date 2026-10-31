@@ -284,6 +284,32 @@ expression: packs
     "assigns": []
   },
   {
+    "name": "nestjs-config",
+    "language": "ts",
+    "detect": [
+      "@nestjs/config"
+    ],
+    "calls": [
+      {
+        "callee": [
+          "configService.get",
+          "configService.getOrThrow",
+          "*.configService.get",
+          "*.configService.getOrThrow"
+        ],
+        "kind": "env",
+        "role": "calls",
+        "key": "$arg1",
+        "method": null,
+        "receiver": null
+      }
+    ],
+    "decorators": [],
+    "chains": [],
+    "embeds": [],
+    "assigns": []
+  },
+  {
     "name": "prisma",
     "language": "ts",
     "detect": [

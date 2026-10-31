@@ -1,0 +1,10 @@
+# NestJS ConfigService: `get` and `getOrThrow` read the environment variable they name.
+name = "nestjs-config"
+language = "ts"
+detect = ["@nestjs/config"]
+
+[[calls]]
+callee = ["configService.get", "configService.getOrThrow", "*.configService.get", "*.configService.getOrThrow"]
+kind = "env"
+role = "calls"
+key = "$arg1"

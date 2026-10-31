@@ -511,6 +511,8 @@ impl Spec<'_> {
             ContractKind::Http => {}
             _ if key.is_empty() => return Outcome::Skip,
             _ if is_computed(key) => return blind(line, what),
+            // A key that is no variable name, such as `database.host`, is a path into a loaded configuration.
+            ContractKind::Env if !is_ident(key) => return Outcome::Skip,
             _ => {}
         }
         Outcome::Fact(ContractFact {
@@ -838,6 +840,20 @@ mod tests {
                 "{target} is a blind spot"
             );
         }
+    }
+
+    #[test]
+    fn an_env_key_that_is_no_variable_name_is_skipped() {
+        let get = rule(serde_json::json!({
+            "callee": "*.get", "kind": "env", "role": "calls", "key": "$arg1",
+        }));
+        let apply =
+            |name: &str| get.apply("cfg", &call("cfg.get", &[Some(name)]), None, 3, "cfg.get");
+        assert_eq!(key(apply("API_URL")), "env API_URL");
+        for path in ["database.host", "a-b", "A B"] {
+            assert_eq!(apply(path), Outcome::Skip, "{path}");
+        }
+        assert!(matches!(apply("${}"), Outcome::Blind(_)));
     }
 
     #[gsttt_scenario::scenario("contract-formats", "A computed origin alone is a blind spot")]
