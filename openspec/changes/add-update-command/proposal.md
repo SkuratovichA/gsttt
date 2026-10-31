@@ -14,7 +14,7 @@ Updating gsttt means remembering how it was installed, and the Claude Code plugi
 - It has no answer, so it writes nothing to stdout in any outcome: its lines, the installer's lines and its notes go to stderr.
 - It asks for a restart of the running Claude Code sessions only when a plugin version or commit changed, or when a binary was installed and a config has the plugin.
 - When the refresh of a marketplace fails, the plugins of that marketplace in that config are not updated, because `claude` would find them newest in a stale copy, and each is noted.
-- The lines it prints for a person to run are safe to paste: `env -u CLAUDE_CONFIG_DIR` for `~/.claude`, `CLAUDE_CONFIG_DIR=<config>` for the others, each word quoted, and a project's call in a subshell, `(cd <project> && …)`.
+- The lines it prints for a person to run are safe to paste: they call `claude` by its name, so an alias or a function works, unset `CLAUDE_CONFIG_DIR` in a subshell for `~/.claude` and set it for the others, quote each word, and run a project's call in a subshell, `(cd <project> && …)`.
 
 ## Impact
 

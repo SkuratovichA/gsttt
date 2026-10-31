@@ -21,7 +21,7 @@ const INSTALL_DIRECTORY_VARIABLE: &str = "GSTTT_INSTALL_DIR";
 /// The version the installer installs, which `update` sets to the one it was given and removes otherwise, because an inherited one would pin the version silently.
 const VERSION_VARIABLE: &str = "GSTTT_VERSION";
 
-/// What `update` says after the plugin lines when it changed something there is a plugin to load: a session that is running keeps the binary and the plugin it started with.
+/// What `update` says after the plugin lines when it changed what a new session loads: a session that is running keeps the binary and the plugin it started with.
 const RESTART: &str = "Restart running Claude Code sessions to load the plugin.\n";
 
 /// `gsttt update [VERSION]`: runs the installer over the running binary, then, unless a version was named, updates the plugin in every Claude Code config that has it.

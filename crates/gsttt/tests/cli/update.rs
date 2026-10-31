@@ -190,13 +190,16 @@ impl Machine {
         ran(self.update(arguments).env("FAKE_CLAUDE_SED", bump()))
     }
 
-    /// Runs `script` in a POSIX shell that starts in the work directory, with the fake `claude` on its `PATH`, as a person would paste lines there, `exported` being the `CLAUDE_CONFIG_DIR` of that shell. It ends by printing the directory it is in.
+    /// Runs `script` in a POSIX shell that starts in the work directory, as a person would paste lines there, `exported` being the `CLAUDE_CONFIG_DIR` of that shell. Its `PATH` holds the system directories and nothing else, so that a `claude` is only what the script defines, and never the real one. It ends by printing the directory it is in.
     fn paste(&self, script: &str, exported: Option<&Path>) -> Ran {
+        for directory in ["/usr/bin", "/bin"] {
+            assert!(!Path::new(directory).join("claude").exists());
+        }
         let mut command = Command::new("sh");
         command
             .env_clear()
             .env("HOME", self.home())
-            .env("PATH", format!("{}:/usr/bin:/bin", self.tools.display()))
+            .env("PATH", "/usr/bin:/bin")
             .env("FAKE_CLAUDE_LOG", &self.log)
             .current_dir(self.sandbox.work.path())
             .arg("-c")
@@ -435,7 +438,16 @@ fn a_failing_plugin_update_fails_the_command_after_the_other_configs_were_update
             Called::new(Some(&working), home, USER),
         ]
     );
-    assert!(run.stderr.contains(RESTART), "{run:?}");
+    // The restart is asked for after the plugin lines, and before the report of the error.
+    let position = |text: &str| {
+        run.stderr
+            .find(text)
+            .unwrap_or_else(|| panic!("{text:?} is missing: {run:?}"))
+    };
+    let updated = position("Updated the plugin in ~/.claude-two");
+    let restart = position(RESTART);
+    let report = position("not up to date in every config");
+    assert!(updated < restart && restart < report, "{run:?}");
 }
 
 #[scenario("cli", "A failed marketplace refresh leaves its plugins alone")]
@@ -503,8 +515,8 @@ fn without_claude_on_the_path_the_configs_that_were_not_updated_are_named() {
     let note = format!(
         "note: `claude` is not on PATH, so the plugin was left as it was in 2 configs. Where `claude` is, run:\n\
          \x20 ~/.claude\n\
-         \x20   env -u CLAUDE_CONFIG_DIR claude plugin marketplace update gsttt\n\
-         \x20   env -u CLAUDE_CONFIG_DIR claude plugin update gsttt@gsttt --scope user\n\
+         \x20   (unset CLAUDE_CONFIG_DIR && claude plugin marketplace update gsttt)\n\
+         \x20   (unset CLAUDE_CONFIG_DIR && claude plugin update gsttt@gsttt --scope user)\n\
          \x20 ~/.claude-work\n\
          \x20   CLAUDE_CONFIG_DIR={second} claude plugin marketplace update gsttt\n\
          \x20   CLAUDE_CONFIG_DIR={second} claude plugin update gsttt@gsttt --scope user\n"
@@ -533,10 +545,16 @@ fn the_lines_to_run_by_hand_name_their_config_and_leave_the_shell_where_it_was()
         .collect();
     assert_eq!(lines.len(), 4, "{run:?}");
 
-    // The person has another config exported, and is in a directory of their own.
+    // The person has another config exported, is in a directory of their own, and has `claude` as a shell function, as Claude Code's own install makes it an alias: no file named `claude` is on the `PATH` of the shell, so a line that goes through `env` finds none.
     machine.write_claude();
     let elsewhere = home.join("elsewhere");
-    let pasted = machine.paste(&lines.join("\n"), Some(&elsewhere));
+    std::fs::create_dir(&elsewhere).unwrap();
+    let script = format!(
+        "! command -v claude >/dev/null || exit 9\nclaude() {{ \"{}/claude\" \"$@\"; }}\n{}",
+        machine.tools.display(),
+        lines.join("\n")
+    );
+    let pasted = machine.paste(&script, Some(&elsewhere));
 
     assert_eq!(pasted.code, Some(0), "{pasted:?}");
     let work = machine.sandbox.work.path();
@@ -601,6 +619,7 @@ fn a_named_version_leaves_the_plugin_alone() {
     assert_eq!(machine.calls(), []);
 }
 
+#[scenario("cli", "A version in the environment does not name the release")]
 #[test]
 fn a_version_in_the_environment_of_the_installer_does_not_name_the_release_to_install() {
     let machine = Machine::new();
@@ -732,7 +751,7 @@ fn the_plugin_lines_say_what_changed_and_not_what_claude_printed() {
          Refreshing the marketplace gsttt in ~/.claude-bare\n\
          Updated the plugin in ~/.claude-bare (user) to 1.0.0\n\
          Refreshing the marketplace gsttt in ~/.claude-commit\n\
-         Updated the plugin in ~/.claude-commit (user): {pinned}, commit {pinned} → e5b2a6d8c7f3\n\
+         Updated the plugin in ~/.claude-commit (user): {pinned}, commit 3c91f0a → e5b2a6d\n\
          {RESTART}"
     );
     assert_eq!(run.stderr, expected);

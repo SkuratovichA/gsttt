@@ -18,11 +18,15 @@ The `gsttt` binary SHALL offer the commands `index`, `impact`, `dependents`, `de
 
 ### Requirement: The update command
 
-`gsttt update [<version>]` SHALL run `install.sh` to put the newest release of gsttt, or `<version>`, into `GSTTT_INSTALL_DIR` or else the directory of the running binary, then update the Claude Code plugin unless a version was named. It SHALL not replace a development build when `GSTTT_INSTALL_DIR` is unset, SHALL exit 1 and leave the plugin alone when the installer fails, and SHALL exit 2 with `-C`, `--json`, `--all` or `--no-refresh`.
+`gsttt update [<version>]` SHALL run `install.sh` to put the newest release of gsttt, or `<version>`, into `GSTTT_INSTALL_DIR` or else the directory of the running binary, without passing on a `GSTTT_VERSION` it inherited, then update the Claude Code plugin unless a version was named. It SHALL not replace a development build when `GSTTT_INSTALL_DIR` is unset, SHALL exit 1 and leave the plugin alone when the installer fails, and SHALL exit 2 with `-C`, `--json`, `--all` or `--no-refresh`.
 
 #### Scenario: An update with nothing new still updates the plugin
 - **WHEN** `gsttt update` runs and the installer finds the newest version already installed
 - **THEN** the installer's line on stderr says so, the plugin is updated in the config that has it and said to be already the newest, stderr has no line that asks for a restart, and the exit code is 0
+
+#### Scenario: A version in the environment does not name the release
+- **WHEN** `gsttt update` runs with no version and with `GSTTT_VERSION` set in its environment to a version that is not the newest
+- **THEN** the installer is run for the newest release, which stderr says is installed, and not for the version of the environment, and the exit code is 0
 
 #### Scenario: A named version leaves the plugin alone
 - **WHEN** `gsttt update 0.1.98` runs and that version is already installed
@@ -62,7 +66,7 @@ After it installs the newest release, `gsttt update` SHALL update the gsttt plug
 
 ### Requirement: The plugin step says what changed
 
-For each install it updates, `gsttt update` SHALL compare the `version` and `gitCommitSha` that `plugins/installed_plugins.json` records before the call and after it, and say `Updated the plugin in <config> (<scope>): <old> → <new>` when either changed (`to <new>` when it had no version before), or `The plugin in <config> (<scope>) is already the newest: <version>`. It SHALL not show what `claude` prints, and SHALL note it and exit 1 when the install has no version in the file after the call.
+For each install it updates, `gsttt update` SHALL compare the `version` and `gitCommitSha` that `plugins/installed_plugins.json` records before and after the call, and say `Updated the plugin in <config> (<scope>): <old> → <new>` when either became another (`to <new>` when it had no version before), or `The plugin in <config> (<scope>) is already the newest: <version>`. It SHALL not show what `claude` prints, and SHALL note it and exit 1 when the install has no version after the call.
 
 #### Scenario: The plugin lines say what changed
 - **WHEN** `gsttt update` runs for a config with a user install that `claude` moves from one version to another and a project install that is at the newest version already, a config with an install that has no version until `claude` gives it one, and a config with an install that stays at its version and moves to another commit of it
@@ -98,15 +102,15 @@ When `claude plugin marketplace update` fails for a marketplace in a config, `gs
 
 ### Requirement: The lines to run by hand are safe to paste
 
-Each line `gsttt update` prints for a person to run SHALL name the config it is for, as `CLAUDE_CONFIG_DIR=<config>` or, for `~/.claude`, as `env -u CLAUDE_CONFIG_DIR`, SHALL quote each word a shell would split, and SHALL run the call of a project as `(cd <project> && …)`, so that a shell that runs several is left in the directory it was in.
+Each line `gsttt update` prints for a person to run SHALL call `claude` by its name, so that an alias or a function of the shell works, and name the config it is for, as `CLAUDE_CONFIG_DIR=<config>` or, for `~/.claude`, by unsetting `CLAUDE_CONFIG_DIR` in a subshell. It SHALL quote each word a shell would split, and run the call of a project as `(cd <project> && …)`, so that a shell that runs several is left in the directory it was in.
 
 #### Scenario: The lines to run by hand are safe to paste
-- **WHEN** `claude` is not on `PATH`, the plugin is installed in `~/.claude`, and in a config and for a project whose names have a space and a single quote, and the four lines are run in one shell that has another `CLAUDE_CONFIG_DIR` exported
+- **WHEN** `claude` is not on `PATH`, the plugin is installed in `~/.claude`, and in a config and for a project whose names have a space and a single quote, and the four lines are run in one shell that has another `CLAUDE_CONFIG_DIR` exported and where `claude` is a function, not a file on `PATH`
 - **THEN** `claude` is called four times, with `CLAUDE_CONFIG_DIR` unset for the two calls of `~/.claude` and set to the config the line names for the others, the call of the project runs in the project, and the shell ends in the directory it started in
 
 ### Requirement: The restart is asked for after a change
 
-`gsttt update` SHALL say `Restart running Claude Code sessions to load the plugin.` after the plugin lines, and before the report of an error when the run fails, when the version or the commit of a plugin install changed, or when it installed another version of the binary and a config has the plugin. It SHALL not say it otherwise.
+`gsttt update` SHALL say `Restart running Claude Code sessions to load the plugin.` after the plugin lines, and before the report of an error when the run fails, when the recorded version of a plugin install changed, or its recorded commit changed to another, or when it installed another version of the binary and a config has the plugin. It SHALL not say it otherwise.
 
 #### Scenario: The restart is asked for only after a change
 - **WHEN** `gsttt update` runs with nothing new, with a binary to install and a plugin at the newest version, with a named version to install, with a plugin to move to another version, and with a binary to install, named or not, where no config has the plugin

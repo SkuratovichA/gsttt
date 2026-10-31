@@ -9,6 +9,7 @@ use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use gsttt_core::text::short;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -105,12 +106,16 @@ fn read_config(dir: &Path) -> Result<Option<Config>, ConfigError> {
         else {
             continue;
         };
-        let list = serde_json::from_value(value).map_err(|source| ConfigError::Installs {
-            path: path.clone(),
-            key: key.clone(),
-            source,
-        })?;
-        installs.insert(marketplace.to_owned(), list);
+        let list: Vec<Install> =
+            serde_json::from_value(value).map_err(|source| ConfigError::Installs {
+                path: path.clone(),
+                key: key.clone(),
+                source,
+            })?;
+        // A marketplace with no install left is no plugin to update.
+        if !list.is_empty() {
+            installs.insert(marketplace.to_owned(), list);
+        }
     }
     Ok((!installs.is_empty()).then(|| Config {
         dir: dir.to_owned(),
@@ -235,21 +240,27 @@ impl Call {
         command
     }
 
-    /// The call as a shell line, for a person to paste where `claude` is. It names the config either way: a shell that exports `CLAUDE_CONFIG_DIR` would send the call for `~/.claude` to another config if the line only left the variable out, so that line takes it away. The line of a project runs in a subshell, so that pasting several leaves the shell where it was.
+    /// The call as a shell line, for a person to paste where `claude` is. It calls `claude` by its name, so that a shell alias or function works, such as the alias a local install of Claude Code makes, which `env` would not find. It names the config either way: a shell that exports `CLAUDE_CONFIG_DIR` would send the call for `~/.claude` to another config if the line only left the variable out, so that line unsets it. A line that changes directory or unsets the variable runs in a subshell, so that pasting several leaves the shell where it was.
     fn line(&self, home: Option<&Path>) -> String {
-        let mut words = Vec::new();
+        let mut call = vec!["claude".to_owned()];
+        call.extend(self.args.iter().map(|arg| quoted(arg).into_owned()));
+        let call = call.join(" ");
+        let mut steps: Vec<String> = self
+            .project
+            .iter()
+            .map(|project| format!("cd {}", quoted(&project.to_string_lossy())))
+            .collect();
         if is_default(&self.config, home) {
-            words.push(format!("env -u {CONFIG_VARIABLE}"));
+            steps.push(format!("unset {CONFIG_VARIABLE}"));
+            steps.push(call);
         } else {
             let config = quoted(&self.config.to_string_lossy()).into_owned();
-            words.push(format!("{CONFIG_VARIABLE}={config}"));
+            steps.push(format!("{CONFIG_VARIABLE}={config} {call}"));
         }
-        words.push("claude".to_owned());
-        words.extend(self.args.iter().map(|arg| quoted(arg).into_owned()));
-        let line = words.join(" ");
-        match &self.project {
-            Some(project) => format!("(cd {} && {line})", quoted(&project.to_string_lossy())),
-            None => line,
+        if steps.len() == 1 {
+            steps.concat()
+        } else {
+            format!("({})", steps.join(" && "))
         }
     }
 
@@ -419,24 +430,23 @@ enum Effect {
     NoClaude,
 }
 
-/// The start of a commit hash, as far as a person tells commits apart.
-fn short(commit: Option<&str>) -> &str {
-    commit.map_or("none", |commit| commit.get(..12).unwrap_or(commit))
-}
-
-/// The line that says the plugin in `place` was updated, `before` being the install as the file had it before the call and `now` as it has it after, at `version`. `None` when neither its version nor its commit changed. An install that had no version is told by where it is now, since there is nothing to say it moved from.
+/// The line that says the plugin in `place` was updated, `before` being the install as the file had it before the call and `now` as it has it after, at `version`. `None` when neither its version nor its commit changed to another: a commit that one of the two records lacks says nothing about a move. An install that had no version is told by where it is now, since there is nothing to say it moved from.
 fn updated_line(place: &str, before: &Install, now: &Install, version: &str) -> Option<String> {
-    match before.version.as_deref() {
-        None => Some(format!("Updated the plugin in {place} to {version}")),
-        Some(old) if old != version => {
+    match (
+        before.version.as_deref(),
+        before.git_commit_sha.as_deref(),
+        now.git_commit_sha.as_deref(),
+    ) {
+        (None, ..) => Some(format!("Updated the plugin in {place} to {version}")),
+        (Some(old), ..) if old != version => {
             Some(format!("Updated the plugin in {place}: {old} → {version}"))
         }
-        Some(_) if before.git_commit_sha != now.git_commit_sha => Some(format!(
+        (Some(_), Some(old), Some(new)) if old != new => Some(format!(
             "Updated the plugin in {place}: {version}, commit {} → {}",
-            short(before.git_commit_sha.as_deref()),
-            short(now.git_commit_sha.as_deref())
+            short(old),
+            short(new)
         )),
-        Some(_) => None,
+        _ => None,
     }
 }
 
@@ -559,11 +569,11 @@ pub(super) fn update(io: &mut Io<'_>, installed: bool) -> Result<Outcome, CliErr
             Step::Plugin { marketplace, .. }
                 if stale.contains(&(call.config.as_path(), marketplace.as_str())) =>
             {
-                let place = call.place(home.as_deref());
                 note(
                     io,
                     &format!(
-                        "the plugin in {place} was not updated, because the marketplace {marketplace} was not refreshed"
+                        "{}, because the marketplace {marketplace} was not refreshed",
+                        call.undone(home.as_deref())
                     ),
                 );
                 Effect::Failed
@@ -662,6 +672,7 @@ mod tests {
             ("no file", None),
             ("no plugins object", Some(r#"{"version":2}"#)),
             ("other plugins", Some(r#"{"plugins":{"other@gsttt":[]}}"#)),
+            ("no install", Some(r#"{"plugins":{"gsttt@gsttt":[]}}"#)),
         ] {
             let dir = tempfile::tempdir().unwrap();
             if let Some(text) = text {
@@ -801,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_config_is_called_without_the_variable_and_its_line_takes_the_variable_away() {
+    fn the_default_config_is_called_without_the_variable_and_its_line_unsets_it() {
         let call = Call {
             config: "/home/ann/.claude".into(),
             project: None,
@@ -810,7 +821,10 @@ mod tests {
         };
         let home = Some(Path::new("/home/ann"));
 
-        assert_eq!(call.line(home), "env -u CLAUDE_CONFIG_DIR claude plugin");
+        assert_eq!(
+            call.line(home),
+            "(unset CLAUDE_CONFIG_DIR && claude plugin)"
+        );
         assert_eq!(
             call.line(None),
             "CLAUDE_CONFIG_DIR=/home/ann/.claude claude plugin"
@@ -926,26 +940,39 @@ mod tests {
     }
 
     #[test]
-    fn a_line_with_a_project_runs_in_a_subshell_and_quotes_what_a_shell_would_split() {
-        let call = Call {
-            config: "/h/.claude it's".into(),
-            project: Some("/h/my app's".into()),
-            args: vec!["plugin".to_owned(), "update".to_owned()],
-            step: Step::Marketplace("gsttt".to_owned()),
+    fn a_line_calls_claude_by_name_and_leaves_the_shell_where_it_was_and_quotes_what_it_would_split()
+     {
+        let home = Some(Path::new("/h"));
+        let line = |config: &str, project: Option<&str>| {
+            Call {
+                config: config.into(),
+                project: project.map(PathBuf::from),
+                args: vec!["plugin".to_owned(), "update".to_owned()],
+                step: Step::Marketplace("gsttt".to_owned()),
+            }
+            .line(home)
         };
 
+        // `~/.claude` unsets the variable a shell may export, and not through `env`, which would not find an alias or a function.
         assert_eq!(
-            call.line(Some(Path::new("/h"))),
-            r#"(cd "/h/my app's" && CLAUDE_CONFIG_DIR="/h/.claude it's" claude plugin update)"#
+            line("/h/.claude", None),
+            "(unset CLAUDE_CONFIG_DIR && claude plugin update)"
         );
-        let default = Call {
-            config: "/h/.claude".into(),
-            project: Some("/h/app".into()),
-            ..call
-        };
         assert_eq!(
-            default.line(Some(Path::new("/h"))),
-            "(cd /h/app && env -u CLAUDE_CONFIG_DIR claude plugin update)"
+            line("/h/.claude", Some("/h/app")),
+            "(cd /h/app && unset CLAUDE_CONFIG_DIR && claude plugin update)"
+        );
+        assert_eq!(
+            line("/h/.claude-work", None),
+            "CLAUDE_CONFIG_DIR=/h/.claude-work claude plugin update"
+        );
+        assert_eq!(
+            line("/h/.claude-work", Some("/h/app")),
+            "(cd /h/app && CLAUDE_CONFIG_DIR=/h/.claude-work claude plugin update)"
+        );
+        assert_eq!(
+            line("/h/.claude it's", Some("/h/my app's")),
+            r#"(cd "/h/my app's" && CLAUDE_CONFIG_DIR="/h/.claude it's" claude plugin update)"#
         );
     }
 
@@ -976,7 +1003,8 @@ mod tests {
     }
 
     #[test]
-    fn an_install_is_told_updated_when_its_version_or_its_commit_changed_and_not_otherwise() {
+    fn an_install_is_told_updated_when_its_version_or_its_commit_changed_to_another_and_not_otherwise()
+     {
         let sha = |sha: &str| {
             at(
                 &format!("{sha}0123456789abcdef"),
@@ -984,39 +1012,36 @@ mod tests {
             )
         };
         let versionless = install("user", None, None);
+        let unrecorded = install("user", None, Some("0.1.50"));
         let place = "~/.claude (user)";
 
         assert_eq!(
-            updated_line(place, &sha("aaaaaaaaaaaa"), &sha("aaaaaaaaaaaa"), "0.1.50"),
+            updated_line(place, &sha("aaaaaaa"), &sha("aaaaaaa"), "0.1.50"),
             None
         );
         assert_eq!(
-            updated_line(place, &sha("aaaaaaaaaaaa"), &sha("bbbbbbbbbbbb"), "0.1.51"),
+            updated_line(place, &sha("aaaaaaa"), &sha("bbbbbbb"), "0.1.51"),
             Some("Updated the plugin in ~/.claude (user): 0.1.50 → 0.1.51".to_owned())
         );
         assert_eq!(
-            updated_line(place, &sha("aaaaaaaaaaaa"), &sha("bbbbbbbbbbbb"), "0.1.50"),
+            updated_line(place, &sha("aaaaaaa"), &sha("bbbbbbb"), "0.1.50"),
             Some(
-                "Updated the plugin in ~/.claude (user): 0.1.50, commit aaaaaaaaaaaa → bbbbbbbbbbbb"
+                "Updated the plugin in ~/.claude (user): 0.1.50, commit aaaaaaa → bbbbbbb"
                     .to_owned()
             )
         );
         assert_eq!(
-            updated_line(place, &versionless, &sha("bbbbbbbbbbbb"), "0.1.50"),
+            updated_line(place, &versionless, &sha("bbbbbbb"), "0.1.50"),
             Some("Updated the plugin in ~/.claude (user) to 0.1.50".to_owned())
         );
-        // A commit that was not recorded before is a change too, and is told as "none".
+        // A commit that one of the two records lacks says nothing about a move.
         assert_eq!(
-            updated_line(
-                place,
-                &install("user", None, Some("0.1.50")),
-                &sha("bbbbbbbbbbbb"),
-                "0.1.50"
-            ),
-            Some(
-                "Updated the plugin in ~/.claude (user): 0.1.50, commit none → bbbbbbbbbbbb"
-                    .to_owned()
-            )
+            updated_line(place, &unrecorded, &sha("bbbbbbb"), "0.1.50"),
+            None
+        );
+        assert_eq!(
+            updated_line(place, &sha("aaaaaaa"), &unrecorded, "0.1.50"),
+            None
         );
     }
 
