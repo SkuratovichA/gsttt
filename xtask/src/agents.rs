@@ -45,7 +45,7 @@ use crate::root::repository_root;
 const USAGE: &str = "usage:
   cargo xtask agents tools
   cargo xtask agents questions [--repository <name>]... [--out <file>]
-  cargo xtask agents run --gsttt <binary> [--repository <name>]... [--question <id>]... [--repeats <n>] [--out <file>]
+  cargo xtask agents run --gsttt <binary> [--repository <name>]... [--question <id>]... [--repeats <n>] [--setup <name>]... [--out <file>]
   cargo xtask agents table [<results file>]";
 
 /// Where the questions are written, relative to the root of the repository.

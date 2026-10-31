@@ -54,11 +54,11 @@ struct Planned<'a> {
 }
 
 /// The runs in the order they are made: by repeat, then by question, then by setup and its arms. A slow hour of the API, or a limit that stops the task, then falls on every setup and arm alike.
-fn order<'a>(questions: &[&'a Question], repeats: u32) -> Vec<Planned<'a>> {
+fn order<'a>(questions: &[&'a Question], chosen: &[Setup], repeats: u32) -> Vec<Planned<'a>> {
     let mut planned = Vec::new();
     for repeat in 1..=repeats {
         for &question in questions {
-            for (setup, arm) in setups::every_arm() {
+            for (setup, arm) in setups::arms_of(chosen) {
                 planned.push(Planned {
                     question,
                     setup,
@@ -129,6 +129,8 @@ struct Session<'a> {
     claude: &'a Path,
     questions: &'a [&'a Question],
     repeats: u32,
+    /// The setups to ask.
+    setups: &'a [Setup],
     checkouts: &'a BTreeMap<String, Checkout>,
     /// Makes the command line of a run.
     invoke: Invoke<'a>,
@@ -169,7 +171,7 @@ impl Session<'_> {
 
     /// The runs of [`Self::run_all`], in order.
     fn run_planned(&self, results: &mut Results) -> anyhow::Result<usize> {
-        let planned = order(self.questions, self.repeats);
+        let planned = order(self.questions, self.setups, self.repeats);
         let total = planned.len();
         let local: Vec<&str> = self.local.iter().map(String::as_str).collect();
         let mut made = 0;
@@ -540,6 +542,12 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         pins.agents.repeats
     );
 
+    let chosen = if args.setups.is_empty() {
+        Setup::ALL.to_vec()
+    } else {
+        args.setups
+    };
+
     let out = args.out.unwrap_or_else(|| root.join(RESULTS));
     // The streams of the runs go in the directory that has the name of the results file without its extension.
     let transcripts = out.with_extension("");
@@ -607,8 +615,8 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
     let invoke = |setup: Setup, arm: Arm, dirs: RunDirs<'_>| {
         setups::invocation(setup, arm, &context, dirs, &host)
     };
-    // Every setup in each of its arms is tried once before the first run: a PATH that holds a program no run may find stops the task before it spends anything.
-    for (setup, arm) in setups::every_arm() {
+    // Every arm of the setups asked is tried once before the first run: a PATH that holds a program no run may find stops the task before it spends anything.
+    for (setup, arm) in setups::arms_of(&chosen) {
         let dirs = RunDirs {
             checkout: &runs_root,
             tmp: &tmp_root,
@@ -661,6 +669,7 @@ pub(super) fn run(args: &[String]) -> anyhow::Result<ExitCode> {
         claude: &claude,
         questions: &questions,
         repeats,
+        setups: &chosen,
         checkouts: &checkouts,
         invoke: Invoke(&invoke),
         tmp_root: &tmp_root,
@@ -972,6 +981,7 @@ touch "$d/finished"
                 claude: &self.claude,
                 questions: &questions,
                 repeats: 1,
+                setups: &Setup::ALL,
                 checkouts: &self.checkouts,
                 invoke: Invoke(&invoke),
                 tmp_root: &self.tmp_root,
@@ -1478,7 +1488,7 @@ touch "$d/finished"
     fn the_setups_take_turns() {
         let first = question("repo-users-1", Kind::Users);
         let second = question("repo-users-2", Kind::Users);
-        let planned = order(&[&first, &second], 2);
+        let planned = order(&[&first, &second], &Setup::ALL, 2);
         let names: Vec<String> = planned
             .iter()
             .map(|run| {
@@ -1523,6 +1533,34 @@ touch "$d/finished"
         );
         assert!(planned[..14].iter().all(|run| run.repeat == 1));
         assert!(planned[14..].iter().all(|run| run.repeat == 2));
+    }
+
+    #[gsttt_scenario::scenario("agent-benchmarks", "--setup asks only the setups it names")]
+    #[test]
+    fn setup_asks_only_the_setups_it_names() {
+        let first = question("repo-users-1", Kind::Users);
+        let args = args::parse(
+            Task::Run,
+            &[
+                "--gsttt", "g", "--setup", "gsttt", "--setup", "plain", "--setup", "gsttt",
+            ]
+            .map(String::from),
+        )
+        .unwrap();
+        let planned = order(&[&first], &args.setups, 1);
+        let names: Vec<String> = planned
+            .iter()
+            .map(|run| format!("{} {}", run.setup, run.arm))
+            .collect();
+        assert_eq!(names, ["plain installed", "gsttt installed", "gsttt told"]);
+
+        let error = args::parse(
+            Task::Run,
+            &["--gsttt", "g", "--setup", "vim"].map(String::from),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("`vim`"), "{error}");
     }
 
     #[gsttt_scenario::scenario("agent-benchmarks", "A run without an answer scores zero")]
