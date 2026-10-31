@@ -25,3 +25,11 @@
 - [x] 5.2 Everything `update` says, the installer's lines included, goes to stderr, and stdout stays empty
 - [x] 5.3 The restart line is said only after a binary was installed or a plugin version changed
 - [x] 5.4 The scenarios of `The update speaks on stderr`, `The plugin step says what changed` and `The restart is asked for after a change`
+
+## 6. Review fixes
+
+- [x] 6.1 The lines to run by hand name their config either way (`env -u CLAUDE_CONFIG_DIR` for `~/.claude`), run a project's call in a subshell, and the integration tests pin their quoting with a config and a project whose names have a space and a quote
+- [x] 6.2 A failed marketplace refresh skips the plugin calls of that marketplace in that config, with a note for each, and the exit code is still 1
+- [x] 6.3 A project that goes between the plan and its call is left out with a note, not read as a missing `claude`
+- [x] 6.4 An install counts as changed when its version or its commit differs, or it had no version before; the restart is asked for only when a plugin changed or a binary was installed where a plugin exists
+- [x] 6.5 The scenarios of `A marketplace that did not refresh leaves its plugins alone` and `The lines to run by hand are safe to paste`, and the wording of the restart and failure requirements

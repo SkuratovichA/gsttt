@@ -10,14 +10,18 @@ use sha2::{Digest, Sha256};
 
 use super::support::{Ran, Sandbox, ran, write, write_executable};
 
-/// A `claude` that appends `CLAUDE_CONFIG_DIR` (or `unset`), the physical current directory and the arguments of each call to `FAKE_CLAUDE_LOG`, and prints a line about the call. It fails, after six more lines on stdout and one on stderr, when `CLAUDE_CONFIG_DIR` is the value of `FAKE_CLAUDE_FAIL`. When `FAKE_CLAUDE_SED` is set, a `plugin update` that works applies it as a `sed` script to `installed_plugins.json` of its config, as Claude Code rewrites the file for the install it updates.
+/// A `claude` that appends `CLAUDE_CONFIG_DIR` (or `unset`), the physical current directory and the arguments of each call to `FAKE_CLAUDE_LOG`, and prints a line about the call. It removes the directory `FAKE_CLAUDE_REMOVE` names, as a person might between two calls. It fails, after six more lines on stdout and one on stderr, when `CLAUDE_CONFIG_DIR` is the value of `FAKE_CLAUDE_FAIL` and the arguments match the pattern `FAKE_CLAUDE_FAIL_ON`, which is any by default. When `FAKE_CLAUDE_SED` is set, a `plugin update` that works applies it as a `sed` script to `installed_plugins.json` of its config, as Claude Code rewrites the file for the install it updates.
 const CLAUDE: &str = r#"#!/bin/sh
 printf '%s|%s|%s\n' "${CLAUDE_CONFIG_DIR:-unset}" "$(pwd -P)" "$*" >> "$FAKE_CLAUDE_LOG"
 echo "fake claude: $*"
+if [ -n "${FAKE_CLAUDE_REMOVE:-}" ]; then rm -rf "$FAKE_CLAUDE_REMOVE"; fi
 if [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ "${CLAUDE_CONFIG_DIR}" = "${FAKE_CLAUDE_FAIL:-}" ]; then
-  for n in 1 2 3 4 5 6; do echo "fake claude: noise $n"; done
-  echo "fake claude: failing" >&2
-  exit 1
+  case "$*" in
+    ${FAKE_CLAUDE_FAIL_ON:-*})
+      for n in 1 2 3 4 5 6; do echo "fake claude: noise $n"; done
+      echo "fake claude: failing" >&2
+      exit 1 ;;
+  esac
 fi
 case "$*" in
   "plugin update "*)
@@ -88,10 +92,15 @@ impl Machine {
             log: work.join("claude.log"),
             sandbox,
         };
-        write_executable(&machine.tools, "claude", CLAUDE);
+        machine.write_claude();
         write(&machine.packages, "latest", "0.1.99\n");
         machine.install_gsttt("0.1.99");
         machine
+    }
+
+    /// Puts the fake `claude` where the `PATH` of the fakes finds it.
+    fn write_claude(&self) {
+        write_executable(&self.tools, "claude", CLAUDE);
     }
 
     /// Replaces the installed `gsttt` by one that says it is `version`.
@@ -179,6 +188,23 @@ impl Machine {
     /// Runs `gsttt update` with `arguments`, the fake `claude` moving the installs of version `OLD` to `NEW`.
     fn run_bumping(&self, arguments: &[&str]) -> Ran {
         ran(self.update(arguments).env("FAKE_CLAUDE_SED", bump()))
+    }
+
+    /// Runs `script` in a POSIX shell that starts in the work directory, with the fake `claude` on its `PATH`, as a person would paste lines there, `exported` being the `CLAUDE_CONFIG_DIR` of that shell. It ends by printing the directory it is in.
+    fn paste(&self, script: &str, exported: Option<&Path>) -> Ran {
+        let mut command = Command::new("sh");
+        command
+            .env_clear()
+            .env("HOME", self.home())
+            .env("PATH", format!("{}:/usr/bin:/bin", self.tools.display()))
+            .env("FAKE_CLAUDE_LOG", &self.log)
+            .current_dir(self.sandbox.work.path())
+            .arg("-c")
+            .arg(format!("{script}\npwd -P"));
+        if let Some(config) = exported {
+            command.env("CLAUDE_CONFIG_DIR", config);
+        }
+        ran(&mut command)
     }
 
     /// The calls of `claude` so far, in order.
@@ -317,16 +343,39 @@ fn every_config_that_has_the_plugin_is_updated_from_the_right_place() {
 fn a_project_that_no_longer_exists_is_skipped_with_a_note() {
     let machine = Machine::new();
     let gone = machine.sandbox.work.path().join("gone");
-    machine.config(".claude", &[("user", None), ("local", Some(&gone))]);
+    // This one is on disk when the update plans its calls, and goes while the first call of `claude` runs.
+    let vanishing = machine.sandbox.work.path().join("vanishing");
+    std::fs::create_dir(&vanishing).unwrap();
+    machine.config(
+        ".claude",
+        &[
+            ("user", None),
+            ("local", Some(&gone)),
+            ("project", Some(&vanishing)),
+        ],
+    );
+    let mut command = machine.update(&[]);
+    command.env("FAKE_CLAUDE_REMOVE", &vanishing);
 
-    let run = machine.run(&[]);
+    let run = ran(&mut command);
 
     assert_eq!(run.code, Some(0), "{run:?}");
     assert!(
-        run.stderr.contains("note: left out the local install"),
+        run.stderr.contains(&format!(
+            "note: left out the local install of gsttt@gsttt in ~/.claude: its project {} is not a directory\n",
+            gone.display()
+        )),
         "{run:?}"
     );
-    assert!(run.stderr.contains(&gone.display().to_string()), "{run:?}");
+    assert!(
+        run.stderr.contains(&format!(
+            "note: left out the project install of gsttt@gsttt in ~/.claude: its project {} is not a directory\n",
+            vanishing.display()
+        )),
+        "{run:?}"
+    );
+    // A directory that is gone is not a `claude` that is gone.
+    assert!(!run.stderr.contains("not on PATH"), "{run:?}");
     assert_eq!(
         machine.calls(),
         [
@@ -340,30 +389,30 @@ fn a_project_that_no_longer_exists_is_skipped_with_a_note() {
 #[test]
 fn a_failing_plugin_update_fails_the_command_after_the_other_configs_were_updated() {
     let machine = Machine::new();
-    let failing = machine.config(".claude-one", &[("user", None)]);
+    let home = machine.home();
+    // Names that a shell splits at the space and would take the quote of for the start of a string.
+    let project = home.join("my app's");
+    std::fs::create_dir(&project).unwrap();
+    let failing = machine.config(".claude it's", &[("local", Some(&project))]);
     let working = machine.config(".claude-two", &[("user", None)]);
     let mut command = machine.update(&[]);
+    // The marketplace is refreshed, and only the update of the plugin fails.
     command
         .env("FAKE_CLAUDE_FAIL", &failing)
+        .env("FAKE_CLAUDE_FAIL_ON", "plugin update *")
         .env("FAKE_CLAUDE_SED", bump());
 
     let run = ran(&mut command);
 
     assert_eq!(run.code, Some(1), "{run:?}");
+    let home_text = home.display();
     let rerun = format!(
-        "CLAUDE_CONFIG_DIR={} claude plugin update gsttt@gsttt --scope user",
-        failing.display()
+        "(cd \"{home_text}/my app's\" && CLAUDE_CONFIG_DIR=\"{home_text}/.claude it's\" claude plugin update gsttt@gsttt --scope local)"
     );
     let failed = format!(
-        "note: the plugin in ~/.claude-one (user) was not updated: `{rerun}` ended with exit status: 1\n  claude printed:\n    fake claude: noise 3\n    fake claude: noise 4\n    fake claude: noise 5\n    fake claude: noise 6\n    fake claude: failing\n"
+        "note: the plugin in ~/.claude it's (local, ~/my app's) was not updated: `{rerun}` ended with exit status: 1\n  claude printed:\n    fake claude: noise 3\n    fake claude: noise 4\n    fake claude: noise 5\n    fake claude: noise 6\n    fake claude: failing\n"
     );
     assert!(run.stderr.contains(&failed), "{run:?}");
-    assert!(
-        run.stderr.contains(
-            "note: the marketplace gsttt in ~/.claude-one was not refreshed: `CLAUDE_CONFIG_DIR="
-        ),
-        "{run:?}"
-    );
     // Only the last five lines are quoted, and what `claude` printed in a call that worked is not.
     assert!(!run.stderr.contains("noise 2"), "{run:?}");
     assert!(!run.stderr.contains("fake claude: plugin"), "{run:?}");
@@ -377,17 +426,62 @@ fn a_failing_plugin_update_fails_the_command_after_the_other_configs_were_update
         run.stderr.contains("not up to date in every config"),
         "{run:?}"
     );
-    let home = machine.home();
     assert_eq!(
         machine.calls(),
         [
             Called::new(Some(&failing), home, MARKETPLACE),
-            Called::new(Some(&failing), home, USER),
+            Called::new(Some(&failing), &project, LOCAL),
             Called::new(Some(&working), home, MARKETPLACE),
             Called::new(Some(&working), home, USER),
         ]
     );
     assert!(run.stderr.contains(RESTART), "{run:?}");
+}
+
+#[scenario("cli", "A failed marketplace refresh leaves its plugins alone")]
+#[test]
+fn a_failed_marketplace_refresh_leaves_its_plugins_alone() {
+    let machine = Machine::new();
+    let project = machine.home().join("app");
+    std::fs::create_dir(&project).unwrap();
+    let stale = machine.config(".claude-one", &[("user", None), ("local", Some(&project))]);
+    let fresh = machine.config(".claude-two", &[("user", None)]);
+    let mut command = machine.update(&[]);
+    command
+        .env("FAKE_CLAUDE_FAIL", &stale)
+        .env("FAKE_CLAUDE_FAIL_ON", "plugin marketplace *")
+        .env("FAKE_CLAUDE_SED", bump());
+
+    let run = ran(&mut command);
+
+    assert_eq!(run.code, Some(1), "{run:?}");
+    let refresh = format!(
+        "note: the marketplace gsttt in ~/.claude-one was not refreshed: `CLAUDE_CONFIG_DIR={} claude plugin marketplace update gsttt` ended with exit status: 1\n",
+        stale.display()
+    );
+    assert!(run.stderr.contains(&refresh), "{run:?}");
+    for place in ["~/.claude-one (user)", "~/.claude-one (local, ~/app)"] {
+        let skipped = format!(
+            "note: the plugin in {place} was not updated, because the marketplace gsttt was not refreshed\n"
+        );
+        assert!(run.stderr.contains(&skipped), "{place}: {run:?}");
+    }
+    // The other config does not depend on it.
+    assert!(
+        run.stderr.contains(&format!(
+            "Updated the plugin in ~/.claude-two (user): {OLD} → {NEW}\n"
+        )),
+        "{run:?}"
+    );
+    let home = machine.home();
+    assert_eq!(
+        machine.calls(),
+        [
+            Called::new(Some(&stale), home, MARKETPLACE),
+            Called::new(Some(&fresh), home, MARKETPLACE),
+            Called::new(Some(&fresh), home, USER),
+        ]
+    );
 }
 
 #[scenario(
@@ -398,29 +492,65 @@ fn a_failing_plugin_update_fails_the_command_after_the_other_configs_were_update
 fn without_claude_on_the_path_the_configs_that_were_not_updated_are_named() {
     let machine = Machine::new();
     std::fs::remove_file(machine.tools.join("claude")).unwrap();
-    let first = machine.config(".claude", &[("user", None)]);
+    machine.config(".claude", &[("user", None)]);
     let second = machine.config(".claude-work", &[("user", None)]);
 
     let run = machine.run(&[]);
 
     assert_eq!(run.code, Some(1), "{run:?}");
-    assert_eq!(first, machine.home().join(".claude"));
-    assert!(run.stderr.contains("  ~/.claude\n"), "{run:?}");
-    assert!(run.stderr.contains("  ~/.claude-work\n"), "{run:?}");
-    assert!(
-        run.stderr
-            .contains("claude plugin update gsttt@gsttt --scope user\n"),
-        "{run:?}"
+    // The config that is `~/.claude` is named by taking the variable away, the other by setting it.
+    let second = second.display();
+    let note = format!(
+        "note: `claude` is not on PATH, so the plugin was left as it was in 2 configs. Where `claude` is, run:\n\
+         \x20 ~/.claude\n\
+         \x20   env -u CLAUDE_CONFIG_DIR claude plugin marketplace update gsttt\n\
+         \x20   env -u CLAUDE_CONFIG_DIR claude plugin update gsttt@gsttt --scope user\n\
+         \x20 ~/.claude-work\n\
+         \x20   CLAUDE_CONFIG_DIR={second} claude plugin marketplace update gsttt\n\
+         \x20   CLAUDE_CONFIG_DIR={second} claude plugin update gsttt@gsttt --scope user\n"
     );
-    assert!(
-        run.stderr.contains(&format!(
-            "CLAUDE_CONFIG_DIR={} claude plugin marketplace update gsttt",
-            second.display()
-        )),
-        "{run:?}"
-    );
+    assert!(run.stderr.contains(&note), "{run:?}");
     assert!(!run.stderr.contains(RESTART), "{run:?}");
     assert_eq!(machine.calls(), []);
+}
+
+#[scenario("cli", "The lines to run by hand are safe to paste")]
+#[test]
+fn the_lines_to_run_by_hand_name_their_config_and_leave_the_shell_where_it_was() {
+    let machine = Machine::new();
+    std::fs::remove_file(machine.tools.join("claude")).unwrap();
+    let home = machine.home();
+    let project = home.join("my app's");
+    std::fs::create_dir(&project).unwrap();
+    machine.config(".claude", &[("user", None)]);
+    let quoted = machine.config(".claude it's", &[("local", Some(&project))]);
+    let run = machine.run(&[]);
+    assert_eq!(run.code, Some(1), "{run:?}");
+    let lines: Vec<&str> = run
+        .stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("    "))
+        .collect();
+    assert_eq!(lines.len(), 4, "{run:?}");
+
+    // The person has another config exported, and is in a directory of their own.
+    machine.write_claude();
+    let elsewhere = home.join("elsewhere");
+    let pasted = machine.paste(&lines.join("\n"), Some(&elsewhere));
+
+    assert_eq!(pasted.code, Some(0), "{pasted:?}");
+    let work = machine.sandbox.work.path();
+    assert_eq!(
+        machine.calls(),
+        [
+            Called::new(None, work, MARKETPLACE),
+            Called::new(None, work, USER),
+            Called::new(Some(&quoted), work, MARKETPLACE),
+            Called::new(Some(&quoted), &project, LOCAL),
+        ]
+    );
+    let after = pasted.stdout.lines().last().unwrap_or_default();
+    assert_eq!(Path::new(after), work.canonicalize().unwrap());
 }
 
 #[scenario("cli", "Without the plugin the commands to add it are printed")]
@@ -469,6 +599,24 @@ fn a_named_version_leaves_the_plugin_alone() {
     );
     assert!(!run.stderr.contains(RESTART), "{run:?}");
     assert_eq!(machine.calls(), []);
+}
+
+#[test]
+fn a_version_in_the_environment_of_the_installer_does_not_name_the_release_to_install() {
+    let machine = Machine::new();
+    machine.config(".claude", &[("user", None)]);
+    // The installer reads `GSTTT_VERSION` too. An update that names no version wants the newest release, 0.1.99, which is installed, and there is no package of 0.1.50 to download.
+    let mut command = machine.update(&[]);
+    command.env("GSTTT_VERSION", "0.1.50");
+
+    let run = ran(&mut command);
+
+    assert_eq!(run.code, Some(0), "{run:?}");
+    assert!(
+        run.stderr.contains("gsttt 0.1.99 is already installed at"),
+        "{run:?}"
+    );
+    assert!(!run.stderr.contains("0.1.50"), "{run:?}");
 }
 
 #[scenario("cli", "A failed install leaves the plugin alone")]
@@ -541,7 +689,8 @@ fn an_empty_version_is_refused() {
 #[test]
 fn the_plugin_lines_say_what_changed_and_not_what_claude_printed() {
     let machine = Machine::new();
-    let project = machine.home().join("app");
+    let home = machine.home();
+    let project = home.join("app");
     std::fs::create_dir(&project).unwrap();
     // Only the install at `OLD` is moved to `NEW`: the one of the project is at a version that is the newest already.
     let newest = "7e0d1c9a4b20";
@@ -549,8 +698,25 @@ fn the_plugin_lines_say_what_changed_and_not_what_claude_printed() {
         ".claude",
         &[("user", None, OLD), ("local", Some(&project), newest)],
     );
+    // An install with no version in the file, which `claude` gives one, and one that stays at its version and moves to another commit of it.
+    write(
+        home,
+        ".claude-bare/plugins/installed_plugins.json",
+        &json!({"version": 2, "plugins": {"gsttt@gsttt": [
+            {"scope": "user", "installPath": "/claude/plugins/cache/gsttt/gsttt/bare"}
+        ]}})
+        .to_string(),
+    );
+    let pinned = "3c91f0aa27d4";
+    machine.config_at(".claude-commit", &[("user", None, pinned)]);
+    let sed = format!(
+        "{};s|\"installPath\":\"/claude/plugins/cache/gsttt/gsttt/bare\"|&,\"version\":\"1.0.0\"|;s/\"gitCommitSha\":\"{pinned}b8c917379dedc4fa592a6e07b605\"/\"gitCommitSha\":\"e5b2a6d8c7f3aaaaaaaaaaaaaaaaaaaaaaaaaaaa\"/",
+        bump()
+    );
+    let mut command = machine.update(&[]);
+    command.env("FAKE_CLAUDE_SED", sed);
 
-    let run = machine.run_bumping(&[]);
+    let run = ran(&mut command);
 
     assert_eq!(run.code, Some(0), "{run:?}");
     assert_eq!(run.stdout, "", "{run:?}");
@@ -563,6 +729,10 @@ fn the_plugin_lines_say_what_changed_and_not_what_claude_printed() {
          Refreshing the marketplace gsttt in ~/.claude\n\
          Updated the plugin in ~/.claude (user): {OLD} → {NEW}\n\
          The plugin in ~/.claude (local, ~/app) is already the newest: {newest}\n\
+         Refreshing the marketplace gsttt in ~/.claude-bare\n\
+         Updated the plugin in ~/.claude-bare (user) to 1.0.0\n\
+         Refreshing the marketplace gsttt in ~/.claude-commit\n\
+         Updated the plugin in ~/.claude-commit (user): {pinned}, commit {pinned} → e5b2a6d8c7f3\n\
          {RESTART}"
     );
     assert_eq!(run.stderr, expected);
@@ -664,4 +834,23 @@ fn the_restart_is_asked_for_only_after_a_binary_was_installed_or_a_plugin_change
     assert_eq!(run.code, Some(0), "{run:?}");
     assert!(run.stderr.contains(&format!("{OLD} → {NEW}")), "{run:?}");
     assert!(run.stderr.ends_with(RESTART), "{run:?}");
+
+    // A binary is installed where no config has the plugin, which has nothing to load.
+    let bare = Machine::new();
+    write(
+        bare.home(),
+        ".claude/plugins/installed_plugins.json",
+        r#"{"version":2,"plugins":{"other@market":[]}}"#,
+    );
+    bare.install_gsttt("0.1.98");
+    bare.release("0.1.99");
+    let run = bare.run(&[]);
+    assert_eq!(run.code, Some(0), "{run:?}");
+    assert!(run.stderr.contains("Installed gsttt 0.1.99 to"), "{run:?}");
+    assert!(!run.stderr.contains(RESTART), "{run:?}");
+    bare.install_gsttt("0.1.98");
+    let run = bare.run(&["0.1.99"]);
+    assert_eq!(run.code, Some(0), "{run:?}");
+    assert!(run.stderr.contains("Installed gsttt 0.1.99 to"), "{run:?}");
+    assert!(!run.stderr.contains(RESTART), "{run:?}");
 }

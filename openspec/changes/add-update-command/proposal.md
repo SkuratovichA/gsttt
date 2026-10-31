@@ -12,7 +12,9 @@ Updating gsttt means remembering how it was installed, and the Claude Code plugi
 - A failed install ends the command with exit 1 and leaves the plugin alone. A failed plugin update, or a machine without `claude`, ends it with exit 1 after the other configs were updated, naming the ones that were not.
 - It says what it changed, not what it ran: for each install of the plugin the version before and after (`Updated the plugin in ~/.claude (user): 9b6517d98ed1 → 4c1f2aa3b5c6`, or that it already is the newest), read from `installed_plugins.json`. What `claude` prints is captured, and quoted (the last 5 lines) only in the note about a call that failed.
 - It has no answer, so it writes nothing to stdout in any outcome: its lines, the installer's lines and its notes go to stderr.
-- It asks for a restart of the running Claude Code sessions only when a binary was installed or a plugin version changed.
+- It asks for a restart of the running Claude Code sessions only when a plugin version or commit changed, or when a binary was installed and a config has the plugin.
+- When the refresh of a marketplace fails, the plugins of that marketplace in that config are not updated, because `claude` would find them newest in a stale copy, and each is noted.
+- The lines it prints for a person to run are safe to paste: `env -u CLAUDE_CONFIG_DIR` for `~/.claude`, `CLAUDE_CONFIG_DIR=<config>` for the others, each word quoted, and a project's call in a subshell, `(cd <project> && …)`.
 
 ## Impact
 

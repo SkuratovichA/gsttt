@@ -38,6 +38,8 @@ struct Install {
     project_path: Option<PathBuf>,
     /// The version of the plugin as the file writes it: the start of the commit of the marketplace.
     version: Option<String>,
+    /// The commit of the marketplace that the install was made from.
+    git_commit_sha: Option<String>,
 }
 
 impl Install {
@@ -167,12 +169,12 @@ fn find_configs(
     (configs, problems)
 }
 
-/// The version that `dir` records now for `install` of the plugin from `marketplace`: `None` when the file has no such install any more, or it has no version.
-fn recorded_version(
+/// What `dir` records now for `install` of the plugin from `marketplace`, with its version: `None` when the file has no such install any more, or it has no version.
+fn recorded_install(
     dir: &Path,
     marketplace: &str,
     install: &Install,
-) -> Result<Option<String>, ConfigError> {
+) -> Result<Option<(Install, String)>, ConfigError> {
     let Some(config) = read_config(dir)? else {
         return Ok(None);
     };
@@ -180,7 +182,12 @@ fn recorded_version(
         .installs
         .get(marketplace)
         .and_then(|installs| installs.iter().find(|found| found.is_where(install)))
-        .and_then(|found| found.version.clone()))
+        .and_then(|found| {
+            found
+                .version
+                .clone()
+                .map(|version| (found.clone(), version))
+        }))
 }
 
 /// What a call of `claude` is for.
@@ -208,12 +215,18 @@ struct Call {
 }
 
 impl Call {
-    /// The call, ready to run: in the project or else the home directory (the config directory when the machine has no home), and with `CLAUDE_CONFIG_DIR` set to the config, or removed when the config is `~/.claude`, which is where Claude Code looks without it.
+    /// The directory the call runs in: the project, or else the home directory, or else, when the machine has no home or it is not a directory, the config directory.
+    fn directory<'a>(&'a self, home: Option<&'a Path>) -> &'a Path {
+        self.project
+            .as_deref()
+            .or(home.filter(|home| home.is_dir()))
+            .unwrap_or(&self.config)
+    }
+
+    /// The call, ready to run: in `directory`, and with `CLAUDE_CONFIG_DIR` set to the config, or removed when the config is `~/.claude`, which is where Claude Code looks without it.
     fn command(&self, home: Option<&Path>) -> Command {
         let mut command = Command::new("claude");
-        command
-            .args(&self.args)
-            .current_dir(self.project.as_deref().or(home).unwrap_or(&self.config));
+        command.args(&self.args).current_dir(self.directory(home));
         if is_default(&self.config, home) {
             command.env_remove(CONFIG_VARIABLE);
         } else {
@@ -222,19 +235,22 @@ impl Call {
         command
     }
 
-    /// The call as a shell line, for a person to run where `claude` is.
+    /// The call as a shell line, for a person to paste where `claude` is. It names the config either way: a shell that exports `CLAUDE_CONFIG_DIR` would send the call for `~/.claude` to another config if the line only left the variable out, so that line takes it away. The line of a project runs in a subshell, so that pasting several leaves the shell where it was.
     fn line(&self, home: Option<&Path>) -> String {
         let mut words = Vec::new();
-        if let Some(project) = &self.project {
-            words.push(format!("cd {} &&", quoted(&project.to_string_lossy())));
-        }
-        if !is_default(&self.config, home) {
+        if is_default(&self.config, home) {
+            words.push(format!("env -u {CONFIG_VARIABLE}"));
+        } else {
             let config = quoted(&self.config.to_string_lossy()).into_owned();
             words.push(format!("{CONFIG_VARIABLE}={config}"));
         }
         words.push("claude".to_owned());
         words.extend(self.args.iter().map(|arg| quoted(arg).into_owned()));
-        words.join(" ")
+        let line = words.join(" ");
+        match &self.project {
+            Some(project) => format!("(cd {} && {line})", quoted(&project.to_string_lossy())),
+            None => line,
+        }
     }
 
     /// Where the call acts, for the lines about it: the config, and for the plugin its scope and, when it has one, its project.
@@ -303,13 +319,11 @@ fn plan(configs: &[Config], home: Option<&Path>) -> (Vec<Call>, Vec<String>) {
                     match install.project_path.as_deref() {
                         Some(path) if path.is_dir() => Some(path.to_owned()),
                         other => {
-                            let why = other.map_or_else(
-                                || "it names no project".to_owned(),
-                                |path| format!("its project {} is not a directory", path.display()),
-                            );
-                            left_out.push(format!(
-                                "left out the {scope} install of {id} in {}: {why}",
-                                tilde(&config.dir, home)
+                            left_out.push(left_out_note(
+                                scope,
+                                marketplace,
+                                &tilde(&config.dir, home),
+                                &project_problem(other),
                             ));
                             continue;
                         }
@@ -330,6 +344,19 @@ fn plan(configs: &[Config], home: Option<&Path>) -> (Vec<Call>, Vec<String>) {
         }
     }
     (calls, left_out)
+}
+
+/// Why an install cannot be updated from `project`: it names none, or the one it names is not on disk.
+fn project_problem(project: Option<&Path>) -> String {
+    project.map_or_else(
+        || "it names no project".to_owned(),
+        |path| format!("its project {} is not a directory", path.display()),
+    )
+}
+
+/// The note for the install in `scope` of the plugin from `marketplace` in `config` that is not updated, for the reason `why`.
+fn left_out_note(scope: &str, marketplace: &str, config: &str, why: &str) -> String {
+    format!("left out the {scope} install of {PLUGIN}@{marketplace} in {config}: {why}")
 }
 
 /// Tells something that went wrong, or was left out, without ending the run.
@@ -392,6 +419,27 @@ enum Effect {
     NoClaude,
 }
 
+/// The start of a commit hash, as far as a person tells commits apart.
+fn short(commit: Option<&str>) -> &str {
+    commit.map_or("none", |commit| commit.get(..12).unwrap_or(commit))
+}
+
+/// The line that says the plugin in `place` was updated, `before` being the install as the file had it before the call and `now` as it has it after, at `version`. `None` when neither its version nor its commit changed. An install that had no version is told by where it is now, since there is nothing to say it moved from.
+fn updated_line(place: &str, before: &Install, now: &Install, version: &str) -> Option<String> {
+    match before.version.as_deref() {
+        None => Some(format!("Updated the plugin in {place} to {version}")),
+        Some(old) if old != version => {
+            Some(format!("Updated the plugin in {place}: {old} → {version}"))
+        }
+        Some(_) if before.git_commit_sha != now.git_commit_sha => Some(format!(
+            "Updated the plugin in {place}: {version}, commit {} → {}",
+            short(before.git_commit_sha.as_deref()),
+            short(now.git_commit_sha.as_deref())
+        )),
+        Some(_) => None,
+    }
+}
+
 /// Runs `call`, captures what `claude` prints, and tells what the call did: for the plugin the version it was and the version it is, as `installed_plugins.json` records them, and for a call that failed what `claude` printed last.
 fn perform(call: &Call, home: Option<&Path>, io: &mut Io<'_>) -> Effect {
     if let Step::Marketplace(name) = &call.step {
@@ -402,6 +450,25 @@ fn perform(call: &Call, home: Option<&Path>, io: &mut Io<'_>) -> Effect {
             )
             .as_bytes(),
         );
+    }
+    // A project can go between the plan and its call. `spawn` says `NotFound` for a directory that is gone as it does for a program that is, so the directory is looked at first, and an install whose project is gone is left out as the plan leaves it out.
+    match (&call.step, call.project.as_deref()) {
+        (
+            Step::Plugin {
+                marketplace,
+                install,
+            },
+            Some(project),
+        ) if !project.is_dir() => {
+            let config = tilde(&call.config, home);
+            let why = project_problem(Some(project));
+            note(
+                io,
+                &left_out_note(&install.scope, marketplace, &config, &why),
+            );
+            return Effect::Nothing;
+        }
+        _ => {}
     }
     let output = match call.command(home).output() {
         Ok(output) => output,
@@ -433,8 +500,8 @@ fn perform(call: &Call, home: Option<&Path>, io: &mut Io<'_>) -> Effect {
     };
 
     let place = call.place(home);
-    let now = match recorded_version(&call.config, marketplace, install) {
-        Ok(Some(version)) => version,
+    let (now, version) = match recorded_install(&call.config, marketplace, install) {
+        Ok(Some(found)) => found,
         Ok(None) => {
             note(
                 io,
@@ -449,25 +516,26 @@ fn perform(call: &Call, home: Option<&Path>, io: &mut Io<'_>) -> Effect {
             return Effect::Failed;
         }
     };
-    match install.version.as_deref() {
-        Some(before) if before == now => {
-            io.complain(format!("The plugin in {place} is already the newest: {now}\n").as_bytes());
-            Effect::Nothing
-        }
-        Some(before) => {
-            io.complain(format!("Updated the plugin in {place}: {before} → {now}\n").as_bytes());
-            Effect::Changed
-        }
-        None => {
-            io.complain(format!("The plugin in {place} is at {now}\n").as_bytes());
-            Effect::Nothing
-        }
+    if let Some(line) = updated_line(&place, install, &now, &version) {
+        io.complain(format!("{line}\n").as_bytes());
+        Effect::Changed
+    } else {
+        io.complain(format!("The plugin in {place} is already the newest: {version}\n").as_bytes());
+        Effect::Nothing
     }
 }
 
-/// Updates the plugin in every Claude Code config that has it, by running `claude`, and says so when no config has it. `installed` is whether the binary was replaced by another version, which running sessions have to be restarted for as much as for a plugin that changed.
+/// Whether any Claude Code config on this machine has the plugin, which tells whether a new binary has a plugin to be loaded with.
+pub(super) fn is_installed() -> bool {
+    let home = std::env::home_dir();
+    !find_configs(std::env::var_os(CONFIG_VARIABLE), home.as_deref())
+        .0
+        .is_empty()
+}
+
+/// Updates the plugin in every Claude Code config that has it, by running `claude`, and says so when no config has it. `installed` is whether the binary was replaced by another version, which running sessions have to be restarted for as much as for a plugin that changed, when there is a plugin for them to load.
 ///
-/// A call that fails is told, and the calls after it still run; the run then ends with exit 1, as it does when `claude` is not found, which leaves the plugin out of step with the binary.
+/// A call that fails is told, and the calls after it still run, except the plugin calls of a marketplace that did not refresh, which would find the plugin newest in a stale copy of it. The run then ends with exit 1, as it does when `claude` is not found, which leaves the plugin out of step with the binary.
 pub(super) fn update(io: &mut Io<'_>, installed: bool) -> Result<Outcome, CliError> {
     let home = std::env::home_dir();
     let (configs, problems) = find_configs(std::env::var_os(CONFIG_VARIABLE), home.as_deref());
@@ -483,12 +551,34 @@ pub(super) fn update(io: &mut Io<'_>, installed: bool) -> Result<Outcome, CliErr
     for text in &left_out {
         note(io, text);
     }
-    let mut changed = installed;
+    let mut changed = installed && !configs.is_empty();
+    // The marketplaces that did not refresh, by the config they are in.
+    let mut stale = BTreeSet::new();
     for (index, call) in calls.iter().enumerate() {
-        match perform(call, home.as_deref(), io) {
+        let effect = match &call.step {
+            Step::Plugin { marketplace, .. }
+                if stale.contains(&(call.config.as_path(), marketplace.as_str())) =>
+            {
+                let place = call.place(home.as_deref());
+                note(
+                    io,
+                    &format!(
+                        "the plugin in {place} was not updated, because the marketplace {marketplace} was not refreshed"
+                    ),
+                );
+                Effect::Failed
+            }
+            _ => perform(call, home.as_deref(), io),
+        };
+        match effect {
             Effect::Nothing => {}
             Effect::Changed => changed = true,
-            Effect::Failed => failed = true,
+            Effect::Failed => {
+                failed = true;
+                if let Step::Marketplace(name) = &call.step {
+                    stale.insert((call.config.as_path(), name.as_str()));
+                }
+            }
             Effect::NoClaude => {
                 note(
                     io,
@@ -525,6 +615,15 @@ mod tests {
             scope: scope.to_owned(),
             project_path: project.map(PathBuf::from),
             version: version.map(str::to_owned),
+            git_commit_sha: None,
+        }
+    }
+
+    /// `install` at the commit `sha`.
+    fn at(sha: &str, install: Install) -> Install {
+        Install {
+            git_commit_sha: Some(sha.to_owned()),
+            ..install
         }
     }
 
@@ -547,7 +646,10 @@ mod tests {
             BTreeMap::from([(
                 "gsttt".to_owned(),
                 vec![
-                    install("user", None, Some("9b6517d98ed1")),
+                    at(
+                        "9b6517d98ed1b8c917379dedc4fa592a6e07b605",
+                        install("user", None, Some("9b6517d98ed1"))
+                    ),
                     install("local", Some("/work/app"), Some("9b6517d98ed1")),
                 ]
             )])
@@ -606,10 +708,11 @@ mod tests {
             ".claude/plugins/installed_plugins.json",
             INSTALLED,
         );
-        std::os::unix::fs::symlink(home.path().join(".claude/plugins"), {
-            fs::create_dir(home.path().join(".claude-backup")).unwrap();
-            home.path().join(".claude-backup/plugins")
-        })
+        fs::create_dir(home.path().join(".claude-backup")).unwrap();
+        std::os::unix::fs::symlink(
+            home.path().join(".claude/plugins"),
+            home.path().join(".claude-backup/plugins"),
+        )
         .unwrap();
         write(
             home.path(),
@@ -677,7 +780,7 @@ mod tests {
                 "CLAUDE_CONFIG_DIR=/home/ann/.claude-work claude plugin update gsttt@gsttt --scope user"
                     .to_owned(),
                 format!(
-                    "cd {} && CLAUDE_CONFIG_DIR=/home/ann/.claude-work claude plugin update gsttt@gsttt --scope local",
+                    "(cd {} && CLAUDE_CONFIG_DIR=/home/ann/.claude-work claude plugin update gsttt@gsttt --scope local)",
                     quoted(&project.path().to_string_lossy())
                 ),
             ]
@@ -698,7 +801,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_config_is_called_without_the_variable() {
+    fn the_default_config_is_called_without_the_variable_and_its_line_takes_the_variable_away() {
         let call = Call {
             config: "/home/ann/.claude".into(),
             project: None,
@@ -707,7 +810,7 @@ mod tests {
         };
         let home = Some(Path::new("/home/ann"));
 
-        assert_eq!(call.line(home), "claude plugin");
+        assert_eq!(call.line(home), "env -u CLAUDE_CONFIG_DIR claude plugin");
         assert_eq!(
             call.line(None),
             "CLAUDE_CONFIG_DIR=/home/ann/.claude claude plugin"
@@ -799,7 +902,11 @@ mod tests {
                 {"scope":"local","projectPath":"/work/b"}
             ]}}"#,
         );
-        let version = |install: &Install| recorded_version(dir.path(), "gsttt", install).unwrap();
+        let version = |install: &Install| {
+            recorded_install(dir.path(), "gsttt", install)
+                .unwrap()
+                .map(|(_, version)| version)
+        };
 
         assert_eq!(
             version(&install("user", None, Some("old"))),
@@ -813,8 +920,116 @@ mod tests {
         assert_eq!(version(&install("local", Some("/work/b"), None)), None);
         assert_eq!(version(&install("local", Some("/work/c"), None)), None);
         assert_eq!(
-            recorded_version(dir.path(), "other", &install("user", None, None)).unwrap(),
+            recorded_install(dir.path(), "other", &install("user", None, None)).unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn a_line_with_a_project_runs_in_a_subshell_and_quotes_what_a_shell_would_split() {
+        let call = Call {
+            config: "/h/.claude it's".into(),
+            project: Some("/h/my app's".into()),
+            args: vec!["plugin".to_owned(), "update".to_owned()],
+            step: Step::Marketplace("gsttt".to_owned()),
+        };
+
+        assert_eq!(
+            call.line(Some(Path::new("/h"))),
+            r#"(cd "/h/my app's" && CLAUDE_CONFIG_DIR="/h/.claude it's" claude plugin update)"#
+        );
+        let default = Call {
+            config: "/h/.claude".into(),
+            project: Some("/h/app".into()),
+            ..call
+        };
+        assert_eq!(
+            default.line(Some(Path::new("/h"))),
+            "(cd /h/app && env -u CLAUDE_CONFIG_DIR claude plugin update)"
+        );
+    }
+
+    #[test]
+    fn a_call_runs_in_its_project_else_in_the_home_directory_else_in_its_config() {
+        let home = tempfile::tempdir().unwrap();
+        let call = |project: Option<&Path>| Call {
+            config: "/c/config".into(),
+            project: project.map(Path::to_path_buf),
+            args: Vec::new(),
+            step: Step::Marketplace("gsttt".to_owned()),
+        };
+        let file = home.path().join("file");
+        fs::write(&file, "").unwrap();
+
+        assert_eq!(
+            call(Some(Path::new("/p/app"))).directory(Some(home.path())),
+            Path::new("/p/app")
+        );
+        assert_eq!(call(None).directory(Some(home.path())), home.path());
+        // No home, a home that is gone and a home that is a file all leave the config directory.
+        assert_eq!(call(None).directory(None), Path::new("/c/config"));
+        assert_eq!(
+            call(None).directory(Some(&home.path().join("gone"))),
+            Path::new("/c/config")
+        );
+        assert_eq!(call(None).directory(Some(&file)), Path::new("/c/config"));
+    }
+
+    #[test]
+    fn an_install_is_told_updated_when_its_version_or_its_commit_changed_and_not_otherwise() {
+        let sha = |sha: &str| {
+            at(
+                &format!("{sha}0123456789abcdef"),
+                install("user", None, Some("0.1.50")),
+            )
+        };
+        let versionless = install("user", None, None);
+        let place = "~/.claude (user)";
+
+        assert_eq!(
+            updated_line(place, &sha("aaaaaaaaaaaa"), &sha("aaaaaaaaaaaa"), "0.1.50"),
+            None
+        );
+        assert_eq!(
+            updated_line(place, &sha("aaaaaaaaaaaa"), &sha("bbbbbbbbbbbb"), "0.1.51"),
+            Some("Updated the plugin in ~/.claude (user): 0.1.50 → 0.1.51".to_owned())
+        );
+        assert_eq!(
+            updated_line(place, &sha("aaaaaaaaaaaa"), &sha("bbbbbbbbbbbb"), "0.1.50"),
+            Some(
+                "Updated the plugin in ~/.claude (user): 0.1.50, commit aaaaaaaaaaaa → bbbbbbbbbbbb"
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            updated_line(place, &versionless, &sha("bbbbbbbbbbbb"), "0.1.50"),
+            Some("Updated the plugin in ~/.claude (user) to 0.1.50".to_owned())
+        );
+        // A commit that was not recorded before is a change too, and is told as "none".
+        assert_eq!(
+            updated_line(
+                place,
+                &install("user", None, Some("0.1.50")),
+                &sha("bbbbbbbbbbbb"),
+                "0.1.50"
+            ),
+            Some(
+                "Updated the plugin in ~/.claude (user): 0.1.50, commit none → bbbbbbbbbbbb"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn a_project_that_cannot_be_used_is_told_by_what_is_wrong_with_it() {
+        assert_eq!(project_problem(None), "it names no project");
+        assert_eq!(
+            project_problem(Some(Path::new("/work/gone"))),
+            "its project /work/gone is not a directory"
+        );
+        assert_eq!(
+            left_out_note("local", "gsttt", "~/.claude", "it names no project"),
+            "left out the local install of gsttt@gsttt in ~/.claude: it names no project"
         );
     }
 }

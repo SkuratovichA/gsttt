@@ -49,8 +49,8 @@ After it installs the newest release, `gsttt update` SHALL update the gsttt plug
 - **THEN** `claude` runs once for each marketplace and each install of those three configs, in the order of their paths, from the project for the project install and from the home directory otherwise, with `CLAUDE_CONFIG_DIR` unset for `.claude` and set to the config for the others, and runs for neither of the other two
 
 #### Scenario: A project that no longer exists is skipped
-- **WHEN** an install of the plugin names a project directory that is not on disk
-- **THEN** stderr notes that the install was left out because its project is not a directory, the other installs are updated and the exit code is 0
+- **WHEN** an install of the plugin names a project directory that is not on disk, or that goes between the planning of the calls and the call
+- **THEN** stderr notes that the install was left out because its project is not a directory, does not say that `claude` is missing, the other installs are updated and the exit code is 0
 
 ### Requirement: The update speaks on stderr
 
@@ -62,11 +62,11 @@ After it installs the newest release, `gsttt update` SHALL update the gsttt plug
 
 ### Requirement: The plugin step says what changed
 
-For each install it updates, `gsttt update` SHALL read the install's `version` from `plugins/installed_plugins.json` before the call and after it, and say `Updated the plugin in <config> (<scope>): <old> → <new>` when it changed, or `The plugin in <config> (<scope>) is already the newest: <version>`. It SHALL not show what `claude` prints, and SHALL note it and exit 1 when the install has no version in the file after the call.
+For each install it updates, `gsttt update` SHALL compare the `version` and `gitCommitSha` that `plugins/installed_plugins.json` records before the call and after it, and say `Updated the plugin in <config> (<scope>): <old> → <new>` when either changed (`to <new>` when it had no version before), or `The plugin in <config> (<scope>) is already the newest: <version>`. It SHALL not show what `claude` prints, and SHALL note it and exit 1 when the install has no version in the file after the call.
 
 #### Scenario: The plugin lines say what changed
-- **WHEN** `gsttt update` runs for a config with a user install that `claude` moves from one version to another and a project install that is at the newest version already
-- **THEN** stderr has the line `Updated the plugin in ~/.claude (user): <old> → <new>` and the line `The plugin in ~/.claude (local, ~/app) is already the newest: <version>`, the home directory being written `~` and the project following the scope, holds nothing that `claude` printed, and the exit code is 0
+- **WHEN** `gsttt update` runs for a config with a user install that `claude` moves from one version to another and a project install that is at the newest version already, a config with an install that has no version until `claude` gives it one, and a config with an install that stays at its version and moves to another commit of it
+- **THEN** stderr has the lines `Updated the plugin in ~/.claude (user): <old> → <new>`, `The plugin in ~/.claude (local, ~/app) is already the newest: <version>`, `Updated the plugin in <config> (user) to <version>` and `Updated the plugin in <config> (user): <version>, commit <old> → <new>`, the home directory being written `~` and the project following the scope, holds nothing that `claude` printed, and the exit code is 0
 
 #### Scenario: An install that is gone after the update is a failure
 - **WHEN** an install is no longer in `plugins/installed_plugins.json` after `claude` updated it
@@ -74,11 +74,11 @@ For each install it updates, `gsttt update` SHALL read the install's `version` f
 
 ### Requirement: The plugin step tells what it could not do
 
-When a call of `claude` fails, `gsttt update` SHALL note the config and scope, the line that repeats the call by hand and at most the last 5 lines `claude` printed, run the calls after it, and exit 1. When `claude` is not found it SHALL note which configs were left as they were and the lines that update them, and exit 1. When no config has the plugin it SHALL print `/plugin marketplace add SkuratovichA/gsttt` and `/plugin install gsttt@gsttt`, not run `claude`, and exit 0.
+When a call of `claude` fails, `gsttt update` SHALL note the config and scope, the line that repeats the call and the last 5 lines of what `claude` printed (its stdout, then its stderr), run the calls after it, and exit 1. When `claude` is not found it SHALL note which configs were left as they were and the lines that update them, and exit 1. When no config has the plugin it SHALL print `/plugin marketplace add SkuratovichA/gsttt` and `/plugin install gsttt@gsttt`, not run `claude`, and exit 0.
 
 #### Scenario: A failing plugin update fails the command
-- **WHEN** `claude` fails for one config and works for the others
-- **THEN** the others are updated, stderr notes the config and scope of the call that failed with the line that repeats it and the last 5 lines `claude` printed, and the exit code is 1
+- **WHEN** `claude` fails to update the plugin of a project install in a config, the config and the project having a space and a single quote in their names, and works for another config
+- **THEN** the other config is updated, stderr notes the config and scope of the call that failed with the line that repeats it, written with the quotes a shell needs, and the last 5 lines of what `claude` printed, its stdout and then its stderr, and the exit code is 1
 
 #### Scenario: A machine without claude is told which configs were not updated
 - **WHEN** `claude` is not on `PATH` and two configs have the plugin
@@ -88,10 +88,26 @@ When a call of `claude` fails, `gsttt update` SHALL note the config and scope, t
 - **WHEN** no config has the plugin
 - **THEN** stderr holds the two commands that add it in Claude Code, `claude` is not called, and the exit code is 0
 
+### Requirement: A marketplace that did not refresh leaves its plugins alone
+
+When `claude plugin marketplace update` fails for a marketplace in a config, `gsttt update` SHALL not update the plugin from that marketplace in that config, whose copy of it is stale, SHALL note for each install that it was not updated because the marketplace was not refreshed, SHALL update the other configs, and SHALL exit 1.
+
+#### Scenario: A failed marketplace refresh leaves its plugins alone
+- **WHEN** `claude` fails to refresh the marketplace in a config that has a user install and a project install, and works for another config
+- **THEN** `claude` is not called for those two installs, stderr notes for each that the plugin in that config and scope was not updated because the marketplace was not refreshed, the other config is updated, and the exit code is 1
+
+### Requirement: The lines to run by hand are safe to paste
+
+Each line `gsttt update` prints for a person to run SHALL name the config it is for, as `CLAUDE_CONFIG_DIR=<config>` or, for `~/.claude`, as `env -u CLAUDE_CONFIG_DIR`, SHALL quote each word a shell would split, and SHALL run the call of a project as `(cd <project> && …)`, so that a shell that runs several is left in the directory it was in.
+
+#### Scenario: The lines to run by hand are safe to paste
+- **WHEN** `claude` is not on `PATH`, the plugin is installed in `~/.claude`, and in a config and for a project whose names have a space and a single quote, and the four lines are run in one shell that has another `CLAUDE_CONFIG_DIR` exported
+- **THEN** `claude` is called four times, with `CLAUDE_CONFIG_DIR` unset for the two calls of `~/.claude` and set to the config the line names for the others, the call of the project runs in the project, and the shell ends in the directory it started in
+
 ### Requirement: The restart is asked for after a change
 
-`gsttt update` SHALL end with the line `Restart running Claude Code sessions to load the plugin.` when it installed another version of the binary or a plugin version changed, whatever the exit code, and SHALL not say it otherwise.
+`gsttt update` SHALL say `Restart running Claude Code sessions to load the plugin.` after the plugin lines, and before the report of an error when the run fails, when the version or the commit of a plugin install changed, or when it installed another version of the binary and a config has the plugin. It SHALL not say it otherwise.
 
 #### Scenario: The restart is asked for only after a change
-- **WHEN** `gsttt update` runs with nothing new, with a binary to install and a plugin at the newest version, with a named version to install, and with a plugin to move to another version
-- **THEN** stderr ends with the line for the last three and does not have it for the first
+- **WHEN** `gsttt update` runs with nothing new, with a binary to install and a plugin at the newest version, with a named version to install, with a plugin to move to another version, and with a binary to install, named or not, where no config has the plugin
+- **THEN** stderr ends with the line for the second, third and fourth, and does not have it for the first and the last
