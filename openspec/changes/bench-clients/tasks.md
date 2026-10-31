@@ -9,6 +9,9 @@
 - [x] 2.1 `bench/agents/service.mjs`: the language service of `functions.mjs`, moved so that both scripts share it
 - [x] 2.2 `bench/agents/clients.mjs`: the methods that a resolver calls, with the files whose GraphQL documents select the field the resolver serves
 
+- [x] 2.3 `clients.mjs` reads a namespace import of `@nestjs/graphql`, the `graphql(...)` call of the client preset, and prints the answer by field with `--fields`
+- [x] 2.4 `--fields` lists the imports it cannot follow as `unresolved` in place of refusing, and still stops at a field name it cannot read
+
 ## 3. The pins
 
 - [x] 3.1 `graphql` among the Node tools, `users` optional, `clients` in the `agents` table of a repository, and `speed = false` for a repository that only the agents ask about

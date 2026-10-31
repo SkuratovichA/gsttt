@@ -4,10 +4,11 @@
 //
 // The answers come from the TypeScript language service (`service.mjs`, the same program as `functions.mjs` reads) and from the `graphql` package, not from gsttt, so that no tool under test marks its own work. Both are the ones installed in `--tools`.
 // A resolver is a method of a class decorated with `@Resolver` that carries `@Query`, `@Mutation` or `@Subscription`, the three decorators of `@nestjs/graphql` by the name the file imports them under. It serves the field the decorator names with its `name` option or its string argument, else the field of the method's name, of the root type of the decorator.
-// A candidate is a method with a body of a top-level class of the scope that is not a resolver, in a file that is not a test or a declaration file. It counts a resolver as calling it when a reference to it (`findReferences`) lies in the text of the resolver's method. Its clients are the tracked files of the scope that hold a GraphQL document (a `.graphql` or `.gql` file, or a `gql` or `graphql` tagged template of a TypeScript or JavaScript file) with an operation of the root type that selects that field at its top level: an alias selects the field it aliases, and a fragment spread or an inline fragment at the top level selects what it selects.
-// The program is the TypeScript below the directory of the tsconfig, since the clients live in packages the tsconfig of the resolvers does not describe; the documents are looked for in the whole scope. A document that does not parse, a fragment spread of a fragment no document defines, a decorator argument that could name a field and that the script cannot read (not a function, a string or an object literal without a spread, or a name that is not a string), or `@nestjs/graphql` imported as a namespace, stops the script: an answer built without them would be wrong.
+// A candidate is a method with a body of a top-level class of the scope that is not a resolver, in a file that is not a test or a declaration file. It counts a resolver as calling it when a reference to it (`findReferences`) lies in the text of the resolver's method. Its clients are the tracked files of the scope that hold a GraphQL document (a `.graphql` or `.gql` file, or a `gql` or `graphql` tagged template or call with a template or a string as its first argument, in a TypeScript or JavaScript file) with an operation of the root type that selects that field at its top level: an alias selects the field it aliases, and a fragment spread or an inline fragment at the top level selects what it selects.
+// The program is the TypeScript below the directory of the tsconfig, since the clients live in packages the tsconfig of the resolvers does not describe; the documents are looked for in the whole scope. A document that does not parse, a fragment spread of a fragment no document defines, a decorator argument that could name a field and that the script cannot read (not a function, a string or an object literal without a spread, or a name that is not a string), stops the script: an answer built without them would be wrong.
 // Prints one JSON object on standard output, sorted so that the same checkout gives the same bytes:
 //   { typescript, graphql, files, methods: [{ file, name, line, clients, ambiguous }] }
+// With `--fields` it prints instead the answer at the level of the field: { typescript, graphql, files, unresolved: [{ file, line, specifier }], fields: [{ field, servers: [{ file, line, method }], clients }] }, one entry for each `Root.field` that a resolver of the program serves or a document of the scope selects, sorted by `field`, the servers by file then line and the clients by path. `unresolved` lists the imports the program could not follow, which the `methods` answer refuses and this one does not, since it uses no references; a field name the script cannot read still stops it.
 // `name` is `Class.method`; only methods that some resolver calls are listed, and `clients` may still be empty when no document selects the field. `ambiguous` is true when a field that such a resolver serves is also served under another root type by some resolver (`Query foo` and `Mutation foo`), so that the name of the field alone does not tell which operations are meant.
 
 import fs from 'node:fs'
@@ -15,24 +16,28 @@ import path from 'node:path'
 
 import { compare, isTestOrDeclaration, loadTool, openService, readOptions } from './service.mjs'
 
-const options = readOptions()
-const { ts, tools, tracked, files, absolute, relative, service, program } = openService(options, { program: path.posix.dirname(options.tsconfig) })
+const options = readOptions({ fields: true })
+const { ts, tools, tracked, files, unresolved, absolute, relative, service, program } = openService(options, { program: path.posix.dirname(options.tsconfig) })
 const graphql = loadTool(tools, 'graphql')
 const checker = program.getTypeChecker()
 
 const ROOTS = ['Query', 'Mutation', 'Subscription']
 
-/** The names `@nestjs/graphql` exports that `source` imports, by the name the file gives them. */
+/** What `source` imports of `@nestjs/graphql`: the names it exports by the name the file gives them, and the namespaces the whole module is bound to (`import * as graphql from ...`). */
 function nestImports(source) {
   const names = new Map()
+  const spaces = new Set()
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== '@nestjs/graphql') continue
     const bindings = statement.importClause?.namedBindings
-    if (bindings && ts.isNamespaceImport(bindings)) throw new Error(`${where(statement)}: \`@nestjs/graphql\` is imported as the namespace \`${bindings.name.text}\`, so the script cannot tell which of its decorators the file uses`)
     if (!bindings) continue
+    if (ts.isNamespaceImport(bindings)) {
+      spaces.add(bindings.name.text)
+      continue
+    }
     for (const element of bindings.elements) names.set(element.name.text, (element.propertyName ?? element.name).text)
   }
-  return names
+  return { names, spaces }
 }
 
 /** The decorators of `node` that come from `@nestjs/graphql`, each with the name it has there and its arguments. */
@@ -41,7 +46,9 @@ function nestDecorators(node, imports) {
   for (const decorator of ts.canHaveDecorators(node) ? (ts.getDecorators(node) ?? []) : []) {
     const call = ts.isCallExpression(decorator.expression) ? decorator.expression : undefined
     const callee = call ? call.expression : decorator.expression
-    const name = ts.isIdentifier(callee) ? imports.get(callee.text) : undefined
+    let name
+    if (ts.isIdentifier(callee)) name = imports.names.get(callee.text)
+    else if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && imports.spaces.has(callee.expression.text)) name = callee.name.text
     if (name) found.push({ name, args: call ? [...call.arguments] : [] })
   }
   return found
@@ -96,7 +103,7 @@ for (const file of files) {
       for (const method of statement.members.filter(ts.isMethodDeclaration)) {
         for (const decorator of nestDecorators(method, imports)) {
           if (!ROOTS.includes(decorator.name)) continue
-          const served = { root: decorator.name, field: fieldOf(decorator, method), start: method.getStart(source), end: method.end }
+          const served = { root: decorator.name, field: fieldOf(decorator, method), start: method.getStart(source), end: method.end, file, method: `${statement.name.text}.${method.name.getText(source)}`, line: source.getLineAndCharacterOfPosition(method.name.getStart(source)).line + 1 }
           resolvers.set(file, [...(resolvers.get(file) ?? []), served])
         }
       }
@@ -128,21 +135,32 @@ function selectedAt(set, file, fragments) {
   return fields
 }
 
-/** The GraphQL documents a file holds, as `{ text, line }` with the line the text starts on: the whole file for `.graphql` and `.gql`, each `gql` or `graphql` tagged template for a script. An expression in a template is dropped, which keeps the fragments it names for the documents that define them. */
+/** Whether an identifier names the function or tag that marks a GraphQL document. */
+function isDocumentTag(identifier) {
+  return identifier.text === 'gql' || identifier.text === 'graphql'
+}
+
+/** The GraphQL documents a file holds, as `{ text, line }` with the line the text starts on: the whole file for `.graphql` and `.gql`, each `gql` or `graphql` tagged template, or call with a template or a string as its first argument, for a script. An expression in a template is dropped, which keeps the fragments it names for the documents that define them. */
 function documentsOf(file) {
   // The name decides before the read: a tracked symlink to nothing or a submodule path is not a document and is never opened.
   const isDocument = /\.(graphql|gql)$/.test(file)
   if (!isDocument && !/\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(file)) return []
   const text = fs.readFileSync(absolute(file), 'utf8')
   if (isDocument) return [{ text, line: 1 }]
-  if (!/\b(gql|graphql)\s*`/.test(text)) return []
+  if (!/\b(gql|graphql)\s*(`|\(\s*[`'"])/.test(text)) return []
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
   const found = []
   const visit = (node) => {
-    if (ts.isTaggedTemplateExpression(node) && ts.isIdentifier(node.tag) && (node.tag.text === 'gql' || node.tag.text === 'graphql')) {
-      const template = node.template
-      const body = ts.isNoSubstitutionTemplateLiteral(template) ? template.text : template.head.text + template.templateSpans.map((span) => ` ${span.literal.text}`).join('')
-      found.push({ text: body, line: source.getLineAndCharacterOfPosition(template.getStart(source)).line + 1 })
+    const tagged = ts.isTaggedTemplateExpression(node) && ts.isIdentifier(node.tag) && isDocumentTag(node.tag) ? node.template : undefined
+    // The `graphql(\`…\`)` call of the client preset of graphql-codegen.
+    const called = ts.isCallExpression(node) && ts.isIdentifier(node.expression) && isDocumentTag(node.expression) ? node.arguments[0] : undefined
+    const template = tagged ?? called
+    if (template && ts.isNoSubstitutionTemplateLiteral(template)) {
+      found.push({ text: template.text, line: source.getLineAndCharacterOfPosition(template.getStart(source)).line + 1 })
+    } else if (template && ts.isTemplateExpression(template)) {
+      found.push({ text: template.head.text + template.templateSpans.map((span) => ` ${span.literal.text}`).join(''), line: source.getLineAndCharacterOfPosition(template.getStart(source)).line + 1 })
+    } else if (called && ts.isStringLiteral(called)) {
+      found.push({ text: called.text, line: source.getLineAndCharacterOfPosition(called.getStart(source)).line + 1 })
     }
     ts.forEachChild(node, visit)
   }
@@ -183,23 +201,38 @@ const rootsOf = new Map()
 for (const served of [...resolvers.values()].flat()) rootsOf.set(served.field, (rootsOf.get(served.field) ?? new Set()).add(served.root))
 
 const resolverText = [...resolvers.keys()].map((file) => program.getSourceFile(absolute(file)).text).join('\n')
-const methods = []
-for (const { file, source, name, identifier } of candidates) {
-  // A reference to a method has its name in the text, so a name no resolver file holds needs no search.
-  if (!resolverText.includes(identifier.text)) continue
-  const served = new Map()
-  for (const symbol of service.findReferences(absolute(file), identifier.getStart(source)) ?? []) {
-    for (const reference of symbol.references) {
-      for (const resolver of resolvers.get(relative(reference.fileName)) ?? []) {
-        if (resolver.start <= reference.textSpan.start && reference.textSpan.start < resolver.end) served.set(`${resolver.root} ${resolver.field}`, resolver)
+if (options.fields) {
+  const servers = new Map()
+  for (const served of [...resolvers.values()].flat()) {
+    const key = `${served.root}.${served.field}`
+    servers.set(key, [...(servers.get(key) ?? []), { file: served.file, line: served.line, method: served.method }])
+  }
+  const clients = new Map([...clientsOf].map(([key, set]) => [key.replace(' ', '.'), [...set].sort(compare)]))
+  const fields = [...new Set([...servers.keys(), ...clients.keys()])].sort(compare).map((field) => ({
+    field,
+    servers: (servers.get(field) ?? []).sort((a, b) => compare(a.file, b.file) || a.line - b.line),
+    clients: clients.get(field) ?? [],
+  }))
+  process.stdout.write(JSON.stringify({ typescript: ts.version, graphql: graphql.version, files: files.length, unresolved, fields }))
+} else {
+  const methods = []
+  for (const { file, source, name, identifier } of candidates) {
+    // A reference to a method has its name in the text, so a name no resolver file holds needs no search.
+    if (!resolverText.includes(identifier.text)) continue
+    const served = new Map()
+    for (const symbol of service.findReferences(absolute(file), identifier.getStart(source)) ?? []) {
+      for (const reference of symbol.references) {
+        for (const resolver of resolvers.get(relative(reference.fileName)) ?? []) {
+          if (resolver.start <= reference.textSpan.start && reference.textSpan.start < resolver.end) served.set(`${resolver.root} ${resolver.field}`, resolver)
+        }
       }
     }
+    if (served.size === 0) continue
+    const clients = new Set([...served.keys()].flatMap((key) => [...(clientsOf.get(key) ?? [])]))
+    const ambiguous = [...served.values()].some((resolver) => rootsOf.get(resolver.field).size > 1)
+    methods.push({ file, name, line: source.getLineAndCharacterOfPosition(identifier.getStart(source)).line + 1, clients: [...clients].sort(compare), ambiguous })
   }
-  if (served.size === 0) continue
-  const clients = new Set([...served.keys()].flatMap((key) => [...(clientsOf.get(key) ?? [])]))
-  const ambiguous = [...served.values()].some((resolver) => rootsOf.get(resolver.field).size > 1)
-  methods.push({ file, name, line: source.getLineAndCharacterOfPosition(identifier.getStart(source)).line + 1, clients: [...clients].sort(compare), ambiguous })
-}
-methods.sort((a, b) => compare(a.file, b.file) || compare(a.name, b.name) || a.line - b.line)
+  methods.sort((a, b) => compare(a.file, b.file) || compare(a.name, b.name) || a.line - b.line)
 
-process.stdout.write(JSON.stringify({ typescript: ts.version, graphql: graphql.version, files: files.length, methods }))
+  process.stdout.write(JSON.stringify({ typescript: ts.version, graphql: graphql.version, files: files.length, methods }))
+}
