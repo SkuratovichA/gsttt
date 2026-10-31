@@ -302,7 +302,7 @@ With the `django` pack, `path()` entries in `urlpatterns` SHALL serve their rout
 - **THEN** `bookings/urls.py` serves `http * /api/bookings/{}` at the line of its `path` entry
 
 ### Requirement: HTTP requests
-With the `requests` and `httpx` packs, `requests.get` and the other verbs, `requests.request(method, url)`, the same verbs on `httpx` and on receivers made by `requests.Session()`, `httpx.Client()` or `httpx.AsyncClient()`, held in a variable or called where they are made, SHALL call the URL with the verb. An f-string URL SHALL keep its literal parts with each computed part as a parameter, and a URL with no literal path, or whose path is computed in every segment, SHALL be an unread site, also when its receiver was made with no base URL.
+With the `requests` and `httpx` packs, the verb functions of `requests` and `httpx`, `requests.request(method, url)`, and the verbs on a receiver made by `requests.Session()`, `httpx.Client()` or `httpx.AsyncClient()`, held in a variable or called where made, SHALL call the URL with the verb. An f-string URL SHALL keep its literal parts with each computed part as a parameter; a URL with no literal path segment SHALL be an unread site, also on a receiver made with no base URL.
 
 #### Scenario: Requests become calls
 - **WHEN** a file has `requests.post(f"{BASE}/bookings/{id}/cancel")` and `httpx.get(url)`
