@@ -246,3 +246,11 @@ The image SHALL hold the `gsttt` binary and nothing else, on a `gcr.io/distroles
 #### Scenario: The base and the builder are pinned by digest
 - **WHEN** the `Dockerfile` and the publish step are read
 - **THEN** the base image and the BuildKit image are each named with a tag and a `sha256` digest
+
+### Requirement: Installer skips an installed version
+
+`install.sh` SHALL download nothing when the `gsttt` in the install directory prints `gsttt <version>` for `--version`, `<version>` being the version it would install. It SHALL say that the version is already installed, print the `PATH` hint as after an install, and exit 0.
+
+#### Scenario: An installed version is not downloaded again
+- **WHEN** the `gsttt` in `GSTTT_INSTALL_DIR` prints `gsttt 0.1.1` and `install.sh` is to install 0.1.1
+- **THEN** it says that 0.1.1 is already installed, fetches the latest version but no package, leaves the install directory as it was, and exits 0
