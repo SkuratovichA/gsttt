@@ -1,20 +1,37 @@
-# NestJS: a controller serves its routes under its prefix, a resolver serves the fields of its root type.
+# NestJS: a controller serves its routes under its prefix, a resolver serves the fields of its root type; a `*.` pattern reads a decorator called through a namespace import.
 name = "nestjs"
 language = "ts"
 detect = ["@nestjs/common", "@nestjs/core", "@nestjs/graphql"]
 
 [[decorators]]
-decorator = ["Get", "Post", "Put", "Patch", "Delete", "Options", "Head", "All"]
+decorator = [
+  "Get",
+  "Post",
+  "Put",
+  "Patch",
+  "Delete",
+  "Options",
+  "Head",
+  "All",
+  "*.Get",
+  "*.Post",
+  "*.Put",
+  "*.Patch",
+  "*.Delete",
+  "*.Options",
+  "*.Head",
+  "*.All",
+]
 kind = "http"
 role = "serves"
 key = "$arg1|"
 method = "$callee"
-class = { from = "Controller", key = "$arg1|$arg1.path" }
+class = { from = ["Controller", "*.Controller"], key = "$arg1|$arg1.path" }
 
 [[decorators]]
-decorator = ["Query", "Mutation", "Subscription"]
+decorator = ["Query", "Mutation", "Subscription", "*.Query", "*.Mutation", "*.Subscription"]
 kind = "graphql"
 role = "serves"
 key = "$arg1.name|$arg2.name|$arg1|$member"
 prefix = "$callee"
-class = { from = "Resolver" }
+class = { from = ["Resolver", "*.Resolver"] }

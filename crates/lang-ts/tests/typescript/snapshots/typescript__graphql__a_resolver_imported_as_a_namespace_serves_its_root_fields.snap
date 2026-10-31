@@ -1,0 +1,179 @@
+---
+source: crates/lang-ts/tests/typescript/graphql.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "graphql Query.users",
+          "line": 8,
+          "role": "serves",
+          "via": "nestjs"
+        },
+        {
+          "key": "graphql Mutation.removeUser",
+          "line": 11,
+          "role": "serves",
+          "via": "nestjs"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "UsersResolver"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "graphql"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "*"
+          ],
+          "spec": "@nestjs/graphql",
+          "to": {
+            "external": "@nestjs/graphql"
+          }
+        }
+      ],
+      "path": "src/users.resolver.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "User",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Org",
+            "uses": []
+          },
+          {
+            "end": 16,
+            "line": 6,
+            "name": "UsersResolver",
+            "uses": [
+              "graphql"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 8,
+            "name": "UsersResolver.users",
+            "uses": [
+              "User",
+              "graphql"
+            ]
+          },
+          {
+            "end": 12,
+            "line": 11,
+            "name": "UsersResolver.remove",
+            "uses": [
+              "User",
+              "graphql"
+            ]
+          },
+          {
+            "end": 15,
+            "line": 14,
+            "name": "UsersResolver.org",
+            "uses": [
+              "Org",
+              "graphql"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "graphql"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "file-system routes (Next.js, Remix, SvelteKit) are not read",
+            "routers mounted from another package are not followed",
+            "prefixes and paths held in variables are not followed",
+            "a global prefix set at start-up (NestJS setGlobalPrefix) is not applied",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the same file",
+            "a mount path array with a non-literal element is read for its literal elements only",
+            "routers that mount each other in a cycle are followed until the cycle closes"
+          ],
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "resolvers built at run time are not read",
+            "schema-first resolvers outside a resolvers map are not read"
+          ],
+          "kind": "graphql",
+          "role": "serves",
+          "via": [
+            "graphql",
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}
