@@ -22,6 +22,24 @@ fn a_resolver_method_serves_a_root_field() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario(
+    "typescript",
+    "A resolver imported as a namespace serves its root fields"
+)]
+fn a_resolver_imported_as_a_namespace_serves_its_root_fields() -> Result<(), Box<dyn Error>> {
+    let json = run("resolver-method-namespace")?;
+    assert_eq!(
+        contracts(&json, "src/users.resolver.ts"),
+        [
+            "serves graphql Query.users @8",
+            "serves graphql Mutation.removeUser @11"
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A resolver map serves its fields")]
 fn a_resolver_map_serves_its_fields() -> Result<(), Box<dyn Error>> {
     let json = run("resolver-map")?;

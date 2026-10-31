@@ -54,6 +54,21 @@ fn a_nestjs_controller_serves_its_routes() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario(
+    "typescript",
+    "A NestJS controller imported as a namespace serves its routes"
+)]
+fn a_nestjs_controller_imported_as_a_namespace_serves_its_routes() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-controller-namespace")?;
+    assert_eq!(
+        contracts(&json, "src/users.controller.ts"),
+        ["serves http GET /users/{} @5", "serves http POST /users @8"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "Requests become calls")]
 fn requests_become_calls() -> Result<(), Box<dyn Error>> {
     let json = run("requests")?;
