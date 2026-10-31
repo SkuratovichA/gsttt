@@ -83,6 +83,10 @@ impl Site for Shape {
         self.arg_at(position)?.text.as_deref().map(Cow::Borrowed)
     }
 
+    fn has_arg(&self, position: NonZeroU32) -> bool {
+        self.arg_at(position).is_some()
+    }
+
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         let (_, value) = self
             .arg_at(position)?

@@ -409,6 +409,10 @@ impl Site for CallSite<'_> {
         text_of(self.positional(position)?)
     }
 
+    fn has_arg(&self, position: NonZeroU32) -> bool {
+        self.positional(position).is_some()
+    }
+
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         dict_prop(self.positional(position)?, prop)
     }
@@ -461,6 +465,10 @@ impl Site for EmbedSite<'_> {
         self.document(self.call.positional(position))
     }
 
+    fn has_arg(&self, position: NonZeroU32) -> bool {
+        self.call.positional(position).is_some()
+    }
+
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         let dict = self.call.positional(position)?;
         self.document(dict_value(dict, prop))
@@ -494,6 +502,10 @@ impl Site for AssignSite<'_> {
             return None;
         }
         text_of(self.value?)
+    }
+
+    fn has_arg(&self, position: NonZeroU32) -> bool {
+        position == NonZeroU32::MIN && self.value.is_some()
     }
 
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
