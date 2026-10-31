@@ -1,0 +1,223 @@
+---
+source: crates/lang-ts/tests/typescript/data.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "env API_URL",
+          "line": 10,
+          "role": "calls",
+          "via": "nestjs-config"
+        },
+        {
+          "key": "env DB_URL",
+          "line": 11,
+          "role": "calls",
+          "via": "nestjs-config"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "AppService"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Injectable"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Injectable"
+          ],
+          "spec": "@nestjs/common",
+          "to": {
+            "external": "@nestjs/common"
+          }
+        },
+        {
+          "exported": [
+            "ConfigService"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "ConfigService"
+          ],
+          "spec": "@nestjs/config",
+          "to": {
+            "external": "@nestjs/config"
+          }
+        },
+        {
+          "exported": [
+            "Env"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 3,
+          "names": [
+            "Env"
+          ],
+          "spec": "./env",
+          "to": {
+            "file": "src/env.ts"
+          }
+        }
+      ],
+      "path": "src/app.service.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 16,
+            "line": 5,
+            "name": "AppService",
+            "uses": [
+              "Injectable"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "AppService.constructor",
+            "uses": [
+              "ConfigService"
+            ]
+          },
+          {
+            "end": 15,
+            "line": 9,
+            "name": "AppService.load",
+            "uses": [
+              "ConfigService",
+              "ConfigService.get",
+              "Env"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Injectable"
+        ]
+      },
+      "tags": 0,
+      "unresolved": [
+        {
+          "detail": "this.configService.get",
+          "line": 13,
+          "reason": {
+            "reason": "non-literal"
+          }
+        }
+      ]
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Env"
+      ],
+      "imports": [],
+      "path": "src/env.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "Env",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "file-system routes (Next.js, Remix, SvelteKit) are not read",
+            "routers mounted from another package are not followed",
+            "prefixes and paths held in variables are not followed",
+            "a global prefix set at start-up (NestJS setGlobalPrefix) is not applied",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the same file",
+            "a mount path array with a non-literal element is read for its literal elements only",
+            "routers that mount each other in a cycle are followed until the cycle closes"
+          ],
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "URLs held in variables are not followed",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "resolvers built at run time are not read",
+            "schema-first resolvers outside a resolvers map are not read"
+          ],
+          "kind": "graphql",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env",
+            "nestjs-config"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, contracts, run, run_tree_within, run_within};
+use crate::support::{NOTHING, contracts, run, run_tree_within, run_within, unread};
 
 #[test]
 #[scenario("typescript", "A Prisma call names its table")]
@@ -402,6 +402,44 @@ fn every_way_of_reading_the_environment_is_seen() -> Result<(), Box<dyn Error>> 
         ]
     );
     insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A ConfigService read names an environment variable")]
+fn a_config_service_read_names_an_environment_variable() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-config")?;
+    let facts = contracts(&json, "src/app.service.ts");
+    assert!(
+        facts.contains(&"calls env API_URL @10".to_owned()),
+        "{facts:?}"
+    );
+    assert!(
+        facts.contains(&"calls env DB_URL @11".to_owned()),
+        "{facts:?}"
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A configuration path is no environment variable")]
+fn a_configuration_path_is_no_environment_variable() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-config")?;
+    let facts = contracts(&json, "src/app.service.ts");
+    assert!(facts.iter().all(|fact| !fact.ends_with("@12")), "{facts:?}");
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A computed configuration name is a blind spot")]
+fn a_computed_configuration_name_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-config")?;
+    let sites = unread(&json, "src/app.service.ts");
+    assert!(
+        sites.iter().any(|site| site.starts_with("@13 ")),
+        "{sites:?}"
+    );
     Ok(())
 }
 
