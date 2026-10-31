@@ -554,6 +554,55 @@ export class TeamResolver {
 
     #[gsttt_scenario::scenario(
         "agent-benchmarks",
+        "The fields flag lists the imports it could not follow in place of refusing"
+    )]
+    #[test]
+    fn the_fields_flag_lists_the_imports_it_could_not_follow_in_place_of_refusing() {
+        let Some((dir, script, tools)) = clients_fixture(&[(
+            "server/dangling.ts",
+            "import './missing'\nimport './absent'\n",
+        )]) else {
+            return;
+        };
+        let checkout = fs::canonicalize(dir.path()).unwrap();
+        let listing = list_fields(&script, &tools, &checkout).unwrap();
+        assert_eq!(
+            listing["unresolved"],
+            serde_json::json!([
+                {"file": "server/dangling.ts", "line": 1, "specifier": "./missing"},
+                {"file": "server/dangling.ts", "line": 2, "specifier": "./absent"},
+            ])
+        );
+        assert!(listing["fields"].as_array().unwrap().len() > 1);
+        // The answer by method uses references, so the same tree stops it.
+        let error = list_methods(&script, &tools, &checkout, ".", "tsconfig.json")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("server/dangling.ts:1: ./missing"), "{error}");
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A field name the fields flag cannot read stops the oracle"
+    )]
+    #[test]
+    fn a_field_name_the_fields_flag_cannot_read_stops_the_oracle() {
+        let resolver = "import { Query, Resolver } from '@nestjs/graphql'\nimport { NAME } from './missing'\n\n@Resolver()\nexport class Named {\n  @Query(() => Boolean, { name: NAME })\n  named() { return 1 }\n}\n";
+        let Some((dir, script, tools)) = clients_fixture(&[("server/named.ts", resolver)]) else {
+            return;
+        };
+        let checkout = fs::canonicalize(dir.path()).unwrap();
+        let error = list_fields(&script, &tools, &checkout)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("server/named.ts:6") && error.contains("not a string"),
+            "{error}"
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
         "A call of gql or graphql with a template or a string is a document"
     )]
     #[test]

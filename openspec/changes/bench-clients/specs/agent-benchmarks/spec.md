@@ -42,6 +42,17 @@ With `--fields` the oracle SHALL print, in place of the methods, each root field
 - **WHEN** the script runs with `--fields` over a tree where a field is served under two root types, one is only selected by a document and one is only served by a resolver
 - **THEN** it prints one entry for each `Root.field`, sorted, with the resolver methods that serve it and the files that select it, and no list of methods
 
+### Requirement: What the answer by field refuses
+The answer by field SHALL NOT be refused over imports the program cannot resolve, since it uses no references, and SHALL list them as `unresolved`. It SHALL be refused, naming the file and line, for a field whose `name` it cannot read, and SHALL NOT serve the field under the name of the method then.
+
+#### Scenario: The fields flag lists the imports it could not follow in place of refusing
+- **WHEN** the script runs over a tree with imports that resolve to no file, with and without `--fields`
+- **THEN** with the flag it prints them sorted as `unresolved` with the file, line and specifier and answers, and without it the draw stops as before
+
+#### Scenario: A field name the fields flag cannot read stops the oracle
+- **WHEN** the `name` option of a resolver is a constant imported from a module that does not resolve
+- **THEN** the script stops naming the file and line of the option, and does not serve the field under the name of the method
+
 ### Requirement: The place of the questions about clients
 The questions of a repository SHALL be in `bench/agents/questions.json` with those about users first, those about tests next and those about clients last, so that drawing the questions about clients leaves the questions drawn before them as they were.
 

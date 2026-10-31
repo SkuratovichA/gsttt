@@ -81,7 +81,7 @@ export function readOptions({ fields = false } = {}) {
 
 /**
  * The language service over the tracked TypeScript files of `options.scope`, or only of those below `options.program` when it is given: a scope may hold packages the tsconfig does not describe, whose imports it cannot resolve.
- * Returns `{ ts, tools, checkout, tracked, files, scope, absolute, relative, service, program }`: `tracked` is every file git tracks under the scope, `files` the TypeScript files of the program, sorted, and `scope` the set of those.
+ * Returns `{ ts, tools, checkout, tracked, files, scope, absolute, relative, service, program, unresolved }`, where `unresolved` is `[{ file, line, specifier }]` and is not empty only with `options.fields`, since otherwise it is a refusal: `tracked` is every file git tracks under the scope, `files` the TypeScript files of the program, sorted, and `scope` the set of those.
  */
 export function openService(options, { program: below } = {}) {
   const tools = fs.realpathSync(path.resolve(options.tools))
@@ -134,12 +134,14 @@ export function openService(options, { program: below } = {}) {
       if (ts.resolveModuleName(specifier, source.fileName, compilerSettings, host, cache, undefined, source.impliedNodeFormat).resolvedModule) continue
       const candidates = relativeImport ? [path.resolve(path.dirname(source.fileName), specifier)] : mapped
       if (namesNoCode(specifier, candidates)) continue
-      unresolved.push(`${file}:${source.getLineAndCharacterOfPosition(pos).line + 1}: ${specifier}`)
+      unresolved.push({ file, line: source.getLineAndCharacterOfPosition(pos).line + 1, specifier })
     }
   }
-  if (unresolved.length > 0) {
-    throw new Error(`${unresolved.length} imports of ${below ?? options.scope} do not resolve to a file:\n${unresolved.sort(compare).join('\n')}`)
+  unresolved.sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.specifier, b.specifier))
+  // An answer that uses no references does not depend on the imports the program cannot follow, so with `--fields` the caller is handed them in place of a refusal.
+  if (unresolved.length > 0 && !options.fields) {
+    throw new Error(`${unresolved.length} imports of ${below ?? options.scope} do not resolve to a file:\n${unresolved.map(({ file, line, specifier }) => `${file}:${line}: ${specifier}`).join('\n')}`)
   }
 
-  return { ts, tools, checkout, tracked, files, scope: new Set(files), absolute, relative, service, program }
+  return { ts, tools, checkout, tracked, files, scope: new Set(files), absolute, relative, service, program, unresolved }
 }

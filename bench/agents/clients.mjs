@@ -8,7 +8,7 @@
 // The program is the TypeScript below the directory of the tsconfig, since the clients live in packages the tsconfig of the resolvers does not describe; the documents are looked for in the whole scope. A document that does not parse, a fragment spread of a fragment no document defines, a decorator argument that could name a field and that the script cannot read (not a function, a string or an object literal without a spread, or a name that is not a string), stops the script: an answer built without them would be wrong.
 // Prints one JSON object on standard output, sorted so that the same checkout gives the same bytes:
 //   { typescript, graphql, files, methods: [{ file, name, line, clients, ambiguous }] }
-// With `--fields` it prints instead the answer at the level of the field: { typescript, graphql, files, fields: [{ field, servers: [{ file, line, method }], clients }] }, one entry for each `Root.field` that a resolver of the program serves or a document of the scope selects, sorted by `field`, the servers by file then line and the clients by path.
+// With `--fields` it prints instead the answer at the level of the field: { typescript, graphql, files, unresolved: [{ file, line, specifier }], fields: [{ field, servers: [{ file, line, method }], clients }] }, one entry for each `Root.field` that a resolver of the program serves or a document of the scope selects, sorted by `field`, the servers by file then line and the clients by path. `unresolved` lists the imports the program could not follow, which the `methods` answer refuses and this one does not, since it uses no references; a field name the script cannot read still stops it.
 // `name` is `Class.method`; only methods that some resolver calls are listed, and `clients` may still be empty when no document selects the field. `ambiguous` is true when a field that such a resolver serves is also served under another root type by some resolver (`Query foo` and `Mutation foo`), so that the name of the field alone does not tell which operations are meant.
 
 import fs from 'node:fs'
@@ -17,7 +17,7 @@ import path from 'node:path'
 import { compare, isTestOrDeclaration, loadTool, openService, readOptions } from './service.mjs'
 
 const options = readOptions({ fields: true })
-const { ts, tools, tracked, files, absolute, relative, service, program } = openService(options, { program: path.posix.dirname(options.tsconfig) })
+const { ts, tools, tracked, files, unresolved, absolute, relative, service, program } = openService(options, { program: path.posix.dirname(options.tsconfig) })
 const graphql = loadTool(tools, 'graphql')
 const checker = program.getTypeChecker()
 
@@ -213,7 +213,7 @@ if (options.fields) {
     servers: (servers.get(field) ?? []).sort((a, b) => compare(a.file, b.file) || a.line - b.line),
     clients: clients.get(field) ?? [],
   }))
-  process.stdout.write(JSON.stringify({ typescript: ts.version, graphql: graphql.version, files: files.length, fields }))
+  process.stdout.write(JSON.stringify({ typescript: ts.version, graphql: graphql.version, files: files.length, unresolved, fields }))
 } else {
   const methods = []
   for (const { file, source, name, identifier } of candidates) {
