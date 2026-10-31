@@ -2,6 +2,7 @@
 
 use std::fs::File;
 use std::io::{Read, Write};
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -192,6 +193,16 @@ pub(crate) fn write(dir: impl AsRef<Path>, path: &str, text: &str) {
     let file = dir.as_ref().join(path);
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(file, text).unwrap();
+}
+
+/// Like [`write`], with the permissions of a program: `rwxr-xr-x`.
+pub(crate) fn write_executable(dir: impl AsRef<Path>, path: &str, text: &str) {
+    write(&dir, path, text);
+    std::fs::set_permissions(
+        dir.as_ref().join(path),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
 }
 
 /// Writes three TypeScript files under `dir`: `app/a.ts` imports `lib/util.ts`, and `app/b.ts` imports nothing.

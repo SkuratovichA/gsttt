@@ -7,7 +7,7 @@ use gsttt_scenario::scenario;
 use super::support::{Sandbox, is_empty};
 
 /// The commands the cli spec lists, each as it is typed: those of the change that adds the command line, and `mcp`, which the change that adds the server puts among them.
-const COMMANDS: [&str; 17] = [
+const COMMANDS: [&str; 18] = [
     "index",
     "impact",
     "dependents",
@@ -24,6 +24,7 @@ const COMMANDS: [&str; 17] = [
     "config trust",
     "config untrust",
     "schema external",
+    "update",
     "completions",
 ];
 

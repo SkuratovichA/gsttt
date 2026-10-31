@@ -17,6 +17,7 @@ mod init;
 mod print;
 mod questions;
 mod schema;
+mod update;
 
 /// Runs the command `cli` names, writing the answer to `io.stdout` and the failure, if any, to `io.stderr`.
 pub fn run(cli: Cli, io: &mut Io<'_>) -> Outcome {
@@ -52,6 +53,7 @@ fn dispatch(flags: &Flags, command: &Command, io: &mut Io<'_>) -> Result<Outcome
             Ok(Outcome::Answered)
         }
         Command::Schema(SchemaCommand::External) => schema::external(io),
+        Command::Update(args) => update::update(args, io),
         Command::Config(ConfigCommand::Trust) => config::trust(flags, io),
         Command::Config(ConfigCommand::Untrust) => config::untrust(flags, io),
         Command::Config(ConfigCommand::Check) => config::check(&Session::open(flags)?, io),
@@ -119,6 +121,14 @@ fn check_arguments(flags: &Flags, command: &Command) -> Result<(), CliError> {
         Command::Mcp if flags.json => Err(CliError::McpTakesNoFlag { flag: "--json" }),
         Command::Mcp if flags.all => Err(CliError::McpTakesNoFlag { flag: "--all" }),
         Command::Mcp if flags.no_refresh => Err(CliError::McpTakesNoFlag {
+            flag: "--no-refresh",
+        }),
+        Command::Update(_) if flags.directory.is_some() => {
+            Err(CliError::UpdateTakesNoFlag { flag: "-C" })
+        }
+        Command::Update(_) if flags.json => Err(CliError::UpdateTakesNoFlag { flag: "--json" }),
+        Command::Update(_) if flags.all => Err(CliError::UpdateTakesNoFlag { flag: "--all" }),
+        Command::Update(_) if flags.no_refresh => Err(CliError::UpdateTakesNoFlag {
             flag: "--no-refresh",
         }),
         Command::Impact(ImpactArgs {

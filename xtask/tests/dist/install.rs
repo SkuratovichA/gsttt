@@ -675,6 +675,64 @@ fn a_directory_off_the_path_comes_with_the_line_that_puts_it_there() {
     assert!(printed(&output).contains(&line), "{}", printed(&output));
 }
 
+/// Puts a `gsttt` in the install directory of `machine` that prints `version` whatever it is asked.
+fn install_fake_gsttt(machine: &Machine, version: &str) {
+    write_executable(
+        &machine.install_dir(),
+        "gsttt",
+        &format!("#!/bin/sh\necho '{version}'\n"),
+    );
+}
+
+#[gsttt_scenario::scenario("distribution", "An installed version is not downloaded again")]
+#[test]
+fn a_version_that_is_installed_is_not_downloaded_again() {
+    let releases = releases(&["first"]);
+    let packages = packages(&releases);
+    fs::write(packages.join("latest"), "0.1.1\n").unwrap();
+    let machine = Machine::new();
+    install_fake_gsttt(&machine, "gsttt 0.1.1");
+    let before = contents(&machine.install_dir());
+    let mut command = machine.installer(&packages);
+    let _scripts = shims(&mut command, &machine, &[("curl", CURL_LOGGING)]);
+
+    let output = command.output().unwrap();
+
+    assert!(output.status.success(), "{}", printed(&output));
+    let binary = machine.install_dir().join("gsttt");
+    let said = format!("gsttt 0.1.1 is already installed at {}", binary.display());
+    assert!(printed(&output).contains(&said), "{}", printed(&output));
+    let hint = format!("export PATH=\"{}:$PATH\"", machine.install_dir().display());
+    assert!(printed(&output).contains(&hint), "{}", printed(&output));
+    let calls = machine.calls();
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+    assert!(calls.trim_end().ends_with("/latest"), "{calls}");
+    assert_eq!(contents(&machine.install_dir()), before);
+}
+
+#[test]
+fn a_gsttt_of_another_version_is_replaced() {
+    let releases = releases(&["first"]);
+    let packages = packages(&releases);
+    for installed in ["gsttt 0.1.0", "gsttt 0.1.10", "gsttt 0.1.1-dev", "0.1.1"] {
+        let machine = Machine::new();
+        install_fake_gsttt(&machine, installed);
+
+        let output = machine.installer(&packages).output().unwrap();
+
+        assert!(output.status.success(), "{installed}: {}", printed(&output));
+        assert!(
+            machine.installed().starts_with("gsttt first "),
+            "{installed}"
+        );
+        assert!(
+            !printed(&output).contains("already installed"),
+            "{installed}: {}",
+            printed(&output)
+        );
+    }
+}
+
 #[gsttt_scenario::scenario("distribution", "An interrupted install leaves nothing behind")]
 #[test]
 fn an_install_interrupted_after_the_copy_leaves_nothing_behind() {

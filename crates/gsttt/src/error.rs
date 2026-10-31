@@ -1,6 +1,7 @@
 //! What a command can fail with, and how a failure is told on stderr.
 
 use std::io;
+use std::process::ExitStatus;
 
 use camino::Utf8PathBuf;
 use gsttt_core::engine::changes::ChangesError;
@@ -118,6 +119,43 @@ pub(crate) enum CliError {
         "drop `{flag}`: the server answers in protocol messages, a tool that lists entries takes `all` as an argument, and every call refreshes the index first"
     ))]
     McpTakesNoFlag { flag: &'static str },
+
+    #[error(
+        "`gsttt update` takes none of `-C`, `--json`, `--all` and `--no-refresh`, and `{flag}` was given"
+    )]
+    #[diagnostic(help(
+        "drop `{flag}`: the update works on the installed binary and the Claude Code configs, not on a repository"
+    ))]
+    UpdateTakesNoFlag { flag: &'static str },
+
+    /// A binary built from source belongs to cargo, and a release put over it behind cargo's back is a surprise.
+    #[error("this gsttt is a development build, and `gsttt update` does not replace those")]
+    #[diagnostic(help(
+        "to put a release somewhere anyway, name the directory: `GSTTT_INSTALL_DIR=~/.local/bin gsttt update`"
+    ))]
+    UpdateOfDevelopmentBuild,
+
+    #[error("cannot tell where the running gsttt is installed: {source}")]
+    #[diagnostic(help(
+        "name the directory to install into: `GSTTT_INSTALL_DIR=<dir> gsttt update`"
+    ))]
+    UpdateDirectory { source: io::Error },
+
+    #[error("cannot start `sh` to run the installer: {source}")]
+    #[diagnostic(help("the installer is a shell script, so `sh` has to be on `PATH`"))]
+    UpdateInstallerStart { source: io::Error },
+
+    #[error("the installer failed with {status}, and the Claude Code plugin was left as it was")]
+    #[diagnostic(help(
+        "the installer's own message is above; fix what it names and run `gsttt update` again"
+    ))]
+    UpdateInstaller { status: ExitStatus },
+
+    #[error("the Claude Code plugin is not up to date in every config that has it")]
+    #[diagnostic(help(
+        "the notes above name what failed; once that is fixed, `gsttt update` finds gsttt installed and repeats only the plugin step"
+    ))]
+    UpdatePlugin,
 }
 
 impl From<RepositoryError> for CliError {
@@ -148,6 +186,11 @@ impl CliError {
             | Self::Init { .. }
             | Self::Serve(_)
             | Self::Runtime { .. }
+            | Self::UpdateOfDevelopmentBuild
+            | Self::UpdateDirectory { .. }
+            | Self::UpdateInstallerStart { .. }
+            | Self::UpdateInstaller { .. }
+            | Self::UpdatePlugin
             | Self::Root(RootError::Workspace(_) | RootError::CurrentDirectory { .. }) => {
                 Outcome::Failed
             }
@@ -161,7 +204,8 @@ impl CliError {
             | Self::BlankName
             | Self::NoRefreshWithIndex
             | Self::TrustNeedsTerminal
-            | Self::McpTakesNoFlag { .. } => Outcome::Usage,
+            | Self::McpTakesNoFlag { .. }
+            | Self::UpdateTakesNoFlag { .. } => Outcome::Usage,
         }
     }
 

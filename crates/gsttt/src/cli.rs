@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 
 use camino::Utf8PathBuf;
+use clap::builder::NonEmptyStringValueParser;
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use clap_complete::Shell;
 
@@ -75,6 +76,8 @@ pub enum Command {
     /// Print a JSON schema
     #[command(subcommand, flatten_help = true)]
     Schema(SchemaCommand),
+    /// Install the newest release of gsttt and update its Claude Code plugin to match
+    Update(UpdateArgs),
     /// Print the completion script of a shell
     Completions {
         /// The shell to complete for
@@ -146,6 +149,14 @@ impl ContractArgs {
     }
 }
 
+/// The arguments of `update`.
+#[derive(Debug, Args)]
+pub struct UpdateArgs {
+    /// The version to install, such as 0.1.42; the newest release when left out
+    #[arg(value_name = "VERSION", value_parser = NonEmptyStringValueParser::new())]
+    pub version: Option<String>,
+}
+
 /// The commands under `hook`.
 #[derive(Debug, Subcommand)]
 pub enum HookCommand {
@@ -193,6 +204,7 @@ impl Command {
             Self::Config(ConfigCommand::Trust) => "config trust",
             Self::Config(ConfigCommand::Untrust) => "config untrust",
             Self::Schema(SchemaCommand::External) => "schema external",
+            Self::Update(_) => "update",
             Self::Completions { .. } => "completions",
         }
     }
