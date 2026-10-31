@@ -18,11 +18,29 @@ A question of the kind `clients` SHALL name a method with a body of a class that
 - **THEN** it names the method and the file that defines it, says what a resolver and an operation are, and ends as the prompt of a question about users does
 
 ### Requirement: The answer of a question about clients
-The clients of a method SHALL be computed without gsttt. A resolver calls the method when the TypeScript language service finds a reference to it in the text of that resolver. Documents are read by the `graphql` package from `.graphql` and `.gql` files and `gql` and `graphql` templates, and an operation selects a field of the root type of its kind. A document that does not parse, a decorator argument that hides the field name and a namespace import of `@nestjs/graphql` SHALL stop the draw.
+The clients of a method SHALL be computed without gsttt. A resolver calls the method when the TypeScript language service finds a reference to it in the text of that resolver. Documents are read by the `graphql` package from `.graphql` and `.gql` files and `gql` and `graphql` templates, and an operation selects a field of the root type of its kind. A document that does not parse and a decorator argument that hides the field name SHALL stop the draw.
 
 #### Scenario: The clients of a method are the files that select the field of a resolver that calls it
 - **WHEN** a resolver that serves a mutation calls a method, a query of the same name is selected by another file, and an alias and a fragment select the fields of two other resolvers
 - **THEN** the mutation's clients are the files that select it alone, an alias and a fragment count, and a method that only a class that is not a resolver calls is not listed
+
+### Requirement: Resolvers and documents as the stacks write them
+The oracle SHALL read the decorators of `@nestjs/graphql` whether a file imports them by name or as a namespace (`@graphql.Resolver()`), and SHALL read as a document a call of `gql` or `graphql` whose first argument is a template or a string, as the client preset of graphql-codegen writes it, as well as a tagged template.
+
+#### Scenario: A namespace import of the decorators is read like named ones
+- **WHEN** a resolver file imports `@nestjs/graphql` as a namespace and decorates its class and methods with `@graphql.Resolver()`, `@graphql.Query()` and `@graphql.Mutation()`
+- **THEN** its methods serve the fields the decorators name, as with named imports
+
+#### Scenario: A call of gql or graphql with a template or a string is a document
+- **WHEN** a script calls `graphql` with a template literal, with a template with an expression or with a string, and once with a name
+- **THEN** the first three are documents whose operations and fragments count, and the call with a name is not
+
+### Requirement: The answer by field
+With `--fields` the oracle SHALL print, in place of the methods, each root field (`Query.user`) that a resolver serves or a document selects, with the methods that serve it and the files that select it, sorted so that the same checkout gives the same bytes.
+
+#### Scenario: The fields flag lists each root field with its servers and its clients
+- **WHEN** the script runs with `--fields` over a tree where a field is served under two root types, one is only selected by a document and one is only served by a resolver
+- **THEN** it prints one entry for each `Root.field`, sorted, with the resolver methods that serve it and the files that select it, and no list of methods
 
 ### Requirement: The place of the questions about clients
 The questions of a repository SHALL be in `bench/agents/questions.json` with those about users first, those about tests next and those about clients last, so that drawing the questions about clients leaves the questions drawn before them as they were.

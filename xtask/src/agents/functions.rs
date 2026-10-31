@@ -489,10 +489,145 @@ export class TeamResolver {
         stops_the_oracle(resolver, &["server/odd.ts:6", "@Mutation", "spread"]);
     }
 
+    /// What the script prints with `--fields` for the fixture, as the JSON it is.
+    fn list_fields(
+        script: &Path,
+        tools: &Path,
+        checkout: &Path,
+    ) -> anyhow::Result<serde_json::Value> {
+        let output = Command::new("node")
+            .arg(script)
+            .arg("--tools")
+            .arg(tools)
+            .arg("--checkout")
+            .arg(checkout)
+            .args(["--scope", ".", "--tsconfig", "tsconfig.json", "--fields"])
+            .output()
+            .context("cannot run node")?;
+        ensure!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Ok(serde_json::from_slice(&output.stdout)?)
+    }
+
+    /// The entry of `field` among the fields the script printed.
+    fn field_entry(listing: &serde_json::Value, field: &str) -> serde_json::Value {
+        listing["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["field"] == field)
+            .unwrap_or_else(|| panic!("{field} is not in {listing}"))
+            .clone()
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A namespace import of the decorators is read like named ones"
+    )]
     #[test]
-    fn a_namespace_import_of_the_decorators_stops_the_oracle() {
-        let resolver = "import * as nest from '@nestjs/graphql'\n\n@nest.Resolver()\nexport class Odd {\n  @nest.Query(() => Boolean)\n  odd() { return 1 }\n}\n";
-        stops_the_oracle(resolver, &["server/odd.ts", "@nestjs/graphql", "namespace"]);
+    fn a_namespace_import_of_the_decorators_is_read_like_named_ones() {
+        let resolver = "import * as graphql from '@nestjs/graphql'\n\n@graphql.Resolver()\nexport class Spaced {\n  @graphql.Query(() => Boolean)\n  spaced() { return 1 }\n\n  @graphql.Mutation(() => Boolean, { name: 'renamed' })\n  other() { return 1 }\n}\n";
+        let Some((dir, script, tools)) = clients_fixture(&[
+            ("server/spaced.ts", resolver),
+            ("client/spaced.graphql", "query Spaced { spaced }\n"),
+        ]) else {
+            return;
+        };
+        let checkout = fs::canonicalize(dir.path()).unwrap();
+        let listing = list_fields(&script, &tools, &checkout).unwrap();
+        assert_eq!(
+            field_entry(&listing, "Query.spaced"),
+            serde_json::json!({
+                "field": "Query.spaced",
+                "servers": [{"file": "server/spaced.ts", "line": 6, "method": "Spaced.spaced"}],
+                "clients": ["client/spaced.graphql"],
+            })
+        );
+        assert_eq!(
+            field_entry(&listing, "Mutation.renamed")["servers"][0]["method"],
+            "Spaced.other"
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "A call of gql or graphql with a template or a string is a document"
+    )]
+    #[test]
+    fn a_call_of_graphql_with_a_template_or_a_string_is_a_document() {
+        let client = "declare function graphql(source: string): unknown\nexport const a = graphql(`query A { fromCall }`)\nexport const b = graphql(\"query B { fromString }\")\nexport const c = graphql(`query C { ...Part } ${part}`)\nexport const d = graphql(name)\n";
+        let Some((dir, script, tools)) = clients_fixture(&[
+            ("client/codegen.ts", client),
+            (
+                "client/part.graphql",
+                "fragment Part on Query { fromFragment }\n",
+            ),
+        ]) else {
+            return;
+        };
+        let checkout = fs::canonicalize(dir.path()).unwrap();
+        let listing = list_fields(&script, &tools, &checkout).unwrap();
+        for field in ["fromCall", "fromString", "fromFragment"] {
+            assert_eq!(
+                field_entry(&listing, &format!("Query.{field}"))["clients"],
+                serde_json::json!(["client/codegen.ts"]),
+                "{field}"
+            );
+        }
+    }
+
+    #[gsttt_scenario::scenario(
+        "agent-benchmarks",
+        "The fields flag lists each root field with its servers and its clients"
+    )]
+    #[test]
+    fn the_fields_flag_lists_each_root_field_with_its_servers_and_its_clients() {
+        let Some((dir, script, tools)) = clients_fixture(&[]) else {
+            return;
+        };
+        let checkout = fs::canonicalize(dir.path()).unwrap();
+        let listing = list_fields(&script, &tools, &checkout).unwrap();
+        let line = |method: &str| {
+            let at = RESOLVER
+                .lines()
+                .position(|l| l.starts_with(&format!("  {method}(")))
+                .unwrap();
+            at + 1
+        };
+        // A field served under two root types is two entries; a field only a document selects has no server; a field only a resolver serves has no client.
+        assert_eq!(
+            field_entry(&listing, "Mutation.shared"),
+            serde_json::json!({
+                "field": "Mutation.shared",
+                "servers": [{"file": "server/resolver.ts", "line": line("sharedMutation"), "method": "TeamResolver.sharedMutation"}],
+                "clients": ["client/shared_write.graphql"],
+            })
+        );
+        assert_eq!(
+            field_entry(&listing, "Query.lookup"),
+            serde_json::json!({"field": "Query.lookup", "servers": [], "clients": ["client/decoy.graphql"]})
+        );
+        assert_eq!(
+            field_entry(&listing, "Query.byName")["servers"],
+            serde_json::json!([{"file": "server/resolver.ts", "line": line("lookup"), "method": "TeamResolver.lookup"}])
+        );
+        assert_eq!(
+            field_entry(&listing, "Mutation.orphan")["clients"],
+            serde_json::json!([])
+        );
+        let names: Vec<&str> = listing["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["field"].as_str().unwrap())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted);
+        assert!(listing.get("methods").is_none());
     }
 
     #[test]

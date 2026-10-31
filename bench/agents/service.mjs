@@ -69,9 +69,9 @@ export function isTestOrDeclaration(file) {
 }
 
 /** The options both scripts take: `--tools <bench/tools/node> --checkout <dir> --scope <dir> --tsconfig <file>`. */
-export function readOptions() {
+export function readOptions({ fields = false } = {}) {
   const { values } = parseArgs({
-    options: { tools: { type: 'string' }, checkout: { type: 'string' }, scope: { type: 'string' }, tsconfig: { type: 'string' } },
+    options: { tools: { type: 'string' }, checkout: { type: 'string' }, scope: { type: 'string' }, tsconfig: { type: 'string' }, ...(fields ? { fields: { type: 'boolean' } } : {}) },
   })
   for (const name of ['tools', 'checkout', 'scope', 'tsconfig']) {
     if (!values[name]) throw new Error(`--${name} is required`)
