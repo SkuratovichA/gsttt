@@ -496,7 +496,8 @@ impl Spec<'_> {
                 if !looks_like_url(key) {
                     return Outcome::Skip;
                 }
-                if is_computed(key) && normalize_http_path(key) == "/" {
+                // A path of placeholders alone, the root included, would meet every served route of its length.
+                if is_computed(key) && !has_literal_segment(&normalize_http_path(key)) {
                     return blind(line, what);
                 }
             }
@@ -529,6 +530,12 @@ fn looks_like_url(key: &str) -> bool {
 
 fn is_computed(key: &str) -> bool {
     key.contains("${") || key.contains("{}")
+}
+
+/// Whether a normalised HTTP path keeps a segment that is not the `{}` parameter.
+fn has_literal_segment(path: &str) -> bool {
+    path.split('/')
+        .any(|segment| !segment.is_empty() && segment != "{}")
 }
 
 fn blind(line: Line, what: &str) -> Outcome {
@@ -780,6 +787,44 @@ mod tests {
             assert_eq!(
                 key(serves.apply("express", &site, None, 1, &callee)),
                 format!("http {} /x", verb.to_ascii_uppercase())
+            );
+        }
+    }
+
+    #[gsttt_scenario::scenario(
+        "contract-formats",
+        "A computed target with a literal segment is a fact"
+    )]
+    #[test]
+    fn a_computed_http_call_with_a_literal_segment_is_a_fact() {
+        let get = rule(serde_json::json!({
+            "callee": "*.get", "kind": "http", "role": "calls", "key": "$arg1", "method": "$callee",
+        }));
+        let site = call("api.get", &[Some("${}/users/${}")]);
+        assert_eq!(
+            key(get.apply("api", &site, None, 7, site.callee)),
+            "http GET /users/{}"
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "contract-formats",
+        "A target whose path is only parameters is a blind spot"
+    )]
+    #[test]
+    fn a_computed_http_call_of_parameters_alone_is_a_blind_spot() {
+        let get = rule(serde_json::json!({
+            "callee": "*.get", "kind": "http", "role": "calls", "key": "$arg1", "method": "$callee",
+        }));
+        for target in ["${}/${}", "${}${}/${}", "https://${}/${}/${}"] {
+            let args = [Some(target)];
+            let site = call("api.get", &args);
+            assert!(
+                matches!(
+                    get.apply("api", &site, None, 7, site.callee),
+                    Outcome::Blind(_)
+                ),
+                "{target} is a blind spot"
             );
         }
     }

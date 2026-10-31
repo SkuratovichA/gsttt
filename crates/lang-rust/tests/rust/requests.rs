@@ -45,6 +45,20 @@ fn built_urls_keep_their_literal_parts_and_bare_urls_are_unread() {
     assert_json_snapshot!(out.sites("src/client.rs"));
 }
 
+#[scenario("rust", "A URL whose path is only computed segments is a blind spot")]
+#[test]
+fn a_url_whose_path_is_only_computed_segments_is_a_blind_spot() {
+    let out = index("placeholder_urls");
+    assert_eq!(
+        out.contracts("src/client.rs"),
+        ["4 calls http GET /users/{}"]
+    );
+    let unresolved = out.sites("src/client.rs")["unresolved"].clone();
+    assert_eq!(unresolved.as_array().unwrap().len(), 1);
+    assert_eq!(unresolved[0]["line"], 3);
+    assert_json_snapshot!(out.sites("src/client.rs"));
+}
+
 #[test]
 fn a_builder_chain_and_a_request_method_are_clients() {
     let out = index("reqwest");

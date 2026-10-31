@@ -1,0 +1,4 @@
+[project]
+name = "placeholder-urls"
+version = "0.1.0"
+dependencies = ["requests", "httpx"]
