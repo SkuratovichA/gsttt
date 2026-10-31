@@ -24,4 +24,4 @@ A MODIFIED requirement in a delta must carry every scenario the requirement has 
 
 ## A glob in a zsh command aborted the whole command
 
-The shell of the sessions is zsh, where a glob that matches nothing is an error (`no matches found`) that stops the command before it runs, so `grep -rn x --include=*.rs` and `ls dir/vitest.config.*` failed instead of matching nothing. Fix: quote every glob that is meant for the program (`--include='*.rs'`), and test for a file with `[ -e ]` or run the line under `bash -c`.
+The shell of the sessions is zsh, where a glob that matches nothing is an error (`no matches found`) that stops the command before it runs, so `grep -rn x --include=*.rs` and `ls dir/vitest.config.*` failed instead of matching nothing. Fix: quote every glob that is meant for the program (`--include='*.rs'`), and test for a file with `[ -e ]` or run the line under `bash -c`. A word that starts with `=` is expanded to the path of a command as well, so a separator `echo ===` failed with `== not found`: quote it (`echo '==='`).
