@@ -15,7 +15,7 @@ use crate::setup::Setup;
 pub type FactKey = u128;
 
 /// Bumped whenever the shape of the stored facts changes, which drops every cached fact.
-pub const FACT_FORMAT: u32 = 7;
+pub const FACT_FORMAT: u32 = 8;
 
 /// The state of the key hash after everything a module contributes.
 pub fn module_state(meta: &Meta, options: &Value, packs: &[Pack]) -> Xxh3 {

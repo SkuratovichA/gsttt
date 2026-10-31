@@ -242,3 +242,19 @@ fn a_setting_getter_is_no_route() -> Result<(), Box<dyn Error>> {
     assert_eq!(contracts(&json, "src/settings.ts"), Vec::<String>::new());
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A route whose path is a constant is a blind spot")]
+fn a_route_whose_path_is_a_constant_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-computed-route")?;
+    assert_eq!(
+        unread(&json, "src/auth.controller.ts"),
+        ["@6 non-literal Get"]
+    );
+    assert_eq!(
+        contracts(&json, "src/auth.controller.ts"),
+        ["serves http GET / @9"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

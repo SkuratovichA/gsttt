@@ -308,6 +308,10 @@ impl Site for View<'_> {
         text_of(argument, false, self.site.edition).map(Cow::Owned)
     }
 
+    fn has_arg(&self, position: NonZeroU32) -> bool {
+        index(position).is_some_and(|at| self.site.positional.get(at).is_some())
+    }
+
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         match prop {
             "method" => self

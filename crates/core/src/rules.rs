@@ -259,7 +259,7 @@ impl Case {
 /// - `$arg2.method`: a property of an argument that is an object literal, or a dict literal in Python.
 /// - `$member`: the name of the declaration a decorator or attribute sits on, `bookings` in `@Query() bookings()`.
 /// - `$prefix`: a keyword argument, `prefix=…` in Python.
-/// - Anything without `$` is literal text: `$arg2.method|GET` falls back to `GET`, and `$arg1|` to empty text.
+/// - Anything without `$` is literal text standing in for an argument that is absent, never for one that is present but not text: `$arg2.method|GET` falls back to `GET`, `$arg1|` reads no argument as empty text and `f(PATH)` as nothing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ValueExpr(Vec<ValueSource>);
@@ -292,6 +292,8 @@ pub trait Site {
     fn callee_last(&self) -> Option<Cow<'_, str>>;
     /// The argument at `position`, counting from 1, as text: a string literal, or a template, f-string or concatenation with each computed part written as `${}`; a list, array or tuple literal gives its first element that is one of those. `None` for anything else.
     fn arg(&self, position: NonZeroU32) -> Option<Cow<'_, str>>;
+    /// Whether the site has an argument at `position`, counting from 1, whatever its form.
+    fn has_arg(&self, position: NonZeroU32) -> bool;
     /// The property `prop` of the argument at `position` when that argument is an object or dict literal, as text the way [`Site::arg`] gives it.
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>>;
     /// The keyword argument `name`, in languages that have them.
@@ -305,15 +307,20 @@ pub trait Site {
 impl ValueExpr {
     /// The first alternative that yields text at `site`.
     pub fn eval(&self, site: &(impl Site + ?Sized)) -> Option<String> {
+        let mut unreadable = false;
         self.0.iter().find_map(|source| match source {
             ValueSource::Callee => site.callee_last().map(Cow::into_owned),
             ValueSource::Member => site.member().map(Cow::into_owned),
-            ValueSource::Arg(position) => site.arg(*position).map(Cow::into_owned),
+            ValueSource::Arg(position) => {
+                let text = site.arg(*position).map(Cow::into_owned);
+                unreadable |= text.is_none() && site.has_arg(*position);
+                text
+            }
             ValueSource::ArgProp(position, prop) => {
                 site.arg_prop(*position, prop).map(Cow::into_owned)
             }
             ValueSource::Keyword(name) => site.keyword(name).map(Cow::into_owned),
-            ValueSource::Literal(text) => Some(text.clone()),
+            ValueSource::Literal(text) => (!unreadable).then(|| text.clone()),
         })
     }
 
@@ -719,6 +726,10 @@ mod tests {
                 .map(Cow::Borrowed)
         }
 
+        fn has_arg(&self, position: NonZeroU32) -> bool {
+            self.args.get(position.get() as usize - 1).is_some()
+        }
+
         fn arg_prop(&self, _: NonZeroU32, _: &str) -> Option<Cow<'_, str>> {
             None
         }
@@ -1054,6 +1065,10 @@ mod tests {
             (position.get() == 1).then(|| "/bookings/${}".into())
         }
 
+        fn has_arg(&self, position: NonZeroU32) -> bool {
+            position.get() <= 2
+        }
+
         fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
             (position.get() == 2 && prop == "method").then(|| "PUT".into())
         }
@@ -1065,6 +1080,24 @@ mod tests {
 
     fn expr(text: &str) -> ValueExpr {
         text.parse().unwrap()
+    }
+
+    #[test]
+    fn a_literal_stands_in_for_an_absent_argument_not_an_unreadable_one() {
+        assert_eq!(expr("$arg1|").eval(&call("Get", &[])), Some(String::new()));
+        assert_eq!(expr("$arg1|").eval(&call("Get", &[None])), None);
+        assert_eq!(
+            expr("$arg1|").eval(&call("Get", &[Some("/x")])),
+            Some("/x".to_string())
+        );
+        let member = Call {
+            member: Some("bookings"),
+            ..call("Query", &[None])
+        };
+        assert_eq!(
+            expr("$arg1|$member").eval(&member),
+            Some("bookings".to_string())
+        );
     }
 
     #[test]
