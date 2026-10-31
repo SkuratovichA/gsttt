@@ -1008,6 +1008,18 @@ fn a_client_with_no_base_url_leaves_a_computed_url_unread() {
     );
 }
 
+#[gsttt_scenario::scenario("python", "A URL whose path is only computed segments is a blind spot")]
+#[test]
+fn a_url_whose_path_is_only_computed_segments_is_a_blind_spot() {
+    let tree = index("placeholder_urls");
+    assert_eq!(tree.unread("client.py"), ["L5 requests.get"]);
+    assert_eq!(tree.contracts("client.py"), ["calls http GET /users/{}@9"]);
+    insta::assert_json_snapshot!(
+        "a_url_whose_path_is_only_computed_segments_is_a_blind_spot",
+        tree.file_json("client.py")
+    );
+}
+
 #[gsttt_scenario::scenario("python", "Model tables are declared")]
 #[test]
 fn model_tables_are_declared() {

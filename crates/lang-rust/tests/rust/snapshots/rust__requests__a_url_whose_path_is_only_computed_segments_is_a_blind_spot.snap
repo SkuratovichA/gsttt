@@ -1,0 +1,24 @@
+---
+source: crates/lang-rust/tests/rust/requests.rs
+expression: "out.sites(\"src/client.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "http GET /users/{}",
+      "line": 4,
+      "role": "calls",
+      "via": "reqwest"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [
+    {
+      "detail": "client.get",
+      "line": 3,
+      "reason": {
+        "reason": "non-literal"
+      }
+    }
+  ]
+}

@@ -91,6 +91,25 @@ fn a_computed_url_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario(
+    "typescript",
+    "A URL whose path is only computed segments is a blind spot"
+)]
+fn a_url_whose_path_is_only_computed_segments_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
+    let json = run("placeholder-url")?;
+    assert_eq!(
+        unread(&json, "src/api.ts"),
+        ["@4 non-literal fetch", "@6 non-literal fetch"]
+    );
+    assert_eq!(
+        contracts(&json, "src/api.ts"),
+        ["calls http * /users/{} @8"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A router mounted under several paths serves under each")]
 fn a_router_mounted_under_several_paths_serves_under_each() -> Result<(), Box<dyn Error>> {
     let json = run("express-mount-forms")?;
