@@ -240,3 +240,13 @@ fn an_unreadable_url_on_an_imported_client_is_one_unread_site() -> Result<(), Bo
     assert!(unread(&json, "src/users.ts")[0].starts_with("@4 "));
     Ok(())
 }
+
+#[test]
+fn a_computed_url_on_an_imported_client_with_no_base_is_one_unread_site()
+-> Result<(), Box<dyn Error>> {
+    let json = run("receivers-no-base")?;
+    assert_eq!(linked(&json), ["calls http GET /users @7 in src/a.ts"]);
+    assert_eq!(contracts(&json, "src/a.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/a.ts"), ["@6 non-literal axios.get"]);
+    Ok(())
+}

@@ -31,6 +31,7 @@
 - [x] 4.7 TypeScript: a test and a fixture for "A client made inside a function does not replace the one a file exports", and tests for a variable another call makes inside a function and for a client made inside a function in a file whose export is not a client
 - [x] 4.8 TypeScript: a test and a fixture for "A call on an imported name is read by the rule of the call that made it"
 - [x] 4.9 TypeScript: tests for an imported router that nothing mounts, a client behind a barrel, a client taken through a namespace import, a client exported by default through its name and an unreadable URL on an imported client; unit tests of what the parse defers and of which specifiers are libraries
+- [x] 4.10 TypeScript: a test and a fixture for a computed URL on an imported client that has no base URL, which is one unread site and not a call of placeholders alone
 
 ## 5. The documents
 
