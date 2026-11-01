@@ -20,13 +20,13 @@ expression: json
       "contracts": [
         {
           "key": "env API_URL",
-          "line": 10,
+          "line": 9,
           "role": "calls",
           "via": "nestjs-config"
         },
         {
           "key": "env DB_URL",
-          "line": 11,
+          "line": 10,
           "role": "calls",
           "via": "nestjs-config"
         }
@@ -65,21 +65,6 @@ expression: json
           "to": {
             "external": "@nestjs/config"
           }
-        },
-        {
-          "exported": [
-            "Env"
-          ],
-          "flags": 0,
-          "kind": "static",
-          "line": 3,
-          "names": [
-            "Env"
-          ],
-          "spec": "./env",
-          "to": {
-            "file": "src/env.ts"
-          }
         }
       ],
       "path": "src/app.service.ts",
@@ -90,29 +75,28 @@ expression: json
       "symbols": {
         "declared": [
           {
-            "end": 16,
-            "line": 5,
+            "end": 15,
+            "line": 4,
             "name": "AppService",
             "uses": [
               "Injectable"
             ]
           },
           {
-            "end": 7,
-            "line": 7,
+            "end": 6,
+            "line": 6,
             "name": "AppService.constructor",
             "uses": [
               "ConfigService"
             ]
           },
           {
-            "end": 15,
-            "line": 9,
+            "end": 14,
+            "line": 8,
             "name": "AppService.load",
             "uses": [
               "ConfigService",
-              "ConfigService.get",
-              "Env"
+              "ConfigService.get"
             ]
           }
         ],
@@ -125,39 +109,12 @@ expression: json
       "unresolved": [
         {
           "detail": "this.configService.get",
-          "line": 13,
+          "line": 12,
           "reason": {
             "reason": "non-literal"
           }
         }
       ]
-    },
-    {
-      "contracts": [],
-      "embedded": [],
-      "exports": [
-        "Env"
-      ],
-      "imports": [],
-      "path": "src/env.ts",
-      "project": "ts .",
-      "status": {
-        "status": "ok"
-      },
-      "symbols": {
-        "declared": [
-          {
-            "end": 3,
-            "line": 1,
-            "name": "Env",
-            "uses": []
-          }
-        ],
-        "exports": [],
-        "on_load": []
-      },
-      "tags": 0,
-      "unresolved": []
     }
   ],
   "linked": [],

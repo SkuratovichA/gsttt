@@ -1,13 +1,16 @@
-//! The link phase: what only the whole repository shows, which is how routers and NestJS modules mount under each other across files, which routes a NestJS controller inherits, and how tRPC routers compose.
+//! The link phase: what only the whole repository shows, which is how routers and NestJS modules mount under each other across files, which routes a NestJS controller inherits, how tRPC routers compose, and the value of a constant that another file declares.
+
+mod deferred;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::FileId;
-use gsttt_core::connector::{LinkFile, LinkInput, LinkedFact};
+use gsttt_core::connector::{LinkFile, LinkInput, Linked, LinkedFact};
 use gsttt_core::contract::{ContractKey, ContractKind, Role};
 use gsttt_core::fact::{ContractFact, Line, Resolution};
-use gsttt_core::rules::contract_key;
+use gsttt_core::rules::{Pack, contract_key};
 
+use self::deferred::Resolved;
 use crate::extra::{ClassRoute, ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra};
 
 /// How far a name is followed through imports and re-exports before the chain is given up.
@@ -16,20 +19,25 @@ const MAX_DEPTH: usize = 16;
 /// A name in a file.
 type Node = (FileId, String);
 
-/// The facts that need other files: Express routes under the prefixes their routers are mounted at, NestJS controller routes behind the global prefix of the apps that reach them and the routes they inherit from a base class, and tRPC procedures under the routers that compose them. An Express route and a procedure are found only here, so they key no parsed fact again and the engine keeps every fact the parse returned. A NestJS route a controller declares is parsed as written, and a fact keyed again by [`LinkedFact::rekeyed`] takes its place.
-pub(crate) fn link(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
+/// The facts that need other files: Express routes under the prefixes their routers are mounted at, NestJS controller routes behind the global prefix of the apps that reach them and the routes they inherit from a base class, tRPC procedures under the routers that compose them, and the contracts of the sites whose rule needed the value of an imported constant. An Express route and a procedure are found only here, so they key no parsed fact again and the engine keeps every fact the parse returned. A NestJS route a controller declares is parsed as written, and a fact keyed again by [`LinkedFact::rekeyed`] takes its place. The sites that a rule still cannot read once the constants are known come back as unread sites of their file.
+pub(crate) fn link(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Linked {
+    let resolved = deferred::resolve(input, packs);
     let edges = parents(input);
     let mut mounts = Mounts::new(&edges);
-    let mut linked = express(input, &mut mounts);
-    linked.extend(nestjs(input, &mut mounts));
-    linked.extend(trpc(input));
+    let mut facts = express(input, &resolved, &mut mounts);
+    facts.extend(nestjs(input, &resolved, &mut mounts));
+    facts.extend(trpc(input));
+    facts.extend(resolved.own);
     if mounts.cuts > 0 {
         tracing::debug!(
             cuts = mounts.cuts,
             "mounts close a cycle, which adds no path of its own"
         );
     }
-    linked
+    Linked {
+        facts,
+        unread: resolved.unread,
+    }
 }
 
 /// The file a specifier written in `file` leads to.
@@ -117,10 +125,14 @@ fn parents(input: &LinkInput<'_, TsExtra>) -> BTreeMap<Node, Vec<(Node, String)>
     parents
 }
 
-fn express(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<LinkedFact> {
+fn express(
+    input: &LinkInput<'_, TsExtra>,
+    resolved: &Resolved,
+    mounts: &mut Mounts<'_>,
+) -> Vec<LinkedFact> {
     let mut linked = Vec::new();
     for file in input.files() {
-        for route in &file.extra.routes {
+        for route in file.extra.routes.iter().chain(resolved.routes_of(file.id)) {
             let node = (file.id, route.host.clone());
             for prefix in mounts.served_under(&node) {
                 linked.push(LinkedFact::found(file.id, rekey(&route.fact, &prefix)));
@@ -132,8 +144,12 @@ fn express(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<Linke
 
 /// The routes of NestJS controllers behind the global prefix of the apps that reach them, and the routes a controller inherits from the base class it extends.
 ///
-/// A route a controller declares is already parsed, so it is keyed again once for every path the controller is served under, the empty one included when some module reaches it without a prefix; a controller that no app prefixes keeps the fact as parsed. A route of a class without the decorator was not parsed, so it is found here, in the file of the base class and in the file of each controller that extends it.
-fn nestjs(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<LinkedFact> {
+/// A route a controller declares is already parsed, so it is keyed again once for every path the controller is served under, the empty one included when some module reaches it without a prefix; a controller that no app prefixes keeps the fact as parsed. A route of a class without the decorator was not parsed, so it is found here, in the file of the base class and in the file of each controller that extends it. A route whose path is an imported constant was not parsed either, and is found here like a base class route: behind every prefix its controller is served under, or as written when no app prefixes it.
+fn nestjs(
+    input: &LinkInput<'_, TsExtra>,
+    resolved: &Resolved,
+    mounts: &mut Mounts<'_>,
+) -> Vec<LinkedFact> {
     let mut linked = Vec::new();
     for file in input.files() {
         for route in file
@@ -151,6 +167,21 @@ fn nestjs(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<Linked
                 linked.push(LinkedFact::rekeyed(file.id, &route.fact, key));
             }
         }
+        // A route read here was never parsed, so no own fact stands in its place: every key it has is found, and a controller that no app prefixes serves it as written.
+        for route in resolved
+            .class_routes_of(file.id)
+            .iter()
+            .filter(|route| !route.inherited)
+        {
+            let prefixes = mounts.served_under(&(file.id, route.class.clone()));
+            if prefixes.iter().all(String::is_empty) {
+                linked.push(LinkedFact::found(file.id, route.fact.clone()));
+                continue;
+            }
+            for prefix in prefixes {
+                linked.push(LinkedFact::found(file.id, rekey(&route.fact, &prefix)));
+            }
+        }
         for inherit in &file.extra.inherits {
             let Some((base_file, base)) = define(input, file.id, &inherit.base, 0) else {
                 continue;
@@ -162,6 +193,7 @@ fn nestjs(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<Linked
                 .extra
                 .class_routes
                 .iter()
+                .chain(resolved.class_routes_of(owner.id))
                 .filter(|route| route.inherited && route.class == base)
                 .collect();
             for prefix in mounts.served_under(&(file.id, inherit.class.clone())) {

@@ -1,7 +1,7 @@
 import { Get } from '@nestjs/common';
-import { ROUTES } from './routes';
+import { route } from './routes';
 
 export class UserControllerBase {
-  @Get(ROUTES.USER)
+  @Get(route('user'))
   find() {}
 }

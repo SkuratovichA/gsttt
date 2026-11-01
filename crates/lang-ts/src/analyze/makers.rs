@@ -10,6 +10,7 @@ use oxc_ast::ast::{
 };
 use oxc_ast_visit::{Visit, walk};
 
+use super::Constants;
 use super::peel;
 use crate::shape::{Shape, chain_of, dotted, field_name, this_key};
 
@@ -33,6 +34,7 @@ pub(super) fn collect(
     text: &str,
     packs: &[Pack],
     nestjs: bool,
+    constants: &Constants,
 ) -> BTreeMap<String, Maker> {
     // Only a rule that reads a receiver, or a `setGlobalPrefix` call of a NestJS app, looks at what a variable was made by, so a file without either skips the walk.
     let needed = packs
@@ -45,6 +47,7 @@ pub(super) fn collect(
     }
     let mut collector = Collector {
         packs,
+        constants,
         found: BTreeMap::new(),
     };
     collector.visit_program(program);
@@ -53,6 +56,7 @@ pub(super) fn collect(
 
 struct Collector<'p> {
     packs: &'p [Pack],
+    constants: &'p Constants,
     found: BTreeMap<String, Maker>,
 }
 
@@ -74,7 +78,7 @@ impl Collector<'_> {
                     .as_ref()
                     .is_some_and(|receiver| receiver.from.matches(&callee))
         });
-        let shape = Shape::of_call(&callee, arguments.iter());
+        let shape = Shape::of_call(&callee, arguments.iter(), self.constants);
         let root = match arguments.first().and_then(Argument::as_expression) {
             Some(Expression::Identifier(first)) if callee == NEST_FACTORY_CREATE => {
                 Some(first.name.as_str().to_owned())

@@ -298,8 +298,8 @@ fn a_setting_getter_is_no_route() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-#[scenario("typescript", "A route whose path is a constant is a blind spot")]
-fn a_route_whose_path_is_a_constant_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
+#[scenario("typescript", "A route whose path is computed is a blind spot")]
+fn a_route_whose_path_is_computed_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
     let json = run("nestjs-computed-route")?;
     assert_eq!(
         unread(&json, "src/auth.controller.ts"),

@@ -10,38 +10,102 @@ use oxc_ast::ast::{
     ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
 };
 use oxc_syntax::operator::BinaryOperator;
+use serde::{Deserialize, Serialize};
+
+use crate::analyze::Constants;
 
 /// How a computed part of a template or a concatenation is written in the text a rule reads.
 const COMPUTED: &str = "${}";
 
 /// A call or a decorator as the rules read it: the last segment of what is called, the declaration it sits on, and the text of each argument.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub(crate) struct Shape {
+    #[serde(skip_serializing_if = "Option::is_none")]
     last: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) member: Option<String>,
     args: Vec<Arg>,
 }
 
-/// One argument: its text when it is a literal, and the properties of an object literal.
-#[derive(Debug, Clone, Default)]
+/// One argument: what it reads as, and the properties of an object literal.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 struct Arg {
+    value: Value,
+    props: Vec<(String, Value)>,
+}
+
+/// What a rule can read of an expression: its text when it has one, and otherwise the name it is written as when that name starts from an import of the file, which the link phase may be able to read.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+struct Value {
+    #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
-    props: Vec<(String, Option<String>)>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+}
+
+impl Value {
+    fn of(expr: &Expression<'_>, constants: &Constants) -> Self {
+        let text = text_with(expr, constants);
+        let name = match text {
+            Some(_) => None,
+            None => constants.imported_name(expr),
+        };
+        Self { text, name }
+    }
+
+    fn text(text: Option<String>) -> Self {
+        Self { text, name: None }
+    }
+
+    /// Reads the name of a value that has no text with `resolve`.
+    fn fill(&mut self, resolve: &impl Fn(&str) -> Option<String>) {
+        if self.text.is_none()
+            && let Some(name) = &self.name
+        {
+            self.text = resolve(name);
+        }
+    }
 }
 
 impl Shape {
-    /// The site of a call to the dotted `callee` with `arguments`.
+    /// The site of a call to the dotted `callee` with `arguments`, whose names are read against `constants`.
     pub(crate) fn of_call<'e, 'a: 'e>(
         callee: &str,
         arguments: impl IntoIterator<Item = &'e Argument<'a>>,
+        constants: &Constants,
     ) -> Self {
         Self {
             last: callee.rsplit('.').next().map(str::to_owned),
             member: None,
             args: arguments
                 .into_iter()
-                .map(|argument| argument.as_expression().map(arg_of).unwrap_or_default())
+                .map(|argument| {
+                    argument
+                        .as_expression()
+                        .map(|expr| arg_of(expr, constants))
+                        .unwrap_or_default()
+                })
                 .collect(),
+        }
+    }
+
+    /// Whether some value has no text and is written as a name that starts from an import of the file.
+    pub(crate) fn has_names(&self) -> bool {
+        self.args.iter().any(|arg| {
+            arg.value.name.is_some() || arg.props.iter().any(|(_, value)| value.name.is_some())
+        })
+    }
+
+    /// Gives the text `resolve` finds for each name that has none yet.
+    pub(crate) fn fill(&mut self, resolve: impl Fn(&str) -> Option<String>) {
+        for arg in &mut self.args {
+            arg.value.fill(&resolve);
+            for (_, value) in &mut arg.props {
+                value.fill(&resolve);
+            }
         }
     }
 
@@ -51,7 +115,7 @@ impl Shape {
             last: callee.rsplit('.').next().map(str::to_owned),
             member: None,
             args: vec![Arg {
-                text: Some(text),
+                value: Value::text(Some(text)),
                 props: Vec::new(),
             }],
         }
@@ -63,7 +127,7 @@ impl Shape {
             last: None,
             member: None,
             args: vec![Arg {
-                text: value,
+                value: Value::text(value),
                 props: Vec::new(),
             }],
         }
@@ -81,7 +145,11 @@ impl Site for Shape {
     }
 
     fn arg(&self, position: NonZeroU32) -> Option<Cow<'_, str>> {
-        self.arg_at(position)?.text.as_deref().map(Cow::Borrowed)
+        self.arg_at(position)?
+            .value
+            .text
+            .as_deref()
+            .map(Cow::Borrowed)
     }
 
     fn has_arg(&self, position: NonZeroU32) -> bool {
@@ -94,7 +162,7 @@ impl Site for Shape {
             .props
             .iter()
             .find(|(name, _)| name == prop)?;
-        value.as_deref().map(Cow::Borrowed)
+        value.text.as_deref().map(Cow::Borrowed)
     }
 
     fn keyword(&self, _name: &str) -> Option<Cow<'_, str>> {
@@ -106,22 +174,23 @@ impl Site for Shape {
     }
 }
 
-fn arg_of(expr: &Expression<'_>) -> Arg {
+fn arg_of(expr: &Expression<'_>, constants: &Constants) -> Arg {
     let props = match expr.get_inner_expression() {
         Expression::ObjectExpression(object) => object
             .properties
             .iter()
             .filter_map(|property| match property {
-                ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
-                    Some((property_name(&property.key)?, text_of(&property.value)))
-                }
+                ObjectPropertyKind::ObjectProperty(property) if !property.computed => Some((
+                    property_name(&property.key)?,
+                    Value::of(&property.value, constants),
+                )),
                 _ => None,
             })
             .collect(),
         _ => Vec::new(),
     };
     Arg {
-        text: text_of(expr),
+        value: Value::of(expr, constants),
         props,
     }
 }
@@ -158,14 +227,16 @@ pub(crate) fn this_key(name: &str) -> String {
     format!("this.{name}")
 }
 
-/// The text of a string, a template or a concatenation, with each computed part written `${}`; the first element that has text for an array; the URL that `new URL(path, base)` builds, alone or followed by `.href`, `.pathname` or `.toString()`. `None` for anything else.
-pub(crate) fn text_of(expr: &Expression<'_>) -> Option<String> {
+/// The text of a string, a template or a concatenation, with each computed part written `${}` unless it is a name that `constants` give the text of; the first element that has text for an array; the URL that `new URL(path, base)` builds, alone or followed by `.href`, `.pathname` or `.toString()`. `None` for anything else.
+pub(crate) fn text_with(expr: &Expression<'_>, constants: &Constants) -> Option<String> {
     match expr.get_inner_expression() {
         Expression::StringLiteral(text) => text.value.as_str().map(str::to_owned),
-        Expression::TemplateLiteral(template) => Some(template_text(template, COMPUTED)),
+        Expression::TemplateLiteral(template) => Some(template_with(template, |part, text| {
+            text.push_str(constants.value(part).unwrap_or(COMPUTED));
+        })),
         Expression::BinaryExpression(binary) if binary.operator == BinaryOperator::Addition => {
-            let left = text_of(&binary.left);
-            let right = text_of(&binary.right);
+            let left = text_with(&binary.left, constants);
+            let right = text_with(&binary.right, constants);
             if left.is_none() && right.is_none() {
                 return None;
             }
@@ -175,50 +246,53 @@ pub(crate) fn text_of(expr: &Expression<'_>) -> Option<String> {
                 right.as_deref().unwrap_or(COMPUTED)
             ))
         }
-        Expression::ArrayExpression(array) => array
-            .elements
-            .iter()
-            .find_map(|element| element.as_expression().and_then(text_of)),
-        Expression::NewExpression(new) => url_text(new),
-        Expression::StaticMemberExpression(member)
+        Expression::ArrayExpression(array) => array.elements.iter().find_map(|element| {
+            element
+                .as_expression()
+                .and_then(|element| text_with(element, constants))
+        }),
+        Expression::NewExpression(new) => url_text(new, constants),
+        // A member of a constant object may be called `href` too, so a URL that is not there leaves the name to the constants.
+        inner @ Expression::StaticMemberExpression(member)
             if matches!(member.property.name.as_str(), "href" | "pathname") =>
         {
-            url_object_text(&member.object)
+            url_object_text(&member.object, constants)
+                .or_else(|| constants.value(inner).map(str::to_owned))
         }
         Expression::CallExpression(call) if call.arguments.is_empty() => {
             match call.callee.get_inner_expression() {
                 Expression::StaticMemberExpression(member)
                     if member.property.name.as_str() == "toString" =>
                 {
-                    url_object_text(&member.object)
+                    url_object_text(&member.object, constants)
                 }
                 _ => None,
             }
         }
-        _ => None,
+        other => constants.value(other).map(str::to_owned),
     }
 }
 
 /// The URL that `expr` builds when it is `new URL(…)`, possibly in parentheses.
-fn url_object_text(expr: &Expression<'_>) -> Option<String> {
+fn url_object_text(expr: &Expression<'_>, constants: &Constants) -> Option<String> {
     match expr.get_inner_expression() {
-        Expression::NewExpression(new) => url_text(new),
+        Expression::NewExpression(new) => url_text(new, constants),
         _ => None,
     }
 }
 
 /// The URL that `new URL(path, base)` builds, with `None` when the callee is not `URL` or `ns.URL`, or the path has no text.
-fn url_text(new: &NewExpression<'_>) -> Option<String> {
+fn url_text(new: &NewExpression<'_>, constants: &Constants) -> Option<String> {
     let callee = dotted_name(&new.callee)?;
     if callee != "URL" && !callee.ends_with(".URL") {
         return None;
     }
     let mut args = new.arguments.iter().map(|arg| arg.as_expression());
-    let path = text_of(args.next()??)?;
+    let path = text_with(args.next()??, constants)?;
     let Some(base) = args.next() else {
         return Some(path);
     };
-    let base = base.and_then(text_of);
+    let base = base.and_then(|base| text_with(base, constants));
     url_join(&path, base.as_deref())
 }
 
@@ -269,10 +343,21 @@ pub(crate) fn literal_text(expr: &Expression<'_>) -> Option<String> {
 
 /// The text of a template with `placeholder` where each expression stood.
 pub(crate) fn template_text(template: &TemplateLiteral<'_>, placeholder: &str) -> String {
+    template_with(template, |_, text| text.push_str(placeholder))
+}
+
+/// The text of a template, with what `fill` writes where each expression stood.
+pub(crate) fn template_with(
+    template: &TemplateLiteral<'_>,
+    mut fill: impl FnMut(&Expression<'_>, &mut String),
+) -> String {
     let mut text = String::new();
     for (index, quasi) in template.quasis.iter().enumerate() {
-        if index > 0 {
-            text.push_str(placeholder);
+        if let Some(part) = index
+            .checked_sub(1)
+            .and_then(|before| template.expressions.get(before))
+        {
+            fill(part, &mut text);
         }
         let raw = quasi.value.raw.as_str();
         text.push_str(match quasi.value.cooked {
@@ -389,7 +474,8 @@ mod tests {
     use oxc_span::SourceType;
     use proptest::prelude::*;
 
-    use super::{text_of, url_join};
+    use super::{Arg, Shape, Value, text_with, url_join};
+    use crate::analyze::Constants;
 
     #[test]
     fn a_path_with_an_origin_is_the_url() {
@@ -497,6 +583,26 @@ mod tests {
         assert_eq!(normalize_http_path(&url), "/users");
     }
 
+    #[test]
+    fn a_url_built_from_constants_is_read() {
+        let allocator = Allocator::default();
+        let code = "const BASE = 'https://a.test/v1/'; const ROUTES = { href: '/h' }; (new URL(`${BASE}x`)); (ROUTES.href);";
+        let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
+        let constants = Constants::collect(&parsed.program);
+        let texts: Vec<String> = parsed
+            .program
+            .body
+            .iter()
+            .filter_map(|statement| match statement {
+                Statement::ExpressionStatement(statement) => {
+                    text_with(&statement.expression, &constants)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, ["https://a.test/v1/x", "/h"]);
+    }
+
     fn text_of_expression(source: &str) -> Option<String> {
         let allocator = Allocator::default();
         let code = format!("({source});");
@@ -504,7 +610,7 @@ mod tests {
         let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.first() else {
             panic!("no expression in {source}");
         };
-        text_of(&statement.expression)
+        text_with(&statement.expression, &Constants::default())
     }
 
     #[test]
@@ -550,5 +656,63 @@ mod tests {
             let url = url_join(&path, None).unwrap();
             prop_assert_eq!(normalize_http_path(&url), normalize_http_path(&format!("/{path}")));
         }
+    }
+
+    fn named(name: &str) -> Value {
+        Value {
+            text: None,
+            name: Some(name.to_owned()),
+        }
+    }
+
+    /// A decorator `@Get(paths.LOGIN, { path: ROOT })` whose second argument is `/x` as written.
+    fn with_names() -> Shape {
+        Shape {
+            last: Some("Get".to_owned()),
+            member: None,
+            args: vec![
+                Arg {
+                    value: named("paths.LOGIN"),
+                    props: Vec::new(),
+                },
+                Arg {
+                    value: Value::text(Some("/x".to_owned())),
+                    props: vec![("path".to_owned(), named("ROOT"))],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn the_names_of_a_shape_survive_the_cache() {
+        let shape = with_names();
+        let cached = serde_json::to_string(&shape).unwrap();
+        assert_eq!(serde_json::from_str::<Shape>(&cached).unwrap(), shape);
+    }
+
+    #[test]
+    fn a_shape_without_names_stores_no_name() {
+        let shape = Shape {
+            last: Some("fetch".to_owned()),
+            member: None,
+            args: vec![Arg {
+                value: Value::text(Some("/x".to_owned())),
+                props: Vec::new(),
+            }],
+        };
+        assert!(!shape.has_names());
+        assert!(!serde_json::to_string(&shape).unwrap().contains("name"));
+    }
+
+    #[test]
+    fn fill_reads_a_name_only_when_the_value_has_no_text() {
+        let mut shape = with_names();
+        assert!(shape.has_names());
+        shape.fill(|name| (name == "paths.LOGIN").then(|| "/login".to_owned()));
+        assert_eq!(shape.args[0].value.text.as_deref(), Some("/login"));
+        // The first argument was read, the property is still a name nothing could read.
+        assert_eq!(shape.args[1].value.text.as_deref(), Some("/x"));
+        assert_eq!(shape.args[1].props[0].1.text, None);
+        assert!(shape.args[1].props[0].1.name.is_some());
     }
 }

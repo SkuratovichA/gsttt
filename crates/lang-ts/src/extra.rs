@@ -3,7 +3,9 @@
 use gsttt_core::fact::{ContractFact, Line};
 use serde::{Deserialize, Serialize};
 
-/// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and mounts, the NestJS modules and controllers it declares, and the tRPC routers it declares. Empty parts are left out of the cached bytes.
+use crate::shape::Shape;
+
+/// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and mounts, the NestJS modules and controllers it declares, the tRPC routers it declares, the constants it exports, and the sites that wait for the constants of other files. Empty parts are left out of the cached bytes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TsExtra {
@@ -34,6 +36,46 @@ pub struct TsExtra {
     /// Variables a tRPC procedure call is stored in, which a router can list by name.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub procedures: Vec<String>,
+    /// The top-level constants of this file whose first name it exports, by the name they are read under (`ROUTES.users.byId`), sorted by name, so that the link can read them for the files that import them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub constants: Vec<(String, String)>,
+    /// The sites whose rule reads a name imported from another file, left to the link, in source order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) deferred: Vec<Deferred>,
+}
+
+/// A call or a decorator that a rule could not read because it names a constant of another file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Deferred {
+    /// The rule that read the site, by its place in the packs.
+    pub(crate) rule: RuleRef,
+    /// The site, with the names the link reads.
+    pub(crate) shape: Shape,
+    /// The prefix the rule was given, as the parse read it.
+    pub(crate) prefix: Option<String>,
+    pub(crate) line: Line,
+    /// The callee or decorator name the rule is applied with.
+    pub(crate) what: String,
+    /// Where a contract the rule finds goes.
+    pub(crate) target: DeferredTarget,
+}
+
+/// The place of a rule in the packs the parse and the link are both given: the index of its pack and of the rule among the pack's rules of that kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum RuleRef {
+    Call { pack: usize, rule: usize },
+    Decorator { pack: usize, rule: usize },
+}
+
+/// What a contract found for a deferred site becomes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum DeferredTarget {
+    /// A contract of the file, as any other.
+    Own,
+    /// A route served by a variable of this file, which waits for the prefixes its mounts give it.
+    Host(String),
+    /// A route that a decorator on a member of a class declares.
+    Class { class: String, inherited: bool },
 }
 
 /// A local name bound to something another module exports.

@@ -49,13 +49,13 @@ expression: json
         },
         {
           "exported": [
-            "LOGIN_PATH"
+            "paths"
           ],
           "flags": 0,
           "kind": "static",
           "line": 2,
           "names": [
-            "LOGIN_PATH"
+            "paths"
           ],
           "spec": "./paths",
           "to": {
@@ -84,7 +84,7 @@ expression: json
             "name": "AuthController.login",
             "uses": [
               "Get",
-              "LOGIN_PATH"
+              "paths"
             ]
           },
           {
@@ -100,7 +100,7 @@ expression: json
         "on_load": [
           "Controller",
           "Get",
-          "LOGIN_PATH"
+          "paths"
         ]
       },
       "tags": 0,
@@ -118,7 +118,7 @@ expression: json
       "contracts": [],
       "embedded": [],
       "exports": [
-        "LOGIN_PATH"
+        "paths"
       ],
       "imports": [],
       "path": "src/paths.ts",
@@ -131,7 +131,7 @@ expression: json
           {
             "end": 1,
             "line": 1,
-            "name": "LOGIN_PATH",
+            "name": "paths",
             "uses": []
           }
         ],

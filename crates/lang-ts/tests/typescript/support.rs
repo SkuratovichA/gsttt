@@ -358,11 +358,14 @@ pub(crate) fn linked(json: &Value) -> Vec<String> {
         .collect()
 }
 
-/// The sites of the file at `path` that were not read: `@<line> <reason> <detail>`.
+/// The sites of the file at `path` that were not read: `@<line> <reason> <detail>`. The sites the parse could not read come first, then the ones the link could not.
 pub(crate) fn unread(json: &Value, path: &str) -> Vec<String> {
-    file(json, path)
+    let parsed = file(json, path)
         .into_iter()
-        .flat_map(|file| items(file, "unresolved"))
+        .flat_map(|file| items(file, "unresolved"));
+    let linked = items(json, "unread").filter(|site| text(site, "file") == Some(path));
+    parsed
+        .chain(linked)
         .map(|site| {
             let reason = site
                 .get("reason")

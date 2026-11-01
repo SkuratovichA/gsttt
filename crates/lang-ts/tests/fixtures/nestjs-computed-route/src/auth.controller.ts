@@ -1,9 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
-import { LOGIN_PATH } from './paths';
+import { paths } from './paths';
 
 @Controller('/')
 export class AuthController {
-  @Get(LOGIN_PATH)
+  @Get(paths.login())
   login() {}
 
   @Get()

@@ -10,12 +10,12 @@ use gsttt_core::fact::{Declared, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     BindingPattern, ChainElement, Class, ClassElement, Declaration, ExportDefaultDeclaration,
-    ExportDefaultDeclarationKind, Expression, ImportDeclaration, ImportDeclarationSpecifier,
-    MethodDefinitionKind, Program, PropertyKey, SimpleAssignmentTarget, Statement,
-    TSModuleReference, VariableDeclaration,
+    ExportDefaultDeclarationKind, Expression, ImportDeclaration, MethodDefinitionKind, Program,
+    PropertyKey, SimpleAssignmentTarget, Statement, TSModuleReference, VariableDeclaration,
 };
 use oxc_span::{GetSpan, Span};
 
+use super::constants::import_locals;
 use super::roots::{constructed, heads};
 use crate::extra::{Export, ExportTarget};
 use crate::shape::{is_parameter_property, property_str};
@@ -188,13 +188,8 @@ impl<'a> Recorder<'a> {
 
     /// The names an import binds.
     fn import(&mut self, import: &ImportDeclaration<'a>) {
-        for specifier in import.specifiers.iter().flatten() {
-            let local = match specifier {
-                ImportDeclarationSpecifier::ImportSpecifier(item) => &item.local,
-                ImportDeclarationSpecifier::ImportDefaultSpecifier(item) => &item.local,
-                ImportDeclarationSpecifier::ImportNamespaceSpecifier(item) => &item.local,
-            };
-            self.entry(local.name.as_str(), Kind::Import, None);
+        for local in import_locals(import) {
+            self.entry(local, Kind::Import, None);
         }
     }
 
