@@ -11,7 +11,9 @@ use gsttt_core::fact::{ContractFact, Line, Resolution};
 use gsttt_core::rules::{Pack, contract_key};
 
 use self::deferred::Resolved;
-use crate::extra::{ClassRoute, ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra};
+use crate::extra::{
+    Binding, ClassRoute, ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra,
+};
 
 /// How far a name is followed through imports and re-exports before the chain is given up.
 const MAX_DEPTH: usize = 16;
@@ -62,12 +64,18 @@ fn define(input: &LinkInput<'_, TsExtra>, file: FileId, name: &str, depth: usize
     if depth >= MAX_DEPTH {
         return None;
     }
-    export_of(
-        input,
-        module_file(here, &binding.spec)?,
-        &binding.name,
-        depth + 1,
-    )
+    through(input, here, binding, &binding.name, depth + 1)
+}
+
+/// Where `export` is defined in the module that `binding`, one of the imports of `file`, leads to: the step from an import to the export it reaches, which `define` and `imported` of the deferred sites share.
+fn through(
+    input: &LinkInput<'_, TsExtra>,
+    file: &LinkFile<'_, TsExtra>,
+    binding: &Binding,
+    export: &str,
+    depth: usize,
+) -> Option<Node> {
+    export_of(input, module_file(file, &binding.spec)?, export, depth)
 }
 
 /// What `file` exports as `name`, as the name it has where it is defined. `export * from` forwards every name but `default`.

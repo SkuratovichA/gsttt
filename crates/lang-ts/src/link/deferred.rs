@@ -7,7 +7,7 @@ use gsttt_core::connector::{LinkFile, LinkInput, LinkedFact};
 use gsttt_core::fact::{ContractFact, UnresolvedSite};
 use gsttt_core::rules::{CallRule, Outcome, Pack};
 
-use super::{Node, export_of, module_file};
+use super::{Node, through};
 use crate::analyze::serves_http;
 use crate::extra::{ClassRoute, Deferred, DeferredTarget, ExportedMaker, Route, RuleRef, TsExtra};
 use crate::shape::Shape;
@@ -117,22 +117,18 @@ fn apply(
     prefix: Option<&str>,
     shape: &Shape,
 ) -> Option<Outcome> {
-    match deferred.rule {
-        RuleRef::Call { .. } => {
-            let (pack, rule) = call_rule(packs, deferred.rule)?;
-            Some(rule.apply(&pack.name, shape, prefix, deferred.line, &deferred.what))
-        }
-        RuleRef::Decorator { pack, rule } => {
-            let pack = packs.get(pack)?;
-            Some(pack.decorators.get(rule)?.apply(
-                &pack.name,
-                shape,
-                prefix,
-                deferred.line,
-                &deferred.what,
-            ))
-        }
+    if let Some((pack, rule)) = call_rule(packs, deferred.rule) {
+        return Some(rule.apply(&pack.name, shape, prefix, deferred.line, &deferred.what));
     }
+    let RuleRef::Decorator { pack, rule } = deferred.rule else {
+        return None;
+    };
+    let pack = packs.get(pack)?;
+    Some(
+        pack.decorators
+            .get(rule)?
+            .apply(&pack.name, shape, prefix, deferred.line, &deferred.what),
+    )
 }
 
 /// The variable that `host`, written in `file`, is imported as, when the file it leads to makes it with a call that some rule takes a receiver from, and the node it is in that file.
@@ -214,7 +210,6 @@ fn imported<'n>(
         .bindings
         .iter()
         .find(|binding| binding.local == root)?;
-    let target = module_file(file, &binding.spec)?;
     let (export, path) = if binding.name == "*" {
         let rest = rest?;
         match rest.split_once('.') {
@@ -224,7 +219,7 @@ fn imported<'n>(
     } else {
         (binding.name.as_str(), rest)
     };
-    Some((export_of(input, target, export, 0)?, path))
+    Some((through(input, file, binding, export, 0)?, path))
 }
 
 /// The text that `name`, written in `file`, stands for in the file it is imported from: `LOGIN_PATH` taken by name, `Env.API_URL` for a member, `ROUTES.users.byId` for a nested property, and `paths.LOGIN_PATH` for a constant taken through a namespace.

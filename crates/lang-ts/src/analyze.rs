@@ -390,18 +390,7 @@ impl<'a> Analyzer<'_, 'a> {
         let (host, _) = callee.rsplit_once('.')?;
         let root = host.split('.').next().unwrap_or(host);
         let spec = self.constants.spec_of(root)?;
-        (!self.is_library(spec)).then_some(host)
-    }
-
-    /// Whether `spec` names Node or a package that some active pack is for.
-    fn is_library(&self, spec: &str) -> bool {
-        is_builtin(spec)
-            || (!is_relative(spec)
-                && split_package(spec).is_some_and(|(package, _)| {
-                    self.packs
-                        .iter()
-                        .any(|pack| pack.detect.iter().any(|name| name == package))
-                }))
+        (!is_library(self.packs, spec)).then_some(host)
     }
 
     /// The rules that read a call on `callee` as `rule`, which takes no receiver, does, but on a receiver made by a call: the same kind and role, a callee that matches, and enough arguments to be read. When the name `callee` is written on turns out to be such a receiver, they read the call and `rule` does not.
@@ -413,7 +402,7 @@ impl<'a> Analyzer<'_, 'a> {
                     && rival.kind == rule.kind
                     && rival.role == rule.role
                     && rival.callee.matches(callee)
-                    && !(serves_http(&rival.kind, rival.role) && arguments < 2)
+                    && !reads_setting(rival, arguments)
                 {
                     rivals.push(RuleRef::Call {
                         pack: pack_index,
@@ -438,11 +427,8 @@ impl<'a> Analyzer<'_, 'a> {
                 let site: &Shape = lazy.get_or_insert_with(|| {
                     Shape::of_call(callee, it.arguments.iter(), &self.constants)
                 });
-                // `app.get('env')` reads a setting: a route always has a handler after its path.
-                if rule.receiver.is_some()
-                    && serves_http(&rule.kind, rule.role)
-                    && it.arguments.len() < 2
-                {
+                // A route always has a handler after its path.
+                if reads_setting(rule, it.arguments.len()) {
                     continue;
                 }
                 let at = RuleRef::Call {
@@ -1687,6 +1673,22 @@ fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
 /// Whether a rule of this kind and role finds the routes an HTTP server serves.
 pub(crate) fn serves_http(kind: &ContractKind, role: Role) -> bool {
     *kind == ContractKind::Http && role == Role::Serves
+}
+
+/// Whether `rule` serves routes on a receiver and a call with `arguments` arguments has no handler after its path, so it reads a setting: `app.get('env')` is no route.
+fn reads_setting(rule: &CallRule, arguments: usize) -> bool {
+    rule.receiver.is_some() && serves_http(&rule.kind, rule.role) && arguments < 2
+}
+
+/// Whether `spec` names Node or a package that some pack of `packs` is for.
+fn is_library(packs: &[Pack], spec: &str) -> bool {
+    is_builtin(spec)
+        || (!is_relative(spec)
+            && split_package(spec).is_some_and(|(package, _)| {
+                packs
+                    .iter()
+                    .any(|pack| pack.detect.iter().any(|name| name == package))
+            }))
 }
 
 /// The name a decorator is applied by and the arguments of the call it is written as, none for `@Name`. `None` when it is applied by anything but a name or a chain of names.
