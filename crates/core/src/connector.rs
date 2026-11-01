@@ -221,6 +221,20 @@ impl LinkedFact {
             replaces: Some(own.key.clone()),
         }
     }
+
+    /// Orders `facts` by file, line, key, `via` and what they replace, and drops the repeats, so that a link reports one site once whatever the order it walked in.
+    pub fn sort_unique(facts: &mut Vec<Self>) {
+        facts.sort_by(|a, b| {
+            (a.file, a.fact.line, &a.fact.key, &a.fact.via, &a.replaces).cmp(&(
+                b.file,
+                b.fact.line,
+                &b.fact.key,
+                &b.fact.via,
+                &b.replaces,
+            ))
+        });
+        facts.dedup();
+    }
 }
 
 /// One kind of contract a project finds, for coverage: `http calls via fetch, axios; blind to URLs built at run time`.

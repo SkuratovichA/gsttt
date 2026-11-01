@@ -18,19 +18,15 @@ type Node = (FileId, String);
 
 /// The facts that need other files: Express routes under the prefixes their routers are mounted at, NestJS controller routes behind the global prefix of the apps that reach them and the routes they inherit from a base class, and tRPC procedures under the routers that compose them. An Express route and a procedure are found only here, so they key no parsed fact again and the engine keeps every fact the parse returned. A NestJS route a controller declares is parsed as written, and a fact keyed again by [`LinkedFact::rekeyed`] takes its place.
 pub(crate) fn link(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
-    let parents = parents(input);
-    let mut mounts = Mounts {
-        parents: &parents,
-        memo: BTreeMap::new(),
-        cuts: 0,
-    };
+    let edges = parents(input);
+    let mut mounts = Mounts::new(&edges);
     let mut linked = express(input, &mut mounts);
     linked.extend(nestjs(input, &mut mounts));
     linked.extend(trpc(input));
     if mounts.cuts > 0 {
         tracing::debug!(
             cuts = mounts.cuts,
-            "mounts close a cycle and are cut where they close"
+            "mounts close a cycle, which adds no path of its own"
         );
     }
     linked
@@ -126,12 +122,7 @@ fn express(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<Linke
     for file in input.files() {
         for route in &file.extra.routes {
             let node = (file.id, route.host.clone());
-            let mut prefixes = mounts.prefixes_of(&node, &mut Vec::new());
-            // A router that is only reached through a cycle is served where it is written.
-            if prefixes.is_empty() {
-                prefixes.insert(String::new());
-            }
-            for prefix in prefixes {
+            for prefix in mounts.served_under(&node) {
                 linked.push(LinkedFact::found(file.id, rekey(&route.fact, &prefix)));
             }
         }
@@ -151,7 +142,7 @@ fn nestjs(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<Linked
             .iter()
             .filter(|route| !route.inherited)
         {
-            let prefixes = mounts.prefixes_of(&(file.id, route.class.clone()), &mut Vec::new());
+            let prefixes = mounts.served_under(&(file.id, route.class.clone()));
             if prefixes.iter().all(String::is_empty) {
                 continue;
             }
@@ -173,13 +164,7 @@ fn nestjs(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<Linked
                 .iter()
                 .filter(|route| route.inherited && route.class == base)
                 .collect();
-            let mut prefixes =
-                mounts.prefixes_of(&(file.id, inherit.class.clone()), &mut Vec::new());
-            // A controller that is only reached through a cycle is served where it is written.
-            if prefixes.is_empty() {
-                prefixes.insert(String::new());
-            }
-            for prefix in prefixes {
+            for prefix in mounts.served_under(&(file.id, inherit.class.clone())) {
                 let full = join_path(&prefix, &inherit.prefix);
                 for route in &inherited {
                     let fact = rekey(&route.fact, &full);
@@ -194,16 +179,7 @@ fn nestjs(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<Linked
         }
     }
     // Two controllers that extend one base class under the same path, and two prefixes that key alike, report a site once.
-    linked.sort_by(|a, b| {
-        (a.file, a.fact.line, &a.fact.key, &a.fact.via, &a.replaces).cmp(&(
-            b.file,
-            b.fact.line,
-            &b.fact.key,
-            &b.fact.via,
-            &b.replaces,
-        ))
-    });
-    linked.dedup();
+    LinkedFact::sort_unique(&mut linked);
     linked
 }
 
@@ -226,16 +202,135 @@ fn mounted_host(
 }
 
 /// The mounts of a run, with the paths of each node remembered so a router under many mounts is walked once.
+///
+/// Nodes that mount each other in a ring are one component, found before any walk. The rings of NestJS are made of `@Module` mounts, which carry no path, so every node of a ring is served under the paths of the mounts that lead into the ring from outside, and the ring is read once. A ring with a path on a mount of its own, which only Express routers mounted under paths can make, gives a node different paths depending on where a walk enters it, so that component is walked path by path.
 struct Mounts<'a> {
     parents: &'a BTreeMap<Node, Vec<(Node, String)>>,
+    /// The component of every node that has parents, as an index into `components`.
+    component_of: BTreeMap<&'a Node, usize>,
+    components: Vec<Component<'a>>,
     memo: BTreeMap<Node, BTreeSet<String>>,
-    /// How many mounts were skipped because they close a cycle.
+    /// How many mounts lie inside a ring. They add no path of their own, so this only reports how much of the graph is cyclic.
     cuts: usize,
+    /// How many mounts the walk path by path skipped because they close a cycle, which tells it whether the paths it found may be remembered.
+    walk_cuts: usize,
 }
 
-impl Mounts<'_> {
-    /// Every path a node is served under: the prefixes of its parents followed by its own mount; the empty path for a node nothing mounts. A mount that would close a cycle adds no path, so a node reached only through a cycle has none. Only a walk that met no cycle is remembered, because a cut makes the answer depend on where the walk began.
-    fn prefixes_of(&mut self, node: &Node, visiting: &mut Vec<Node>) -> BTreeSet<String> {
+/// A set of nodes that reach each other through mounts, or one node alone.
+struct Component<'a> {
+    nodes: Vec<&'a Node>,
+    /// A mount between two of its nodes has a path, so a path through it depends on where the walk entered.
+    walked: bool,
+}
+
+impl<'a> Mounts<'a> {
+    fn new(parents: &'a BTreeMap<Node, Vec<(Node, String)>>) -> Self {
+        let nodes: Vec<&Node> = parents.keys().collect();
+        let index: BTreeMap<&Node, usize> = nodes
+            .iter()
+            .enumerate()
+            .map(|(at, node)| (*node, at))
+            .collect();
+        // A node that nothing is mounted under is on no ring, so a mount into it is left out.
+        let leads_to: Vec<Vec<usize>> = parents
+            .values()
+            .map(|above| {
+                above
+                    .iter()
+                    .filter_map(|(parent, _)| index.get(parent).copied())
+                    .collect()
+            })
+            .collect();
+        let mut components: Vec<Component<'a>> = Vec::new();
+        let mut component_of = BTreeMap::new();
+        for (node, id) in nodes.into_iter().zip(strongly_connected(&leads_to)) {
+            if components.len() <= id {
+                components.resize_with(id + 1, || Component {
+                    nodes: Vec::new(),
+                    walked: false,
+                });
+            }
+            if let Some(component) = components.get_mut(id) {
+                component.nodes.push(node);
+            }
+            component_of.insert(node, id);
+        }
+        let mut cuts = 0;
+        for (node, above) in parents {
+            let Some(&id) = component_of.get(node) else {
+                continue;
+            };
+            for (parent, mount) in above {
+                if component_of.get(parent) != Some(&id) {
+                    continue;
+                }
+                cuts += 1;
+                // A mount of a node under itself is never part of a simple path.
+                if parent != node
+                    && !mount.is_empty()
+                    && let Some(component) = components.get_mut(id)
+                {
+                    component.walked = true;
+                }
+            }
+        }
+        Self {
+            parents,
+            component_of,
+            components,
+            memo: BTreeMap::new(),
+            cuts,
+            walk_cuts: 0,
+        }
+    }
+
+    /// Every path a node is served under: the paths of its parents followed by its own mount; the empty path for a node nothing mounts. A mount that would close a cycle adds no path, so a node reached only through a cycle has none.
+    fn prefixes_of(&mut self, node: &Node) -> BTreeSet<String> {
+        if let Some(known) = self.memo.get(node) {
+            return known.clone();
+        }
+        let Some((id, component)) = self
+            .component_of
+            .get(node)
+            .and_then(|&id| Some((id, self.components.get(id)?)))
+        else {
+            return BTreeSet::from([String::new()]);
+        };
+        if component.walked {
+            return self.walk_simple_paths(node, &mut Vec::new());
+        }
+        let parents = self.parents;
+        let members = component.nodes.clone();
+        let exits: Vec<(&Node, &str)> = members
+            .iter()
+            .filter_map(|member| parents.get(*member))
+            .flatten()
+            .filter(|(parent, _)| self.component_of.get(parent) != Some(&id))
+            .map(|(parent, mount)| (parent, mount.as_str()))
+            .collect();
+        let mut prefixes = BTreeSet::new();
+        for (parent, mount) in exits {
+            for above in self.prefixes_of(parent) {
+                prefixes.insert(join_path(&above, mount));
+            }
+        }
+        for member in members {
+            self.memo.insert(member.clone(), prefixes.clone());
+        }
+        prefixes
+    }
+
+    /// [`Mounts::prefixes_of`], with the empty path for a node that only a ring reaches, which is served where it is written.
+    fn served_under(&mut self, node: &Node) -> BTreeSet<String> {
+        let mut prefixes = self.prefixes_of(node);
+        if prefixes.is_empty() {
+            prefixes.insert(String::new());
+        }
+        prefixes
+    }
+
+    /// The paths of a node by following every simple path up through its parents, skipping a parent already on the stack. Only a walk that met no cycle is remembered, because a cut makes the answer depend on where the walk began. It costs the number of simple paths, so it serves only the components whose mounts have paths.
+    fn walk_simple_paths(&mut self, node: &Node, visiting: &mut Vec<Node>) -> BTreeSet<String> {
         if let Some(known) = self.memo.get(node) {
             return known.clone();
         }
@@ -243,23 +338,147 @@ impl Mounts<'_> {
         let Some(edges) = parents.get(node) else {
             return BTreeSet::from([String::new()]);
         };
-        let cuts_before = self.cuts;
+        let cuts_before = self.walk_cuts;
         visiting.push(node.clone());
         let mut prefixes = BTreeSet::new();
         for (parent, mount) in edges {
             if visiting.contains(parent) {
-                self.cuts += 1;
+                self.walk_cuts += 1;
                 continue;
             }
-            for above in self.prefixes_of(parent, visiting) {
+            for above in self.walk_simple_paths(parent, visiting) {
                 prefixes.insert(join_path(&above, mount));
             }
         }
         visiting.pop();
-        if self.cuts == cuts_before {
+        if self.walk_cuts == cuts_before {
             self.memo.insert(node.clone(), prefixes.clone());
         }
         prefixes
+    }
+}
+
+/// What the walk of [`strongly_connected`] knows of a node.
+#[derive(Clone, Copy)]
+struct Slot {
+    /// When the walk first reached the node, `UNSEEN` before it did.
+    index: usize,
+    /// The lowest `index` that the walk below the node has reached on the stack.
+    low: usize,
+    on_stack: bool,
+    component: usize,
+}
+
+/// The `index` of a node the walk has not reached.
+const UNSEEN: usize = usize::MAX;
+
+/// The strongly connected component of every node, numbered from 0, of the graph where `leads_to[n]` lists the nodes that `n` has an edge to. Tarjan's algorithm with a stack of its own in place of recursion, so a long chain of modules costs memory and not the call stack.
+fn strongly_connected(leads_to: &[Vec<usize>]) -> Vec<usize> {
+    let mut walk = Tarjan {
+        leads_to,
+        slots: vec![
+            Slot {
+                index: UNSEEN,
+                low: 0,
+                on_stack: false,
+                component: UNSEEN,
+            };
+            leads_to.len()
+        ],
+        open: Vec::new(),
+        order: 0,
+        components: 0,
+    };
+    for root in 0..leads_to.len() {
+        if walk
+            .slots
+            .get(root)
+            .is_some_and(|slot| slot.index == UNSEEN)
+        {
+            walk.from(root);
+        }
+    }
+    walk.slots.into_iter().map(|slot| slot.component).collect()
+}
+
+struct Tarjan<'g> {
+    leads_to: &'g [Vec<usize>],
+    slots: Vec<Slot>,
+    /// The nodes reached whose component is not closed yet.
+    open: Vec<usize>,
+    order: usize,
+    components: usize,
+}
+
+impl Tarjan<'_> {
+    /// Walks everything `root` reaches that is not reached yet.
+    fn from(&mut self, root: usize) {
+        // A node and the position of the next edge to follow from it.
+        let mut calls = vec![(root, 0)];
+        self.enter(root);
+        while let Some(&(node, at)) = calls.last() {
+            let Some(&to) = self.leads_to.get(node).and_then(|edges| edges.get(at)) else {
+                calls.pop();
+                self.leave(node, calls.last().map(|&(caller, _)| caller));
+                continue;
+            };
+            if let Some(call) = calls.last_mut() {
+                call.1 += 1;
+            }
+            match self.slots.get(to).copied() {
+                Some(Slot { index: UNSEEN, .. }) => {
+                    self.enter(to);
+                    calls.push((to, 0));
+                }
+                Some(Slot {
+                    index,
+                    on_stack: true,
+                    ..
+                }) => self.lower(node, index),
+                _ => {}
+            }
+        }
+    }
+
+    fn enter(&mut self, node: usize) {
+        if let Some(slot) = self.slots.get_mut(node) {
+            *slot = Slot {
+                index: self.order,
+                low: self.order,
+                on_stack: true,
+                component: UNSEEN,
+            };
+        }
+        self.order += 1;
+        self.open.push(node);
+    }
+
+    fn lower(&mut self, node: usize, to: usize) {
+        if let Some(slot) = self.slots.get_mut(node) {
+            slot.low = slot.low.min(to);
+        }
+    }
+
+    /// `node` has no edge left to follow: when nothing below it reaches above it, it closes a component, and its caller learns how high the walk below it went.
+    fn leave(&mut self, node: usize, caller: Option<usize>) {
+        let Some(Slot { index, low, .. }) = self.slots.get(node).copied() else {
+            return;
+        };
+        if low == index {
+            while let Some(member) = self.open.pop() {
+                if let Some(slot) = self.slots.get_mut(member) {
+                    slot.on_stack = false;
+                    slot.component = self.components;
+                }
+                if member == node {
+                    break;
+                }
+            }
+            self.components += 1;
+        }
+        if let Some(caller) = caller {
+            self.lower(caller, low);
+        }
     }
 }
 
@@ -411,7 +630,90 @@ fn join_dot(prefix: &str, name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
+
+    fn node(name: &str) -> Node {
+        (FileId::from_raw(0), name.to_owned())
+    }
+
+    /// Records that `parent` mounts `child` under `path`.
+    fn mount(
+        parents: &mut BTreeMap<Node, Vec<(Node, String)>>,
+        child: &str,
+        parent: &str,
+        path: &str,
+    ) {
+        parents
+            .entry(node(child))
+            .or_default()
+            .push((node(parent), path.to_owned()));
+    }
+
+    #[test]
+    fn a_ring_of_modules_that_import_each_other_is_read_once() {
+        const RING: usize = 24;
+        let mut parents = BTreeMap::new();
+        mount(&mut parents, "m0", "app", "api");
+        for child in 0..RING {
+            mount(&mut parents, &format!("c{child}"), &format!("m{child}"), "");
+            for parent in (0..RING).filter(|parent| *parent != child) {
+                mount(
+                    &mut parents,
+                    &format!("m{child}"),
+                    &format!("m{parent}"),
+                    "",
+                );
+            }
+        }
+        let mut mounts = Mounts::new(&parents);
+        let api = BTreeSet::from(["api".to_owned()]);
+        for at in 0..RING {
+            assert_eq!(mounts.prefixes_of(&node(&format!("m{at}"))), api);
+            assert_eq!(mounts.prefixes_of(&node(&format!("c{at}"))), api);
+        }
+        assert_eq!(mounts.cuts, RING * (RING - 1));
+    }
+
+    #[test]
+    fn a_ring_that_nothing_outside_mounts_has_no_path() {
+        let mut parents = BTreeMap::new();
+        mount(&mut parents, "a", "b", "");
+        mount(&mut parents, "b", "a", "");
+        mount(&mut parents, "c", "c", "x");
+        let mut mounts = Mounts::new(&parents);
+        assert!(mounts.prefixes_of(&node("a")).is_empty());
+        assert_eq!(
+            mounts.served_under(&node("a")),
+            BTreeSet::from([String::new()])
+        );
+        assert!(mounts.prefixes_of(&node("c")).is_empty());
+    }
+
+    proptest! {
+        #[test]
+        fn components_give_the_paths_of_the_walk_of_every_simple_path(
+            edges in prop::collection::vec(
+                (0..7usize, 0..7usize, prop::sample::select(vec!["", "a", "b"])),
+                0..16,
+            ),
+        ) {
+            let mut parents = BTreeMap::new();
+            for (child, parent, path) in &edges {
+                mount(&mut parents, &format!("n{child}"), &format!("n{parent}"), path);
+            }
+            let mut by_components = Mounts::new(&parents);
+            let mut by_paths = Mounts::new(&parents);
+            for at in 0..7 {
+                let at = node(&format!("n{at}"));
+                prop_assert_eq!(
+                    by_components.prefixes_of(&at),
+                    by_paths.walk_simple_paths(&at, &mut Vec::new())
+                );
+            }
+        }
+    }
 
     #[test]
     fn mounts_join_without_doubled_slashes() {

@@ -188,16 +188,7 @@ fn follow(
             .map(|(_, fact)| fact),
     );
     let mut facts = out;
-    facts.sort_by(|a, b| {
-        (a.file, a.fact.line, &a.fact.key, &a.fact.via, &a.replaces).cmp(&(
-            b.file,
-            b.fact.line,
-            &b.fact.key,
-            &b.fact.via,
-            &b.replaces,
-        ))
-    });
-    facts.dedup();
+    LinkedFact::sort_unique(&mut facts);
     (facts, cuts)
 }
 
