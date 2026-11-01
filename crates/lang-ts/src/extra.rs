@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::shape::Shape;
 
-/// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and mounts, the NestJS modules and controllers it declares, the tRPC routers it declares, the constants it exports, and the sites that wait for the constants of other files. Empty parts are left out of the cached bytes.
+/// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and mounts, the NestJS modules and controllers it declares, the tRPC routers it declares, the constants it exports, the clients and routers it makes and exports, and the sites that wait for other files. Empty parts are left out of the cached bytes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TsExtra {
@@ -39,9 +39,23 @@ pub struct TsExtra {
     /// The top-level constants of this file whose first name it exports, by the name they are read under (`ROUTES.users.byId`), sorted by name, so that the link can read them for the files that import them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub constants: Vec<(String, String)>,
-    /// The sites whose rule reads a name imported from another file, left to the link, in source order.
+    /// The variables of this file made by a call that some call rule takes a receiver from, whose name the file exports as a local, sorted by name, so that the link can read a call on them in the files that import them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) makers: Vec<ExportedMaker>,
+    /// The sites left to the link, in source order: those whose rule reads a name imported from another file, and those on a name imported from another file that a rule reads only on the receiver it was made as.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) deferred: Vec<Deferred>,
+}
+
+/// A variable made by a call that a call rule takes the receiver of its calls from: `export const api = axios.create({ baseURL: '/api' })`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ExportedMaker {
+    /// The name it is declared under in this file, `default` for `export default axios.create()`.
+    pub(crate) name: String,
+    /// The callee of the call that made it, as written: `axios.create`.
+    pub(crate) callee: String,
+    /// The call as a rule reads it, for the prefix the rule takes from it.
+    pub(crate) shape: Shape,
 }
 
 /// A call or a decorator that a rule could not read because it names a constant of another file.
@@ -76,6 +90,10 @@ pub(crate) enum DeferredTarget {
     Host(String),
     /// A route that a decorator on a member of a class declares.
     Class { class: String, inherited: bool },
+    /// A call on a name imported from another file, read on the receiver that file makes under the name, whose rule needs one.
+    Receiver { host: String },
+    /// A call on a name imported from another file, read as a rule without a receiver reads it, unless the name is a receiver the rules in `rivals` read it on.
+    Fallback { host: String, rivals: Vec<RuleRef> },
 }
 
 /// A local name bound to something another module exports.

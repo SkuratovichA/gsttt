@@ -2,16 +2,16 @@
 
 use std::collections::BTreeMap;
 
-use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::rules::Pack;
 use oxc_ast::ast::{
-    Argument, AssignmentExpression, AssignmentTarget, BindingPattern, Expression, Program,
-    PropertyDefinition, VariableDeclarator,
+    Argument, AssignmentExpression, AssignmentTarget, BindingPattern, ExportDefaultDeclaration,
+    Expression, Program, PropertyDefinition, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 
-use super::Constants;
-use super::peel;
+use super::constants::exported_locals;
+use super::{Constants, peel, serves_http};
+use crate::extra::{Export, ExportedMaker};
 use crate::shape::{Shape, chain_of, dotted, field_name, this_key};
 
 /// The callee that makes a NestJS app, whose root module the global prefix of the app is mounted on.
@@ -24,8 +24,24 @@ pub(super) struct Maker {
     pub(super) shape: Shape,
     /// The root module of a NestJS app when it is a plain name: `AppModule` for `NestFactory.create(AppModule)`; `None` for any other call.
     pub(super) root: Option<String>,
+    /// Some call rule takes the receiver of its calls from a variable made by this callee, so a file that imports the variable can have its calls read.
+    pub(super) receiver: bool,
     /// Some pack serves HTTP routes on receivers made by this callee, so the variable is a node mounts connect.
     pub(super) serves: bool,
+}
+
+/// The makers of `makers` that a call rule takes a receiver from and that `exports` name as a local, in the order of their names, for the files that import them.
+pub(super) fn exported(makers: &BTreeMap<String, Maker>, exports: &[Export]) -> Vec<ExportedMaker> {
+    let locals = exported_locals(exports);
+    makers
+        .iter()
+        .filter(|(name, maker)| maker.receiver && locals.contains(name.as_str()))
+        .map(|(name, maker)| ExportedMaker {
+            name: name.clone(),
+            callee: maker.callee.clone(),
+            shape: maker.shape.clone(),
+        })
+        .collect()
 }
 
 /// Every variable of `program`, whose source is `text`, that is made by a call, by its name; a field is named `this.field`. `nestjs` is whether that pack is active, whose `setGlobalPrefix` is read from the app that `NestFactory.create` made.
@@ -70,14 +86,18 @@ impl Collector<'_> {
         let Some(callee) = chain_of(callee).and_then(|names| dotted(&names)) else {
             return;
         };
-        let serves = self.packs.iter().flat_map(|pack| &pack.calls).any(|rule| {
-            rule.kind == ContractKind::Http
-                && rule.role == Role::Serves
-                && rule
-                    .receiver
-                    .as_ref()
-                    .is_some_and(|receiver| receiver.from.matches(&callee))
-        });
+        let mut receiver = false;
+        let mut serves = false;
+        for rule in self.packs.iter().flat_map(|pack| &pack.calls) {
+            if rule
+                .receiver
+                .as_ref()
+                .is_some_and(|receiver| receiver.from.matches(&callee))
+            {
+                receiver = true;
+                serves |= serves_http(&rule.kind, rule.role);
+            }
+        }
         let shape = Shape::of_call(&callee, arguments.iter(), self.constants);
         let root = match arguments.first().and_then(Argument::as_expression) {
             Some(Expression::Identifier(first)) if callee == NEST_FACTORY_CREATE => {
@@ -91,6 +111,7 @@ impl Collector<'_> {
                 callee,
                 shape,
                 root,
+                receiver,
                 serves,
             },
         );
@@ -103,6 +124,13 @@ impl<'a> Visit<'a> for Collector<'_> {
             self.add(id.name.as_str().to_owned(), init);
         }
         walk::walk_variable_declarator(self, it);
+    }
+
+    fn visit_export_default_declaration(&mut self, it: &ExportDefaultDeclaration<'a>) {
+        if let Some(init) = it.declaration.as_expression() {
+            self.add("default".to_owned(), init);
+        }
+        walk::walk_export_default_declaration(self, it);
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {

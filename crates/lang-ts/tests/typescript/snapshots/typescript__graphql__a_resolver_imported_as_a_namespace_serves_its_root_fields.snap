@@ -131,7 +131,8 @@ expression: json
             "a NestJS global prefix is applied only when it is a string or a constant of the same file set on an app that NestFactory.create(<name>) makes in the same file, and the exclude option is not read, so excluded routes get the prefix too; RouterModule paths are not read",
             "NestJS modules are followed through @Module imports and controllers written as names or forwardRef(() => Name); modules made by a call (forRoot, register), names read from a namespace (ns.Module) and anonymous default exports are not",
             "a NestJS controller serves the routes of the class it extends only when that class is named directly (not ns.Base), carries no @Controller of its own, and is its direct base",
-            "routes on an app or router received as a function parameter are not read: the receiver must be made in the same file",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the file that registers the route, or be imported from a file of the same project that makes it",
+            "a mount on an app or router imported from another file (importedApp.use('/x', router)) is not read: only an app or router made in the same file takes a mount",
             "a mount path is read from a string or a constant of the same file, not from an imported constant, and a mount path array with an element that is not text is read for its other elements only",
             "a NestJS controller whose @Controller prefix is not text (an imported constant, a call) serves no route and is reported as a site the file could not read: its own routes and those of the class it extends are not served",
             "routers that mount each other in a cycle are followed until the cycle closes"
@@ -145,7 +146,7 @@ expression: json
         {
           "blind_spots": [
             "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
-            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not"
           ],
           "kind": "http",
           "role": "calls",

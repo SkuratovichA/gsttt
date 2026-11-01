@@ -15,7 +15,7 @@ use gsttt_core::fact::{
     ContractFact, Embedded, Import, ImportFlags, ImportKind, Line, Symbols, UnresolvedReason,
     UnresolvedSite,
 };
-use gsttt_core::rules::{Outcome, Pack, Prefix, Site};
+use gsttt_core::rules::{CallRule, Outcome, Pack, Prefix, Site};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     AccessorProperty, Argument, ArrowFunctionExpression, AssignmentExpression, AssignmentTarget,
@@ -39,10 +39,12 @@ pub(crate) use self::constants::Constants;
 use self::makers::{Maker, NEST_FACTORY_CREATE};
 use self::roots::Roots;
 use self::symbols::Recorder;
+use crate::builtins::is_builtin;
 use crate::extra::{
     Binding, ClassRoute, Deferred, DeferredTarget, Export, ExportTarget, Inherit, Mount,
     MountTarget, Route, RuleRef, TsExtra,
 };
+use crate::pathing::{is_relative, split_package};
 use crate::shape::{
     COMPUTED, Shape, chain_of, dotted, dotted_name, field_name, literal_text, member_chain,
     property_name, property_str, static_chain, template_text, text_with,
@@ -201,7 +203,7 @@ impl<'a> Analyzer<'_, 'a> {
     }
 
     fn bind(&mut self, local: &str, spec: &str, name: &str) {
-        self.constants.import(local);
+        self.constants.import(local, spec);
         self.out.extra.bindings.push(Binding {
             local: local.to_owned(),
             spec: spec.to_owned(),
@@ -383,10 +385,51 @@ impl<'a> Analyzer<'_, 'a> {
             .then(|| (rule.read(&maker.shape), host))
     }
 
+    /// The receiver of `callee` when it is written on a name this file imports from a file of its project: `api` for `api.get`, `store.cache` for `store.cache.get`. A name imported from Node, or from a package that some active pack is for, is a library, and a rule reads a call on it as it is written.
+    fn imported_receiver<'c>(&self, callee: &'c str) -> Option<&'c str> {
+        let (host, _) = callee.rsplit_once('.')?;
+        let root = host.split('.').next().unwrap_or(host);
+        let spec = self.constants.spec_of(root)?;
+        (!self.is_library(spec)).then_some(host)
+    }
+
+    /// Whether `spec` names Node or a package that some active pack is for.
+    fn is_library(&self, spec: &str) -> bool {
+        is_builtin(spec)
+            || (!is_relative(spec)
+                && split_package(spec).is_some_and(|(package, _)| {
+                    self.packs
+                        .iter()
+                        .any(|pack| pack.detect.iter().any(|name| name == package))
+                }))
+    }
+
+    /// The rules that read a call on `callee` as `rule`, which takes no receiver, does, but on a receiver made by a call: the same kind and role, a callee that matches, and enough arguments to be read. When the name `callee` is written on turns out to be such a receiver, they read the call and `rule` does not.
+    fn rivals(&self, callee: &str, rule: &CallRule, arguments: usize) -> Vec<RuleRef> {
+        let mut rivals = Vec::new();
+        for (pack_index, pack) in self.packs.iter().enumerate() {
+            for (rule_index, rival) in pack.calls.iter().enumerate() {
+                if rival.receiver.is_some()
+                    && rival.kind == rule.kind
+                    && rival.role == rule.role
+                    && rival.callee.matches(callee)
+                    && !(serves_http(&rival.kind, rival.role) && arguments < 2)
+                {
+                    rivals.push(RuleRef::Call {
+                        pack: pack_index,
+                        rule: rule_index,
+                    });
+                }
+            }
+        }
+        rivals
+    }
+
     fn call(&mut self, it: &CallExpression<'_>, callee: &str) {
         let line = self.line(it.span.start);
         let packs = self.packs;
         let mut lazy: Option<Shape> = None;
+        let mut imported: Option<Option<&str>> = None;
         for (pack_index, pack) in packs.iter().enumerate() {
             for (rule_index, rule) in pack.calls.iter().enumerate() {
                 if !rule.callee.matches(callee) {
@@ -402,12 +445,50 @@ impl<'a> Analyzer<'_, 'a> {
                 {
                     continue;
                 }
-                let (prefix, host) = match &rule.receiver {
-                    None => (None, None),
-                    Some(receiver) => match self.receiver(callee, receiver) {
-                        Some((prefix, host)) => (Some(prefix), Some(host)),
-                        None => continue,
-                    },
+                let at = RuleRef::Call {
+                    pack: pack_index,
+                    rule: rule_index,
+                };
+                // The receiver may be a client or a router that another file makes, which only the link can see.
+                let from_file = *imported.get_or_insert_with(|| self.imported_receiver(callee));
+                let (prefix, host) = match (&rule.receiver, from_file) {
+                    (None, Some(from_file)) => {
+                        let rivals = self.rivals(callee, rule, it.arguments.len());
+                        if !rivals.is_empty() {
+                            self.defer(Deferred {
+                                rule: at,
+                                shape: site.clone(),
+                                prefix: None,
+                                line,
+                                what: callee.to_owned(),
+                                target: DeferredTarget::Fallback {
+                                    host: from_file.to_owned(),
+                                    rivals,
+                                },
+                            });
+                            continue;
+                        }
+                        (None, None)
+                    }
+                    (None, None) => (None, None),
+                    (Some(receiver), from_file) => {
+                        let Some((prefix, host)) = self.receiver(callee, receiver) else {
+                            if let Some(from_file) = from_file {
+                                self.defer(Deferred {
+                                    rule: at,
+                                    shape: site.clone(),
+                                    prefix: None,
+                                    line,
+                                    what: callee.to_owned(),
+                                    target: DeferredTarget::Receiver {
+                                        host: from_file.to_owned(),
+                                    },
+                                });
+                            }
+                            continue;
+                        };
+                        (Some(prefix), Some(host))
+                    }
                 };
                 let outcome = rule.apply(&pack.name, site, prefix.as_deref(), line, callee);
                 if waits_for_link(&outcome, site) {
@@ -418,10 +499,7 @@ impl<'a> Analyzer<'_, 'a> {
                         _ => DeferredTarget::Own,
                     };
                     self.defer(Deferred {
-                        rule: RuleRef::Call {
-                            pack: pack_index,
-                            rule: rule_index,
-                        },
+                        rule: at,
                         shape: site.clone(),
                         prefix,
                         line,
@@ -897,6 +975,7 @@ impl<'a> Analyzer<'_, 'a> {
             exports_unknown,
             ..
         } = self;
+        out.extra.makers = makers::exported(&makers, &out.extra.exports);
         hosts.extend(
             makers
                 .into_iter()
@@ -1606,7 +1685,7 @@ fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
 }
 
 /// Whether a rule of this kind and role finds the routes an HTTP server serves.
-fn serves_http(kind: &ContractKind, role: Role) -> bool {
+pub(crate) fn serves_http(kind: &ContractKind, role: Role) -> bool {
     *kind == ContractKind::Http && role == Role::Serves
 }
 
