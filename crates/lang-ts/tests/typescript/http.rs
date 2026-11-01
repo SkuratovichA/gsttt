@@ -179,6 +179,25 @@ fn a_url_whose_path_is_only_computed_segments_is_a_blind_spot() -> Result<(), Bo
 }
 
 #[test]
+#[scenario("typescript", "A client with no base URL leaves a computed URL unread")]
+fn a_client_with_no_base_url_leaves_a_computed_url_unread() -> Result<(), Box<dyn Error>> {
+    let json = run("client-without-base")?;
+    assert_eq!(
+        unread(&json, "src/api.ts"),
+        ["@8 non-literal api.get", "@12 non-literal edge.get"]
+    );
+    assert_eq!(
+        contracts(&json, "src/api.ts"),
+        [
+            "calls http GET /users @9",
+            "calls http GET /v1/bookings @15"
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A router mounted under several paths serves under each")]
 fn a_router_mounted_under_several_paths_serves_under_each() -> Result<(), Box<dyn Error>> {
     let json = run("express-mount-forms")?;

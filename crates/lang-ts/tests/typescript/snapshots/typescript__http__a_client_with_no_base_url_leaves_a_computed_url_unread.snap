@@ -1,0 +1,202 @@
+---
+source: crates/lang-ts/tests/typescript/http.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "http GET /users",
+          "line": 9,
+          "role": "calls",
+          "via": "axios"
+        },
+        {
+          "key": "http GET /v1/bookings",
+          "line": 15,
+          "role": "calls",
+          "via": "axios"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "bookings",
+        "dynamic",
+        "reach",
+        "users"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "axios"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "axios",
+          "to": {
+            "external": "axios"
+          }
+        }
+      ],
+      "path": "src/api.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "base",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "host",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "path",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "api",
+            "uses": [
+              "axios"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "dynamic",
+            "uses": [
+              "api",
+              "base",
+              "path"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "users",
+            "uses": [
+              "api"
+            ]
+          },
+          {
+            "end": 11,
+            "line": 11,
+            "name": "edge",
+            "uses": [
+              "axios",
+              "host"
+            ]
+          },
+          {
+            "end": 12,
+            "line": 12,
+            "name": "reach",
+            "uses": [
+              "edge",
+              "path"
+            ]
+          },
+          {
+            "end": 14,
+            "line": 14,
+            "name": "v1",
+            "uses": [
+              "axios"
+            ]
+          },
+          {
+            "end": 15,
+            "line": 15,
+            "name": "bookings",
+            "uses": [
+              "v1"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "axios",
+          "host"
+        ]
+      },
+      "tags": 0,
+      "unresolved": [
+        {
+          "detail": "api.get",
+          "line": 8,
+          "reason": {
+            "reason": "non-literal"
+          }
+        },
+        {
+          "detail": "edge.get",
+          "line": 12,
+          "reason": {
+            "reason": "non-literal"
+          }
+        }
+      ]
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "axios",
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}
