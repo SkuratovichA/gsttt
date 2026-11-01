@@ -285,8 +285,43 @@ fn a_base_class_that_no_controller_extends_serves_nothing() -> Result<(), Box<dy
     assert_eq!(unread(&json, "src/user.controller.base.ts"), NOTHING);
     assert_eq!(
         sites("nestjs-unextended-base")?,
-        ["serves http GET /orders @5 in src/orders.controller.ts"]
+        [
+            "serves http GET /orders @4 in src/orders.controller.base.ts",
+            "serves http GET /orders @4 in src/orders.controller.ts",
+        ]
     );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A subclass without the controller decorator serves no route of its base"
+)]
+fn a_subclass_without_the_controller_decorator_serves_no_route_of_its_base()
+-> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-undecorated-subclass")?;
+    assert_eq!(contracts(&json, "src/user.controller.ts"), NOTHING);
+    assert_eq!(
+        sites("nestjs-undecorated-subclass")?,
+        [
+            "serves http GET /users/{} @4 in src/user.controller.base.ts",
+            "serves http GET /users/{} @4 in src/user.controller.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A computed path on a base class is an unread site")]
+fn a_computed_path_on_a_base_class_is_an_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-computed-base-route")?;
+    assert_eq!(
+        unread(&json, "src/user.controller.base.ts"),
+        ["@5 non-literal Get"]
+    );
+    assert_eq!(contracts(&json, "src/user.controller.base.ts"), NOTHING);
+    assert_eq!(sites("nestjs-computed-base-route")?, NOTHING);
     Ok(())
 }
 
@@ -372,6 +407,24 @@ fn a_controller_that_no_app_reaches_keeps_its_path() -> Result<(), Box<dyn Error
 }
 
 #[test]
+#[scenario(
+    "typescript",
+    "A controller in a ring of modules that no app reaches keeps its path"
+)]
+fn a_controller_in_a_ring_of_modules_that_no_app_reaches_keeps_its_path()
+-> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("nestjs-unreached-ring")?,
+        [
+            "serves http GET /a/{} @5 in src/a.controller.ts",
+            "serves http GET /b @4 in src/b.controller.base.ts",
+            "serves http GET /b @4 in src/b.controller.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A computed global prefix is an unread site")]
 fn a_computed_global_prefix_is_an_unread_site() -> Result<(), Box<dyn Error>> {
     let json = run("nestjs-computed-prefix")?;
@@ -387,13 +440,55 @@ fn a_computed_global_prefix_is_an_unread_site() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn a_controller_reached_with_and_without_a_prefix_keeps_both_keys() -> Result<(), Box<dyn Error>> {
+#[scenario(
+    "typescript",
+    "A controller that a prefixed app and an unprefixed module both reach is served under both"
+)]
+fn a_controller_that_a_prefixed_app_and_an_unprefixed_module_both_reach_is_served_under_both()
+-> Result<(), Box<dyn Error>> {
     assert_eq!(
         sites("nestjs-two-apps")?,
         [
             "serves http GET /api/users/{} @5 in src/user/user.controller.ts",
             "serves http GET /users/{} @5 in src/user/user.controller.ts",
         ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A global prefix on an app made elsewhere is an unread site"
+)]
+fn a_global_prefix_on_an_app_made_elsewhere_is_an_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-global-prefix-elsewhere")?;
+    assert_eq!(
+        unread(&json, "src/setup.ts"),
+        ["@4 unsupported app.setGlobalPrefix('api')"]
+    );
+    assert_eq!(
+        unread(&json, "src/main.ts"),
+        ["@6 unsupported app.setGlobalPrefix('api')"]
+    );
+    assert_eq!(
+        sites("nestjs-global-prefix-elsewhere")?,
+        ["serves http GET /users/{} @5 in src/user/user.controller.ts"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "The options of a global prefix are an unread site")]
+fn the_options_of_a_global_prefix_are_an_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-global-prefix-options")?;
+    assert_eq!(
+        unread(&json, "src/main.ts"),
+        ["@6 unsupported app.setGlobalPrefix('api', { exclude: ['health'] })"]
+    );
+    assert_eq!(
+        sites("nestjs-global-prefix-options")?,
+        ["serves http GET /api/users/{} @5 in src/user/user.controller.ts"]
     );
     Ok(())
 }

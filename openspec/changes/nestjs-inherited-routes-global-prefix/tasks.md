@@ -10,9 +10,13 @@
 - [x] 2.2 `crates/lang-ts/src/extra.rs`: `ClassRoute` and `Inherit`, and the lists of them in `TsExtra`
 - [x] 2.3 `crates/lang-ts/src/analyze.rs`: the routes of a class without the class decorator, the inheritance edges, the mounts of `@Module` classes and of `setGlobalPrefix`, an unread site for a computed prefix, and the hosts
 
+- [x] 2.4 `crates/lang-ts/src/analyze.rs`: a `setGlobalPrefix` that is not applied, and a computed path on the route of a base class, are unread sites; the maker walk runs for NestJS only on a file that names `setGlobalPrefix`, and a class frame holds the offset of its decorators
+
 ## 3. The link
 
 - [x] 3.1 `crates/lang-ts/src/link.rs`: one walk of the mounts for Express routers and NestJS classes; controller routes keyed again behind every prefix; inherited routes served in the file of the base class and of the controller
+
+- [x] 3.2 `crates/lang-ts/src/link.rs`: the mounts are grouped into strongly connected components, so that a ring of modules is read once and the walk over simple paths is left to a ring with a path on a mount of its own
 
 ## 4. The reader
 
@@ -30,3 +34,9 @@
 - [x] 5.7 TypeScript: a test and a fixture for "A controller that no app reaches keeps its path"
 - [x] 5.8 TypeScript: a test and a fixture for "A computed global prefix is an unread site"
 - [x] 5.9 TypeScript: a test and a fixture for "A route behind a global prefix keeps the facts of other rules on its line"
+- [x] 5.10 TypeScript: a test and a fixture for "A subclass without the controller decorator serves no route of its base"
+- [x] 5.11 TypeScript: a test and a fixture for "A computed path on a base class is an unread site"
+- [x] 5.12 TypeScript: a test and a fixture for "A controller in a ring of modules that no app reaches keeps its path"
+- [x] 5.13 TypeScript: a test and a fixture for "A controller that a prefixed app and an unprefixed module both reach is served under both"
+- [x] 5.14 TypeScript: a test and a fixture for "A global prefix on an app made elsewhere is an unread site"
+- [x] 5.15 TypeScript: a test and a fixture for "The options of a global prefix are an unread site"

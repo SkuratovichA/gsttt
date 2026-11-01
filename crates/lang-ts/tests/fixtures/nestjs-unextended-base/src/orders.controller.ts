@@ -1,7 +1,5 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller } from '@nestjs/common';
+import { OrdersControllerBase } from './orders.controller.base';
 
 @Controller('orders')
-export class OrdersController {
-  @Get()
-  list() {}
-}
+export class OrdersController extends OrdersControllerBase {}
