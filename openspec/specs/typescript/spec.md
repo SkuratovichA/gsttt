@@ -209,6 +209,11 @@ With the `fetch` pack, `fetch` SHALL call `http <method> <url>`, the method take
 - **THEN** each is an unread site at its line and the file calls nothing for them
 - **AND** ``fetch(`${API_URL}/users/${id}`)`` still calls `http * /users/{}`
 
+#### Scenario: A client with no base URL leaves a computed URL unread
+- **WHEN** a file has `const api = axios.create({ timeout: 1000 })` with ``api.get(`${base}${path}`)`` and `api.get('users')`, `` const edge = axios.create({ baseURL: `${host}` }) `` with ``edge.get(`${path}`)``, and `const v1 = axios.create({ baseURL: 'https://api.example.com/v1' })` with `v1.get('/bookings')`
+- **THEN** it has an unread site at the line of ``api.get(`${base}${path}`)`` and at the line of `edge.get`
+- **AND** it calls `http GET /users` and `http GET /v1/bookings`
+
 ### Requirement: GraphQL
 With the `nestjs` pack, `@Query`, `@Mutation` and `@Subscription` on a method SHALL serve `graphql <Root>.<name>`, the name taken from the decorator's `name` option or else the method's name, also when they are called through a namespace import (`@graphql.Query`).
 
