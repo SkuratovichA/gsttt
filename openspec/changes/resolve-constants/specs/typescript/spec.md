@@ -46,12 +46,26 @@ Where a rule reads text, a name or dotted name SHALL be read as the value of the
 - **THEN** the file has an unread site at the line of each call
 - **AND** it calls no `http` key
 
+#### Scenario: A constant is read wherever the parse reads text
+- **WHEN** `main.ts` declares `const P = 'api'` and calls `app.setGlobalPrefix(P)` on an app made by `NestFactory.create(AppModule)`, `users.controller.ts` declares `const BASE = 'users'` and has `@Controller(BASE)` and a method decorated `@Get('x')`, `client.ts` declares `const API = 'https://api.example.com/v1'`, makes `const http = axios.create({ baseURL: API })` and calls `http.get('/x')`, and `server.ts` declares `const MOUNT = '/v2'`, calls `router.get('/y', handler)` on `express.Router()` and `app.use(MOUNT, router)`
+- **THEN** `users.controller.ts` serves `http GET /api/users/x`, `client.ts` calls `http GET /v1/x`, and `server.ts` serves `http GET /v2/y`
+- **AND** none of the four files has an unread site
+
 ### Requirement: Route paths that are computed
 A NestJS route decorator whose path argument is not a string literal, a template or a constant SHALL be a blind spot at the line of the decorator, not a route at the controller's prefix; a route decorator with no argument SHALL still serve the prefix alone.
 
 #### Scenario: A route whose path is computed is a blind spot
 - **WHEN** a class decorated `@Controller('/')` has a method decorated `@Get(paths.login())`, where `paths` is an imported object whose `login` is a function, and another method decorated `@Get()`
 - **THEN** the file has an unread site at the line of `@Get(paths.login())` and serves `http GET /` only at the line of `@Get()`
+
+### Requirement: Controller prefixes that are not read
+A class decorator whose prefix is not read, such as `@Controller(PREFIX)` with `PREFIX` imported, SHALL be an unread site at its line, and its class SHALL serve no route, neither its own nor one it inherits; `@Controller()` and `@Controller({ version: '1' })` give no prefix.
+
+#### Scenario: A controller whose prefix is not read serves nothing
+- **WHEN** `auth.controller.ts` has `@Controller(PREFIX)`, with `PREFIX` imported, and methods `@Get('login')` and `@Get(LOGIN)`, with `LOGIN` imported
+- **AND** `user.controller.ts` has `@Controller(prefix()) class UserController extends UserControllerBase`, where `UserControllerBase` in another file has `@Get(':id')`
+- **THEN** each controller file has an unread site at the line of its `@Controller` and serves no http key
+- **AND** the file of the base class serves nothing
 
 ## MODIFIED Requirements
 
@@ -69,6 +83,46 @@ With the `nestjs-config` pack, `get` and `getOrThrow` on a `configService` recei
 #### Scenario: A computed configuration name is a blind spot
 - **WHEN** a file calls `this.configService.get(key)`, where `key` is a parameter of the method
 - **THEN** the file has an unread site at that line
+
+### Requirement: NestJS global prefix
+With the `nestjs` pack, `app.setGlobalPrefix(<prefix>)` on an app made by `NestFactory.create(<Root>)` in the same file, where `<prefix>` is a literal or a constant of the same file, SHALL put every controller that `<Root>` reaches through the `imports` and `controllers` of `@Module` classes behind the prefix, the routes it inherits included. A controller that no such app reaches SHALL keep its path, and a prefix that is neither a literal nor a constant of the same file SHALL be an unread site.
+
+#### Scenario: A global prefix reaches the controllers of imported modules
+- **WHEN** `main.ts` has `const app = await NestFactory.create(AppModule)` and `app.setGlobalPrefix('api')`, `app.module.ts` has `@Module({ imports: [UserModule, ConfigModule.forRoot()] }) class AppModule`, `user.module.ts` has `@Module({ controllers: [UserController] }) class UserModule`, and `user.controller.ts` has `@Controller('users')` with a method decorated `@Get(':id')`
+- **THEN** `user.controller.ts` serves `http GET /api/users/{}` at the line of `@Get` and `http GET /users/{}` nowhere
+
+#### Scenario: A global prefix reaches the routes a controller inherits
+- **WHEN** the modules and `main.ts` are as above, `UserController` is `@Controller('users') class UserController extends UserControllerBase {}`, and `UserControllerBase` in another file has a method decorated `@Get('/:id')`
+- **THEN** the file of the base class and `user.controller.ts` both serve `http GET /api/users/{}`, the first at the line of `@Get` and the second at the line of `@Controller`
+- **AND** neither serves `http GET /users/{}`
+
+#### Scenario: Modules that import each other through forwardRef keep the prefix
+- **WHEN** `AppModule` imports `AuthModule`, `AuthModule` imports `forwardRef(() => UserModule)` and lists `AuthController`, `UserModule` imports `forwardRef(() => AuthModule)` and lists `UserController`, `AuthController` is `@Controller()` with `@Post('login')`, `UserController` is `@Controller('users')` with `@Get(':id')`, and `main.ts` sets the global prefix `api`
+- **THEN** the controllers serve `http POST /api/login` and `http GET /api/users/{}`
+- **AND** no route is served under a path that goes round the cycle
+
+#### Scenario: A controller that no app reaches keeps its path
+- **WHEN** the modules and `main.ts` are as in the first scenario, and `legacy.controller.ts` has `@Controller('legacy')` with `@Get(':id')` and is listed by a `LegacyModule` that neither `AppModule` nor any module it reaches imports
+- **THEN** `legacy.controller.ts` serves `http GET /legacy/{}`
+- **AND** `user.controller.ts` still serves `http GET /api/users/{}`
+
+#### Scenario: A controller in a ring of modules that no app reaches keeps its path
+- **WHEN** `AModule` imports `forwardRef(() => BModule)` and lists `AController`, `BModule` imports `forwardRef(() => AModule)` and lists `BController`, `AController` is `@Controller('a')` with `@Get(':id')`, `BController` is `@Controller('b') class BController extends BControllerBase {}` where `BControllerBase` has a method decorated `@Get()`, no app or module reaches either module, and `main.ts` sets the global prefix `api` on an app made of `AppModule`
+- **THEN** the controllers serve `http GET /a/{}` and `http GET /b`, `BControllerBase` serves `http GET /b`, and no route is served under `/api`
+
+#### Scenario: A controller that a prefixed app and an unprefixed module both reach is served under both
+- **WHEN** `main.ts` makes an app of `AppModule` and sets the global prefix `api`, `worker.ts` makes an app of `WorkerModule` and sets no prefix, both modules import `UserModule`, and `UserModule` lists `UserController`, which is `@Controller('users')` with a method decorated `@Get(':id')`
+- **THEN** `user.controller.ts` serves `http GET /api/users/{}` and `http GET /users/{}`, both at the line of `@Get`
+
+#### Scenario: A computed global prefix is an unread site
+- **WHEN** `main.ts` has `app.setGlobalPrefix(prefix)` where `prefix` is a variable, on an app made by `NestFactory.create(AppModule)`
+- **THEN** `main.ts` has an unread site at that line with the reason computed at run time
+- **AND** the controllers `AppModule` reaches serve their paths as written
+
+#### Scenario: A global prefix held in a constant is read
+- **WHEN** `main.ts` has `const PREFIX = 'api'`, `const app = await NestFactory.create(AppModule)` and `app.setGlobalPrefix(PREFIX)`, `AppModule` lists `UsersController` in `controllers`, and `UsersController` is `@Controller('users')` with a method decorated `@Get('x')`
+- **THEN** `users.controller.ts` serves `http GET /api/users/x` at the line of `@Get` and `http GET /users/x` nowhere
+- **AND** `main.ts` has no unread site
 
 ### Requirement: NestJS routes inherited from a base class
 With the `nestjs` pack, a route decorator on a method of a class that has no `@Controller` decorator SHALL be served by every class decorated `@Controller('<prefix>')` that extends it by name, under that prefix, at the line of the method in the file of the base class and at the line of the `@Controller` decorator. A base class that no controller extends, and a subclass without the decorator, SHALL serve nothing, and a path on the base class that is neither a literal nor a constant SHALL be an unread site.

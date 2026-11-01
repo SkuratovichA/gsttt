@@ -40,3 +40,18 @@
 ## 6. The documents
 
 - [x] 6.1 `docs/architecture.md`: the link returns the sites it could not read
+
+## 7. The review
+
+- [x] 7.1 A: a controller whose prefix is not read is an unread site and serves nothing, neither its own routes nor those of its base class; `Arg.object`, `Shape::unread` and `ClassPrefix`, with the scenario "A controller whose prefix is not read serves nothing"
+- [x] 7.2 B: an enum member reads its siblings before a top-level constant of the same name
+- [x] 7.3 C: an object spread drops the earlier keys under its path, `export default class` collects its statics, and the limitation of an assigned static is written down
+- [x] 7.4 D: a fixture, a snapshot and the scenario "A constant is read wherever the parse reads text"; no pack of the TypeScript connector has an assign rule, so there is none to prove
+- [x] 7.5 E: "NestJS global prefix" restated with a constant of the same file, and the scenario "A global prefix held in a constant is read"
+- [x] 7.6 F: the blind spots of the http contracts say what is read and what is not, and the 94 snapshots that list them follow
+- [x] 7.7 G: the unread sites of the parse and the link are merged and counted once, with the scenario "A site the parse and the link both report is counted once"
+- [x] 7.8 H: the sort of `Output::unread` is documented and `unread_of` returns an iterator
+- [x] 7.9 I: a cached second run counts the unread site of the link once with the same coverage, and a changed constant of an exporter moves the key of the importer, on the CLI harness of `crates/gsttt/tests/cli`
+- [x] 7.10 J: the strict reader of a value stays private to the declarations and a property test pins it to `text_with`; the global prefix and the mount paths take `${}` for a part that is not read
+- [x] 7.11 K: decorator shapes are built only for the decorators that a class prefix names, and a cold `index` of this repository costs the same before and after (median of five runs, 1,738 files: parse 37.6 ms before and 36.4 ms after, in all 85.5 ms before and 81.6 ms after)
+- [x] 7.12 L: `design.md` says what `TsExtra` caches, and lists the limitations of a failing link, of another package, of a controller prefix that is imported and of an assigned property
