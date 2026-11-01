@@ -45,3 +45,17 @@ With the `nestjs` pack, `app.setGlobalPrefix('<literal>')` on an app made by `Ne
 - **WHEN** `main.ts` has `app.setGlobalPrefix(prefix)` where `prefix` is a variable, on an app made by `NestFactory.create(AppModule)`
 - **THEN** `main.ts` has an unread site at that line with the reason computed at run time
 - **AND** the controllers `AppModule` reaches serve their paths as written
+
+## MODIFIED Requirements
+
+### Requirement: Link and parsed facts
+`link` SHALL return the routes under the prefixes their routers are mounted at, the routes a NestJS controller inherits and the tRPC procedures as new facts that name no parsed fact, so that a fact of any rule on the line of a route keeps its site. A route a NestJS controller declares SHALL be keyed again in place of its parsed fact when a global prefix reaches it, and the other facts of its line SHALL keep their sites.
+
+#### Scenario: A fact of another rule on the line of a route is kept
+- **WHEN** one line of `app.ts` has `app.get('/b', h)` on an Express app, `fetch('/c')` and a `@Get('a')` method of a `@Controller('x')` class
+- **THEN** `app.ts` serves `http GET /b` and `http GET /x/a` and calls `http * /c`, all at that line
+
+#### Scenario: A route behind a global prefix keeps the facts of other rules on its line
+- **WHEN** `main.ts` sets the global prefix `api` on an app made by `NestFactory.create(AppModule)`, `AppModule` lists `UserController` in its `controllers`, and one line of `user.controller.ts` has a `@Get(':id')` method of a `@Controller('users')` class whose body calls `fetch('/c')`
+- **THEN** `user.controller.ts` serves `http GET /api/users/{}` and calls `http * /c`, both at that line
+- **AND** it serves `http GET /users/{}` nowhere

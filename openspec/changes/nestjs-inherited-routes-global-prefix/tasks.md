@@ -29,3 +29,4 @@
 - [x] 5.6 TypeScript: a test and a fixture for "Modules that import each other through forwardRef keep the prefix"
 - [x] 5.7 TypeScript: a test and a fixture for "A controller that no app reaches keeps its path"
 - [x] 5.8 TypeScript: a test and a fixture for "A computed global prefix is an unread site"
+- [x] 5.9 TypeScript: a test and a fixture for "A route behind a global prefix keeps the facts of other rules on its line"

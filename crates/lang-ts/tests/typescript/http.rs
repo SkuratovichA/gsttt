@@ -397,3 +397,27 @@ fn a_controller_reached_with_and_without_a_prefix_keeps_both_keys() -> Result<()
     );
     Ok(())
 }
+
+#[test]
+#[scenario(
+    "typescript",
+    "A route behind a global prefix keeps the facts of other rules on its line"
+)]
+fn a_route_behind_a_global_prefix_keeps_the_facts_of_other_rules_on_its_line()
+-> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        contracts(
+            &run("nestjs-global-prefix-on-one-line")?,
+            "src/user.controller.ts"
+        ),
+        ["calls http * /c @5", "serves http GET /users/{} @5"]
+    );
+    assert_eq!(
+        sites("nestjs-global-prefix-on-one-line")?,
+        [
+            "calls http * /c @5 in src/user.controller.ts",
+            "serves http GET /api/users/{} @5 in src/user.controller.ts",
+        ]
+    );
+    Ok(())
+}
