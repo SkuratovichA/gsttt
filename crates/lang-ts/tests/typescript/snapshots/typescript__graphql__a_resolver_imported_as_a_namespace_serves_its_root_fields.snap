@@ -127,7 +127,7 @@ expression: json
             "file-system routes (Next.js, Remix, SvelteKit) are not read",
             "routers mounted from another package are not followed",
             "prefixes and paths held in variables are not followed",
-            "a NestJS global prefix is applied only when it is a literal set without options on an app that NestFactory.create(<name>) makes in the same file; RouterModule paths are not read",
+            "a NestJS global prefix is applied only when it is a literal set on an app that NestFactory.create(<name>) makes in the same file, and the exclude option is not read, so excluded routes get the prefix too; RouterModule paths are not read",
             "NestJS modules are followed through @Module imports and controllers written as names or forwardRef(() => Name); modules made by a call (forRoot, register), names read from a namespace (ns.Module) and anonymous default exports are not",
             "a NestJS controller serves the routes of the class it extends only when that class is named directly (not ns.Base), carries no @Controller of its own, and is its direct base",
             "routes on an app or router received as a function parameter are not read: the receiver must be made in the same file",

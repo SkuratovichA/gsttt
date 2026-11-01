@@ -85,7 +85,7 @@ Every number, with the command that measured it, is in [`bench/results/benchmark
 <summary>TypeScript and JavaScript</summary>
 
 - Routes defined by the file system (Next.js, Remix, SvelteKit).
-- A NestJS global prefix is applied only when it is a literal set without options on an app that `NestFactory.create(<name>)` makes in the same file; `RouterModule` paths are not read. Any other `setGlobalPrefix` call is reported as a site gsttt could not read.
+- A NestJS global prefix is applied only when it is a literal set on an app that `NestFactory.create(<name>)` makes in the same file, and the `exclude` option is not read, so excluded routes get the prefix too; `RouterModule` paths are not read. Any other `setGlobalPrefix` call, and one that passes options, is reported as a site gsttt could not read.
 - NestJS modules are followed through `@Module` `imports` and `controllers` written as names or `forwardRef(() => Name)`; modules made by a call (`forRoot`, `register`), names read from a namespace (`ns.Module`) and anonymous default exports are not.
 - A NestJS controller serves the routes of the class it extends only when that class is named directly (not `ns.Base`), carries no `@Controller` of its own, and is its direct base.
 - Routers mounted from another package, and routes on an app or router received as a function parameter: the app or router must be made in the file that declares the routes.
