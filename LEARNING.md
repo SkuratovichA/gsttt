@@ -37,3 +37,7 @@ A task line cherry-picked from another change into `tasks.md` kept the number it
 ## A branch made from a remote-tracking ref tracked it
 
 `git worktree add -b x <path> origin/main` sets `origin/main` as the upstream of the new branch, so a plain `git push` or `git pull` on a branch that was meant to stay local talked to main. Fix: create such a branch with `--no-track` (`git worktree add --no-track -b x <path> origin/main`), or run `git branch --unset-upstream` on it, and check with `git rev-parse --abbrev-ref x@{upstream}`, which must fail.
+
+## A build in the main checkout handed back the binary of a worktree
+
+With one `CARGO_TARGET_DIR` for the main checkout and a worktree, a crate gets the same unit hash in both trees and cargo decides freshness by file times, so `cargo build --release` in the main checkout after a build in the worktree finished in a quarter of a second and left the worktree's binary in `target/release`. A timing of "main against the branch" then compared the branch with itself. Fix: build the other tree into a target dir of its own (`CARGO_TARGET_DIR=<scratch>/target-main`), and compare `shasum` of the two binaries before measuring.
