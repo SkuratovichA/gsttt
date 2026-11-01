@@ -44,10 +44,12 @@ fn a_router_made_in_another_file_serves_under_its_mounts() -> Result<(), Box<dyn
 )]
 fn a_call_on_an_imported_name_that_no_rule_makes_is_silent() -> Result<(), Box<dyn Error>> {
     let json = run("receivers-silent")?;
+    // The call on the client is read, which only a link that finds what another file makes can do, so this test fails when imported receivers are not read at all; the two calls on the map are not.
+    let client = ["calls http GET /b/users @7 in src/a.ts"];
+    assert_eq!(linked(&json), client);
+    assert_eq!(sites("receivers-silent")?, client);
     assert_eq!(contracts(&json, "src/a.ts"), NOTHING);
     assert_eq!(unread(&json, "src/a.ts"), NOTHING);
-    assert_eq!(linked(&json), NOTHING);
-    assert_eq!(sites("receivers-silent")?, NOTHING);
     insta::assert_json_snapshot!(json);
     Ok(())
 }
@@ -167,5 +169,74 @@ fn a_client_made_inside_a_function_is_no_export_of_the_file() -> Result<(), Box<
     assert_eq!(linked(&json), NOTHING);
     assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
     assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+fn an_imported_router_that_nothing_mounts_serves_the_paths_it_is_written_with()
+-> Result<(), Box<dyn Error>> {
+    let json = run("receivers-router-unmounted")?;
+    assert_eq!(linked(&json), ["serves http GET /users @3 in src/users.ts"]);
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A call on an imported name is read by the rule of the call that made it"
+)]
+fn a_call_on_an_imported_name_is_read_by_the_rule_of_the_call_that_made_it()
+-> Result<(), Box<dyn Error>> {
+    let json = run("receivers-by-maker")?;
+    // `app.get('env')` and `app.get('/k')` on the Express app are no client call, and `api.get('/users', { params })` on the client is no route.
+    let client = ["calls http GET /b/users @7 in src/a.ts"];
+    assert_eq!(linked(&json), client);
+    assert_eq!(sites("receivers-by-maker")?, client);
+    assert_eq!(contracts(&json, "src/a.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/a.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+fn a_client_re_exported_by_a_barrel_is_read_under_its_base() -> Result<(), Box<dyn Error>> {
+    let json = run("receivers-barrel")?;
+    assert_eq!(
+        linked(&json),
+        ["calls http GET /b/users @3 in src/users.ts"]
+    );
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+fn a_client_taken_through_a_namespace_import_is_read_under_its_base() -> Result<(), Box<dyn Error>>
+{
+    let json = run("receivers-namespace")?;
+    assert_eq!(linked(&json), ["calls http GET /b/x @3 in src/users.ts"]);
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+fn a_client_exported_by_default_through_its_name_is_read_under_its_base()
+-> Result<(), Box<dyn Error>> {
+    let json = run("receivers-default-local")?;
+    assert_eq!(
+        linked(&json),
+        ["calls http GET /b/users @3 in src/users.ts"]
+    );
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+fn an_unreadable_url_on_an_imported_client_is_one_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("receivers-unread-url")?;
+    assert_eq!(linked(&json), NOTHING);
+    assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/users.ts").len(), 1);
+    assert!(unread(&json, "src/users.ts")[0].starts_with("@4 "));
     Ok(())
 }

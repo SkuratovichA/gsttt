@@ -23,11 +23,26 @@ expression: json
       "imports": [
         {
           "exported": [
-            "cache"
+            "api"
           ],
           "flags": 0,
           "kind": "static",
           "line": 1,
+          "names": [
+            "api"
+          ],
+          "spec": "./api",
+          "to": {
+            "file": "src/api.ts"
+          }
+        },
+        {
+          "exported": [
+            "cache"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
           "names": [
             "cache"
           ],
@@ -42,7 +57,7 @@ expression: json
           ],
           "flags": 0,
           "kind": "static",
-          "line": 2,
+          "line": 3,
           "names": [
             "*"
           ],
@@ -61,8 +76,56 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
+          "api",
           "cache",
           "store"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "api"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "axios"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "axios",
+          "to": {
+            "external": "axios"
+          }
+        }
+      ],
+      "path": "src/api.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "api",
+            "uses": [
+              "axios"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "axios"
         ]
       },
       "tags": 0,
@@ -96,7 +159,15 @@ expression: json
       "unresolved": []
     }
   ],
-  "linked": [],
+  "linked": [
+    {
+      "file": "src/a.ts",
+      "key": "http GET /b/users",
+      "line": 7,
+      "role": "calls",
+      "via": "axios"
+    }
+  ],
   "problems": [],
   "projects": [
     {

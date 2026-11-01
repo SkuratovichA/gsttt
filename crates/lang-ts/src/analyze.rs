@@ -1774,3 +1774,77 @@ fn mount_target(expr: &Expression<'_>) -> Option<MountTarget> {
             .map(MountTarget::Local),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use oxc_allocator::Allocator;
+    use oxc_parser::Parser;
+
+    use super::*;
+
+    fn packs() -> Vec<Pack> {
+        gsttt_config::builtin_packs(crate::PACKS).unwrap()
+    }
+
+    /// What the parse of `code` finds, with the built-in packs.
+    fn analysis_of(code: &str) -> Analysis {
+        let allocator = Allocator::default();
+        let parsed = Parser::new(&allocator, code, oxc_span::SourceType::ts()).parse();
+        analyze(&parsed.program, code, &LineIndex::new(code), &packs())
+    }
+
+    #[test]
+    fn node_and_the_packages_of_the_packs_are_libraries() {
+        let packs = packs();
+        for spec in [
+            "fs",
+            "node:fs",
+            "fs/promises",
+            "node:test",
+            "axios",
+            "axios/lib/x",
+            "express",
+            "@nestjs/common",
+            "@nestjs/common/decorators",
+        ] {
+            assert!(is_library(&packs, spec), "{spec}");
+        }
+    }
+
+    #[test]
+    fn a_package_that_no_pack_is_for_and_a_relative_path_are_no_libraries() {
+        let packs = packs();
+        for spec in [
+            "left-pad",
+            "axios-extra",
+            "@acme/ui",
+            "@acme/ui/button",
+            "@nestjs/testing",
+            ".",
+            "..",
+            "./http",
+            "../lib/http",
+        ] {
+            assert!(!is_library(&packs, spec), "{spec}");
+        }
+    }
+
+    #[test]
+    fn a_call_on_a_package_or_node_defers_nothing() {
+        let analysis = analysis_of(
+            "import axios from 'axios';\nimport http from 'node:http';\nimport https from 'https';\naxios.get('/x');\nhttp.get('/y');\nhttps.get('/z');\n",
+        );
+        assert_eq!(analysis.contracts.len(), 1);
+        assert_eq!(analysis.extra.deferred, []);
+    }
+
+    #[test]
+    fn a_call_on_a_name_from_a_file_of_the_project_is_deferred_on_that_name() {
+        let analysis = analysis_of("import { api } from './http';\napi.get('/x');\n");
+        assert_eq!(analysis.contracts, []);
+        assert!(matches!(
+            analysis.extra.deferred.as_slice(),
+            [Deferred { target: DeferredTarget::Receiver { host }, .. }] if host == "api"
+        ));
+    }
+}
