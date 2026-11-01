@@ -50,7 +50,7 @@ pub struct Output {
     pub unclaimed: Vec<FileId>,
     /// Contract sites `link` found across files, in file order.
     pub linked: Vec<LinkedFact>,
-    /// Sites a project left to `link` that it could not read either, by file, line and detail.
+    /// Sites a project left to `link` that it could not read either, sorted by file, then line and detail, once each. [`Output::unread_of`] finds the run of a file by that order.
     pub unread: Vec<(FileId, UnresolvedSite)>,
     /// Connector calls that failed outside a single file's parse.
     pub problems: Vec<Problem>,
@@ -775,10 +775,14 @@ pub(super) fn display_root(root: &str) -> &str {
 
 impl Output {
     /// The sites of `file` that the link could not read, in line order.
-    pub fn unread_of(&self, file: FileId) -> &[(FileId, UnresolvedSite)] {
+    pub fn unread_of(&self, file: FileId) -> impl Iterator<Item = &UnresolvedSite> {
         let start = self.unread.partition_point(|(id, _)| *id < file);
         let end = self.unread.partition_point(|(id, _)| *id <= file);
-        self.unread.get(start..end).unwrap_or_default()
+        self.unread
+            .get(start..end)
+            .unwrap_or_default()
+            .iter()
+            .map(|(_, site)| site)
     }
 
     /// The output as JSON, with paths in place of file ids and `<connector> <root>` in place of project ids, for snapshots and for looking at what a connector made of a tree.
@@ -1198,7 +1202,7 @@ mod tests {
                 (json!("a.txt"), json!(3), json!("fetch(b)")),
             ]
         );
-        assert_eq!(output.unread_of(output.unread[0].0).len(), 2);
+        assert_eq!(output.unread_of(output.unread[0].0).count(), 2);
 
         let (_dir, repo) = tree(&[("a.txt", b"")]);
         let json = run(&repo, &modules(), LIMIT).unwrap().to_json(&repo);
