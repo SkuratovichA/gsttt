@@ -20,8 +20,8 @@ pub(crate) struct Constants {
     values: BTreeMap<String, String>,
     /// The first segment of each name in `values`, so that a name that starts with anything else is known to be no constant before a string is built for it.
     roots: BTreeSet<String>,
-    /// The local names an import binds.
-    imported: BTreeSet<String>,
+    /// The local names an import binds, each with the specifier of the module it takes the name from.
+    imported: BTreeMap<String, String>,
     /// The enum whose members are being read, while they are.
     scope: Option<EnumScope>,
 }
@@ -42,8 +42,11 @@ impl Constants {
         for statement in &program.body {
             match statement {
                 Statement::ImportDeclaration(import) => {
+                    let Some(spec) = import.source.value.as_str() else {
+                        continue;
+                    };
                     for local in import_locals(import) {
-                        constants.import(local);
+                        constants.import(local, spec);
                     }
                 }
                 Statement::ExportDeclaration(export) => {
@@ -66,11 +69,16 @@ impl Constants {
         constants
     }
 
-    /// Notes that the file binds `local` to something another module exports.
-    pub(super) fn import(&mut self, local: &str) {
-        if !self.imported.contains(local) {
-            self.imported.insert(local.to_owned());
+    /// Notes that the file binds `local` to something the module `spec` exports.
+    pub(super) fn import(&mut self, local: &str, spec: &str) {
+        if !self.imported.contains_key(local) {
+            self.imported.insert(local.to_owned(), spec.to_owned());
         }
+    }
+
+    /// The specifier of the module that `local` is imported from, when the file imports the name.
+    pub(super) fn spec_of(&self, local: &str) -> Option<&str> {
+        self.imported.get(local).map(String::as_str)
     }
 
     /// The text that `expr` stands for when it is a name or a chain of names that a constant of this file is read under.
@@ -93,7 +101,7 @@ impl Constants {
 
     /// The name that `expr` writes when it is a name or a chain of names that starts from a name the file imports: `Env.API_URL` for `Env.API_URL`.
     pub(crate) fn imported_name(&self, expr: &Expression<'_>) -> Option<String> {
-        if self.imported.is_empty() || !self.imported.contains(base_name(expr)?) {
+        if self.imported.is_empty() || !self.imported.contains_key(base_name(expr)?) {
             return None;
         }
         dotted_name(expr).map(std::borrow::Cow::into_owned)
@@ -101,13 +109,7 @@ impl Constants {
 
     /// The constants whose first segment `exports` name as a local, sorted by name, to be read by the files that import them.
     pub(crate) fn exported(&self, exports: &[Export]) -> Vec<(String, String)> {
-        let locals: BTreeSet<&str> = exports
-            .iter()
-            .filter_map(|export| match &export.target {
-                ExportTarget::Local(local) => Some(local.as_str()),
-                ExportTarget::From { .. } => None,
-            })
-            .collect();
+        let locals = exported_locals(exports);
         self.values
             .iter()
             .filter(|(name, _)| locals.contains(root_of(name)))
@@ -289,6 +291,17 @@ fn rewrite(path: &mut String, segments: &[&str]) {
         }
         path.push_str(segment);
     }
+}
+
+/// The names a file exports as its own declarations, the locals that `exports` name: the ones other files can read a constant or a maker from.
+pub(super) fn exported_locals(exports: &[Export]) -> BTreeSet<&str> {
+    exports
+        .iter()
+        .filter_map(|export| match &export.target {
+            ExportTarget::Local(local) => Some(local.as_str()),
+            ExportTarget::From { .. } => None,
+        })
+        .collect()
 }
 
 /// The first segment of a dotted name.

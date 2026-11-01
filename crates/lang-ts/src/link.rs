@@ -1,4 +1,4 @@
-//! The link phase: what only the whole repository shows, which is how routers and NestJS modules mount under each other across files, which routes a NestJS controller inherits, how tRPC routers compose, and the value of a constant that another file declares.
+//! The link phase: what only the whole repository shows, which is how routers and NestJS modules mount under each other across files, which routes a NestJS controller inherits, how tRPC routers compose, the value of a constant that another file declares, and the client or router that another file makes.
 
 mod deferred;
 
@@ -11,7 +11,9 @@ use gsttt_core::fact::{ContractFact, Line, Resolution};
 use gsttt_core::rules::{Pack, contract_key};
 
 use self::deferred::Resolved;
-use crate::extra::{ClassRoute, ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra};
+use crate::extra::{
+    Binding, ClassRoute, ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra,
+};
 
 /// How far a name is followed through imports and re-exports before the chain is given up.
 const MAX_DEPTH: usize = 16;
@@ -19,7 +21,7 @@ const MAX_DEPTH: usize = 16;
 /// A name in a file.
 type Node = (FileId, String);
 
-/// The facts that need other files: Express routes under the prefixes their routers are mounted at, NestJS controller routes behind the global prefix of the apps that reach them and the routes they inherit from a base class, tRPC procedures under the routers that compose them, and the contracts of the sites whose rule needed the value of an imported constant. An Express route and a procedure are found only here, so they key no parsed fact again and the engine keeps every fact the parse returned. A NestJS route a controller declares is parsed as written, and a fact keyed again by [`LinkedFact::rekeyed`] takes its place. The sites that a rule still cannot read once the constants are known come back as unread sites of their file.
+/// The facts that need other files: Express routes under the prefixes their routers are mounted at, NestJS controller routes behind the global prefix of the apps that reach them and the routes they inherit from a base class, tRPC procedures under the routers that compose them, and the contracts of the sites whose rule needed the value of an imported constant or the client or router that an imported name stands for. An Express route and a procedure are found only here, so they key no parsed fact again and the engine keeps every fact the parse returned. A NestJS route a controller declares is parsed as written, and a fact keyed again by [`LinkedFact::rekeyed`] takes its place. The sites that a rule still cannot read once the constants are known come back as unread sites of their file.
 pub(crate) fn link(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Linked {
     let resolved = deferred::resolve(input, packs);
     let edges = parents(input);
@@ -62,12 +64,18 @@ fn define(input: &LinkInput<'_, TsExtra>, file: FileId, name: &str, depth: usize
     if depth >= MAX_DEPTH {
         return None;
     }
-    export_of(
-        input,
-        module_file(here, &binding.spec)?,
-        &binding.name,
-        depth + 1,
-    )
+    through(input, here, binding, &binding.name, depth + 1)
+}
+
+/// Where `export` is defined in the module that `binding`, one of the imports of `file`, leads to: the step from an import to the export it reaches, which `define` and `imported` of the deferred sites share.
+fn through(
+    input: &LinkInput<'_, TsExtra>,
+    file: &LinkFile<'_, TsExtra>,
+    binding: &Binding,
+    export: &str,
+    depth: usize,
+) -> Option<Node> {
+    export_of(input, module_file(file, &binding.spec)?, export, depth)
 }
 
 /// What `file` exports as `name`, as the name it has where it is defined. `export * from` forwards every name but `default`.
@@ -137,6 +145,12 @@ fn express(
             for prefix in mounts.served_under(&node) {
                 linked.push(LinkedFact::found(file.id, rekey(&route.fact, &prefix)));
             }
+        }
+    }
+    // A route on a router another file makes is served under the mounts of that router, and stays a site of the file that registers it.
+    for (file, node, fact) in &resolved.served {
+        for prefix in mounts.served_under(node) {
+            linked.push(LinkedFact::found(*file, rekey(fact, &prefix)));
         }
     }
     linked
