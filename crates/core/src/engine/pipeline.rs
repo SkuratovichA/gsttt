@@ -17,11 +17,12 @@ use serde_json::{Map, Value};
 
 use super::files::{FileState, Stamp};
 use crate::connector::{
-    ConnectorError, DynConnector, DynProject, LinkFile, LinkInput, LinkedFact, Meta, PrepareFile,
-    Provide, SourceFile,
+    ConnectorError, DynConnector, DynProject, LinkFile, LinkInput, Linked, LinkedFact, Meta,
+    PrepareFile, Provide, SourceFile,
 };
 use crate::fact::{
     ContractFact, FileFacts, ParseFailure, Resolution, ResolvedImport, UnresolvedReason,
+    UnresolvedSite,
 };
 use crate::ids::{FileId, Id, ProjectId};
 use crate::path::RepoPath;
@@ -49,6 +50,8 @@ pub struct Output {
     pub unclaimed: Vec<FileId>,
     /// Contract sites `link` found across files, in file order.
     pub linked: Vec<LinkedFact>,
+    /// Sites a project left to `link` that it could not read either, by file, line and detail.
+    pub unread: Vec<(FileId, UnresolvedSite)>,
     /// Connector calls that failed outside a single file's parse.
     pub problems: Vec<Problem>,
 }
@@ -374,7 +377,7 @@ pub fn execute(
     let resolve_time = started.elapsed();
 
     let started = Instant::now();
-    let linked: Vec<(Vec<LinkedFact>, Option<Problem>)> = projects
+    let linked: Vec<(Linked, Option<Problem>)> = projects
         .par_iter()
         .zip(members.par_iter())
         .map(|(project, members)| {
@@ -395,13 +398,13 @@ pub fn execute(
                 .collect();
             let input = LinkInput::new(files);
             match contain(|| project.link(&input)) {
-                Ok(Ok(facts)) => (facts, None),
+                Ok(Ok(linked)) => (linked, None),
                 Ok(Err(error)) => (
-                    Vec::new(),
+                    Linked::default(),
                     Some(problem(project.as_ref(), Call::Link, error.to_string())),
                 ),
                 Err(message) => (
-                    Vec::new(),
+                    Linked::default(),
                     Some(problem(project.as_ref(), Call::Link, message)),
                 ),
             }
@@ -427,17 +430,24 @@ pub fn execute(
         });
     }
     let mut linked_facts = Vec::new();
-    for (facts, link_problem) in linked {
-        linked_facts.extend(facts);
+    let mut unread = Vec::new();
+    for (linked, link_problem) in linked {
+        linked_facts.extend(linked.facts);
+        unread.extend(linked.unread);
         problems.extend(link_problem);
     }
     linked_facts.sort_by_key(|fact| fact.file);
+    unread.sort_by(|(a_file, a), (b_file, b)| {
+        (a_file, a.line, &a.detail, &a.reason).cmp(&(b_file, b.line, &b.detail, &b.reason))
+    });
+    unread.dedup();
 
     let output = Output {
         projects: project_runs(&projects),
         files,
         unclaimed,
         linked: linked_facts,
+        unread,
         problems,
     };
     let phases = Phases {
@@ -764,6 +774,13 @@ pub(super) fn display_root(root: &str) -> &str {
 }
 
 impl Output {
+    /// The sites of `file` that the link could not read, in line order.
+    pub fn unread_of(&self, file: FileId) -> &[(FileId, UnresolvedSite)] {
+        let start = self.unread.partition_point(|(id, _)| *id < file);
+        let end = self.unread.partition_point(|(id, _)| *id <= file);
+        self.unread.get(start..end).unwrap_or_default()
+    }
+
     /// The output as JSON, with paths in place of file ids and `<connector> <root>` in place of project ids, for snapshots and for looking at what a connector made of a tree.
     pub fn to_json(&self, repo: &RepoView) -> Value {
         let path = |id: FileId| {
@@ -842,6 +859,19 @@ impl Output {
         output.insert("projects".to_owned(), Value::Array(projects));
         output.insert("files".to_owned(), Value::Array(files));
         output.insert("linked".to_owned(), Value::Array(linked));
+        // Left out when empty, so the output of a tree whose link reads every site it is given stays as it was.
+        if !self.unread.is_empty() {
+            let unread = self
+                .unread
+                .iter()
+                .map(|(file, site)| {
+                    let mut entry = object(site);
+                    entry.insert("file".to_owned(), path(*file));
+                    Value::Object(entry)
+                })
+                .collect();
+            output.insert("unread".to_owned(), Value::Array(unread));
+        }
         output.insert(
             "unclaimed".to_owned(),
             self.unclaimed.iter().map(|&id| path(id)).collect(),
@@ -1139,6 +1169,40 @@ mod tests {
         assert_eq!(linked[0]["replaces"], json!("http GET /a"));
         assert_eq!(linked[1]["key"], json!("http GET /b"));
         assert!(linked[1].get("replaces").is_none(), "{:?}", linked[1]);
+    }
+
+    #[test]
+    fn the_sites_a_link_could_not_read_show_only_when_there_are_some() {
+        let (_dir, repo) = tree(&[
+            ("a.txt", b"unread 3 fetch(b)\nunread 2 fetch(a)\n"),
+            ("b.txt", b""),
+        ]);
+        let output = run(&repo, &modules(), LIMIT).unwrap();
+        let json = output.to_json(&repo);
+        let details: Vec<_> = json["unread"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|site| {
+                (
+                    site["file"].clone(),
+                    site["line"].clone(),
+                    site["detail"].clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            details,
+            [
+                (json!("a.txt"), json!(2), json!("fetch(a)")),
+                (json!("a.txt"), json!(3), json!("fetch(b)")),
+            ]
+        );
+        assert_eq!(output.unread_of(output.unread[0].0).len(), 2);
+
+        let (_dir, repo) = tree(&[("a.txt", b"")]);
+        let json = run(&repo, &modules(), LIMIT).unwrap().to_json(&repo);
+        assert!(json.get("unread").is_none(), "{json}");
     }
 
     #[test]

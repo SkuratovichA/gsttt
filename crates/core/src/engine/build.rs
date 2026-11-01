@@ -108,6 +108,10 @@ pub fn build_index(
         for site in &file.facts.unresolved {
             entry.count_blind(file.id, site);
         }
+        for (_, site) in output.unread_of(file.id) {
+            entry.count_blind(file.id, site);
+            unresolved.push(site.clone());
+        }
         for fact in &file.facts.contracts {
             if replaced.contains(&(file.id, fact.line, fact.role, &fact.key)) {
                 // The link keyed this declaration again, once per mount, so the parsed key would be a second site.

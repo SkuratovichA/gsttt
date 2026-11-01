@@ -1064,6 +1064,23 @@ mod tests {
         assert_eq!(files, [graph.file_id("a.txt").unwrap()]);
     }
 
+    #[gsttt_scenario::scenario("indexing", "An unread site from the link is counted")]
+    #[test]
+    fn an_unread_site_from_the_link_is_counted() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "fact 1 serves queue q\n\nunread 3 fetch(url)\n")]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        let blind = &run.index.coverage.connector("notes").unwrap().blind;
+        assert_eq!(blind.len(), 1);
+        assert_eq!(blind[0].reason, UnresolvedReason::NonLiteral);
+        assert_eq!((blind[0].count, blind[0].first.line), (1, 3));
+        let file = run.index.graph.file_id("a.txt").unwrap();
+        let unresolved = &run.index.record(file).unwrap().unresolved;
+        assert_eq!(unresolved.len(), 1);
+        assert_eq!(unresolved[0].detail, "fetch(url)");
+        assert_eq!(unresolved[0].line, 3);
+    }
+
     #[gsttt_scenario::scenario("indexing", "A linked fact replaces the own fact it re-keys")]
     #[test]
     fn a_linked_fact_replaces_the_own_fact_it_re_keys() {

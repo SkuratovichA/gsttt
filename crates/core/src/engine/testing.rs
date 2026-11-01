@@ -14,12 +14,13 @@ use serde_json::Value;
 
 use super::pipeline::Module;
 use crate::connector::{
-    Connector, ConnectorError, DynConnector, Erased, LinkInput, LinkedFact, Meta, Parsed,
+    Connector, ConnectorError, DynConnector, Erased, LinkInput, Linked, LinkedFact, Meta, Parsed,
     PrepareFile, Project, Provide, SourceFile,
 };
 use crate::contract::{ContractKey, Role};
 use crate::fact::{
     ContractFact, Embedded, FileFacts, Import, ImportKind, Resolution, UnresolvedReason,
+    UnresolvedSite,
 };
 use crate::path::RepoPath;
 use crate::repo::RepoView;
@@ -249,7 +250,7 @@ pub(crate) struct Options {
     pub(crate) tag: String,
 }
 
-/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
+/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. `unread <line> <detail>` is a site that `link` cannot read. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -312,8 +313,7 @@ impl Connector for Notes {
 }
 
 impl Project for NotesProject {
-    /// The facts `link` returns for the file, each with the key it replaces: the `linked` lines of its text.
-    type Extra = Vec<(ContractFact, Option<ContractKey>)>;
+    type Extra = NotesExtra;
 
     fn root(&self) -> &str {
         self.counters.roots.fetch_add(1, Ordering::Relaxed);
@@ -336,7 +336,7 @@ impl Project for NotesProject {
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<Self::Extra> {
         self.counters.parse.fetch_add(1, Ordering::Relaxed);
         let mut facts = FileFacts::default();
-        let mut linked = Vec::new();
+        let mut extra = NotesExtra::default();
         for (index, line) in file.text.lines().enumerate() {
             let number = u32::try_from(index + 1).unwrap();
             if line == "boom" {
@@ -358,13 +358,12 @@ impl Project for NotesProject {
             } else if let Some(text) = line.strip_prefix("fact ") {
                 facts.contracts.push(declared_fact(text));
             } else if let Some(text) = line.strip_prefix("linked ") {
-                linked.push(linked_line(text));
+                extra.linked.push(linked_line(text));
+            } else if let Some(text) = line.strip_prefix("unread ") {
+                extra.unread.push(unread_line(text));
             }
         }
-        Parsed {
-            facts,
-            extra: linked,
-        }
+        Parsed { facts, extra }
     }
 
     fn prepare(&mut self, files: &[PrepareFile<'_>]) {
@@ -393,7 +392,7 @@ impl Project for NotesProject {
         }
     }
 
-    fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Vec<LinkedFact> {
+    fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Linked {
         self.counters.link.fetch_add(1, Ordering::Relaxed);
         assert!(
             !input.files().iter().any(|file| file
@@ -413,13 +412,42 @@ impl Project for NotesProject {
             })
             .map(|file| LinkedFact::found(file.id, fact("queue linked")));
         let keyed_again = input.files().iter().flat_map(|file| {
-            file.extra.iter().map(|(declared, replaces)| LinkedFact {
-                file: file.id,
-                fact: declared.clone(),
-                replaces: replaces.clone(),
-            })
+            file.extra
+                .linked
+                .iter()
+                .map(|(declared, replaces)| LinkedFact {
+                    file: file.id,
+                    fact: declared.clone(),
+                    replaces: replaces.clone(),
+                })
         });
-        imported.chain(keyed_again).collect()
+        Linked {
+            facts: imported.chain(keyed_again).collect(),
+            unread: input
+                .files()
+                .iter()
+                .flat_map(|file| file.extra.unread.iter().map(|site| (file.id, site.clone())))
+                .collect(),
+        }
+    }
+}
+
+/// What `link` reads from a file of [`Notes`].
+#[derive(Default, Serialize, Deserialize)]
+pub(crate) struct NotesExtra {
+    /// The facts `link` returns for the file, each with the key it replaces: the `linked` lines of its text.
+    linked: Vec<(ContractFact, Option<ContractKey>)>,
+    /// The sites `link` cannot read: the `unread` lines of its text.
+    unread: Vec<UnresolvedSite>,
+}
+
+/// The site that `<line> <detail>` spells: `3 fetch(url)`.
+fn unread_line(text: &str) -> UnresolvedSite {
+    let (line, detail) = text.split_once(' ').unwrap();
+    UnresolvedSite {
+        line: line.parse().unwrap(),
+        reason: UnresolvedReason::NonLiteral,
+        detail: detail.to_owned(),
     }
 }
 

@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use gsttt_core::connector::{
-    Connector, ConnectorError, Erased, LinkInput, LinkedFact, Meta, Parsed, Project, Provide,
-    SourceFile,
+    Connector, ConnectorError, Erased, LinkInput, Linked, LinkedFact, Meta, Parsed, Project,
+    Provide, SourceFile,
 };
 use gsttt_core::contract::{ContractKind, Role, path_after_origin, without_query_and_fragment};
 use gsttt_core::fact::{ContractFact, FileFacts, Import, ImportKind, Line, Resolution};
@@ -251,7 +251,7 @@ impl Project for OpenApiProject {
         resolve_relative(&self.repo, from, &import.spec)
     }
 
-    fn link(&self, input: &LinkInput<'_, OpenApiExtra>) -> Vec<LinkedFact> {
+    fn link(&self, input: &LinkInput<'_, OpenApiExtra>) -> Linked {
         let mut linked = Vec::new();
         for file in input.files() {
             for path_ref in &file.extra.path_refs {
@@ -284,7 +284,7 @@ impl Project for OpenApiProject {
                 }
             }
         }
-        linked
+        linked.into()
     }
 }
 

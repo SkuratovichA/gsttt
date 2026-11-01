@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::connector::{
-    ConnectorError, LinkInput, LinkedFact, Parsed, Project, Provide, SourceFile, salt_of,
+    ConnectorError, LinkInput, Linked, Parsed, Project, Provide, SourceFile, salt_of,
 };
 use gsttt_core::fact::{Import, Resolution};
 use gsttt_core::path::RepoPath;
@@ -335,8 +335,8 @@ impl Project for PythonProject {
         crate::resolve::resolve(self, from, import)
     }
 
-    fn link(&self, input: &LinkInput<'_, PyExtra>) -> Vec<LinkedFact> {
-        crate::link::link(self, input)
+    fn link(&self, input: &LinkInput<'_, PyExtra>) -> Linked {
+        crate::link::link(self, input).into()
     }
 }
 

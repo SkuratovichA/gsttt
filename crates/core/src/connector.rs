@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::Xxh3;
 
 use crate::contract::{ContractKey, ContractKind, Role};
-use crate::fact::{ContractFact, Embedded, FileFacts, Import, Resolution, ResolvedImport};
+use crate::fact::{
+    ContractFact, Embedded, FileFacts, Import, Resolution, ResolvedImport, UnresolvedSite,
+};
 use crate::ids::FileId;
 use crate::path::RepoPath;
 use crate::repo::RepoView;
@@ -80,10 +82,10 @@ pub trait Project: Send + Sync + 'static {
     /// Where an import of the file `from` points.
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution;
 
-    /// Contract sites that only show across files: route prefixes mounted in another file, tRPC routers merged into an app router. A fact that keys an own fact of the project again is made by [`LinkedFact::rekeyed`], and the engine drops the site of that own fact and of no other.
-    fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Vec<LinkedFact> {
+    /// Contract sites that only show across files: route prefixes mounted in another file, tRPC routers merged into an app router, a constant imported from another file. A fact that keys an own fact of the project again is made by [`LinkedFact::rekeyed`], and the engine drops the site of that own fact and of no other. A site that the parse left to the link and that the link cannot read either comes back in [`Linked::unread`], and coverage counts it as the parse would have.
+    fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Linked {
         let _ = input;
-        Vec::new()
+        Linked::default()
     }
 
     /// Languages of embedded documents this project reads: `["graphql"]`.
@@ -186,6 +188,23 @@ impl<'a, X: ?Sized> LinkInput<'a, X> {
             .binary_search_by_key(&id, |file| file.id)
             .ok()
             .and_then(|index| self.files.get(index))
+    }
+}
+
+/// What [`Project::link`] returns: the contract sites it found, and the sites the parse left to it that it could not read either.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Linked {
+    pub facts: Vec<LinkedFact>,
+    /// Each counts in coverage as an unread site of its file, as a site the parse could not read does.
+    pub unread: Vec<(FileId, UnresolvedSite)>,
+}
+
+impl From<Vec<LinkedFact>> for Linked {
+    fn from(facts: Vec<LinkedFact>) -> Self {
+        Self {
+            facts,
+            unread: Vec::new(),
+        }
     }
 }
 
@@ -316,7 +335,7 @@ pub trait DynProject: Send + Sync {
     fn prepare(&mut self, files: &[PrepareFile<'_>]);
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution;
     /// Links with the extra data as JSON, the way [`DynProject::parse`] gave it.
-    fn link(&self, input: &LinkInput<'_, [u8]>) -> Result<Vec<LinkedFact>, ConnectorError>;
+    fn link(&self, input: &LinkInput<'_, [u8]>) -> Result<Linked, ConnectorError>;
     fn embeds(&self) -> &[&str];
     fn parse_embedded(&self, document: &Embedded) -> Vec<ContractFact>;
 }
@@ -452,7 +471,7 @@ impl<P: Project> DynProject for ErasedProject<P> {
         self.project.resolve(from, import)
     }
 
-    fn link(&self, input: &LinkInput<'_, [u8]>) -> Result<Vec<LinkedFact>, ConnectorError> {
+    fn link(&self, input: &LinkInput<'_, [u8]>) -> Result<Linked, ConnectorError> {
         let extras = input
             .files()
             .iter()
@@ -633,7 +652,7 @@ mod tests {
             }
         }
 
-        fn link(&self, input: &LinkInput<'_, String>) -> Vec<LinkedFact> {
+        fn link(&self, input: &LinkInput<'_, String>) -> Linked {
             input
                 .files()
                 .iter()
@@ -649,7 +668,8 @@ mod tests {
                         },
                     )
                 })
-                .collect()
+                .collect::<Vec<_>>()
+                .into()
         }
     }
 
@@ -749,7 +769,8 @@ mod tests {
             extra: extra.as_slice(),
         }]);
         let linked = project.link(&input).unwrap();
-        assert_eq!(linked[0].fact.key.to_string(), "queue jobs");
+        assert_eq!(linked.facts[0].fact.key.to_string(), "queue jobs");
+        assert!(linked.unread.is_empty(), "{:?}", linked.unread);
         assert_eq!(format!("{project:?}"), r#"DynProject("lines", "")"#);
     }
 }

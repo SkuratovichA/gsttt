@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use gsttt_core::connector::{LinkInput, LinkedFact, Parsed, Project, Provide, SourceFile, salt_of};
+use gsttt_core::connector::{LinkInput, Linked, Parsed, Project, Provide, SourceFile, salt_of};
 use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseFailure, Resolution};
 use gsttt_core::rules::Pack;
 use gsttt_core::tree;
@@ -111,8 +111,8 @@ impl Project for TsProject {
         resolve::resolve(&self.shared, &self.root, from, import)
     }
 
-    fn link(&self, input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
-        link::link(input)
+    fn link(&self, input: &LinkInput<'_, TsExtra>) -> Linked {
+        link::link(input).into()
     }
 }
 
