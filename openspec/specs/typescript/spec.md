@@ -612,13 +612,6 @@ Inside a class, a declaration that reads `this.<field>.<member>`, or `this.#<fie
 - **AND** the methods that take the field as a value use `MailQueue`, and the one that reads `send` uses `Left.send` and `Right.send`
 - **AND** the two that read `#queue` also use `Spellings.#queue`
 
-### Requirement: Computed route paths
-A NestJS route decorator whose path argument is not a string literal or template SHALL be a blind spot at the line of the decorator, not a route at the controller's prefix; a route decorator with no argument SHALL still serve the prefix alone.
-
-#### Scenario: A route whose path is a constant is a blind spot
-- **WHEN** a class decorated `@Controller('/')` has a method decorated `@Get(LOGIN_PATH)`, where `LOGIN_PATH` is an imported constant, and another method decorated `@Get()`
-- **THEN** the file has an unread site at the line of `@Get(LOGIN_PATH)` and serves `http GET /` only at the line of `@Get()`
-
 ### Requirement: NestJS configuration
 With the `nestjs-config` pack, `get` and `getOrThrow` on a `configService` receiver SHALL call `env <NAME>` when the first argument is a string that names a variable; a first argument that is a path into a loaded configuration, such as `database.host`, SHALL name no environment variable, and a computed first argument SHALL be a blind spot.
 
@@ -631,11 +624,11 @@ With the `nestjs-config` pack, `get` and `getOrThrow` on a `configService` recei
 - **THEN** it calls no `env` key at that line
 
 #### Scenario: A computed configuration name is a blind spot
-- **WHEN** a file calls `this.configService.get(Env.API_URL)`, where `Env` is an imported enum
+- **WHEN** a file calls `this.configService.get(key)`, where `key` is a parameter of the method
 - **THEN** the file has an unread site at that line
 
 ### Requirement: NestJS routes inherited from a base class
-With the `nestjs` pack, a route decorator on a method of a class that has no `@Controller` decorator SHALL be served by every class decorated `@Controller('<prefix>')` that extends it by name, under that prefix, at the line of the method in the file of the base class and at the line of the `@Controller` decorator. A base class that no controller extends, and a subclass without the decorator, SHALL serve nothing, and a path on the base class that is not a literal SHALL be an unread site.
+With the `nestjs` pack, a route decorator on a method of a class that has no `@Controller` decorator SHALL be served by every class decorated `@Controller('<prefix>')` that extends it by name, under that prefix, at the line of the method in the file of the base class and at the line of the `@Controller` decorator. A base class that no controller extends, and a subclass without the decorator, SHALL serve nothing, and a path on the base class that is neither a literal nor a constant SHALL be an unread site.
 
 #### Scenario: A controller serves the routes of the base class it extends
 - **WHEN** `user.controller.base.ts` has a class `UserControllerBase` with no class decorator and methods decorated `@common.Get('/:id')` and `@common.Post()`, and `user.controller.ts` imports it by name and has `@common.Controller('users') class UserController extends UserControllerBase {}`
@@ -653,7 +646,7 @@ With the `nestjs` pack, a route decorator on a method of a class that has no `@C
 - **AND** nothing is served for `FakeUserController`
 
 #### Scenario: A computed path on a base class is an unread site
-- **WHEN** `UserControllerBase` has a method decorated `@Get(ROUTES.USER)`, where `ROUTES` is imported, and `@Controller('users') class UserController extends UserControllerBase {}` is in another file
+- **WHEN** `UserControllerBase` has a method decorated `@Get(route('user'))`, where `route` is an imported function, and `@Controller('users') class UserController extends UserControllerBase {}` is in another file
 - **THEN** `user.controller.base.ts` has an unread site at the line of `@Get` with the reason computed at run time
 - **AND** no file serves a route for it
 
@@ -663,7 +656,7 @@ With the `nestjs` pack, a route decorator on a method of a class that has no `@C
 - **AND** each controller file serves its own path at the line of its `@Controller`
 
 ### Requirement: NestJS global prefix
-With the `nestjs` pack, `app.setGlobalPrefix('<literal>')` on an app made by `NestFactory.create(<Root>)` in the same file SHALL put every controller that `<Root>` reaches through the `imports` and `controllers` of `@Module` classes behind the prefix, the routes it inherits included. A controller that no such app reaches SHALL keep its path, and a prefix that is not a literal SHALL be an unread site.
+With the `nestjs` pack, `app.setGlobalPrefix(<prefix>)` on an app made by `NestFactory.create(<Root>)` in the same file, where `<prefix>` is a literal or a constant of the same file, SHALL put every controller that `<Root>` reaches through the `imports` and `controllers` of `@Module` classes behind the prefix, the routes it inherits included. A controller that no such app reaches SHALL keep its path, and a prefix that is neither a literal nor a constant of the same file SHALL be an unread site.
 
 #### Scenario: A global prefix reaches the controllers of imported modules
 - **WHEN** `main.ts` has `const app = await NestFactory.create(AppModule)` and `app.setGlobalPrefix('api')`, `app.module.ts` has `@Module({ imports: [UserModule, ConfigModule.forRoot()] }) class AppModule`, `user.module.ts` has `@Module({ controllers: [UserController] }) class UserModule`, and `user.controller.ts` has `@Controller('users')` with a method decorated `@Get(':id')`
@@ -697,6 +690,11 @@ With the `nestjs` pack, `app.setGlobalPrefix('<literal>')` on an app made by `Ne
 - **THEN** `main.ts` has an unread site at that line with the reason computed at run time
 - **AND** the controllers `AppModule` reaches serve their paths as written
 
+#### Scenario: A global prefix held in a constant is read
+- **WHEN** `main.ts` has `const PREFIX = 'api'`, `const app = await NestFactory.create(AppModule)` and `app.setGlobalPrefix(PREFIX)`, `AppModule` lists `UsersController` in `controllers`, and `UsersController` is `@Controller('users')` with a method decorated `@Get('x')`
+- **THEN** `users.controller.ts` serves `http GET /api/users/x` at the line of `@Get` and `http GET /users/x` nowhere
+- **AND** `main.ts` has no unread site
+
 ### Requirement: NestJS global prefixes that are not read
 With the `nestjs` pack, a `setGlobalPrefix` call on an app that `NestFactory.create(<name>)` does not make in the same file, or whose root module is not a plain name, SHALL be an unread site and apply no prefix. A call that passes options SHALL apply its prefix and also be an unread site, because the routes the options exclude are keyed behind the prefix.
 
@@ -728,3 +726,68 @@ A URL argument written `new URL(path, base)`, alone or followed by `.href`, `.pa
 #### Scenario: A URL built from a computed path is an unread site
 - **WHEN** a file has `fetch(new URL(path, base))`
 - **THEN** the file has an unread site at that line and calls nothing for it
+
+### Requirement: Constants
+Where a rule reads text, a name or dotted name SHALL be read as the value of the top-level constant it names, in the same file or imported directly, by namespace or through re-exports: a `const` string, or a template or concatenation of such constants, a string `enum` member, a `static` class property with a text initializer, or a property at any depth of a `const` object literal. Any other name, such as a `let`, a function-local name or an import that leads nowhere, SHALL leave the site unread.
+
+#### Scenario: A constant in the same file is read
+- **WHEN** `src/api.ts` declares `const BASE = '/api'` and `` const USERS = `${BASE}/users` ``, and calls `fetch(USERS)` and `` fetch(`${BASE}/orders`) ``
+- **THEN** the file calls `http * /api/users` and `http * /api/orders` at the lines of the two calls
+- **AND** it has no unread site
+
+#### Scenario: An imported enum member names an environment variable
+- **WHEN** a package declares `@nestjs/config`, `env.ts` exports `enum Env { API_URL = 'API_URL' }`, and `app.service.ts` imports `Env` and calls `this.configService.get(Env.API_URL)`
+- **THEN** `app.service.ts` calls `env API_URL` at the line of the call
+- **AND** it has no unread site
+
+#### Scenario: A static property and a nested object property are read
+- **WHEN** `routes.ts` exports `class Routes { static readonly LOGIN = 'login' }` and `` export const ROUTES = { users: { byId: ':id' } } as const ``, and a class decorated `@Controller('users')` imports both and has methods decorated `@Get(Routes.LOGIN)` and `@Get(ROUTES.users.byId)`
+- **THEN** the file serves `http GET /users/login` and `http GET /users/{}` at the lines of the two decorators
+- **AND** it has no unread site
+
+#### Scenario: A constant imported through re-exports or a namespace is read
+- **WHEN** `paths/auth.ts` exports `const LOGIN_PATH = 'login'`, `paths/index.ts` has `export * from './auth'`, one class decorated `@Controller('/')` imports `LOGIN_PATH` from `./paths` and has a method decorated `@Get(LOGIN_PATH)`, and another imports `* as paths from './paths/auth'` and has a method decorated `@Get(paths.LOGIN_PATH)`
+- **THEN** both files serve `http GET /login` at the line of their `@Get`
+- **AND** neither has an unread site
+
+#### Scenario: An imported constant path of an Express router is served under its mount
+- **WHEN** `paths.ts` exports `const PATHS = { USERS: '/users' }`, `users.ts` imports it and calls `router.get(PATHS.USERS, handler)` on a `Router()` it exports by default, and `app.ts` calls `app.use('/v1', router)` with that router
+- **THEN** `users.ts` serves `http GET /v1/users` at the line of the call
+- **AND** it has no unread site
+
+#### Scenario: An imported constant path of a controller is served behind the global prefix
+- **WHEN** `paths.ts` exports `const LOGIN_PATH = 'login'`, a class decorated `@Controller('auth')` has a method decorated `@Get(LOGIN_PATH)`, `AppModule` lists it in `controllers`, and `main.ts` has `const app = await NestFactory.create(AppModule)` and `app.setGlobalPrefix('api')`
+- **THEN** the controller's file serves `http GET /api/auth/login` at the line of `@Get`
+- **AND** it serves `http GET /auth/login` nowhere and has no unread site
+
+#### Scenario: An imported constant path on a base class is served by its controllers
+- **WHEN** `UserControllerBase` has no class decorator and a method decorated `@Get(ROUTES.USER)`, where `ROUTES` is imported from a file that declares `export const ROUTES = { USER: 'user' }`, and `@Controller('users') class UserController extends UserControllerBase {}` is in another file
+- **THEN** the file of the base class serves `http GET /users/user` at the line of `@Get`
+- **AND** the file of the controller serves `http GET /users/user` at the line of `@Controller`
+- **AND** the file of the base class has no unread site
+
+#### Scenario: A name that is no constant leaves the site unread
+- **WHEN** `api.ts` imports `LOGIN_URL` from the package `some-package`, declares `let PATH = '/users'`, and calls `fetch(PATH)` and `fetch(LOGIN_URL)`
+- **THEN** the file has an unread site at the line of each call
+- **AND** it calls no `http` key
+
+#### Scenario: A constant is read wherever the parse reads text
+- **WHEN** `main.ts` declares `const P = 'api'` and calls `app.setGlobalPrefix(P)` on an app made by `NestFactory.create(AppModule)`, `users.controller.ts` declares `const BASE = 'users'` and has `@Controller(BASE)` and a method decorated `@Get('x')`, `client.ts` declares `const API = 'https://api.example.com/v1'`, makes `const http = axios.create({ baseURL: API })` and calls `http.get('/x')`, and `server.ts` declares `const MOUNT = '/v2'`, calls `router.get('/y', handler)` on `express.Router()` and `app.use(MOUNT, router)`
+- **THEN** `users.controller.ts` serves `http GET /api/users/x`, `client.ts` calls `http GET /v1/x`, and `server.ts` serves `http GET /v2/y`
+- **AND** none of the four files has an unread site
+
+### Requirement: Route paths that are computed
+A NestJS route decorator whose path argument is not a string literal, a template or a constant SHALL be a blind spot at the line of the decorator, not a route at the controller's prefix; a route decorator with no argument SHALL still serve the prefix alone.
+
+#### Scenario: A route whose path is computed is a blind spot
+- **WHEN** a class decorated `@Controller('/')` has a method decorated `@Get(paths.login())`, where `paths` is an imported object whose `login` is a function, and another method decorated `@Get()`
+- **THEN** the file has an unread site at the line of `@Get(paths.login())` and serves `http GET /` only at the line of `@Get()`
+
+### Requirement: Controller prefixes that are not read
+A class decorator whose prefix is not read, such as `@Controller(PREFIX)` with `PREFIX` imported, SHALL be an unread site at its line, and its class SHALL serve no route, neither its own nor one it inherits; `@Controller()` and `@Controller({ version: '1' })` give no prefix.
+
+#### Scenario: A controller whose prefix is not read serves nothing
+- **WHEN** `auth.controller.ts` has `@Controller(PREFIX)`, with `PREFIX` imported, and methods `@Get('login')` and `@Get(LOGIN)`, with `LOGIN` imported
+- **AND** `user.controller.ts` has `@Controller(prefix()) class UserController extends UserControllerBase`, where `UserControllerBase` in another file has `@Get(':id')`
+- **THEN** each controller file has an unread site at the line of its `@Controller` and serves no http key
+- **AND** the file of the base class serves nothing
