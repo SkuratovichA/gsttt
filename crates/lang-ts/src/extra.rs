@@ -58,7 +58,7 @@ pub(crate) struct ExportedMaker {
     pub(crate) shape: Shape,
 }
 
-/// A call or a decorator that a rule could not read because it names a constant of another file.
+/// A call or a decorator that the parse left to the link: a rule could not read it because it names a constant of another file, or it is a call on a client or a router that another file makes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Deferred {
     /// The rule that read the site, by its place in the packs.

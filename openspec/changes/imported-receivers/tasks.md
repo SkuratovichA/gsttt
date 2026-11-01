@@ -12,11 +12,13 @@
 - [x] 2.4 `crates/lang-ts/src/extra.rs`: `ExportedMaker`, `DeferredTarget::Receiver` and `DeferredTarget::Fallback`
 - [x] 2.5 `crates/lang-ts/src/project.rs`: `READER_VERSION` 5 to 6
 - [x] 2.6 `crates/lang-ts/src/analyze/makers.rs`: a maker declared at the top level of the module wins over one of the same name declared in a function, a block or a class, and only a top-level maker is exported
+- [x] 2.7 `crates/lang-ts/src/analyze.rs`: the guard that a route has a handler after its path, and the test of whether a specifier is a library, are one function each
 
 ## 3. The link
 
 - [x] 3.1 `crates/lang-ts/src/link/deferred.rs`: the export a name reaches is found in one place for constants and receivers, a receiver is read on what the file that makes it made, and the fallback is dropped when the name is such a receiver
 - [x] 3.2 `crates/lang-ts/src/link.rs`: a route registered on a router another file makes is served under the mounts of that router
+- [x] 3.3 `crates/lang-ts/src/link.rs` and `link/deferred.rs`: the step from an import to the export it reaches is one function for `define` and for the names a deferred site is written on, and `apply` reads a call rule through `call_rule`
 
 ## 4. The scenarios
 
@@ -32,4 +34,4 @@
 
 ## 5. The documents
 
-- [x] 5.1 `crates/lang-ts/src/provides.rs`, `README.md` and `docs/architecture.md`: what is read and what is not, and the snapshots that list the blind spots
+- [x] 5.1 `crates/lang-ts/src/provides.rs`, `README.md` and `docs/architecture.md`: what is read and what is not, what a router that no read mount reaches and a name inside a function are read as, and the snapshots that list the blind spots

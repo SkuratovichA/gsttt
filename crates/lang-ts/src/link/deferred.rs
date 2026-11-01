@@ -1,4 +1,4 @@
-//! The sites the parse left to the link because a rule needed the value of a constant that another file declares.
+//! The sites the parse left to the link: those whose rule needed the value of a constant that another file declares, and the calls on a client or a router that another file makes, which are read on what that file makes under the name.
 
 use std::collections::BTreeMap;
 
@@ -12,7 +12,7 @@ use crate::analyze::serves_http;
 use crate::extra::{ClassRoute, Deferred, DeferredTarget, ExportedMaker, Route, RuleRef, TsExtra};
 use crate::shape::Shape;
 
-/// What the deferred sites of every file came to, once the constants they name were read.
+/// What the deferred sites of every file came to, once the constants they name were read and the clients and routers they are called on were found.
 #[derive(Default)]
 pub(super) struct Resolved {
     /// Contracts of the files that declare no host or class for them, which the link finds on its own.
