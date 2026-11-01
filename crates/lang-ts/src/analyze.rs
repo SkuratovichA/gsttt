@@ -44,8 +44,8 @@ use crate::extra::{
     MountTarget, Route, RuleRef, TsExtra,
 };
 use crate::shape::{
-    Shape, chain_of, dotted, dotted_name, field_name, literal_text, member_chain, property_name,
-    property_str, static_chain, template_text, text_with,
+    COMPUTED, Shape, chain_of, dotted, dotted_name, field_name, literal_text, member_chain,
+    property_name, property_str, static_chain, template_text, text_with,
 };
 
 /// Everything one file says on its own.
@@ -110,11 +110,29 @@ struct ClassFrame {
     heritage: Option<String>,
 }
 
-/// A decorator of a class: the name it is applied by, the arguments it is given, and where it starts.
+/// A decorator of a class: the name it is applied by, the arguments it is given, and the source it covers.
 struct ClassDecorator {
     name: String,
     shape: Shape,
-    offset: u32,
+    span: Span,
+}
+
+/// What a class decorator gives as the prefix of the routes of its class.
+enum ClassPrefix {
+    /// The text of the prefix, empty when the decorator carries none.
+    Text(String),
+    /// The decorator holds a prefix that is not text here, so the path of no route of the class is known.
+    Unread,
+}
+
+impl ClassPrefix {
+    /// What `decorator` gives under the class prefix `rule` that names it.
+    fn of(rule: &Prefix, decorator: &ClassDecorator) -> Self {
+        match &rule.key {
+            Some(key) if decorator.shape.unread(key) => Self::Unread,
+            _ => Self::Text(rule.read(&decorator.shape)),
+        }
+    }
 }
 
 /// The packs that switch on reading that no rule describes, by name, found once per file.
@@ -484,7 +502,8 @@ impl<'a> Analyzer<'_, 'a> {
             .arguments
             .first()
             .and_then(Argument::as_expression)
-            .and_then(|prefix| self.constants.literal(prefix))
+            .and_then(|prefix| text_with(prefix, &self.constants))
+            .filter(|prefix| !prefix.contains(COMPUTED))
         else {
             self.unread(call.span, line, UnresolvedReason::NonLiteral);
             return;
@@ -550,23 +569,24 @@ impl<'a> Analyzer<'_, 'a> {
     /// A class that extends a plain name and carries the class decorator of an http serves rule serves the routes of that base class under the prefix of the decorator. The base class may be in another file, so the link phase resolves the name.
     fn inherit(&mut self, name: &str) {
         let packs = self.packs;
-        let Some(frame) = self.classes.last() else {
+        let Some((rule, decorator)) = packs
+            .iter()
+            .flat_map(|pack| &pack.decorators)
+            .filter(|rule| serves_http(&rule.kind, rule.role))
+            .filter_map(|rule| rule.class.as_ref())
+            .find_map(|prefix| Some((prefix, self.class_decorator(prefix)?)))
+        else {
             return;
         };
-        let Some((prefix, offset)) = frame.decorators.iter().find_map(|decorator| {
-            packs
-                .iter()
-                .flat_map(|pack| &pack.decorators)
-                .filter(|rule| serves_http(&rule.kind, rule.role))
-                .filter_map(|rule| rule.class.as_ref())
-                .find(|prefix| prefix.from.matches(&decorator.name))
-                .map(|prefix| (prefix.read(&decorator.shape), decorator.offset))
-        }) else {
+        // A prefix that is not read gives no route to the class, so it gives none to inherit either: `unread_prefixes` has reported it.
+        let ClassPrefix::Text(prefix) = ClassPrefix::of(rule, decorator) else {
             return;
         };
-        let Some(base) = frame
-            .heritage
-            .as_deref()
+        let line = self.line(decorator.span.start);
+        let Some(base) = self
+            .classes
+            .last()
+            .and_then(|frame| frame.heritage.as_deref())
             .filter(|base| !base.contains('.'))
             .map(str::to_owned)
         else {
@@ -577,8 +597,29 @@ impl<'a> Analyzer<'_, 'a> {
             class: name.to_owned(),
             base,
             prefix,
-            line: self.line(offset),
+            line,
         });
+    }
+
+    /// One site this file could not read for each decorator of the innermost class whose route prefix is not text, although many route rules may share the prefix: the class serves no route.
+    fn unread_prefixes(&mut self) {
+        let packs = self.packs;
+        let mut spans: Vec<Span> = packs
+            .iter()
+            .flat_map(|pack| &pack.decorators)
+            .filter_map(|rule| rule.class.as_ref())
+            .filter_map(|prefix| {
+                let decorator = self.class_decorator(prefix)?;
+                matches!(ClassPrefix::of(prefix, decorator), ClassPrefix::Unread)
+                    .then_some(decorator.span)
+            })
+            .collect();
+        spans.sort_by_key(|span| span.start);
+        spans.dedup();
+        for span in spans {
+            let line = self.line(span.start);
+            self.unread(span, line, UnresolvedReason::NonLiteral);
+        }
     }
 
     /// `host.use([prefix], router…)`. A prefix may be an array of paths: the routers are mounted once under each literal element, and an element that is not a literal is a site the file could not read.
@@ -627,7 +668,7 @@ impl<'a> Analyzer<'_, 'a> {
         if targets.is_empty() {
             return;
         }
-        if computed || prefixes.iter().any(|prefix| prefix.contains("${}")) {
+        if computed || prefixes.iter().any(|prefix| prefix.contains(COMPUTED)) {
             self.unread(call.span, line, UnresolvedReason::NonLiteral);
         }
         for prefix in prefixes {
@@ -663,9 +704,18 @@ impl<'a> Analyzer<'_, 'a> {
     fn decorators(&mut self, decorators: &[Decorator<'_>], member: Option<&str>) {
         let packs = self.packs;
         for decorator in decorators {
-            let Some((name, mut site)) = decorator_shape(decorator, &self.constants) else {
+            let Some((name, arguments)) = decorator_call(decorator) else {
                 continue;
             };
+            // Most decorators of a program (`@Injectable`, `@Column`) are named by no rule, and their arguments are not read.
+            let named = packs
+                .iter()
+                .flat_map(|pack| &pack.decorators)
+                .any(|rule| rule.receiver.is_none() && rule.decorator.matches(&name));
+            if !named {
+                continue;
+            }
+            let mut site = Shape::of_call(&name, arguments.iter(), &self.constants);
             site.member = member.map(str::to_owned);
             let line = self.line(decorator.span.start);
             for (pack_index, pack) in packs.iter().enumerate() {
@@ -677,10 +727,11 @@ impl<'a> Analyzer<'_, 'a> {
                     let (prefix, inherited) = match &rule.class {
                         None => (None, false),
                         Some(class) => match self.class_prefix(class) {
-                            Some(prefix) => (Some(prefix), false),
+                            Some(ClassPrefix::Text(prefix)) => (Some(prefix), false),
                             // A class without the decorator may be the base of a controller in another file, which serves its routes.
                             None if serves => (Some(String::new()), true),
-                            None => continue,
+                            // A prefix this file cannot read serves no route, and `unread_prefixes` has reported it; a class without the decorator serves nothing for a rule that does not serve.
+                            Some(ClassPrefix::Unread) | None => continue,
                         },
                     };
                     let outcome = rule.apply(&pack.name, &site, prefix.as_deref(), line, &name);
@@ -733,14 +784,19 @@ impl<'a> Analyzer<'_, 'a> {
         });
     }
 
-    /// The prefix the innermost class gives through the decorator `rule` names; `None` when it carries none.
-    fn class_prefix(&self, rule: &Prefix) -> Option<String> {
-        let frame = self.classes.last()?;
-        let decorator = frame
+    /// The decorator of the innermost class that the class prefix `rule` names; `None` when the class carries none.
+    fn class_decorator(&self, rule: &Prefix) -> Option<&ClassDecorator> {
+        self.classes
+            .last()?
             .decorators
             .iter()
-            .find(|decorator| rule.from.matches(&decorator.name))?;
-        Some(rule.read(&decorator.shape))
+            .find(|decorator| rule.from.matches(&decorator.name))
+    }
+
+    /// The prefix the innermost class gives through the decorator `rule` names; `None` when it carries none.
+    fn class_prefix(&self, rule: &Prefix) -> Option<ClassPrefix> {
+        let decorator = self.class_decorator(rule)?;
+        Some(ClassPrefix::of(rule, decorator))
     }
 
     /// The assign rules for `target = value`; a class field counts when the class extends one the rule names.
@@ -1217,18 +1273,25 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
 
     fn visit_class(&mut self, it: &Class<'a>) {
         let name = it.id.as_ref().map(|id| id.name.as_str().to_owned());
+        let packs = self.packs;
         let frame = ClassFrame {
             name: name.clone(),
+            // Only the decorators that a class prefix names are kept: the others give the class nothing to read.
             decorators: it
                 .decorators
                 .iter()
                 .filter_map(|decorator| {
-                    let (name, shape) = decorator_shape(decorator, &self.constants)?;
-                    Some(ClassDecorator {
-                        name,
-                        shape,
-                        offset: decorator.span.start,
-                    })
+                    let (name, arguments) = decorator_call(decorator)?;
+                    packs
+                        .iter()
+                        .flat_map(|pack| &pack.decorators)
+                        .filter_map(|rule| rule.class.as_ref())
+                        .any(|prefix| prefix.from.matches(&name))
+                        .then(|| ClassDecorator {
+                            shape: Shape::of_call(&name, arguments.iter(), &self.constants),
+                            name,
+                            span: decorator.span,
+                        })
                 })
                 .collect(),
             heritage: it
@@ -1238,6 +1301,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 .map(Cow::into_owned),
         };
         self.classes.push(frame);
+        if !it.decorators.is_empty() {
+            self.unread_prefixes();
+        }
         self.decorators(&it.decorators, name.as_deref());
         if let Some(name) = &name {
             if self.gates.nestjs {
@@ -1544,19 +1610,13 @@ fn serves_http(kind: &ContractKind, role: Role) -> bool {
     *kind == ContractKind::Http && role == Role::Serves
 }
 
-/// The name a decorator is applied by and the arguments it is given.
-fn decorator_shape(decorator: &Decorator<'_>, constants: &Constants) -> Option<(String, Shape)> {
+/// The name a decorator is applied by and the arguments of the call it is written as, none for `@Name`. `None` when it is applied by anything but a name or a chain of names.
+fn decorator_call<'d, 'a>(decorator: &'d Decorator<'a>) -> Option<(String, &'d [Argument<'a>])> {
     match decorator.expression.get_inner_expression() {
         Expression::CallExpression(call) => {
-            let name = dotted(&chain_of(&call.callee)?)?;
-            let shape = Shape::of_call(&name, call.arguments.iter(), constants);
-            Some((name, shape))
+            Some((dotted(&chain_of(&call.callee)?)?, call.arguments.as_slice()))
         }
-        other => {
-            let name = dotted(&chain_of(other)?)?;
-            let shape = Shape::of_call(&name, std::iter::empty::<&Argument<'_>>(), constants);
-            Some((name, shape))
-        }
+        other => Some((dotted(&chain_of(other)?)?, &[])),
     }
 }
 

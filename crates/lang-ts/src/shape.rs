@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::num::NonZeroU32;
 
 use gsttt_core::contract::{path_after_origin, without_query_and_fragment};
-use gsttt_core::rules::Site;
+use gsttt_core::rules::{Site, ValueExpr, ValueSource};
 use oxc_ast::ast::{
     Argument, ChainElement, Expression, FormalParameter, MemberExpression, NewExpression,
     ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::analyze::Constants;
 
 /// How a computed part of a template or a concatenation is written in the text a rule reads.
-const COMPUTED: &str = "${}";
+pub(crate) const COMPUTED: &str = "${}";
 
 /// A call or a decorator as the rules read it: the last segment of what is called, the declaration it sits on, and the text of each argument.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -28,11 +28,13 @@ pub(crate) struct Shape {
     args: Vec<Arg>,
 }
 
-/// One argument: what it reads as, and the properties of an object literal.
+/// One argument: what it reads as, whether it is an object literal, and the properties of that literal.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 struct Arg {
     value: Value,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    object: bool,
     props: Vec<(String, Value)>,
 }
 
@@ -116,7 +118,7 @@ impl Shape {
             member: None,
             args: vec![Arg {
                 value: Value::text(Some(text)),
-                props: Vec::new(),
+                ..Arg::default()
             }],
         }
     }
@@ -128,9 +130,31 @@ impl Shape {
             member: None,
             args: vec![Arg {
                 value: Value::text(value),
-                props: Vec::new(),
+                ..Arg::default()
             }],
         }
+    }
+
+    /// Whether `key` yields no text here although it names a value the site holds: an argument that is neither text nor an object literal, or a property of an object literal that is not text.
+    ///
+    /// `ValueExpr::eval` gives `None` both for that and for a value the site does not carry (`@Controller()`, `@Controller({ version: '1' })`), and only the first is a blind spot.
+    pub(crate) fn unread(&self, key: &ValueExpr) -> bool {
+        key.eval(self).is_none()
+            && key.sources().iter().any(|source| match source {
+                ValueSource::Arg(position) => self
+                    .arg_at(*position)
+                    .is_some_and(|arg| arg.value.text.is_none() && !arg.object),
+                ValueSource::ArgProp(position, prop) => self.arg_at(*position).is_some_and(|arg| {
+                    if arg.object {
+                        arg.props
+                            .iter()
+                            .any(|(name, value)| name == prop && value.text.is_none())
+                    } else {
+                        arg.value.text.is_none()
+                    }
+                }),
+                _ => false,
+            })
     }
 
     fn arg_at(&self, position: NonZeroU32) -> Option<&Arg> {
@@ -175,6 +199,7 @@ impl Site for Shape {
 }
 
 fn arg_of(expr: &Expression<'_>, constants: &Constants) -> Arg {
+    let object = matches!(expr.get_inner_expression(), Expression::ObjectExpression(_));
     let props = match expr.get_inner_expression() {
         Expression::ObjectExpression(object) => object
             .properties
@@ -191,6 +216,7 @@ fn arg_of(expr: &Expression<'_>, constants: &Constants) -> Arg {
     };
     Arg {
         value: Value::of(expr, constants),
+        object,
         props,
     }
 }
@@ -468,8 +494,9 @@ fn push_computed(
 #[cfg(test)]
 mod tests {
     use gsttt_core::contract::normalize_http_path;
+    use gsttt_core::rules::ValueExpr;
     use oxc_allocator::Allocator;
-    use oxc_ast::ast::Statement;
+    use oxc_ast::ast::{Expression, Statement};
     use oxc_parser::Parser;
     use oxc_span::SourceType;
     use proptest::prelude::*;
@@ -673,10 +700,11 @@ mod tests {
             args: vec![
                 Arg {
                     value: named("paths.LOGIN"),
-                    props: Vec::new(),
+                    ..Arg::default()
                 },
                 Arg {
                     value: Value::text(Some("/x".to_owned())),
+                    object: true,
                     props: vec![("path".to_owned(), named("ROOT"))],
                 },
             ],
@@ -697,7 +725,7 @@ mod tests {
             member: None,
             args: vec![Arg {
                 value: Value::text(Some("/x".to_owned())),
-                props: Vec::new(),
+                ..Arg::default()
             }],
         };
         assert!(!shape.has_names());
@@ -714,5 +742,66 @@ mod tests {
         assert_eq!(shape.args[1].value.text.as_deref(), Some("/x"));
         assert_eq!(shape.args[1].props[0].1.text, None);
         assert!(shape.args[1].props[0].1.name.is_some());
+    }
+
+    /// The shape of the decorator `@Controller(<arguments>)` as the parse reads it, with no constant in scope.
+    fn controller(arguments: &str) -> Shape {
+        let allocator = Allocator::default();
+        let code = format!("Controller({arguments});");
+        let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
+        let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.first() else {
+            panic!("no call in {code}");
+        };
+        let Expression::CallExpression(call) = &statement.expression else {
+            panic!("no call in {code}");
+        };
+        Shape::of_call("Controller", call.arguments.iter(), &Constants::default())
+    }
+
+    #[test]
+    fn a_prefix_is_unread_only_when_the_decorator_holds_a_value_that_is_not_text() {
+        let key = "$arg1|$arg1.path".parse::<ValueExpr>().unwrap();
+        for (arguments, unread) in [
+            ("", false),
+            ("{ version: '1' }", false),
+            ("{}", false),
+            ("'auth'", false),
+            ("['a', 'b']", false),
+            ("PREFIX", true),
+            ("prefix()", true),
+            ("ROUTES.AUTH", true),
+            ("{ path: PREFIX }", true),
+        ] {
+            assert_eq!(
+                controller(arguments).unread(&key),
+                unread,
+                "@Controller({arguments})"
+            );
+        }
+    }
+
+    #[test]
+    fn a_literal_fallback_keeps_the_value_it_gives_and_is_never_unread() {
+        let method = "$arg2.method|GET".parse::<ValueExpr>().unwrap();
+        for arguments in [
+            "'/x'",
+            "'/x', {}",
+            "'/x', options",
+            "'/x', { method: verb }",
+        ] {
+            assert!(!controller(arguments).unread(&method), "{arguments}");
+        }
+    }
+
+    #[test]
+    fn the_object_flag_of_an_argument_survives_the_cache() {
+        let shape = controller("{ path: PREFIX }");
+        let cached = serde_json::to_string(&shape).unwrap();
+        assert_eq!(serde_json::from_str::<Shape>(&cached).unwrap(), shape);
+        assert!(
+            !serde_json::to_string(&controller("'a'"))
+                .unwrap()
+                .contains("object")
+        );
     }
 }
