@@ -171,7 +171,7 @@ pub struct AssignRule {
 
 /// Where a key prefix comes from: the decorator or call named by `from`, and the value `key` reads there.
 ///
-/// Every connector reads it the same way. For `class`, the innermost enclosing class must carry a decorator matching `from`, or the rule does not apply. For `receiver`, the site's receiver must be a name bound in the same file to a call matching `from` (`router = APIRouter(prefix="/x")`, `const app = express()`), or the rule does not apply; a receiver imported from another file is left to the connector's `link` step, which sees both files. So `receiver` is also how a rule stays off `cache.get("/x")`.
+/// Every connector reads it the same way. For `class`, the innermost enclosing class must carry a decorator matching `from`, or the rule does not apply. The TypeScript connector keeps the http serves route of a class without that decorator for its link phase, which serves it from the decorated classes that extend that class. For `receiver`, the site's receiver must be a name bound in the same file to a call matching `from` (`router = APIRouter(prefix="/x")`, `const app = express()`), or the rule does not apply; a receiver imported from another file is left to the connector's `link` step, which sees both files. So `receiver` is also how a rule stays off `cache.get("/x")`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Prefix {

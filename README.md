@@ -85,8 +85,9 @@ Every number, with the command that measured it, is in [`bench/results/benchmark
 <summary>TypeScript and JavaScript</summary>
 
 - Routes defined by the file system (Next.js, Remix, SvelteKit).
-- A NestJS global prefix that is not a literal, is set on an app that `NestFactory.create` does not make in the same file, or reaches controllers through modules made by a call (`forRoot`, `register`); `RouterModule` paths and the `exclude` option of `setGlobalPrefix`.
-- NestJS routes inherited from a base of the class a controller extends: only the class it extends directly is read.
+- A NestJS global prefix is applied only when it is a literal set without options on an app that `NestFactory.create(<name>)` makes in the same file; `RouterModule` paths are not read. Any other `setGlobalPrefix` call is reported as a site gsttt could not read.
+- NestJS modules are followed through `@Module` `imports` and `controllers` written as names or `forwardRef(() => Name)`; modules made by a call (`forRoot`, `register`), names read from a namespace (`ns.Module`) and anonymous default exports are not.
+- A NestJS controller serves the routes of the class it extends only when that class is named directly (not `ns.Base`), carries no `@Controller` of its own, and is its direct base.
 - Routers mounted from another package, and routes on an app or router received as a function parameter: the app or router must be made in the file that declares the routes.
 - A mount path array is read for its literal elements only, and routers that mount each other in a cycle are followed until the cycle closes.
 - An `axios.create` client made in another file than the one that calls it.
