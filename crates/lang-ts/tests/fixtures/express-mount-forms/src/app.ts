@@ -5,7 +5,7 @@ import { pair } from './pair';
 import { mixed } from './mixed';
 
 const app = express();
-const dynamic = '/dyn';
+const dynamic = String(Date.now());
 
 app.use('/v1', users);
 app.use('/v2', users);

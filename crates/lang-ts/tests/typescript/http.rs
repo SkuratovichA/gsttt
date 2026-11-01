@@ -298,8 +298,8 @@ fn a_setting_getter_is_no_route() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-#[scenario("typescript", "A route whose path is a constant is a blind spot")]
-fn a_route_whose_path_is_a_constant_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
+#[scenario("typescript", "A route whose path is computed is a blind spot")]
+fn a_route_whose_path_is_computed_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
     let json = run("nestjs-computed-route")?;
     assert_eq!(
         unread(&json, "src/auth.controller.ts"),
@@ -490,6 +490,18 @@ fn a_computed_global_prefix_is_an_unread_site() -> Result<(), Box<dyn Error>> {
         sites("nestjs-computed-prefix")?,
         ["serves http GET /users/{} @5 in src/user/user.controller.ts"]
     );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A global prefix held in a constant is read")]
+fn a_global_prefix_held_in_a_constant_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-constant-prefix")?;
+    assert_eq!(
+        sites("nestjs-constant-prefix")?,
+        ["serves http GET /api/users/x @5 in src/users.controller.ts"]
+    );
+    assert_eq!(unread(&json, "src/main.ts"), NOTHING);
     Ok(())
 }
 

@@ -1,1 +1,1 @@
-export const ROUTES = { USER: 'user' };
+export const route = (name: string) => name;

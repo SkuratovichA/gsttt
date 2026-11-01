@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use gsttt_core::connector::{
-    LinkInput, LinkedFact, Parsed, PrepareFile, Project, Provide, SourceFile, salt_of,
+    LinkInput, Linked, Parsed, PrepareFile, Project, Provide, SourceFile, salt_of,
 };
 use gsttt_core::fact::{ErrorCount, FileFacts, FileTags, Import, ImportKind, Resolution};
 use gsttt_core::path::RepoPath;
@@ -200,10 +200,11 @@ impl Project for RustProject {
         .resolve(from, import)
     }
 
-    fn link(&self, input: &LinkInput<'_, link::Extra>) -> Vec<LinkedFact> {
+    fn link(&self, input: &LinkInput<'_, link::Extra>) -> Linked {
         link::link(input, &|from, spec| {
             self.resolve(from, &Import::new(spec, ImportKind::Static, 1))
         })
+        .into()
     }
 }
 

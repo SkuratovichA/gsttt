@@ -1,1 +1,1 @@
-export const LOGIN_PATH = 'login';
+export const paths = { login: () => 'login' };

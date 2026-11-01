@@ -411,11 +411,11 @@ fn a_config_service_read_names_an_environment_variable() -> Result<(), Box<dyn E
     let json = run("nestjs-config")?;
     let facts = contracts(&json, "src/app.service.ts");
     assert!(
-        facts.contains(&"calls env API_URL @10".to_owned()),
+        facts.contains(&"calls env API_URL @9".to_owned()),
         "{facts:?}"
     );
     assert!(
-        facts.contains(&"calls env DB_URL @11".to_owned()),
+        facts.contains(&"calls env DB_URL @10".to_owned()),
         "{facts:?}"
     );
     insta::assert_json_snapshot!(json);
@@ -427,7 +427,7 @@ fn a_config_service_read_names_an_environment_variable() -> Result<(), Box<dyn E
 fn a_configuration_path_is_no_environment_variable() -> Result<(), Box<dyn Error>> {
     let json = run("nestjs-config")?;
     let facts = contracts(&json, "src/app.service.ts");
-    assert!(facts.iter().all(|fact| !fact.ends_with("@12")), "{facts:?}");
+    assert!(facts.iter().all(|fact| !fact.ends_with("@11")), "{facts:?}");
     Ok(())
 }
 
@@ -437,7 +437,7 @@ fn a_computed_configuration_name_is_a_blind_spot() -> Result<(), Box<dyn Error>>
     let json = run("nestjs-config")?;
     let sites = unread(&json, "src/app.service.ts");
     assert!(
-        sites.iter().any(|site| site.starts_with("@13 ")),
+        sites.iter().any(|site| site.starts_with("@12 ")),
         "{sites:?}"
     );
     Ok(())

@@ -104,7 +104,7 @@ expression: json
       "provides": [
         {
           "blind_spots": [
-            "URLs held in variables are not followed",
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
             "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
           ],
           "kind": "http",

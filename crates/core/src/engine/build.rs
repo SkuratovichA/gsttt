@@ -105,7 +105,14 @@ pub fn build_index(
             }
         }
         let mut unresolved = file.facts.unresolved.clone();
-        for site in &file.facts.unresolved {
+        let parsed = unresolved.len();
+        unresolved.extend(output.unread_of(file.id).cloned());
+        if unresolved.len() > parsed {
+            // The parse and the link may report one site, and it is one site however many say so.
+            unresolved.sort_by(|a, b| (a.line, &a.detail).cmp(&(b.line, &b.detail)));
+            unresolved.dedup_by(|a, b| a.line == b.line && a.detail == b.detail);
+        }
+        for site in &unresolved {
             entry.count_blind(file.id, site);
         }
         for fact in &file.facts.contracts {
