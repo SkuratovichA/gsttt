@@ -250,7 +250,7 @@ pub(crate) struct Options {
     pub(crate) tag: String,
 }
 
-/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. `unread <line> <detail>` is a site that `link` cannot read. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
+/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. `unread <line> <detail>` is a site that `link` cannot read, and `blind <line> <detail>` one that `parse` cannot. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -361,6 +361,8 @@ impl Project for NotesProject {
                 extra.linked.push(linked_line(text));
             } else if let Some(text) = line.strip_prefix("unread ") {
                 extra.unread.push(unread_line(text));
+            } else if let Some(text) = line.strip_prefix("blind ") {
+                facts.unresolved.push(unread_line(text));
             }
         }
         Parsed { facts, extra }
@@ -441,7 +443,7 @@ pub(crate) struct NotesExtra {
     unread: Vec<UnresolvedSite>,
 }
 
-/// The site that `<line> <detail>` spells: `3 fetch(url)`.
+/// The site that `<line> <detail>` spells, one that `parse` or `link` cannot read: `3 fetch(url)`.
 fn unread_line(text: &str) -> UnresolvedSite {
     let (line, detail) = text.split_once(' ').unwrap();
     UnresolvedSite {

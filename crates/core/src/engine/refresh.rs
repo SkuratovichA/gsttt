@@ -1081,6 +1081,66 @@ mod tests {
         assert_eq!(unresolved[0].line, 3);
     }
 
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A site the parse and the link both report is counted once"
+    )]
+    #[test]
+    fn a_site_the_parse_and_the_link_both_report_is_counted_once() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            (
+                "a.txt",
+                "blind 3 fetch(url)\nunread 3 fetch(url)\nunread 2 fetch(other)\n",
+            ),
+            ("b.txt", "blind 5 later\nblind 2 earlier\n"),
+        ]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        let blind = &run.index.coverage.connector("notes").unwrap().blind;
+        assert_eq!(blind.len(), 1);
+        // `a.txt` has two sites and `b.txt` two: the one the parse and the link share is not counted twice.
+        assert_eq!(blind[0].count, 4);
+        let record = |path: &str| {
+            let file = run.index.graph.file_id(path).unwrap();
+            run.index
+                .record(file)
+                .unwrap()
+                .unresolved
+                .iter()
+                .map(|site| (site.line, site.detail.clone()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            record("a.txt"),
+            [(2, "fetch(other)".to_owned()), (3, "fetch(url)".to_owned())]
+        );
+        // A file the link reports nothing for keeps the sites of its parse as they came.
+        assert_eq!(
+            record("b.txt"),
+            [(5, "later".to_owned()), (2, "earlier".to_owned())]
+        );
+    }
+
+    #[test]
+    fn the_unread_site_of_the_link_is_counted_once_again_when_the_parse_is_reused() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "fact 1 serves queue q\nunread 3 fetch(url)\n")]);
+        let setup = Setup::default();
+        let coverage = |run: &Refresh| {
+            let blind = &run.index.coverage.connector("notes").unwrap().blind;
+            assert_eq!(blind.len(), 1);
+            (blind[0].reason.clone(), blind[0].count, blind[0].first.line)
+        };
+        let first = index(&rig, &dir, &setup).unwrap();
+        assert_eq!((first.parsed, first.reused), (1, 0));
+        let second = index(&rig, &dir, &setup).unwrap();
+        assert_eq!((second.parsed, second.reused), (0, 1));
+        assert_eq!(coverage(&second), (UnresolvedReason::NonLiteral, 1, 3));
+        assert_eq!(coverage(&second), coverage(&first));
+        let file = second.index.graph.file_id("a.txt").unwrap();
+        assert_eq!(second.index.record(file).unwrap().unresolved.len(), 1);
+    }
+
     #[gsttt_scenario::scenario("indexing", "A linked fact replaces the own fact it re-keys")]
     #[test]
     fn a_linked_fact_replaces_the_own_fact_it_re_keys() {
