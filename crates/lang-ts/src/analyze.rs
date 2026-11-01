@@ -34,7 +34,7 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::operator::UnaryOperator;
 use oxc_syntax::scope::ScopeFlags;
 
-use self::makers::Maker;
+use self::makers::{Maker, NEST_FACTORY_CREATE};
 use self::roots::Roots;
 use self::symbols::Recorder;
 use crate::extra::{
@@ -71,7 +71,7 @@ pub(crate) fn analyze(
         text,
         index,
         packs,
-        makers: makers::collect(program, packs, gates.nestjs),
+        makers: makers::collect(program, text, packs, gates.nestjs),
         roots: roots::collect(program, packs),
         symbols: Recorder::collect(program, index),
         done: BTreeSet::new(),
@@ -101,8 +101,15 @@ enum Taking<'p, 'a> {
 /// A class being walked: its name, the decorators it carries, and the class it extends.
 struct ClassFrame {
     name: Option<String>,
-    decorators: Vec<(String, Shape)>,
+    decorators: Vec<ClassDecorator>,
     heritage: Option<String>,
+}
+
+/// A decorator of a class: the name it is applied by, the arguments it is given, and where it starts.
+struct ClassDecorator {
+    name: String,
+    shape: Shape,
+    offset: u32,
 }
 
 /// The packs that switch on reading that no rule describes, by name, found once per file.
@@ -368,8 +375,7 @@ impl<'a> Analyzer<'_, 'a> {
                     lazy.get_or_insert_with(|| Shape::of_call(callee, it.arguments.iter()));
                 // `app.get('env')` reads a setting: a route always has a handler after its path.
                 if rule.receiver.is_some()
-                    && rule.kind == ContractKind::Http
-                    && rule.role == Role::Serves
+                    && serves_http(&rule.kind, rule.role)
                     && it.arguments.len() < 2
                 {
                     continue;
@@ -383,9 +389,7 @@ impl<'a> Analyzer<'_, 'a> {
                 };
                 let outcome = rule.apply(&pack.name, site, prefix.as_deref(), line, callee);
                 match (outcome, host) {
-                    (Outcome::Fact(fact), Some(host))
-                        if rule.kind == ContractKind::Http && rule.role == Role::Serves =>
-                    {
+                    (Outcome::Fact(fact), Some(host)) if serves_http(&rule.kind, rule.role) => {
                         self.out.extra.routes.push(Route {
                             host: host.to_owned(),
                             fact,
@@ -422,16 +426,29 @@ impl<'a> Analyzer<'_, 'a> {
         self.trpc_router(it, callee);
     }
 
-    /// `app.setGlobalPrefix('api')` on an app that `NestFactory.create(AppModule)` made in this file puts `AppModule` and every controller it reaches behind the prefix. A prefix that is not a literal is a site the file could not read.
+    /// `app.setGlobalPrefix('api')` on an app that `NestFactory.create(AppModule)` made in this file puts `AppModule` and every controller it reaches behind the prefix. Every other `setGlobalPrefix` call is a site the file could not read: one on an app made elsewhere or from a root module that is not a plain name, and one whose prefix is not a literal. A call that passes options is applied and also a site, because the routes the options exclude are not behind the prefix.
     fn global_prefix(&mut self, app: &str, call: &CallExpression<'_>, line: Line) {
-        let Some(maker) = self
+        let made = self
             .makers
             .get(app)
-            .filter(|maker| maker.callee == "NestFactory.create")
-        else {
+            .filter(|maker| maker.callee == NEST_FACTORY_CREATE)
+            .map(|maker| maker.root.clone());
+        let Some(root) = made else {
+            self.unread(
+                call,
+                line,
+                "NestJS global prefix on an app that NestFactory.create does not make in this file",
+            );
             return;
         };
-        let root = maker.first_name.clone();
+        let Some(root) = root else {
+            self.unread(
+                call,
+                line,
+                "NestJS global prefix on an app whose root module is not a plain name",
+            );
+            return;
+        };
         let Some(prefix) = call
             .arguments
             .first()
@@ -446,14 +463,25 @@ impl<'a> Analyzer<'_, 'a> {
             });
             return;
         };
-        if let Some(root) = root {
-            self.out.extra.mounts.push(Mount {
-                host: app.to_owned(),
-                prefix,
-                targets: vec![MountTarget::Local(root)],
-                line,
-            });
+        self.out.extra.mounts.push(Mount {
+            host: app.to_owned(),
+            prefix,
+            targets: vec![MountTarget::Local(root)],
+            line,
+        });
+        if call.arguments.len() > 1 {
+            self.unread(call, line, "NestJS global prefix options");
         }
+    }
+
+    /// A call of a construct this connector does not read, which the file could not read.
+    fn unread(&mut self, call: &CallExpression<'_>, line: Line, construct: &str) {
+        let detail = self.snippet(call.span);
+        self.out.unresolved.push(UnresolvedSite {
+            line,
+            reason: UnresolvedReason::Unsupported(construct.to_owned()),
+            detail,
+        });
     }
 
     /// `@Module({ imports, controllers })` on the class `module` mounts the modules and controllers it lists as plain names or `forwardRef(() => Name)` on that class, with no path of their own.
@@ -463,8 +491,7 @@ impl<'a> Analyzer<'_, 'a> {
             else {
                 continue;
             };
-            let is_module = chain_of(&call.callee)
-                .and_then(|names| dotted(&names))
+            let is_module = dotted_name(&call.callee)
                 .is_some_and(|name| name == "Module" || name.ends_with(".Module"));
             if !is_module {
                 continue;
@@ -483,36 +510,37 @@ impl<'a> Analyzer<'_, 'a> {
     }
 
     /// A class that extends a plain name and carries the class decorator of an http serves rule serves the routes of that base class under the prefix of the decorator. The base class may be in another file, so the link phase resolves the name.
-    fn inherit(&mut self, class: &Class<'_>, name: &str) {
-        let Some(base) = self
-            .classes
-            .last()
-            .and_then(|frame| frame.heritage.as_deref())
+    fn inherit(&mut self, name: &str) {
+        let packs = self.packs;
+        let Some(frame) = self.classes.last() else {
+            return;
+        };
+        let Some((prefix, offset)) = frame.decorators.iter().find_map(|decorator| {
+            packs
+                .iter()
+                .flat_map(|pack| &pack.decorators)
+                .filter(|rule| serves_http(&rule.kind, rule.role))
+                .filter_map(|rule| rule.class.as_ref())
+                .find(|prefix| prefix.from.matches(&decorator.name))
+                .map(|prefix| (prefix.read(&decorator.shape), decorator.offset))
+        }) else {
+            return;
+        };
+        let Some(base) = frame
+            .heritage
+            .as_deref()
             .filter(|base| !base.contains('.'))
             .map(str::to_owned)
         else {
             return;
         };
-        let packs = self.packs;
-        let controller = class.decorators.iter().find_map(|decorator| {
-            let (decorated, shape) = decorator_shape(decorator)?;
-            packs
-                .iter()
-                .flat_map(|pack| &pack.decorators)
-                .filter(|rule| rule.kind == ContractKind::Http && rule.role == Role::Serves)
-                .filter_map(|rule| rule.class.as_ref())
-                .find(|prefix| prefix.from.matches(&decorated))
-                .map(|prefix| (prefix.read(&shape), decorator.span.start))
+        self.hosts.insert(name.to_owned());
+        self.out.extra.inherits.push(Inherit {
+            class: name.to_owned(),
+            base,
+            prefix,
+            line: self.line(offset),
         });
-        if let Some((prefix, offset)) = controller {
-            self.hosts.insert(name.to_owned());
-            self.out.extra.inherits.push(Inherit {
-                class: name.to_owned(),
-                base,
-                prefix,
-                line: self.line(offset),
-            });
-        }
     }
 
     /// `host.use([prefix], router…)`. A prefix may be an array of paths: the routers are mounted once under each literal element, and an element that is not a literal is a site the file could not read.
@@ -608,7 +636,7 @@ impl<'a> Analyzer<'_, 'a> {
                     if !rule.decorator.matches(&name) || rule.receiver.is_some() {
                         continue;
                     }
-                    let serves = rule.kind == ContractKind::Http && rule.role == Role::Serves;
+                    let serves = serves_http(&rule.kind, rule.role);
                     let (prefix, inherited) = match &rule.class {
                         None => (None, false),
                         Some(class) => match self.class_prefix(class) {
@@ -622,7 +650,8 @@ impl<'a> Analyzer<'_, 'a> {
                     if rule.class.is_some() && serves {
                         self.class_route(&outcome, inherited);
                     }
-                    if !inherited {
+                    // The route of an undecorated class is served by the controllers that extend it, so it is not a fact here; a path it could not read is still a site this file could not read.
+                    if !(inherited && matches!(outcome, Outcome::Fact(_))) {
                         self.record(outcome);
                     }
                 }
@@ -649,11 +678,11 @@ impl<'a> Analyzer<'_, 'a> {
     /// The prefix the innermost class gives through the decorator `rule` names; `None` when it carries none.
     fn class_prefix(&self, rule: &Prefix) -> Option<String> {
         let frame = self.classes.last()?;
-        let (_, shape) = frame
+        let decorator = frame
             .decorators
             .iter()
-            .find(|(name, _)| rule.from.matches(name))?;
-        Some(rule.read(shape))
+            .find(|decorator| rule.from.matches(&decorator.name))?;
+        Some(rule.read(&decorator.shape))
     }
 
     /// The assign rules for `target = value`; a class field counts when the class extends one the rule names.
@@ -1128,7 +1157,18 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         let name = it.id.as_ref().map(|id| id.name.as_str().to_owned());
         let frame = ClassFrame {
             name: name.clone(),
-            decorators: it.decorators.iter().filter_map(decorator_shape).collect(),
+            decorators: it
+                .decorators
+                .iter()
+                .filter_map(|decorator| {
+                    let (name, shape) = decorator_shape(decorator)?;
+                    Some(ClassDecorator {
+                        name,
+                        shape,
+                        offset: decorator.span.start,
+                    })
+                })
+                .collect(),
             heritage: it
                 .heritage
                 .as_ref()
@@ -1141,7 +1181,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             if self.gates.nestjs {
                 self.module_mounts(name, &it.decorators);
             }
-            self.inherit(it, name);
+            if !it.decorators.is_empty() {
+                self.inherit(name);
+            }
         }
         let outer = self.symbols.class_at(it.span.start);
         walk::walk_class(self, it);
@@ -1435,6 +1477,11 @@ fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
     }
 }
 
+/// Whether a rule of this kind and role finds the routes an HTTP server serves.
+fn serves_http(kind: &ContractKind, role: Role) -> bool {
+    *kind == ContractKind::Http && role == Role::Serves
+}
+
 /// The name a decorator is applied by and the arguments it is given.
 fn decorator_shape(decorator: &Decorator<'_>) -> Option<(String, Shape)> {
     match decorator.expression.get_inner_expression() {
@@ -1478,12 +1525,11 @@ fn module_targets(module: &CallExpression<'_>) -> Vec<MountTarget> {
         .collect()
 }
 
-/// A name, or the name `forwardRef(() => Name)` returns.
+/// A name, or the name `forwardRef(() => Name)` returns. A member such as `ns.Module` is not followed.
 fn module_target(expr: &Expression<'_>) -> Option<MountTarget> {
     let named = match expr.get_inner_expression() {
-        Expression::Identifier(name) => name,
         Expression::CallExpression(call) => {
-            let callee = dotted(&chain_of(&call.callee)?)?;
+            let callee = dotted_name(&call.callee)?;
             if callee != "forwardRef" && !callee.ends_with(".forwardRef") {
                 return None;
             }
@@ -1495,15 +1541,15 @@ fn module_target(expr: &Expression<'_>) -> Option<MountTarget> {
             else {
                 return None;
             };
-            let Expression::Identifier(name) = arrow.get_expression()?.get_inner_expression()
-            else {
-                return None;
-            };
-            name
+            arrow.get_expression()?.get_inner_expression()
         }
-        _ => return None,
+        other => other,
     };
-    Some(MountTarget::Local(named.name.as_str().to_owned()))
+    if matches!(named, Expression::Identifier(_)) {
+        mount_target(named)
+    } else {
+        None
+    }
 }
 
 /// What a router is mounted from: a name, or a `require` written in place.
