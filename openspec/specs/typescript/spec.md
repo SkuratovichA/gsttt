@@ -628,7 +628,7 @@ With the `nestjs-config` pack, `get` and `getOrThrow` on a `configService` recei
 - **THEN** the file has an unread site at that line
 
 ### Requirement: NestJS routes inherited from a base class
-With the `nestjs` pack, a route decorator on a method of a class that has no `@Controller` decorator SHALL be served by every class decorated `@Controller('<prefix>')` that extends it by name, under that prefix, at the line of the method in the file of the base class and at the line of the `@Controller` decorator. A base class that no controller extends, and a subclass without the decorator, SHALL serve nothing, and a path on the base class that is neither a literal nor a constant SHALL be an unread site.
+With the `nestjs` pack, a route decorator on a method of a class with no `@Controller` decorator SHALL be served by every class decorated `@Controller('<prefix>')` that extends it by name, under that prefix, at the line of the method in the file of the base class and at the line of `@Controller`. A base class that no controller extends, and a subclass without the decorator, SHALL serve nothing, and a path on the base class that is neither a literal nor a constant SHALL be an unread site.
 
 #### Scenario: A controller serves the routes of the base class it extends
 - **WHEN** `user.controller.base.ts` has a class `UserControllerBase` with no class decorator and methods decorated `@common.Get('/:id')` and `@common.Post()`, and `user.controller.ts` imports it by name and has `@common.Controller('users') class UserController extends UserControllerBase {}`
