@@ -116,12 +116,9 @@ impl Analyzer<'_, '_> {
 
     /// A router entry the link phase cannot follow becomes a site this file could not read.
     fn skipped_entry(&mut self, form: &str, span: oxc_span::Span) {
-        let site = gsttt_core::fact::UnresolvedSite {
-            line: self.line(span.start),
-            reason: gsttt_core::fact::UnresolvedReason::Unsupported(format!("tRPC router {form}")),
-            detail: self.snippet(span),
-        };
-        self.out.unresolved.push(site);
+        let line = self.line(span.start);
+        let reason = gsttt_core::fact::UnresolvedReason::Unsupported(format!("tRPC router {form}"));
+        self.unread(span, line, reason);
     }
 }
 

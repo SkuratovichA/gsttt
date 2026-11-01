@@ -214,12 +214,7 @@ impl<'a> Analyzer<'_, 'a> {
         }
         let line = self.line(span.start);
         let Some(spec) = argument.and_then(literal_text) else {
-            let detail = self.snippet(span);
-            self.out.unresolved.push(UnresolvedSite {
-                line,
-                reason: UnresolvedReason::NonLiteral,
-                detail,
-            });
+            self.unread(span, line, UnresolvedReason::NonLiteral);
             return;
         };
         let namespace = if matches!(kind, ImportKind::Require) {
@@ -435,17 +430,23 @@ impl<'a> Analyzer<'_, 'a> {
             .map(|maker| maker.root.clone());
         let Some(root) = made else {
             self.unread(
-                call,
+                call.span,
                 line,
-                "NestJS global prefix on an app that NestFactory.create does not make in this file",
+                UnresolvedReason::Unsupported(
+                    "NestJS global prefix on an app that NestFactory.create does not make in this file"
+                        .to_owned(),
+                ),
             );
             return;
         };
         let Some(root) = root else {
             self.unread(
-                call,
+                call.span,
                 line,
-                "NestJS global prefix on an app whose root module is not a plain name",
+                UnresolvedReason::Unsupported(
+                    "NestJS global prefix on an app whose root module is not a plain name"
+                        .to_owned(),
+                ),
             );
             return;
         };
@@ -455,12 +456,7 @@ impl<'a> Analyzer<'_, 'a> {
             .and_then(Argument::as_expression)
             .and_then(literal_text)
         else {
-            let detail = self.snippet(call.span);
-            self.out.unresolved.push(UnresolvedSite {
-                line,
-                reason: UnresolvedReason::NonLiteral,
-                detail,
-            });
+            self.unread(call.span, line, UnresolvedReason::NonLiteral);
             return;
         };
         self.out.extra.mounts.push(Mount {
@@ -470,16 +466,20 @@ impl<'a> Analyzer<'_, 'a> {
             line,
         });
         if call.arguments.len() > 1 {
-            self.unread(call, line, "NestJS global prefix options");
+            self.unread(
+                call.span,
+                line,
+                UnresolvedReason::Unsupported("NestJS global prefix options".to_owned()),
+            );
         }
     }
 
-    /// A call of a construct this connector does not read, which the file could not read.
-    fn unread(&mut self, call: &CallExpression<'_>, line: Line, construct: &str) {
-        let detail = self.snippet(call.span);
+    /// A site this file could not read, at `line` and for `reason`, shown by the source that `span` covers.
+    fn unread(&mut self, span: Span, line: Line, reason: UnresolvedReason) {
+        let detail = self.snippet(span);
         self.out.unresolved.push(UnresolvedSite {
             line,
-            reason: UnresolvedReason::Unsupported(construct.to_owned()),
+            reason,
             detail,
         });
     }
@@ -586,12 +586,7 @@ impl<'a> Analyzer<'_, 'a> {
             return;
         }
         if computed || prefixes.iter().any(|prefix| prefix.contains("${}")) {
-            let detail = self.snippet(call.span);
-            self.out.unresolved.push(UnresolvedSite {
-                line,
-                reason: UnresolvedReason::NonLiteral,
-                detail,
-            });
+            self.unread(call.span, line, UnresolvedReason::NonLiteral);
         }
         for prefix in prefixes {
             self.out.extra.mounts.push(Mount {
