@@ -8,6 +8,7 @@
 
 - [x] 2.1 `crates/core/src/rules.rs`: an HTTP call checks the joined target for placeholders alone, with or without a prefix, and skips a non-URL only with no prefix
 - [x] 2.2 `crates/core/src/rules.rs`: unit tests for an empty base, a base of placeholders, a literal base and no base
+- [x] 2.3 `crates/core/src/engine/keys.rs`: `FACT_FORMAT` one up, because cached facts of an unchanged file would keep the old call
 
 ## 3. The scenario
 
