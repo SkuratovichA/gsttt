@@ -96,6 +96,60 @@ fn a_base_url_in_a_template_is_dropped() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario("typescript", "A URL built from a path and a base is called")]
+fn a_url_built_from_a_path_and_a_base_is_called() -> Result<(), Box<dyn Error>> {
+    let json = run("new-url")?;
+    assert_eq!(
+        contracts(&json, "src/client.ts"),
+        [
+            "calls http POST /build-runner/success @7",
+            "calls env API_URL @11",
+            "calls http * /users @11"
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A URL built from a template that starts with a base URL keeps its path"
+)]
+fn a_url_built_from_a_template_that_starts_with_a_base_url_keeps_its_path()
+-> Result<(), Box<dyn Error>> {
+    let json = run("new-url-template")?;
+    assert_eq!(
+        contracts(&json, "src/client.ts"),
+        ["calls http * /users @1", "calls http * /orders @2"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A relative path joins the directory of a literal base")]
+fn a_relative_path_joins_the_directory_of_a_literal_base() -> Result<(), Box<dyn Error>> {
+    let json = run("new-url-joined")?;
+    assert_eq!(
+        contracts(&json, "src/client.ts"),
+        ["calls http * /v1/users/{} @1", "calls http * /users @2"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A URL built from a computed path is an unread site")]
+fn a_url_built_from_a_computed_path_is_an_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("new-url-computed")?;
+    assert_eq!(unread(&json, "src/client.ts"), ["@1 non-literal fetch"]);
+    assert_eq!(contracts(&json, "src/client.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A computed URL is a blind spot")]
 fn a_computed_url_is_a_blind_spot() -> Result<(), Box<dyn Error>> {
     let json = run("computed-url")?;

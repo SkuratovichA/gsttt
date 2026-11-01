@@ -3,10 +3,11 @@
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 
+use gsttt_core::contract::{path_after_origin, without_query_and_fragment};
 use gsttt_core::rules::Site;
 use oxc_ast::ast::{
-    Argument, ChainElement, Expression, FormalParameter, MemberExpression, ObjectPropertyKind,
-    PropertyDefinition, PropertyKey, TemplateLiteral,
+    Argument, ChainElement, Expression, FormalParameter, MemberExpression, NewExpression,
+    ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
 };
 use oxc_syntax::operator::BinaryOperator;
 
@@ -157,7 +158,7 @@ pub(crate) fn this_key(name: &str) -> String {
     format!("this.{name}")
 }
 
-/// The text of a string, a template or a concatenation, with each computed part written `${}`; the first element that has text for an array. `None` for anything else.
+/// The text of a string, a template or a concatenation, with each computed part written `${}`; the first element that has text for an array; the URL that `new URL(path, base)` builds, alone or followed by `.href`, `.pathname` or `.toString()`. `None` for anything else.
 pub(crate) fn text_of(expr: &Expression<'_>) -> Option<String> {
     match expr.get_inner_expression() {
         Expression::StringLiteral(text) => text.value.as_str().map(str::to_owned),
@@ -178,8 +179,81 @@ pub(crate) fn text_of(expr: &Expression<'_>) -> Option<String> {
             .elements
             .iter()
             .find_map(|element| element.as_expression().and_then(text_of)),
+        Expression::NewExpression(new) => url_text(new),
+        Expression::StaticMemberExpression(member)
+            if matches!(member.property.name.as_str(), "href" | "pathname") =>
+        {
+            url_object_text(&member.object)
+        }
+        Expression::CallExpression(call) if call.arguments.is_empty() => {
+            match call.callee.get_inner_expression() {
+                Expression::StaticMemberExpression(member)
+                    if member.property.name.as_str() == "toString" =>
+                {
+                    url_object_text(&member.object)
+                }
+                _ => None,
+            }
+        }
         _ => None,
     }
+}
+
+/// The URL that `expr` builds when it is `new URL(…)`, possibly in parentheses.
+fn url_object_text(expr: &Expression<'_>) -> Option<String> {
+    match expr.get_inner_expression() {
+        Expression::NewExpression(new) => url_text(new),
+        _ => None,
+    }
+}
+
+/// The URL that `new URL(path, base)` builds, with `None` when the callee is not `URL` or `ns.URL`, or the path has no text.
+fn url_text(new: &NewExpression<'_>) -> Option<String> {
+    let callee = dotted_name(&new.callee)?;
+    if callee != "URL" && !callee.ends_with(".URL") {
+        return None;
+    }
+    let mut args = new.arguments.iter().map(|arg| arg.as_expression());
+    let path = text_of(args.next()??)?;
+    let Some(base) = args.next() else {
+        return Some(path);
+    };
+    let base = base.and_then(text_of);
+    url_join(&path, base.as_deref())
+}
+
+/// The text of the URL that `path` makes against `base`, written the way the HTTP rules read it. A path with an origin, or one that starts with a computed part, which is a base URL, is the URL, a path that starts with `/` has a base URL that the normaliser drops, and a relative path joins the directory of `base`, or follows a dropped base URL when there is no text for it. `None` for an empty path without a base and for a path with a `..` segment, which would climb out of the text.
+pub(crate) fn url_join(path: &str, base: Option<&str>) -> Option<String> {
+    if path.is_empty() {
+        return base.map(str::to_owned);
+    }
+    if path_after_origin(path).is_some() || path.starts_with(COMPUTED) {
+        return Some(path.to_owned());
+    }
+    if path.starts_with("//") {
+        return Some(format!("{COMPUTED}:{path}"));
+    }
+    if path.starts_with('/') {
+        return Some(format!("{COMPUTED}{path}"));
+    }
+    if without_query_and_fragment(path)
+        .split('/')
+        .any(|segment| segment == "..")
+    {
+        return None;
+    }
+    let relative = path.strip_prefix("./").unwrap_or(path);
+    let Some(base) = base else {
+        return Some(format!("{COMPUTED}/{relative}"));
+    };
+    let base = without_query_and_fragment(base);
+    let directory = if path_after_origin(base) == Some("") {
+        format!("{base}/")
+    } else {
+        base.rsplit_once('/')
+            .map_or_else(|| format!("{base}/"), |(head, _)| format!("{head}/"))
+    };
+    Some(format!("{directory}{relative}"))
 }
 
 /// The text of a string, or of a template with nothing computed in it.
@@ -304,4 +378,177 @@ fn push_computed(
     }
     names.push(literal_text(expression));
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use gsttt_core::contract::normalize_http_path;
+    use oxc_allocator::Allocator;
+    use oxc_ast::ast::Statement;
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+    use proptest::prelude::*;
+
+    use super::{text_of, url_join};
+
+    #[test]
+    fn a_path_with_an_origin_is_the_url() {
+        assert_eq!(
+            url_join("https://a.test/x", Some("https://b.test/y")).as_deref(),
+            Some("https://a.test/x")
+        );
+        assert_eq!(
+            url_join("https://a.test/x", None).as_deref(),
+            Some("https://a.test/x")
+        );
+    }
+
+    #[test]
+    fn a_path_that_starts_with_two_slashes_drops_the_host() {
+        let url = url_join("//cdn.test/x", Some("https://b.test/")).unwrap();
+        assert_eq!(url, "${}://cdn.test/x");
+        assert_eq!(normalize_http_path(&url), "/x");
+    }
+
+    #[test]
+    fn a_path_that_starts_with_a_slash_has_a_dropped_base() {
+        assert_eq!(
+            url_join("/users", Some("https://a.test/v1/")).as_deref(),
+            Some("${}/users")
+        );
+        assert_eq!(url_join("/users", None).as_deref(), Some("${}/users"));
+    }
+
+    #[test]
+    fn a_path_with_a_parent_segment_is_not_read() {
+        assert_eq!(url_join("../users", Some("https://a.test/v1/")), None);
+        assert_eq!(url_join("a/../b", None), None);
+    }
+
+    #[test]
+    fn a_relative_path_without_a_base_follows_a_dropped_base() {
+        assert_eq!(url_join("users", None).as_deref(), Some("${}/users"));
+        assert_eq!(url_join("./users", None).as_deref(), Some("${}/users"));
+    }
+
+    #[test]
+    fn a_relative_path_joins_the_directory_of_the_base() {
+        assert_eq!(
+            url_join("users", Some("https://a.test/v1/")).as_deref(),
+            Some("https://a.test/v1/users")
+        );
+        assert_eq!(
+            url_join("users", Some("https://a.test/v1")).as_deref(),
+            Some("https://a.test/users")
+        );
+        assert_eq!(
+            url_join("users", Some("https://a.test")).as_deref(),
+            Some("https://a.test/users")
+        );
+        assert_eq!(
+            url_join("users", Some("${}/v1/")).as_deref(),
+            Some("${}/v1/users")
+        );
+        assert_eq!(url_join("users", Some("${}")).as_deref(), Some("${}/users"));
+        assert_eq!(
+            url_join("users", Some("https://a.test/v1/?x=1#top")).as_deref(),
+            Some("https://a.test/v1/users")
+        );
+    }
+
+    #[test]
+    fn a_path_that_starts_with_a_computed_part_is_the_url() {
+        assert_eq!(
+            url_join("${}/users", Some("https://a.test/v1/")).as_deref(),
+            Some("${}/users")
+        );
+        assert_eq!(url_join("${}/users", None).as_deref(), Some("${}/users"));
+    }
+
+    #[test]
+    fn a_url_of_one_argument_is_its_text() {
+        assert_eq!(
+            text_of_expression("new URL(`${baseUrl}/users`)").as_deref(),
+            Some("${}/users")
+        );
+        assert_eq!(
+            text_of_expression("new URL(`${API}/orders`, window.location.origin)").as_deref(),
+            Some("${}/orders")
+        );
+        assert_eq!(
+            text_of_expression("new URL('users')").as_deref(),
+            Some("users")
+        );
+    }
+
+    #[test]
+    fn an_empty_path_is_the_base() {
+        assert_eq!(
+            url_join("", Some("https://a.test/v1")).as_deref(),
+            Some("https://a.test/v1")
+        );
+        assert_eq!(url_join("", None), None);
+    }
+
+    #[test]
+    fn a_query_in_the_path_stays_for_the_normaliser() {
+        let url = url_join("users?x=1", None).unwrap();
+        assert_eq!(url, "${}/users?x=1");
+        assert_eq!(normalize_http_path(&url), "/users");
+    }
+
+    fn text_of_expression(source: &str) -> Option<String> {
+        let allocator = Allocator::default();
+        let code = format!("({source});");
+        let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
+        let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.first() else {
+            panic!("no expression in {source}");
+        };
+        text_of(&statement.expression)
+    }
+
+    #[test]
+    fn the_members_of_a_url_that_are_paths_are_read() {
+        let base = "'https://a.test/v1/'";
+        for form in [
+            format!("new URL('users', {base})"),
+            format!("new URL('users', {base}).href"),
+            format!("new URL('users', {base}).pathname"),
+            format!("new URL('users', {base}).toString()"),
+            format!("(new URL('users', {base})).href"),
+            format!("new url.URL('users', {base})"),
+        ] {
+            assert_eq!(
+                text_of_expression(&form).as_deref(),
+                Some("https://a.test/v1/users"),
+                "{form}"
+            );
+        }
+        assert_eq!(
+            text_of_expression("new URL('/a', 'https://a.test/')").as_deref(),
+            Some("${}/a")
+        );
+    }
+
+    #[test]
+    fn other_members_and_other_constructors_are_not_read() {
+        for form in [
+            "new URL('users', 'https://a.test/').origin",
+            "new URL('users', 'https://a.test/').search",
+            "new URL('users', 'https://a.test/').toString(1)",
+            "new Other('users')",
+            "new URL(path, base)",
+            "new URL()",
+        ] {
+            assert_eq!(text_of_expression(form), None, "{form}");
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn a_relative_path_without_a_base_is_rooted(path in "[a-z0-9]{1,8}(/[a-z0-9]{1,8}){0,3}") {
+            let url = url_join(&path, None).unwrap();
+            prop_assert_eq!(normalize_http_path(&url), normalize_http_path(&format!("/{path}")));
+        }
+    }
 }
