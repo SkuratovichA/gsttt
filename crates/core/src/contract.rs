@@ -289,18 +289,25 @@ pub fn without_query_and_fragment(url: &str) -> &str {
 /// - A scheme and host go: `https://api.example.com/v1/x` becomes `/v1/x`, and so does `${}://${}/v1/x` with a scheme and host written as placeholders. Only text that starts with an origin has a host, see [`path_after_origin`]: in `/a?next=https://b/c` the path `/a` stays, and the host of `http://h?next=/a` ends at the `?`, so that path is `/`.
 /// - The query string and fragment go.
 /// - Parameter segments become `{}`: `:id`, `{id}`, `{id:int}`, `<id>`, `<int:id>`, any segment that holds a `{` followed later by a `}` or a `<` followed later by a `>`, such as the custom methods `{id}:cancel` and `<id>:cancel`, and any segment holding a `${…}` or `{}` placeholder from a template string or a concatenation.
-/// - A placeholder before the first `/` is a base URL and goes: `${API}/bookings` becomes `/bookings`.
+/// - A placeholder before the first `/` is a base URL and goes: `${API}/bookings` becomes `/bookings`. A literal glued after it that cannot be part of a host starts the path: `${API}api/bookings` becomes `/api/bookings`, while `${HOST}:8080/bookings` and `${SUB}.example.com/bookings` become `/bookings`.
 /// - Repeated and trailing slashes go, and so does the whitespace around a segment; the result starts with `/`.
 pub fn normalize_http_path(raw: &str) -> String {
     let raw = raw.trim();
     let without_host = path_after_origin(raw).unwrap_or(raw);
     let path = without_query_and_fragment(without_host);
     let mut segments = path.split('/').map(str::trim).peekable();
-    if !path.starts_with('/') && segments.peek().is_some_and(|first| is_placeholder(first)) {
-        segments.next();
-    }
+    let glued =
+        if !path.starts_with('/') && segments.peek().is_some_and(|first| is_placeholder(first)) {
+            segments.next().and_then(glued_tail)
+        } else {
+            None
+        };
     let mut out = String::with_capacity(path.len() + 1);
-    for segment in segments.filter(|segment| !segment.is_empty()) {
+    for segment in glued
+        .into_iter()
+        .chain(segments)
+        .filter(|segment| !segment.is_empty())
+    {
         out.push('/');
         out.push_str(if is_param(segment) { "{}" } else { segment });
     }
@@ -308,6 +315,14 @@ pub fn normalize_http_path(raw: &str) -> String {
         out.push('/');
     }
     out
+}
+
+/// What follows the base URL placeholder that opens `segment`, as `api` in `${base}api`, when it cannot be part of a host: `${host}:8080`, `${sub}.example.com`, `${user}@host` and `${base}-api` keep nothing.
+fn glued_tail(segment: &str) -> Option<&str> {
+    let (_, tail) = segment.split_once('}')?;
+    let literal = tail.split(['$', '{']).next().unwrap_or(tail);
+    (literal.starts_with(|c: char| c.is_ascii_alphanumeric()) && !literal.contains(['.', ':', '@']))
+        .then_some(tail)
 }
 
 fn is_placeholder(segment: &str) -> bool {
@@ -482,6 +497,24 @@ mod tests {
         assert!(ContractKey::parse("http").is_err());
     }
 
+    #[gsttt_scenario::scenario("indexing", "A literal glued to a base URL starts the path")]
+    #[test]
+    fn a_literal_glued_to_a_base_url_starts_the_path() {
+        assert_eq!(
+            normalize_http_path("${catalogServiceUrl}api/versions/${id}"),
+            "/api/versions/{}"
+        );
+        for spelling in [
+            "${HOST}:8080/bookings",
+            "${SUB}.example.com/bookings",
+            "${base}${period}/bookings",
+        ] {
+            assert_eq!(normalize_http_path(spelling), "/bookings", "{spelling}");
+        }
+        assert_eq!(normalize_http_path("${base}api${version}/x"), "/{}/x");
+        assert_eq!(normalize_http_path("{}api/x"), "/api/x");
+    }
+
     /// Text that reaches the edges of a path, with its separators, brackets, placeholders and a space, and any text at all.
     fn texts() -> impl Strategy<Value = String> {
         prop_oneof!["[a-z/:{}$<>?#.+ -]{0,24}", ".{0,40}"]
@@ -494,6 +527,14 @@ mod tests {
             prop_assert!(path.starts_with('/'), "{path:?}");
             prop_assert!(!path.contains(['?', '#']), "{path:?}");
             prop_assert_eq!(normalize_http_path(&path), path);
+        }
+
+        #[test]
+        fn a_literal_glued_to_a_base_url_is_the_first_segment(segment in "[a-z0-9][a-z0-9_-]{0,8}", rest in "(/[a-z0-9:{}]{0,6}){0,3}") {
+            prop_assert_eq!(
+                normalize_http_path(&format!("${{x}}{segment}{rest}")),
+                normalize_http_path(&format!("/{segment}{rest}"))
+            );
         }
 
         #[test]
