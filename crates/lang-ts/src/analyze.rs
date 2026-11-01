@@ -37,7 +37,9 @@ use oxc_syntax::scope::ScopeFlags;
 use self::makers::Maker;
 use self::roots::Roots;
 use self::symbols::Recorder;
-use crate::extra::{Binding, Export, ExportTarget, Mount, MountTarget, Route, TsExtra};
+use crate::extra::{
+    Binding, ClassRoute, Export, ExportTarget, Inherit, Mount, MountTarget, Route, TsExtra,
+};
 use crate::shape::{
     Shape, chain_of, dotted, dotted_name, field_name, literal_text, member_chain, property_name,
     property_str, static_chain, template_text, text_of,
@@ -64,18 +66,19 @@ pub(crate) fn analyze(
     index: &LineIndex,
     packs: &[Pack],
 ) -> Analysis {
+    let gates = Gates::of(packs);
     let mut analyzer = Analyzer {
         text,
         index,
         packs,
-        makers: makers::collect(program, packs),
+        makers: makers::collect(program, packs, gates.nestjs),
         roots: roots::collect(program, packs),
         symbols: Recorder::collect(program, index),
         done: BTreeSet::new(),
         names: BTreeMap::new(),
         classes: Vec::new(),
-        has_graphql: packs.iter().any(|pack| pack.name == "graphql"),
-        has_trpc: packs.iter().any(|pack| pack.name == "trpc"),
+        gates,
+        hosts: BTreeSet::new(),
         exports_unknown: false,
         module_depth: 0,
         out: Analysis::default(),
@@ -95,10 +98,30 @@ enum Taking<'p, 'a> {
     Member(&'p str),
 }
 
-/// A class being walked: the decorators it carries, and the class it extends.
+/// A class being walked: its name, the decorators it carries, and the class it extends.
 struct ClassFrame {
+    name: Option<String>,
     decorators: Vec<(String, Shape)>,
     heritage: Option<String>,
+}
+
+/// The packs that switch on reading that no rule describes, by name, found once per file.
+#[derive(Clone, Copy)]
+struct Gates {
+    graphql: bool,
+    trpc: bool,
+    nestjs: bool,
+}
+
+impl Gates {
+    fn of(packs: &[Pack]) -> Self {
+        let has = |name: &str| packs.iter().any(|pack| pack.name == name);
+        Self {
+            graphql: has("graphql"),
+            trpc: has("trpc"),
+            nestjs: has("nestjs"),
+        }
+    }
 }
 
 struct Analyzer<'p, 'a> {
@@ -116,8 +139,9 @@ struct Analyzer<'p, 'a> {
     /// The name a call is stored under, `appRouter` for `const appRouter = router({…})`, by the start of the call.
     names: BTreeMap<u32, String>,
     classes: Vec<ClassFrame>,
-    has_graphql: bool,
-    has_trpc: bool,
+    gates: Gates,
+    /// The classes that mounts can attach: `@Module` classes and the classes that serve routes. The variables that serve are added when the walk is over.
+    hosts: BTreeSet<String>,
     /// Whether the file assigns `module.exports` or `exports`, or has `export =`, so that its syntax does not list what it exports.
     exports_unknown: bool,
     /// How many `namespace` and `declare module` bodies the walk is in, whose `export`s are theirs and not the file's.
@@ -390,7 +414,105 @@ impl<'a> Analyzer<'_, 'a> {
         {
             self.mount(host, it, line);
         }
+        if self.gates.nestjs
+            && let Some(host) = callee.strip_suffix(".setGlobalPrefix")
+        {
+            self.global_prefix(host, it, line);
+        }
         self.trpc_router(it, callee);
+    }
+
+    /// `app.setGlobalPrefix('api')` on an app that `NestFactory.create(AppModule)` made in this file puts `AppModule` and every controller it reaches behind the prefix. A prefix that is not a literal is a site the file could not read.
+    fn global_prefix(&mut self, app: &str, call: &CallExpression<'_>, line: Line) {
+        let Some(maker) = self
+            .makers
+            .get(app)
+            .filter(|maker| maker.callee == "NestFactory.create")
+        else {
+            return;
+        };
+        let root = maker.first_name.clone();
+        let Some(prefix) = call
+            .arguments
+            .first()
+            .and_then(Argument::as_expression)
+            .and_then(literal_text)
+        else {
+            let detail = self.snippet(call.span);
+            self.out.unresolved.push(UnresolvedSite {
+                line,
+                reason: UnresolvedReason::NonLiteral,
+                detail,
+            });
+            return;
+        };
+        if let Some(root) = root {
+            self.out.extra.mounts.push(Mount {
+                host: app.to_owned(),
+                prefix,
+                targets: vec![MountTarget::Local(root)],
+                line,
+            });
+        }
+    }
+
+    /// `@Module({ imports, controllers })` on the class `module` mounts the modules and controllers it lists as plain names or `forwardRef(() => Name)` on that class, with no path of their own.
+    fn module_mounts(&mut self, module: &str, decorators: &[Decorator<'_>]) {
+        for decorator in decorators {
+            let Expression::CallExpression(call) = decorator.expression.get_inner_expression()
+            else {
+                continue;
+            };
+            let is_module = chain_of(&call.callee)
+                .and_then(|names| dotted(&names))
+                .is_some_and(|name| name == "Module" || name.ends_with(".Module"));
+            if !is_module {
+                continue;
+            }
+            self.hosts.insert(module.to_owned());
+            let targets = module_targets(call);
+            if !targets.is_empty() {
+                self.out.extra.mounts.push(Mount {
+                    host: module.to_owned(),
+                    prefix: String::new(),
+                    targets,
+                    line: self.line(decorator.span.start),
+                });
+            }
+        }
+    }
+
+    /// A class that extends a plain name and carries the class decorator of an http serves rule serves the routes of that base class under the prefix of the decorator. The base class may be in another file, so the link phase resolves the name.
+    fn inherit(&mut self, class: &Class<'_>, name: &str) {
+        let Some(base) = self
+            .classes
+            .last()
+            .and_then(|frame| frame.heritage.as_deref())
+            .filter(|base| !base.contains('.'))
+            .map(str::to_owned)
+        else {
+            return;
+        };
+        let packs = self.packs;
+        let controller = class.decorators.iter().find_map(|decorator| {
+            let (decorated, shape) = decorator_shape(decorator)?;
+            packs
+                .iter()
+                .flat_map(|pack| &pack.decorators)
+                .filter(|rule| rule.kind == ContractKind::Http && rule.role == Role::Serves)
+                .filter_map(|rule| rule.class.as_ref())
+                .find(|prefix| prefix.from.matches(&decorated))
+                .map(|prefix| (prefix.read(&shape), decorator.span.start))
+        });
+        if let Some((prefix, offset)) = controller {
+            self.hosts.insert(name.to_owned());
+            self.out.extra.inherits.push(Inherit {
+                class: name.to_owned(),
+                base,
+                prefix,
+                line: self.line(offset),
+            });
+        }
     }
 
     /// `host.use([prefix], router…)`. A prefix may be an array of paths: the routers are mounted once under each literal element, and an element that is not a literal is a site the file could not read.
@@ -486,18 +608,42 @@ impl<'a> Analyzer<'_, 'a> {
                     if !rule.decorator.matches(&name) || rule.receiver.is_some() {
                         continue;
                     }
-                    let prefix = match &rule.class {
-                        None => None,
+                    let serves = rule.kind == ContractKind::Http && rule.role == Role::Serves;
+                    let (prefix, inherited) = match &rule.class {
+                        None => (None, false),
                         Some(class) => match self.class_prefix(class) {
-                            Some(prefix) => Some(prefix),
+                            Some(prefix) => (Some(prefix), false),
+                            // A class without the decorator may be the base of a controller in another file, which serves its routes.
+                            None if serves => (Some(String::new()), true),
                             None => continue,
                         },
                     };
                     let outcome = rule.apply(&pack.name, &site, prefix.as_deref(), line, &name);
-                    self.record(outcome);
+                    if rule.class.is_some() && serves {
+                        self.class_route(&outcome, inherited);
+                    }
+                    if !inherited {
+                        self.record(outcome);
+                    }
                 }
             }
         }
+    }
+
+    /// Keeps the route `outcome` names, when it names one, for the link phase, with the class it is declared in.
+    fn class_route(&mut self, outcome: &Outcome, inherited: bool) {
+        let (Outcome::Fact(fact), Some(class)) = (
+            outcome,
+            self.classes.last().and_then(|frame| frame.name.clone()),
+        ) else {
+            return;
+        };
+        self.hosts.insert(class.clone());
+        self.out.extra.class_routes.push(ClassRoute {
+            class,
+            fact: fact.clone(),
+            inherited,
+        });
     }
 
     /// The prefix the innermost class gives through the decorator `rule` names; `None` when it carries none.
@@ -603,14 +749,17 @@ impl<'a> Analyzer<'_, 'a> {
             makers,
             symbols,
             mut out,
+            mut hosts,
             exports_unknown,
             ..
         } = self;
-        out.extra.hosts = makers
-            .into_iter()
-            .filter(|(_, maker)| maker.serves)
-            .map(|(name, _)| name)
-            .collect();
+        hosts.extend(
+            makers
+                .into_iter()
+                .filter(|(_, maker)| maker.serves)
+                .map(|(name, _)| name),
+        );
+        out.extra.hosts = hosts.into_iter().collect();
         out.contracts.sort_by(|a, b| order(a).cmp(&order(b)));
         out.contracts.dedup_by(|a, b| order(a) == order(b));
         out.extra
@@ -619,6 +768,12 @@ impl<'a> Analyzer<'_, 'a> {
         out.extra
             .routes
             .dedup_by(|a, b| a.host == b.host && order(&a.fact) == order(&b.fact));
+        out.extra.class_routes.sort_by(|a, b| {
+            (&a.class, order(&a.fact), a.inherited).cmp(&(&b.class, order(&b.fact), b.inherited))
+        });
+        out.extra.class_routes.dedup_by(|a, b| {
+            a.class == b.class && order(&a.fact) == order(&b.fact) && a.inherited == b.inherited
+        });
         out.unresolved
             .sort_by(|a, b| (a.line, &a.detail).cmp(&(b.line, &b.detail)));
         out.unresolved
@@ -858,7 +1013,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                     .insert(call.span.start, id.name.as_str().to_owned());
             }
             self.load_declared(init, &it.id);
-            if self.has_trpc
+            if self.gates.trpc
                 && let (BindingPattern::BindingIdentifier(id), Expression::CallExpression(call)) =
                     (&it.id, init)
                 && maps::is_procedure(call)
@@ -866,7 +1021,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 self.out.extra.procedures.push(id.name.as_str().to_owned());
             }
             self.destructured_chain(&it.id, init, it.span.start);
-            if self.has_graphql
+            if self.gates.graphql
                 && let BindingPattern::BindingIdentifier(id) = &it.id
                 && is_resolvers_name(id.name.as_str())
                 && let Expression::ObjectExpression(object) = init
@@ -880,7 +1035,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
-        if self.has_graphql
+        if self.gates.graphql
             && !it.computed
             && property_str(&it.key) == Some("resolvers")
             && let Expression::ObjectExpression(object) = it.value.get_inner_expression()
@@ -970,7 +1125,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_class(&mut self, it: &Class<'a>) {
+        let name = it.id.as_ref().map(|id| id.name.as_str().to_owned());
         let frame = ClassFrame {
+            name: name.clone(),
             decorators: it.decorators.iter().filter_map(decorator_shape).collect(),
             heritage: it
                 .heritage
@@ -978,9 +1135,14 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 .and_then(|heritage| dotted_name(&heritage.expression))
                 .map(Cow::into_owned),
         };
-        let name = it.id.as_ref().map(|id| id.name.as_str().to_owned());
         self.classes.push(frame);
         self.decorators(&it.decorators, name.as_deref());
+        if let Some(name) = &name {
+            if self.gates.nestjs {
+                self.module_mounts(name, &it.decorators);
+            }
+            self.inherit(it, name);
+        }
         let outer = self.symbols.class_at(it.span.start);
         walk::walk_class(self, it);
         self.symbols.restore(outer);
@@ -1287,6 +1449,61 @@ fn decorator_shape(decorator: &Decorator<'_>) -> Option<(String, Shape)> {
             Some((name, shape))
         }
     }
+}
+
+/// The modules and controllers that the `controllers` and `imports` arrays of the `@Module` call list, as names: a plain name, or `forwardRef(() => Name)`. A module made by a call (`ConfigModule.forRoot()`), a spread and a member are left out.
+fn module_targets(module: &CallExpression<'_>) -> Vec<MountTarget> {
+    let Some(Expression::ObjectExpression(object)) = module
+        .arguments
+        .first()
+        .and_then(Argument::as_expression)
+        .map(Expression::get_inner_expression)
+    else {
+        return Vec::new();
+    };
+    object
+        .properties
+        .iter()
+        .filter_map(|property| match property {
+            ObjectPropertyKind::ObjectProperty(property) if !property.computed => Some(property),
+            _ => None,
+        })
+        .filter(|property| matches!(property_str(&property.key), Some("controllers" | "imports")))
+        .filter_map(|property| match property.value.get_inner_expression() {
+            Expression::ArrayExpression(array) => Some(array),
+            _ => None,
+        })
+        .flat_map(|array| &array.elements)
+        .filter_map(|element| module_target(element.as_expression()?))
+        .collect()
+}
+
+/// A name, or the name `forwardRef(() => Name)` returns.
+fn module_target(expr: &Expression<'_>) -> Option<MountTarget> {
+    let named = match expr.get_inner_expression() {
+        Expression::Identifier(name) => name,
+        Expression::CallExpression(call) => {
+            let callee = dotted(&chain_of(&call.callee)?)?;
+            if callee != "forwardRef" && !callee.ends_with(".forwardRef") {
+                return None;
+            }
+            let Expression::ArrowFunctionExpression(arrow) = call
+                .arguments
+                .first()?
+                .as_expression()?
+                .get_inner_expression()
+            else {
+                return None;
+            };
+            let Expression::Identifier(name) = arrow.get_expression()?.get_inner_expression()
+            else {
+                return None;
+            };
+            name
+        }
+        _ => return None,
+    };
+    Some(MountTarget::Local(named.name.as_str().to_owned()))
 }
 
 /// What a router is mounted from: a name, or a `require` written in place.

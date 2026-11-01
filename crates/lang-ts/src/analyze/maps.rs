@@ -53,7 +53,7 @@ impl Analyzer<'_, '_> {
 
     /// `router({ get: procedure.query(…), nested: router({…}), other })` declares a tRPC router. The link phase puts the routers together, because a router is mostly composed in another file than it is built in.
     pub(super) fn trpc_router(&mut self, call: &CallExpression<'_>, callee: &str) {
-        if !self.has_trpc || !is_router_callee(callee) {
+        if !self.gates.trpc || !is_router_callee(callee) {
             return;
         }
         let Some(Argument::ObjectExpression(object)) = call.arguments.first() else {

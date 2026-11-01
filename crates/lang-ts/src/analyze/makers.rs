@@ -5,11 +5,12 @@ use std::collections::BTreeMap;
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::rules::Pack;
 use oxc_ast::ast::{
-    AssignmentExpression, AssignmentTarget, BindingPattern, Expression, Program,
+    Argument, AssignmentExpression, AssignmentTarget, BindingPattern, Expression, Program,
     PropertyDefinition, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 
+use super::peel;
 use crate::shape::{Shape, chain_of, dotted, field_name, this_key};
 
 /// A variable made by a call: what was called, the call as a rule reads it, and whether it serves routes.
@@ -17,17 +18,24 @@ use crate::shape::{Shape, chain_of, dotted, field_name, this_key};
 pub(super) struct Maker {
     pub(super) callee: String,
     pub(super) shape: Shape,
+    /// The first argument of the call when it is a plain name: `AppModule` for `NestFactory.create(AppModule)`.
+    pub(super) first_name: Option<String>,
     /// Some pack serves HTTP routes on receivers made by this callee, so the variable is a node mounts connect.
     pub(super) serves: bool,
 }
 
-/// Every variable of `program` that is made by a call, by its name; a field is named `this.field`.
-pub(super) fn collect(program: &Program<'_>, packs: &[Pack]) -> BTreeMap<String, Maker> {
-    // Only a rule that reads a receiver looks at what a variable was made by, so a project without one skips the walk.
-    if !packs
-        .iter()
-        .flat_map(|pack| &pack.calls)
-        .any(|rule| rule.receiver.is_some())
+/// Every variable of `program` that is made by a call, by its name; a field is named `this.field`. `nestjs` is whether that pack is active, whose `setGlobalPrefix` is read from the app that `NestFactory.create` made.
+pub(super) fn collect(
+    program: &Program<'_>,
+    packs: &[Pack],
+    nestjs: bool,
+) -> BTreeMap<String, Maker> {
+    // Only a rule that reads a receiver, or the global prefix of a NestJS app, looks at what a variable was made by, so a project without one skips the walk.
+    if !nestjs
+        && !packs
+            .iter()
+            .flat_map(|pack| &pack.calls)
+            .any(|rule| rule.receiver.is_some())
     {
         return BTreeMap::new();
     }
@@ -46,7 +54,7 @@ struct Collector<'p> {
 
 impl Collector<'_> {
     fn add(&mut self, name: String, init: &Expression<'_>) {
-        let (callee, arguments) = match init.get_inner_expression() {
+        let (callee, arguments) = match peel(init) {
             Expression::CallExpression(call) => (&call.callee, &call.arguments),
             Expression::NewExpression(new) => (&new.callee, &new.arguments),
             _ => return,
@@ -63,11 +71,16 @@ impl Collector<'_> {
                     .is_some_and(|receiver| receiver.from.matches(&callee))
         });
         let shape = Shape::of_call(&callee, arguments.iter());
+        let first_name = match arguments.first().and_then(Argument::as_expression) {
+            Some(Expression::Identifier(first)) => Some(first.name.as_str().to_owned()),
+            _ => None,
+        };
         self.found.insert(
             name,
             Maker {
                 callee,
                 shape,
+                first_name,
                 serves,
             },
         );

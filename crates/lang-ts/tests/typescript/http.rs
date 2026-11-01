@@ -258,3 +258,142 @@ fn a_route_whose_path_is_a_constant_is_a_blind_spot() -> Result<(), Box<dyn Erro
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+#[scenario(
+    "typescript",
+    "A controller serves the routes of the base class it extends"
+)]
+fn a_controller_serves_the_routes_of_the_base_class_it_extends() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("nestjs-inherited-routes")?,
+        [
+            "serves http GET /users/{} @4 in src/user.controller.base.ts",
+            "serves http GET /users/{} @4 in src/user.controller.ts",
+            "serves http POST /users @4 in src/user.controller.ts",
+            "serves http POST /users @7 in src/user.controller.base.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A base class that no controller extends serves nothing")]
+fn a_base_class_that_no_controller_extends_serves_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-unextended-base")?;
+    assert_eq!(contracts(&json, "src/user.controller.base.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/user.controller.base.ts"), NOTHING);
+    assert_eq!(
+        sites("nestjs-unextended-base")?,
+        ["serves http GET /orders @5 in src/orders.controller.ts"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "Two controllers that extend one base class serve its routes under their own prefixes"
+)]
+fn two_controllers_that_extend_one_base_class_serve_its_routes_under_their_own_prefixes()
+-> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("nestjs-two-subclasses")?,
+        [
+            "serves http GET /admin/users/{} @4 in src/admin.controller.ts",
+            "serves http GET /admin/users/{} @4 in src/user.controller.base.ts",
+            "serves http GET /users/{} @4 in src/user.controller.base.ts",
+            "serves http GET /users/{} @4 in src/user.controller.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A global prefix reaches the controllers of imported modules"
+)]
+fn a_global_prefix_reaches_the_controllers_of_imported_modules() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-global-prefix")?;
+    assert_eq!(unread(&json, "src/app.module.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/main.ts"), NOTHING);
+    assert_eq!(
+        sites("nestjs-global-prefix")?,
+        ["serves http GET /api/users/{} @5 in src/user/user.controller.ts"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A global prefix reaches the routes a controller inherits"
+)]
+fn a_global_prefix_reaches_the_routes_a_controller_inherits() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("nestjs-global-prefix-inherited")?,
+        [
+            "serves http GET /api/users/{} @4 in src/user/base/user.controller.base.ts",
+            "serves http GET /api/users/{} @4 in src/user/user.controller.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "Modules that import each other through forwardRef keep the prefix"
+)]
+fn modules_that_import_each_other_through_forward_ref_keep_the_prefix() -> Result<(), Box<dyn Error>>
+{
+    assert_eq!(
+        sites("nestjs-module-cycle")?,
+        [
+            "serves http GET /api/users/{} @5 in src/user/user.controller.ts",
+            "serves http POST /api/login @5 in src/auth/auth.controller.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A controller that no app reaches keeps its path")]
+fn a_controller_that_no_app_reaches_keeps_its_path() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("nestjs-unreached-controller")?,
+        [
+            "serves http GET /api/users/{} @5 in src/user/user.controller.ts",
+            "serves http GET /legacy/{} @5 in src/legacy/legacy.controller.ts",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A computed global prefix is an unread site")]
+fn a_computed_global_prefix_is_an_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-computed-prefix")?;
+    assert_eq!(
+        unread(&json, "src/main.ts"),
+        ["@7 non-literal app.setGlobalPrefix(prefix)"]
+    );
+    assert_eq!(
+        sites("nestjs-computed-prefix")?,
+        ["serves http GET /users/{} @5 in src/user/user.controller.ts"]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_controller_reached_with_and_without_a_prefix_keeps_both_keys() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("nestjs-two-apps")?,
+        [
+            "serves http GET /api/users/{} @5 in src/user/user.controller.ts",
+            "serves http GET /users/{} @5 in src/user/user.controller.ts",
+        ]
+    );
+    Ok(())
+}

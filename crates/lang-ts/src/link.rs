@@ -1,4 +1,4 @@
-//! The link phase: what only the whole repository shows, which is how routers mount under each other across files and how tRPC routers compose.
+//! The link phase: what only the whole repository shows, which is how routers and NestJS modules mount under each other across files, which routes a NestJS controller inherits, and how tRPC routers compose.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -8,7 +8,7 @@ use gsttt_core::contract::{ContractKey, ContractKind, Role};
 use gsttt_core::fact::{ContractFact, Line, Resolution};
 use gsttt_core::rules::contract_key;
 
-use crate::extra::{ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra};
+use crate::extra::{ClassRoute, ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra};
 
 /// How far a name is followed through imports and re-exports before the chain is given up.
 const MAX_DEPTH: usize = 16;
@@ -16,10 +16,23 @@ const MAX_DEPTH: usize = 16;
 /// A name in a file.
 type Node = (FileId, String);
 
-/// The facts that need other files: routes under the prefixes their routers are mounted at, and tRPC procedures under the routers that compose them. Neither keys a parsed fact again, because an Express route is found only here and a procedure is built from nothing, so the engine keeps every fact the parse returned.
+/// The facts that need other files: Express routes under the prefixes their routers are mounted at, NestJS controller routes behind the global prefix of the apps that reach them and the routes they inherit from a base class, and tRPC procedures under the routers that compose them. An Express route and a procedure are found only here, so they key no parsed fact again and the engine keeps every fact the parse returned. A NestJS route a controller declares is parsed as written, and a fact keyed again by [`LinkedFact::rekeyed`] takes its place.
 pub(crate) fn link(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
-    let mut linked = express(input);
+    let parents = parents(input);
+    let mut mounts = Mounts {
+        parents: &parents,
+        memo: BTreeMap::new(),
+        cuts: 0,
+    };
+    let mut linked = express(input, &mut mounts);
+    linked.extend(nestjs(input, &mut mounts));
     linked.extend(trpc(input));
+    if mounts.cuts > 0 {
+        tracing::debug!(
+            cuts = mounts.cuts,
+            "mounts close a cycle and are cut where they close"
+        );
+    }
     linked
 }
 
@@ -90,7 +103,8 @@ fn export_of(
         })
 }
 
-fn express(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
+/// For every node that some mount attaches, the nodes it is attached to and the path of each mount: Express routers, NestJS modules and controllers, and the roots of the apps with a global prefix.
+fn parents(input: &LinkInput<'_, TsExtra>) -> BTreeMap<Node, Vec<(Node, String)>> {
     let mut parents: BTreeMap<Node, Vec<(Node, String)>> = BTreeMap::new();
     for file in input.files() {
         for mount in &file.extra.mounts {
@@ -104,11 +118,10 @@ fn express(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
             }
         }
     }
-    let mut mounts = Mounts {
-        parents: &parents,
-        memo: BTreeMap::new(),
-        cuts: 0,
-    };
+    parents
+}
+
+fn express(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<LinkedFact> {
     let mut linked = Vec::new();
     for file in input.files() {
         for route in &file.extra.routes {
@@ -123,12 +136,74 @@ fn express(input: &LinkInput<'_, TsExtra>) -> Vec<LinkedFact> {
             }
         }
     }
-    if mounts.cuts > 0 {
-        tracing::debug!(
-            cuts = mounts.cuts,
-            "mounts close a cycle and are cut where they close"
-        );
+    linked
+}
+
+/// The routes of NestJS controllers behind the global prefix of the apps that reach them, and the routes a controller inherits from the base class it extends.
+///
+/// A route a controller declares is already parsed, so it is keyed again once for every path the controller is served under, the empty one included when some module reaches it without a prefix; a controller that no app prefixes keeps the fact as parsed. A route of a class without the decorator was not parsed, so it is found here, in the file of the base class and in the file of each controller that extends it.
+fn nestjs(input: &LinkInput<'_, TsExtra>, mounts: &mut Mounts<'_>) -> Vec<LinkedFact> {
+    let mut linked = Vec::new();
+    for file in input.files() {
+        for route in file
+            .extra
+            .class_routes
+            .iter()
+            .filter(|route| !route.inherited)
+        {
+            let prefixes = mounts.prefixes_of(&(file.id, route.class.clone()), &mut Vec::new());
+            if prefixes.iter().all(String::is_empty) {
+                continue;
+            }
+            for prefix in prefixes {
+                let key = rekey(&route.fact, &prefix).key;
+                linked.push(LinkedFact::rekeyed(file.id, &route.fact, key));
+            }
+        }
+        for inherit in &file.extra.inherits {
+            let Some((base_file, base)) = define(input, file.id, &inherit.base, 0) else {
+                continue;
+            };
+            let Some(owner) = input.get(base_file) else {
+                continue;
+            };
+            let inherited: Vec<&ClassRoute> = owner
+                .extra
+                .class_routes
+                .iter()
+                .filter(|route| route.inherited && route.class == base)
+                .collect();
+            let mut prefixes =
+                mounts.prefixes_of(&(file.id, inherit.class.clone()), &mut Vec::new());
+            // A controller that is only reached through a cycle is served where it is written.
+            if prefixes.is_empty() {
+                prefixes.insert(String::new());
+            }
+            for prefix in prefixes {
+                let full = join_path(&prefix, &inherit.prefix);
+                for route in &inherited {
+                    let fact = rekey(&route.fact, &full);
+                    let at_controller = ContractFact {
+                        line: inherit.line,
+                        ..fact.clone()
+                    };
+                    linked.push(LinkedFact::found(base_file, fact));
+                    linked.push(LinkedFact::found(file.id, at_controller));
+                }
+            }
+        }
     }
+    // Two controllers that extend one base class under the same path, and two prefixes that key alike, report a site once.
+    linked.sort_by(|a, b| {
+        (a.file, a.fact.line, &a.fact.key, &a.fact.via, &a.replaces).cmp(&(
+            b.file,
+            b.fact.line,
+            &b.fact.key,
+            &b.fact.via,
+            &b.replaces,
+        ))
+    });
+    linked.dedup();
     linked
 }
 
