@@ -14,7 +14,7 @@ A call that a rule reads on a receiver, written on a name the file imports from 
 - **THEN** `users.ts` serves `http GET /api/users` at the line of `router.get`
 
 #### Scenario: A call on an imported name that no rule makes is silent
-- **WHEN** `cache.ts` has `export const cache = new Map()`, `api.ts` has `export const api = axios.create({ baseURL: '/b' })`, and `a.ts` imports `cache` and `api` and `* as store` from `./cache`, and calls `cache.get('k')`, `store.cache.get('k')` and `api.get('/users')`
+- **WHEN** `cache.ts` has `export const cache = new Map()`, `api.ts` has `export const api = axios.create({ baseURL: '/b' })`, and `a.ts` imports `cache` and `* as store` from `./cache` and `api` from `./api`, and calls `cache.get('k')`, `store.cache.get('k')` and `api.get('/users')`
 - **THEN** `a.ts` calls `http GET /b/users` at the line of `api.get`
 - **AND** `a.ts` has no other contract site and no unread site
 
