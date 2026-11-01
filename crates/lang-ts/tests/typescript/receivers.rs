@@ -130,3 +130,42 @@ fn a_member_of_an_imported_client_is_no_client() -> Result<(), Box<dyn Error>> {
     assert_eq!(unread(&json, "src/users.ts"), NOTHING);
     Ok(())
 }
+
+#[test]
+#[scenario(
+    "typescript",
+    "A client made inside a function does not replace the one a file exports"
+)]
+fn a_client_made_inside_a_function_does_not_replace_the_one_a_file_exports()
+-> Result<(), Box<dyn Error>> {
+    let json = run("receivers-nested-client")?;
+    assert_eq!(
+        linked(&json),
+        ["calls http GET /a/users @3 in src/users.ts"]
+    );
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+fn a_variable_another_call_makes_inside_a_function_leaves_the_export_in_place()
+-> Result<(), Box<dyn Error>> {
+    // The functions come before and after the export, so the export wins whichever the walk meets first.
+    let json = run("receivers-nested-load")?;
+    assert_eq!(
+        linked(&json),
+        ["calls http GET /a/users @3 in src/users.ts"]
+    );
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+fn a_client_made_inside_a_function_is_no_export_of_the_file() -> Result<(), Box<dyn Error>> {
+    let json = run("receivers-nested-only")?;
+    assert_eq!(linked(&json), NOTHING);
+    assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    Ok(())
+}

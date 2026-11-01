@@ -1,5 +1,6 @@
 //! The variables a file makes with a call, found before the walk: `const app = express()`, `this.http = axios.create()`.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use gsttt_core::rules::Pack;
@@ -8,6 +9,7 @@ use oxc_ast::ast::{
     Expression, Program, PropertyDefinition, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
+use oxc_syntax::scope::{ScopeFlags, ScopeId};
 
 use super::constants::exported_locals;
 use super::{Constants, peel, serves_http};
@@ -28,14 +30,16 @@ pub(super) struct Maker {
     pub(super) receiver: bool,
     /// Some pack serves HTTP routes on receivers made by this callee, so the variable is a node mounts connect.
     pub(super) serves: bool,
+    /// The variable is declared at the top level of the module, not inside a function, a block or a class: the only kind a file can export, and the one that wins over a variable of the same name declared deeper.
+    pub(super) top_level: bool,
 }
 
-/// The makers of `makers` that a call rule takes a receiver from and that `exports` name as a local, in the order of their names, for the files that import them.
+/// The makers of `makers` declared at the top level of the file that a call rule takes a receiver from and that `exports` name as a local, in the order of their names, for the files that import them.
 pub(super) fn exported(makers: &BTreeMap<String, Maker>, exports: &[Export]) -> Vec<ExportedMaker> {
     let locals = exported_locals(exports);
     makers
         .iter()
-        .filter(|(name, maker)| maker.receiver && locals.contains(name.as_str()))
+        .filter(|(name, maker)| maker.top_level && maker.receiver && locals.contains(name.as_str()))
         .map(|(name, maker)| ExportedMaker {
             name: name.clone(),
             callee: maker.callee.clone(),
@@ -64,6 +68,7 @@ pub(super) fn collect(
     let mut collector = Collector {
         packs,
         constants,
+        depth: 0,
         found: BTreeMap::new(),
     };
     collector.visit_program(program);
@@ -73,6 +78,8 @@ pub(super) fn collect(
 struct Collector<'p> {
     packs: &'p [Pack],
     constants: &'p Constants,
+    /// How many scopes the walk is in. The program is the first, so the top level of the module is 1.
+    depth: u32,
     found: BTreeMap<String, Maker>,
 }
 
@@ -105,6 +112,11 @@ impl Collector<'_> {
             }
             _ => None,
         };
+        // A variable declared deeper never replaces one the module declares at its top level, whichever comes first in the source.
+        let top_level = self.depth <= 1;
+        if !top_level && self.found.get(&name).is_some_and(|known| known.top_level) {
+            return;
+        }
         self.found.insert(
             name,
             Maker {
@@ -113,12 +125,21 @@ impl Collector<'_> {
                 root,
                 receiver,
                 serves,
+                top_level,
             },
         );
     }
 }
 
 impl<'a> Visit<'a> for Collector<'_> {
+    fn enter_scope(&mut self, _flags: ScopeFlags, _scope_id: &Cell<Option<ScopeId>>) {
+        self.depth = self.depth.saturating_add(1);
+    }
+
+    fn leave_scope(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+    }
+
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let (BindingPattern::BindingIdentifier(id), Some(init)) = (&it.id, &it.init) {
             self.add(id.name.as_str().to_owned(), init);

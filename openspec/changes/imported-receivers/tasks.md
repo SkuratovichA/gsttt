@@ -11,6 +11,7 @@
 - [x] 2.3 `crates/lang-ts/src/analyze.rs`: a call on a name imported from a file of the project is deferred to the link, for the rules with a receiver and as a fallback for the rules without one
 - [x] 2.4 `crates/lang-ts/src/extra.rs`: `ExportedMaker`, `DeferredTarget::Receiver` and `DeferredTarget::Fallback`
 - [x] 2.5 `crates/lang-ts/src/project.rs`: `READER_VERSION` 5 to 6
+- [x] 2.6 `crates/lang-ts/src/analyze/makers.rs`: a maker declared at the top level of the module wins over one of the same name declared in a function, a block or a class, and only a top-level maker is exported
 
 ## 3. The link
 
@@ -25,6 +26,7 @@
 - [x] 4.4 TypeScript: a test and a fixture for "A call on the default import of a file that makes a client is the client's"
 - [x] 4.5 TypeScript: tests for an imported constant URL on an imported client, a base URL imported into the file that makes the client, a router exported by default without a name, a call on a package or on Node, and a member of an imported client
 - [x] 4.6 CLI: a changed `baseURL` of an exported client moves the key of an importer that is reused
+- [x] 4.7 TypeScript: a test and a fixture for "A client made inside a function does not replace the one a file exports", and tests for a variable another call makes inside a function and for a client made inside a function in a file whose export is not a client
 
 ## 5. The documents
 

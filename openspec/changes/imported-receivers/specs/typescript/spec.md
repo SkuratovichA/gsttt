@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Receivers made in another file
-A call that a rule reads on a receiver, written on a name the file imports from a file of the same project, SHALL be read on what that file makes under the name: an `axios.create()` client calls under its `baseURL`, and an Express app or router serves its routes under its own mounts. A call on an imported name that no such call makes SHALL be read as the rules without a receiver read it, or SHALL be silent when none does.
+A call that a rule reads on a receiver, written on a name the file imports from a file of the same project, SHALL be read on what that file makes under the name at its top level: an `axios.create()` client calls under its `baseURL`, and an Express app or router serves its routes under its own mounts. A call on an imported name that no such call makes SHALL be read as the rules without a receiver read it, or SHALL be silent when none does.
 
 #### Scenario: A client made in another file is called
 - **WHEN** `http.ts` has `export const api = axios.create({ baseURL: '/api' })` and `users.ts` imports `api` from `./http` and calls `api.get('/users')`
@@ -21,3 +21,7 @@ A call that a rule reads on a receiver, written on a name the file imports from 
 - **WHEN** `lib/http.ts` has `export default axios.create({ baseURL: '/api' })` and `users.ts` has `import axios from './lib/http'` and `axios.get('/users')`, and `lib/axios.ts` has `import axios from 'axios'; export default axios` and `orders.ts` has `import axios from './lib/axios'` and `axios.get('/orders')`
 - **THEN** `users.ts` calls `http GET /api/users` and not `http GET /users`
 - **AND** `orders.ts` calls `http GET /orders`
+
+#### Scenario: A client made inside a function does not replace the one a file exports
+- **WHEN** `client.ts` has `export const api = axios.create({ baseURL: '/a' })` and a function with `const api = axios.create({ baseURL: '/b' })`, and `users.ts` has `import { api } from './client'` and calls `api.get('/users')`
+- **THEN** `users.ts` calls `http GET /a/users`
