@@ -53,7 +53,7 @@ impl Analyzer<'_, '_> {
 
     /// `router({ get: procedure.query(…), nested: router({…}), other })` declares a tRPC router. The link phase puts the routers together, because a router is mostly composed in another file than it is built in.
     pub(super) fn trpc_router(&mut self, call: &CallExpression<'_>, callee: &str) {
-        if !self.has_trpc || !is_router_callee(callee) {
+        if !self.gates.trpc || !is_router_callee(callee) {
             return;
         }
         let Some(Argument::ObjectExpression(object)) = call.arguments.first() else {
@@ -116,12 +116,9 @@ impl Analyzer<'_, '_> {
 
     /// A router entry the link phase cannot follow becomes a site this file could not read.
     fn skipped_entry(&mut self, form: &str, span: oxc_span::Span) {
-        let site = gsttt_core::fact::UnresolvedSite {
-            line: self.line(span.start),
-            reason: gsttt_core::fact::UnresolvedReason::Unsupported(format!("tRPC router {form}")),
-            detail: self.snippet(span),
-        };
-        self.out.unresolved.push(site);
+        let line = self.line(span.start);
+        let reason = gsttt_core::fact::UnresolvedReason::Unsupported(format!("tRPC router {form}"));
+        self.unread(span, line, reason);
     }
 }
 

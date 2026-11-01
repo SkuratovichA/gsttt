@@ -29,3 +29,15 @@ The shell of the sessions is zsh, where a glob that matches nothing is an error 
 ## main broke after the archive bot merged a change into a spec
 
 Archiving `http-placeholder-urls` made the Python requirement "HTTP requests" 543 characters long, over the 500 that `openspec validate --strict` allows, although the change had validated in its pull request. The archive-specs workflow pushes with the default token, and GitHub starts no workflow for such a push, so nothing checked main and the OpenSpec check failed on the next pull request instead. Fix: after an archive commit lands, run `openspec validate --all --strict` on main and fix a failure in a pull request of its own (#39).
+
+## A cherry-picked line of tasks.md kept its task number
+
+A task line cherry-picked from another change into `tasks.md` kept the number it had there, so the file held the same task ID twice and `openspec validate --strict` failed on the duplicate. Fix: renumber the picked line to the next free number of the file in the same commit, and run `openspec validate <change> --strict` before the commit.
+
+## A branch made from a remote-tracking ref tracked it
+
+`git worktree add -b x <path> origin/main` sets `origin/main` as the upstream of the new branch, so a plain `git push` or `git pull` on a branch that was meant to stay local talked to main. Fix: create such a branch with `--no-track` (`git worktree add --no-track -b x <path> origin/main`), or run `git branch --unset-upstream` on it, and check with `git rev-parse --abbrev-ref x@{upstream}`, which must fail.
+
+## A build in the main checkout handed back the binary of a worktree
+
+With one `CARGO_TARGET_DIR` for the main checkout and a worktree, a crate gets the same unit hash in both trees and cargo decides freshness by file times, so `cargo build --release` in the main checkout after a build in the worktree finished in a quarter of a second and left the worktree's binary in `target/release`. A timing of "main against the branch" then compared the branch with itself. Fix: build the other tree into a target dir of its own (`CARGO_TARGET_DIR=<scratch>/target-main`), and compare `shasum` of the two binaries before measuring.

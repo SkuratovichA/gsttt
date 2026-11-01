@@ -3,7 +3,7 @@
 use gsttt_core::fact::{ContractFact, Line};
 use serde::{Deserialize, Serialize};
 
-/// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and mounts, and the tRPC routers it declares. Empty parts are left out of the cached bytes.
+/// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and mounts, the NestJS modules and controllers it declares, and the tRPC routers it declares. Empty parts are left out of the cached bytes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TsExtra {
@@ -13,15 +13,21 @@ pub struct TsExtra {
     /// What other files can take from this one.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub exports: Vec<Export>,
-    /// Variables made by an Express-like call, the nodes mounts connect.
+    /// The names mounts can attach, sorted and once each: variables made by an Express-like call, `@Module` classes, and classes that serve routes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hosts: Vec<String>,
     /// Routes served by a host, waiting for the prefix its mounts give it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<Route>,
-    /// `host.use(prefix, router)` calls.
+    /// `host.use(prefix, router)` calls, the lists of a `@Module`, and `app.setGlobalPrefix(prefix)` on a NestJS app.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mounts: Vec<Mount>,
+    /// Routes that NestJS classes declare, waiting for the prefixes of the modules that reach the class.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub class_routes: Vec<ClassRoute>,
+    /// Controllers that extend a plain name, which may be a class that declares routes in another file.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inherits: Vec<Inherit>,
     /// tRPC routers declared in this file.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub routers: Vec<TrpcRouter>,
@@ -66,7 +72,31 @@ pub struct Route {
     pub fact: ContractFact,
 }
 
-/// A `host.use(prefix, targets…)` call.
+/// A route that a decorator on a member of a class declares.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClassRoute {
+    /// The class that declares it.
+    pub class: String,
+    /// The route as the rules found it: behind the prefix of the class decorator when the class carries one, and with no prefix when it does not.
+    pub fact: ContractFact,
+    /// The class carries no decorator that gives a prefix, so the route is served only by a controller that extends the class, and the parse records no fact for it.
+    pub inherited: bool,
+}
+
+/// A controller that extends a plain name: `@Controller('users') class UserController extends UserControllerBase`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Inherit {
+    /// The controller.
+    pub class: String,
+    /// The name it extends, as written in the file.
+    pub base: String,
+    /// The prefix its class decorator gives.
+    pub prefix: String,
+    /// The line of the class decorator, where the routes it inherits are served in this file.
+    pub line: Line,
+}
+
+/// A `host.use(prefix, targets…)` call, a `@Module` decorator, or an `app.setGlobalPrefix(prefix)` call.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mount {
     pub host: String,
@@ -79,7 +109,7 @@ pub struct Mount {
 /// What a mount attaches to its host.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MountTarget {
-    /// A name in the file: a router made here or imported.
+    /// A name in the file: a router, module or controller made here or imported.
     Local(String),
     /// `require('./router')` written in place.
     Module(String),
