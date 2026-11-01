@@ -499,12 +499,14 @@ impl Spec<'_> {
         };
         let key = key.trim();
         match self.kind {
-            ContractKind::Http if matches!(self.role, Role::Calls) && prefix.is_none() => {
-                if !looks_like_url(key) {
+            ContractKind::Http if matches!(self.role, Role::Calls) => {
+                if prefix.is_none() && !looks_like_url(key) {
                     return Outcome::Skip;
                 }
-                // A path of placeholders alone, the root included, would meet every served route of its length.
-                if is_computed(key) && !has_literal_segment(&normalize_http_path(key)) {
+                // A target of placeholders alone, the root included, would meet every served route of its length, whatever base the receiver puts before it.
+                let target =
+                    prefix.map_or(Cow::Borrowed(key), |prefix| join(self.kind, prefix, key));
+                if is_computed(&target) && !has_literal_segment(&normalize_http_path(&target)) {
                     return blind(line, what);
                 }
             }
@@ -854,6 +856,23 @@ mod tests {
             assert_eq!(apply(path), Outcome::Skip, "{path}");
         }
         assert!(matches!(apply("${}"), Outcome::Blind(_)));
+    }
+
+    #[test]
+    fn a_call_on_a_receiver_reads_its_target_behind_the_base() {
+        let get = rule(serde_json::json!({
+            "callee": "*.get", "kind": "http", "role": "calls", "key": "$arg1", "method": "$callee",
+        }));
+        let apply = |prefix: Option<&str>, target: &str| {
+            let args = [Some(target)];
+            let site = call("api.get", &args);
+            get.apply("api", &site, prefix, 7, site.callee)
+        };
+        assert!(matches!(apply(Some(""), "${}${}"), Outcome::Blind(_)));
+        assert!(matches!(apply(Some("${}"), "${}"), Outcome::Blind(_)));
+        assert_eq!(key(apply(Some("/api"), "${}")), "http GET /api/{}");
+        assert_eq!(key(apply(Some(""), "users")), "http GET /users");
+        assert_eq!(apply(None, "users"), Outcome::Skip);
     }
 
     #[gsttt_scenario::scenario("contract-formats", "A computed origin alone is a blind spot")]

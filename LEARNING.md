@@ -41,3 +41,7 @@ A task line cherry-picked from another change into `tasks.md` kept the number it
 ## A build in the main checkout handed back the binary of a worktree
 
 With one `CARGO_TARGET_DIR` for the main checkout and a worktree, a crate gets the same unit hash in both trees and cargo decides freshness by file times, so `cargo build --release` in the main checkout after a build in the worktree finished in a quarter of a second and left the worktree's binary in `target/release`. A timing of "main against the branch" then compared the branch with itself. Fix: build the other tree into a target dir of its own (`CARGO_TARGET_DIR=<scratch>/target-main`), and compare `shasum` of the two binaries before measuring.
+
+## A rule fix in core would have left the facts of unchanged files as they were
+
+The key of a file's cached facts covers the fact format, the connector's name and version, the options and the packs, but not the code that applies a rule, so a fix in `crates/core` that reads the same text differently leaves every unchanged file with its old facts. The first commit of such a fix did not bump anything, and review caught it. Fix: a change in `crates/core` that gives a different outcome for the same text bumps `FACT_FORMAT` in `crates/core/src/engine/keys.rs` and names the bump in the proposal; a change confined to one connector bumps that connector's version instead, such as `READER_VERSION` in `crates/lang-ts/src/project.rs`.
