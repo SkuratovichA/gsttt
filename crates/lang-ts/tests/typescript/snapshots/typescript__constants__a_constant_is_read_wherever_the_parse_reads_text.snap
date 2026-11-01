@@ -1,0 +1,429 @@
+---
+source: crates/lang-ts/tests/typescript/constants.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "AppModule"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Module"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Module"
+          ],
+          "spec": "@nestjs/common",
+          "to": {
+            "external": "@nestjs/common"
+          }
+        },
+        {
+          "exported": [
+            "UsersController"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "UsersController"
+          ],
+          "spec": "./users.controller",
+          "to": {
+            "file": "src/users.controller.ts"
+          }
+        }
+      ],
+      "path": "src/app.module.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 4,
+            "name": "AppModule",
+            "uses": [
+              "Module",
+              "UsersController"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Module",
+          "UsersController"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "http GET /v1/x",
+          "line": 6,
+          "role": "calls",
+          "via": "axios"
+        }
+      ],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "axios"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "axios",
+          "to": {
+            "external": "axios"
+          }
+        }
+      ],
+      "path": "src/client.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "API",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "http",
+            "uses": [
+              "API",
+              "axios"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "API",
+          "axios",
+          "http"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "NestFactory"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "NestFactory"
+          ],
+          "spec": "@nestjs/core",
+          "to": {
+            "external": "@nestjs/core"
+          }
+        },
+        {
+          "exported": [
+            "AppModule"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "AppModule"
+          ],
+          "spec": "./app.module",
+          "to": {
+            "file": "src/app.module.ts"
+          }
+        }
+      ],
+      "path": "src/main.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "P",
+            "uses": []
+          },
+          {
+            "end": 10,
+            "line": 6,
+            "name": "bootstrap",
+            "uses": [
+              "AppModule",
+              "NestFactory",
+              "P"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "bootstrap"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "express"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "express",
+          "to": {
+            "external": "express"
+          }
+        }
+      ],
+      "path": "src/server.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "MOUNT",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "app",
+            "uses": [
+              "express"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "router",
+            "uses": [
+              "express"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "MOUNT",
+          "app",
+          "express",
+          "router"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "http GET /users/x",
+          "line": 7,
+          "role": "serves",
+          "via": "nestjs"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "UsersController"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Controller",
+            "Get"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Controller",
+            "Get"
+          ],
+          "spec": "@nestjs/common",
+          "to": {
+            "external": "@nestjs/common"
+          }
+        }
+      ],
+      "path": "src/users.controller.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "BASE",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 5,
+            "name": "UsersController",
+            "uses": [
+              "BASE",
+              "Controller"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 7,
+            "name": "UsersController.find",
+            "uses": [
+              "Get"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "BASE",
+          "Controller",
+          "Get"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [
+    {
+      "file": "src/server.ts",
+      "key": "http GET /v2/y",
+      "line": 8,
+      "role": "serves",
+      "via": "express"
+    },
+    {
+      "file": "src/users.controller.ts",
+      "key": "http GET /api/users/x",
+      "line": 7,
+      "replaces": "http GET /users/x",
+      "role": "serves",
+      "via": "nestjs"
+    }
+  ],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "file-system routes (Next.js, Remix, SvelteKit) are not read",
+            "routers mounted from another package, and constants imported from another package, are not followed: the link reads one project at a time",
+            "a route path is read from a string, a template or a concatenation, and from a constant (a const, an enum member, a static property or a property of a constant object) declared in the same file or in a file of the same project that it is imported from; a path held in a function-local value, or in a key that an object spread follows, is not read",
+            "a static property or an object property that the program assigns again is read with the value it declares",
+            "a NestJS global prefix is applied only when it is a string or a constant of the same file set on an app that NestFactory.create(<name>) makes in the same file, and the exclude option is not read, so excluded routes get the prefix too; RouterModule paths are not read",
+            "NestJS modules are followed through @Module imports and controllers written as names or forwardRef(() => Name); modules made by a call (forRoot, register), names read from a namespace (ns.Module) and anonymous default exports are not",
+            "a NestJS controller serves the routes of the class it extends only when that class is named directly (not ns.Base), carries no @Controller of its own, and is its direct base",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the same file",
+            "a mount path is read from a string or a constant of the same file, not from an imported constant, and a mount path array with an element that is not text is read for its other elements only",
+            "a NestJS controller whose @Controller prefix is not text (an imported constant, a call) serves no route and is reported as a site the file could not read: its own routes and those of the class it extends are not served",
+            "routers that mount each other in a cycle are followed until the cycle closes"
+          ],
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "express",
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
+            "clients created in another file are not recognised: an axios.create receiver must be made in the file that calls it"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "axios",
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "resolvers built at run time are not read",
+            "schema-first resolvers outside a resolvers map are not read"
+          ],
+          "kind": "graphql",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

@@ -494,6 +494,18 @@ fn a_computed_global_prefix_is_an_unread_site() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario("typescript", "A global prefix held in a constant is read")]
+fn a_global_prefix_held_in_a_constant_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-constant-prefix")?;
+    assert_eq!(
+        sites("nestjs-constant-prefix")?,
+        ["serves http GET /api/users/x @5 in src/users.controller.ts"]
+    );
+    assert_eq!(unread(&json, "src/main.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
 #[scenario(
     "typescript",
     "A controller that a prefixed app and an unprefixed module both reach is served under both"

@@ -33,6 +33,7 @@ fn every_form_of_constant_is_read_and_nothing_else() -> Result<(), Box<dyn Error
             "calls http * /j @24",
             "calls http * /l @26",
             "calls http * /a/b/{} @28",
+            "calls http * /last @31",
         ]
     );
     assert_eq!(
@@ -42,6 +43,7 @@ fn every_form_of_constant_is_read_and_nothing_else() -> Result<(), Box<dyn Error
             "@22 non-literal fetch",
             "@25 non-literal fetch",
             "@27 non-literal fetch",
+            "@30 non-literal fetch",
         ]
     );
     Ok(())
@@ -170,6 +172,57 @@ fn an_imported_constant_path_on_a_base_class_is_served_by_its_controllers()
         ]
     );
     assert_eq!(unread(&json, "src/user.controller.base.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A constant is read wherever the parse reads text")]
+fn a_constant_is_read_wherever_the_parse_reads_text() -> Result<(), Box<dyn Error>> {
+    let json = run("constants-uses")?;
+    assert_eq!(
+        sites("constants-uses")?,
+        [
+            "calls http GET /v1/x @6 in src/client.ts",
+            "serves http GET /api/users/x @7 in src/users.controller.ts",
+            "serves http GET /v2/y @8 in src/server.ts",
+        ]
+    );
+    for path in [
+        "src/main.ts",
+        "src/users.controller.ts",
+        "src/client.ts",
+        "src/server.ts",
+    ] {
+        assert_eq!(unread(&json, path), NOTHING, "{path}");
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A controller whose prefix is not read serves nothing")]
+fn a_controller_whose_prefix_is_not_read_serves_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("constants-unread-prefix")?;
+    assert_eq!(
+        unread(&json, "src/auth.controller.ts"),
+        ["@4 non-literal @Controller(PREFIX)"]
+    );
+    assert_eq!(
+        unread(&json, "src/user.controller.ts"),
+        ["@5 non-literal @Controller(prefix())"]
+    );
+    assert_eq!(contracts(&json, "src/auth.controller.ts"), NOTHING);
+    assert_eq!(contracts(&json, "src/user.controller.ts"), NOTHING);
+    assert_eq!(linked(&json), NOTHING);
+    // The base class serves no route of its own, and none through the controller that extends it.
+    assert_eq!(contracts(&json, "src/user.controller.base.ts"), NOTHING);
+    // A controller that gives no prefix is not one that gives an unread prefix.
+    assert_eq!(unread(&json, "src/health.controller.ts"), NOTHING);
+    assert_eq!(
+        sites("constants-unread-prefix")?,
+        ["serves http GET /health @5 in src/health.controller.ts"]
+    );
+    insta::assert_json_snapshot!(json);
     Ok(())
 }
 

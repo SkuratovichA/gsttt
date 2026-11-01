@@ -10,7 +10,7 @@ export class Cls {
   static G = '/g';
   H = '/h';
 }
-const OBJ = { i: '/i', nested: { j: '/j' }, ['k']: '/k', 'l-x': '/l', ...Cls };
+const OBJ = { ...Cls, i: '/i', nested: { j: '/j' }, ['k']: '/k', 'l-x': '/l' };
 let later = '/z';
 
 fetch(B);
@@ -26,3 +26,6 @@ fetch(OBJ.k);
 fetch(OBJ['l-x']);
 fetch(later);
 fetch(`${B}/${later}`);
+const MIXED = { first: '/first', ...Cls, last: '/last' };
+fetch(MIXED.first);
+fetch(MIXED.last);
