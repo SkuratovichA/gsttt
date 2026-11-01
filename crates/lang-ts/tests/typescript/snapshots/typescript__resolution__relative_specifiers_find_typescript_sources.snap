@@ -164,7 +164,7 @@ expression: json
         {
           "blind_spots": [
             "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
-            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not"
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a client the file imports or makes is read as that one"
           ],
           "kind": "http",
           "role": "calls",
