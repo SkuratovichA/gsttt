@@ -65,8 +65,10 @@ impl Default for Setup {
 #[serde(deny_unknown_fields)]
 pub struct GraphqlEndpoint {
     /// Globs of the files that send operations to the endpoint. At least one.
+    #[schemars(length(min = 1))]
     pub clients: Vec<String>,
     /// Globs of the files that resolve the operations of the endpoint. At least one.
+    #[schemars(length(min = 1))]
     pub servers: Vec<String>,
 }
 

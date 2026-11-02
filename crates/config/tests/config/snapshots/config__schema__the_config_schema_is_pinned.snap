@@ -230,14 +230,16 @@ expression: config_schema(&registry.connectors())
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "minItems": 1
         },
         "servers": {
           "description": "Globs of the files that resolve the operations of the endpoint. At least one.",
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "minItems": 1
         }
       },
       "additionalProperties": false,
