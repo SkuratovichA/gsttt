@@ -372,6 +372,7 @@ mod tests {
 
     use std::collections::BTreeMap;
 
+    use gsttt_core::fact::FileTags;
     use gsttt_core::text::LineIndex;
 
     use super::Constants;
@@ -546,12 +547,18 @@ mod tests {
     fn walk_binds(code: &str) -> BTreeMap<String, String> {
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
-        analyze(&parsed.program, code, &LineIndex::new(code), &[])
-            .extra
-            .bindings
-            .into_iter()
-            .map(|binding| (binding.local, binding.spec))
-            .collect()
+        analyze(
+            &parsed.program,
+            code,
+            &LineIndex::new(code),
+            &[],
+            FileTags::NONE,
+        )
+        .extra
+        .bindings
+        .into_iter()
+        .map(|binding| (binding.local, binding.spec))
+        .collect()
     }
 
     /// `Constants::collect` binds the names that the walk of the file does, by its own reading of the same forms, so the order of the two never changes what a name stands for.

@@ -14,7 +14,7 @@
 
 - [x] 3.1 `crates/lang-ts/src/analyze.rs`: `waits_for_link` takes the key and the method of the rule, and a call on a client or a router made here with a name in its prefix waits as `DeferredTarget::Made`
 - [x] 3.2 `crates/lang-ts/src/analyze/makers.rs` and `extra.rs`: `LinkMaker` replaces `ExportedMaker` and is kept for the makers a deferred call waits on
-- [x] 3.3 `crates/lang-ts/src/project.rs`: `READER_VERSION` 8 to 10, 9 is taken by another change
+- [x] 3.3 `crates/lang-ts/src/project.rs`: `READER_VERSION` 10 to 11
 
 ## 4. The link
 
@@ -41,3 +41,15 @@
 - [x] 6.7 `crates/lang-ts/src/link/deferred.rs`: each constant is read once, with tests of a diamond of 24 files and of a cycle read from every end, and the stack of a read is `Inside`
 - [x] 6.8 The scenario "An imported name the link cannot read keeps its reading" has a constant that names an import which reads as no text, and "A method that is an imported name defers nothing" is proven by the unit test of the deferred list
 - [x] 6.9 The requirement `Constants` is modified with its scenarios, and the new behaviours have requirements and scenarios of their own
+
+## 7. Fix round
+
+- [x] 7.1 `crates/lang-ts/src/link/deferred.rs`: `Reader::constant` reads a chain with a stack of frames of its own and no recursion, marking as inside only the constants on the path, with unit tests of a diamond, of a cycle read from either end, of a name that is no constant, and of a chain of 5000 constants on a thread of 256 KiB
+- [x] 7.2 `crates/lang-ts/src/link/deferred.rs`: the text the reader keeps for the constants it has read is at most `MAX_KEPT` (32 MiB) in all, with a unit test of constants that each read as a text of the longest a constant may be
+- [x] 7.3 `crates/lang-ts/src/parts.rs`: `Part::cat` refuses a part nested deeper than `MAX_DEPTH` (32) levels, so the data of a file stays within what `serde_json` reads back, with a test that writes a part at the limit in the deepest place of a `TsExtra` and reads it back
+- [x] 7.4 `crates/lang-ts/src/parts.rs` and `shape.rs`: `Part::cat`, `Part::read` and `template_part` refuse more than `MAX_COMPOSED` (one mebibyte) of text, counting what a name adds and no literal of a template that adds none
+- [x] 7.5 `crates/lang-ts/src/shape.rs`: `part_of` reads the left side of a sum in a loop and keeps a long sum in one level, with a test of a sum of 5000 operands on a thread of 256 KiB in both modes
+- [x] 7.6 TypeScript: a test for "A chain of constants across two files is read to its end", with a tree of 4000 constants made in the test
+- [x] 7.7 TypeScript: a test for "A constant built deeper than the limit is no constant and the project still links"
+- [x] 7.8 TypeScript: a test for "A constant that doubles past the limit is no constant and the index completes"
+- [x] 7.9 The proposal states the limits, and the requirements for the three scenarios are in the delta of `typescript`

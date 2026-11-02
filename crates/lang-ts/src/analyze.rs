@@ -2273,7 +2273,13 @@ prefix = "$arg1"
         let analyse = |code: &str| {
             let allocator = Allocator::default();
             let parsed = Parser::new(&allocator, code, oxc_span::SourceType::ts()).parse();
-            analyze(&parsed.program, code, &LineIndex::new(code), &packs)
+            analyze(
+                &parsed.program,
+                code,
+                &LineIndex::new(code),
+                &packs,
+                FileTags::NONE,
+            )
         };
         let analysis = analyse(
             "import { BASE } from './config';\nclass C {\n  @Route(BASE)\n  list() {}\n}\n",
@@ -2312,7 +2318,13 @@ receiver = { from = "makeApp", key = "$arg1" }
         let code = "import { BASE } from './config';\nconst app = makeApp(BASE);\napp.get('/users', handler);\n";
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, oxc_span::SourceType::ts()).parse();
-        let analysis = analyze(&parsed.program, code, &LineIndex::new(code), &packs);
+        let analysis = analyze(
+            &parsed.program,
+            code,
+            &LineIndex::new(code),
+            &packs,
+            FileTags::NONE,
+        );
         // A route served behind a prefix that is not text is a blind spot, unless the link can still read the prefix.
         assert_eq!(analysis.unresolved, []);
         assert!(matches!(

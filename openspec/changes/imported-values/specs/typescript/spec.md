@@ -67,6 +67,30 @@ A call or a decorator SHALL wait for the link when a value its rule reads its ke
 - **THEN** `routes.ts` serves `http GET /api/v1/list` at the line of the decorator
 - **AND** it has no unread site
 
+### Requirement: A chain of constants is read to its end
+A chain of constants that name one another across files SHALL be read to its end whatever its length, within the limits on the text it puts together. The read keeps its own stack of the constants it is inside of, so the length of a chain does not overflow the stack of a worker of the link, and the link finishes.
+
+#### Scenario: A chain of constants across two files is read to its end
+- **WHEN** `a.ts` and `b.ts` export 4000 constants between them, each a template that names the next one with a suffix, the last of which is text, and `use.ts` calls `fetch` with the first
+- **THEN** `use.ts` calls `http * /end` followed by one suffix for each constant before the last, at the line of the call
+- **AND** it has no unread site and the run has no problem line
+
+### Requirement: A constant built deeper than the limit is no constant
+A constant built from more than 32 nested levels of constants SHALL be no constant: a site that reads it is an unread site. The rest of the project SHALL link as it would without it, because the data the parse keeps for the link stays within the depth a file of the cache can be read back at.
+
+#### Scenario: A constant built deeper than the limit is no constant and the project still links
+- **WHEN** `deep.ts` exports 60 templates that each name the one before and ends with a call on the 32nd and a call on the last, and `other.ts` calls a route elsewhere in the project
+- **THEN** `deep.ts` calls the route of the 32nd, and has an unread site at the line of the call on the last
+- **AND** `other.ts` calls its route and the run has no problem line
+
+### Requirement: A constant that doubles past the limit is no constant
+A constant whose text, put together from the constants it names, is longer than one mebibyte SHALL be no constant: a site that reads it is an unread site, and the index SHALL complete in the time and the memory of a small project.
+
+#### Scenario: A constant that doubles past the limit is no constant and the index completes
+- **WHEN** `big.ts` exports 30 templates that each name the one before twice, from a constant that is a short text, and `use.ts` calls the 2nd and the 30th
+- **THEN** `use.ts` calls the route of the 2nd, and has an unread site at the line of the call on the 30th
+- **AND** the index completes and the run has no problem line
+
 ## MODIFIED Requirements
 
 ### Requirement: Constants

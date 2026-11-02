@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::shape::COMPUTED;
 
+/// The most levels of [`Part::Cat`] a part nests. The link data of a file is read back by `serde_json`, which refuses a document nested more than 127 levels deep, and a `Cat` takes three of them (`{"Cat":["All",[…]]}`), so a part that nests this many levels in the deepest place one is kept, a `Shape` under a deferred site, reaches level 106 and reads back whole. A part that nests deeper would make the whole file's link data unreadable and lose every contract of its project, so it is no part: a use reads it as `${}` and a constant is no constant. The test `a_part_at_the_depth_limit_is_read_back` in `shape.rs` pins the number against what `serde_json` allows.
+pub(crate) const MAX_DEPTH: usize = 32;
+
+/// The most a part may weigh and the most text a read of one may give. A constant that names another twice doubles what it is built from at every step, in the part and in the text it reads as, so that thirty such constants would ask for gigabytes; this is what stays of them. It is 1 MiB, far more than a path or a base URL, and the weight of a part is the bytes of its texts and names plus one for each piece.
+pub(crate) const MAX_COMPOSED: usize = 1 << 20;
+
 /// A piece of text, or pieces written one after the other.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Part {
@@ -56,16 +62,55 @@ impl Mode {
 }
 
 impl Part {
-    /// The pieces `parts` written one after the other. A whole with no name in it needs no link to be read, so it is the text it reads as, or `None` when it reads as none.
+    /// The pieces `parts` written one after the other. A whole with no name in it needs no link to be read, so it is the text it reads as, or `None` when it reads as none. `None` too for a whole that nests deeper than [`MAX_DEPTH`] or weighs more than [`MAX_COMPOSED`]: a use reads that as `${}` and a constant is no constant.
     pub(crate) fn cat(reads: Reads, mut parts: Vec<Part>) -> Option<Part> {
         if reads == Reads::All && parts.len() == 1 {
             return parts.pop();
         }
         let cat = Part::Cat(reads, parts);
         if cat.has_names() {
-            return Some(cat);
+            let mut budget = MAX_COMPOSED;
+            return cat.fits(&mut budget).then_some(cat);
         }
         cat.lax().map(Part::Text)
+    }
+
+    /// Whether the part nests at most [`MAX_DEPTH`] levels of `Cat` and weighs at most `budget`; its weight is taken off `budget`, so that several parts can share one. One walk gives both and stops at the first piece that passes either limit, so a part far past them costs no more to refuse than one at them.
+    pub(crate) fn fits(&self, budget: &mut usize) -> bool {
+        self.fits_below(0, budget)
+    }
+
+    fn fits_below(&self, levels: usize, budget: &mut usize) -> bool {
+        let own = match self {
+            Self::Text(text) => text.len(),
+            Self::Name(name) => name.len(),
+            Self::Computed | Self::Cat(..) => 0,
+        };
+        let Some(left) = budget.checked_sub(own + 1) else {
+            return false;
+        };
+        *budget = left;
+        match self {
+            Self::Cat(_, parts) => {
+                levels < MAX_DEPTH && parts.iter().all(|part| part.fits_below(levels + 1, budget))
+            }
+            Self::Text(_) | Self::Computed | Self::Name(_) => true,
+        }
+    }
+
+    /// The names the part is built from, in the order they are written and once for each time they are.
+    pub(crate) fn names(&self) -> Vec<&str> {
+        let mut names = Vec::new();
+        self.collect_names(&mut names);
+        names
+    }
+
+    fn collect_names<'p>(&'p self, names: &mut Vec<&'p str>) {
+        match self {
+            Self::Name(name) => names.push(name),
+            Self::Cat(_, parts) => parts.iter().for_each(|part| part.collect_names(names)),
+            Self::Text(_) | Self::Computed => {}
+        }
     }
 
     /// Whether the part holds a name that another file declares.
@@ -84,8 +129,17 @@ impl Part {
             Self::Computed => None,
             Self::Name(name) => resolve(name),
             Self::Cat(reads, parts) => {
-                let read: Vec<Option<String>> =
-                    parts.iter().map(|part| part.read(resolve)).collect();
+                // The length is summed as the pieces come, so that a whole past the limit is refused before the text of the pieces after it is read, and before the text of the whole is made.
+                let mut read = Vec::with_capacity(parts.len());
+                let mut length = 0;
+                for part in parts {
+                    let piece = part.read(resolve);
+                    length += piece.as_deref().map_or(COMPUTED.len(), str::len);
+                    if length > MAX_COMPOSED {
+                        return None;
+                    }
+                    read.push(piece);
+                }
                 let enough = match reads {
                     Reads::Always => true,
                     Reads::Any => read.iter().any(Option::is_some),
@@ -111,7 +165,7 @@ impl Part {
 
 #[cfg(test)]
 mod tests {
-    use super::{Part, Reads};
+    use super::{MAX_COMPOSED, MAX_DEPTH, Part, Reads};
 
     fn text(text: &str) -> Part {
         Part::Text(text.to_owned())
@@ -200,5 +254,74 @@ mod tests {
             Part::Cat(Reads::Always, vec![name("BASE"), text("/a")]).lax(),
             Some("${}/a".to_owned())
         );
+    }
+
+    /// `levels` pieces of `Cat`, one inside the other, with a name at the bottom.
+    fn nested(levels: usize) -> Option<Part> {
+        let mut part = name("BASE");
+        for _ in 0..levels {
+            part = Part::cat(Reads::Always, vec![part, text("/x")])?;
+        }
+        Some(part)
+    }
+
+    #[test]
+    fn a_part_nests_as_deep_as_the_limit_and_no_deeper() {
+        assert!(nested(MAX_DEPTH).is_some());
+        assert_eq!(nested(MAX_DEPTH + 1), None);
+        assert_eq!(nested(MAX_DEPTH * 100), None);
+    }
+
+    #[test]
+    fn a_part_weighs_as_much_as_the_limit_and_no_more() {
+        // The cat itself weighs one, the name two, and the text one more than its bytes.
+        let fills = MAX_COMPOSED - 1 - 2 - 1;
+        let at_the_limit = Part::cat(Reads::Always, vec![name("N"), text(&"x".repeat(fills))]);
+        assert!(at_the_limit.is_some());
+        let past_it = Part::cat(Reads::Always, vec![name("N"), text(&"x".repeat(fills + 1))]);
+        assert_eq!(past_it, None);
+    }
+
+    #[test]
+    fn a_part_that_is_refused_for_its_weight_is_no_text_in_a_constant_and_in_a_use() {
+        let heavy = text(&"x".repeat(MAX_COMPOSED));
+        assert_eq!(Part::cat(Reads::All, vec![name("N"), heavy.clone()]), None);
+        assert_eq!(Part::cat(Reads::Any, vec![name("N"), heavy]), None);
+    }
+
+    #[test]
+    fn a_read_gives_as_much_text_as_the_limit_and_no_more() {
+        let both = cat(Reads::Always, vec![name("A"), name("B")]);
+        let of = |length: usize| move |_: &str| Some("x".repeat(length));
+        let half = MAX_COMPOSED / 2;
+        assert_eq!(
+            both.read(&of(half)).map(|text| text.len()),
+            Some(MAX_COMPOSED)
+        );
+        assert_eq!(both.read(&of(half + 1)), None);
+    }
+
+    #[test]
+    fn a_read_past_the_limit_is_none_whatever_the_pieces_must_read() {
+        let big = |_: &str| Some("x".repeat(MAX_COMPOSED));
+        for reads in [Reads::Always, Reads::Any, Reads::All] {
+            let both = cat(reads, vec![name("A"), name("B")]);
+            assert_eq!(both.read(&big), None, "{reads:?}");
+        }
+    }
+
+    #[test]
+    fn a_read_counts_the_pieces_that_read_as_no_text_as_computed() {
+        let none = |_: &str| None;
+        let computed = Part::Cat(Reads::Always, vec![Part::Computed; MAX_COMPOSED / 3 + 1]);
+        assert_eq!(computed.read(&none), None);
+    }
+
+    #[test]
+    fn the_names_of_a_part_come_in_the_order_they_are_written() {
+        let inner = cat(Reads::All, vec![name("B"), text("/"), name("C")]);
+        let part = cat(Reads::Always, vec![name("A"), inner, name("A")]);
+        assert_eq!(part.names(), ["A", "B", "C", "A"]);
+        assert_eq!(text("/a").names(), Vec::<&str>::new());
     }
 }

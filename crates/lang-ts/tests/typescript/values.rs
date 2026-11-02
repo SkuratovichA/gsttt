@@ -8,11 +8,21 @@ use std::time::Duration;
 use gsttt_scenario::scenario;
 
 use crate::support::{
-    NOTHING, contracts, linked, run, run_tree_within, run_with_pack, run_within, sites, unread,
+    NOTHING, contracts, linked, problems, run, run_tree_within, run_with_pack, run_within, sites,
+    unread,
 };
 
 /// The number of files in the diamond of constants, each of which names the one before it twice.
 const DIAMOND_LEVELS: usize = 24;
+
+/// The number of constants in the chain across two files, which a read that calls itself once for each of them could not follow on the stack of a worker.
+const CHAIN_LENGTH: usize = 4000;
+
+/// The number of constants in `deep.ts` that each name the one before: more than a part may nest, and more than the link data of a file may hold if they all were kept.
+const DEEP_LEVELS: usize = 60;
+
+/// The number of constants in the doubling, each of which names the one before it twice: the last would read as a few gigabytes of text.
+const DOUBLING_STEPS: usize = 30;
 
 /// A rule that serves the method a decorator is on, behind the prefix the decorator itself gives.
 const ROUTE_PACK: &str = r#"name = "fixture"
@@ -260,6 +270,140 @@ fn a_cycle_of_constants_is_unread_from_every_constant_that_reaches_it() -> Resul
             "@6 non-literal fetch",
         ]
     );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A chain of constants across two files is read to its end"
+)]
+fn a_chain_of_constants_across_two_files_is_read_to_its_end() -> Result<(), Box<dyn Error>> {
+    let tree = tempfile::tempdir()?;
+    fs::create_dir(tree.path().join("src"))?;
+    fs::write(tree.path().join("package.json"), r#"{ "name": "chain" }"#)?;
+    // `K<n>` names `K<n+1>`, which the other of the two files keeps, and the last is text.
+    for (file, other, parity) in [("a", "b", 0), ("b", "a", 1)] {
+        let mine = || (0..CHAIN_LENGTH).filter(|number| number % 2 == parity);
+        let taken: Vec<String> = mine()
+            .filter(|number| number + 1 < CHAIN_LENGTH)
+            .map(|number| format!("K{}", number + 1))
+            .collect();
+        let mut source = format!("import {{ {} }} from './{other}';\n", taken.join(", "));
+        for number in mine() {
+            if number + 1 < CHAIN_LENGTH {
+                writeln!(source, "export const K{number} = `${{K{}}}/y`;", number + 1)?;
+            } else {
+                writeln!(source, "export const K{number} = '/end';")?;
+            }
+        }
+        fs::write(tree.path().join(format!("src/{file}.ts")), source)?;
+    }
+    fs::write(
+        tree.path().join("src/use.ts"),
+        "import { K0 } from './a';\nfetch(K0);\n",
+    )?;
+    let json = run_tree_within(tree.path(), CYCLE_LIMIT)?;
+    assert_eq!(
+        linked(&json),
+        [format!(
+            "calls http * /end{} @2 in src/use.ts",
+            "/y".repeat(CHAIN_LENGTH - 1)
+        )]
+    );
+    assert_eq!(unread(&json, "src/use.ts"), NOTHING);
+    assert_eq!(problems(&json), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A constant built deeper than the limit is no constant and the project still links"
+)]
+fn a_constant_built_deeper_than_the_limit_is_no_constant_and_the_project_still_links()
+-> Result<(), Box<dyn Error>> {
+    let tree = tempfile::tempdir()?;
+    fs::create_dir(tree.path().join("src"))?;
+    fs::write(tree.path().join("package.json"), r#"{ "name": "deep" }"#)?;
+    fs::write(
+        tree.path().join("src/base.ts"),
+        "export const BASE = '/api';\n",
+    )?;
+    // `D<n>` nests `n + 1` levels, so `D31` is the last that is 32 levels deep.
+    let mut deep = String::from("import { BASE } from './base';\n");
+    writeln!(deep, "export const D0 = `${{BASE}}/x`;")?;
+    for level in 1..DEEP_LEVELS {
+        writeln!(deep, "export const D{level} = `${{D{}}}/x`;", level - 1)?;
+    }
+    writeln!(deep, "fetch(D31);")?;
+    writeln!(deep, "fetch(D{});", DEEP_LEVELS - 1)?;
+    fs::write(tree.path().join("src/deep.ts"), deep)?;
+    fs::write(
+        tree.path().join("src/other.ts"),
+        "import { BASE } from './base';\nfetch(`${BASE}/users`);\n",
+    )?;
+    let json = run_tree_within(tree.path(), CYCLE_LIMIT)?;
+    let mut found = linked(&json);
+    found.sort();
+    assert_eq!(
+        found,
+        [
+            "calls http * /api/users @2 in src/other.ts".to_owned(),
+            format!(
+                "calls http * /api{} @{} in src/deep.ts",
+                "/x".repeat(32),
+                DEEP_LEVELS + 2
+            ),
+        ]
+    );
+    assert_eq!(
+        unread(&json, "src/deep.ts"),
+        [format!("@{} non-literal fetch", DEEP_LEVELS + 3)]
+    );
+    assert_eq!(problems(&json), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A constant that doubles past the limit is no constant and the index completes"
+)]
+fn a_constant_that_doubles_past_the_limit_is_no_constant_and_the_index_completes()
+-> Result<(), Box<dyn Error>> {
+    let tree = tempfile::tempdir()?;
+    fs::create_dir(tree.path().join("src"))?;
+    fs::write(
+        tree.path().join("package.json"),
+        r#"{ "name": "doubling" }"#,
+    )?;
+    fs::write(tree.path().join("src/i.ts"), "export const I = '/xyz';\n")?;
+    let mut big = String::from("import { I } from './i';\n");
+    writeln!(big, "export const A0 = `${{I}}${{I}}`;")?;
+    for step in 1..DOUBLING_STEPS {
+        writeln!(
+            big,
+            "export const A{step} = `${{A{}}}${{A{}}}`;",
+            step - 1,
+            step - 1
+        )?;
+    }
+    fs::write(tree.path().join("src/big.ts"), big)?;
+    fs::write(
+        tree.path().join("src/use.ts"),
+        format!(
+            "import {{ A1, A{last} }} from './big';\nfetch(A1);\nfetch(A{last});\n",
+            last = DOUBLING_STEPS - 1
+        ),
+    )?;
+    let json = run_tree_within(tree.path(), CYCLE_LIMIT)?;
+    assert_eq!(
+        linked(&json),
+        ["calls http * /xyz/xyz/xyz/xyz @2 in src/use.ts"]
+    );
+    assert_eq!(unread(&json, "src/use.ts"), ["@3 non-literal fetch"]);
+    assert_eq!(problems(&json), NOTHING);
     Ok(())
 }
 

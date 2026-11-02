@@ -6,14 +6,14 @@ use std::num::NonZeroU32;
 use gsttt_core::contract::{has_parent_segment, path_after_origin, without_query_and_fragment};
 use gsttt_core::rules::{Site, ValueExpr, ValueSource};
 use oxc_ast::ast::{
-    Argument, ChainElement, Expression, FormalParameter, MemberExpression, NewExpression,
-    ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
+    Argument, BinaryExpression, ChainElement, Expression, FormalParameter, MemberExpression,
+    NewExpression, ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
 };
 use oxc_syntax::operator::BinaryOperator;
 use serde::{Deserialize, Serialize};
 
 use crate::analyze::Constants;
-use crate::parts::{Mode, Part};
+use crate::parts::{MAX_COMPOSED, Mode, Part, Reads};
 
 /// How a computed part of a template or a concatenation is written in the text a rule reads.
 pub(crate) const COMPUTED: &str = "${}";
@@ -312,13 +312,7 @@ pub(crate) fn part_of(expr: &Expression<'_>, constants: &Constants, mode: Mode) 
         }
         Expression::TemplateLiteral(template) => template_part(template, constants, mode),
         Expression::BinaryExpression(binary) if binary.operator == BinaryOperator::Addition => {
-            let operand = |operand: &Expression<'_>| match part_of(operand, constants, mode) {
-                None if mode == Mode::Use => Some(Part::Computed),
-                part => part,
-            };
-            let left = operand(&binary.left)?;
-            let right = operand(&binary.right)?;
-            Part::cat(mode.sum(), vec![left, right])
+            sum_part(binary, constants, mode)
         }
         // An array, a URL and the text of a URL may hold a part that reads as no text, which a constant is not allowed to.
         Expression::ArrayExpression(array) if mode == Mode::Use => array
@@ -356,7 +350,47 @@ pub(crate) fn part_of(expr: &Expression<'_>, constants: &Constants, mode: Mode) 
     }
 }
 
-/// What a template reads as. The text is kept in one string until a piece holds a name, so that the common template, with none, allocates the string it reads as and nothing else.
+/// What `a + b + c` reads as. The operands nest to the left, one level for each `+`, and a sum of thousands of them is not a depth to recurse to, so the left spine is walked down to the first operand and then up again, which puts the operands together in the order that reading each left operand first would. A piece that reads as no text is `${}` in a use, and leaves a constant no constant.
+fn sum_part(first: &BinaryExpression<'_>, constants: &Constants, mode: Mode) -> Option<Part> {
+    let operand = |part: Option<Part>| match part {
+        None if mode == Mode::Use => Some(Part::Computed),
+        part => part,
+    };
+    // The right operands from the outermost `+` inwards, and the operand that is the left of the innermost.
+    let mut rights = vec![&first.right];
+    let mut innermost = &first.left;
+    while let Expression::BinaryExpression(binary) = innermost.get_inner_expression() {
+        if binary.operator != BinaryOperator::Addition {
+            break;
+        }
+        rights.push(&binary.right);
+        innermost = &binary.left;
+    }
+    let mut sum = part_of(innermost, constants, mode);
+    for right in rights.into_iter().rev() {
+        let left = operand(sum)?;
+        let right = operand(part_of(right, constants, mode))?;
+        sum = append(left, right, mode.sum());
+    }
+    sum
+}
+
+/// `left` followed by `right`, as one level of pieces when `left` is already a sum of the same kind that reads as the sum of `left` and `right` would: a constant reads when all its pieces do, which is no matter how they are grouped, and a concatenation that holds a text reads always. So a long sum, which nests to the left, stays as flat as it is written and the depth a part may nest is for the sums written in parentheses and the templates inside one another.
+fn append(left: Part, right: Part, reads: Reads) -> Option<Part> {
+    match left {
+        Part::Cat(own, mut parts)
+            if own == reads
+                && (reads == Reads::All
+                    || parts.iter().any(|part| matches!(part, Part::Text(_)))) =>
+        {
+            parts.push(right);
+            Part::cat(reads, parts)
+        }
+        left => Part::cat(reads, vec![left, right]),
+    }
+}
+
+/// What a template reads as. The text is kept in one string until a piece holds a name, so that the common template, with none, allocates the string it reads as and nothing else. What the holes add to the template is limited to [`MAX_COMPOSED`] bytes, and the template is no text past it, because a constant that names another twice doubles at every step; the text the template is written with is never counted, since the file bounds it.
 fn template_part(
     template: &TemplateLiteral<'_>,
     constants: &Constants,
@@ -365,6 +399,7 @@ fn template_part(
     // `text` is the run of text since the last piece that holds a name; `parts` is what came before it.
     let mut text = String::new();
     let mut parts = Vec::new();
+    let mut budget = MAX_COMPOSED;
     for piece in pieces(template) {
         let hole = match piece {
             Piece::Text(chunk) => {
@@ -381,8 +416,12 @@ fn template_part(
             continue;
         };
         if let Part::Text(chunk) = &*part {
+            budget = budget.checked_sub(chunk.len())?;
             text.push_str(chunk);
             continue;
+        }
+        if !part.fits(&mut budget) {
+            return None;
         }
         if !text.is_empty() {
             parts.push(Part::Text(std::mem::take(&mut text)));
@@ -614,9 +653,10 @@ mod tests {
     use oxc_span::SourceType;
     use proptest::prelude::*;
 
-    use super::{Arg, Shape, Value, text_with, url_join};
+    use super::{Arg, Shape, Value, part_of, text_with, url_join};
     use crate::analyze::Constants;
-    use crate::parts::Part;
+    use crate::extra::{Deferred, DeferredTarget, RuleRef, TsExtra};
+    use crate::parts::{MAX_COMPOSED, MAX_DEPTH, Mode, Part, Reads};
 
     #[test]
     fn a_path_with_an_origin_is_the_url() {
@@ -1124,5 +1164,171 @@ mod tests {
                 .unwrap()
                 .contains("object")
         );
+    }
+
+    /// `levels` pieces of `Cat`, one inside the other, around a name.
+    fn nested(levels: usize) -> Part {
+        (0..levels).fold(Part::Name("BASE".to_owned()), |inner, _| {
+            Part::Cat(Reads::Always, vec![inner, Part::Text("/x".to_owned())])
+        })
+    }
+
+    /// The link data of a file that keeps `part` in the deepest place a part is kept: a property of an object argument of a deferred site.
+    fn extra_holding(part: Part) -> TsExtra {
+        TsExtra {
+            deferred: vec![Deferred {
+                rule: RuleRef::Call { pack: 0, rule: 0 },
+                shape: Shape {
+                    last: Some("fetch".to_owned()),
+                    member: None,
+                    args: vec![Arg {
+                        value: Value::default(),
+                        object: true,
+                        props: vec![(
+                            "url".to_owned(),
+                            Value {
+                                text: None,
+                                parts: Some(part),
+                            },
+                        )],
+                        spread: false,
+                    }],
+                    spread: None,
+                },
+                prefix: None,
+                line: 1,
+                what: "fetch".to_owned(),
+                target: DeferredTarget::Own,
+            }],
+            ..TsExtra::default()
+        }
+    }
+
+    fn reads_back(levels: usize) -> bool {
+        let extra = extra_holding(nested(levels));
+        let bytes = serde_json::to_vec(&extra).unwrap();
+        serde_json::from_slice::<TsExtra>(&bytes).is_ok_and(|read| read == extra)
+    }
+
+    #[test]
+    fn a_part_at_the_depth_limit_is_read_back() {
+        assert!(reads_back(MAX_DEPTH));
+    }
+
+    #[test]
+    fn the_depth_limit_keeps_clear_of_what_serde_json_refuses() {
+        let refused = (MAX_DEPTH..MAX_DEPTH * 2).find(|&levels| !reads_back(levels));
+        assert!(
+            refused.is_some_and(|levels| levels > MAX_DEPTH),
+            "a part of {refused:?} levels is the first that does not read back"
+        );
+    }
+
+    /// What `source` reads as in `mode`, with the names that `IMPORT` binds. The constants are collected from the import alone: the walk that collects them from a file recurses into every expression, and a sum of thousands of operands is not what this reads.
+    fn sum_in(source: &str, mode: Mode) -> Option<Part> {
+        let allocator = Allocator::default();
+        let imports = Parser::new(&allocator, IMPORT, SourceType::ts()).parse();
+        let constants = Constants::collect(&imports.program);
+        let code = format!("({source});");
+        let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
+        let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.last() else {
+            panic!("no expression in {code}");
+        };
+        part_of(&statement.expression, &constants, mode)
+    }
+
+    /// `terms` operands of a sum: the digits in turn as strings, and the name `OTHER` at every thousandth. The source, and the text the sum reads as when `OTHER` reads as `X`.
+    fn long_sum(terms: usize) -> (String, String) {
+        let mut source = Vec::new();
+        let mut text = String::new();
+        for term in 0..terms {
+            if term % 1000 == 999 {
+                source.push("OTHER".to_owned());
+                text.push('X');
+            } else {
+                source.push(format!("'{}'", term % 10));
+                text.push_str(&(term % 10).to_string());
+            }
+        }
+        (source.join(" + "), text)
+    }
+
+    #[test]
+    fn a_sum_of_thousands_of_operands_is_read_on_a_small_stack() {
+        let (source, text) = long_sum(5000);
+        let read = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(move || {
+                let x = |name: &str| (name == "OTHER").then(|| "X".to_owned());
+                let used = sum_in(&source, Mode::Use).unwrap();
+                let declared = sum_in(&source, Mode::Declare).unwrap();
+                let flat = |part: &Part| {
+                    matches!(part, Part::Cat(_, parts) if parts.iter().all(|piece| !matches!(piece, Part::Cat(..))))
+                };
+                (
+                    used.read(&x),
+                    used.read(&|_| None),
+                    declared.read(&x),
+                    declared.read(&|_| None),
+                    flat(&used) && flat(&declared),
+                )
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(read.0.as_deref(), Some(text.as_str()));
+        assert_eq!(read.1, Some(text.replace('X', "${}")));
+        assert_eq!(read.2.as_deref(), Some(text.as_str()));
+        assert_eq!(read.3, None);
+        assert!(read.4, "a long sum nests no deeper than it is written");
+    }
+
+    #[test]
+    fn a_sum_that_holds_a_piece_with_no_text_is_a_use_with_a_hole_and_no_constant() {
+        for source in [
+            "'a' + compute() + 'b' + OTHER + 'c'",
+            "(compute() + compute()) + 'a' + 'b'",
+        ] {
+            let used = sum_in(source, Mode::Use).and_then(Part::lax);
+            assert!(used.is_some_and(|text| text.contains("${}")), "{source}");
+            assert_eq!(sum_in(source, Mode::Declare), None, "{source}");
+        }
+        assert_eq!(
+            sum_in("'a' + compute() + 'b'", Mode::Use).and_then(Part::lax),
+            Some("a${}b".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_sum_of_names_that_read_as_no_text_is_one_computed_part_where_it_is_grouped() {
+        assert_eq!(
+            first_argument(IMPORT, "OTHER + OTHER + '/x'"),
+            (Some("${}/x".to_owned()), Some("${}/x".to_owned()))
+        );
+        assert_eq!(
+            first_argument(IMPORT, "'/a' + OTHER + OTHER + '/x'"),
+            (Some("/a${}${}/x".to_owned()), Some("/a${}${}/x".to_owned()))
+        );
+    }
+
+    #[test]
+    fn what_a_template_adds_to_a_text_is_limited_and_the_text_it_is_written_with_is_not() {
+        let most = "x".repeat(MAX_COMPOSED / 4 * 3);
+        let prelude = format!("const A = '{most}';");
+        assert_eq!(length_in(&prelude, "`${A}`"), Some(most.len()));
+        assert_eq!(length_in(&prelude, "`${A}${A}`"), None);
+        // A constant is no constant past the limit either.
+        let doubled = format!("{prelude}\nconst B = `${{A}}${{A}}`;");
+        assert_eq!(length_in(&doubled, "B"), None);
+        // The text a template is written with is its own, and the file bounds it.
+        let written = "y".repeat(MAX_COMPOSED + 1);
+        assert_eq!(length_in("", &format!("`{written}`")), Some(written.len()));
+    }
+
+    /// The length of the text the first argument of a `fetch` reads as, written after `prelude`.
+    fn length_in(prelude: &str, arguments: &str) -> Option<usize> {
+        fetch_after(prelude, arguments)
+            .arg(NonZeroU32::MIN)
+            .map(|text| text.len())
     }
 }
