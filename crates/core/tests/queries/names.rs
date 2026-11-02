@@ -182,6 +182,97 @@ fn a_barrel_adds_no_hop() {
     );
 }
 
+#[scenario("queries", "A star barrel gets no row when a name is asked about")]
+#[test]
+fn a_star_barrel_gets_no_row_when_a_name_is_asked_about() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("helper", (1, 2), &[]))
+        .exports("a.ts", &["helper"])
+        .re_exports_all("index.ts", "a.ts")
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &[])
+        .imports_names("page.ts", "index.ts", &["helper"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("open", (1, 4), &["helper"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["helper"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("page.ts", 1, "imports helper from index.ts", &["open"])]
+    );
+}
+
+#[scenario("queries", "A chain of star barrels gets no row")]
+#[test]
+fn a_chain_of_star_barrels_gets_no_row() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("helper", (1, 2), &[]))
+        .exports("a.ts", &["helper"])
+        .re_exports_all("index.ts", "a.ts")
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &[])
+        .re_exports_all("outer.ts", "index.ts")
+        .symbols("outer.ts", Code::new())
+        .exports("outer.ts", &[])
+        .imports_names("page.test.ts", "outer.ts", &["helper"])
+        .symbols(
+            "page.test.ts",
+            Code::new().declaration("checks", (1, 4), &["helper"]),
+        )
+        .exports("page.test.ts", &[])
+        .tag("page.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = ask(&index, "a.ts", &["helper"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert_eq!(
+        rows(&answer.tests),
+        [row(
+            "page.test.ts",
+            1,
+            "imports helper from outer.ts",
+            &["checks"]
+        )]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A named re-export keeps its row when a name is asked about"
+)]
+#[test]
+fn a_named_re_export_keeps_its_row_when_a_name_is_asked_about() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("helper", (1, 2), &[]))
+        .exports("a.ts", &["helper"])
+        .re_exports("index.ts", "a.ts", &[("helper", "helper")])
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &["helper"])
+        .imports_names("page.ts", "index.ts", &["helper"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("open", (1, 4), &["helper"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["helper"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("index.ts", 1, "re-exports helper from a.ts", &[]),
+            row("page.ts", 1, "imports helper from index.ts", &["open"]),
+        ]
+    );
+}
+
 #[scenario("queries", "A name imported and exported again adds no hop")]
 #[test]
 fn a_name_imported_and_exported_again_adds_no_hop() {
@@ -1475,10 +1566,7 @@ fn a_star_barrel_passes_a_name_on_but_never_the_default() {
 
     assert_eq!(
         rows(&foo.affected),
-        [
-            row("index.ts", 1, "re-exports foo from a.ts", &[]),
-            row("page.ts", 1, "imports foo from index.ts", &["render"]),
-        ]
+        [row("page.ts", 1, "imports foo from index.ts", &["render"])]
     );
     assert!(thing.affected.is_empty(), "{:?}", thing.affected);
 }
