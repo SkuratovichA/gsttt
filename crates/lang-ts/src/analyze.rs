@@ -10,12 +10,11 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::fact::{
     ContractFact, Embedded, Import, ImportFlags, ImportKind, Line, Symbols, UnresolvedReason,
     UnresolvedSite,
 };
-use gsttt_core::rules::{CallRule, Outcome, Pack, Prefix, Site};
+use gsttt_core::rules::{CallRule, Outcome, Pack, Prefix, Reading, Site, serves_http};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     AccessorProperty, Argument, ArrowFunctionExpression, AssignmentExpression, AssignmentTarget,
@@ -131,9 +130,9 @@ enum ClassPrefix {
 impl ClassPrefix {
     /// What `decorator` gives under the class prefix `rule` that names it.
     fn of(rule: &Prefix, decorator: &ClassDecorator) -> Self {
-        match &rule.key {
-            Some(key) if decorator.shape.unread(key) => Self::Unread,
-            _ => Self::Text(rule.read(&decorator.shape)),
+        match rule.reading(&decorator.shape).as_prefix() {
+            Some(prefix) => Self::Text(prefix.to_owned()),
+            None => Self::Unread,
         }
     }
 }
@@ -411,13 +410,13 @@ impl<'a> Analyzer<'_, 'a> {
             .any(|rule| rule.reads(spec))
     }
 
-    /// The prefix the call that made the receiver of `callee` gives, and the receiver's name, when the receiver was made in this file by a call that `rule` names.
-    fn receiver<'c>(&self, callee: &'c str, rule: &Prefix) -> Option<(String, &'c str)> {
+    /// What the call that made the receiver of `callee` gives as a prefix, and the receiver's name, when the receiver was made in this file by a call that `rule` names.
+    fn receiver<'c>(&self, callee: &'c str, rule: &Prefix) -> Option<(Reading, &'c str)> {
         let (host, _) = callee.rsplit_once('.')?;
         let maker = self.makers.get(host)?;
         rule.from
             .matches(&maker.callee)
-            .then(|| (rule.read(&maker.shape), host))
+            .then(|| (rule.reading(&maker.shape), host))
     }
 
     /// The receiver of `callee` when it is written on a name this file imports from a file of its project: `api` for `api.get`, `store.cache` for `store.cache.get`. A name imported from Node, or from a package that some active pack is for, is a library, and a rule reads a call on it as it is written.
@@ -493,7 +492,7 @@ impl<'a> Analyzer<'_, 'a> {
                     }
                     (None, None) => (None, None),
                     (Some(receiver), from_file) => {
-                        let Some((prefix, host)) = self.receiver(callee, receiver) else {
+                        let Some((reading, host)) = self.receiver(callee, receiver) else {
                             if let Some(from_file) = from_file {
                                 self.defer(Deferred {
                                     rule: at,
@@ -506,6 +505,10 @@ impl<'a> Analyzer<'_, 'a> {
                                     },
                                 });
                             }
+                            continue;
+                        };
+                        let Some(prefix) = rule.behind(&reading).map(str::to_owned) else {
+                            self.record(Outcome::blind(line, callee));
                             continue;
                         };
                         (Some(prefix), Some(host))
@@ -1716,11 +1719,6 @@ fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
     }
 }
 
-/// Whether a rule of this kind and role finds the routes an HTTP server serves.
-pub(crate) fn serves_http(kind: &ContractKind, role: Role) -> bool {
-    *kind == ContractKind::Http && role == Role::Serves
-}
-
 /// Whether `rule` serves routes on a receiver and a call with `arguments` arguments has no handler after its path, so it reads a setting: `app.get('env')` is no route.
 fn reads_setting(rule: &CallRule, arguments: usize) -> bool {
     rule.receiver.is_some() && serves_http(&rule.kind, rule.role) && arguments < 2
@@ -1823,6 +1821,7 @@ fn mount_target(expr: &Expression<'_>) -> Option<MountTarget> {
 
 #[cfg(test)]
 mod tests {
+    use gsttt_core::contract::Role;
     use gsttt_scenario::scenario;
     use oxc_allocator::Allocator;
     use oxc_parser::Parser;
@@ -1842,6 +1841,68 @@ mod tests {
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, source_type).parse();
         analyze(&parsed.program, code, &LineIndex::new(code), &packs())
+    }
+
+    #[test]
+    #[scenario(
+        "typescript",
+        "A client whose base is not text is called at the path after it"
+    )]
+    fn a_client_whose_base_is_not_text_is_called_at_the_path_after_it() {
+        let analysis = analysis_of(
+            "import axios from 'axios';\nconst api = axios.create({ baseURL: process.env.API });\napi.get('/users');\n",
+        );
+        let calls: Vec<String> = analysis
+            .contracts
+            .iter()
+            .filter(|fact| fact.role == Role::Calls && fact.via == "axios")
+            .map(|fact| fact.key.to_string())
+            .collect();
+        assert_eq!(calls, ["http GET /users"]);
+        assert_eq!(analysis.unresolved, []);
+    }
+
+    #[test]
+    #[scenario("typescript", "A spread may carry a property")]
+    fn a_spread_may_carry_a_property() {
+        let pack = r#"name = "requests"
+language = "ts"
+
+[[calls]]
+callee = "client.request"
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "$arg2.method|GET"
+"#;
+        let packs = gsttt_config::builtin_packs(&[("requests", pack)]).unwrap();
+        let code = "client.request('/plain');\nclient.request('/post', { method: 'POST' });\nclient.request('/options', { ...options });\nclient.request('/rest', ...rest);\nclient.request(...args);\nclient.request('/own', { ...options, method: 'PUT' });\n";
+        let allocator = Allocator::default();
+        let parsed = Parser::new(&allocator, code, oxc_span::SourceType::ts()).parse();
+        let analysis = analyze(&parsed.program, code, &LineIndex::new(code), &packs);
+        let calls: Vec<String> = analysis
+            .contracts
+            .iter()
+            .map(|fact| format!("{}@{}", fact.key, fact.line))
+            .collect();
+        // What the call writes is read wherever the spread stands, and a method that a spread may give is any method, where the same call without the spread is `GET`.
+        assert_eq!(
+            calls,
+            [
+                "http GET /plain@1",
+                "http POST /post@2",
+                "http * /options@3",
+                "http * /rest@4",
+                "http PUT /own@6",
+            ]
+        );
+        // A call whose only argument is a spread may carry the url, so it is an unread site.
+        let unread: Vec<(u32, &str)> = analysis
+            .unresolved
+            .iter()
+            .map(|site| (site.line, site.detail.as_str()))
+            .collect();
+        assert_eq!(unread, [(5, "client.request")]);
     }
 
     #[test]

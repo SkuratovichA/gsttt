@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 
 use gsttt_core::contract::ContractKind;
 use gsttt_core::fact::Line;
-use gsttt_core::rules::Site;
+use gsttt_core::rules::{Site, ValueSource};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::str_prefix::StringLiteralPrefix;
 use ruff_python_ast::{
@@ -342,6 +342,39 @@ pub(crate) fn dict_value<'a>(expr: &'a Expr, prop: &str) -> Option<&'a Expr> {
     })
 }
 
+/// Whether `value` is something the program computes at run time: it is neither text nor `None`, which is what leaving an argument out comes to.
+fn is_computed_value(value: &Expr) -> bool {
+    text_of(value).is_none() && !value.is_none_literal_expr()
+}
+
+/// Whether the argument `arg` holds a computed value at `$argN`, or at `$argN.prop` when `prop` is given. A dict literal is read through its keys, so it holds a value under a key it has, and under any key when it unpacks a mapping with `**`, which may give that key; any other argument has no keys to see, so a computed one is the value of every property.
+fn holds_in_argument(arg: &Expr, prop: Option<&str>) -> bool {
+    match (arg, prop) {
+        (Expr::Dict(_), None) => false,
+        (Expr::Dict(dict), Some(prop)) => {
+            dict.items.iter().any(|item| item.key.is_none())
+                || dict_value(arg, prop).is_some_and(is_computed_value)
+        }
+        (_, _) => is_computed_value(arg),
+    }
+}
+
+/// Whether `**mapping` is among the keywords of `arguments`: it may give any keyword that is not written.
+fn unpacks_keywords(arguments: &Arguments) -> bool {
+    arguments
+        .keywords
+        .iter()
+        .any(|keyword| keyword.arg.is_none())
+}
+
+/// Whether `*iterable` is among the first `position` arguments, counting from 1: the argument at `position` is then one the iterable may give, and `find_positional` stops at the unpacking and finds nothing there.
+fn unpacks_positional(arguments: &Arguments, position: NonZeroU32) -> bool {
+    let Ok(count) = usize::try_from(position.get()) else {
+        return false;
+    };
+    arguments.args.iter().take(count).any(Expr::is_starred_expr)
+}
+
 /// The dotted name of a `Name` or an attribute chain: `os.environ`, `self.router`. A chain that starts at something else, such as a call or a subscript, has `?` for that segment so that `*` patterns still match: `Session().execute` is `?.execute`. `None` when the expression is not a name at all.
 pub(crate) fn dotted(expr: &Expr) -> Option<String> {
     let mut name = String::new();
@@ -398,6 +431,12 @@ impl<'a> CallSite<'a> {
     fn keyword_value(&self, name: &str) -> Option<&'a Expr> {
         Some(&self.arguments?.find_keyword(name)?.value)
     }
+
+    /// Whether an unpacking `*args` stands at or before the argument at `position`.
+    fn unpacked(&self, position: NonZeroU32) -> bool {
+        self.arguments
+            .is_some_and(|arguments| unpacks_positional(arguments, position))
+    }
 }
 
 impl Site for CallSite<'_> {
@@ -407,10 +446,6 @@ impl Site for CallSite<'_> {
 
     fn arg(&self, position: NonZeroU32) -> Option<Cow<'_, str>> {
         text_of(self.positional(position)?)
-    }
-
-    fn has_arg(&self, position: NonZeroU32) -> bool {
-        self.positional(position).is_some()
     }
 
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
@@ -423,6 +458,28 @@ impl Site for CallSite<'_> {
 
     fn member(&self) -> Option<Cow<'_, str>> {
         self.member.map(Cow::Borrowed)
+    }
+
+    fn holds(&self, source: &ValueSource) -> bool {
+        match source {
+            ValueSource::Arg(position) => {
+                self.unpacked(*position)
+                    || self
+                        .positional(*position)
+                        .is_some_and(|arg| holds_in_argument(arg, None))
+            }
+            ValueSource::ArgProp(position, prop) => {
+                self.unpacked(*position)
+                    || self
+                        .positional(*position)
+                        .is_some_and(|arg| holds_in_argument(arg, Some(prop)))
+            }
+            ValueSource::Keyword(name) => {
+                self.arguments.is_some_and(unpacks_keywords)
+                    || self.keyword_value(name).is_some_and(is_computed_value)
+            }
+            ValueSource::Callee | ValueSource::Member | ValueSource::Literal(_) => false,
+        }
     }
 }
 
@@ -465,10 +522,6 @@ impl Site for EmbedSite<'_> {
         self.document(self.call.positional(position))
     }
 
-    fn has_arg(&self, position: NonZeroU32) -> bool {
-        self.call.positional(position).is_some()
-    }
-
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         let dict = self.call.positional(position)?;
         self.document(dict_value(dict, prop))
@@ -480,6 +533,11 @@ impl Site for EmbedSite<'_> {
 
     fn member(&self) -> Option<Cow<'_, str>> {
         self.call.member()
+    }
+
+    /// Judged on the plain text of the call, as reading a document sets the line it starts on and a question must not move it.
+    fn holds(&self, source: &ValueSource) -> bool {
+        self.call.holds(source)
     }
 }
 
@@ -504,10 +562,6 @@ impl Site for AssignSite<'_> {
         text_of(self.value?)
     }
 
-    fn has_arg(&self, position: NonZeroU32) -> bool {
-        position == NonZeroU32::MIN && self.value.is_some()
-    }
-
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         if position != NonZeroU32::MIN {
             return None;
@@ -517,16 +571,41 @@ impl Site for AssignSite<'_> {
 
     /// The keyword `name` of the call the value is, as in `url: str = Field(alias="DB_URL")`.
     ///
-    /// A keyword that is there but not a literal names something the rule cannot read, so it comes back as a computed text and the rule records an unread site: left out, the rule would go on to the next alternative and name a variable the field does not read. `None` is what a keyword defaults to, so it is left out all the same.
+    /// A keyword that is there but not a literal names something the rule cannot read, and so does the `**mapping` of a call that does not write the keyword, which may give it, so both come back as a computed text and the rule records an unread site: left out, the rule would go on to the next alternative and name a variable the field does not read. `None` is what a keyword defaults to, so it is left out all the same.
     fn keyword(&self, name: &str) -> Option<Cow<'_, str>> {
         let Expr::Call(call) = self.value? else {
             return None;
         };
-        let value = &call.arguments.find_keyword(name)?.value;
+        let Some(keyword) = call.arguments.find_keyword(name) else {
+            return unpacks_keywords(&call.arguments).then_some(Cow::Borrowed(COMPUTED));
+        };
+        let value = &keyword.value;
         if value.is_none_literal_expr() {
             return None;
         }
         Some(literal_of(value).unwrap_or(Cow::Borrowed(COMPUTED)))
+    }
+
+    /// A keyword holds nothing here: one that is not a literal, or that `**mapping` may give, comes back from [`Site::keyword`] as computed text already.
+    fn holds(&self, source: &ValueSource) -> bool {
+        match source {
+            ValueSource::Arg(position) => {
+                *position == NonZeroU32::MIN
+                    && self
+                        .value
+                        .is_some_and(|value| holds_in_argument(value, None))
+            }
+            ValueSource::ArgProp(position, prop) => {
+                *position == NonZeroU32::MIN
+                    && self
+                        .value
+                        .is_some_and(|value| holds_in_argument(value, Some(prop)))
+            }
+            ValueSource::Callee
+            | ValueSource::Member
+            | ValueSource::Keyword(_)
+            | ValueSource::Literal(_) => false,
+        }
     }
 }
 
@@ -569,6 +648,63 @@ mod tests {
         assert_eq!(read("field = Field('DB_URL', description='d')"), None);
         assert_eq!(read("field = 'DB_URL'"), None);
         assert_eq!(read("field = NAME"), None);
+    }
+
+    #[test]
+    fn a_mapping_that_is_unpacked_may_give_the_keyword_of_the_assigned_call() {
+        let read = |source| assigned_keyword(source, "alias");
+        // `**opts` may carry `alias`, which nobody can read, so the keyword is as good as computed.
+        assert_eq!(read("field = Field(**opts)").as_deref(), Some("${}"));
+        assert_eq!(read("field = Field('eu', **opts)").as_deref(), Some("${}"));
+        // A keyword that is written stays what it is written as.
+        assert_eq!(
+            read("field = Field(alias='DB_URL', **opts)").as_deref(),
+            Some("DB_URL")
+        );
+        assert_eq!(read("field = Field(alias=None, **opts)"), None);
+        assert_eq!(read("field = Field(description='d')"), None);
+    }
+
+    /// Whether the call `source`, a call statement, holds a value at `value`.
+    fn call_holds(source: &str, value: &ValueSource) -> bool {
+        let parsed = parse_module(source).unwrap();
+        let Some(ruff_python_ast::Stmt::Expr(statement)) = parsed.suite().first() else {
+            panic!("not an expression statement");
+        };
+        let Expr::Call(call) = &*statement.value else {
+            panic!("not a call");
+        };
+        let site = CallSite {
+            callee: "f",
+            arguments: Some(&call.arguments),
+            member: None,
+        };
+        site.holds(value)
+    }
+
+    #[test]
+    fn an_unpacking_holds_what_the_call_does_not_write() {
+        let arg = |position| ValueSource::Arg(NonZeroU32::new(position).unwrap());
+        let prop = |position, name: &str| {
+            ValueSource::ArgProp(NonZeroU32::new(position).unwrap(), name.to_owned())
+        };
+        let keyword = |name: &str| ValueSource::Keyword(name.to_owned());
+        // `**mapping` may give any keyword the call does not write.
+        assert!(call_holds("f('/x', **opts)", &keyword("methods")));
+        assert!(!call_holds("f('/x', methods=['GET'])", &keyword("methods")));
+        assert!(!call_holds("f('/x')", &keyword("methods")));
+        // `*iterable` may give the argument at its place and each one after it, and none before it.
+        assert!(call_holds("f(*parts)", &arg(1)));
+        assert!(call_holds("f('/x', *parts)", &arg(2)));
+        assert!(call_holds("f('/x', *parts)", &arg(3)));
+        assert!(!call_holds("f('/x', *parts)", &arg(1)));
+        assert!(call_holds("f('/x', *parts)", &prop(3, "method")));
+        assert!(!call_holds("f('/x', *parts)", &prop(1, "method")));
+        // A dict literal is read through its keys, and `**mapping` in it may give any key it does not write.
+        assert!(call_holds("f('/x', {**base})", &prop(2, "method")));
+        assert!(call_holds("f('/x', {'a': 1, **base})", &prop(2, "method")));
+        assert!(!call_holds("f('/x', {'a': 1})", &prop(2, "method")));
+        assert!(!call_holds("f('/x', {**base})", &arg(2)));
     }
 
     fn call_text(source: &str, position: u32) -> Option<String> {

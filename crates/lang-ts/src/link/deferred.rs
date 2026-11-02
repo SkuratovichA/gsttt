@@ -5,10 +5,9 @@ use std::collections::BTreeMap;
 use gsttt_core::FileId;
 use gsttt_core::connector::{LinkFile, LinkInput, LinkedFact};
 use gsttt_core::fact::{ContractFact, UnresolvedSite};
-use gsttt_core::rules::{CallRule, Outcome, Pack};
+use gsttt_core::rules::{CallRule, Outcome, Pack, serves_http};
 
 use super::{Node, through};
-use crate::analyze::serves_http;
 use crate::extra::{ClassRoute, Deferred, DeferredTarget, ExportedMaker, Route, RuleRef, TsExtra};
 use crate::shape::Shape;
 
@@ -148,7 +147,7 @@ fn maker_of<'a>(
     Some((node, makers.get(found)?))
 }
 
-/// What the rule of a call on `host` makes of the call when `host`, written in `file`, is a client or a router that another file makes: the prefix is the one the rule takes from the call that made it, read against the constants of the file that made it. The node is the router the route is served on, for a rule that serves routes. `None` when `host` is no such variable, or the rule takes no receiver from the call that made it.
+/// What the rule of a call on `host` makes of the call when `host`, written in `file`, is a client or a router that another file makes: the prefix is the one the rule takes from the call that made it, read against the constants of the file that made it, and the call is a blind spot when a rule that serves routes finds a prefix there that is not text. The node is the router the route is served on, for a rule that serves routes. `None` when `host` is no such variable, or the rule takes no receiver from the call that made it.
 fn on_made(
     input: &LinkInput<'_, TsExtra>,
     packs: &[Pack],
@@ -166,11 +165,14 @@ fn on_made(
     let owner = input.get(node.0)?;
     let mut made = maker.shape.clone();
     made.fill(|name| constant(input, owner, name));
-    let prefix = receiver.read(&made);
+    let reading = receiver.reading(&made);
+    let Some(prefix) = rule.behind(&reading) else {
+        return Some((Outcome::blind(deferred.line, &deferred.what), None));
+    };
     let outcome = rule.apply(
         &pack.name,
         shape,
-        Some(&prefix),
+        Some(prefix),
         deferred.line,
         &deferred.what,
     );

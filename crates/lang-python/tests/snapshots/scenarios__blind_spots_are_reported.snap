@@ -15,7 +15,7 @@ expression: "tree.json[\"projects\"]"
           "flask"
         ],
         "blind_spots": [
-          "Flask routes whose methods are held in a variable, which are read as GET",
+          "Flask routes whose methods are held in a variable, which are read as any method",
           "Flask routes with several methods beyond the first",
           "mounts of a router by a file of another Python project, in a cycle, deeper than 32 routers, in more than 64 ways, with a prefix held in a variable, through an import that cannot be resolved, or through a name that a module other than a package's __init__.py re-exports",
           "names brought in by a star import, which are not matched to the module they come from",

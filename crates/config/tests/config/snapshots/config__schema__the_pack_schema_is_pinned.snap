@@ -96,7 +96,7 @@ expression: pack_schema()
           "type": "string"
         },
         "method": {
-          "description": "For HTTP, where the method is: `GET`, `$callee`, `$arg2.method|GET`. Unset: any method (`*`).",
+          "description": "For HTTP, where the method is: `GET`, `$callee`, `$arg2.method|GET`. Unset: any method (`*`), as is a method the site holds but cannot read, such as `{ method: verb }` for `$arg2.method`.",
           "type": "string"
         },
         "receiver": {

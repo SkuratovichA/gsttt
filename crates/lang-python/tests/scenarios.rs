@@ -186,13 +186,21 @@ impl Tree {
             .collect()
     }
 
-    /// The unread sites of a file, as `L<line> <what>`.
+    /// The unread sites of a file, as `L<line> <what>`: the ones the parse found and the ones the link did, which coverage counts alike.
     fn unread(&self, path: &str) -> Vec<String> {
-        self.file(path)
+        let file = self.file(path);
+        let mut sites: Vec<(Line, &str)> = file
             .facts
             .unresolved
             .iter()
-            .map(|site| format!("L{} {}", site.line, site.detail))
+            .chain(self.output.unread_of(file.id))
+            .map(|site| (site.line, site.detail.as_str()))
+            .collect();
+        sites.sort_unstable();
+        sites.dedup();
+        sites
+            .into_iter()
+            .map(|(line, detail)| format!("L{line} {detail}"))
             .collect()
     }
 
@@ -827,6 +835,34 @@ fn a_flask_blueprint_serves_under_its_prefix() {
     insta::assert_json_snapshot!(
         "a_flask_blueprint_serves_under_its_prefix",
         json!({ "app": tree.file_json("app.py"), "linked": tree.json["linked"] })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A Flask route whose methods are not text serves any method")]
+#[test]
+fn a_flask_route_whose_methods_are_not_text_serves_any_method() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"shop\"\ndependencies = [\"flask\"]\n",
+        ),
+        (
+            "app.py",
+            "from flask import Flask\n\napp = Flask(__name__)\nMETHODS = [\"GET\", \"POST\"]\n\n\n@app.route(\"/held\", methods=METHODS)\ndef held():\n    return \"ok\"\n\n\n@app.route(\"/plain\")\ndef plain():\n    return \"ok\"\n\n\n@app.route(\"/post\", methods=[\"POST\"])\ndef post():\n    return \"ok\"\n",
+        ),
+    ]);
+    // The methods in the variable are not known, so the route is served on any method; the route without `methods` is a `GET` and the one with a list is read from it.
+    assert_eq!(
+        tree.contracts("app.py"),
+        [
+            "serves http * /held@7",
+            "serves http GET /plain@12",
+            "serves http POST /post@17"
+        ]
+    );
+    insta::assert_json_snapshot!(
+        "a_flask_route_whose_methods_are_not_text_serves_any_method",
+        tree.file_json("app.py")
     );
 }
 
@@ -1727,7 +1763,7 @@ fn blind_spots_are_reported() {
     let blind_spots = tree.blind_spots();
     for words in [
         "Flask routes with several methods beyond the first",
-        "Flask routes whose methods are held in a variable, which are read as GET",
+        "Flask routes whose methods are held in a variable, which are read as any method",
         "prefixes held in variables",
         "Django default table names",
         "execute and executemany calls on a receiver of more than three segments",
@@ -2016,6 +2052,301 @@ fn a_prefix_that_is_not_a_literal_cuts_the_chain() {
     assert_eq!(tree.unread("app/main.py"), ["L7 app.include_router"]);
 }
 
+#[gsttt_scenario::scenario(
+    "python",
+    "A router whose prefix is not text serves none of its routes"
+)]
+#[test]
+fn a_router_whose_prefix_is_not_text_serves_none_of_its_routes() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/users.py",
+            "from fastapi import APIRouter\n\nfrom app import child\nfrom app.config import settings\n\nrouter = APIRouter(prefix=settings.API_PREFIX)\nrouter.include_router(child.router)\n\n\n@router.get(\"/users\")\ndef list_users():\n    return []\n\n\n@router.post(\"/users\")\ndef add_user():\n    return {}\n",
+        ),
+        (
+            "app/child.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter(prefix=\"/child\")\n\n\n@router.get(\"/leaf\")\ndef leaf():\n    return {}\n",
+        ),
+        (
+            "app/dynamic.py",
+            "from fastapi import APIRouter\n\nfrom app.config import get_prefix\n\nrouter = APIRouter(prefix=get_prefix())\n\n\n@router.get(\"/dynamic\")\ndef dynamic():\n    return {}\n",
+        ),
+        (
+            "app/ok.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter(prefix=\"/ok\")\n\n\n@router.get(\"/ping\")\ndef ping():\n    return {}\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import dynamic, ok, users\n\napp = FastAPI()\napp.include_router(users.router)\napp.include_router(dynamic.router)\napp.include_router(ok.router)\n",
+        ),
+    ]);
+    // The prefix is held in a setting or comes from a call, so the routes of the router are served at paths that are not known and none of them is served, at its own path or behind a mount.
+    assert_eq!(tree.contracts("app/users.py"), Vec::<String>::new());
+    assert_eq!(tree.linked("app/users.py"), Vec::<String>::new());
+    assert_eq!(tree.contracts("app/dynamic.py"), Vec::<String>::new());
+    assert_eq!(tree.linked("app/dynamic.py"), Vec::<String>::new());
+    // Each route is an unread site of its file, and so is the include of the router below the unread one, because the way through it is lost.
+    assert_eq!(
+        tree.unread("app/users.py"),
+        [
+            "L7 router.include_router",
+            "L10 router.get",
+            "L15 router.post"
+        ]
+    );
+    assert_eq!(tree.unread("app/dynamic.py"), ["L8 router.get"]);
+    // A router the unread one includes has no known way to be served either, while a router with a prefix that is text is served as before.
+    assert_eq!(tree.linked("app/child.py"), Vec::<String>::new());
+    assert_eq!(tree.unread("app/child.py"), Vec::<String>::new());
+    assert_eq!(tree.linked("app/ok.py"), ["serves http GET /ok/ping@6"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A registration prefix stands in for a blueprint prefix that is not text"
+)]
+#[test]
+fn a_registration_prefix_stands_in_for_a_blueprint_prefix_that_is_not_text() {
+    let tree = index("flask_unread_prefix");
+    // The blueprint is registered with `url_prefix="/api"`, which replaces its own, so the path is known and nothing is unread.
+    assert_eq!(tree.linked("app/api.py"), ["serves http GET /api/x@8"]);
+    assert_eq!(tree.unread("app/api.py"), Vec::<String>::new());
+    // Registered with no prefix it keeps its own, which is not text: the route serves nothing and is an unread site.
+    assert_eq!(tree.linked("app/loose.py"), Vec::<String>::new());
+    assert_eq!(tree.unread("app/loose.py"), ["L8 loose.get"]);
+    // A blueprint registered on a parent whose own prefix is replaced by its registration is served behind the registration's prefix and its own.
+    assert_eq!(tree.linked("app/child.py"), ["serves http GET /v1/c/z@6"]);
+    assert_eq!(tree.unread("app/child.py"), Vec::<String>::new());
+    assert_eq!(tree.unread("app/parent.py"), Vec::<String>::new());
+    insta::assert_json_snapshot!(
+        "a_registration_prefix_stands_in_for_a_blueprint_prefix_that_is_not_text",
+        tree.json["linked"]
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A blueprint registered with a prefix and without is served and unread"
+)]
+#[test]
+fn a_blueprint_registered_with_a_prefix_and_without_is_served_and_unread() {
+    let tree = index("flask_unread_prefix_twice");
+    // The registration on line 6 gives `/v1` in place of the prefix of the blueprint, which is not text, so the route is served there.
+    assert_eq!(tree.linked("app/api.py"), ["serves http GET /v1/x@8"]);
+    // The registration on line 7 gives none, so the blueprint keeps the prefix that is not text and the route is served at a path nobody read: it is an unread site as well.
+    assert_eq!(tree.unread("app/api.py"), ["L8 api.get"]);
+    assert_eq!(tree.unread("app/__init__.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A mount whose prefix is not text is not also the cycle it closes"
+)]
+#[test]
+fn a_mount_whose_prefix_is_not_text_is_not_also_the_cycle_it_closes() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"web\"\ndependencies = [\"django\"]\n",
+        ),
+        (
+            "project/urls.py",
+            "from django.urls import include, path, re_path\n\nfrom . import views\n\nPREFIX = r\"^api/\"\nurlpatterns = [\n    re_path(PREFIX, include(\"app.urls\")),\n    path(\"health/\", views.health),\n]\n",
+        ),
+        (
+            "app/urls.py",
+            "from django.urls import include, path\n\nfrom . import views\n\nurlpatterns = [\n    path(\"items/\", views.items),\n    path(\"back/\", include(\"project.urls\")),\n]\n",
+        ),
+    ]);
+    // The include on line 7 of `project/urls.py` gives a prefix that is not text and closes the cycle through `app/urls.py`: it is the one site `parse` counted, under the name it is called by.
+    let project = tree.file("project/urls.py");
+    assert_eq!(project.facts.unresolved.len(), 1);
+    assert_eq!(tree.output.unread_of(project.id).count(), 0);
+    assert_eq!(tree.unread("project/urls.py"), ["L7 re_path"]);
+    assert_eq!(tree.unread("app/urls.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "Routers that include each other leave the include an unread site"
+)]
+#[test]
+fn routers_that_include_each_other_leave_the_include_an_unread_site() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/a.py",
+            "from fastapi import APIRouter\n\nfrom app import b\n\nrouter = APIRouter(prefix=\"/a\")\nrouter.include_router(b.router)\n\n\n@router.get(\"/one\")\ndef one():\n    return {}\n",
+        ),
+        (
+            "app/b.py",
+            "from fastapi import APIRouter\n\nfrom app import a\n\nrouter = APIRouter(prefix=\"/b\")\nrouter.include_router(a.router)\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import a\n\napp = FastAPI()\napp.include_router(a.router)\n",
+        ),
+    ]);
+    // The way through `b` comes back to `a`, which adds no path; the way through `main` is whole.
+    assert_eq!(tree.linked("app/a.py"), ["serves http GET /a/one@9"]);
+    // The include that closes the cycle is where the way stops.
+    assert_eq!(tree.unread("app/a.py"), ["L6 router.include_router"]);
+    assert_eq!(tree.unread("app/b.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A mount whose prefix is not text is one unread site")]
+#[test]
+fn a_mount_whose_prefix_is_not_text_is_one_unread_site() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/users.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get(\"/users\")\ndef list_users():\n    return []\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import users\nfrom app.config import settings\n\napp = FastAPI()\napp.include_router(users.router, prefix=settings.PREFIX)\n",
+        ),
+    ]);
+    // The only way to the router is cut at the mount.
+    assert_eq!(tree.linked("app/users.py"), Vec::<String>::new());
+    let main = tree.file("app/main.py");
+    // The parse reports the mount, so the link, which cuts the way at it, does not report it again.
+    assert_eq!(main.facts.unresolved.len(), 1);
+    assert_eq!(tree.output.unread_of(main.id).count(), 0);
+    assert_eq!(tree.unread("app/main.py"), ["L7 app.include_router"]);
+}
+
+#[test]
+fn a_mount_with_a_prefix_of_none_gives_no_prefix() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/users.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get(\"/users\")\ndef list_users():\n    return []\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import users\n\napp = FastAPI()\napp.include_router(users.router, prefix=None)\n",
+        ),
+    ]);
+    // `None` is what leaving the prefix out comes to: the router is mounted where it is and nothing is unread.
+    assert_eq!(tree.linked("app/users.py"), ["serves http GET /users@6"]);
+    assert_eq!(tree.unread("app/main.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "An unpacking may carry a key or a keyword")]
+#[test]
+fn an_unpacking_may_carry_a_key_or_a_keyword() {
+    let pack = r#"name = "requests"
+language = "python"
+
+[[calls]]
+callee = "client.request"
+kind = "http"
+role = "calls"
+key = "$arg1|$url"
+method = "$arg2.method|$verb|GET"
+"#;
+    let tree = index_files_with(
+        &[(
+            "calls.py",
+            "def calls(client, base, options, parts, rest):\n    client.request(\"/plain\")\n    client.request(\"/post\", {\"method\": \"POST\"})\n    client.request(\"/dict\", {**base})\n    client.request(\"/keyword\", **options)\n    client.request(\"/positional\", *rest)\n    client.request(*parts)\n",
+        )],
+        builtin_packs(&[("requests", pack)]).unwrap(),
+    );
+    // What the call writes is read as before, and a method that an unpacking may give is any method, where the same call without the unpacking is `GET`.
+    assert_eq!(
+        tree.contracts("calls.py"),
+        [
+            "calls http GET /plain@2",
+            "calls http POST /post@3",
+            "calls http * /dict@4",
+            "calls http * /keyword@5",
+            "calls http * /positional@6",
+        ]
+    );
+    // A call whose only argument is unpacked may carry the URL, so it is an unread site where it used to be no site.
+    assert_eq!(tree.unread("calls.py"), ["L7 client.request"]);
+}
+
+#[gsttt_scenario::scenario("python", "A Flask route whose options are unpacked serves any method")]
+#[test]
+fn a_flask_route_whose_options_are_unpacked_serves_any_method() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"web\"\ndependencies = [\"flask\"]\n",
+        ),
+        (
+            "app.py",
+            "from flask import Flask\n\napp = Flask(__name__)\nOPTIONS = {\"methods\": [\"POST\"]}\n\n\n@app.route(\"/held\", **OPTIONS)\ndef held():\n    return {}\n\n\n@app.route(\"/plain\")\ndef plain():\n    return {}\n",
+        ),
+    ]);
+    assert_eq!(
+        tree.contracts("app.py"),
+        ["serves http * /held@7", "serves http GET /plain@12"]
+    );
+}
+
+/// A built-in pack reads the prefix of a router the same way: `**options` may give the `prefix`, so the router is one whose prefix is not text.
+#[test]
+fn a_router_whose_options_are_unpacked_serves_none_of_its_routes() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"web\"\ndependencies = [\"fastapi\"]\n",
+        ),
+        (
+            "app/routes.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter(**OPTIONS)\nplain = APIRouter(tags=[\"x\"])\n\n\n@router.get(\"/held\")\ndef held():\n    return {}\n\n\n@plain.get(\"/plain\")\ndef plain_route():\n    return {}\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import routes\n\napp = FastAPI()\napp.include_router(routes.router)\napp.include_router(routes.plain)\n",
+        ),
+    ]);
+    assert_eq!(tree.linked("app/routes.py"), ["serves http GET /plain@12"]);
+    assert_eq!(tree.unread("app/routes.py"), ["L7 router.get"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A class decorator whose prefix is not text leaves its routes unread"
+)]
+#[test]
+fn a_class_decorator_whose_prefix_is_not_text_leaves_its_routes_unread() {
+    let pack = r#"name = "views"
+language = "python"
+
+[[decorators]]
+decorator = "route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "GET"
+class = { from = "controller", key = "$arg1" }
+"#;
+    let tree = index_files_with(
+        &[(
+            "views.py",
+            "from framework import controller, route\n\nBASE = \"/base\"\n\n\n@controller(BASE)\nclass Held:\n    @route(\"/a\")\n    def a(self):\n        return 1\n\n\n@controller(\"/fixed\")\nclass Written:\n    @route(\"/b\")\n    def b(self):\n        return 1\n\n\n@controller\nclass Bare:\n    @route(\"/c\")\n    def c(self):\n        return 1\n",
+        )],
+        builtin_packs(&[("views", pack)]).unwrap(),
+    );
+    // The class of the first route carries a prefix that is not text, so the route is not served at the path it was written with: it is an unread site, while a class with a prefix that is text and one with none are read.
+    assert_eq!(
+        tree.contracts("views.py"),
+        ["serves http GET /fixed/b@15", "serves http GET /c@22"]
+    );
+    assert_eq!(tree.unread("views.py"), ["L8 route"]);
+}
+
 #[test]
 fn a_registration_or_an_include_with_a_prefix_held_in_a_variable_is_cut_too() {
     let tree = index_files(&[
@@ -2062,7 +2393,7 @@ fn the_mounts_that_are_not_followed_are_named() {
         .iter()
         .find(|words| words.starts_with("mounts of a router"))
         .expect("the provides name the mounts that are not followed");
-    // Every way a chain of mounts is cut is in that one line, because `link` cannot report a site it did not read.
+    // Every way a chain of mounts is cut is in that one line, whether or not the cut is also an unread site of the file it stopped at.
     for cut in [
         "another Python project",
         "a cycle",

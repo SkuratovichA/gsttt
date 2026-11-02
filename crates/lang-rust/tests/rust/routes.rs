@@ -35,6 +35,13 @@ fn an_actix_route_attribute_serves_the_trace_method() {
     assert_eq!(out.contracts("src/main.rs"), ["3 serves http TRACE /x"]);
 }
 
+#[scenario("rust", "An actix resource whose path is not text serves nothing")]
+#[test]
+fn an_actix_resource_whose_path_is_not_text_serves_nothing() {
+    let out = index("actixunread");
+    assert_json_snapshot!(out.sites("src/main.rs"));
+}
+
 #[scenario("rust", "A nested router in another file serves under the prefix")]
 #[test]
 fn a_nested_router_in_another_file_serves_under_the_prefix() {

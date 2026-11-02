@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use gsttt_core::rules::{OneOrMany, Prefix};
+use gsttt_core::rules::{OneOrMany, Prefix, Reading};
 use ra_ap_syntax::ast::{self, HasName};
 use ra_ap_syntax::{AstNode, SyntaxKind, SyntaxNode, TextSize};
 
@@ -77,15 +77,15 @@ enum Origin {
 }
 
 impl Reader<'_> {
-    /// The prefix the receiver of `candidate` carries when the file shows it to be made by a call `prefix` names, or to be declared with a type it names. `None` when it does not.
-    pub(super) fn gate(&self, candidate: &Candidate, prefix: &Prefix) -> Option<String> {
+    /// What the receiver of `candidate` carries as a prefix when the file shows it to be made by a call `prefix` names, or to be declared with a type it names. `None` when it does not.
+    pub(super) fn gate(&self, candidate: &Candidate, prefix: &Prefix) -> Option<Reading> {
         let receiver = candidate.receiver.as_ref()?;
         match self.origin(receiver, &prefix.from)? {
             Origin::Call(maker) => {
                 let maker = Candidate::of_call(&maker, self.lines)?.prepare(self.edition);
-                Some(prefix.read(&View::new(&maker)))
+                Some(prefix.reading(&View::new(&maker)))
             }
-            Origin::Declared => Some(String::new()),
+            Origin::Declared => Some(Reading::Absent),
         }
     }
 

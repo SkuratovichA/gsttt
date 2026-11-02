@@ -109,7 +109,7 @@ Every number, with the command that measured it, is in [`bench/results/benchmark
 - FastAPI routers and Flask blueprints created in another module than the one that declares their routes.
 - Router mounts made from another Python project, in a cycle, deeper than 32 routers or in more than 64 ways, through an import that cannot be resolved, or through a name re-exported by a module other than a package's `__init__.py`.
 - FastAPI applications mounted under a path with `mount`, as Starlette does, and routes added with `add_api_route`.
-- Flask routes with several methods are read for the first one only, methods held in a variable are read as GET, and `add_url_rule` and class-based views are not read.
+- Flask routes with several methods are read for the first one only, methods held in a variable are read as any method, and `add_url_rule` and class-based views are not read.
 - Django `re_path` and regex routes, Django REST framework routers, and Django's default table names.
 - HTTP clients other than requests and httpx, sessions and clients created in another module than the one that uses them, and a client library imported under one name in both `try` and `except`, of which the last import is read.
 - Names brought in by a star import are not matched to the module they come from.

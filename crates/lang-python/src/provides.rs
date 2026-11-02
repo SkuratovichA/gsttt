@@ -67,7 +67,9 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
         ],
         "flask" => vec![
             serves("Flask routes with several methods beyond the first"),
-            serves("Flask routes whose methods are held in a variable, which are read as GET"),
+            serves(
+                "Flask routes whose methods are held in a variable, which are read as any method",
+            ),
             serves("prefixes held in variables"),
             serves(ROUTERS_ELSEWHERE),
             serves("routes registered by calls to add_url_rule and class-based views"),

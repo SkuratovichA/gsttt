@@ -8,13 +8,14 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use gsttt_config::builtin_packs;
+use gsttt_config::{builtin_packs, read_pack};
 use gsttt_core::RepoView;
 use gsttt_core::engine::build::build_index;
 use gsttt_core::engine::pipeline::{self, Module, Output};
 use gsttt_core::fact::{FileTags, ImportFlags};
 use gsttt_core::index::{Freshness, Index, IndexInfo};
 use gsttt_core::query::{ImpactRequest, impact};
+use gsttt_core::rules::Pack;
 use serde_json::Value;
 
 /// The size above which a file is left unread; the fixtures are far below it, and so is the largest file that a test generates.
@@ -28,30 +29,48 @@ fn fixture_root(fixture: &str) -> String {
     format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Runs the tree at `root` through the pipeline with the TypeScript connector and its built-in packs.
-fn pipeline_at(root: &str) -> Result<(RepoView, Output), Box<dyn Error>> {
+/// Runs the tree at `root` through the pipeline with the TypeScript connector and `packs`.
+fn pipeline_with(root: &str, packs: Vec<Pack>) -> Result<(RepoView, Output), Box<dyn Error>> {
     let repo = RepoView::scan(root)?;
     let modules = [Module {
         connector: &gsttt_lang_ts::TYPESCRIPT,
         options: Value::Null,
-        packs: builtin_packs(gsttt_lang_ts::PACKS)?,
+        packs,
     }];
     let output = pipeline::run(&repo, &modules, MAX_FILE_BYTES)?;
     Ok((repo, output))
 }
 
-/// Indexes the tree at `root` with the TypeScript connector and its built-in packs, and returns the output in the JSON form that is snapshotted, with the keys of every object in byte order.
+/// Runs the tree at `root` through the pipeline with the TypeScript connector and its built-in packs.
+fn pipeline_at(root: &str) -> Result<(RepoView, Output), Box<dyn Error>> {
+    pipeline_with(root, builtin_packs(gsttt_lang_ts::PACKS)?)
+}
+
+/// The output in the JSON form that is snapshotted, with the keys of every object in byte order.
+fn json_of(repo: &RepoView, output: &Output) -> Value {
+    // Sorted here, once, so that no snapshot depends on whether serde_json keeps insertion order (its `preserve_order` feature, which another crate of the workspace may switch on).
+    let mut json = output.to_json(repo);
+    json.sort_all_objects();
+    json
+}
+
+/// Indexes the tree at `root` with the TypeScript connector and its built-in packs, and returns the output in the JSON form that is snapshotted.
 fn run_at(root: &str) -> Result<Value, Box<dyn Error>> {
     let (repo, output) = pipeline_at(root)?;
-    // Sorted here, once, so that no snapshot depends on whether serde_json keeps insertion order (its `preserve_order` feature, which another crate of the workspace may switch on).
-    let mut json = output.to_json(&repo);
-    json.sort_all_objects();
-    Ok(json)
+    Ok(json_of(&repo, &output))
 }
 
 /// Indexes the tree `tests/fixtures/<fixture>`, as `run_at` does.
 pub(crate) fn run(fixture: &str) -> Result<Value, Box<dyn Error>> {
     run_at(&fixture_root(fixture))
+}
+
+/// Indexes the tree `tests/fixtures/<fixture>` with the built-in packs and the pack that the TOML in `pack` writes, as `run` does.
+pub(crate) fn run_with_pack(fixture: &str, pack: &str) -> Result<Value, Box<dyn Error>> {
+    let mut packs = builtin_packs(gsttt_lang_ts::PACKS)?;
+    packs.push(read_pack("fixture.toml", pack)?);
+    let (repo, output) = pipeline_with(&fixture_root(fixture), packs)?;
+    Ok(json_of(&repo, &output))
 }
 
 /// Runs `work` on another thread and gives up after `limit`, so that a walk that does not end fails its test instead of hanging the run.

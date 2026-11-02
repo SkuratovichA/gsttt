@@ -309,9 +309,16 @@ impl<'a> Reader<'a> {
         let prefix = match &rule.receiver {
             // A receiver the file does not show to be what the rule wants is not a site at all.
             Some(receiver) => match self.gate(candidate, receiver) {
-                // A prefix that is empty is no prefix, so a request still has to name a URL to count.
-                Some(prefix) => Some(prefix).filter(|prefix| !prefix.is_empty()),
                 None => return,
+                Some(reading) => match rule.behind(&reading) {
+                    // A route behind a prefix that is not text is served at a path nobody read.
+                    None => {
+                        outcomes.add(Outcome::blind(candidate.line, &candidate.callee));
+                        return;
+                    }
+                    // A prefix that is empty is no prefix, so a request still has to name a URL to count.
+                    Some(prefix) => Some(prefix.to_owned()).filter(|prefix| !prefix.is_empty()),
+                },
             },
             None => None,
         };

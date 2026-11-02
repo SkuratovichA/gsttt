@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::collections::BTreeMap;
 
-use gsttt_core::rules::Pack;
+use gsttt_core::rules::{Pack, serves_http};
 use oxc_ast::ast::{
     Argument, AssignmentExpression, AssignmentTarget, BindingPattern, ExportDefaultDeclaration,
     Expression, Program, PropertyDefinition, VariableDeclarator,
@@ -12,7 +12,7 @@ use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::{ScopeFlags, ScopeId};
 
 use super::constants::exported_locals;
-use super::{Constants, peel, serves_http};
+use super::{Constants, peel};
 use crate::extra::{Export, ExportedMaker};
 use crate::shape::{Shape, chain_of, dotted, field_name, this_key};
 
