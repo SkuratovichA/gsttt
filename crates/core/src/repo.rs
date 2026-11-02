@@ -154,6 +154,25 @@ impl RepoView {
         std::fs::read_to_string(self.absolute(path))
     }
 
+    /// The text of a file of the working tree, or `None` when it is not a regular file or cannot be read; each case is logged and the file is skipped. A file set made from git lists a symbolic link as a file, and a link can point out of the repository, which nothing here may read.
+    pub fn read_regular_file(&self, path: &str) -> Option<String> {
+        if self
+            .absolute(path)
+            .symlink_metadata()
+            .is_ok_and(|meta| !meta.is_file())
+        {
+            tracing::warn!(file = path, "a file that is not a regular file is skipped");
+            return None;
+        }
+        match self.read_to_string(path) {
+            Ok(text) => Some(text),
+            Err(error) => {
+                tracing::warn!(file = path, %error, "a file cannot be read and is skipped");
+                None
+            }
+        }
+    }
+
     /// Whether `path` exists in the working tree, in the view or not. It tells an import of a git-ignored file from an import of nothing.
     pub fn exists_on_disk(&self, path: &str) -> bool {
         self.absolute(path).symlink_metadata().is_ok()

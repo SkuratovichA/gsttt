@@ -1738,6 +1738,7 @@ dependencies = [
  "gsttt-config",
  "gsttt-contracts",
  "gsttt-core",
+ "gsttt-lang-go",
  "gsttt-lang-python",
  "gsttt-lang-rust",
  "gsttt-lang-ts",
@@ -1834,6 +1835,24 @@ dependencies = [
  "thiserror",
  "tracing",
  "xxhash-rust",
+]
+
+[[package]]
+name = "gsttt-lang-go"
+version = "0.1.0"
+dependencies = [
+ "gsttt-config",
+ "gsttt-core",
+ "gsttt-scenario",
+ "insta",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "tree-sitter",
+ "tree-sitter-go",
 ]
 
 [[package]]
@@ -3299,6 +3318,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3916,6 +3947,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4264,6 +4301,35 @@ dependencies = [
  "tracing",
  "tracing-core",
 ]
+
+[[package]]
+name = "tree-sitter"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5129de2ccc97808c4583d48f1fb44576d015cf241e432800572bda11ef30c3b"
+dependencies = [
+ "cc",
+ "regex",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-go"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8560a4d2f835cc0d4d2c2e03cbd0dde2f6114b43bc491164238d333e28b16ea"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
 
 [[package]]
 name = "triomphe"

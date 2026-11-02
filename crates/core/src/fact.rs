@@ -92,6 +92,8 @@ mod flag_sets {
             REPLACES = 4;
             /// A dynamic import that asks for the module as it is, past any mock of it: TS `vi.importActual('x')`, `jest.requireActual('x')`.
             ACTUAL = 5;
+            /// The names are read from the package as a whole, which a directory of files shares: Go. An edge to a file keeps only the names that file exports.
+            PACKAGE = 6;
         }
     }
 
@@ -316,7 +318,10 @@ pub struct FileFacts {
     /// The names the file exports itself, sorted, without the names an `export *` brings in. `None` when the connector cannot tell, because the file does not list its exports or was read past errors. Empty for a file that exports nothing itself, such as a barrel made only of `export *`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exports: Option<Vec<String>>,
-    /// The declarations of the file and what each of them refers to, which `impact` follows when it is asked about names. `None` when the connector records none, which every connector but TypeScript does for now, or when the file was read past errors; `impact` follows such a file whole.
+    /// The package the file says it belongs to, in a language where that differs from its directory: the name in a Go package clause. `None` when the language has no such clause or the file was read past errors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// The declarations of the file and what each of them refers to, which `impact` follows when it is asked about names. `None` when the connector records none, which only the TypeScript and Go connectors record for now, or when the file was read past errors; `impact` follows such a file whole.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbols: Option<Symbols>,
 }
