@@ -6,7 +6,7 @@ The property test `a_literal_glued_to_a_base_url_is_the_first_segment` failed on
 
 ## What Changes
 
-- In `path_after_origin`, the protocol before a bare `//` must be made of placeholders alone, as `${}`, `${a}${b}` or `{scheme}`. A literal glued to the placeholder makes the text a base URL that starts a path, so `${base}api//${id}` becomes `/api/{}` and `${x}0//{}` becomes `/0/{}`. The protocol before `://` is unchanged, so `http${s}://h/x` is still an origin, and so are `${}//${}/api/x` and the rewritten `${}//api/x`.
+- In `path_after_origin`, the protocol before a bare `//` must be made of placeholders alone, as `${}`, `${a}${b}` or `{scheme}`. A literal glued to the placeholder makes the text a base URL that starts a path, so `${base}api//${id}` becomes `/api/{}` and `${x}0//{}` becomes `/0/{}`. The protocol before `://` is unchanged, so `http${s}://h/x` is still an origin, and so is `${}//${}/api/x`, while `${}//api/x`, a base URL with a trailing slash, still becomes `/api/x`.
 - The requirement "The origin of a URL" says "Placeholders alone" and gets a scenario for the glued literal.
 - `FACT_FORMAT` goes from 11 to 12, because the core now makes other facts from the same text.
 
