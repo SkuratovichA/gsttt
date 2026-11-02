@@ -24,7 +24,7 @@
 - [x] 4.2 Config: tests for "A pack sets what a relative request means" and "A relative setting that is neither value is refused"
 - [x] 4.3 TypeScript, Python and Rust: a fixture and tests for each scenario
 
-## 5. The fix round
+## 5. The edges of a relative target
 
 - [x] 5.1 `relative_target` drops `./` first, reuses `is_scheme`, and reads ``./${x}/y`` as unread
 - [x] 5.2 A base that is there and unread is decided as `rooted`
