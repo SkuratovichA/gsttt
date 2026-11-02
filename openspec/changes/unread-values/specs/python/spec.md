@@ -3,18 +3,37 @@
 ## ADDED Requirements
 
 ### Requirement: Prefixes that are not text
-A route on a router, a blueprint or a class whose own prefix is not text, such as `APIRouter(prefix=settings.API_PREFIX)` or `APIRouter(prefix=get_prefix())`, SHALL be an unread site of its file and serve nothing, since the path it is served at is not known. A chain of mounts SHALL be cut at such a router, so a router included into it is served by no chain that passes it.
+A route on a router, a blueprint or a class whose own prefix is not text, such as `APIRouter(prefix=settings.API_PREFIX)`, SHALL serve nothing and be an unread site of its file, unless the `url_prefix` of the Flask registration it is served through replaces that prefix. A way through such a router SHALL be cut, and the include below it SHALL be an unread site. A mount whose prefix is not text SHALL be one unread site.
 
 #### Scenario: A router whose prefix is not text serves none of its routes
-- **WHEN** `app/users.py` has `router = APIRouter(prefix=settings.API_PREFIX)`, `router.include_router(child.router)`, `@router.get("/users")` on line 10 and `@router.post("/users")` on line 15, `app/dynamic.py` has `router = APIRouter(prefix=get_prefix())` and `@router.get("/dynamic")`, `app/child.py` has `router = APIRouter(prefix="/child")` and `@router.get("/leaf")`, `app/ok.py` has `router = APIRouter(prefix="/ok")` and `@router.get("/ping")`, and `app/main.py` includes the routers of `users`, `dynamic` and `ok`
+- **WHEN** `app/users.py` has `router = APIRouter(prefix=settings.API_PREFIX)`, `router.include_router(child.router)` on line 7, `@router.get("/users")` on line 10 and `@router.post("/users")` on line 15, `app/dynamic.py` has `router = APIRouter(prefix=get_prefix())` and `@router.get("/dynamic")`, `app/child.py` has `router = APIRouter(prefix="/child")` and `@router.get("/leaf")`, `app/ok.py` has `router = APIRouter(prefix="/ok")` and `@router.get("/ping")`, and `app/main.py` includes the routers of `users`, `dynamic` and `ok`
 - **THEN** `app/users.py` and `app/dynamic.py` serve no route, and each decorator is an unread site of its file
-- **AND** `app/child.py` serves no route, because the only way to it goes through the router of `app/users.py`
+- **AND** `app/child.py` serves no route, because the only way to it goes through the router of `app/users.py`, and the include on line 7 of `app/users.py` is an unread site
 - **AND** `app/ok.py` serves `http GET /ok/ping`
+
+#### Scenario: A registration prefix stands in for a blueprint prefix that is not text
+- **WHEN** `api.py` has `api = Blueprint("api", __name__, url_prefix=settings.PREFIX)` and `@api.get("/x")`, `loose.py` has such a blueprint `loose` and `@loose.get("/y")`, `parent.py` has such a blueprint `parent` that registers `child`, a blueprint of `url_prefix="/c"` with `@child.get("/z")`, and `__init__.py` has `app.register_blueprint(api, url_prefix="/api")`, `app.register_blueprint(loose)` and `app.register_blueprint(parent, url_prefix="/v1")`
+- **THEN** `api.py` serves `http GET /api/x` and has no unread site
+- **AND** `loose.py` serves no route and its decorator is an unread site
+- **AND** `child.py` serves `http GET /v1/c/z` and has no unread site
+
+#### Scenario: A mount whose prefix is not text is one unread site
+- **WHEN** `app/users.py` has `router = APIRouter()` and `@router.get("/users")`, and `app/main.py` has `app.include_router(users.router, prefix=settings.PREFIX)`
+- **THEN** `app/users.py` serves no route
+- **AND** the include in `app/main.py` is one unread site, not two
 
 #### Scenario: A class decorator whose prefix is not text leaves its routes unread
 - **WHEN** a pack reads the prefix of a route from the argument of the decorator `controller` on its class, and `views.py` has `@controller(BASE)` on a class with `@route("/a")`, `@controller("/fixed")` on a class with `@route("/b")` and a bare `@controller` on a class with `@route("/c")`
 - **THEN** `views.py` serves `http GET /fixed/b` and `http GET /c`
 - **AND** the route of the first class is an unread site
+
+### Requirement: Ways the link stops
+A way from a route up through the routers that include it that the link stops, because the includes close a cycle or the chain is deeper or wider than the bounds of the link, SHALL leave the include it stops at as an unread site of its file, whose reason names the bound it hit.
+
+#### Scenario: Routers that include each other leave the include an unread site
+- **WHEN** `app/a.py` has `router = APIRouter(prefix="/a")`, `router.include_router(b.router)` on line 6 and `@router.get("/one")`, `app/b.py` has `router = APIRouter(prefix="/b")` and `router.include_router(a.router)`, and `app/main.py` includes `a.router`
+- **THEN** `app/a.py` serves `http GET /a/one`
+- **AND** the include on line 6 of `app/a.py`, where the cycle closes, is an unread site and `app/b.py` has none
 
 ## MODIFIED Requirements
 
