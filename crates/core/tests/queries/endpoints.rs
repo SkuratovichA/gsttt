@@ -1,8 +1,9 @@
 //! `impact` and `path` over GraphQL contracts, which cross only within an endpoint when the index has endpoints.
 
+use gsttt_core::contract::Role;
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{ContractLookup, Found, ImpactRequest, contract, impact};
-use gsttt_core::testing::Tree;
+use gsttt_core::testing::{Code, Tree};
 use gsttt_scenario::scenario;
 
 use super::impact::{request, rows, run};
@@ -273,6 +274,10 @@ fn a_site_reached_only_by_the_farther_of_two_leavers_has_the_hops_of_that_leaver
     );
 }
 
+#[scenario(
+    "queries",
+    "The contract query lists every site whatever the endpoints"
+)]
 #[test]
 fn the_contract_query_lists_every_site_whatever_the_endpoints() {
     let tree = users(two_endpoints(), USER);
@@ -290,4 +295,132 @@ fn the_contract_query_lists_every_site_whatever_the_endpoints() {
     };
     assert_eq!(paths(&serves), ["api-a/users.ts", "api-b/users.ts"]);
     assert_eq!(paths(&calls), ["web-a/page.ts", "web-b/page.ts"]);
+}
+
+/// Asks about the `names` declared in `file`, with the depth of the request left as given.
+fn ask_names(
+    index: &Index,
+    file: &str,
+    names: &[&str],
+    depth: Option<u32>,
+) -> gsttt_core::query::Impact {
+    let request = ImpactRequest {
+        files: vec![file.to_owned()],
+        names: names.iter().map(|name| (*name).to_owned()).collect(),
+        depth,
+        ..ImpactRequest::default()
+    };
+    impact(index, Freshness::Fresh, &request)
+}
+
+#[scenario(
+    "queries",
+    "A walk by name crosses a GraphQL contract within an endpoint"
+)]
+#[test]
+fn a_walk_by_name_crosses_a_graphql_contract_within_an_endpoint() {
+    // `lib/user.ts` is in no endpoint, so the scope of the site the walk leaves by is that of the file the walk reached, `api-a/users.ts`, and not that of the file the name is declared in.
+    let index = users(two_endpoints(), USER)
+        .symbols(
+            "lib/user.ts",
+            Code::new().declaration("loadUser", (1, 5), &[]),
+        )
+        .exports("lib/user.ts", &["loadUser"])
+        .imports_names("api-a/users.ts", "lib/user.ts", &["loadUser"])
+        .symbols(
+            "api-a/users.ts",
+            Code::new().declaration("resolveUser", (1, 5), &["loadUser"]),
+        )
+        .exports("api-a/users.ts", &["resolveUser"])
+        .build();
+
+    let answer = ask_names(&index, "lib/user.ts", &["loadUser"], None);
+
+    assert_eq!(
+        seen(&answer),
+        [
+            row("api-a/users.ts", 1, "imports loadUser from lib/user.ts"),
+            row("web-a/page.ts", 2, "calls graphql Query.user"),
+        ]
+    );
+}
+
+/// `api-<near>/lib.ts` declares `foo` and serves `Query.other`, which `api-<near>/users.ts` calls, so its server of `Query.user` is reached across a contract, with no hop through code. `api-<far>/users.ts` uses `foo`, so its server of `Query.user` is reached with one. Each page has an entry that imports it.
+fn two_servers_at_different_hops(near: &str, far: &str) -> Index {
+    let mut tree = users(two_endpoints(), USER)
+        .site(
+            &format!("api-{near}/lib.ts"),
+            "graphql Query.other",
+            Role::Serves,
+            2,
+        )
+        .site(
+            &format!("api-{near}/users.ts"),
+            "graphql Query.other",
+            Role::Calls,
+            2,
+        )
+        .symbols(
+            &format!("api-{near}/lib.ts"),
+            Code::new().declaration("foo", (1, 5), &[]),
+        )
+        .exports(&format!("api-{near}/lib.ts"), &["foo"])
+        .imports_names(
+            &format!("api-{far}/users.ts"),
+            &format!("api-{near}/lib.ts"),
+            &["foo"],
+        )
+        .symbols(
+            &format!("api-{far}/users.ts"),
+            Code::new().declaration("resolve", (1, 5), &["foo"]),
+        )
+        .exports(&format!("api-{far}/users.ts"), &["resolve"])
+        .symbols(
+            &format!("api-{near}/users.ts"),
+            Code::new().declaration("resolve", (1, 5), &[]),
+        )
+        .exports(&format!("api-{near}/users.ts"), &["resolve"]);
+    for side in [near, far] {
+        let page = format!("web-{side}/page.ts");
+        let entry = format!("web-{side}/entry.ts");
+        tree = tree
+            .symbols(&page, Code::new().declaration("show", (1, 5), &[]))
+            .exports(&page, &["show"])
+            .imports_names(&entry, &page, &["show"])
+            .symbols(&entry, Code::new().declaration("main", (1, 5), &["show"]))
+            .exports(&entry, &[]);
+    }
+    tree.build()
+}
+
+#[test]
+fn the_hops_through_code_across_a_contract_are_those_of_the_servers_of_its_endpoint() {
+    // Each page is as far in hops through code as the server of its own endpoint, whichever endpoint that is, so with a depth of one the file that imports the page of the near endpoint is reached and the one that imports the page of the far endpoint is not.
+    for (near, far) in [("b", "a"), ("a", "b")] {
+        let index = two_servers_at_different_hops(near, far);
+
+        let answer = ask_names(&index, &format!("api-{near}/lib.ts"), &["foo"], Some(1));
+
+        let mut expected = vec![
+            row(
+                &format!("api-{far}/users.ts"),
+                1,
+                &format!("imports foo from api-{near}/lib.ts"),
+            ),
+            row(
+                &format!("api-{near}/users.ts"),
+                1,
+                "calls graphql Query.other",
+            ),
+            row("web-a/page.ts", 2, "calls graphql Query.user"),
+            row("web-b/page.ts", 2, "calls graphql Query.user"),
+            row(
+                &format!("web-{near}/entry.ts"),
+                3,
+                &format!("imports show from web-{near}/page.ts"),
+            ),
+        ];
+        expected.sort_by(|left, right| (left.1, &left.0).cmp(&(right.1, &right.0)));
+        assert_eq!(seen(&answer), expected, "near endpoint {near}");
+    }
 }

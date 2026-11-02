@@ -37,7 +37,7 @@ From every changed and every affected file, `impact` SHALL cross the contracts t
 ## ADDED Requirements
 
 ### Requirement: GraphQL endpoints
-With endpoints in the index, `impact` and `path` SHALL cross a GraphQL contract only between sites that meet. A site belongs to the endpoints whose globs match its file: a `serves` site by `servers`, a `declares` site by `clients` or `servers`, a `calls` site by `clients` or, when none matches, by `servers`. Two sites meet when the one in the higher role (`calls`, `serves`, `declares`) belongs to no endpoint, or the two share one. Other contracts SHALL NOT be scoped.
+With endpoints in the index, `impact` and `path` SHALL cross a GraphQL contract only between sites that meet. A site belongs to the endpoints whose globs match its file: a `serves` site by `servers`, a `declares` site by `clients` or `servers`, a `calls` site by `clients` or, when none matches, by `servers`. Two sites meet when the one in the higher role (`calls`, `serves`, `declares`) belongs to no endpoint, or the two share one. Other contracts and the `contract` query SHALL NOT be scoped.
 
 #### Scenario: A change reaches the callers of its own endpoint only
 - **WHEN** the endpoint `a` has the clients `web-a/**` and the servers `api-a/**`, the endpoint `b` has `web-b/**` and `api-b/**`, `api-a/users.ts` and `api-b/users.ts` serve `graphql Query.user`, `web-a/page.ts` and `web-b/page.ts` call it, and `api-a/users.ts` changes
@@ -69,3 +69,11 @@ With endpoints in the index, `impact` and `path` SHALL cross a GraphQL contract 
 #### Scenario: Endpoints do not scope other contracts
 - **WHEN** the endpoints and files of the first scenario serve and call `http GET /user` in place of the GraphQL key
 - **THEN** a change of `api-a/users.ts` reaches both pages
+
+#### Scenario: The contract query lists every site whatever the endpoints
+- **WHEN** the endpoints and files of the first scenario are given and `contract` is asked for `graphql Query.user`
+- **THEN** it lists `api-a/users.ts` and `api-b/users.ts` as servers and `web-a/page.ts` and `web-b/page.ts` as callers
+
+#### Scenario: A walk by name crosses a GraphQL contract within an endpoint
+- **WHEN** the endpoints and files of the first scenario are given, `lib/user.ts`, which matches no glob, declares `loadUser`, and `api-a/users.ts` uses it in the resolver that serves `graphql Query.user`
+- **THEN** impact asked about `loadUser` lists `api-a/users.ts` and `web-a/page.ts` and not `web-b/page.ts`
