@@ -4,7 +4,7 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, contracts, linked, run, sites, unread};
+use crate::support::{NOTHING, contracts, linked, run, run_with_pack, sites, unread};
 
 #[test]
 #[scenario("typescript", "A client made in another file is called")]
@@ -248,5 +248,73 @@ fn a_computed_url_on_an_imported_client_with_no_base_is_one_unread_site()
     assert_eq!(linked(&json), ["calls http GET /users @7 in src/a.ts"]);
     assert_eq!(contracts(&json, "src/a.ts"), NOTHING);
     assert_eq!(unread(&json, "src/a.ts"), ["@6 non-literal axios.get"]);
+    Ok(())
+}
+
+/// A pack that serves `get` on a router made by `makeRouter`, behind the prefix the `prefix` property of the maker's argument holds.
+const ROUTER_PACK: &str = r#"
+name = "fixture"
+language = "ts"
+
+[[calls]]
+callee = "*.get"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$callee"
+receiver = { from = "makeRouter", key = "$arg1.prefix" }
+"#;
+
+#[test]
+#[scenario(
+    "typescript",
+    "A route on a router made in the same file with a prefix that is not text is unread"
+)]
+fn a_route_on_a_router_made_here_with_a_prefix_that_is_not_text_is_unread()
+-> Result<(), Box<dyn Error>> {
+    let json = run_with_pack("receivers-unread-prefix", ROUTER_PACK)?;
+    assert_eq!(
+        unread(&json, "src/router.ts"),
+        ["@9 non-literal dynamic.get"]
+    );
+    let served: Vec<String> = linked(&json)
+        .into_iter()
+        .filter(|fact| fact.ends_with("in src/router.ts"))
+        .collect();
+    assert_eq!(
+        served,
+        [
+            "serves http GET /own @11 in src/router.ts",
+            "serves http GET /v1/own @10 in src/router.ts",
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A route on a router made in another file with a prefix that is not text is unread"
+)]
+fn a_route_on_a_router_made_in_another_file_with_a_prefix_that_is_not_text_is_unread()
+-> Result<(), Box<dyn Error>> {
+    let json = run_with_pack("receivers-unread-prefix", ROUTER_PACK)?;
+    assert_eq!(
+        unread(&json, "src/users.ts"),
+        ["@5 non-literal dynamic.get"]
+    );
+    let served: Vec<String> = linked(&json)
+        .into_iter()
+        .filter(|fact| fact.ends_with("in src/users.ts"))
+        .collect();
+    assert_eq!(
+        served,
+        [
+            "serves http GET /v1/orders @6 in src/users.ts",
+            "serves http GET /items @7 in src/users.ts",
+        ]
+    );
+    assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
     Ok(())
 }

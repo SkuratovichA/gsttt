@@ -412,13 +412,13 @@ impl<'a> Analyzer<'_, 'a> {
             .any(|rule| rule.reads(spec))
     }
 
-    /// The prefix the call that made the receiver of `callee` gives, and the receiver's name, when the receiver was made in this file by a call that `rule` names.
-    fn receiver<'c>(&self, callee: &'c str, rule: &Prefix) -> Option<(String, &'c str)> {
+    /// What the call that made the receiver of `callee` gives as a prefix, and the receiver's name, when the receiver was made in this file by a call that `rule` names.
+    fn receiver<'c>(&self, callee: &'c str, rule: &Prefix) -> Option<(Reading, &'c str)> {
         let (host, _) = callee.rsplit_once('.')?;
         let maker = self.makers.get(host)?;
         rule.from
             .matches(&maker.callee)
-            .then(|| (rule.read(&maker.shape), host))
+            .then(|| (rule.reading(&maker.shape), host))
     }
 
     /// The receiver of `callee` when it is written on a name this file imports from a file of its project: `api` for `api.get`, `store.cache` for `store.cache.get`. A name imported from Node, or from a package that some active pack is for, is a library, and a rule reads a call on it as it is written.
@@ -494,7 +494,7 @@ impl<'a> Analyzer<'_, 'a> {
                     }
                     (None, None) => (None, None),
                     (Some(receiver), from_file) => {
-                        let Some((prefix, host)) = self.receiver(callee, receiver) else {
+                        let Some((reading, host)) = self.receiver(callee, receiver) else {
                             if let Some(from_file) = from_file {
                                 self.defer(Deferred {
                                     rule: at,
@@ -507,6 +507,10 @@ impl<'a> Analyzer<'_, 'a> {
                                     },
                                 });
                             }
+                            continue;
+                        };
+                        let Some(prefix) = behind(rule, reading) else {
+                            self.record(Outcome::blind(line, callee));
                             continue;
                         };
                         (Some(prefix), Some(host))
@@ -1722,6 +1726,15 @@ pub(crate) fn serves_http(kind: &ContractKind, role: Role) -> bool {
     *kind == ContractKind::Http && role == Role::Serves
 }
 
+/// The prefix a call of `rule` is applied behind when the receiver's prefix reads as `reading`: empty when the receiver gives none. `None` for a prefix that is not text under a rule that serves routes, because a route would be served at a path that is not its own; the base of a client is still the origin, and the path after it is right.
+pub(crate) fn behind(rule: &CallRule, reading: Reading) -> Option<String> {
+    match reading {
+        Reading::Text(prefix) => Some(prefix),
+        Reading::Unread if serves_http(&rule.kind, rule.role) => None,
+        Reading::Absent | Reading::Unread => Some(String::new()),
+    }
+}
+
 /// Whether `rule` serves routes on a receiver and a call with `arguments` arguments has no handler after its path, so it reads a setting: `app.get('env')` is no route.
 fn reads_setting(rule: &CallRule, arguments: usize) -> bool {
     rule.receiver.is_some() && serves_http(&rule.kind, rule.role) && arguments < 2
@@ -1843,6 +1856,25 @@ mod tests {
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, source_type).parse();
         analyze(&parsed.program, code, &LineIndex::new(code), &packs())
+    }
+
+    #[test]
+    #[scenario(
+        "typescript",
+        "A client whose base is not text is called at the path after it"
+    )]
+    fn a_client_whose_base_is_not_text_is_called_at_the_path_after_it() {
+        let analysis = analysis_of(
+            "import axios from 'axios';\nconst api = axios.create({ baseURL: process.env.API });\napi.get('/users');\n",
+        );
+        let calls: Vec<String> = analysis
+            .contracts
+            .iter()
+            .filter(|fact| fact.role == Role::Calls && fact.via == "axios")
+            .map(|fact| fact.key.to_string())
+            .collect();
+        assert_eq!(calls, ["http GET /users"]);
+        assert_eq!(analysis.unresolved, []);
     }
 
     #[test]
