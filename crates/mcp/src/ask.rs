@@ -77,7 +77,7 @@ fn within_budget<A: Answer>(answer: &A, entries: Entries) -> String {
     }
     let line = format!(
         "cut: lists shortened to fit this answer in {} characters; the \"more\" counts say what they leave out. \
-         Ask a narrower question for the rest: fewer files, or a smaller depth.",
+         Ask a narrower question for the rest: fewer files, a smaller depth, or the tests left out.",
         thousands(BUDGET)
     );
     let cut_to = |shown: usize| format!("{line}\n{}", answer.text(Entries::First(shown)));

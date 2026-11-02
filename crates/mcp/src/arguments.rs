@@ -64,9 +64,9 @@ pub(crate) struct ImpactArguments {
     pub(crate) changed: bool,
     /// With `changed`: compare against the best common ancestor of HEAD and this git revision, such as a branch name, instead of against HEAD.
     pub(crate) base: Option<String>,
-    /// Stop the walk after this many hops through code from a changed file: the imports, and with `names` the uses of a name. A hop across a contract does not count, so the walk goes on to the clients of every contract it comes to. Leave it out to follow every hop, or, with `names`, to take one: the direct callers.
+    /// Stop the walk after this many hops through code from a changed file, for every file but the tests: the imports, and with `names` the uses of a name. A hop across a contract does not count, so the walk goes on to the clients of every contract it comes to. The tests are followed to every depth. Leave it out to follow every hop, or, with `names`, to take one: the direct callers.
     pub(crate) depth: Option<u32>,
-    /// With `paths`: ask about these names, each a function, class, method or variable that the files declare, instead of about the files as a whole. A method is written `Class.method`. The answer lists the direct callers of the names, the declarations that refer to them, each with the line it starts on, so ask again about a caller to go further. A name that a file does not declare is said so in the answer and reaches nothing. It cannot go with `changed`.
+    /// With `paths`: ask about these names, each a function, class, method or variable that the files declare, instead of about the files as a whole. A method is written `Class.method`. The answer lists the direct callers of the names, the declarations that refer to them, each with the line it starts on, and every test that reaches them at any depth, so ask again about a caller to go further. A name that a file does not declare is said so in the answer and reaches nothing. It cannot go with `changed`.
     #[serde(default)]
     pub(crate) names: Vec<String>,
     /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.

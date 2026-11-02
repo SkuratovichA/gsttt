@@ -78,7 +78,8 @@ impl ToolName {
                  to true before finishing a task, to see what your edits reach. A question about one function, \
                  class, method or variable is asked with its name in `names`, beside the file that declares it in \
                  `paths`: the answer then lists its direct callers, the declarations that refer to it and the lines \
-                 they start on, so ask again about a caller to go further. The answer ends with what the index \
+                 they start on, and every test that reaches it at any depth, so ask again about a caller to go \
+                 further. The answer ends with what the index \
                  covered and how fresh it is."
             }
             Self::Dependents => {

@@ -242,8 +242,9 @@ fn name_asks_about_a_name() {
     let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--name", "foo"]);
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
-        text.stdout
-            .starts_with("impact of foo in src/a.ts, within 1 hop through code\n"),
+        text.stdout.starts_with(
+            "impact of foo in src/a.ts, within 1 hop through code; tests at any depth\n"
+        ),
         "{text:?}"
     );
     assert!(
@@ -636,7 +637,7 @@ fn name_asks_about_a_member_of_a_class() {
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
         text.stdout
-            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop through code\n"),
+            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop through code; tests at any depth\n"),
         "{text:?}"
     );
     assert!(

@@ -132,7 +132,7 @@ fn depth_limits_the_walk() {
     assert!(
         answer
             .to_string()
-            .contains("impact of a.ts, within 1 hop through code\n")
+            .contains("impact of a.ts, within 1 hop through code; tests at any depth\n")
     );
 }
 
@@ -146,6 +146,118 @@ fn depth_zero_reaches_nothing() {
     let answer = impact(&chain(), Freshness::Fresh, &limited);
 
     assert_eq!(paths(&answer.affected), NONE);
+}
+
+/// `c.ts` imports `b.ts`, `b.ts` imports `a.ts`, and the test `c.test.ts` imports `c.ts`, so the test is three hops from `a.ts`.
+fn tested_chain() -> Tree {
+    Tree::new()
+        .imports("c.ts", "b.ts")
+        .imports("b.ts", "a.ts")
+        .imports("c.test.ts", "c.ts")
+        .tag("c.test.ts", FileTags::TEST)
+}
+
+fn limited_to(depth: u32, files: &[&str]) -> ImpactRequest {
+    ImpactRequest {
+        depth: Some(depth),
+        ..request(files)
+    }
+}
+
+#[scenario("queries", "A depth on a walk by files leaves the tests whole")]
+#[test]
+fn a_depth_on_a_walk_by_files_leaves_the_tests_whole() {
+    let index = tested_chain().build();
+
+    let answer = impact(&index, Freshness::Fresh, &limited_to(1, &["a.ts"]));
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(rows(&answer.tests), [row("c.test.ts", 3, "imports c.ts")]);
+    assert_eq!(answer.depth, Some(1));
+    let text = answer.to_string();
+    assert!(
+        text.starts_with("impact of a.ts, within 1 hop through code; tests at any depth\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("c.test.ts  distance 3  imports c.ts"),
+        "{text}"
+    );
+}
+
+#[scenario("queries", "Tests left out past the depth are counted")]
+#[test]
+fn tests_left_out_past_the_depth_are_counted() {
+    let index = tested_chain().build();
+    let request = ImpactRequest {
+        no_tests: true,
+        ..limited_to(1, &["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(paths(&answer.tests), NONE);
+    assert_eq!(answer.tests_left_out, 1);
+    let text = answer.to_string();
+    assert!(text.contains("1 test file left out\n"), "{text}");
+    assert!(!text.contains("c.test.ts"), "{text}");
+}
+
+#[test]
+fn the_footer_covers_the_tests_past_the_depth() {
+    let index = tested_chain()
+        .read_by("ts", "a.ts")
+        .read_by("ts", "b.ts")
+        .read_by("ts", "c.ts")
+        .read_by("extra", "c.test.ts")
+        .build();
+
+    let text = impact(&index, Freshness::Fresh, &limited_to(1, &["a.ts"])).to_string();
+
+    assert!(text.contains("extra read 1 of 1 files"), "{text}");
+}
+
+#[test]
+fn a_depth_that_reaches_no_file_still_lists_the_tests_past_it() {
+    let index = tested_chain().build();
+
+    let answer = impact(&index, Freshness::Fresh, &limited_to(0, &["a.ts"]));
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert_eq!(rows(&answer.tests), [row("c.test.ts", 3, "imports c.ts")]);
+    let text = answer.to_string();
+    assert!(!text.contains("nothing is affected"), "{text}");
+}
+
+#[test]
+fn an_answer_with_tests_past_the_depth_looks_for_no_misses() {
+    // `src/x.ts` imports `./a`, which resolved to nothing, so it may have meant the changed `src/a.ts`.
+    let tree = || {
+        Tree::new().read_by("ts", "src/a.ts").import(
+            "src/x.ts",
+            Import::new("./a", ImportKind::Static, 1),
+            To::Missing(UnresolvedReason::NotFound),
+        )
+    };
+    let reached_nothing = tree().build();
+    let reached_a_test = tree()
+        .imports("src/a.test.ts", "src/a.ts")
+        .tag("src/a.test.ts", FileTags::TEST)
+        .build();
+    let request = limited_to(0, &["src/a.ts"]);
+
+    let looked = impact(&reached_nothing, Freshness::Fresh, &request);
+    let skipped = impact(&reached_a_test, Freshness::Fresh, &request);
+
+    assert_eq!(
+        looked.possible_misses.len(),
+        1,
+        "{:?}",
+        looked.possible_misses
+    );
+    assert_eq!(paths(&skipped.tests), ["src/a.test.ts"]);
+    assert_eq!(skipped.possible_misses, Vec::new());
 }
 
 /// `b.ts` is a barrel over the changed `a.ts`, and `i.ts` imports from the barrel.
@@ -1209,6 +1321,11 @@ pub(super) fn file_path(number: usize) -> String {
 impl Case {
     /// The files with their exports and the imports that name what they take.
     fn by_name(&self) -> Index {
+        self.named_files().build()
+    }
+
+    /// The tree behind [`Case::by_name`], before it is built, for a test to tag files in.
+    fn named_files(&self) -> Tree {
         let mut tree = Tree::new();
         for (number, own) in self.own.iter().enumerate() {
             tree = tree.read_by("ts", &file_path(number));
@@ -1230,11 +1347,16 @@ impl Case {
                 Take::Require(names) => tree.requires(&importer, &target, names),
             };
         }
-        tree.build()
+        tree
     }
 
     /// The same files and the same edges with every name taken out, so that each import brings in everything: the walk over files.
     pub(super) fn by_file(&self) -> Index {
+        self.whole_files().build()
+    }
+
+    /// The tree behind [`Case::by_file`], before it is built, for a test to tag files in.
+    fn whole_files(&self) -> Tree {
         let mut tree = Tree::new();
         for number in 0..FILES {
             tree = tree.read_by("ts", &file_path(number));
@@ -1242,7 +1364,7 @@ impl Case {
         for (importer, target, _) in &self.edges {
             tree = tree.imports(&file_path(*importer), &file_path(*target));
         }
-        tree.build()
+        tree
     }
 }
 
@@ -1411,6 +1533,108 @@ proptest! {
             .filter(|file| !named.contains_key(file.as_str()))
             .collect();
         prop_assert!(dropped.is_empty(), "dropped {dropped:?}");
+    }
+}
+
+/// Tags the files `tests` picks, by number, as tests.
+fn with_tests(tree: Tree, tests: &[bool]) -> Index {
+    tests
+        .iter()
+        .enumerate()
+        .filter(|&(_, &test)| test)
+        .fold(tree, |tree, (number, _)| {
+            tree.tag(&file_path(number), FileTags::TEST)
+        })
+        .build()
+}
+
+/// That the depth leaves the tests of an answer about `names` in `files` whole. `plain` and `tagged` are one tree, the second with the files `is_test` picks tagged as tests. What a walk with no limit reaches in `plain`, where nothing is set apart, is the oracle: the tests of `tagged` at every depth are the entries of it whose path `is_test`, with the distance, reason, callers and load of that walk, the count of those left out is their number, and a larger depth drops no affected file.
+pub(super) fn depth_leaves_the_tests_whole(
+    plain: &Index,
+    tagged: &Index,
+    files: &[&str],
+    names: &[&str],
+    is_test: impl Fn(&str) -> bool,
+) -> Result<(), TestCaseError> {
+    let ask = |index: &Index, depth: Option<u32>, no_tests: bool| {
+        let request = ImpactRequest {
+            names: names.iter().map(|&name| name.to_owned()).collect(),
+            depth,
+            no_tests,
+            ..request(files)
+        };
+        impact(index, Freshness::Fresh, &request)
+    };
+    // A walk by name takes one hop through code when no depth is asked, and a walk by files takes them all.
+    let unlimited = if names.is_empty() {
+        None
+    } else {
+        Some(u32::MAX)
+    };
+    let whole = ask(plain, unlimited, false);
+    let (expected_tests, expected_affected): (Vec<Affected>, Vec<Affected>) = whole
+        .affected
+        .iter()
+        .cloned()
+        .partition(|entry| is_test(&entry.path));
+
+    let mut smaller: BTreeSet<String> = BTreeSet::new();
+    for depth in [Some(0), Some(1), Some(2), Some(3), None] {
+        let answer = ask(tagged, depth, false);
+        prop_assert_eq!(&answer.tests, &expected_tests, "depth {:?}", depth);
+        prop_assert_eq!(answer.tests_left_out, 0);
+        let left_out = ask(tagged, depth, true);
+        prop_assert_eq!(left_out.tests, Vec::new(), "depth {:?}", depth);
+        prop_assert_eq!(
+            left_out.tests_left_out as usize,
+            expected_tests.len(),
+            "depth {:?}",
+            depth
+        );
+        prop_assert_eq!(&left_out.affected, &answer.affected, "depth {:?}", depth);
+
+        let affected: BTreeSet<String> = answer
+            .affected
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect();
+        prop_assert!(
+            answer.affected.iter().all(|entry| !is_test(&entry.path)),
+            "depth {depth:?} lists a test among the affected files"
+        );
+        if depth.is_some() {
+            prop_assert!(
+                smaller.is_subset(&affected),
+                "depth {depth:?} dropped {:?}",
+                smaller.difference(&affected).collect::<Vec<_>>()
+            );
+            smaller = affected;
+        } else if names.is_empty() {
+            prop_assert_eq!(&answer.affected, &expected_affected);
+        }
+    }
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    /// The depth bounds the affected files and never the tests, on a tree where imports name what they take and on one where they take everything, asked about the files and about a name.
+    #[test]
+    fn the_depth_never_bounds_the_tests(
+        case in case(),
+        tests in prop::collection::vec(any::<bool>(), FILES),
+    ) {
+        let changed = file_path(case.changed);
+        let is_test = |path: &str| (0..FILES).any(|number| tests[number] && file_path(number) == path);
+        let trees = [
+            (case.by_file(), with_tests(case.whole_files(), &tests)),
+            (case.by_name(), with_tests(case.named_files(), &tests)),
+        ];
+        for (plain, tagged) in &trees {
+            depth_leaves_the_tests_whole(plain, tagged, &[&changed], &[], is_test)?;
+            depth_leaves_the_tests_whole(plain, tagged, &[&changed], &["a"], is_test)?;
+        }
     }
 }
 
