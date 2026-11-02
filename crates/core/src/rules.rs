@@ -12,7 +12,9 @@ use std::str::FromStr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::contract::{ContractKey, ContractKind, Role, normalize_http_path, path_after_origin};
+use crate::contract::{
+    ContractKey, ContractKind, PARAMETER, Role, normalize_http_path, path_after_origin,
+};
 use crate::fact::{ContractFact, Embedded, Line, UnresolvedReason, UnresolvedSite};
 
 /// The rules for one framework or library.
@@ -546,7 +548,7 @@ fn is_computed(key: &str) -> bool {
 /// Whether a normalised HTTP path keeps a segment that is not the `{}` parameter.
 fn has_literal_segment(path: &str) -> bool {
     path.split('/')
-        .any(|segment| !segment.is_empty() && segment != "{}")
+        .any(|segment| !segment.is_empty() && segment != PARAMETER)
 }
 
 fn blind(line: Line, what: &str) -> Outcome {

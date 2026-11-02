@@ -1,10 +1,10 @@
 //! Which HTTP contract keys meet. A call and the route it reaches are rarely spelled alike: the method may be a wildcard, a gateway may put a prefix in front of the route, and parameters have no name in a key.
 
-use crate::contract::{ContractKey, normalize_http_path};
+use crate::contract::{ContractKey, PARAMETER, normalize_http_path};
 
 /// Decides whether two contract keys meet, under the path prefixes a gateway or proxy puts in front of routes.
 ///
-/// Two HTTP keys meet when their methods are equal or either is `*`, and their paths have the same number of segments, each pair equal or `{}` on either side. A prefix may be taken off the start of one of the paths, never of both: `/api/users` meets `/users`, but not `/v1/users`, which is another route behind another gateway. Taking a prefix off is optional, so adding a prefix never breaks a match, and it must leave a path: `/api` is a prefix, not a route, and does not meet `/`. Any other two keys meet when they are equal.
+/// Two HTTP keys meet when their methods are equal or either is `*`, and their paths have the same number of segments, each pair equal or `{}` on either side. When both paths hold a literal segment, at least one pair must be the same literal on both sides, so `/{}/messages` does not meet `/u/{}`, which no literal agrees on, while `/{}` meets `/users`. A prefix may be taken off the start of one of the paths, never of both: `/api/users` meets `/users`, but not `/v1/users`, which is another route behind another gateway. Taking a prefix off is optional, so adding a prefix never breaks a match, and it must leave a path: `/api` is a prefix, not a route, and does not meet `/`. Any other two keys meet when they are equal.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HttpMatcher {
     /// The prefixes in the form key paths take: `/api/v1`, never `api/v1/`. The root is not a prefix.
@@ -69,13 +69,18 @@ fn segments(path: &str) -> impl Iterator<Item = &str> {
     path.split('/').filter(|segment| !segment.is_empty())
 }
 
+/// Whether two paths meet segment by segment. Paths that both hold a literal need one literal in common, or a call whose literals fall on parameters of the route, and the route's on its computed parts, would meet it; a path of parameters alone is a catch-all and keeps meeting every path of its length.
 fn segments_meet(a: &str, b: &str) -> bool {
-    let mut a = segments(a);
-    let mut b = segments(b);
+    let (mut a, mut b) = (segments(a), segments(b));
+    let (mut literal_a, mut literal_b, mut shared) = (false, false, false);
     loop {
         match (a.next(), b.next()) {
-            (None, None) => return true,
-            (Some(x), Some(y)) if x == y || x == "{}" || y == "{}" => {}
+            (None, None) => return shared || !(literal_a && literal_b),
+            (Some(x), Some(y)) if x == y || x == PARAMETER || y == PARAMETER => {
+                literal_a |= x != PARAMETER;
+                literal_b |= y != PARAMETER;
+                shared |= x == y && x != PARAMETER;
+            }
             _ => return false,
         }
     }

@@ -303,6 +303,22 @@ fn a_call_reaches_a_route_through_a_parameter() {
 }
 
 #[test]
+fn a_call_that_shares_no_literal_with_a_route_does_not_reach_it() {
+    let index = Tree::new()
+        .serves("users.controller.ts", "http POST /u/{}")
+        .calls("outside.ts", "http POST /{}/messages")
+        .calls("app.ts", "http POST /u/me")
+        .build();
+
+    let answer = run(&index, &["users.controller.ts"]);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [("app.ts", 1, "calls http POST /u/me".to_owned())]
+    );
+}
+
+#[test]
 fn a_prefix_joins_a_call_to_a_route_it_is_written_before() {
     let index = Tree::new()
         .serves("bookings.controller.ts", "http GET /bookings/{}")
