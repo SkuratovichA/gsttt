@@ -45,3 +45,11 @@ With one `CARGO_TARGET_DIR` for the main checkout and a worktree, a crate gets t
 ## A rule fix in core would have left the facts of unchanged files as they were
 
 The key of a file's cached facts covers the fact format, the connector's name and version, the options and the packs, but not the code that applies a rule, so a fix in `crates/core` that reads the same text differently leaves every unchanged file with its old facts. The first commit of such a fix did not bump anything, and review caught it. Fix: a change in `crates/core` that gives a different outcome for the same text bumps `FACT_FORMAT` in `crates/core/src/engine/keys.rs` and names the bump in the proposal; a change confined to one connector bumps that connector's version instead, such as `READER_VERSION` in `crates/lang-ts/src/project.rs`.
+
+## A field result was put down to a stale snapshot that could not exist
+
+A drop in a field score was first explained as a stale snapshot of the index, but the scoring script removes the snapshot before each run, so no run could have read one. Fix: before blaming a cache, check whether the run could have used one, and call the cause unverified until then.
+
+## A speed difference of 125 against 137 ms was noise
+
+One timing of each side gave 125 against 137 ms, and the difference was within the spread of repeated runs of one binary. Fix: time each side several times, alternating the two, and report the median and the spread.
