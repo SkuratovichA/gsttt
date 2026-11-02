@@ -384,6 +384,30 @@ fn changing_a_server_reaches_its_callers_only() {
     );
 }
 
+#[scenario(
+    "queries",
+    "A file that sets a variable reaches the files that read it"
+)]
+#[test]
+fn a_file_that_sets_a_variable_reaches_the_files_that_read_it() {
+    let index = Tree::new()
+        .read_by("python", "a.py")
+        .read_by("python", "b.py")
+        .serves("a.py", "env X")
+        .calls("a.py", "env X")
+        .calls("b.py", "env X")
+        .build();
+
+    let setter = run(&index, &["a.py"]);
+    let reader = run(&index, &["b.py"]);
+
+    assert_eq!(
+        rows(&setter.affected),
+        [("b.py", 1, "calls env X".to_owned())]
+    );
+    assert_eq!(paths(&reader.affected), NONE);
+}
+
 #[scenario("queries", "Changing a caller reaches no server")]
 #[test]
 fn changing_a_caller_reaches_no_server() {

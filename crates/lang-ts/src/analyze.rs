@@ -21,13 +21,14 @@ use oxc_ast::ast::{
     AssignmentTargetPropertyIdentifier, BindingIdentifier, BindingPattern, CallExpression, Class,
     ClassBody, Declaration, Decorator, ExportAllDeclaration, ExportDeclaration,
     ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportFromDeclaration,
-    ExportNamedDeclaration, Expression, ExpressionStatement, FormalParameter, Function,
-    IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ImportExpression,
-    ImportOrExportKind, MemberExpression, MethodDefinition, ModuleExportName, NewExpression,
-    ObjectProperty, ObjectPropertyKind, PrivateInExpression, Program, PropertyDefinition,
-    SimpleAssignmentTarget, TSExportAssignment, TSImportEqualsDeclaration, TSImportType,
-    TSImportTypeQualifier, TSModuleBlock, TSModuleReference, TSType, TSTypeName,
-    TaggedTemplateExpression, UnaryExpression, UpdateExpression, VariableDeclarator,
+    ExportNamedDeclaration, Expression, ExpressionStatement, ForStatement, ForStatementInit,
+    FormalParameter, Function, IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier,
+    ImportExpression, ImportOrExportKind, MemberExpression, MethodDefinition, ModuleExportName,
+    NewExpression, ObjectProperty, ObjectPropertyKind, PrivateInExpression, Program,
+    PropertyDefinition, SequenceExpression, SimpleAssignmentTarget, TSExportAssignment,
+    TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier, TSModuleBlock,
+    TSModuleReference, TSType, TSTypeName, TaggedTemplateExpression, UnaryExpression,
+    UpdateExpression, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
@@ -89,7 +90,7 @@ pub(crate) fn analyze(
         module_depth: 0,
         imported: Vec::new(),
         access: None,
-        discarded: None,
+        discarded: Vec::new(),
         out: Analysis::default(),
     };
     analyzer.visit_program(program);
@@ -186,8 +187,8 @@ struct Analyzer<'p, 'a> {
     imported: Vec<Imported>,
     /// How the next member expression the walk reaches is touched, set by what writes it just before the walk goes in and taken by that member expression first of all, so that a computed key or an argument inside it is read.
     access: Option<Access>,
-    /// The expression that the last expression statement is made of, parentheses peeled: its value is dropped, so a compound assignment or an update that is exactly this expression only writes.
-    discarded: Option<Span>,
+    /// The expressions whose value the code around them drops, parentheses peeled: a compound assignment or an update that is exactly one of them only writes. A mark lives while its parent is walked, so this holds as many as the nesting is deep.
+    discarded: Vec<Span>,
     out: Analysis,
 }
 
@@ -966,13 +967,21 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
-    /// How a compound assignment or an update at `span` touches its target. As an expression statement of its own it drops the value, so it only writes; anywhere else the value can be used and the old value is read too.
+    /// How a compound assignment or an update at `span` touches its target. When the code around it drops the value it only writes; anywhere else the value can be used and the old value is read too.
     fn modification(&self, span: Span) -> Access {
-        if self.discarded == Some(span) {
+        if self.discarded.contains(&span) {
             Access::Write
         } else {
             Access::ReadWrite
         }
+    }
+
+    /// Walks with `spans` marked as dropped, and takes the marks off when `walk` is done.
+    fn dropping(&mut self, spans: impl IntoIterator<Item = Span>, walk: impl FnOnce(&mut Self)) {
+        let mark = self.discarded.len();
+        self.discarded.extend(spans);
+        walk(self);
+        self.discarded.truncate(mark);
     }
 
     /// Walks what is computed inside a chain of member accesses, `a[b()].c[d]`, and the types written on the way down, `(a as T).c`, and nothing else of it. The chain itself goes through the wrappers, as `chain_of` reads it.
@@ -1329,8 +1338,29 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_expression_statement(&mut self, it: &ExpressionStatement<'a>) {
-        self.discarded = Some(it.expression.without_parentheses().span());
-        walk::walk_expression_statement(self, it);
+        let dropped = it.expression.without_parentheses().span();
+        self.dropping([dropped], |this| walk::walk_expression_statement(this, it));
+    }
+
+    fn visit_sequence_expression(&mut self, it: &SequenceExpression<'a>) {
+        // The last member gives the value of the sequence, so it is dropped only when the sequence is.
+        let kept = usize::from(!self.discarded.contains(&it.span));
+        let dropped = it.expressions.len().saturating_sub(kept);
+        let spans = it
+            .expressions
+            .iter()
+            .take(dropped)
+            .map(|member| member.without_parentheses().span());
+        self.dropping(spans, |this| walk::walk_sequence_expression(this, it));
+    }
+
+    fn visit_for_statement(&mut self, it: &ForStatement<'a>) {
+        let init = it.init.as_ref().and_then(ForStatementInit::as_expression);
+        let spans = init
+            .into_iter()
+            .chain(it.update.as_ref())
+            .map(|expr| expr.without_parentheses().span());
+        self.dropping(spans, |this| walk::walk_for_statement(this, it));
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
@@ -1602,7 +1632,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 self.access = Some(Access::Write);
             }
         }
-        walk::walk_unary_expression(self, it);
+        let dropped =
+            (it.operator == UnaryOperator::Void).then(|| it.argument.without_parentheses().span());
+        self.dropping(dropped, |this| walk::walk_unary_expression(this, it));
         self.access = None;
     }
 

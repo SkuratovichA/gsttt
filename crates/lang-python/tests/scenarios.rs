@@ -1597,6 +1597,19 @@ os.environ.pop("TOKEN", None)
     assert_eq!(tree.unread("defaults.py"), Vec::<String>::new());
 }
 
+#[gsttt_scenario::scenario("python", "A write to a member of a variable reads it")]
+#[test]
+fn a_write_to_a_member_of_a_variable_reads_it() {
+    let tree = index_files(&[(
+        "member.py",
+        r#"import os
+os.environ["P"].foo = 1
+"#,
+    )]);
+    assert_eq!(tree.contracts("member.py"), ["calls env P@2"]);
+    assert_eq!(tree.unread("member.py"), Vec::<String>::new());
+}
+
 #[gsttt_scenario::scenario("python", "A computed name in a write is one unread site")]
 #[test]
 fn a_computed_name_in_a_write_is_one_unread_site() {

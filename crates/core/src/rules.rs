@@ -51,10 +51,10 @@ impl Pack {
             || dependencies.any(|dependency| self.detect.iter().any(|name| name == dependency))
     }
 
-    /// The kind and the role of every contract the rules of this pack name, once for each role a rule gives: a chain that is also named when it is written (`written`) lists both. A connector adds the contracts it finds without a rule, as Rust does for an embedded document.
+    /// The kind and the role of every contract the rules of this pack name, once for each role a rule gives: a chain that is also named when it is written (`written`) lists both. The `[[imports]]` rules are left out, since only the TypeScript connector reads them, and it adds them; a connector adds the contracts it finds without a rule, as Rust does for an embedded document.
     pub fn contracts(&self) -> impl Iterator<Item = (&ContractKind, Role)> {
         let chains = self.chains.iter().flat_map(|rule| {
-            [Some(rule.role), rule.written]
+            rule.roles(Access::ReadWrite)
                 .into_iter()
                 .flatten()
                 .map(move |role| (&rule.kind, role))
@@ -65,7 +65,6 @@ impl Pack {
             .chain(self.decorators.iter().map(|rule| (&rule.kind, rule.role)))
             .chain(chains)
             .chain(self.assigns.iter().map(|rule| (&rule.kind, rule.role)))
-            .chain(self.imports.iter().map(|rule| (&rule.kind, rule.role)))
     }
 }
 
@@ -738,14 +737,14 @@ pub enum Access {
     Read,
     /// A value is stored in the chain and its old value is not used: `process.env.API_URL = "x"`, `del os.environ["API_URL"]`, and a compound assignment whose value is dropped, `process.env.API_URL ??= "x";`.
     Write,
-    /// A value is stored in the chain and the expression also gives a value that depends on the old one: `const url = (process.env.API_URL ??= "x")`.
+    /// A value is stored in the chain and the expression also gives a value that depends on the old one, as a compound assignment or an update whose value is used does: `const url = (process.env.API_URL ??= "x")`. A plain `=` used as a value only stores, so it is a [`Access::Write`].
     ReadWrite,
 }
 
 impl ChainRule {
     /// What this rule makes of a member chain that starts at one of its roots, touched as `access` says. `segments` follow the root in order, `None` where a segment is computed (`process.env[name]`); `root` is the root as written.
     ///
-    /// A read names the key with [`ChainRule::role`], a write with [`ChainRule::written`] and a read-write with both, so it gives up to two outcomes. A rule with no role for the access gives [`Outcome::Skip`] alone, and a computed segment gives one blind spot whatever the access.
+    /// A read names the key with [`ChainRule::role`], a write with [`ChainRule::written`] and a read-write with both, so it gives up to two outcomes. A rule with no role for the access gives [`Outcome::Skip`] alone, and a computed segment gives one blind spot whatever the access. A chain the rule's `segments` limit cut short, `process.env.X.foo`, is stored into the value of the variable, so a rule with a written role reads it whatever the access.
     pub fn apply(
         &self,
         pack: &str,
@@ -754,36 +753,52 @@ impl ChainRule {
         line: Line,
         root: &str,
     ) -> impl Iterator<Item = Outcome> + use<> {
-        let roles = match access {
-            Access::Read => [Some(self.role), None],
-            Access::Write => [None, self.written],
-            Access::ReadWrite => [Some(self.role), self.written],
-        };
-        let outcomes = if roles == [None, None] {
+        let outcomes = if self.roles(access) == [None, None] {
             [Some(Outcome::Skip), None]
         } else {
             match self.key(segments) {
                 Err(Computed) => [Some(Outcome::blind(line, root)), None],
                 Ok(None) => [Some(Outcome::Skip), None],
-                Ok(Some(key)) => {
-                    roles.map(|role| role.map(|role| named(&self.kind, role, &key, line, pack)))
+                Ok(Some((key, cut))) => {
+                    // A member below the variable, `process.env.X.foo = 1`, is stored in its value and sets nothing, so the rule that can tell a write reads it; a rule with no written role has nothing to read it as, and a write to a member of its chain names nothing.
+                    let access = if cut && self.written.is_some() {
+                        Access::Read
+                    } else {
+                        access
+                    };
+                    self.roles(access)
+                        .map(|role| role.map(|role| named(&self.kind, role, &key, line, pack)))
                 }
             }
         };
         outcomes.into_iter().flatten()
     }
 
-    /// The key the chain makes: `Ok(None)` when the segments hold none, `Err` when one of them is computed.
-    fn key(&self, segments: &[Option<&str>]) -> Result<Option<String>, Computed> {
+    /// The roles this rule names a chain touched as `access` says, once each: a role that is both read and written is one.
+    fn roles(&self, access: Access) -> [Option<Role>; 2] {
+        let (read, written) = match access {
+            Access::Read => (Some(self.role), None),
+            Access::Write => (None, self.written),
+            Access::ReadWrite => (Some(self.role), self.written),
+        };
+        [read, written.filter(|role| Some(*role) != read)]
+    }
+
+    /// The key the chain makes and whether the rule's `segments` limit cut the chain short: `Ok(None)` when the segments hold none, `Err` when one of them is computed.
+    fn key(&self, segments: &[Option<&str>]) -> Result<Option<(String, bool)>, Computed> {
         let limit = self.segments.map_or(usize::MAX, |count| {
             usize::try_from(count.get()).unwrap_or(usize::MAX)
         });
         let mut parts: Vec<&str> = Vec::new();
+        let mut cut = false;
         for segment in segments {
             match segment {
                 None => return Err(Computed),
                 Some(segment) if self.terminals.iter().any(|terminal| terminal == segment) => break,
-                Some(_) if parts.len() == limit => break,
+                Some(_) if parts.len() == limit => {
+                    cut = true;
+                    break;
+                }
                 Some(segment) => parts.push(segment),
             }
         }
@@ -791,9 +806,8 @@ impl ChainRule {
             return Ok(None);
         }
         let joined = parts.join(".");
-        Ok(Some(
-            self.case.map_or(joined.clone(), |case| case.apply(&joined)),
-        ))
+        let key = self.case.map_or(joined.clone(), |case| case.apply(&joined));
+        Ok(Some((key, cut)))
     }
 }
 
@@ -1344,6 +1358,62 @@ mod tests {
                 "{access:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_member_below_the_variable_is_a_read_not_a_write() {
+        let rule = env_chain(Some("serves"));
+        let below = [Some("API_URL"), Some("foo")];
+        for access in [Access::Read, Access::Write, Access::ReadWrite] {
+            assert_eq!(
+                touch(&rule, access, &below),
+                (vec!["calls env API_URL".to_owned()], 0, 0),
+                "{access:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_member_below_a_chain_with_no_written_role_names_nothing_when_written() {
+        let rule = env_chain(None);
+        let below = [Some("user"), Some("foo")];
+        assert_eq!(touch(&rule, Access::Write, &below), (Vec::new(), 0, 1));
+        assert_eq!(
+            touch(&rule, Access::Read, &below),
+            (vec!["calls env USER".to_owned()], 0, 0)
+        );
+    }
+
+    #[test]
+    fn a_terminal_is_no_cut() {
+        let mut rule = env_chain(Some("serves"));
+        rule.terminals = vec!["foo".to_owned()];
+        assert_eq!(
+            touch(&rule, Access::Write, &[Some("API_URL"), Some("foo")]),
+            (vec!["serves env API_URL".to_owned()], 0, 0)
+        );
+    }
+
+    #[test]
+    fn a_role_that_is_read_and_written_is_one_fact_and_one_listed_role() {
+        let mut rule = env_chain(Some("calls"));
+        assert_eq!(
+            touch(&rule, Access::ReadWrite, &[Some("API_URL")]),
+            (vec!["calls env API_URL".to_owned()], 0, 0)
+        );
+        rule.written = Some(Role::Calls);
+        let pack = Pack {
+            name: "env".to_owned(),
+            language: "ts".to_owned(),
+            detect: Vec::new(),
+            calls: Vec::new(),
+            decorators: Vec::new(),
+            chains: vec![rule],
+            embeds: Vec::new(),
+            assigns: Vec::new(),
+            imports: Vec::new(),
+        };
+        assert_eq!(pack.contracts().count(), 1);
     }
 
     #[test]

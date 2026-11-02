@@ -14,3 +14,10 @@ With the `env` pack, `os.environ["<NAME>"] = …`, an augmented assignment to it
 #### Scenario: A computed name in a write is one unread site
 - **WHEN** a file has `os.environ[NAME] = "x"`, `os.environ.setdefault(NAME, "y")` and `os.environ.pop(NAME, None)`
 - **THEN** it names no `env` and leaves one unread site for each of the three lines
+
+### Requirement: A write below a variable
+A site that assigns to a member of the value of an environment variable, as `os.environ["P"].foo = 1`, SHALL call `env P` and not serve it, because it sets no variable.
+
+#### Scenario: A write to a member of a variable reads it
+- **WHEN** a file has `os.environ["P"].foo = 1`
+- **THEN** it calls `env P` and serves no `env`

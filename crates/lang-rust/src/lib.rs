@@ -77,7 +77,7 @@ impl Connector for Rust {
     fn meta(&self) -> Meta {
         Meta {
             name: "rust",
-            version: 3,
+            version: 4,
             summary: "Rust: crates, module trees, use paths, and the contracts of axum, actix, reqwest, sqlx and sea-orm",
             extensions: &["rs"],
         }

@@ -478,8 +478,8 @@ fn every_form_of_assignment_target_is_a_write() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-#[scenario("typescript", "An assignment used as a value reads and serves")]
-fn an_assignment_used_as_a_value_reads_and_serves() -> Result<(), Box<dyn Error>> {
+#[scenario("typescript", "A compound assignment used as a value reads and serves")]
+fn a_compound_assignment_used_as_a_value_reads_and_serves() -> Result<(), Box<dyn Error>> {
     let json = run("environment-writes")?;
     assert_eq!(
         contracts(&json, "src/read-write.ts"),
@@ -492,6 +492,70 @@ fn an_assignment_used_as_a_value_reads_and_serves() -> Result<(), Box<dyn Error>
             "serves env COUNT @3",
         ]
     );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A compound assignment whose value is dropped only serves"
+)]
+fn a_compound_assignment_whose_value_is_dropped_only_serves() -> Result<(), Box<dyn Error>> {
+    let json = run("environment-writes")?;
+    let sites = contracts(&json, "src/dropped.ts");
+    for (name, line) in [
+        ("A", 1),
+        ("B", 2),
+        ("C", 3),
+        ("D", 4),
+        ("E", 5),
+        ("F", 6),
+        ("G", 6),
+        ("H", 7),
+        ("S", 9),
+    ] {
+        let served = format!("serves env {name} @{line}");
+        let called = format!("calls env {name} @{line}");
+        assert!(sites.contains(&served), "{served}: {sites:?}");
+        assert!(!sites.contains(&called), "{called}: {sites:?}");
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A compound assignment whose value can be used reads and serves"
+)]
+fn a_compound_assignment_whose_value_can_be_used_reads_and_serves() -> Result<(), Box<dyn Error>> {
+    let json = run("environment-writes")?;
+    let sites = contracts(&json, "src/dropped.ts");
+    for (name, line) in [
+        ("I", 8),
+        ("K", 10),
+        ("L", 11),
+        ("N", 13),
+        ("O", 14),
+        ("Q", 15),
+        ("R", 16),
+    ] {
+        for role in ["calls", "serves"] {
+            let site = format!("{role} env {name} @{line}");
+            assert!(sites.contains(&site), "{site}: {sites:?}");
+        }
+    }
+    for (name, line) in [("M", 12), ("P", 15)] {
+        assert!(sites.contains(&format!("serves env {name} @{line}")));
+        assert!(!sites.contains(&format!("calls env {name} @{line}")));
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A write to a member of a variable reads it")]
+fn a_write_to_a_member_of_a_variable_reads_it() -> Result<(), Box<dyn Error>> {
+    let json = run("environment-writes")?;
+    assert_eq!(contracts(&json, "src/member.ts"), ["calls env J @1"]);
     Ok(())
 }
 

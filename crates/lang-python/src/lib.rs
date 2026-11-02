@@ -56,7 +56,7 @@ impl Connector for Python {
     fn meta(&self) -> Meta {
         Meta {
             name: "python",
-            version: 2,
+            version: 3,
             summary: "Python imports and packages, with FastAPI, Flask, Django, requests, httpx, SQLAlchemy and Alembic contracts",
             extensions: &["py", "pyi"],
         }

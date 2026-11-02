@@ -68,6 +68,210 @@ expression: json
     {
       "contracts": [
         {
+          "key": "env A",
+          "line": 1,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env B",
+          "line": 2,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env C",
+          "line": 3,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env D",
+          "line": 4,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env E",
+          "line": 5,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env F",
+          "line": 6,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env G",
+          "line": 6,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env H",
+          "line": 7,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env I",
+          "line": 8,
+          "role": "calls",
+          "via": "env"
+        },
+        {
+          "key": "env I",
+          "line": 8,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env S",
+          "line": 9,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env K",
+          "line": 10,
+          "role": "calls",
+          "via": "env"
+        },
+        {
+          "key": "env K",
+          "line": 10,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env L",
+          "line": 11,
+          "role": "calls",
+          "via": "env"
+        },
+        {
+          "key": "env L",
+          "line": 11,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env M",
+          "line": 12,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env N",
+          "line": 13,
+          "role": "calls",
+          "via": "env"
+        },
+        {
+          "key": "env N",
+          "line": 13,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env O",
+          "line": 14,
+          "role": "calls",
+          "via": "env"
+        },
+        {
+          "key": "env O",
+          "line": 14,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env P",
+          "line": 15,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env Q",
+          "line": 15,
+          "role": "calls",
+          "via": "env"
+        },
+        {
+          "key": "env Q",
+          "line": 15,
+          "role": "serves",
+          "via": "env"
+        },
+        {
+          "key": "env R",
+          "line": 16,
+          "role": "calls",
+          "via": "env"
+        },
+        {
+          "key": "env R",
+          "line": 16,
+          "role": "serves",
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "i",
+        "k",
+        "s"
+      ],
+      "imports": [],
+      "path": "src/dropped.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 8,
+            "line": 8,
+            "name": "i",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "s",
+            "uses": []
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "k",
+            "uses": []
+          },
+          {
+            "end": 11,
+            "line": 11,
+            "name": "l",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 12,
+            "name": "m",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
           "key": "env G",
           "line": 1,
           "role": "serves",
@@ -108,6 +312,31 @@ expression: json
       "exports": [],
       "imports": [],
       "path": "src/forms.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "env J",
+          "line": 1,
+          "role": "calls",
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "exports": [],
+      "imports": [],
+      "path": "src/member.ts",
       "project": "ts .",
       "status": {
         "status": "ok"

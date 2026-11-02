@@ -10,7 +10,9 @@ use gsttt_core::rules::Pack;
 pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut groups: BTreeMap<(ContractKind, Role), BTreeSet<&str>> = BTreeMap::new();
     for pack in packs {
-        for (kind, role) in pack.contracts() {
+        // The import rules are read here and by no other connector, so the pack does not list them.
+        let imports = pack.imports.iter().map(|rule| (&rule.kind, rule.role));
+        for (kind, role) in pack.contracts().chain(imports) {
             groups
                 .entry((kind.clone(), role))
                 .or_default()
@@ -89,4 +91,32 @@ fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
         _ => &[],
     };
     spots.iter().map(|spot| (*spot).to_owned()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_import_rules_of_a_pack_are_listed() {
+        let packs = gsttt_config::builtin_packs(crate::PACKS).unwrap();
+        let prisma = provides(&packs)
+            .into_iter()
+            .find(|provide| provide.kind == ContractKind::Table && provide.role == Role::Calls)
+            .unwrap();
+        assert_eq!(prisma.via, ["prisma"]);
+        let only_imports = Pack {
+            chains: Vec::new(),
+            calls: Vec::new(),
+            ..packs
+                .into_iter()
+                .find(|pack| pack.name == "prisma")
+                .unwrap()
+        };
+        assert!(
+            !only_imports.imports.is_empty() && only_imports.contracts().next().is_none(),
+            "the pack lists none itself"
+        );
+        assert_eq!(provides(&[only_imports]).len(), 1, "the provides add them");
+    }
 }
