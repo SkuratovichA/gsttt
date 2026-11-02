@@ -136,7 +136,7 @@ When several ways reach a file at the same distance, `impact` SHALL give as its 
 - **AND** it does not list the contracts of the index
 
 ### Requirement: HTTP matching
-Two HTTP keys SHALL meet when their methods are equal or either is `*`, and their paths have the same number of segments, each pair equal or `{}` on either side, with or without one prefix from the index's `http_prefixes` removed from the start of one of the two paths. A prefix SHALL NOT be removed from both paths, and SHALL NOT be removed from a path that it is all of.
+Two HTTP keys SHALL meet when their methods are equal or either is `*`, and their paths have the same number of segments, each pair equal or `{}` on either side, with or without one prefix from the index's `http_prefixes` removed from the start of one of the two paths. A prefix SHALL NOT be removed from both paths, and SHALL NOT be removed from a path that it is all of. When both paths hold a literal segment, at least one pair SHALL be the same literal on both sides.
 
 #### Scenario: A prefix is stripped before matching
 - **WHEN** `http_prefixes` is `["/api"]` and `http GET /api/bookings/me` is compared with `http GET /bookings/{}`
@@ -161,6 +161,14 @@ Two HTTP keys SHALL meet when their methods are equal or either is `*`, and thei
 #### Scenario: Meeting is symmetric
 - **WHEN** any two HTTP keys and any prefixes are compared in both orders
 - **THEN** both comparisons give the same result
+
+#### Scenario: Literals that meet only parameters make no match
+- **WHEN** `http POST /{}/messages` is compared with `http POST /u/{}`
+- **THEN** they do not meet
+
+#### Scenario: A path of parameters alone meets a literal path
+- **WHEN** `http GET /{}` is compared with `http GET /users`, and `http GET /{}/{}` with `http GET /a/b`
+- **THEN** both pairs meet
 
 ### Requirement: Coverage answer
 `coverage` SHALL begin with every problem of the index, one line each and never cut (the key `problems` in JSON), and SHALL list, per connector, its projects, its files by parse status (read cleanly, read past syntax errors, failed, skipped), the share of imports resolved, the unresolved imports and unread sites by reason with the first place of each, and what it provides with its blind spots, followed by the unclaimed files by language and the files skipped before any connector read them.
