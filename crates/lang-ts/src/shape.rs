@@ -689,6 +689,34 @@ pub(crate) fn static_chain(object: &Expression<'_>, property: &str) -> Option<Ve
     push_static(object, property, &mut names).then_some(names)
 }
 
+/// What the assignment `target = value` exports, when `target` is `module.exports`, `module.exports.x` or `exports.x`: each export name with the value it gets. `module.exports = { a, b: c }` exports `a` and `b`, and any other value of `module.exports` is the `default`. `None` for any other target.
+pub(crate) fn commonjs_exports<'e, 'a>(
+    target: &str,
+    value: &'e Expression<'a>,
+) -> Option<Vec<(String, &'e Expression<'a>)>> {
+    if target == "module.exports" {
+        let Expression::ObjectExpression(object) = value.get_inner_expression() else {
+            return Some(vec![("default".to_owned(), value)]);
+        };
+        return Some(
+            object
+                .properties
+                .iter()
+                .filter_map(|property| match property {
+                    ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
+                        Some((property_name(&property.key)?, &property.value))
+                    }
+                    _ => None,
+                })
+                .collect(),
+        );
+    }
+    let name = target
+        .strip_prefix("exports.")
+        .or_else(|| target.strip_prefix("module.exports."))?;
+    Some(vec![(name.to_owned(), value)])
+}
+
 /// The names joined with dots, when none is computed.
 pub(crate) fn dotted(names: &[Option<String>]) -> Option<String> {
     let parts: Option<Vec<&str>> = names.iter().map(Option::as_deref).collect();

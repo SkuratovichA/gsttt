@@ -4,7 +4,7 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, contracts, linked, run, run_with_pack, sites, unread};
+use crate::support::{NOTHING, contracts, exports, linked, run, run_with_pack, sites, unread};
 
 #[test]
 #[scenario("typescript", "A client made in another file is called")]
@@ -329,6 +329,78 @@ fn a_request_on_a_client_made_in_another_file_is_called() -> Result<(), Box<dyn 
     );
     assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
     assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A client assigned to module.exports is called by a file that requires it"
+)]
+fn a_client_assigned_to_module_exports_is_called_by_a_file_that_requires_it()
+-> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-require-whole")?;
+    assert_eq!(
+        linked(&json),
+        [
+            "calls http GET /esm/default @3 in src/esm.ts",
+            "calls http GET /whole/whole-module @3 in src/whole.js",
+        ],
+        "an ES module with export default reads as before"
+    );
+    assert_eq!(
+        exports(&json, "src/default-client.js"),
+        None,
+        "assigning module.exports leaves the exports unknown"
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A client assigned to a named CommonJS export is called by a file that requires it"
+)]
+fn a_client_assigned_to_a_named_commonjs_export_is_called_by_a_file_that_requires_it()
+-> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-require-named")?;
+    assert_eq!(
+        linked(&json),
+        [
+            "calls http GET /named/from-exports @5 in src/users.js",
+            "calls http GET /member/from-module-exports @6 in src/users.js",
+            "calls http GET /in-object/from-object @7 in src/users.js",
+        ]
+    );
+    for path in [
+        "src/exports-client.js",
+        "src/module-exports-client.js",
+        "src/object-client.js",
+    ] {
+        assert_eq!(exports(&json, path), None, "{path}");
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member of a required CommonJS module is read as its export"
+)]
+fn a_member_of_a_required_commonjs_module_is_read_as_its_export() -> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-require-namespace")?;
+    assert_eq!(
+        linked(&json),
+        [
+            "calls http GET /real/first @3 in src/default-first.ts",
+            "calls http GET /api/interop @3 in src/interop.ts",
+            "calls http GET /api/namespace @3 in src/namespace.js",
+        ],
+        "a module with a default export of its own is still read as its default"
+    );
     insta::assert_json_snapshot!(json);
     Ok(())
 }

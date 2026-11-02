@@ -50,8 +50,9 @@ use crate::extra::{
 };
 use crate::pathing::{is_relative, split_package};
 use crate::shape::{
-    COMPUTED, ClassPrefix, Shape, chain_of, dotted, dotted_name, field_name, literal_text,
-    member_chain, property_name, property_str, static_chain, template_text, text_with,
+    COMPUTED, ClassPrefix, Shape, chain_of, commonjs_exports, dotted, dotted_name, field_name,
+    literal_text, member_chain, property_name, property_str, static_chain, template_text,
+    text_with,
 };
 
 /// The most segments a chain rule's root can have. A root is tried at every length of the chain and each try reads the root again, so a chain of `n` names costs `n` squared without a limit, and no root a rule lists comes near this length.
@@ -1190,32 +1191,25 @@ impl<'a> Analyzer<'_, 'a> {
 
     /// `module.exports = x` and `exports.name = x`. A file that does either lists no exports in its syntax, so they are unknown.
     fn commonjs_export(&mut self, target: &str, value: &Expression<'_>) {
-        if target == "module.exports" {
-            self.exports_unknown = true;
-            if let Expression::ObjectExpression(object) = value.get_inner_expression() {
-                for property in &object.properties {
-                    if let ObjectPropertyKind::ObjectProperty(property) = property
-                        && !property.computed
-                        && let Some(name) = property_name(&property.key)
-                    {
-                        self.export_value(&name, &property.value);
-                    }
-                }
-            } else {
-                self.export_value("default", value);
-            }
-        } else if let Some(name) = target
-            .strip_prefix("exports.")
-            .or_else(|| target.strip_prefix("module.exports."))
-        {
-            self.exports_unknown = true;
-            self.export_value(name, value);
+        let Some(exports) = commonjs_exports(target, value) else {
+            return;
+        };
+        self.exports_unknown = true;
+        for (name, value) in exports {
+            self.export_value(&name, value);
         }
     }
 
+    /// A name is exported as itself, and a call as the variable `makers` records under the export name, as `export default <call>` does.
     fn export_value(&mut self, name: &str, value: &Expression<'_>) {
-        if let Expression::Identifier(local) = value.get_inner_expression() {
-            self.export(name, ExportTarget::Local(local.name.as_str().to_owned()));
+        match peel(value) {
+            Expression::Identifier(local) => {
+                self.export(name, ExportTarget::Local(local.name.as_str().to_owned()));
+            }
+            Expression::CallExpression(_) | Expression::NewExpression(_) => {
+                self.export(name, ExportTarget::Local(name.to_owned()));
+            }
+            _ => {}
         }
     }
 
