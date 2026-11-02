@@ -1,0 +1,391 @@
+---
+source: crates/lang-ts/tests/typescript/data.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "table user",
+          "line": 6,
+          "role": "calls",
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "users"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "PrismaClient"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "PrismaClient"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/array.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "prisma",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "users",
+            "uses": [
+              "prisma"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "PrismaClient"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "users"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "PrismaClient"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "PrismaClient"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/destructured.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "prisma",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "users",
+            "uses": [
+              "prisma"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "PrismaClient"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "table booking",
+          "line": 6,
+          "role": "calls",
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "Bookings"
+      ],
+      "imports": [],
+      "path": "src/nested.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 9,
+            "line": 1,
+            "name": "Bookings",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Bookings.constructor",
+            "uses": []
+          },
+          {
+            "end": 8,
+            "line": 4,
+            "name": "Bookings.create",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [],
+      "path": "src/others.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "items",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "items"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "users"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "PrismaClient"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "PrismaClient"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/shared.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "prisma",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "client",
+            "uses": []
+          },
+          {
+            "end": 11,
+            "line": 6,
+            "name": "users",
+            "uses": [
+              "client",
+              "prisma"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "PrismaClient"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "table user",
+          "line": 7,
+          "role": "calls",
+          "via": "prisma"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "users"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "PrismaClient"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "PrismaClient"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/untyped.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "prisma",
+            "uses": [
+              "PrismaClient"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 5,
+            "name": "users",
+            "uses": [
+              "prisma"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "PrismaClient"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a client the file imports or makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "query builders and SQL built at run time are not read; raw SQL is read from a literal or a template given to $queryRaw, $executeRaw, $queryRawUnsafe or $executeRawUnsafe on a receiver of up to three segments, and from Prisma.sql, and a Prisma.sql fragment that is no statement names no table",
+            "clients under a root other than the chain roots of the pack are recognised only through an alias of this, or a name the same file declares with one of the root types of the pack, directly or through a type alias of that file, or the first parameter of a callback given to $transaction; a name that the file also binds anywhere else to anything but this or a root type is not recognised (function a(tx2: PrismaClient) beside items.map(tx2 => tx2) reads no table), and a root type that the file declares as a type of its own is that local type",
+            "a root type is not read when the file imports it under another name (PrismaClient as Base), reaches it through a renamed namespace (P.TransactionClient), writes it as typeof a name, or aliases an import type of it (type Db = import('@prisma/client').PrismaClient)",
+            "model types are read only from the packages the pack names: those of a client generated to a custom output path, or of a package that re-exports the client with export * from '@prisma/client', name no table",
+            "an enum imported by name from @prisma/client and used as a value reads as a table of that name that no model declares; a model type that the file only imports, re-exports or writes in a type names no table"
+          ],
+          "kind": "table",
+          "role": "calls",
+          "via": [
+            "prisma"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

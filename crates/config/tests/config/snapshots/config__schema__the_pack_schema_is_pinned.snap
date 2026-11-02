@@ -263,6 +263,13 @@ expression: pack_schema()
             "type": "string"
           }
         },
+        "callback_roots": {
+          "description": "Calls whose callback receives a root: the first parameter of a function given as the first argument of a call that one of these patterns matches starts a chain too. `*.$transaction` makes `db` a root in `prisma.$transaction(async (db) => …)`. Read by the TypeScript connector.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "kind": {
           "type": "string"
         },

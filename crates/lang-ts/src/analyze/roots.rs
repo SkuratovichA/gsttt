@@ -1,15 +1,15 @@
-//! The names of a file that a rule reads without their being written in it: `self` after `const self = this`, and `reader` or `this.db` when their declared type, or the class they are made of with `new`, is one the rules list as the root type of a chain or as the receiver type of a call. A name counts only when every binding of it in the file is of that kind, so `self` bound to `this` in one method and to a mock in another function is neither.
+//! The names of a file that a rule reads without their being written in it: `self` after `const self = this`, `reader` or `this.db` when their declared type, or the class they are made of with `new`, is one the rules list as the root type of a chain or as the receiver type of a call, and `db` in `prisma.$transaction(async (db) => …)` when the call is one a chain rule lists as a callback root. A name counts only when every binding of it in the file is of that kind, so `self` bound to `this` in one method and to a mock in another function is neither.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use gsttt_core::rules::{ChainRule, Pack};
+use gsttt_core::rules::{ChainRule, Pack, callee_matches};
 use oxc_ast::ast::{
-    BindingIdentifier, BindingPattern, Class, Expression, FormalParameter, Function, Program,
-    PropertyDefinition, TSEnumDeclaration, TSInterfaceDeclaration, TSType, TSTypeAliasDeclaration,
-    TSTypeAnnotation, TSTypeName, TSTypeParameter, TSTypeParameterInstantiation,
-    VariableDeclarator,
+    Argument, BindingIdentifier, BindingPattern, CallExpression, Class, Expression,
+    FormalParameter, Function, Program, PropertyDefinition, TSEnumDeclaration,
+    TSInterfaceDeclaration, TSType, TSTypeAliasDeclaration, TSTypeAnnotation, TSTypeName,
+    TSTypeParameter, TSTypeParameterInstantiation, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::ScopeFlags;
@@ -31,7 +31,7 @@ const WRAPPERS: [&str; 6] = [
 pub(super) struct Roots<'p> {
     /// Names bound by `const self = this`.
     this_aliases: BTreeSet<String>,
-    /// Names declared with a type some rule lists, by name (`reader`, `this.db`), with the listed types they were declared with.
+    /// Names declared with a type some rule lists, by name (`reader`, `this.db`), with the listed types they were declared with. The first parameter of a callback that a rule lists is declared with the pattern of the call, which no type name can equal.
     typed: BTreeMap<String, Vec<&'p str>>,
 }
 
@@ -66,9 +66,10 @@ fn chain_rules(packs: &[Pack]) -> impl Iterator<Item = &ChainRule> {
     packs.iter().flat_map(|pack| &pack.chains)
 }
 
-/// Every type some rule of `packs` lists: the root types of the chain rules and the receiver types of the call rules.
+/// Every type some rule of `packs` lists: the root types of the chain rules and the receiver types of the call rules, and the call patterns of the callback roots, which stand in the same list as the types that a callback parameter is declared with.
 fn listed_types(packs: &[Pack]) -> impl Iterator<Item = &str> {
-    let roots = chain_rules(packs).flat_map(|rule| &rule.root_types);
+    let roots =
+        chain_rules(packs).flat_map(|rule| rule.root_types.iter().chain(&rule.callback_roots));
     let receivers = packs
         .iter()
         .flat_map(|pack| &pack.calls)
@@ -145,6 +146,8 @@ struct Collector<'p, 'a> {
     declared: Vec<(Name<'a>, Range<usize>)>,
     /// Every name the file declares as a `type` alias, an `interface`, a `class` or an `enum`, with the names that its definition stands for at its head, which only a `type` alias has: such a name is the type the file says it is, never the type of a pack that has the same name.
     types: BTreeMap<&'a str, Vec<Cow<'a, str>>>,
+    /// The first parameter of each callback that a rule lists, by the start of the parameter, with the pattern of the call that it is given to. Empty until a call that a rule lists is seen.
+    callbacks: BTreeMap<u32, &'p str>,
     /// Every name that `const name = this` binds.
     this_bound: BTreeSet<&'a str>,
     /// The names that could start a chain, which the first walk found, and the only ones whose other bindings are kept. Empty during the first walk.
@@ -161,6 +164,7 @@ impl<'p, 'a> Collector<'p, 'a> {
             heads: Vec::new(),
             declared: Vec::new(),
             types: BTreeMap::new(),
+            callbacks: BTreeMap::new(),
             this_bound: BTreeSet::new(),
             watched,
             others: BTreeMap::new(),
@@ -192,6 +196,41 @@ impl<'p, 'a> Collector<'p, 'a> {
             self.declared
                 .extend(names.into_iter().map(|name| (name, rows.clone())));
         }
+    }
+
+    /// The pattern of the callback root that `call` matches, with the start of the first parameter of its callback. The last segment of the callee is compared first, so that a call no pattern ends with costs no allocation.
+    fn callback_root(&self, call: &CallExpression<'a>) -> Option<(u32, &'p str)> {
+        let last = match call.callee.get_inner_expression() {
+            Expression::Identifier(name) => name.name.as_str(),
+            Expression::StaticMemberExpression(member) => member.property.name.as_str(),
+            _ => return None,
+        };
+        let packs = self.packs;
+        let mut patterns = chain_rules(packs)
+            .flat_map(|rule| &rule.callback_roots)
+            .map(String::as_str)
+            .filter(|pattern| {
+                let end = pattern.rsplit('.').next();
+                end == Some("*") || end == Some(last)
+            })
+            .peekable();
+        patterns.peek()?;
+        let parameter = match call
+            .arguments
+            .first()
+            .and_then(Argument::as_expression)?
+            .get_inner_expression()
+        {
+            Expression::ArrowFunctionExpression(function) => function.params.items.first(),
+            Expression::FunctionExpression(function) => function.params.items.first(),
+            _ => None,
+        }?;
+        if !matches!(parameter.pattern, BindingPattern::BindingIdentifier(_)) {
+            return None;
+        }
+        let callee = dotted_name(&call.callee)?;
+        let pattern = patterns.find(|pattern| callee_matches(pattern, &callee))?;
+        Some((parameter.span.start, pattern))
     }
 
     /// The file binds `name` to something that is neither `this` nor given a type. Only a watched name keeps it.
@@ -317,6 +356,13 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
     fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
         if let BindingPattern::BindingIdentifier(id) = &it.pattern {
             let name = id.name.as_str();
+            if let Some(pattern) = self.callbacks.get(&it.span.start).copied() {
+                // The parameter is the client itself, so it is no other binding of its name, and an annotation on it does not change what it is.
+                let start = self.heads.len();
+                self.heads.push(Cow::Owned(pattern.to_owned()));
+                self.declared.push((Name::Local(name), start..start + 1));
+                return;
+            }
             // `constructor(private readonly db: PrismaService)` declares the property `this.db` as well.
             let property = is_parameter_property(it).then_some(Name::Property(name));
             self.bind(
@@ -333,6 +379,13 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
         if let Some(initializer) = &it.initializer {
             self.visit_expression(initializer);
         }
+    }
+
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if let Some((start, pattern)) = self.callback_root(it) {
+            self.callbacks.insert(start, pattern);
+        }
+        walk::walk_call_expression(self, it);
     }
 
     fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
