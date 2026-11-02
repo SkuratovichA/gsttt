@@ -7,35 +7,95 @@ use oxc_ast::ast::{
     ArrowFunctionExpression, BindingIdentifier, BindingPattern, BlockStatement, CatchClause, Class,
     Expression, ForInStatement, ForOfStatement, ForStatement, Function, Program, StaticBlock,
     SwitchStatement, TSInterfaceDeclaration, TSModuleBlock, TSType, TSTypeAliasDeclaration,
-    TSTypeParameterDeclaration, VariableDeclaration, VariableDeclarationKind,
+    TSTypeParameterDeclaration, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::Span;
 use oxc_syntax::scope::ScopeFlags;
 
-use super::{Constants, Home, Local, may_hold_text, rewrite};
+use super::{Constants, Home, Local, Locals, may_hold_text, rewrite};
 
-/// Records in `constants` what each scope of `program` below its top level binds: the constants among it, read the way those of the top level are, and every other name as hidden. Then drops the names that cannot change an answer, so that a file without a local of interest pays one check per lookup.
+/// Records in `constants` what each scope of `program` below its top level binds: first every name as hidden, then the constants among them, read the way those of the top level are. Two walks, because an initializer reads a name through the scopes around it, and one of them may bind that name further down. Drops the names that cannot change an answer, so that a file without a local of interest pays one check per lookup.
 pub(super) fn collect(constants: &mut Constants, program: &Program<'_>) {
-    let mut scopes = Scopes {
+    Scopes {
         constants,
         stack: Vec::new(),
         hoist: false,
-        path: String::new(),
+    }
+    .visit_program(program);
+    constants.keep_locals(|locals| locals.constant);
+    for locals in constants.locals.values_mut() {
+        locals.index();
+    }
+    if constants.locals.values().any(|locals| locals.constant) {
+        Initializers {
+            constants,
+            path: String::new(),
+        }
+        .visit_program(program);
+        constants.keep_locals(|locals| locals.scopes.iter().any(|local| !local.values.is_empty()));
+    }
+}
+
+impl Constants {
+    /// Keeps the names that `matters` says so of, and those that hide something of the file: a constant or an import. Any other name that a scope binds can change no answer.
+    fn keep_locals(&mut self, matters: impl Fn(&Locals) -> bool) {
+        let Self {
+            roots,
+            imported,
+            locals,
+            ..
+        } = self;
+        locals.retain(|name, locals| {
+            matters(locals) || roots.contains(name) || imported.contains_key(name)
+        });
+    }
+}
+
+/// The binding and the initializer of `declarator` when, in a declaration of `kind`, it binds one name to a constant that can hold text.
+fn text_constant<'d, 'a>(
+    kind: VariableDeclarationKind,
+    declarator: &'d VariableDeclarator<'a>,
+) -> Option<(&'d BindingIdentifier<'a>, &'d Expression<'a>)> {
+    if kind != VariableDeclarationKind::Const {
+        return None;
+    }
+    let BindingPattern::BindingIdentifier(id) = &declarator.id else {
+        return None;
     };
-    scopes.visit_program(program);
-    let Constants {
-        roots,
-        imported,
-        locals,
-        ..
-    } = scopes.constants;
-    // A hidden name matters when something it hides is there: a constant or an import of the file, or a constant of a scope around it.
-    locals.retain(|name, scopes| {
-        roots.contains(name)
-            || imported.contains_key(name)
-            || scopes.iter().any(|local| !local.values.is_empty())
-    });
+    let init = declarator.init.as_ref()?;
+    may_hold_text(init).then_some((&**id, init))
+}
+
+/// The second walk: reads the constants of the scopes in source order, once every binding is known.
+struct Initializers<'c> {
+    constants: &'c mut Constants,
+    /// The buffer that the name of a constant is written in.
+    path: String,
+}
+
+impl<'a> Visit<'a> for Initializers<'_> {
+    fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
+        for declarator in &it.declarations {
+            if let Some((id, init)) = text_constant(it.kind, declarator) {
+                let (name, at) = (id.name.as_str(), id.span.start);
+                // The innermost scope that binds the name around its own declaration is the one that declares it. A constant of the top level has none.
+                if self
+                    .constants
+                    .local(name, at)
+                    .is_some_and(|local| !local.rebound)
+                {
+                    rewrite(&mut self.path, &[name]);
+                    self.constants
+                        .add(Home::Local(name, at), &mut self.path, init);
+                }
+            }
+        }
+        walk::walk_variable_declaration(self, it);
+    }
+
+    /// A type declares no constant, and it is most of what a typed file holds.
+    fn visit_ts_type(&mut self, _it: &TSType<'a>) {}
 }
 
 /// A scope the walk is in.
@@ -51,8 +111,6 @@ struct Scopes<'c> {
     stack: Vec<Frame>,
     /// Whether the names being walked belong to a `var`, which a block does not close.
     hoist: bool,
-    /// The buffer that the name of a constant is written in.
-    path: String,
 }
 
 impl Scopes<'_> {
@@ -65,8 +123,8 @@ impl Scopes<'_> {
         self.hoist = hoist;
     }
 
-    /// Notes that the scope around binds `name`, as nothing: a name that its initializer reads as text is filled in by [`Scopes::constant`]. True when this is the first binding of the name in the scope. A second one clears what the first read, because the name then stands for nothing in the whole scope. The top level of the file is no scope below it, so nothing is noted there.
-    fn bind(&mut self, name: &str, hoist: bool) -> bool {
+    /// Notes that the scope around binds `name`: as hidden, and as `constant` when an initializer may give it text, which [`Initializers`] reads. A second binding of the name in the scope leaves it standing for nothing there. The top level of the file is no scope below it, so nothing is noted there.
+    fn bind(&mut self, name: &str, hoist: bool, constant: bool) {
         let mut frames = self.stack.iter().rev();
         let frame = if hoist {
             frames.find(|frame| frame.function)
@@ -74,43 +132,39 @@ impl Scopes<'_> {
             frames.next()
         };
         let Some(scope) = frame.map(|frame| frame.span) else {
-            return false;
+            return;
         };
         let locals = self.constants.locals.entry(name.to_owned()).or_default();
-        if let Some(known) = locals.iter_mut().find(|local| local.scope == scope) {
-            known.values.clear();
-            return false;
+        locals.constant |= constant;
+        // The walk is in source order, so a scope that ended before this one started was noted before any binding of this one: stopping there keeps a name bound in every function of a minified bundle linear.
+        if let Some(known) = locals
+            .scopes
+            .iter_mut()
+            .rev()
+            .take_while(|local| local.scope.end > scope.start)
+            .find(|local| local.scope == scope)
+        {
+            known.rebound = true;
+            return;
         }
-        locals.push(Local {
+        locals.scopes.push(Local {
             scope,
             values: BTreeMap::new(),
+            rebound: false,
         });
-        true
-    }
-
-    /// Notes that the scope around binds `name` to `init`, which can hold text, and reads it as the top level reads a constant. It sees the scopes noted so far, and the name itself as hidden.
-    fn constant(&mut self, name: &str, init: &Expression<'_>) {
-        if self.bind(name, false) {
-            rewrite(&mut self.path, &[name]);
-            self.constants.add(Home::Local(name), &mut self.path, init);
-        }
     }
 }
 
 impl<'a> Visit<'a> for Scopes<'_> {
     /// Every name that no visitor below classifies is bound to something other than text: a parameter, a destructured name, a function, a class, a catch clause.
     fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
-        self.bind(it.name.as_str(), self.hoist);
+        self.bind(it.name.as_str(), self.hoist, false);
     }
 
     fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
         for declarator in &it.declarations {
-            if it.kind == VariableDeclarationKind::Const
-                && let BindingPattern::BindingIdentifier(id) = &declarator.id
-                && let Some(init) = &declarator.init
-                && may_hold_text(init)
-            {
-                self.constant(id.name.as_str(), init);
+            if let Some((id, _)) = text_constant(it.kind, declarator) {
+                self.bind(id.name.as_str(), false, true);
             } else {
                 self.hoist = it.kind == VariableDeclarationKind::Var;
                 self.visit_binding_pattern(&declarator.id);
@@ -131,13 +185,13 @@ impl<'a> Visit<'a> for Scopes<'_> {
         if it.is_function_declaration()
             && let Some(id) = &it.id
         {
-            self.bind(id.name.as_str(), false);
+            self.bind(id.name.as_str(), false, false);
         }
         self.within(it.span, true, |scopes| {
             if it.is_expression()
                 && let Some(id) = &it.id
             {
-                scopes.bind(id.name.as_str(), false);
+                scopes.bind(id.name.as_str(), false, false);
             }
             scopes.visit_formal_parameters(&it.params);
             scopes.visit_function_body(body);

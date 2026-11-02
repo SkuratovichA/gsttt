@@ -3,6 +3,7 @@
 mod scopes;
 
 use std::borrow::Cow;
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use oxc_ast::ast::{
@@ -28,9 +29,47 @@ pub(crate) struct Constants {
     /// The local names an import binds, each with the specifier of the module it takes the name from.
     imported: BTreeMap<String, String>,
     /// What each scope below the top level binds, by name: a parameter, a variable, a function, a class, a catch clause. A name read inside such a scope is what the innermost scope around it binds it to, and the constants of the file and the imports are no answer there. Only the names that can change an answer are kept.
-    locals: BTreeMap<String, Vec<Local>>,
+    locals: BTreeMap<String, Locals>,
     /// The enum whose members are being read, while they are.
     scope: Option<EnumScope>,
+}
+
+/// What the scopes below the top level of the file bind under one name.
+#[derive(Debug, Default)]
+struct Locals {
+    /// The scopes that bind the name, each once.
+    scopes: Vec<Local>,
+    /// Whether one of them binds the name to a constant that can hold text.
+    constant: bool,
+    /// From each position on, the index in `scopes` of the scope that answers for the name, and none between scopes, sorted by position: a lookup is a binary search, whatever the nesting and however many scopes of a minified bundle bind the name.
+    answers: Vec<(u32, Option<usize>)>,
+}
+
+impl Locals {
+    /// The index in `scopes` of the innermost scope around the position `at`.
+    fn answer(&self, at: u32) -> Option<usize> {
+        let after = self.answers.partition_point(|&(start, _)| start <= at);
+        self.answers.get(after.checked_sub(1)?)?.1
+    }
+
+    /// Works out `answers`. Scopes nest or stand apart, so going through their starts and ends in order with a stack of the open ones says which one answers from each position on.
+    fn index(&mut self) {
+        self.scopes
+            .sort_unstable_by_key(|local| (local.scope.start, Reverse(local.scope.end)));
+        let mut answers = Vec::with_capacity(self.scopes.len() * 2);
+        let mut open: Vec<(u32, usize)> = Vec::new();
+        for (index, local) in self.scopes.iter().enumerate() {
+            while let Some((end, _)) = open.pop_if(|&mut (end, _)| end <= local.scope.start) {
+                answers.push((end, open.last().map(|&(_, around)| around)));
+            }
+            open.push((local.scope.end, index));
+            answers.push((local.scope.start, Some(index)));
+        }
+        while let Some((end, _)) = open.pop() {
+            answers.push((end, open.last().map(|&(_, around)| around)));
+        }
+        self.answers = answers;
+    }
 }
 
 /// What one scope below the top level of the file binds under one name.
@@ -38,15 +77,17 @@ pub(crate) struct Constants {
 struct Local {
     /// Where the binding is visible: the whole function, block or loop that declares it, not only the part after the declaration, because a closure may use a constant written below it.
     scope: Span,
-    /// The constants the binding stands for, under the dotted names they are read by like `values` of the file. None for a binding that is no text (a parameter, a `let`, a function) or that the scope binds twice: the name is hidden there and stands for nothing.
+    /// The constants the binding stands for, under the dotted names they are read by like `values` of the file. None for a binding that is no text (a parameter, a `let`, a function) or that is `rebound`: the name is hidden there and stands for nothing.
     values: BTreeMap<String, Part>,
+    /// Whether the scope binds the name more than once, so that it stands for nothing in the whole scope.
+    rebound: bool,
 }
 
-/// Where `Constants::add` writes what it reads: the constants of the file, or those of the scope last recorded under a name.
+/// Where `Constants::add` writes what it reads: the constants of the file, or those of the scope that answers for a name at a position.
 #[derive(Clone, Copy)]
 enum Home<'a> {
     File,
-    Local(&'a str),
+    Local(&'a str, u32),
 }
 
 /// The enum being read: a bare name in the initializer of a member is the member of that name, when the enum has declared one above, as TypeScript scopes it.
@@ -206,11 +247,8 @@ impl Constants {
 
     /// The innermost scope around the position `at` that binds `name` below the top level of the file.
     fn local(&self, name: &str, at: u32) -> Option<&Local> {
-        self.locals
-            .get(name)?
-            .iter()
-            .filter(|local| local.scope.start <= at && at < local.scope.end)
-            .min_by_key(|local| local.scope.size())
+        let locals = self.locals.get(name)?;
+        locals.scopes.get(locals.answer(at)?)
     }
 
     /// The constants whose first segment `exports` name as a local, sorted by name, to be read by the files that import them.
@@ -325,11 +363,11 @@ impl Constants {
     fn table(&mut self, home: Home<'_>) -> Option<&mut BTreeMap<String, Part>> {
         match home {
             Home::File => Some(&mut self.values),
-            Home::Local(name) => self
-                .locals
-                .get_mut(name)?
-                .last_mut()
-                .map(|local| &mut local.values),
+            Home::Local(name, at) => {
+                let locals = self.locals.get_mut(name)?;
+                let scope = locals.answer(at)?;
+                locals.scopes.get_mut(scope).map(|local| &mut local.values)
+            }
         }
     }
 
@@ -419,7 +457,7 @@ mod tests {
     use oxc_ast::ast::{Argument, CallExpression, Expression};
     use oxc_ast_visit::{Visit, walk};
     use oxc_parser::Parser;
-    use oxc_span::SourceType;
+    use oxc_span::{SourceType, Span};
     use proptest::prelude::*;
 
     use std::collections::BTreeMap;
@@ -427,7 +465,7 @@ mod tests {
     use gsttt_core::fact::FileTags;
     use gsttt_core::text::LineIndex;
 
-    use super::Constants;
+    use super::{Constants, Local, Locals};
     use crate::analyze::analyze;
     use crate::extra::{Export, ExportTarget};
     use crate::parts::{Mode, Part};
@@ -800,6 +838,121 @@ mod tests {
             reads("function f() { function p() {} const p = '/a'; read(p); }"),
             ["-"]
         );
+        // A block between the two bindings is noted after the first, so the search for the scope passes over it.
+        assert_eq!(
+            reads("function f() { const p = '/a'; { let p = 1; } function p() {} read(p); }"),
+            ["-"]
+        );
+    }
+
+    #[test]
+    fn a_scope_that_ended_keeps_its_binding_of_a_name_the_next_scope_binds_too() {
+        assert_eq!(
+            reads(
+                "function a() { const p = '/a'; read(p); } function b() { const p = '/b'; read(p); }"
+            ),
+            ["/a", "/b"]
+        );
+    }
+
+    #[test]
+    fn the_outer_scope_answers_again_once_the_inner_one_has_ended() {
+        assert_eq!(
+            reads(
+                "const p = '/top'; function f() { const p = '/a'; { const p = '/b'; read(p); } read(p); } read(p);"
+            ),
+            ["/b", "/a", "/top"]
+        );
+    }
+
+    #[test]
+    fn a_scope_answers_for_a_name_it_binds_below_a_block_that_binds_it_too() {
+        assert_eq!(
+            reads("function f() { { const p = '/b'; read(p); } read(p); var p = '/a'; }"),
+            ["/b", "-"]
+        );
+        assert_eq!(
+            reads(
+                "function f() { { const p = '/b'; read(p); } read(p); const g = () => read(p); const p = '/a'; }"
+            ),
+            ["/b", "/a", "/a"]
+        );
+    }
+
+    #[test]
+    fn between_two_scopes_a_name_is_what_the_file_says() {
+        assert_eq!(
+            reads(
+                "const p = '/top'; function f() { const p = '/a'; } read(p); function g() { const p = '/b'; }"
+            ),
+            ["/top"]
+        );
+    }
+
+    #[test]
+    fn an_initializer_reads_a_name_through_every_scope_around_it_whatever_is_written_below() {
+        // The whole scope binds `p`, so that the constant of the file is hidden from `q`, also above the line that binds it.
+        assert_eq!(
+            reads(
+                "const p = '/top'; function f() { const q = p + '/x'; read(q); const p = '/a'; }"
+            ),
+            ["-"]
+        );
+        // A block that ended is no scope around `q`.
+        assert_eq!(
+            reads(
+                "function f() { const p = '/a'; { const p = '/b'; } const q = p + '/x'; read(q); }"
+            ),
+            ["/a/x"]
+        );
+        assert_eq!(
+            reads(
+                "function f() { { const p = '/b'; } const p = '/a'; const q = p + '/x'; read(q); }"
+            ),
+            ["/a/x"]
+        );
+    }
+
+    proptest! {
+        /// The answer for every position is the definition of a scope: the smallest of those around it. Each `true` opens a scope and each `false` closes the last one, so the scopes nest as a file's do, and only every third one binds the name.
+        #[test]
+        fn the_answer_at_every_position_is_the_innermost_scope_around_it(
+            steps in prop::collection::vec(any::<bool>(), 0..80)
+        ) {
+            let (mut open, mut spans, mut at) = (Vec::new(), Vec::new(), 0u32);
+            for step in steps {
+                at += 2;
+                if step {
+                    open.push(at);
+                } else if let Some(start) = open.pop() {
+                    spans.push(Span::new(start, at));
+                }
+            }
+            while let Some(start) = open.pop() {
+                at += 2;
+                spans.push(Span::new(start, at));
+            }
+            let bound: Vec<_> = spans.into_iter().step_by(3).collect();
+            let mut locals = Locals {
+                scopes: bound
+                    .iter()
+                    .map(|&scope| Local { scope, values: BTreeMap::new(), rebound: false })
+                    .collect(),
+                ..Locals::default()
+            };
+            locals.index();
+            for position in 0..=at + 1 {
+                let expected = bound
+                    .iter()
+                    .filter(|scope| scope.start <= position && position < scope.end)
+                    .min_by_key(|scope| scope.size());
+                let answered = locals
+                    .answer(position)
+                    .and_then(|index| locals.scopes.get(index))
+                    .map(|local| &local.scope);
+                prop_assert_eq!(answered, expected);
+            }
+        }
     }
 
     #[test]
