@@ -160,7 +160,7 @@ expression: json
             "routes on an app or router received as a function parameter are not read: the receiver must be made in the file that registers the route, or be imported from a file of the same project that makes it; a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a router or app the file imports or makes is read as that one",
             "a mount on an app or router imported from another file (importedApp.use('/x', router)) is read only when the name is the app or router itself, not a member of it (server.app.use) and not a name from a package; the routes of a router that no read mount reaches are served at the paths they are written with",
             "a mount path is read from a string or a constant of the same file, not from an imported constant, and a mount path array with an element that is not text is read for its other elements only",
-            "a NestJS controller whose @Controller prefix is not text (an imported constant, a call) serves no route and is reported as a site the file could not read: its own routes and those of the class it extends are not served",
+            "a NestJS controller whose @Controller prefix is not text (a call, a constant of another package, a constant that is not text) serves no route and is reported as a site the file could not read: its own routes and those of the class it extends are not served",
             "a NestJS @Controller({ path: [...] }) serves its routes under the first path of the array that is text only, where @Controller([...]) serves them under every path",
             "routers that mount each other in a cycle are followed until the cycle closes"
           ],

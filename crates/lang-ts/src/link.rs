@@ -227,7 +227,12 @@ fn nestjs(
                 linked.push(LinkedFact::found(file.id, rekey(&route.fact, &prefix)));
             }
         }
-        for inherit in &file.extra.inherits {
+        for inherit in file
+            .extra
+            .inherits
+            .iter()
+            .chain(resolved.inherits_of(file.id))
+        {
             let Some((base_file, base)) = define(input, file.id, &inherit.base, 0) else {
                 continue;
             };
