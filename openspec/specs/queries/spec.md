@@ -699,3 +699,10 @@ In the walk over names, a namespace import SHALL be a caller only of the names i
 #### Scenario: A name goes on through a namespace a barrel exports
 - **WHEN** `barrel.ts` has `export * as ns from './svc'`, `page.ts` imports `ns` from it with `open` using `ns.helper` and `close` using `ns.other`, and impact is asked about `helper` in `svc.ts` with depth 2
 - **THEN** impact lists `page.ts` with the caller `open` and not `close`
+
+### Requirement: A changed declaration is walked with its file
+An `impact` request that names the changed declarations of a file SHALL walk those declarations and the declarations of the file that use them, and a name that is empty SHALL walk nothing. The header SHALL name the declarations and the file.
+
+#### Scenario: A changed declaration is walked with the declarations of its file that use it
+- **WHEN** `helper` of `lib.ts` is asked for, `render` uses `helper`, `a.ts` imports `render` and `b.ts` imports `unrelated`
+- **THEN** only `a.ts` is affected and the header is `impact of helper in lib.ts, within 1 hop through code`

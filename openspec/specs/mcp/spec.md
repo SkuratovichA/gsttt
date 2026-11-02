@@ -191,3 +191,10 @@ The server SHALL NOT grant trust to an `[[external]]` connector of the config, a
 #### Scenario: A tests argument that is not a boolean is a tool error
 - **WHEN** `impact` is called with `paths` set to `["a.ts"]` and `tests` set to `"no"`
 - **THEN** the result has `isError` set and names `tests` and says it must be true or false
+
+### Requirement: Changed asks by declaration
+`impact` with `changed` set to true SHALL answer as the query does for the declarations the patch changes, as the command line does.
+
+#### Scenario: changed asks about the declarations a patch changes
+- **WHEN** `lib/util.ts` is modified in `render` and `src/a.ts` imports `render` and `src/b.ts` imports `unrelated`
+- **THEN** the text is the one of the query for that `render`, and lists `src/a.ts` and not `src/b.ts`
