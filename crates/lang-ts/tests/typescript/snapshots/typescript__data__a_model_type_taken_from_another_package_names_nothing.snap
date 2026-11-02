@@ -26,6 +26,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -83,6 +84,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -128,6 +130,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,

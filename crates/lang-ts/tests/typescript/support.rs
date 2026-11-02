@@ -367,6 +367,21 @@ pub(crate) fn local_exports(json: &Value, path: &str) -> Vec<String> {
         .collect()
 }
 
+/// The heirs of the file at `path`, in the order of the output: `<name> of <head>`.
+pub(crate) fn heirs(json: &Value, path: &str) -> Vec<String> {
+    symbols(json, path)
+        .into_iter()
+        .flat_map(|symbols| items(symbols, "heirs"))
+        .map(|heir| {
+            format!(
+                "{} of {}",
+                text(heir, "name").unwrap_or("?"),
+                text(heir, "of").unwrap_or("?")
+            )
+        })
+        .collect()
+}
+
 /// The line of the first import of the file at `path` that reads `spec`.
 pub(crate) fn import_line(json: &Value, path: &str, spec: &str) -> Option<u64> {
     items(file(json, path)?, "imports")

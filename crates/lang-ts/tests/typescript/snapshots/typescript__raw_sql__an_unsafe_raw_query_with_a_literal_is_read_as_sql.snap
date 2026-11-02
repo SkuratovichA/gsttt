@@ -75,11 +75,17 @@ expression: json
             "name": "constant",
             "uses": [
               "TEXT",
-              "prisma"
+              "prisma.$queryRawUnsafe"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [
           "PrismaClient"
         ]
@@ -149,12 +155,18 @@ expression: json
             "line": 7,
             "name": "held",
             "uses": [
-              "prisma",
+              "prisma.$queryRaw",
               "query"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [
           "Prisma.sql",
           "PrismaClient"
@@ -237,7 +249,7 @@ expression: json
             "line": 5,
             "name": "literal",
             "uses": [
-              "prisma"
+              "prisma.$queryRawUnsafe"
             ]
           },
           {
@@ -245,7 +257,7 @@ expression: json
             "line": 7,
             "name": "run",
             "uses": [
-              "prisma"
+              "prisma.$executeRawUnsafe"
             ]
           },
           {
@@ -253,7 +265,7 @@ expression: json
             "line": 9,
             "name": "computed",
             "uses": [
-              "prisma"
+              "prisma.$queryRawUnsafe"
             ]
           },
           {
@@ -262,7 +274,7 @@ expression: json
             "name": "wrapped",
             "uses": [
               "Prisma.sql",
-              "prisma"
+              "prisma.$queryRaw"
             ]
           },
           {
@@ -270,11 +282,17 @@ expression: json
             "line": 14,
             "name": "variable",
             "uses": [
-              "prisma"
+              "prisma.$executeRawUnsafe"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [
           "PrismaClient"
         ]

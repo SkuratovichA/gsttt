@@ -87,6 +87,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "bare",
           "dynamic",
@@ -146,6 +147,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "bare.get",
           "dynamic.get",

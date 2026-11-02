@@ -3,22 +3,23 @@
 //! A table of the top-level bindings is made before the visit, so that the visit only has to know where it is: the group of the declaration whose code it walks, and how far that code runs as the file loads. A reference to a binding of the table goes into that group and, when the code runs at load, into the list of the file. Both hold indices, and the names are made once, in [`Recorder::finish`].
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use gsttt_core::fact::{Declared, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
+use gsttt_core::fact::{Declared, Heir, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     BindingPattern, ChainElement, Class, ClassElement, Declaration, ExportDefaultDeclaration,
     ExportDefaultDeclarationKind, Expression, ImportDeclaration, MethodDefinitionKind, Program,
-    PropertyKey, SimpleAssignmentTarget, Statement, TSModuleReference, VariableDeclaration,
+    PropertyKey, SimpleAssignmentTarget, Statement, TSInterfaceDeclaration, TSModuleReference,
+    VariableDeclaration, VariableDeclarationKind,
 };
 use oxc_span::{GetSpan, Span};
 
 use super::constants::import_locals;
-use super::roots::{constructed, heads};
+use super::roots::{constructed, declared_class, heads};
 use crate::extra::{Export, ExportTarget};
-use crate::shape::{is_export_key, is_parameter_property, property_str};
+use crate::shape::{dotted_name, is_export_key, is_parameter_property, property_str};
 
 /// The member that stands for a class used by its type alone: recorded as `Class.`, so that a question about the class reaches it and a question about one of its members does not.
 pub(super) const TYPE_ONLY: &str = "";
@@ -111,9 +112,11 @@ enum Region {
 
 /// A top-level class: the group of its decorators, `extends` and members without a name, and the group of each member by its position in the body.
 #[derive(Debug)]
-struct ClassPlan {
+struct ClassPlan<'a> {
     group: usize,
     entry: usize,
+    /// What the class extends, spelled as the source writes it, when that is a name.
+    head: Option<Cow<'a, str>>,
     members: Vec<Option<usize>>,
 }
 
@@ -148,7 +151,11 @@ pub(super) struct Recorder<'a> {
     plans: Vec<Plan>,
     /// Sorted by the start of the node.
     regions: Vec<(u32, Region)>,
-    class_plans: Vec<ClassPlan>,
+    class_plans: Vec<ClassPlan<'a>>,
+    /// The names that take the members of another, in the order met.
+    heirs: Vec<Heir>,
+    /// The entries that appear in `heirs` as the name that takes the members.
+    heir_entries: HashSet<usize>,
     /// What the file refers to as it loads, in the order met.
     on_load: Vec<usize>,
     place: Place,
@@ -228,7 +235,9 @@ impl<'a> Recorder<'a> {
                 self.single(Some(alias.id.name.as_str()), lines, Load::Later)
             }
             Declaration::TSInterfaceDeclaration(interface) => {
-                self.single(Some(interface.id.name.as_str()), lines, Load::Later)
+                let plan = self.single(Some(interface.id.name.as_str()), lines, Load::Later);
+                self.interface(interface);
+                plan
             }
             Declaration::TSEnumDeclaration(declared) => {
                 self.single(Some(declared.id.name.as_str()), lines, Load::Static)
@@ -276,11 +285,38 @@ impl<'a> Recorder<'a> {
                 Plan::Inside
             }
             ExportDefaultDeclarationKind::TSInterfaceDeclaration(interface) => {
-                self.single(Some(interface.id.name.as_str()), lines, Load::Later)
+                let plan = self.single(Some(interface.id.name.as_str()), lines, Load::Later);
+                self.interface(interface);
+                plan
             }
             // `export default name` declares nothing: it exports a name the file has.
             ExportDefaultDeclarationKind::Identifier(_) => Plan::Skip,
-            _ => self.single(Some("default"), lines, Load::Static),
+            other => {
+                let plan = self.single(Some("default"), lines, Load::Static);
+                if let Some(held) = other.as_expression().and_then(constructed) {
+                    self.heir("default", &held);
+                }
+                plan
+            }
+        }
+    }
+
+    /// Records that `name` takes the members of `of`.
+    fn heir(&mut self, name: &str, of: &str) {
+        if let Some(&entry) = self.names.get(name) {
+            self.heir_entries.insert(entry);
+        }
+        self.heirs.push(Heir {
+            name: name.to_owned(),
+            of: of.to_owned(),
+        });
+    }
+
+    /// An interface takes the members of each interface it extends.
+    fn interface(&mut self, interface: &TSInterfaceDeclaration<'a>) {
+        let name = interface.id.name.as_str();
+        for base in &interface.extends {
+            self.heir(name, &base.type_name.to_string());
         }
     }
 
@@ -304,6 +340,13 @@ impl<'a> Recorder<'a> {
                 .into_iter()
                 .map(|id| self.entry(id.name.as_str(), Kind::Variable, Some(lines)))
                 .collect();
+            // Only a `const` holds the same value for good.
+            if variables.kind == VariableDeclarationKind::Const
+                && let BindingPattern::BindingIdentifier(id) = &declarator.id
+                && let Some(held) = declared_class(declarator)
+            {
+                self.heir(id.name.as_str(), &held);
+            }
             let group = self.group(&declared);
             self.regions
                 .push((declarator.span.start, Region::Declarator(group)));
@@ -322,6 +365,13 @@ impl<'a> Recorder<'a> {
             Some(line_pair(index, Span::new(start, span.end))),
         );
         let group = self.group(&[entry]);
+        let head = class
+            .heritage
+            .as_ref()
+            .and_then(|heritage| dotted_name(&heritage.expression));
+        if let Some(head) = &head {
+            self.heir(name, head);
+        }
         let mut members = Vec::with_capacity(class.body.body.len());
         for element in &class.body.body {
             self.field_types(entry, element);
@@ -332,6 +382,7 @@ impl<'a> Recorder<'a> {
         self.class_plans.push(ClassPlan {
             group,
             entry,
+            head,
             members,
         });
         self.regions.push((class.span.start, Region::Class(plan)));
@@ -669,6 +720,10 @@ impl<'a> Recorder<'a> {
                 .and_then(|plan| self.class_plans.get(plan))
                 .map(|plan| plan.entry);
             if let (Some(class), Some(member)) = (class, second) {
+                // A member the class does not declare is one it takes from what it extends.
+                if self.member_entry(class, false, member).is_none() {
+                    self.super_use(member);
+                }
                 self.member_use(class, false, member);
                 let read = names.get(2).and_then(Option::as_deref);
                 self.field_use(class, false, member, read);
@@ -688,13 +743,26 @@ impl<'a> Recorder<'a> {
             .entries
             .get(binding)
             .is_some_and(|entry| entry.kind == Kind::Import);
+        // A name that takes the members of another is used by its name, like an import, so that the walk can pass the member on.
         match declared {
             Some(member) => self.note(member),
-            None if imported => {
+            None if imported || self.heir_entries.contains(&binding) => {
                 let used = self.typed_entry(root, member);
                 self.note(used);
             }
             None => self.note(binding),
+        }
+    }
+
+    /// `super.member`, or `this.member` for a member the class does not declare: a use of `member` of what the class extends. A class that extends no name uses nothing.
+    pub(super) fn super_use(&mut self, member: &str) {
+        let head = self
+            .place
+            .class
+            .and_then(|plan| self.class_plans.get(plan))
+            .and_then(|plan| plan.head.clone());
+        if let Some(head) = head {
+            self.through_class(&head, Some(member));
         }
     }
 
@@ -856,10 +924,14 @@ impl<'a> Recorder<'a> {
             })
             .collect();
         declared.sort_unstable_by(|a, b| (a.line, &a.name).cmp(&(b.line, &b.name)));
+        let mut heirs = std::mem::take(&mut self.heirs);
+        heirs.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
+        heirs.dedup();
         Symbols {
             declared,
             on_load: self.names_of(self.on_load.iter().copied(), &ranks, &order),
             exports: local_exports(exports),
+            heirs,
         }
     }
 

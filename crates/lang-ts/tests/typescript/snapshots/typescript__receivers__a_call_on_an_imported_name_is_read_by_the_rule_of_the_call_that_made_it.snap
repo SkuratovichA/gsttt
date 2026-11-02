@@ -67,6 +67,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "api.get",
           "app.get",
@@ -116,6 +117,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "express"
         ]
@@ -163,6 +165,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "axios.create"
         ]

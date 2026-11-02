@@ -93,6 +93,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Controller",
           "Get",
@@ -160,6 +161,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Controller",
           "Get"
@@ -204,6 +206,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -255,6 +258,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Get"
         ]
@@ -334,6 +338,12 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "UserController",
+            "of": "UserControllerBase"
+          }
+        ],
         "on_load": [
           "Controller",
           "prefix"

@@ -58,7 +58,7 @@ expression: json
             "line": 4,
             "name": "hit",
             "uses": [
-              "cache"
+              "cache.get"
             ]
           },
           {
@@ -71,8 +71,14 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "cache",
+            "of": "Map"
+          }
+        ],
         "on_load": [
-          "cache",
+          "cache.get",
           "express"
         ]
       },

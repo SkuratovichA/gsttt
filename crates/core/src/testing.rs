@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{
-    Declared, FileTags, Import, ImportFlags, ImportKind, LocalExport, ParseFailure, ParseStatus,
-    Resolution, ResolvedImport, Symbols, UnresolvedReason, UnresolvedSite,
+    Declared, FileTags, Heir, Import, ImportFlags, ImportKind, LocalExport, ParseFailure,
+    ParseStatus, Resolution, ResolvedImport, Symbols, UnresolvedReason, UnresolvedSite,
 };
 use crate::graph::{ContractSite, GraphBuilder};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
@@ -137,6 +137,15 @@ impl Code {
         self
     }
 
+    /// `name` takes the members of `of`, as `class name extends of` does.
+    pub fn heir(mut self, name: &str, of: &str) -> Self {
+        self.symbols.heirs.push(Heir {
+            name: name.to_owned(),
+            of: of.to_owned(),
+        });
+        self
+    }
+
     /// The symbols in the order a connector records them: declarations by line and then by name, and every list sorted and without repeats.
     fn finish(self) -> Symbols {
         let mut symbols = self.symbols;
@@ -152,6 +161,10 @@ impl Code {
         symbols
             .exports
             .sort_by(|left, right| left.name.cmp(&right.name));
+        symbols
+            .heirs
+            .sort_by(|left, right| (&left.name, &left.of).cmp(&(&right.name, &right.of)));
+        symbols.heirs.dedup();
         symbols
     }
 }

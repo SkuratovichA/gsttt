@@ -125,6 +125,7 @@ expression: "run(\"scopes-hidden\")?"
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "BASE"
         ]

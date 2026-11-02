@@ -66,11 +66,18 @@ expression: json
             "line": 5,
             "name": "users",
             "uses": [
-              "prisma"
+              "prisma.$transaction",
+              "prisma.user"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [
           "PrismaClient"
         ]
@@ -121,11 +128,17 @@ expression: json
             "line": 5,
             "name": "users",
             "uses": [
-              "prisma"
+              "prisma.$transaction"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [
           "PrismaClient"
         ]
@@ -174,6 +187,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -199,6 +213,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "items"
         ]
@@ -256,11 +271,17 @@ expression: json
             "name": "users",
             "uses": [
               "client",
-              "prisma"
+              "prisma.$transaction"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [
           "PrismaClient"
         ]
@@ -318,11 +339,17 @@ expression: json
             "line": 5,
             "name": "users",
             "uses": [
-              "prisma"
+              "prisma.$transaction"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [
           "PrismaClient"
         ]

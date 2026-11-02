@@ -85,6 +85,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "common.Controller",
           "common.Get",

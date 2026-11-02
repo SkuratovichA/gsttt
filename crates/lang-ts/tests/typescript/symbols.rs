@@ -5,8 +5,8 @@ use std::error::Error;
 use gsttt_scenario::scenario;
 
 use crate::support::{
-    NOTHING, declared, edges, import_line, imports, local_exports, local_names, on_load, run,
-    status, uses,
+    NOTHING, declared, edges, heirs, import_line, imports, local_exports, local_names, on_load,
+    run, status, uses,
 };
 
 #[test]
@@ -84,8 +84,8 @@ fn a_function_that_fills_a_cache_is_a_use_of_the_cache() -> Result<(), Box<dyn E
     assert_eq!(uses(&json, path, "count"), Some(vec!["bump"]));
     assert_eq!(
         uses(&json, path, "read"),
-        Some(vec!["cache"]),
-        "a reader refers to the cache, which is the other direction"
+        Some(vec!["cache.get"]),
+        "a reader refers to the cache, which is the other direction, and a `Map` is a value that takes the members of its class"
     );
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -379,9 +379,9 @@ fn every_form_of_a_write_is_a_use_of_the_variable() -> Result<(), Box<dyn Error>
             "doomed -> removes",
             "assignMember -> table",
             "pushes -> list",
-            "adds -> seen",
+            "adds -> seen.add",
             "deep -> nested",
-            "reads -> untouched",
+            "reads -> untouched.get",
             "compound -> total",
             "loops -> current",
             "destructures -> first, second",
@@ -847,5 +847,92 @@ fn a_qualified_type_name_is_used_by_its_whole_name() -> Result<(), Box<dyn Error
 fn a_jsx_member_is_used_by_its_whole_name() -> Result<(), Box<dyn Error>> {
     let json = run("symbols-qualified")?;
     assert_eq!(uses(&json, "src/view.tsx", "jsx"), Some(vec!["lib.Comp"]));
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A class records what it extends")]
+fn a_class_records_what_it_extends() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-heirs")?;
+    let all = heirs(&json, "src/classes.ts");
+    for pair in ["Plain of Base", "Qualified of lib.Base", "Named of Base"] {
+        assert!(all.iter().any(|heir| heir == pair), "{pair}: {all:?}");
+    }
+    for name in ["Mixed", "Alone", "Promised"] {
+        assert!(
+            !all.iter().any(|heir| heir.starts_with(&format!("{name} "))),
+            "{name} takes no head: {all:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An interface records what it extends")]
+fn an_interface_records_what_it_extends() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-heirs")?;
+    let all = heirs(&json, "src/classes.ts");
+    for pair in ["Wide of Base", "Wide of lib.Shape", "Named of Base"] {
+        assert!(all.iter().any(|heir| heir == pair), "{pair}: {all:?}");
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A top-level value records the class it holds")]
+fn a_top_level_value_records_the_class_it_holds() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-heirs")?;
+    assert_eq!(
+        heirs(&json, "src/classes.ts"),
+        [
+            "Named of Base",
+            "Plain of Base",
+            "Qualified of lib.Base",
+            "Wide of Base",
+            "Wide of lib.Shape",
+            "generic of Repository",
+            "made of Service",
+            "typed of Service",
+        ],
+        "`let`, `var`, an unknown value and a value below the top level hold nothing"
+    );
+    assert_eq!(heirs(&json, "src/default.ts"), ["default of Service"]);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "`super` and an inherited `this` name the member of the head"
+)]
+fn super_and_an_inherited_this_name_the_member_of_the_head() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-heirs")?;
+    let path = "src/members.ts";
+    assert_eq!(
+        uses(&json, path, "Sub.place"),
+        Some(vec!["Base.own", "Base.place", "Sub.own"])
+    );
+    assert_eq!(
+        uses(&json, path, "Sub.constructor"),
+        Some(vec!["Base.constructor"])
+    );
+    assert_eq!(
+        uses(&json, path, "Headless.run"),
+        Some(vec![]),
+        "a class with no head records nothing for `this` and `super`"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read from a name with a head is used by its name"
+)]
+fn a_member_read_from_a_name_with_a_head_is_used_by_its_name() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-heirs")?;
+    let path = "src/members.ts";
+    assert_eq!(uses(&json, path, "use"), Some(vec!["orders.place"]));
+    assert_eq!(uses(&json, path, "build"), Some(vec!["Sub.make"]));
     Ok(())
 }

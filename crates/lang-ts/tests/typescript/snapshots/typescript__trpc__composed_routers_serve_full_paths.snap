@@ -73,6 +73,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "f",
           "publicProcedure.input",
@@ -139,6 +140,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "bookingRouter",
           "router"
@@ -204,6 +206,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "initTRPC.create"
         ]

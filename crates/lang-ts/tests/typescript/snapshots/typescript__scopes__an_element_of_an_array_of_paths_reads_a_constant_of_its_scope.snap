@@ -70,6 +70,7 @@ expression: json
             "name": "default"
           }
         ],
+        "heirs": [],
         "on_load": [
           "express.Router"
         ]

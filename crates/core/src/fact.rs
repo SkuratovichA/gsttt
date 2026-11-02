@@ -342,6 +342,8 @@ pub struct Symbols {
     pub on_load: Vec<String>,
     /// Each name the file exports from a local of another name, by the name it is exported as: `b` from `a` for `export { a as b }`, `default` from `f` for `export default f`. A name exported under its own local name is not listed, and neither is a re-export, which its import describes.
     pub exports: Vec<LocalExport>,
+    /// Each name that takes the members of another: a class and what it extends, an interface and what it extends, a top-level value and the class it holds, sorted by name and then by what it takes from, each pair once.
+    pub heirs: Vec<Heir>,
 }
 
 /// What joins a class and a member of it in the name of a declaration: `Runner.start`, and `Runner.#start` for a private member. A connector writes member names with it and a walk by name splits them on it.
@@ -404,6 +406,26 @@ pub struct LocalExport {
     pub name: String,
     /// The declaration or import binding behind it: `a` in `export { a as b }`.
     pub local: String,
+}
+
+/// A name that takes the members of another.
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct Heir {
+    /// The name that takes the members: `Sub` in `class Sub extends Base`.
+    pub name: String,
+    /// The head it takes them from, spelled as the source writes it: `Base`, or `lib.Base` through a namespace.
+    pub of: String,
 }
 
 impl FileFacts {

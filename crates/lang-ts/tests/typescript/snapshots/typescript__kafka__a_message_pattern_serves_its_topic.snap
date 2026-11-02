@@ -64,6 +64,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -138,6 +139,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "EventPattern",
           "MessagePattern"
@@ -202,6 +204,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -285,6 +288,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Inject"
         ]
@@ -340,6 +344,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -406,6 +411,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -452,6 +458,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -551,6 +558,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -624,6 +632,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -672,7 +681,7 @@ expression: json
             "line": 4,
             "name": "producer",
             "uses": [
-              "kafka"
+              "kafka.producer"
             ]
           },
           {
@@ -685,9 +694,15 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "kafka",
+            "of": "Kafka"
+          }
+        ],
         "on_load": [
           "Kafka",
-          "kafka"
+          "kafka.producer"
         ]
       },
       "tags": 0,
