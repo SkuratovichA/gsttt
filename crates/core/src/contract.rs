@@ -249,7 +249,7 @@ impl fmt::Display for ContractKey {
 ///
 /// An origin is a scheme, `://` and a host at the start of the text. A scheme is a letter followed by letters, digits, `+`, `-` or `.` (RFC 3986 section 3.1). It may also be written as placeholders, because the connectors write a computed part as `${}` and OpenAPI writes a server variable as `{name}`: it may start with `$` or `{` and hold `$`, `{` and `}` as well. It never holds `/`, so the `://` of a query string or of a deeper path segment, as in `/a?next=https://b/c`, is no origin.
 ///
-/// A protocol that holds its own colon, as in the template `${location.protocol}//${location.host}/api/x`, leaves `${}//${}/api/x`, which is an origin too: a placeholder, `//` and a host that holds a placeholder. `${}//api/x` is not, because that is a base URL with a trailing slash.
+/// A protocol that holds its own colon, as in the template `${location.protocol}//${location.host}/api/x`, leaves `${}//${}/api/x`, which is an origin too: placeholders alone, `//` and a host that holds a placeholder. `${}//api/x` is not, because that is a base URL with a trailing slash, and neither is `${base}api//${id}`, because a literal glued to the placeholder makes it a base URL that starts a path.
 pub fn path_after_origin(url: &str) -> Option<&str> {
     if let Some((scheme, rest)) = url.split_once("://")
         && is_scheme(scheme)
@@ -258,7 +258,7 @@ pub fn path_after_origin(url: &str) -> Option<&str> {
     }
     let (scheme, rest) = url.split_once("//")?;
     let (host, path) = split_host(rest);
-    (is_scheme(scheme) && is_placeholder(scheme) && is_placeholder(host)).then_some(path)
+    (is_scheme(scheme) && is_only_placeholders(scheme) && is_placeholder(host)).then_some(path)
 }
 
 /// Whether `text` can be the scheme of a URL, see [`path_after_origin`].
@@ -323,6 +323,21 @@ fn glued_tail(segment: &str) -> Option<&str> {
     let literal = tail.split(['$', '{']).next().unwrap_or(tail);
     (literal.starts_with(|c: char| c.is_ascii_alphanumeric()) && !literal.contains(['.', ':', '@']))
         .then_some(tail)
+}
+
+/// Whether `text` is made of placeholders alone, as `${}`, `${a}${b}` or `{scheme}`, with no literal glued to one.
+fn is_only_placeholders(text: &str) -> bool {
+    let mut rest = text;
+    while !rest.is_empty() {
+        let Some(open) = rest.strip_prefix("${").or_else(|| rest.strip_prefix('{')) else {
+            return false;
+        };
+        let Some((_, after)) = open.split_once('}') else {
+            return false;
+        };
+        rest = after;
+    }
+    !text.is_empty()
 }
 
 fn is_placeholder(segment: &str) -> bool {
@@ -433,6 +448,22 @@ mod tests {
         assert_eq!(normalize_http_path("${}//api/x"), "/api/x");
         assert_eq!(path_after_origin("${}/${}/x"), None);
         assert_eq!(normalize_http_path("${}/${}/x"), "/{}/x");
+    }
+
+    #[gsttt_scenario::scenario(
+        "contract-formats",
+        "A literal glued to a placeholder before `//` is no origin"
+    )]
+    #[test]
+    fn a_literal_glued_to_a_placeholder_before_slashes_is_no_origin() {
+        // `${x}0//{}` is the case the property test of a base URL found.
+        for (url, path) in [("${base}api//${id}", "/api/{}"), ("${x}0//{}", "/0/{}")] {
+            assert_eq!(path_after_origin(url), None, "{url}");
+            assert_eq!(normalize_http_path(url), path, "{url}");
+        }
+        // Placeholders alone, in any number, still make the protocol of an origin.
+        assert_eq!(path_after_origin("${a}${b}//${}/x"), Some("/x"));
+        assert_eq!(path_after_origin("{scheme}//{}/x"), Some("/x"));
     }
 
     #[gsttt_scenario::scenario("contract-formats", "A URL in a query string is no origin")]
