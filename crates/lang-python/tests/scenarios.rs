@@ -2931,3 +2931,23 @@ fn the_sqlalchemy_pack_is_credited_with_the_tables_it_finds() {
         ["dbapi", "sqlalchemy"]
     );
 }
+
+#[gsttt_scenario::scenario("python", "A call rule that lists receiver types reads nothing")]
+#[test]
+fn a_call_rule_that_lists_receiver_types_reads_nothing() {
+    let rule = |extra: &str| {
+        format!(
+            "name = \"queue\"\nlanguage = \"python\"\n\n[[calls]]\ncallee = \"client.send\"\n{extra}kind = \"queue\"\nrole = \"calls\"\nkey = \"$arg1\"\n"
+        )
+    };
+    let files = [("send.py", "def send(client):\n    client.send(\"topic\")\n")];
+    // Without receiver types the rule reads the call, so the test fails when the rule is read at all.
+    let plain = rule("");
+    let tree = index_files_with(&files, builtin_packs(&[("queue", &plain)]).unwrap());
+    assert_eq!(tree.contracts("send.py"), ["calls queue topic@2"]);
+    // Python knows no declared type, so reading the call on any receiver would make false edges.
+    let typed = rule("receiver_types = [\"Producer\"]\n");
+    let tree = index_files_with(&files, builtin_packs(&[("queue", &typed)]).unwrap());
+    assert_eq!(tree.contracts("send.py"), Vec::<String>::new());
+    assert_eq!(tree.unread("send.py"), Vec::<String>::new());
+}

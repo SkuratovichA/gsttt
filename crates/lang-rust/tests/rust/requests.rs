@@ -3,7 +3,9 @@
 use gsttt_scenario::scenario;
 use insta::assert_json_snapshot;
 
-use crate::support::index;
+use gsttt_config::builtin_packs;
+
+use crate::support::{index, index_with};
 
 #[scenario("rust", "A client held in a field calls the URL")]
 #[test]
@@ -104,4 +106,27 @@ fn a_type_from_another_crate_is_no_client_and_one_from_reqwest_is() {
 fn an_absolute_request_is_unchanged_by_relative_requests() {
     let out = index("relative_without_base");
     assert_eq!(out.contracts("src/client.rs"), ["11 calls http GET /x"]);
+}
+
+#[scenario("rust", "A call rule that lists receiver types reads nothing")]
+#[test]
+fn a_call_rule_that_lists_receiver_types_reads_nothing() {
+    let rule = |extra: &str| {
+        format!(
+            "name = \"queue\"\nlanguage = \"rust\"\n\n[[calls]]\ncallee = [\"*.get\", \"*.*.get\"]\n{extra}kind = \"queue\"\nrole = \"calls\"\nkey = \"$arg1\"\n"
+        )
+    };
+    let queue_sites = |packs| {
+        let out = index_with("reqwest", packs);
+        out.contracts("src/api.rs")
+            .into_iter()
+            .filter(|site| site.contains("calls queue"))
+            .count()
+    };
+    // Without receiver types the rule reads the calls of the file, so the test fails when the rule is read at all.
+    let plain = rule("");
+    assert!(queue_sites(builtin_packs(&[("queue", &plain)]).unwrap()) > 0);
+    // Rust knows no declared type, so reading the call on any receiver would make false edges.
+    let typed = rule("receiver_types = [\"Producer\"]\n");
+    assert_eq!(queue_sites(builtin_packs(&[("queue", &typed)]).unwrap()), 0);
 }

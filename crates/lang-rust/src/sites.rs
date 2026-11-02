@@ -176,9 +176,15 @@ impl<'a> Reader<'a> {
         Self {
             root,
             lines,
+            // Rust sites know no declared type, so a call rule that asks for one reads nothing.
             calls: packs
                 .iter()
-                .flat_map(|pack| pack.calls.iter().map(move |rule| (pack, rule)))
+                .flat_map(|pack| {
+                    pack.calls
+                        .iter()
+                        .filter(|rule| rule.receiver_types.is_empty())
+                        .map(move |rule| (pack, rule))
+                })
                 .collect(),
             // A class or a receiver is where a decorator in another language finds its prefix, and an attribute has neither.
             decorators: packs

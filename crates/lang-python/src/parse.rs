@@ -378,7 +378,11 @@ impl<'a> Collector<'a> {
             .iter()
             .flat_map(|pack| {
                 let decorators = pack.decorators.iter().map(|rule| rule.receiver.as_ref());
-                let calls = pack.calls.iter().map(|rule| rule.receiver.as_ref());
+                let calls = pack
+                    .calls
+                    .iter()
+                    .filter(|rule| rule.receiver_types.is_empty())
+                    .map(|rule| rule.receiver.as_ref());
                 decorators.chain(calls).flatten()
             })
             .collect();
@@ -449,6 +453,10 @@ impl<'a> Collector<'a> {
         let mut unread = false;
         for pack in packs {
             for rule in &pack.calls {
+                // Python knows no declared type, so a rule that asks for one reads nothing.
+                if !rule.receiver_types.is_empty() {
+                    continue;
+                }
                 let Some(matched) = callee.matching(&rule.callee) else {
                     continue;
                 };
