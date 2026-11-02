@@ -63,13 +63,13 @@ pub(in crate::query) struct Walked {
     pub(in crate::query) notes: Vec<Note>,
 }
 
-/// Every file that holds a declaration, or the load, that refers to the `names` of the declarations of `changed` within `depth` hops through code, with the callers in each. The files of `changed` are listed only when their own code refers to the names.
+/// Every file that holds a declaration, or the load, that refers to the `names` of the declarations of `changed` within `depth` hops through code, or at any number of them when there is no depth, with the callers in each. The files of `changed` are listed only when their own code refers to the names.
 pub(in crate::query) fn reach_names(
     index: &Index,
     crossing: &Crossing<'_>,
     changed: &[FileId],
     names: &[String],
-    depth: u32,
+    depth: Option<u32>,
 ) -> Walked {
     let mut walk = Walk {
         index,
@@ -241,8 +241,8 @@ struct Walk<'a> {
     index: &'a Index,
     graph: &'a Graph,
     crossing: &'a Crossing<'a>,
-    /// The hops through code a part may be reached by before the walk takes no more.
-    depth: u32,
+    /// The hops through code a part may be reached by before the walk takes no more, none when there is no limit.
+    depth: Option<u32>,
     files: BTreeMap<FileId, Touch>,
     /// The members of classes the walk looked for the callers of through their class, each with its class.
     through_class: BTreeSet<(String, String)>,
@@ -304,14 +304,14 @@ impl Walk<'_> {
             })
     }
 
-    /// The parts reached by `depth` hops through code, which take no more of them.
+    /// The parts reached by `depth` hops through code, which take no more of them. A walk with no depth has none.
     fn at_depth(&self) -> Vec<Front> {
         self.files
             .iter()
             .flat_map(|(&file, touch)| {
                 touch
                     .parts()
-                    .filter(|&(_, hops)| hops.code == self.depth)
+                    .filter(|&(_, hops)| self.depth == Some(hops.code))
                     .map(move |(part, hops)| Front {
                         unit: Unit { file, part },
                         code: hops.code,
@@ -648,7 +648,7 @@ impl<'w, 'a> Step<'w, 'a> {
         for group in fronts.chunk_by(|left, right| left.code == right.code) {
             // The depth stops the hops through code and not the crossing of a contract.
             if let Some(code) = group.first().map(|front| front.code)
-                && code < self.walk.depth
+                && super::within(self.walk.depth, code)
             {
                 self.hops = code + 1;
                 let parts = self.parts(file, group);

@@ -279,7 +279,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     } else {
         // A walk by name takes the direct callers unless a depth is asked.
         let depth = request.depth.unwrap_or(1);
-        let walked = reach_names(index, &crossing, &changed, &names, depth);
+        let walked = reach_names(index, &crossing, &changed, &names, Some(depth));
         (walked.hits, walked.notes, Some(depth))
     };
     let mut affected = Vec::new();
