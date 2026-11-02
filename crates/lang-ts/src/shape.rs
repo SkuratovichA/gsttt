@@ -26,6 +26,9 @@ pub(crate) struct Shape {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) member: Option<String>,
     args: Vec<Arg>,
+    /// Where the first `...spread` argument is, counting from 0: it gives the arguments from that place on, and none of them is read at the place it is written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    spread: Option<usize>,
 }
 
 /// One argument: what it reads as, whether it is an object literal, and the properties of that literal.
@@ -36,6 +39,9 @@ struct Arg {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     object: bool,
     props: Vec<(String, Value)>,
+    /// Whether the object literal has a `...spread` property, which may give any property that is not written.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    spread: bool,
 }
 
 /// What a rule can read of an expression: its text when it has one, and otherwise the name it is written as when that name starts from an import of the file, which the link phase may be able to read.
@@ -79,11 +85,12 @@ impl Shape {
         arguments: impl IntoIterator<Item = &'e Argument<'a>>,
         constants: &Constants,
     ) -> Self {
+        let arguments: Vec<&Argument<'a>> = arguments.into_iter().collect();
         Self {
             last: callee.rsplit('.').next().map(str::to_owned),
             member: None,
             args: arguments
-                .into_iter()
+                .iter()
                 .map(|argument| {
                     argument
                         .as_expression()
@@ -91,6 +98,9 @@ impl Shape {
                         .unwrap_or_default()
                 })
                 .collect(),
+            spread: arguments
+                .iter()
+                .position(|argument| matches!(argument, Argument::SpreadElement(_))),
         }
     }
 
@@ -120,6 +130,7 @@ impl Shape {
                 value: Value::text(Some(text)),
                 ..Arg::default()
             }],
+            spread: None,
         }
     }
 
@@ -132,12 +143,25 @@ impl Shape {
                 value: Value::text(value),
                 ..Arg::default()
             }],
+            spread: None,
         }
     }
 
+    /// The argument written at `position`, counting from 1, which is none when a spread stands there or before it.
     fn arg_at(&self, position: NonZeroU32) -> Option<&Arg> {
+        if self.unpacked(position) {
+            return None;
+        }
         self.args
             .get(usize::try_from(position.get().checked_sub(1)?).ok()?)
+    }
+
+    /// Whether a `...spread` argument stands at `position`, counting from 1, or before it: the argument there is one the spread may give, and what is written there is not.
+    fn unpacked(&self, position: NonZeroU32) -> bool {
+        let Ok(position) = usize::try_from(position.get()) else {
+            return false;
+        };
+        self.spread.is_some_and(|spread| spread < position)
     }
 }
 
@@ -173,18 +197,26 @@ impl Site for Shape {
 
     fn holds(&self, source: &ValueSource) -> bool {
         match source {
-            ValueSource::Arg(position) => self
-                .arg_at(*position)
-                .is_some_and(|arg| arg.value.text.is_none() && !arg.object),
-            ValueSource::ArgProp(position, prop) => self.arg_at(*position).is_some_and(|arg| {
-                if arg.object {
-                    arg.props
-                        .iter()
-                        .any(|(name, value)| name == prop && value.text.is_none())
-                } else {
-                    arg.value.text.is_none()
-                }
-            }),
+            ValueSource::Arg(position) => {
+                self.unpacked(*position)
+                    || self
+                        .arg_at(*position)
+                        .is_some_and(|arg| arg.value.text.is_none() && !arg.object)
+            }
+            ValueSource::ArgProp(position, prop) => {
+                self.unpacked(*position)
+                    || self.arg_at(*position).is_some_and(|arg| {
+                        if arg.object {
+                            arg.spread
+                                || arg
+                                    .props
+                                    .iter()
+                                    .any(|(name, value)| name == prop && value.text.is_none())
+                        } else {
+                            arg.value.text.is_none()
+                        }
+                    })
+            }
             ValueSource::Callee
             | ValueSource::Member
             | ValueSource::Keyword(_)
@@ -209,10 +241,16 @@ fn arg_of(expr: &Expression<'_>, constants: &Constants) -> Arg {
             .collect(),
         _ => Vec::new(),
     };
+    let spread = matches!(
+        expr.get_inner_expression(),
+        Expression::ObjectExpression(object)
+            if object.properties.iter().any(|property| matches!(property, ObjectPropertyKind::SpreadProperty(_)))
+    );
     Arg {
         value: Value::of(expr, constants),
         object,
         props,
+        spread,
     }
 }
 
@@ -701,8 +739,10 @@ mod tests {
                     value: Value::text(Some("/x".to_owned())),
                     object: true,
                     props: vec![("path".to_owned(), named("ROOT"))],
+                    spread: false,
                 },
             ],
+            spread: None,
         }
     }
 
@@ -722,6 +762,7 @@ mod tests {
                 value: Value::text(Some("/x".to_owned())),
                 ..Arg::default()
             }],
+            spread: None,
         };
         assert!(!shape.has_names());
         assert!(!serde_json::to_string(&shape).unwrap().contains("name"));
@@ -787,6 +828,48 @@ mod tests {
         ] {
             assert_eq!(method.read(&controller(arguments)), reading, "{arguments}");
         }
+    }
+
+    #[test]
+    fn a_spread_may_give_the_property_the_call_does_not_write() {
+        let method = "$arg2.method|GET".parse::<ValueExpr>().unwrap();
+        let put = || Reading::Text("PUT".to_owned());
+        for (arguments, reading) in [
+            ("'/x', { ...options }", Reading::Unread),
+            ("'/x', { other: 1, ...options }", Reading::Unread),
+            ("'/x', { method: 'PUT', ...options }", put()),
+            ("'/x', { ...options, method: 'PUT' }", put()),
+            ("'/x', { other: 1 }", Reading::Text("GET".to_owned())),
+            ("'/x', ...rest", Reading::Unread),
+            ("...args", Reading::Unread),
+        ] {
+            assert_eq!(method.read(&controller(arguments)), reading, "{arguments}");
+        }
+    }
+
+    #[test]
+    fn nothing_is_read_at_or_after_a_spread_argument() {
+        let read = |key: &str, arguments: &str| {
+            key.parse::<ValueExpr>()
+                .unwrap()
+                .read(&controller(arguments))
+        };
+        let text = |text: &str| Reading::Text(text.to_owned());
+        // What is written before the spread is the argument at its place, and nothing after the spread is.
+        assert_eq!(read("$arg1", "'/x', ...rest"), text("/x"));
+        assert_eq!(read("$arg2", "'/x', ...rest"), Reading::Unread);
+        assert_eq!(read("$arg1", "...parts, '/x'"), Reading::Unread);
+        assert_eq!(read("$arg2", "...parts, '/x'"), Reading::Unread);
+        assert_eq!(read("$arg3", "'/x', 'y'"), Reading::Absent);
+    }
+
+    #[test]
+    fn the_spreads_of_a_shape_survive_the_cache() {
+        let shape = controller("'/x', { ...options }, ...rest");
+        let cached = serde_json::to_string(&shape).unwrap();
+        assert_eq!(serde_json::from_str::<Shape>(&cached).unwrap(), shape);
+        let plain = serde_json::to_string(&controller("'/x', { a: 1 }")).unwrap();
+        assert!(!plain.contains("spread"), "{plain}");
     }
 
     #[test]

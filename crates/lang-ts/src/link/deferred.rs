@@ -5,10 +5,9 @@ use std::collections::BTreeMap;
 use gsttt_core::FileId;
 use gsttt_core::connector::{LinkFile, LinkInput, LinkedFact};
 use gsttt_core::fact::{ContractFact, UnresolvedSite};
-use gsttt_core::rules::{CallRule, Outcome, Pack};
+use gsttt_core::rules::{CallRule, Outcome, Pack, serves_http};
 
 use super::{Node, through};
-use crate::analyze::{behind, serves_http};
 use crate::extra::{ClassRoute, Deferred, DeferredTarget, ExportedMaker, Route, RuleRef, TsExtra};
 use crate::shape::Shape;
 
@@ -166,13 +165,14 @@ fn on_made(
     let owner = input.get(node.0)?;
     let mut made = maker.shape.clone();
     made.fill(|name| constant(input, owner, name));
-    let Some(prefix) = behind(rule, receiver.reading(&made)) else {
+    let reading = receiver.reading(&made);
+    let Some(prefix) = rule.behind(&reading) else {
         return Some((Outcome::blind(deferred.line, &deferred.what), None));
     };
     let outcome = rule.apply(
         &pack.name,
         shape,
-        Some(&prefix),
+        Some(prefix),
         deferred.line,
         &deferred.what,
     );

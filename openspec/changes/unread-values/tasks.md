@@ -32,3 +32,14 @@
 - [x] 5.4 TypeScript: the prefix of a receiver is read with `Prefix::reading`, and a rule that serves routes finds a blind spot where it is not text, for a receiver made in the same file and in another
 - [x] 5.5 Core: `UnresolvedSite::non_literal` in place of the inline constructions of a site whose value is not a literal, and the doc of `method` says a method that is held and not text is any method
 - [x] 5.6 Tests: "A registration prefix stands in for a blueprint prefix that is not text", "A mount whose prefix is not text is one unread site", "Routers that include each other leave the include an unread site" and the three scenarios of "Receivers whose prefix is not text"
+
+## 6. Round two
+
+- [x] 6.1 Python: the bounds of the link are pinned by the reason each leaves (`levels deep`, `ways up`, `include each other`), so a swapped string or an `Unsupported` that is dropped fails a test
+- [x] 6.2 Core: `Reading::as_prefix`, used by the Python parse, the TypeScript analyzer and the Rust sites, and `CallRule::behind`, used by the TypeScript and Rust connectors, in place of the matches of the same reading
+- [x] 6.3 Core: `serves_http` moves out of the TypeScript connector, and the Rust connector blinds a call behind a prefix that is not text only for a rule that serves HTTP routes, as the TypeScript one does
+- [x] 6.4 Python: a mount whose prefix is not text is tested before the cycle and the bounds, and a mount reports the callee it is written as, so the parse and the link report the one site
+- [x] 6.5 Python: no match arm lets a default stand for a case, and `written(prefix).unwrap_or_default()` is gone
+- [x] 6.6 Python and TypeScript: a spread or an unpacking holds what it may give (a property, a keyword, a key, an argument at or after it)
+- [x] 6.7 Python: "A blueprint registered with a prefix and without is served and unread", "A mount whose prefix is not text is not also the cycle it closes", "An unpacking may carry a key or a keyword" and "A Flask route whose options are unpacked serves any method"
+- [x] 6.8 TypeScript: "A spread may carry a property", and `READER_VERSION` goes from 7 to 8

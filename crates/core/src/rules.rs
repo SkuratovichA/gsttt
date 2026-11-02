@@ -335,6 +335,20 @@ impl Reading {
             Self::Absent | Self::Unread => None,
         }
     }
+
+    /// This reading as a prefix that is put in front of a path: the text, empty when the site carries none, and `None` when it carries one that is not text, because a path joined to nothing is not the path of the contract.
+    pub fn as_prefix(&self) -> Option<&str> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Absent => Some(""),
+            Self::Unread => None,
+        }
+    }
+}
+
+/// Whether a rule of this kind and role finds the routes an HTTP server serves.
+pub fn serves_http(kind: &ContractKind, role: Role) -> bool {
+    *kind == ContractKind::Http && role == Role::Serves
 }
 
 impl From<ValueSource> for ValueExpr {
@@ -615,6 +629,15 @@ fn named(kind: &ContractKind, role: Role, key: &str, line: Line, pack: &str) -> 
 }
 
 impl CallRule {
+    /// The prefix a call of this rule is applied behind when the prefix of its [`CallRule::receiver`] reads as `reading`: empty when the receiver gives none. `None` for one that is not text under a rule that serves HTTP routes, because a route would be served at a path that is not its own and the call is a blind spot. Under any other rule it stands for no prefix: the base of a client is still the origin, and the path after it is right.
+    pub fn behind<'r>(&self, reading: &'r Reading) -> Option<&'r str> {
+        match (reading.as_prefix(), serves_http(&self.kind, self.role)) {
+            (Some(prefix), _) => Some(prefix),
+            (None, true) => None,
+            (None, false) => Some(""),
+        }
+    }
+
     /// What this rule makes of a call whose callee matched [`CallRule::callee`]. `prefix` is what the connector read for [`CallRule::receiver`]; `callee` is the callee as written.
     pub fn apply(
         &self,
@@ -1346,6 +1369,43 @@ mod tests {
         assert_eq!(site.detail, "Controller");
         assert_eq!(key(apply(Slot::Absent)), "http GET /api/x");
         assert_eq!(key(apply(Slot::Text("v1"))), "http GET /api/v1/x");
+    }
+
+    #[test]
+    fn a_reading_is_a_prefix_only_when_it_is_written() {
+        assert_eq!(Reading::Text("/api".into()).as_prefix(), Some("/api"));
+        assert_eq!(Reading::Absent.as_prefix(), Some(""));
+        assert_eq!(Reading::Unread.as_prefix(), None);
+    }
+
+    #[test]
+    fn a_call_is_blind_behind_a_prefix_that_is_not_text_only_when_it_serves_http_routes() {
+        let behind = |kind: &str, role: &str, reading: Reading| {
+            let rule = rule(serde_json::json!({
+                "callee": "x.*", "kind": kind, "role": role, "key": "$arg1",
+            }));
+            rule.behind(&reading).map(str::to_owned)
+        };
+        let unread = |kind, role| behind(kind, role, Reading::Unread);
+        assert_eq!(unread("http", "serves"), None);
+        assert_eq!(unread("http", "calls"), Some(String::new()));
+        assert_eq!(unread("graphql", "serves"), Some(String::new()));
+        assert_eq!(unread("graphql", "calls"), Some(String::new()));
+        for (kind, role) in [("http", "serves"), ("http", "calls"), ("graphql", "serves")] {
+            assert_eq!(
+                behind(kind, role, Reading::Text("/api".into())),
+                Some("/api".into())
+            );
+            assert_eq!(behind(kind, role, Reading::Absent), Some(String::new()));
+        }
+    }
+
+    #[test]
+    fn only_an_http_rule_that_serves_finds_the_routes_of_a_server() {
+        assert!(serves_http(&ContractKind::Http, Role::Serves));
+        assert!(!serves_http(&ContractKind::Http, Role::Calls));
+        assert!(!serves_http(&ContractKind::Http, Role::Declares));
+        assert!(!serves_http(&ContractKind::Graphql, Role::Serves));
     }
 
     #[test]

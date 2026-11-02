@@ -297,7 +297,7 @@ impl<'a> Collector<'a> {
                         let Some(reading) = self.class_prefix(class) else {
                             continue;
                         };
-                        let Some(read) = self.behind(reading, line, name.written()) else {
+                        let Some(read) = self.behind(&reading, line, name.written()) else {
                             continue;
                         };
                         prefix = Some(read);
@@ -312,7 +312,7 @@ impl<'a> Collector<'a> {
                             prefix = Some(prefix.unwrap_or_default());
                             router = receiver;
                         } else {
-                            let Some(read) = self.behind(reading, line, name.written()) else {
+                            let Some(read) = self.behind(&reading, line, name.written()) else {
                                 continue;
                             };
                             prefix = Some(match prefix {
@@ -357,15 +357,12 @@ impl<'a> Collector<'a> {
     }
 
     /// The prefix a decorator rule is applied behind, empty when the class or the maker carries none. One that is not text leaves the decorator an unread site and no prefix: the route would be served at a path that is not its own.
-    fn behind(&mut self, reading: Reading, line: Line, decorator: &str) -> Option<String> {
-        match reading {
-            Reading::Text(prefix) => Some(prefix),
-            Reading::Absent => Some(String::new()),
-            Reading::Unread => {
-                self.unresolved(line, decorator);
-                None
-            }
+    fn behind(&mut self, reading: &Reading, line: Line, decorator: &str) -> Option<String> {
+        let prefix = reading.as_prefix().map(str::to_owned);
+        if prefix.is_none() {
+            self.unresolved(line, decorator);
         }
+        prefix
     }
 
     /// Whether `var` is a name of this file made by a router constructor, as opposed to an application or a client.
@@ -614,7 +611,7 @@ impl<'a> Collector<'a> {
             }
             Reading::Absent => Reading::Absent,
             Reading::Unread => {
-                self.unresolved(line, "path");
+                self.unresolved(line, callee);
                 Reading::Unread
             }
         };

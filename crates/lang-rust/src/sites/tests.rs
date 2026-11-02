@@ -371,6 +371,50 @@ receiver = { from = "web.resource", key = "$arg1" }
 }
 
 #[test]
+fn only_a_rule_that_serves_http_routes_is_blind_behind_a_prefix_that_is_not_text() {
+    let pack = r#"name = "t"
+language = "rust"
+
+[[calls]]
+callee = "*.route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "GET"
+receiver = { from = "web.scope", key = "$arg1" }
+
+[[calls]]
+callee = "*.field"
+kind = "graphql"
+role = "serves"
+key = "$arg1"
+receiver = { from = "schema.object", key = "$arg1" }
+
+[[calls]]
+callee = "*.get"
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "$callee"
+receiver = { from = "client.base", key = "$arg1" }
+"#;
+    let source = r#"fn f(prefix: &str) {
+    web::scope(prefix).route("/a", show);
+    web::scope("/api").route("/b", show);
+    schema::object(prefix).field("user");
+    client::base(prefix).get("/c");
+}
+"#;
+    let out = sites(source, pack);
+    // A route behind a prefix nobody read is served at a path nobody read, and so is blind. The other kinds and roles go on without the prefix, as the TypeScript connector does with the same rules.
+    assert_eq!(
+        found(&out),
+        ["3 http GET /api/b", "4 graphql user", "5 http GET /c"]
+    );
+    assert_eq!(unresolved(&out), [(2, "_.route")]);
+}
+
+#[test]
 fn a_receiver_is_what_the_file_says_it_is() {
     let pack = r#"name = "t"
 language = "rust"

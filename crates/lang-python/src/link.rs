@@ -260,7 +260,7 @@ impl<'a> Climb<'_, 'a, '_> {
         trail: &mut Vec<Router<'a>>,
         via: Option<Cut<'a>>,
     ) {
-        let own = written(self.mounts.own_prefix(node));
+        let own = self.mounts.own_prefix(node).as_prefix();
         let Some(parents) = self.mounts.parents.get(&node) else {
             match own {
                 Some(own) => {
@@ -279,6 +279,15 @@ impl<'a> Climb<'_, 'a, '_> {
                 detail: parent.callee,
                 why: Why::TooMany,
             };
+            // `parse` has reported a mount whose prefix is not text, so it is tested before the bounds: a mount that also closes a cycle is still the one site `parse` counted, and not a second one.
+            let prefix = match parent.prefix {
+                Reading::Unread => {
+                    self.cut_mount(Why::MountPrefix, mount);
+                    continue;
+                }
+                Reading::Text(prefix) => Some(prefix.as_str()),
+                Reading::Absent => None,
+            };
             let bound = if self.ended >= MAX_WALKED {
                 Some(Why::TooMany)
             } else if trail.contains(&parent.router) {
@@ -292,23 +301,17 @@ impl<'a> Climb<'_, 'a, '_> {
                 self.cut_mount(why, mount);
                 continue;
             }
-            // FastAPI and Django put the mount's prefix in front of the router's own; Flask's registration prefix stands where the blueprint's own would have been, and the blueprint keeps its own only without one. A prefix that is not text cuts the way unless a registration prefix replaces it.
-            let local = match (parent.prefix, parent.replaces, own) {
-                (Reading::Unread, ..) => {
-                    self.cut_mount(Why::MountPrefix, mount);
-                    continue;
+            // FastAPI and Django put the mount's prefix in front of the router's own; Flask's registration prefix stands where the blueprint's own would have been, and the blueprint keeps its own only without one. A router prefix that is not text cuts the way unless a registration prefix replaces it.
+            let local = match (prefix, parent.replaces, own) {
+                (Some(prefix), true, _) => Cow::Borrowed(prefix),
+                (None, _, Some(own)) => Cow::Borrowed(own),
+                (Some(prefix), false, Some(own)) => {
+                    Cow::Owned(join_prefixes(&ContractKind::Http, prefix, own))
                 }
-                (Reading::Text(prefix), true, _) => Cow::Borrowed(prefix.as_str()),
-                (_, _, None) => {
+                (None, _, None) | (Some(_), false, None) => {
                     self.cut_own(via);
                     continue;
                 }
-                (Reading::Absent, true, Some(own)) => Cow::Borrowed(own),
-                (prefix, false, Some(own)) => Cow::Owned(join_prefixes(
-                    &ContractKind::Http,
-                    written(prefix).unwrap_or_default(),
-                    own,
-                )),
             };
             let below = join_prefixes(&ContractKind::Http, &local, below);
             trail.push(parent.router);
@@ -335,15 +338,6 @@ impl<'a> Climb<'_, 'a, '_> {
             }
             None => self.own_unread = true,
         }
-    }
-}
-
-/// The text of a prefix that is written, empty when there is none, and `None` when there is one that is not text.
-fn written(reading: &Reading) -> Option<&str> {
-    match reading {
-        Reading::Text(text) => Some(text),
-        Reading::Absent => Some(""),
-        Reading::Unread => None,
     }
 }
 
@@ -522,6 +516,23 @@ mod tests {
             .collect()
     }
 
+    /// The reason of each unread site the cuts make, a reason that several cuts give once.
+    fn reasons_of(composed: &Composed<'_>) -> Vec<UnresolvedReason> {
+        let mut reasons: Vec<UnresolvedReason> = composed
+            .cuts
+            .iter()
+            .filter_map(Cut::unread)
+            .map(|(_, site)| site.reason)
+            .collect();
+        reasons.dedup();
+        reasons
+    }
+
+    /// The reason a cut gives when a way meets a bound, which names the bound for the coverage line.
+    fn bound(text: &str) -> UnresolvedReason {
+        UnresolvedReason::Unsupported(text.to_owned())
+    }
+
     #[test]
     fn routers_that_mount_each_other_end_at_the_first_router_seen_twice() {
         let mut project = Project::new();
@@ -549,6 +560,10 @@ mod tests {
         assert_eq!(keys(&composed), Vec::<String>::new());
         assert!(composed.cuts.iter().all(|cut| cut.why == Why::Cycle));
         assert!(!composed.cuts.is_empty());
+        assert_eq!(
+            reasons_of(&composed),
+            [bound("routers that include each other")]
+        );
     }
 
     #[test]
@@ -676,16 +691,23 @@ mod tests {
         project.mount("a", "b", "/ba");
         project.route("a", "/one");
         let composed = project.compose();
-        let reasons: Vec<UnresolvedReason> = composed
-            .cuts
-            .iter()
-            .filter_map(Cut::unread)
-            .map(|(_, site)| site.reason)
-            .collect();
-        assert!(matches!(
-            reasons.as_slice(),
-            [UnresolvedReason::Unsupported(bound)] if bound.contains("include each other")
-        ));
+        assert_eq!(
+            reasons_of(&composed),
+            [bound("routers that include each other")]
+        );
+    }
+
+    #[test]
+    fn a_mount_whose_prefix_is_not_text_is_not_also_the_cycle_it_closes() {
+        let mut project = Project::new();
+        project.declare("a", "/x");
+        project.mount("b", "a", "/ab");
+        project.mount_reading("a", "b", Reading::Unread, false);
+        project.route("a", "/one");
+        let composed = project.compose();
+        // The second mount closes the cycle, and `parse` has counted it for its prefix: the cut names the prefix, and `link` adds no site of its own.
+        assert_eq!(cuts_of(&composed), [(2, Why::MountPrefix)]);
+        assert_eq!(unread_of(&composed), []);
     }
 
     /// `count` layers of two routers, each router mounted into both routers of the layer above, so that `a0` is reached in 2^`count` ways and has the route `/leaf`. The mounts are written from the lowest layer up, or the other way round.
@@ -720,6 +742,12 @@ mod tests {
         assert_eq!(composed.facts.len(), MAX_WAYS);
         assert!(!composed.cuts.is_empty());
         assert!(composed.cuts.iter().all(|cut| cut.why == Why::TooMany));
+        assert_eq!(
+            reasons_of(&composed),
+            [bound(&format!(
+                "more than {MAX_WAYS} ways up from a router"
+            ))]
+        );
     }
 
     #[test]
@@ -754,6 +782,12 @@ mod tests {
         let (straight, reversed) = (straight.compose(), reversed.compose());
         assert_eq!(straight.facts.len(), MAX_WAYS);
         assert!(straight.cuts.iter().all(|cut| cut.why == Why::TooMany));
+        assert_eq!(
+            reasons_of(&straight),
+            [bound(&format!(
+                "more than {MAX_WAYS} ways up from a router"
+            ))]
+        );
         assert_eq!(keys(&straight), keys(&reversed));
     }
 
@@ -769,6 +803,12 @@ mod tests {
         assert_eq!(keys(&composed), Vec::<String>::new());
         assert_eq!(composed.cuts.len(), 1);
         assert!(composed.cuts.iter().all(|cut| cut.why == Why::TooDeep));
+        assert_eq!(
+            reasons_of(&composed),
+            [bound(&format!(
+                "routers mounted more than {MAX_DEPTH} levels deep"
+            ))]
+        );
     }
 
     #[test]

@@ -18,3 +18,11 @@ A call that a rule serves routes with, on a receiver whose maker holds the `pref
 #### Scenario: A client whose base is not text is called at the path after it
 - **WHEN** a file has `const api = axios.create({ baseURL: process.env.API })` and `api.get('/users')`
 - **THEN** it calls `http GET /users` and has no unread site
+
+### Requirement: Spreads
+A call with `...spread` among its arguments, and an object literal with `...spread` among its properties, SHALL hold what they may give: the argument at or after the spread, and a property the literal does not write. What a call holds and no connector can read as text SHALL leave the value unread, and an argument written after a spread SHALL not be read at the place it is written.
+
+#### Scenario: A spread may carry a property
+- **WHEN** a pack calls `http` for `client.request` with the key `$arg1` and the method `$arg2.method|GET`, and a file has `client.request('/plain')` on line 1, `client.request('/post', { method: 'POST' })` on line 2, `client.request('/options', { ...options })` on line 3, `client.request('/rest', ...rest)` on line 4, `client.request(...args)` on line 5 and `client.request('/own', { ...options, method: 'PUT' })` on line 6
+- **THEN** the file calls `http GET /plain`, `http POST /post`, `http * /options`, `http * /rest` and `http PUT /own`
+- **AND** the call on line 5 is an unread site
