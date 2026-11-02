@@ -24,6 +24,6 @@ callee = [
 ]
 kind = "http"
 role = "serves"
-key = "$arg1"
+key = "$arg1[]"
 method = "$callee"
 receiver = { from = ["express", "express.Router", "Router"] }

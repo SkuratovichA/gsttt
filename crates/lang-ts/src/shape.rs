@@ -43,6 +43,22 @@ struct Arg {
     /// Whether the object literal has a `...spread` property, which may give any property that is not written.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     spread: bool,
+    /// The elements of an array literal, each read on its own, and none for an element that is a spread or a hole. Only the walk of a file reads them, so a site that is stored has been through [`Shape::stored`] first.
+    #[serde(skip)]
+    elements: Vec<Value>,
+}
+
+impl Arg {
+    /// The argument as it is stored, without the elements of an array.
+    fn stored(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            object: self.object,
+            props: self.props.clone(),
+            spread: self.spread,
+            elements: Vec::new(),
+        }
+    }
 }
 
 /// What a rule can read of an expression: its text when it has one, and the pieces that text is put together from when some of them are names that start from an import of the file, which the link phase may be able to read.
@@ -109,6 +125,46 @@ impl Shape {
         }
     }
 
+    /// The sites a rule reads for `expr`: one for each element of the array literal that its first `$argN[]` source takes, which holds that element in place of the array, and the site itself when `expr` has no such source, or the array no element.
+    pub(crate) fn each(&self, expr: &ValueExpr) -> Cow<'_, [Shape]> {
+        let array = expr.sources().iter().find_map(|source| {
+            let ValueSource::ArgEach(position) = source else {
+                return None;
+            };
+            let arg = self.arg_at(*position)?;
+            (!arg.elements.is_empty()).then_some((slot(*position)?, arg))
+        });
+        let Some((slot, array)) = array else {
+            return Cow::Borrowed(std::slice::from_ref(self));
+        };
+        Cow::Owned(
+            array
+                .elements
+                .iter()
+                .map(|element| {
+                    let mut site = self.stored();
+                    if let Some(arg) = site.args.get_mut(slot) {
+                        *arg = Arg {
+                            value: element.clone(),
+                            ..Arg::default()
+                        };
+                    }
+                    site
+                })
+                .collect(),
+        )
+    }
+
+    /// The site as it is stored for the link phase: without the elements of its arrays, which [`Shape::each`] has told apart by then.
+    pub(crate) fn stored(&self) -> Self {
+        Self {
+            last: self.last.clone(),
+            member: self.member.clone(),
+            args: self.args.iter().map(Arg::stored).collect(),
+            spread: self.spread,
+        }
+    }
+
     /// Whether some source of `expr` holds a name that starts from an import of the file: the argument, or the property of the object literal, that it reads.
     pub(crate) fn holds_name(&self, expr: &ValueExpr) -> bool {
         expr.sources().iter().any(|source| {
@@ -159,8 +215,7 @@ impl Shape {
         if self.unpacked(position) {
             return None;
         }
-        self.args
-            .get(usize::try_from(position.get().checked_sub(1)?).ok()?)
+        self.args.get(slot(position)?)
     }
 
     /// Whether a `...spread` argument stands at `position`, counting from 1, or before it: the argument there is one the spread may give, and what is written there is not.
@@ -174,7 +229,7 @@ impl Shape {
     /// Whether `pred` is true of some value that `source` reads: `Some(value)` for a value the call writes, and `None` for a value that a spread may give in place of what is written. An object literal written as an argument is no value of its own; its properties are.
     fn any_value(&self, source: &ValueSource, pred: impl Fn(Option<&Value>) -> bool) -> bool {
         match source {
-            ValueSource::Arg(position) => {
+            ValueSource::Arg(position) | ValueSource::ArgEach(position) => {
                 (self.unpacked(*position) && pred(None))
                     || self
                         .arg_at(*position)
@@ -259,12 +314,31 @@ fn arg_of(expr: &Expression<'_>, constants: &Constants) -> Arg {
         Expression::ObjectExpression(object)
             if object.properties.iter().any(|property| matches!(property, ObjectPropertyKind::SpreadProperty(_)))
     );
+    let elements = match expr.get_inner_expression() {
+        Expression::ArrayExpression(array) => array
+            .elements
+            .iter()
+            .map(|element| {
+                element
+                    .as_expression()
+                    .map(|element| Value::of(element, constants))
+                    .unwrap_or_default()
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
     Arg {
         value: Value::of(expr, constants),
         object,
         props,
         spread,
+        elements,
     }
+}
+
+/// Where the argument at `position`, counting from 1, is in the arguments of a call.
+fn slot(position: NonZeroU32) -> Option<usize> {
+    usize::try_from(position.get().checked_sub(1)?).ok()
 }
 
 /// The name of a property key written as an identifier or a string, as the source spells it.
@@ -860,7 +934,7 @@ mod tests {
                     value: Value::text(Some("/x".to_owned())),
                     object: true,
                     props: vec![("path".to_owned(), named("ROOT"))],
-                    spread: false,
+                    ..Arg::default()
                 },
             ],
             spread: None,
@@ -1033,6 +1107,111 @@ mod tests {
         );
     }
 
+    /// What each site that `key` is read for in `fetch(<arguments>)` gives, with `BASE` imported.
+    fn each_reading(arguments: &str, key: &str) -> Vec<Reading> {
+        let shape = fetch_after(IMPORT, arguments);
+        let key = key.parse::<ValueExpr>().unwrap();
+        shape.each(&key).iter().map(|site| key.read(site)).collect()
+    }
+
+    fn text(text: &str) -> Reading {
+        Reading::Text(text.to_owned())
+    }
+
+    #[test]
+    fn each_element_of_an_array_literal_is_a_site_of_its_own() {
+        assert_eq!(
+            each_reading("['/a', '/b/:id']", "$arg1[]"),
+            [text("/a"), text("/b/:id")]
+        );
+        assert_eq!(
+            each_reading("['/a', `/b/${id}`], 1", "$arg1[]|none"),
+            [text("/a"), text("/b/${}")]
+        );
+        // The arguments around the array are what they were.
+        assert_eq!(
+            each_reading("'/x', ['/a', '/b']", "$arg2[]"),
+            [text("/a"), text("/b")]
+        );
+        let shape = fetch_after(IMPORT, "'/x', ['/a', '/b']");
+        let key = key("$arg2[]");
+        for site in shape.each(&key).iter() {
+            assert_eq!(self::key("$arg1").read(site), text("/x"));
+        }
+    }
+
+    #[test]
+    fn an_element_that_is_not_text_is_a_site_that_is_not_read_and_the_others_stay_read() {
+        assert_eq!(
+            each_reading("['/a', compute(), ...rest, , '/b']", "$arg1[]"),
+            [
+                text("/a"),
+                Reading::Unread,
+                Reading::Unread,
+                Reading::Unread,
+                text("/b")
+            ]
+        );
+    }
+
+    #[test]
+    fn what_is_no_array_literal_with_an_element_is_one_site_that_is_not_copied() {
+        for (arguments, key) in [
+            ("'/a'", "$arg1[]"),
+            ("[]", "$arg1[]"),
+            ("paths", "$arg1[]"),
+            ("{ path: ['/a', '/b'] }", "$arg1[]"),
+            // Without the `[]`, an array reads as its first element with text, as it always did.
+            ("['/a', '/b']", "$arg1"),
+            ("['/a', '/b']", "$arg2[]"),
+            ("...args", "$arg1[]"),
+            ("'/x', ...args, ['/a']", "$arg3[]"),
+        ] {
+            let shape = fetch_after(IMPORT, arguments);
+            let key = key.parse::<ValueExpr>().unwrap();
+            assert!(
+                matches!(shape.each(&key), Cow::Borrowed([_])),
+                "{key} over {arguments}"
+            );
+        }
+        assert_eq!(each_reading("[]", "$arg1[]"), [Reading::Unread]);
+        assert_eq!(each_reading("['/a', '/b']", "$arg1"), [text("/a")]);
+    }
+
+    #[test]
+    fn an_element_that_starts_from_an_import_waits_for_the_link_on_its_own() {
+        let shape = fetch_after(IMPORT, "[BASE, '/x']");
+        let key = key("$arg1[]");
+        let sites = shape.each(&key);
+        assert_eq!(
+            sites
+                .iter()
+                .map(|site| site.holds_name(&key))
+                .collect::<Vec<_>>(),
+            [true, false]
+        );
+        let mut waiting = sites[0].clone();
+        waiting.fill(|name| (name == "BASE").then(|| "/api/v1".to_owned()));
+        assert_eq!(key.read(&waiting), text("/api/v1"));
+        assert_eq!(key.read(&sites[1]), text("/x"));
+    }
+
+    #[test]
+    fn a_site_is_stored_without_the_elements_of_its_arrays() {
+        let key = key("$arg1[]");
+        for arguments in ["['/a', BASE]", "'/x', ['/a']", "{ path: ['/a'] }"] {
+            let shape = fetch_after(IMPORT, arguments);
+            let stored = shape.stored();
+            let cached = serde_json::to_string(&stored).unwrap();
+            assert_eq!(serde_json::from_str::<Shape>(&cached).unwrap(), stored);
+        }
+        for site in fetch_after(IMPORT, "['/a', BASE]").each(&key).iter() {
+            let cached = serde_json::to_string(site).unwrap();
+            assert_eq!(&serde_json::from_str::<Shape>(&cached).unwrap(), site);
+            assert!(matches!(site.each(&key), Cow::Borrowed(_)));
+        }
+    }
+
     #[test]
     fn only_the_sources_of_a_key_decide_whether_a_name_matters() {
         let shape = fetch_after(IMPORT, "compute(), { method: BASE }");
@@ -1191,7 +1370,7 @@ mod tests {
                                 parts: Some(part),
                             },
                         )],
-                        spread: false,
+                        ..Arg::default()
                     }],
                     spread: None,
                 },

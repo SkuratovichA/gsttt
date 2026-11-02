@@ -24,9 +24,9 @@ decorator = [
 ]
 kind = "http"
 role = "serves"
-key = "$arg1|"
+key = "$arg1[]|"
 method = "$callee"
-class = { from = ["Controller", "*.Controller"], key = "$arg1|$arg1.path" }
+class = { from = ["Controller", "*.Controller"], key = "$arg1[]|$arg1.path" }
 
 [[decorators]]
 decorator = ["Query", "Mutation", "Subscription", "*.Query", "*.Mutation", "*.Subscription"]

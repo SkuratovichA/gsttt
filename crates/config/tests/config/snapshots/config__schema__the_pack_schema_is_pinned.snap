@@ -100,7 +100,7 @@ expression: pack_schema()
           "$ref": "#/definitions/Role"
         },
         "key": {
-          "description": "Where the key is: `$arg1`, `$arg1.url`, `$url|$arg1`.",
+          "description": "Where the key is: `$arg1`, `$arg1.url`, `$arg1[]`, `$url|$arg1`.",
           "type": "string"
         },
         "method": {

@@ -17,7 +17,7 @@ use gsttt_core::fact::{
     UnresolvedReason, UnresolvedSite,
 };
 use gsttt_core::rules::{
-    Access, CallRule, Outcome, Pack, Prefix, Reading, Site, ValueExpr, serves_http,
+    Access, CallRule, DecoratorRule, Outcome, Pack, Prefix, Reading, Site, ValueExpr, serves_http,
 };
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
@@ -130,22 +130,49 @@ struct ClassDecorator {
     span: Span,
 }
 
-/// What a class decorator gives as the prefix of the routes of its class.
-enum ClassPrefix {
-    /// The text of the prefix, empty when the decorator carries none.
-    Text(String),
-    /// The decorator holds a prefix that is not text here, so the path of no route of the class is known.
-    Unread,
+/// What a class decorator gives as the prefixes of the routes of its class.
+struct ClassPrefix {
+    /// The text of each prefix, once each: one empty text when the decorator carries none.
+    texts: Vec<String>,
+    /// The decorator holds a prefix that is not text here, so the routes of the class under it are not known.
+    unread: bool,
 }
 
 impl ClassPrefix {
-    /// What `decorator` gives under the class prefix `rule` that names it.
+    /// What `decorator` gives under the class prefix `rule` that names it: a prefix for each element of an array of paths.
     fn of(rule: &Prefix, decorator: &ClassDecorator) -> Self {
-        match rule.reading(&decorator.shape).as_prefix() {
-            Some(prefix) => Self::Text(prefix.to_owned()),
-            None => Self::Unread,
+        let sites = rule.key.as_ref().map_or_else(
+            || Cow::Borrowed(std::slice::from_ref(&decorator.shape)),
+            |key| decorator.shape.each(key),
+        );
+        let mut prefix = Self {
+            texts: Vec::new(),
+            unread: false,
+        };
+        for site in sites.iter() {
+            match rule.reading(site).as_prefix() {
+                Some(text) if prefix.texts.iter().all(|known| known != text) => {
+                    prefix.texts.push(text.to_owned());
+                }
+                Some(_) => {}
+                None => prefix.unread = true,
+            }
         }
+        prefix
     }
+}
+
+/// What stays the same while one decorator rule is applied to each of the sites of a decorator under each prefix of its class.
+struct DecoratorAt<'a> {
+    /// The place of the rule among the packs, kept when a site waits for the link.
+    rule: RuleRef,
+    line: Line,
+    /// The name the decorator is applied by.
+    name: &'a str,
+    /// The rule finds the routes of an HTTP server.
+    serves: bool,
+    /// The routes belong to a class without the decorator, which a controller in another file may extend.
+    inherited: bool,
 }
 
 /// The packs that switch on reading that no rule describes, by name, found once per file.
@@ -545,6 +572,8 @@ impl<'a> Analyzer<'_, 'a> {
                 if reads_setting(rule, it.arguments.len()) {
                     continue;
                 }
+                // An array of paths is read as one site for each path, and a rule the link phase finishes keeps those, because the array is not stored.
+                let sites = site.each(&rule.key);
                 let at = RuleRef::Call {
                     pack: pack_index,
                     rule: rule_index,
@@ -555,17 +584,11 @@ impl<'a> Analyzer<'_, 'a> {
                     (None, Some(from_file)) => {
                         let rivals = self.rivals(callee, rule, it.arguments.len());
                         if !rivals.is_empty() {
-                            self.defer(Deferred {
-                                rule: at,
-                                shape: site.clone(),
-                                prefix: None,
-                                line,
-                                what: callee.to_owned(),
-                                target: DeferredTarget::Fallback {
-                                    host: from_file.to_owned(),
-                                    rivals,
-                                },
-                            });
+                            let target = DeferredTarget::Fallback {
+                                host: from_file.to_owned(),
+                                rivals,
+                            };
+                            self.defer_each(&sites, at, None, line, callee, &target);
                             continue;
                         }
                         (None, None)
@@ -574,31 +597,19 @@ impl<'a> Analyzer<'_, 'a> {
                     (Some(receiver), from_file) => {
                         let Some((reading, host)) = self.receiver(callee, receiver) else {
                             if let Some(from_file) = from_file {
-                                self.defer(Deferred {
-                                    rule: at,
-                                    shape: site.clone(),
-                                    prefix: None,
-                                    line,
-                                    what: callee.to_owned(),
-                                    target: DeferredTarget::Receiver {
-                                        host: from_file.to_owned(),
-                                    },
-                                });
+                                let target = DeferredTarget::Receiver {
+                                    host: from_file.to_owned(),
+                                };
+                                self.defer_each(&sites, at, None, line, callee, &target);
                             }
                             continue;
                         };
                         // The prefix is read by the link, which sees the name, so a parse that reads none is no blind spot yet.
                         if self.made_on_names(host, receiver) {
-                            self.defer(Deferred {
-                                rule: at,
-                                shape: site.clone(),
-                                prefix: None,
-                                line,
-                                what: callee.to_owned(),
-                                target: DeferredTarget::Made {
-                                    host: host.to_owned(),
-                                },
-                            });
+                            let target = DeferredTarget::Made {
+                                host: host.to_owned(),
+                            };
+                            self.defer_each(&sites, at, None, line, callee, &target);
                             continue;
                         }
                         let Ok(prefix) = rule.behind(&reading) else {
@@ -608,39 +619,41 @@ impl<'a> Analyzer<'_, 'a> {
                         (prefix.map(str::to_owned), Some(host))
                     }
                 };
-                let outcome = rule.apply(
-                    &pack.name,
-                    pack.relative_without_base,
-                    site,
-                    prefix.as_deref(),
-                    line,
-                    callee,
-                );
-                if waits_for_link(&outcome, site, &rule.key, rule.method.as_ref(), None) {
-                    let target = match host {
-                        Some(host) if serves_http(&rule.kind, rule.role) => {
-                            DeferredTarget::Host(host.to_owned())
-                        }
-                        _ => DeferredTarget::Own,
-                    };
-                    self.defer(Deferred {
-                        rule: at,
-                        shape: site.clone(),
-                        prefix,
+                for site in sites.iter() {
+                    let outcome = rule.apply(
+                        &pack.name,
+                        pack.relative_without_base,
+                        site,
+                        prefix.as_deref(),
                         line,
-                        what: callee.to_owned(),
-                        target,
-                    });
-                    continue;
-                }
-                match (outcome, host) {
-                    (Outcome::Fact(fact), Some(host)) if serves_http(&rule.kind, rule.role) => {
-                        self.out.extra.routes.push(Route {
-                            host: host.to_owned(),
-                            fact,
+                        callee,
+                    );
+                    if waits_for_link(&outcome, site, &rule.key, rule.method.as_ref(), None) {
+                        let target = match host {
+                            Some(host) if serves_http(&rule.kind, rule.role) => {
+                                DeferredTarget::Host(host.to_owned())
+                            }
+                            _ => DeferredTarget::Own,
+                        };
+                        self.defer(Deferred {
+                            rule: at,
+                            shape: site.stored(),
+                            prefix: prefix.clone(),
+                            line,
+                            what: callee.to_owned(),
+                            target,
                         });
+                        continue;
                     }
-                    (outcome, _) => self.record(outcome),
+                    match (outcome, host) {
+                        (Outcome::Fact(fact), Some(host)) if serves_http(&rule.kind, rule.role) => {
+                            self.out.extra.routes.push(Route {
+                                host: host.to_owned(),
+                                fact,
+                            });
+                        }
+                        (outcome, _) => self.record(outcome),
+                    }
                 }
             }
             for rule in &pack.embeds {
@@ -738,6 +751,28 @@ impl<'a> Analyzer<'_, 'a> {
         });
     }
 
+    /// Keeps each of `sites` for the link phase to read, all for the rule `at` under the same `prefix` and `target`.
+    fn defer_each(
+        &mut self,
+        sites: &[Shape],
+        at: RuleRef,
+        prefix: Option<&str>,
+        line: Line,
+        what: &str,
+        target: &DeferredTarget,
+    ) {
+        for site in sites {
+            self.defer(Deferred {
+                rule: at,
+                shape: site.stored(),
+                prefix: prefix.map(str::to_owned),
+                line,
+                what: what.to_owned(),
+                target: target.clone(),
+            });
+        }
+    }
+
     /// Keeps a site for the link phase to read, with every trace of its target that a site read here leaves.
     fn defer(&mut self, deferred: Deferred) {
         if let DeferredTarget::Class { class, .. } = &deferred.target {
@@ -784,9 +819,10 @@ impl<'a> Analyzer<'_, 'a> {
             return;
         };
         // A prefix that is not read gives no route to the class, so it gives none to inherit either: `unread_prefixes` has reported it.
-        let ClassPrefix::Text(prefix) = ClassPrefix::of(rule, decorator) else {
+        let prefixes = ClassPrefix::of(rule, decorator).texts;
+        if prefixes.is_empty() {
             return;
-        };
+        }
         let line = self.line(decorator.span.start);
         let Some(base) = self
             .classes
@@ -798,12 +834,14 @@ impl<'a> Analyzer<'_, 'a> {
             return;
         };
         self.hosts.insert(name.to_owned());
-        self.out.extra.inherits.push(Inherit {
-            class: name.to_owned(),
-            base,
-            prefix,
-            line,
-        });
+        for prefix in prefixes {
+            self.out.extra.inherits.push(Inherit {
+                class: name.to_owned(),
+                base: base.clone(),
+                prefix,
+                line,
+            });
+        }
     }
 
     /// One site this file could not read for each decorator of the innermost class whose route prefix is not text, although many route rules may share the prefix: the class serves no route.
@@ -815,7 +853,8 @@ impl<'a> Analyzer<'_, 'a> {
             .filter_map(|rule| rule.class.as_ref())
             .filter_map(|prefix| {
                 let decorator = self.class_decorator(prefix)?;
-                matches!(ClassPrefix::of(prefix, decorator), ClassPrefix::Unread)
+                ClassPrefix::of(prefix, decorator)
+                    .unread
                     .then_some(decorator.span)
             })
             .collect();
@@ -964,53 +1003,82 @@ impl<'a> Analyzer<'_, 'a> {
                         continue;
                     }
                     let serves = serves_http(&rule.kind, rule.role);
-                    let (prefix, inherited) = match &rule.class {
-                        None => (None, false),
+                    let (prefixes, inherited) = match &rule.class {
+                        None => (vec![None], false),
                         Some(class) => match self.class_prefix(class) {
-                            Some(ClassPrefix::Text(prefix)) => (Some(prefix), false),
+                            // A controller with several prefixes serves every route under each of them, and one prefix it cannot read leaves the others.
+                            Some(ClassPrefix { texts, .. }) if !texts.is_empty() => {
+                                (texts.into_iter().map(Some).collect(), false)
+                            }
                             // A class without the decorator may be the base of a controller in another file, which serves its routes.
-                            None if serves => (Some(String::new()), true),
+                            None if serves => (vec![Some(String::new())], true),
                             // A prefix this file cannot read serves no route, and `unread_prefixes` has reported it; a class without the decorator serves nothing for a rule that does not serve.
-                            Some(ClassPrefix::Unread) | None => continue,
+                            Some(_) | None => continue,
                         },
                     };
-                    let outcome = rule.apply(&pack.name, &site, prefix.as_deref(), line, &name);
-                    if waits_for_link(
-                        &outcome,
-                        &site,
-                        &rule.key,
-                        rule.method.as_ref(),
-                        rule.prefix.as_ref(),
-                    ) {
-                        let class = self.classes.last().and_then(|frame| frame.name.clone());
-                        let target = match class {
-                            Some(class) if rule.class.is_some() && serves => {
-                                DeferredTarget::Class { class, inherited }
-                            }
-                            _ => DeferredTarget::Own,
-                        };
-                        self.defer(Deferred {
-                            rule: RuleRef::Decorator {
-                                pack: pack_index,
-                                rule: rule_index,
-                            },
-                            shape: site.clone(),
-                            prefix,
-                            line,
-                            what: name.clone(),
-                            target,
-                        });
-                        continue;
-                    }
-                    if rule.class.is_some() && serves {
-                        self.class_route(&outcome, inherited);
-                    }
-                    // The route of an undecorated class is served by the controllers that extend it, so it is not a fact here; a path it could not read is still a site this file could not read.
-                    if !(inherited && matches!(outcome, Outcome::Fact(_))) {
-                        self.record(outcome);
+                    let at = DecoratorAt {
+                        rule: RuleRef::Decorator {
+                            pack: pack_index,
+                            rule: rule_index,
+                        },
+                        line,
+                        name: &name,
+                        serves,
+                        inherited,
+                    };
+                    // An array of paths is read as one site for each path.
+                    let sites = site.each(&rule.key);
+                    for prefix in prefixes {
+                        for site in sites.iter() {
+                            self.decorator_site(&pack.name, rule, site, prefix.as_deref(), &at);
+                        }
                     }
                 }
             }
+        }
+    }
+
+    /// Applies the decorator rule `rule` of the pack `pack` to `site` behind `prefix`, and decides what it becomes: a site the link finishes, a route of the class, or a fact or an unread site of the file.
+    fn decorator_site(
+        &mut self,
+        pack: &str,
+        rule: &DecoratorRule,
+        site: &Shape,
+        prefix: Option<&str>,
+        at: &DecoratorAt<'_>,
+    ) {
+        let outcome = rule.apply(pack, site, prefix, at.line, at.name);
+        if waits_for_link(
+            &outcome,
+            site,
+            &rule.key,
+            rule.method.as_ref(),
+            rule.prefix.as_ref(),
+        ) {
+            let class = self.classes.last().and_then(|frame| frame.name.clone());
+            let target = match class {
+                Some(class) if rule.class.is_some() && at.serves => DeferredTarget::Class {
+                    class,
+                    inherited: at.inherited,
+                },
+                _ => DeferredTarget::Own,
+            };
+            self.defer(Deferred {
+                rule: at.rule,
+                shape: site.stored(),
+                prefix: prefix.map(str::to_owned),
+                line: at.line,
+                what: at.name.to_owned(),
+                target,
+            });
+            return;
+        }
+        if rule.class.is_some() && at.serves {
+            self.class_route(&outcome, at.inherited);
+        }
+        // The route of an undecorated class is served by the controllers that extend it, so it is not a fact here; a path it could not read is still a site this file could not read.
+        if !(at.inherited && matches!(outcome, Outcome::Fact(_))) {
+            self.record(outcome);
         }
     }
 

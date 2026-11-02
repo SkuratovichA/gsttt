@@ -98,7 +98,7 @@ pub struct CallRule {
     #[schemars(with = "String")]
     pub kind: ContractKind,
     pub role: Role,
-    /// Where the key is: `$arg1`, `$arg1.url`, `$url|$arg1`.
+    /// Where the key is: `$arg1`, `$arg1.url`, `$arg1[]`, `$url|$arg1`.
     #[schemars(with = "String")]
     pub key: ValueExpr,
     /// For HTTP, where the method is: `GET`, `$callee`, `$arg2.method|GET`. Unset: any method (`*`), as is a method the site holds but cannot read, such as `{ method: verb }` for `$arg2.method`.
@@ -328,7 +328,8 @@ impl Case {
 /// Where a value comes from at a call or decorator site: alternatives separated by `|`, tried left to right, the first that yields text winning.
 ///
 /// - `$callee`: the last segment of the callee, `get` in `axios.get(…)` and `Get` in `@Get(…)`.
-/// - `$arg1`, `$arg2`, …: an argument, counting from 1, when it is a string literal or a template.
+/// - `$arg1`, `$arg2`, …: an argument, counting from 1, when it is a string literal or a template; for an array, its first element that is one of those.
+/// - `$arg1[]`: like `$arg1`, but an array literal gives one site for each of its elements, so `@Post(['a', 'b'])` names two contracts. Only the TypeScript connector tells the elements apart: Python and Rust read `$arg1[]` exactly as `$arg1`.
 /// - `$arg2.method`: a property of an argument that is an object literal, or a dict literal in Python.
 /// - `$member`: the name of the declaration a decorator or attribute sits on, `bookings` in `@Query() bookings()`.
 /// - `$prefix`: a keyword argument, `prefix=…` in Python.
@@ -343,6 +344,8 @@ pub enum ValueSource {
     Callee,
     Member,
     Arg(NonZeroU32),
+    /// Every element of an array literal given as argument N, one site per element; an argument that is no array reads as `$argN`.
+    ArgEach(NonZeroU32),
     ArgProp(NonZeroU32, String),
     Keyword(String),
     Literal(String),
@@ -354,7 +357,7 @@ pub enum ValueExprError {
     #[error("`{0}`: arguments count from 1, so `$arg1` is the first")]
     Position(String),
     #[error(
-        "`{0}` is not a value: expected `$callee`, `$member`, `$argN`, `$argN.prop`, `$keyword` or literal text"
+        "`{0}` is not a value: expected `$callee`, `$member`, `$argN`, `$argN[]`, `$argN.prop`, `$keyword` or literal text"
     )]
     Malformed(String),
 }
@@ -375,7 +378,7 @@ pub trait Site {
     }
     /// Whether the site carries a value at `source` that it cannot read as text, as opposed to carrying none there.
     ///
-    /// - [`ValueSource::Arg`]: an argument at that position that is neither text nor an object or dict literal, which is read through its properties.
+    /// - [`ValueSource::Arg`] and [`ValueSource::ArgEach`]: an argument at that position that is neither text nor an object or dict literal, which is read through its properties.
     /// - [`ValueSource::ArgProp`]: an object or dict literal at that position whose property is there and is not text, or an argument that is neither text nor such a literal, whose properties nothing can see. A literal without the property holds nothing there.
     /// - [`ValueSource::Keyword`]: a keyword argument that is there and is not text.
     /// - [`ValueSource::Callee`], [`ValueSource::Member`] and [`ValueSource::Literal`] hold nothing.
@@ -442,7 +445,7 @@ impl ValueExpr {
             let text = match source {
                 ValueSource::Callee => site.callee_last(),
                 ValueSource::Member => site.member(),
-                ValueSource::Arg(position) => site.arg(*position),
+                ValueSource::Arg(position) | ValueSource::ArgEach(position) => site.arg(*position),
                 ValueSource::ArgProp(position, prop) => site.arg_prop(*position, prop),
                 ValueSource::Keyword(name) => site.keyword(name),
                 ValueSource::Literal(text) => (!held).then_some(Cow::Borrowed(text.as_str())),
@@ -481,6 +484,10 @@ impl ValueSource {
             _ => {}
         }
         if let Some(rest) = name.strip_prefix("arg") {
+            let (rest, each) = match rest.strip_suffix("[]") {
+                Some(rest) => (rest, true),
+                None => (rest, false),
+            };
             let (position, prop) = match rest.split_once('.') {
                 Some((position, prop)) => (position, Some(prop)),
                 None => (rest, None),
@@ -489,10 +496,14 @@ impl ValueSource {
                 let position: NonZeroU32 = position
                     .parse()
                     .map_err(|_| ValueExprError::Position(text.to_owned()))?;
-                return match prop {
-                    None => Ok(Self::Arg(position)),
-                    Some(prop) if is_ident(prop) => Ok(Self::ArgProp(position, prop.to_owned())),
-                    Some(_) => Err(ValueExprError::Malformed(text.to_owned())),
+                return match (prop, each) {
+                    (None, false) => Ok(Self::Arg(position)),
+                    (None, true) => Ok(Self::ArgEach(position)),
+                    // A property of an element is no form: `$arg1[].x` and `$arg1.x[]` are both malformed.
+                    (Some(prop), false) if is_ident(prop) => {
+                        Ok(Self::ArgProp(position, prop.to_owned()))
+                    }
+                    (Some(_), _) => Err(ValueExprError::Malformed(text.to_owned())),
                 };
             }
         }
@@ -547,6 +558,7 @@ impl fmt::Display for ValueExpr {
                 ValueSource::Callee => f.write_str("$callee")?,
                 ValueSource::Member => f.write_str("$member")?,
                 ValueSource::Arg(position) => write!(f, "$arg{position}")?,
+                ValueSource::ArgEach(position) => write!(f, "$arg{position}[]")?,
                 ValueSource::ArgProp(position, prop) => write!(f, "$arg{position}.{prop}")?,
                 ValueSource::Keyword(name) => write!(f, "${name}")?,
                 ValueSource::Literal(text) => f.write_str(text)?,
@@ -1017,7 +1029,7 @@ mod tests {
 
         fn holds(&self, source: &ValueSource) -> bool {
             match source {
-                ValueSource::Arg(position) => {
+                ValueSource::Arg(position) | ValueSource::ArgEach(position) => {
                     self.args.get(position.get() as usize - 1) == Some(&None)
                 }
                 _ => false,
@@ -1691,7 +1703,7 @@ mod tests {
 
         fn holds(&self, source: &ValueSource) -> bool {
             match source {
-                ValueSource::Arg(_) => self.arg.unread(),
+                ValueSource::Arg(_) | ValueSource::ArgEach(_) => self.arg.unread(),
                 ValueSource::ArgProp(..) => self.prop.unread(),
                 ValueSource::Keyword(_) => self.keyword.unread(),
                 ValueSource::Callee | ValueSource::Member | ValueSource::Literal(_) => false,
@@ -1735,6 +1747,8 @@ mod tests {
     fn value_exprs_round_trip_and_reject_nonsense() {
         for text in [
             "$arg1",
+            "$arg1[]",
+            "$arg1[]|",
             "$arg2.method|GET",
             "$callee",
             "$url|$arg1",
@@ -1755,6 +1769,64 @@ mod tests {
             "$1x".parse::<ValueExpr>(),
             Err(ValueExprError::Malformed(_))
         ));
+    }
+
+    /// Value expressions as a rule author writes them: alternatives of every form, `$argN[]` among them.
+    fn value_exprs() -> impl proptest::strategy::Strategy<Value = String> {
+        use proptest::prelude::*;
+        let name = "[a-z][a-z0-9_]{0,5}";
+        let source = prop_oneof![
+            Just("$callee".to_owned()),
+            Just("$member".to_owned()),
+            (1u32..100).prop_map(|position| format!("$arg{position}")),
+            (1u32..100).prop_map(|position| format!("$arg{position}[]")),
+            (1u32..100, name).prop_map(|(position, prop)| format!("$arg{position}.{prop}")),
+            name.prop_map(|keyword| format!("${keyword}")),
+            "[A-Z0-9/]{0,5}",
+        ];
+        proptest::collection::vec(source, 1..4).prop_map(|sources| sources.join("|"))
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn a_value_expr_prints_as_it_was_written(text in value_exprs()) {
+            proptest::prop_assert_eq!(expr(&text).to_string(), text);
+        }
+
+        #[test]
+        fn a_value_expr_that_parses_prints_as_one_that_parses_to_it(text in ".*") {
+            if let Ok(parsed) = text.parse::<ValueExpr>() {
+                proptest::prop_assert_eq!(parsed.to_string().parse::<ValueExpr>(), Ok(parsed));
+            }
+        }
+    }
+
+    #[test]
+    fn an_argument_read_as_each_element_is_one_form_and_takes_no_property() {
+        assert_eq!(
+            expr("$arg2[]").sources(),
+            [ValueSource::ArgEach(NonZeroU32::new(2).unwrap())]
+        );
+        for text in ["$arg1[].x", "$arg1.x[]", "$arg[]", "$arg1[]x", "$arg1[][]"] {
+            assert!(
+                matches!(text.parse::<ValueExpr>(), Err(ValueExprError::Malformed(_))),
+                "{text}"
+            );
+        }
+        assert!(matches!(
+            "$arg0[]".parse::<ValueExpr>(),
+            Err(ValueExprError::Position(_))
+        ));
+    }
+
+    #[test]
+    fn a_site_that_cannot_tell_the_elements_apart_reads_each_as_the_argument() {
+        let site = call("Get", &[Some("/x"), None]);
+        for (each, plain) in [("$arg1[]", "$arg1"), ("$arg2[]|none", "$arg2|none")] {
+            assert_eq!(expr(each).read(&site), expr(plain).read(&site), "{each}");
+        }
+        assert_eq!(expr("$arg2[]").read(&site), Reading::Unread);
+        assert_eq!(expr("$arg3[]").read(&site), Reading::Absent);
     }
 
     #[test]

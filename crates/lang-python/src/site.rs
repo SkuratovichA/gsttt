@@ -462,7 +462,7 @@ impl Site for CallSite<'_> {
 
     fn holds(&self, source: &ValueSource) -> bool {
         match source {
-            ValueSource::Arg(position) => {
+            ValueSource::Arg(position) | ValueSource::ArgEach(position) => {
                 self.unpacked(*position)
                     || self
                         .positional(*position)
@@ -589,7 +589,7 @@ impl Site for AssignSite<'_> {
     /// A keyword holds nothing here: one that is not a literal, or that `**mapping` may give, comes back from [`Site::keyword`] as computed text already.
     fn holds(&self, source: &ValueSource) -> bool {
         match source {
-            ValueSource::Arg(position) => {
+            ValueSource::Arg(position) | ValueSource::ArgEach(position) => {
                 *position == NonZeroU32::MIN
                     && self
                         .value
@@ -611,7 +611,7 @@ impl Site for AssignSite<'_> {
 
 #[cfg(test)]
 mod tests {
-    use gsttt_core::rules::{CallRule, Outcome};
+    use gsttt_core::rules::{CallRule, Outcome, ValueExpr};
     use proptest::prelude::*;
     use ruff_python_ast::PySourceType;
     use ruff_python_parser::{parse_module, parse_unchecked_source};
@@ -705,6 +705,38 @@ mod tests {
         assert!(call_holds("f('/x', {'a': 1, **base})", &prop(2, "method")));
         assert!(!call_holds("f('/x', {'a': 1})", &prop(2, "method")));
         assert!(!call_holds("f('/x', {**base})", &arg(2)));
+    }
+
+    #[test]
+    fn an_argument_read_as_each_element_reads_as_the_argument() {
+        // The reading as text, because it borrows from the parsed source.
+        let read = |source: &str, key: &str| {
+            let parsed = parse_module(source).unwrap();
+            let Some(ruff_python_ast::Stmt::Expr(statement)) = parsed.suite().first() else {
+                panic!("not an expression statement");
+            };
+            let Expr::Call(call) = &*statement.value else {
+                panic!("not a call");
+            };
+            let site = CallSite {
+                callee: "f",
+                arguments: Some(&call.arguments),
+                member: None,
+            };
+            format!("{:?}", key.parse::<ValueExpr>().unwrap().read(&site))
+        };
+        let sources = [
+            "f('/x')",
+            "f(path)",
+            "f(['/a', '/b'])",
+            "f(*parts)",
+            "f({**base})",
+            "f()",
+        ];
+        for source in sources {
+            assert_eq!(read(source, "$arg1[]"), read(source, "$arg1"), "{source}");
+        }
+        assert_ne!(read("f('/x')", "$arg1[]"), read("f()", "$arg1[]"));
     }
 
     fn call_text(source: &str, position: u32) -> Option<String> {

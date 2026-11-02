@@ -51,7 +51,7 @@ pub(super) fn linked(
         .map(|(name, maker)| LinkMaker {
             name: name.clone(),
             callee: maker.callee.clone(),
-            shape: maker.shape.clone(),
+            shape: maker.shape.stored(),
         })
         .collect()
 }

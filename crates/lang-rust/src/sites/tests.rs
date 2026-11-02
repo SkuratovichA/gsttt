@@ -101,6 +101,24 @@ method = "$arg2.method"
 }
 
 #[test]
+fn an_argument_read_as_each_element_is_read_as_the_argument() {
+    let pack = |key: &str| {
+        format!(
+            "name = \"t\"\nlanguage = \"rust\"\n\n[[calls]]\ncallee = \"*.route\"\nkind = \"http\"\nrole = \"serves\"\nkey = \"{key}\"\n"
+        )
+    };
+    // A path that is read, one that is not text, and a call without the argument.
+    let source =
+        "fn main() {\n    r.route(\"/a\", h);\n    r.route(path(), h);\n    r.route();\n}\n";
+    let plain = sites(source, &pack("$arg1"));
+    let each = sites(source, &pack("$arg1[]"));
+    assert_eq!(found(&each), ["2 http * /a"]);
+    assert_eq!(found(&each), found(&plain));
+    assert_eq!(unresolved(&each), unresolved(&plain));
+    assert_eq!(unresolved(&each), [(3, "r.route"), (4, "r.route")]);
+}
+
+#[test]
 fn a_method_call_is_where_its_method_is_written() {
     let pack = r#"name = "t"
 language = "rust"
