@@ -118,7 +118,8 @@ expression: json
             "line": 11,
             "name": "audited",
             "uses": [
-              "Audited"
+              "Audited.",
+              "Audited.tenant"
             ]
           },
           {
@@ -126,7 +127,8 @@ expression: json
             "line": 15,
             "name": "logged",
             "uses": [
-              "Logged"
+              "Logged.",
+              "Logged.tenant"
             ]
           },
           {
@@ -134,7 +136,8 @@ expression: json
             "line": 19,
             "name": "narrow",
             "uses": [
-              "Narrow"
+              "Narrow.",
+              "Narrow.tenant"
             ]
           },
           {
@@ -142,7 +145,8 @@ expression: json
             "line": 23,
             "name": "wide",
             "uses": [
-              "Wide"
+              "Wide.",
+              "Wide.tenant"
             ]
           },
           {
@@ -233,7 +237,7 @@ expression: json
             "line": 10,
             "name": "TenantRepository.constructor",
             "uses": [
-              "PrismaService"
+              "PrismaService."
             ]
           },
           {
@@ -291,7 +295,8 @@ expression: json
             "line": 9,
             "name": "cached",
             "uses": [
-              "Cache"
+              "Cache.",
+              "Cache.tenant"
             ]
           },
           {
@@ -299,7 +304,8 @@ expression: json
             "line": 13,
             "name": "shaped",
             "uses": [
-              "Shape"
+              "Shape.",
+              "Shape.tenant"
             ]
           }
         ],

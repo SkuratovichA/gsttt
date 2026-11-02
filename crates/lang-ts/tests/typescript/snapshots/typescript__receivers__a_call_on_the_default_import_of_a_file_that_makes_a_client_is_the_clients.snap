@@ -92,13 +92,13 @@ expression: json
             "line": 3,
             "name": "default",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,
@@ -134,7 +134,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "axios"
+          "axios.get"
         ]
       },
       "tags": 0,
@@ -170,7 +170,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "axios"
+          "axios.get"
         ]
       },
       "tags": 0,

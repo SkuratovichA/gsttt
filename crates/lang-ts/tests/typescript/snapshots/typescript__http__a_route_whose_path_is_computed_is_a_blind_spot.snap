@@ -84,7 +84,7 @@ expression: json
             "name": "AuthController.login",
             "uses": [
               "Get",
-              "paths"
+              "paths.login"
             ]
           },
           {
@@ -100,7 +100,7 @@ expression: json
         "on_load": [
           "Controller",
           "Get",
-          "paths"
+          "paths.login"
         ]
       },
       "tags": 0,

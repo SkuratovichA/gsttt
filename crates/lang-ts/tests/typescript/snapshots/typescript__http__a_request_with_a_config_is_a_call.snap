@@ -65,7 +65,7 @@ expression: json
             "line": 3,
             "name": "book",
             "uses": [
-              "axios"
+              "axios.request"
             ]
           },
           {
@@ -73,7 +73,7 @@ expression: json
             "line": 4,
             "name": "all",
             "uses": [
-              "axios"
+              "axios.request"
             ]
           }
         ],

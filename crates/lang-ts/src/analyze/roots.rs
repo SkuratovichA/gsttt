@@ -444,6 +444,29 @@ pub(super) fn constructed<'a>(init: &Expression<'a>) -> Option<Cow<'a, str>> {
     }
 }
 
+/// The class that an annotation names when it is a plain reference, `OrderService` or `Orders.Service`. A reference with type arguments, a union, an array or any other type names none.
+pub(super) fn plain_class<'a>(annotation: &TSTypeAnnotation<'a>) -> Option<Cow<'a, str>> {
+    let TSType::TSTypeReference(reference) = &annotation.type_annotation else {
+        return None;
+    };
+    if reference.type_arguments.is_some() {
+        return None;
+    }
+    Some(match &reference.type_name {
+        TSTypeName::IdentifierReference(name) => Cow::Borrowed(name.name.as_str()),
+        qualified => Cow::Owned(qualified.to_string()),
+    })
+}
+
+/// The class that a `const` declarator holds: its plain type when it has one, else the class it constructs.
+pub(super) fn declared_class<'a>(declarator: &VariableDeclarator<'a>) -> Option<Cow<'a, str>> {
+    declarator
+        .type_annotation
+        .as_deref()
+        .and_then(plain_class)
+        .or_else(|| declarator.init.as_ref().and_then(constructed))
+}
+
 /// Calls `found` with the name of every type that `ty` stands for at its head: a reference is its own name, a union or an intersection is each of its members, and a wrapper such as `Pick<T, …>` is what it wraps.
 pub(super) fn heads<'a>(ty: &TSType<'a>, found: &mut impl FnMut(Cow<'a, str>)) {
     match ty {

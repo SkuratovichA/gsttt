@@ -52,7 +52,7 @@ expression: json
             "line": 3,
             "name": "api",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           },
           {
@@ -61,13 +61,13 @@ expression: json
             "name": "other",
             "uses": [
               "api",
-              "axios"
+              "axios.create"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,
@@ -103,7 +103,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "api"
+          "api.get"
         ]
       },
       "tags": 0,

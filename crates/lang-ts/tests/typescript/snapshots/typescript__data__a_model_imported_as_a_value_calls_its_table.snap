@@ -58,7 +58,7 @@ expression: json
             "line": 3,
             "name": "confirmed",
             "uses": [
-              "BookingStatus"
+              "BookingStatus.CONFIRMED"
             ]
           }
         ],
@@ -110,7 +110,7 @@ expression: json
             "line": 3,
             "name": "confirmed",
             "uses": [
-              "Status"
+              "Status.CONFIRMED"
             ]
           }
         ],

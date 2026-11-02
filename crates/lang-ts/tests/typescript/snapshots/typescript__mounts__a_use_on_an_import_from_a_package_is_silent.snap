@@ -65,7 +65,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "i18n",
+          "i18n.use",
           "initReactI18next"
         ]
       },

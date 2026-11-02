@@ -65,7 +65,8 @@ expression: json
             "line": 3,
             "name": "first",
             "uses": [
-              "PrismaClient"
+              "PrismaClient.",
+              "PrismaClient.tenant"
             ]
           },
           {
@@ -127,7 +128,8 @@ expression: json
             "line": 7,
             "name": "typed",
             "uses": [
-              "PrismaClient"
+              "PrismaClient.",
+              "PrismaClient.tenant"
             ]
           },
           {

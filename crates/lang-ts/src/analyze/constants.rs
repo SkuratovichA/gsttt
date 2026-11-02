@@ -41,6 +41,8 @@ struct Locals {
     scopes: Vec<Local>,
     /// Whether one of them binds the name to a constant that can hold text.
     constant: bool,
+    /// Whether one of them binds the name to a value of a known class.
+    held: bool,
     /// From each position on, the index in `scopes` of the scope that answers for the name, and none between scopes, sorted by position: a lookup is a binary search, whatever the nesting and however many scopes of a minified bundle bind the name.
     answers: Vec<(u32, Option<usize>)>,
 }
@@ -81,6 +83,8 @@ struct Local {
     values: BTreeMap<String, Part>,
     /// Whether the scope binds the name more than once, so that it stands for nothing in the whole scope.
     rebound: bool,
+    /// The class the name holds when one `const` or parameter binds it, made by `new` or declared with a plain class type: `OrderService` for `const s = new OrderService()` and for `s: OrderService`.
+    class: Option<Box<str>>,
 }
 
 /// Where `Constants::add` writes what it reads: the constants of the file, or those of the scope that answers for a name at a position.
@@ -249,6 +253,15 @@ impl Constants {
     fn local(&self, name: &str, at: u32) -> Option<&Local> {
         let locals = self.locals.get(name)?;
         locals.scopes.get(locals.answer(at)?)
+    }
+
+    /// The class that `name` holds at the position `at`, when the innermost scope around binds it once, to a value of that class.
+    pub(super) fn class_held(&self, name: &str, at: u32) -> Option<&str> {
+        let local = self.local(name, at)?;
+        if local.rebound {
+            return None;
+        }
+        local.class.as_deref()
     }
 
     /// The constants whose first segment `exports` name as a local, sorted by name, to be read by the files that import them.
@@ -991,7 +1004,7 @@ mod tests {
             let mut locals = Locals {
                 scopes: bound
                     .iter()
-                    .map(|&scope| Local { scope, values: BTreeMap::new(), rebound: false })
+                    .map(|&scope| Local { scope, values: BTreeMap::new(), rebound: false, class: None })
                     .collect(),
                 ..Locals::default()
             };

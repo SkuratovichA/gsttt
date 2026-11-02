@@ -100,13 +100,13 @@ expression: json
             "line": 3,
             "name": "i18n",
             "uses": [
-              "i18next"
+              "i18next.createInstance"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "i18next"
+          "i18next.createInstance"
         ]
       },
       "tags": 0,
@@ -164,7 +164,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "app",
+          "app.use",
           "router"
         ]
       },
@@ -206,13 +206,13 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "express"
+              "express.Router"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "express",
+          "express.Router",
           "router"
         ]
       },
@@ -273,7 +273,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "i18n",
+          "i18n.use",
           "initReactI18next"
         ]
       },

@@ -110,7 +110,7 @@ expression: json
             "line": 5,
             "name": "bare",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           },
           {
@@ -124,7 +124,7 @@ expression: json
             "line": 7,
             "name": "plain",
             "uses": [
-              "axios"
+              "axios.get"
             ]
           },
           {
@@ -189,7 +189,7 @@ expression: json
             "name": "unread",
             "uses": [
               "BASE",
-              "axios"
+              "axios.create"
             ]
           },
           {
@@ -204,7 +204,7 @@ expression: json
         "exports": [],
         "on_load": [
           "BASE",
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,

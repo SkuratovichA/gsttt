@@ -65,11 +65,11 @@ fn references_tags_types_and_this_are_uses() -> Result<(), Box<dyn Error>> {
     let path = "src/view.tsx";
     assert_eq!(
         uses(&json, path, "View"),
-        Some(vec!["Props", "Widget", "helper", "useX"]),
+        Some(vec!["Props.", "Widget", "helper", "useX"]),
         "a type, a tag, a call and an import"
     );
     assert_eq!(uses(&json, path, "C.a"), Some(vec!["C.b"]));
-    assert_eq!(uses(&json, path, "d"), Some(vec!["C", "C.s"]));
+    assert_eq!(uses(&json, path, "d"), Some(vec!["C.s"]));
     assert_eq!(uses(&json, path, "helper"), Some(vec![]));
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -259,12 +259,12 @@ fn a_private_name_is_a_member_of_the_class_that_declares_it() -> Result<(), Box<
         "`this.#hidden` and `#secret in this`: {uses:?}"
     );
     assert!(
-        uses.contains(&"Privates.make -> Privates, Privates.#secret".to_owned()),
+        uses.contains(&"Privates.make -> Privates, Privates., Privates.#secret".to_owned()),
         "`instance.#secret` names the private field of the class around it: {uses:?}"
     );
     assert!(
-        uses.contains(&"Statics.bump -> Statics, Statics.count".to_owned()),
-        "`Statics.count` is a use of both, and so is `this.count` of the member: {uses:?}"
+        uses.contains(&"Statics.bump -> Statics.count".to_owned()),
+        "`Statics.count` and `this.count` are uses of the member alone: {uses:?}"
     );
     Ok(())
 }
@@ -346,7 +346,7 @@ fn a_test_file_uses_what_it_tests_at_load() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         on_load(&json, path),
         Some(vec![
-            "Runner", "check", "describe", "expect", "getHash", "it", "runner", "vi"
+            "Runner", "check", "describe", "expect", "getHash", "it", "runner", "vi.fn"
         ]),
         "what a callback of `describe` or `it` calls runs as the file loads"
     );
@@ -412,7 +412,7 @@ fn every_form_that_runs_as_the_file_loads_is_recorded() -> Result<(), Box<dyn Er
             "made -> i, j",
             "lazy -> k",
             "object -> l, m",
-            "Service.constructor -> Dep, Inject, n",
+            "Service.constructor -> Dep., Inject, n",
         ]
     );
     Ok(())
@@ -698,5 +698,119 @@ fn a_member_is_used_however_the_field_is_spelled() -> Result<(), Box<dyn Error>>
         Some(vec!["MailQueue.push", "Spellings.#queue"])
     );
     insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+/// The declarations of `src/uses.ts` of the fixture `member-uses`.
+fn member_uses(name: &str) -> Result<Option<Vec<String>>, Box<dyn Error>> {
+    let json = run("member-uses")?;
+    Ok(uses(&json, "src/uses.ts", name).map(|used| used.into_iter().map(str::to_owned).collect()))
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read from a new instance is a use of that member"
+)]
+fn a_member_read_from_a_new_instance_is_a_use_of_that_member() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        member_uses("refund")?,
+        Some(vec![
+            "OrderService.cancel".into(),
+            "OrderService.constructor".into()
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read from a constant made by new is a use of that member"
+)]
+fn a_member_read_from_a_constant_made_by_new_is_a_use_of_that_member() -> Result<(), Box<dyn Error>>
+{
+    assert_eq!(
+        member_uses("refundLater")?,
+        Some(vec![
+            "OrderService.cancel".into(),
+            "OrderService.constructor".into()
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read from a parameter of a class type is a use of that member"
+)]
+fn a_member_read_from_a_parameter_of_a_class_type_is_a_use_of_that_member()
+-> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        member_uses("refundWith")?,
+        Some(vec!["OrderService.".into(), "OrderService.cancel".into()])
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A value of a class read as a value is a use of the class"
+)]
+fn a_value_of_a_class_read_as_a_value_is_a_use_of_the_class() -> Result<(), Box<dyn Error>> {
+    for name in ["pass", "keep"] {
+        let used = member_uses(name)?.unwrap_or_default();
+        assert!(
+            used.iter().any(|used| used == "OrderService"),
+            "{name}: {used:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A static member of an imported class is a use of that member"
+)]
+fn a_static_member_of_an_imported_class_is_a_use_of_that_member() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        member_uses("create")?,
+        Some(vec!["OrderService.create".into()])
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A static member of a class of the file is a use of that member"
+)]
+fn a_static_member_of_a_class_of_the_file_is_a_use_of_that_member() -> Result<(), Box<dyn Error>> {
+    assert_eq!(member_uses("begin")?, Some(vec!["Runner.start".into()]));
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A type with arguments holds no class")]
+fn a_type_with_arguments_holds_no_class() -> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        member_uses("load")?,
+        Some(vec!["Repository".into(), "User".into()])
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A name bound twice in a scope holds no class")]
+fn a_name_bound_twice_in_a_scope_holds_no_class() -> Result<(), Box<dyn Error>> {
+    let used = member_uses("twice")?.ok_or("the file records no `twice`")?;
+    assert!(used.iter().any(|used| used == "OrderService"), "{used:?}");
+    assert!(
+        !used.iter().any(|used| used.ends_with(".cancel")),
+        "{used:?}"
+    );
     Ok(())
 }

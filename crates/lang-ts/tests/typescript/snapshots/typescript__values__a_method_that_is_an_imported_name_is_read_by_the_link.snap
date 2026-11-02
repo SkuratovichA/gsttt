@@ -46,7 +46,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "M"
+          "M.post"
         ]
       },
       "tags": 0,

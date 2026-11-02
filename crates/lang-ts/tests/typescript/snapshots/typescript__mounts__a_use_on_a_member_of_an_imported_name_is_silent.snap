@@ -51,13 +51,13 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "express"
+              "express.Router"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "express",
+          "express.Router",
           "router"
         ]
       },
@@ -157,7 +157,7 @@ expression: json
         "exports": [],
         "on_load": [
           "router",
-          "server"
+          "server.app"
         ]
       },
       "tags": 0,

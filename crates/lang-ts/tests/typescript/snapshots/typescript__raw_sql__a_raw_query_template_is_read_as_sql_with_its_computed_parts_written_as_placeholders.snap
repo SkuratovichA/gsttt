@@ -216,7 +216,8 @@ expression: json
             "line": 4,
             "name": "Reports.constructor",
             "uses": [
-              "PrismaService"
+              "PrismaService",
+              "PrismaService."
             ]
           },
           {

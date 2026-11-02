@@ -71,7 +71,7 @@ expression: json
             "line": 6,
             "name": "dynamic",
             "uses": [
-              "axios",
+              "axios.request",
               "config"
             ]
           },
@@ -80,7 +80,7 @@ expression: json
             "line": 7,
             "name": "templated",
             "uses": [
-              "axios",
+              "axios.request",
               "id"
             ]
           }

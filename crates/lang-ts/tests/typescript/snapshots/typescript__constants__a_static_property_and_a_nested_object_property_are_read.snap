@@ -119,7 +119,7 @@ expression: json
             "name": "UsersController.login",
             "uses": [
               "Get",
-              "Routes"
+              "Routes.LOGIN"
             ]
           },
           {
@@ -128,7 +128,7 @@ expression: json
             "name": "UsersController.find",
             "uses": [
               "Get",
-              "ROUTES"
+              "ROUTES.users"
             ]
           }
         ],
@@ -136,8 +136,8 @@ expression: json
         "on_load": [
           "Controller",
           "Get",
-          "ROUTES",
-          "Routes"
+          "ROUTES.users",
+          "Routes.LOGIN"
         ]
       },
       "tags": 0,

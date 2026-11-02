@@ -77,7 +77,7 @@ expression: json
             "line": 6,
             "name": "InvoiceResolver.constructor",
             "uses": [
-              "InvoiceService"
+              "InvoiceService."
             ]
           },
           {

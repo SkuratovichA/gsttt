@@ -76,9 +76,9 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "api",
-          "cache",
-          "store"
+          "api.get",
+          "cache.get",
+          "store.cache"
         ]
       },
       "tags": 0,
@@ -119,13 +119,13 @@ expression: json
             "line": 3,
             "name": "api",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,

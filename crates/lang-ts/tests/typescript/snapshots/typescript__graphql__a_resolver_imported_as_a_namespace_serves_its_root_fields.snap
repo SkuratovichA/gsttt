@@ -76,7 +76,7 @@ expression: json
             "line": 6,
             "name": "UsersResolver",
             "uses": [
-              "graphql"
+              "graphql.Resolver"
             ]
           },
           {
@@ -85,7 +85,7 @@ expression: json
             "name": "UsersResolver.users",
             "uses": [
               "User",
-              "graphql"
+              "graphql.Query"
             ]
           },
           {
@@ -94,7 +94,7 @@ expression: json
             "name": "UsersResolver.remove",
             "uses": [
               "User",
-              "graphql"
+              "graphql.Mutation"
             ]
           },
           {
@@ -103,13 +103,16 @@ expression: json
             "name": "UsersResolver.org",
             "uses": [
               "Org",
-              "graphql"
+              "graphql.ResolveField"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "graphql"
+          "graphql.Mutation",
+          "graphql.Query",
+          "graphql.ResolveField",
+          "graphql.Resolver"
         ]
       },
       "tags": 0,

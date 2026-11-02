@@ -85,7 +85,7 @@ expression: json
             "line": 7,
             "name": "api",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           },
           {
@@ -111,7 +111,7 @@ expression: json
             "line": 11,
             "name": "edge",
             "uses": [
-              "axios",
+              "axios.create",
               "host"
             ]
           },
@@ -129,7 +129,7 @@ expression: json
             "line": 14,
             "name": "v1",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           },
           {
@@ -143,7 +143,7 @@ expression: json
         ],
         "exports": [],
         "on_load": [
-          "axios",
+          "axios.create",
           "host"
         ]
       },

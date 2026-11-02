@@ -54,7 +54,8 @@ expression: json
             "line": 3,
             "name": "find",
             "uses": [
-              "Db"
+              "Db.",
+              "Db.tenant"
             ]
           }
         ],
@@ -99,7 +100,8 @@ expression: json
             "line": 3,
             "name": "find",
             "uses": [
-              "P"
+              "P.TransactionClient.",
+              "P.TransactionClient.tenant"
             ]
           }
         ],
@@ -144,7 +146,8 @@ expression: json
             "line": 3,
             "name": "find",
             "uses": [
-              "Base"
+              "Base.",
+              "Base.tenant"
             ]
           }
         ],

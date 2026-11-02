@@ -129,7 +129,7 @@ expression: json
             "name": "bootstrap",
             "uses": [
               "AppModule",
-              "NestFactory"
+              "NestFactory.create"
             ]
           }
         ],

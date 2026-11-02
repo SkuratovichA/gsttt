@@ -51,7 +51,7 @@ expression: json
         "exports": [],
         "on_load": [
           "ORDERS",
-          "PATHS",
+          "PATHS.items",
           "USERS"
         ]
       },

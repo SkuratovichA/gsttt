@@ -31,8 +31,8 @@ use oxc_ast::ast::{
     NewExpression, ObjectProperty, ObjectPropertyKind, PrivateInExpression, Program,
     PropertyDefinition, SequenceExpression, SimpleAssignmentTarget, Statement, TSExportAssignment,
     TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier, TSModuleBlock,
-    TSModuleReference, TSType, TSTypeName, TaggedTemplateExpression, UnaryExpression,
-    UpdateExpression, VariableDeclarator,
+    TSModuleReference, TSType, TSTypeAnnotation, TSTypeName, TaggedTemplateExpression,
+    UnaryExpression, UpdateExpression, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
@@ -41,8 +41,8 @@ use oxc_syntax::scope::ScopeFlags;
 
 pub(crate) use self::constants::Constants;
 use self::makers::{Maker, NEST_FACTORY_CREATE};
-use self::roots::Roots;
-use self::symbols::Recorder;
+use self::roots::{Roots, plain_class};
+use self::symbols::{Recorder, TYPE_ONLY};
 use crate::builtins::is_builtin;
 use crate::extra::{
     Binding, ClassRoute, Deferred, DeferredTarget, Export, ExportTarget, ImportedMount, Inherit,
@@ -102,6 +102,7 @@ pub(crate) fn analyze(
         module_depth: 0,
         imported: Vec::new(),
         access: None,
+        held_new: None,
         discarded: Vec::new(),
         out: Analysis::default(),
     };
@@ -217,6 +218,8 @@ struct Analyzer<'p, 'a> {
     imported: Vec<Imported>,
     /// How the next member expression the walk reaches is touched, set by what writes it just before the walk goes in and taken by that member expression first of all, so that a computed key or an argument inside it is read.
     access: Option<Access>,
+    /// The start of a `new` whose value goes no further than its members: `new Service().run()`, and the `new` that a `const` holding the class is made of. Its callee is used through `constructor` and not as a name.
+    held_new: Option<u32>,
     /// The expressions whose value the code around them drops, parentheses peeled: a compound assignment or an update that is exactly one of them only writes. A mark lives while its parent is walked, so this holds as many as the nesting is deep.
     discarded: Vec<Span>,
     out: Analysis,
@@ -1234,6 +1237,20 @@ impl<'a> Analyzer<'_, 'a> {
         self.discarded.truncate(mark);
     }
 
+    /// The class that a name holds by the plain type `annotation` it is declared with, which is then used by its type alone.
+    fn held_by_type(
+        &self,
+        pattern: &BindingPattern<'a>,
+        annotation: &TSTypeAnnotation<'a>,
+    ) -> Option<String> {
+        let BindingPattern::BindingIdentifier(id) = pattern else {
+            return None;
+        };
+        let class = plain_class(annotation)?;
+        (self.constants.class_held(id.name.as_str(), id.span.start) == Some(&*class))
+            .then(|| class.into_owned())
+    }
+
     /// Walks what is computed inside a chain of member accesses, `a[b()].c[d]`, and the types written on the way down, `(a as T).c`, and nothing else of it. The chain itself goes through the wrappers, as `chain_of` reads it.
     fn walk_spine(&mut self, expr: &Expression<'a>) {
         match expr {
@@ -1557,6 +1574,13 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                     .insert(made.span().start, id.name.as_str().to_owned());
             }
             self.load_declared(init, &it.id);
+            if let BindingPattern::BindingIdentifier(id) = &it.id
+                && let Expression::NewExpression(new) = init
+                && let Some(class) = dotted_name(&new.callee)
+                && self.constants.class_held(id.name.as_str(), id.span.start) == Some(&*class)
+            {
+                self.held_new = Some(new.span.start);
+            }
             if self.gates.trpc
                 && let (BindingPattern::BindingIdentifier(id), Expression::CallExpression(call)) =
                     (&it.id, init)
@@ -1574,7 +1598,16 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             }
         }
         let outer = self.symbols.declarator(it.span.start);
-        walk::walk_variable_declarator(self, it);
+        self.visit_binding_pattern(&it.id);
+        if let Some(type_annotation) = &it.type_annotation {
+            match self.held_by_type(&it.id, type_annotation) {
+                Some(class) => self.symbols.through_class(&class, Some(TYPE_ONLY)),
+                None => self.visit_ts_type_annotation(type_annotation),
+            }
+        }
+        if let Some(init) = &it.init {
+            self.visit_expression(init);
+        }
         self.symbols.restore(outer);
     }
 
@@ -1683,6 +1716,15 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 MemberExpression::StaticMemberExpression(member) => {
                     let property = member.property.name.as_str();
                     self.member_of_load(&member.object, property);
+                    // `new Service().run()` reads one member of the class it constructs.
+                    if let Expression::NewExpression(new) = member.object.get_inner_expression()
+                        && let Some(class) = dotted_name(&new.callee)
+                    {
+                        self.held_new = Some(new.span.start);
+                        let outer = self.symbols.run();
+                        self.symbols.through_class(&class, Some(property));
+                        self.symbols.restore(outer);
+                    }
                     // `this.#field.member` reads a member of the type of the field, so the field is not read as a value. The types written around the field are still walked, as for `this.field.member`.
                     if let Expression::PrivateFieldExpression(field) =
                         member.object.get_inner_expression()
@@ -1700,7 +1742,16 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             return;
         };
         self.chain_rules(&names, it.span().start, access);
-        self.symbols.chain(&names);
+        let held = names
+            .first()
+            .and_then(|root| root.as_deref())
+            .and_then(|root| self.constants.class_held(root, it.span().start));
+        match held {
+            Some(class) => self
+                .symbols
+                .through_class(class, names.get(1).and_then(Option::as_deref)),
+            None => self.symbols.chain(&names),
+        }
         // The links below this one are parts of the same chain: only what is computed inside it is still to walk.
         match it {
             MemberExpression::StaticMemberExpression(member) => self.walk_spine(&member.object),
@@ -1846,7 +1897,11 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-        self.symbols.reference(it.name.as_str());
+        // A value of a known class that goes somewhere else may meet any member of it.
+        match self.constants.class_held(it.name.as_str(), it.span.start) {
+            Some(class) => self.symbols.through_class(class, None),
+            None => self.symbols.reference(it.name.as_str()),
+        }
     }
 
     fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
@@ -1861,7 +1916,10 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         self.symbols.restore(outer);
         self.visit_binding_pattern(&it.pattern);
         if let Some(type_annotation) = &it.type_annotation {
-            self.visit_ts_type_annotation(type_annotation);
+            match self.held_by_type(&it.pattern, type_annotation) {
+                Some(class) => self.symbols.through_class(&class, Some(TYPE_ONLY)),
+                None => self.visit_ts_type_annotation(type_annotation),
+            }
         }
         if let Some(initializer) = &it.initializer {
             self.visit_expression(initializer);
@@ -1882,7 +1940,20 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
 
     fn visit_new_expression(&mut self, it: &NewExpression<'a>) {
         let outer = self.symbols.run();
-        walk::walk_new_expression(self, it);
+        if self.held_new == Some(it.span.start)
+            && let Some(class) = dotted_name(&it.callee)
+        {
+            self.held_new = None;
+            self.symbols
+                .value_of(class.split('.').next().unwrap_or(&class));
+            self.symbols.through_class(&class, Some("constructor"));
+            if let Some(type_arguments) = &it.type_arguments {
+                self.visit_ts_type_parameter_instantiation(type_arguments);
+            }
+            self.visit_arguments(&it.arguments);
+        } else {
+            walk::walk_new_expression(self, it);
+        }
         self.symbols.restore(outer);
     }
 

@@ -92,7 +92,7 @@ expression: json
             "name": "api",
             "uses": [
               "API_URL",
-              "axios"
+              "axios.create"
             ]
           }
         ],
@@ -100,7 +100,7 @@ expression: json
         "on_load": [
           "API_URL",
           "api",
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,
