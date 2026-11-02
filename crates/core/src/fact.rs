@@ -82,6 +82,10 @@ mod flag_sets {
             TYPE_CHECKING = 2;
             /// Only compiled for tests: Rust `#[cfg(test)]`.
             TEST_ONLY = 3;
+            /// A mock whose factory stands in for the module, so that the importer runs none of its code: TS `vi.mock('x', () => ({}))`. A mock that has no factory, or whose factory asks for the module as it is, does not carry it.
+            REPLACES = 4;
+            /// A dynamic import that asks for the module as it is, past any mock of it: TS `vi.importActual('x')`, `jest.requireActual('x')`.
+            ACTUAL = 5;
         }
     }
 

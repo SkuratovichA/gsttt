@@ -206,7 +206,7 @@ pub(crate) fn tags(json: &Value, path: &str) -> FileTags {
         .unwrap_or_default()
 }
 
-/// The imports of the file at `path`, in file order: `<specifier> <kind> @<line> [type-only] [<names>] -> <target>`.
+/// The imports of the file at `path`, in file order: `<specifier> <kind> @<line> [type-only] [replaces] [actual] [<names>] -> <target>`.
 pub(crate) fn imports(json: &Value, path: &str) -> Vec<String> {
     file(json, path)
         .into_iter()
@@ -222,8 +222,14 @@ pub(crate) fn imports(json: &Value, path: &str) -> Vec<String> {
                 text(import, "kind").unwrap_or("?").to_owned(),
                 format!("@{}", number(import, "line")),
             ];
-            if flags.contains(ImportFlags::TYPE_ONLY) {
-                parts.push("type-only".to_owned());
+            for (flag, name) in [
+                (ImportFlags::TYPE_ONLY, "type-only"),
+                (ImportFlags::REPLACES, "replaces"),
+                (ImportFlags::ACTUAL, "actual"),
+            ] {
+                if flags.contains(flag) {
+                    parts.push(name.to_owned());
+                }
             }
             if !names.is_empty() {
                 parts.push(format!("[{}]", names.join(",")));

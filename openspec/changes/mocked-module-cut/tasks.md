@@ -6,10 +6,10 @@
 
 ## 2. The reader
 
-- [ ] 2.1 `crates/core/src/fact.rs`: `ImportFlags::REPLACES` and `ImportFlags::ACTUAL`
-- [ ] 2.2 `crates/lang-ts/src/analyze/mocks.rs` and `crates/lang-ts/src/analyze.rs`: a `vi.mock` or `jest.mock` call that is a statement of its own at the top level, with a factory that does not use its first parameter, marks its import as replacing; the dynamic import of `vi.importActual` and `jest.requireActual` is marked as asking for the actual module
-- [ ] 2.3 `crates/lang-ts/src/project.rs`: `READER_VERSION` 9 to 10
-- [ ] 2.4 Fixtures, tests and snapshots of the five scenarios of `Mocks that replace a module` and of the scenario of `Actual modules` that is extended; the snapshots that change are read before they are accepted
+- [x] 2.1 `crates/core/src/fact.rs`: `ImportFlags::REPLACES` and `ImportFlags::ACTUAL`
+- [x] 2.2 `crates/lang-ts/src/analyze/mocks.rs` and `crates/lang-ts/src/analyze.rs`: a `vi.mock` or `jest.mock` call that is a statement of its own at the top level, with a factory that does not use its first parameter, marks its import as replacing; the dynamic import of `vi.importActual` and `jest.requireActual` is marked as asking for the actual module
+- [x] 2.3 `crates/lang-ts/src/project.rs`: `READER_VERSION` 9 to 10
+- [x] 2.4 Fixtures, tests and snapshots of the five scenarios of `Mocks that replace a module` and of the scenario of `Actual modules` that is extended; the snapshots that change are read before they are accepted
 
 ## 3. The walks
 

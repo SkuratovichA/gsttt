@@ -56,7 +56,7 @@ expression: json
       "exports": [],
       "imports": [
         {
-          "flags": 0,
+          "flags": 32,
           "kind": "dynamic",
           "line": 1,
           "names": [
@@ -68,7 +68,7 @@ expression: json
           }
         },
         {
-          "flags": 0,
+          "flags": 32,
           "kind": "dynamic",
           "line": 2,
           "names": [
@@ -80,7 +80,7 @@ expression: json
           }
         },
         {
-          "flags": 0,
+          "flags": 32,
           "kind": "dynamic",
           "line": 3,
           "names": [
@@ -92,7 +92,7 @@ expression: json
           }
         },
         {
-          "flags": 0,
+          "flags": 32,
           "kind": "dynamic",
           "line": 4,
           "names": [],
