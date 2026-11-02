@@ -590,7 +590,7 @@ fn parse(
                 path: file.path,
                 text: &text,
             };
-            contain(|| project.parse(&source)).unwrap_or_else(|message| {
+            contain_reading(text.len(), || project.parse(&source)).unwrap_or_else(|message| {
                 (
                     FileFacts::failed(ParseFailure::Panicked { message }),
                     Vec::new(),
@@ -691,14 +691,15 @@ fn read_embedded(
                     facts: Vec::new(),
                 };
             };
-            let facts = contain(|| reader.parse_embedded(document)).unwrap_or_else(|message| {
-                let message = format!(
-                    "{} document on line {}: {message}",
-                    document.lang, document.line
-                );
-                problems.push(problem(reader.as_ref(), Call::ParseEmbedded, message));
-                Vec::new()
-            });
+            let facts = contain_reading(document.text.len(), || reader.parse_embedded(document))
+                .unwrap_or_else(|message| {
+                    let message = format!(
+                        "{} document on line {}: {message}",
+                        document.lang, document.line
+                    );
+                    problems.push(problem(reader.as_ref(), Call::ParseEmbedded, message));
+                    Vec::new()
+                });
             // A reader counts lines from the first line of its document, the host file from its own.
             let facts = facts
                 .into_iter()
@@ -767,6 +768,36 @@ fn contain<T>(call: impl FnOnce() -> T) -> Result<T, String> {
             .or_else(|| payload.downcast_ref::<String>().cloned())
             .unwrap_or_else(|| "a panic without a message".to_owned())
     })
+}
+
+/// What a parse needs besides the nesting of its text.
+const BASE_STACK: usize = 1024 * 1024;
+
+/// The stack of a worker of a run. A read asks [`contain_reading`] for stack in proportion to its text, and growing one costs system calls and fresh pages for each file, so a worker starts with enough for all but the largest files. Only the pages a read touches take memory.
+pub(super) const WORKER_STACK: usize = 256 * 1024 * 1024;
+
+/// Runs `run` in a pool whose workers have stacks of `size`. On a machine that refuses such stacks it runs in the global pool, where a read grows a stack of its own. The global pool is not the one given the stacks because a `build_global` that fails leaves it unusable for the rest of the process.
+pub(super) fn on_stacks<T: Send>(size: usize, run: impl FnOnce() -> T + Send) -> T {
+    match rayon::ThreadPoolBuilder::new().stack_size(size).build() {
+        Ok(pool) => pool.install(run),
+        Err(error) => {
+            tracing::debug!(%error, "the workers keep their default stacks");
+            run()
+        }
+    }
+}
+
+/// Stack a parse can touch per byte of its text, at the deepest form a parser recurses on, one level per byte. Measured on the TypeScript, Python and Rust connectors.
+const STACK_PER_BYTE: usize = if cfg!(debug_assertions) {
+    6 * 1024
+} else {
+    3 * 1024
+};
+
+/// Runs a connector call that reads `len` bytes of text like [`contain`], on a stack that the nesting of that text cannot exhaust: a stack overflow aborts the process and no `catch_unwind` sees it. The stack grows only when the one at hand cannot hold the text, and only the pages a parse touches cost memory.
+fn contain_reading<T>(len: usize, call: impl FnOnce() -> T) -> Result<T, String> {
+    let needed = BASE_STACK.saturating_add(len.saturating_mul(STACK_PER_BYTE));
+    contain(|| stacker::maybe_grow(needed, needed, call))
 }
 
 pub(super) fn display_root(root: &str) -> &str {
@@ -1255,6 +1286,31 @@ mod tests {
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 1, "{seen:?}");
         assert!(seen[0].contains("uncontained"), "{seen:?}");
+    }
+
+    #[test]
+    fn the_workers_of_a_run_have_the_stacks_it_asked_for() {
+        let least = on_stacks(WORKER_STACK, || {
+            (0..64)
+                .into_par_iter()
+                .map(|_| stacker::remaining_stack().unwrap())
+                .min()
+                .unwrap()
+        });
+        assert!(least > WORKER_STACK / 2, "{least} bytes left");
+    }
+
+    #[test]
+    fn stacks_the_machine_refuses_leave_the_run_on_the_global_pool() {
+        let refused = 1 << 60;
+        assert!(
+            rayon::ThreadPoolBuilder::new()
+                .stack_size(refused)
+                .build()
+                .is_err()
+        );
+        let sum = on_stacks(refused, || (1..4).into_par_iter().sum::<i32>());
+        assert_eq!(sum, 6);
     }
 
     #[test]

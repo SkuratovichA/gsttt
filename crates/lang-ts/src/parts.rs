@@ -34,6 +34,17 @@ pub(crate) enum Reads {
     All,
 }
 
+impl Reads {
+    /// Whether `read`, what each piece reads as, is enough for the whole to read.
+    fn enough(self, read: &[Option<String>]) -> bool {
+        match self {
+            Self::Always => true,
+            Self::Any => read.iter().any(Option::is_some),
+            Self::All => read.iter().all(Option::is_some),
+        }
+    }
+}
+
 /// Why an expression is read, which decides what it does with a piece it cannot read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mode {
@@ -128,29 +139,7 @@ impl Part {
             Self::Text(text) => Some(text.clone()),
             Self::Computed => None,
             Self::Name(name) => resolve(name),
-            Self::Cat(reads, parts) => {
-                // The length is summed as the pieces come, so that a whole past the limit is refused before the text of the pieces after it is read, and before the text of the whole is made.
-                let mut read = Vec::with_capacity(parts.len());
-                let mut length = 0;
-                for part in parts {
-                    let piece = part.read(resolve);
-                    length += piece.as_deref().map_or(COMPUTED.len(), str::len);
-                    if length > MAX_COMPOSED {
-                        return None;
-                    }
-                    read.push(piece);
-                }
-                let enough = match reads {
-                    Reads::Always => true,
-                    Reads::Any => read.iter().any(Option::is_some),
-                    Reads::All => read.iter().all(Option::is_some),
-                };
-                enough.then(|| {
-                    read.iter()
-                        .map(|text| text.as_deref().unwrap_or(COMPUTED))
-                        .collect()
-                })
-            }
+            Self::Cat(reads, parts) => joined(*reads, parts.iter().map(|part| part.read(resolve))),
         }
     }
 
@@ -158,13 +147,57 @@ impl Part {
     pub(crate) fn lax(self) -> Option<String> {
         match self {
             Self::Text(text) => Some(text),
-            other => other.read(&|_| None),
+            Self::Computed | Self::Name(_) => None,
+            Self::Cat(reads, parts) => joined(reads, parts.into_iter().map(Self::lax)),
         }
     }
+
+    /// What `pieces`, the pieces of a `Cat` that [`Part::cat`] gave, leave of [`MAX_COMPOSED`].
+    pub(crate) fn room_after(pieces: &[Part]) -> usize {
+        let mut room = MAX_COMPOSED.saturating_sub(1);
+        for piece in pieces {
+            if !piece.fits_as_piece(&mut room) {
+                break;
+            }
+        }
+        room
+    }
+
+    /// Whether the part fits as one more piece of a `Cat` that leaves `room`, which its weight is taken off.
+    pub(crate) fn fits_as_piece(&self, room: &mut usize) -> bool {
+        self.fits_below(1, room)
+    }
+}
+
+/// What `reads` makes of `pieces` written one after the other. The length is summed as the pieces come, so that a whole past the limit is refused before the text of it is written, and the text of the first piece is kept and added to, so that a sum written `a + b + c + …`, which nests to the left, costs what its text weighs and not that many times over.
+fn joined(reads: Reads, pieces: impl ExactSizeIterator<Item = Option<String>>) -> Option<String> {
+    let mut read = Vec::with_capacity(pieces.len());
+    let mut length = 0;
+    for piece in pieces {
+        length += piece.as_deref().map_or(COMPUTED.len(), str::len);
+        if length > MAX_COMPOSED {
+            return None;
+        }
+        read.push(piece);
+    }
+    if !reads.enough(&read) {
+        return None;
+    }
+    let mut pieces = read.into_iter();
+    let mut text = match pieces.next() {
+        None => String::new(),
+        Some(first) => first.unwrap_or_else(|| COMPUTED.to_owned()),
+    };
+    for piece in pieces {
+        text.push_str(piece.as_deref().unwrap_or(COMPUTED));
+    }
+    Some(text)
 }
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::{MAX_COMPOSED, MAX_DEPTH, Part, Reads};
 
     fn text(text: &str) -> Part {
@@ -254,6 +287,40 @@ mod tests {
             Part::Cat(Reads::Always, vec![name("BASE"), text("/a")]).lax(),
             Some("${}/a".to_owned())
         );
+    }
+
+    #[test]
+    fn a_whole_of_no_pieces_is_empty_text_where_no_piece_is_needed() {
+        assert_eq!(
+            Part::Cat(Reads::Always, Vec::new()).read(&|_| None),
+            Some(String::new())
+        );
+        assert_eq!(
+            Part::Cat(Reads::Always, Vec::new()).lax(),
+            Some(String::new())
+        );
+        assert_eq!(Part::Cat(Reads::Any, Vec::new()).lax(), None);
+    }
+
+    fn any_part() -> impl Strategy<Value = Part> {
+        let leaf = prop_oneof![
+            "[a-z/]{0,4}".prop_map(Part::Text),
+            Just(Part::Computed),
+            "[A-Z]{1,2}".prop_map(Part::Name),
+        ];
+        leaf.prop_recursive(3, 24, 4, |inner| {
+            let reads = prop_oneof![Just(Reads::Always), Just(Reads::Any), Just(Reads::All)];
+            (reads, prop::collection::vec(inner, 0..4))
+                .prop_map(|(reads, parts)| Part::Cat(reads, parts))
+        })
+    }
+
+    proptest! {
+        /// `lax` moves the text it can, and that is all that sets it apart from a read in which no name reads.
+        #[test]
+        fn lax_is_a_read_in_which_no_name_reads(part in any_part()) {
+            prop_assert_eq!(part.read(&|_| None), part.clone().lax());
+        }
     }
 
     /// `levels` pieces of `Cat`, one inside the other, with a name at the bottom.

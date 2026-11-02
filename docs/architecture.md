@@ -38,7 +38,7 @@ Phases 6, 8 and 9 run file-parallel and 7 and 10 project-parallel. Output never 
 
 ## Failure containment
 
-A panic is caught around every connector call: per file for `parse`, `resolve` and `parse_embedded`, per project for `prepare` and `link`. A panicking parse becomes `ParseFailure::Panicked` with the message; any other panic becomes a coverage line naming the connector, the project and the call. The run always finishes, and the answer's coverage says what was lost. The release profile keeps `panic = "unwind"` for this.
+A panic is caught around every connector call: per file for `parse`, `resolve` and `parse_embedded`, per project for `prepare` and `link`. A panicking parse becomes `ParseFailure::Panicked` with the message; any other panic becomes a coverage line naming the connector, the project and the call. The run always finishes, and the answer's coverage says what was lost. The release profile keeps `panic = "unwind"` for this. A stack overflow is no panic and cannot be caught, so a parse of a file runs on a stack sized by the length of its text (`contain_reading` in `engine/pipeline.rs`), and the Rust connector refuses a file whose tree would nest deeper than 2000 levels before it builds the tree.
 
 ## Snapshot
 

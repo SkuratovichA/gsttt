@@ -4,6 +4,7 @@
 mod colour;
 mod config;
 mod constants;
+mod deep;
 mod dogfood;
 mod hook;
 mod impact;

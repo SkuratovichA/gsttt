@@ -5,6 +5,7 @@ mod support;
 
 mod activation;
 mod data;
+mod depth;
 // Its helpers read the engine's JSON with `unwrap`, which clippy lets pass only in test code.
 #[cfg(test)]
 mod dogfood;

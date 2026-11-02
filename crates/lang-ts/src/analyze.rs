@@ -54,6 +54,9 @@ use crate::shape::{
     member_chain, property_name, property_str, static_chain, template_text, text_with,
 };
 
+/// The most segments a chain rule's root can have. A root is tried at every length of the chain and each try reads the root again, so a chain of `n` names costs `n` squared without a limit, and no root a rule lists comes near this length.
+const MAX_ROOT_SEGMENTS: usize = 64;
+
 /// Everything one file says on its own.
 #[derive(Debug, Default)]
 pub(crate) struct Analysis {
@@ -417,7 +420,7 @@ impl<'a> Analyzer<'_, 'a> {
         let names = names.as_ref();
         for pack in packs {
             for rule in &pack.chains {
-                for count in 1..names.len() {
+                for count in 1..names.len().min(MAX_ROOT_SEGMENTS + 1) {
                     let Some((head, tail)) = names.split_at_checked(count) else {
                         break;
                     };

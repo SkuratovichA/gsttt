@@ -475,26 +475,37 @@ fn sum_part(first: &BinaryExpression<'_>, constants: &Constants, mode: Mode) -> 
         innermost = &binary.left;
     }
     let mut sum = part_of(innermost, constants, mode);
+    let mut room = None;
     for right in rights.into_iter().rev() {
         let left = operand(sum)?;
         let right = operand(part_of(right, constants, mode))?;
-        sum = append(left, right, mode.sum());
+        sum = append(left, right, mode.sum(), &mut room);
     }
     sum
 }
 
 /// `left` followed by `right`, as one level of pieces when `left` is already a sum of the same kind that reads as the sum of `left` and `right` would: a constant reads when all its pieces do, which is no matter how they are grouped, and a concatenation that holds a text reads always. So a long sum, which nests to the left, stays as flat as it is written and the depth a part may nest is for the sums written in parentheses and the templates inside one another.
-fn append(left: Part, right: Part, reads: Reads) -> Option<Part> {
+///
+/// `room` is what the pieces of `left` leave of the limit, kept from one operand to the next: `Part::cat` gave them, so they hold a name and fit, and weighing them all again for every operand would make a sum of thousands of them quadratic.
+fn append(left: Part, right: Part, reads: Reads, room: &mut Option<usize>) -> Option<Part> {
     match left {
         Part::Cat(own, mut parts)
             if own == reads
                 && (reads == Reads::All
                     || parts.iter().any(|part| matches!(part, Part::Text(_)))) =>
         {
+            let left = room.get_or_insert_with(|| Part::room_after(&parts));
+            if !right.fits_as_piece(left) {
+                *room = None;
+                return None;
+            }
             parts.push(right);
-            Part::cat(reads, parts)
+            Some(Part::Cat(reads, parts))
         }
-        left => Part::cat(reads, vec![left, right]),
+        left => {
+            *room = None;
+            Part::cat(reads, vec![left, right])
+        }
     }
 }
 
@@ -761,7 +772,7 @@ mod tests {
     use oxc_span::SourceType;
     use proptest::prelude::*;
 
-    use super::{Arg, Shape, Value, part_of, text_with, url_join};
+    use super::{Arg, Shape, Value, append, part_of, text_with, url_join};
     use crate::analyze::Constants;
     use crate::extra::{Deferred, DeferredTarget, RuleRef, TsExtra};
     use crate::parts::{MAX_COMPOSED, MAX_DEPTH, Mode, Part, Reads};
@@ -1464,6 +1475,31 @@ mod tests {
             }
         }
         (source.join(" + "), text)
+    }
+
+    /// `append` weighs only the new operand, and the limit it reaches must be the one `Part::cat` finds by weighing the whole.
+    #[test]
+    fn a_sum_put_together_one_operand_at_a_time_is_refused_where_the_whole_is() {
+        let piece = Part::Text("x".repeat(MAX_COMPOSED / 5));
+        for reads in [Reads::All, Reads::Any] {
+            let mut pieces = vec![Part::Name("N".to_owned()), piece.clone()];
+            let mut sum = Part::cat(reads, pieces.clone());
+            let mut room = None;
+            for operands in 3..9 {
+                pieces.push(piece.clone());
+                let left = sum.take().unwrap();
+                sum = append(left, piece.clone(), reads, &mut room);
+                assert_eq!(
+                    sum,
+                    Part::cat(reads, pieces.clone()),
+                    "{operands} operands, {reads:?}"
+                );
+                if sum.is_none() {
+                    break;
+                }
+            }
+            assert_eq!(sum, None, "the limit was never reached, {reads:?}");
+        }
     }
 
     #[test]

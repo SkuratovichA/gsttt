@@ -4,6 +4,7 @@
 //!
 //! [`Project::provides`]: gsttt_core::connector::Project::provides
 
+mod depth;
 mod eval;
 mod imports;
 mod link;
@@ -77,7 +78,7 @@ impl Connector for Rust {
     fn meta(&self) -> Meta {
         Meta {
             name: "rust",
-            version: 4,
+            version: 5,
             summary: "Rust: crates, module trees, use paths, and the contracts of axum, actix, reqwest, sqlx and sea-orm",
             extensions: &["rs"],
         }
