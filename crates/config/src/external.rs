@@ -62,7 +62,7 @@ impl External {
                 "`cmd` is empty: it needs the program and its arguments".to_owned(),
             ));
         };
-        let files = glob_set(&setup.files).map_err(|error| invalid(error.in_option("files")))?;
+        let files = glob_set(&setup.files).map_err(|error| invalid(error.at("`files`")))?;
         check_env(&setup.env).map_err(|error| invalid(format!("`env` {error}")))?;
         let options = options_object(&setup.options)
             .map_err(|error| invalid(format!("`options` {error}")))?;

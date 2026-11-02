@@ -7,7 +7,7 @@
 ## 2. The config
 
 - [x] 2.1 `crates/core/src/setup.rs`: `Setup::graphql_endpoints` and `GraphqlEndpoint`
-- [x] 2.2 `crates/config/src/evaluate.rs`: the key, the check that both lists are not empty, and the globs checked with `glob_set` and `GlobError::in_option`
+- [x] 2.2 `crates/config/src/evaluate.rs`: the key, the check that an entry holds a glob, and the globs checked with `glob_set` and `GlobError::at`
 - [x] 2.3 The fixture `full`, the schema test and the reviewed snapshots
 
 ## 3. The index
@@ -42,5 +42,11 @@
 - [x] 8.3 `crates/core/src/query/cross.rs`: `cross_as` without the flag that stopped an unscoped contract after its first role
 - [x] 8.4 `crates/core/src/query/scope.rs`: the globs are compiled on the first ask, and a comment on the memo
 - [x] 8.5 `crates/core/src/setup.rs`: `minItems` 1 on `clients` and `servers`, and the reviewed schema snapshot
-- [x] 8.6 `crates/config/src/external.rs` and `evaluate.rs`: core's `GlobError` is the only glob error, and a bad glob of an external speaks through `in_option`
+- [x] 8.6 `crates/config/src/external.rs` and `evaluate.rs`: core's `GlobError` is the only glob error, and a bad glob of an external speaks through `GlobError::at`
 - [x] 8.7 Tests: the config reaches the index and its snapshot, in the engine and through the binary; the walk by name with endpoints; the glob that matches no file; the `contract` query lists every site
+
+## 9. The second review
+
+- [x] 9.1 `crates/core/src/setup.rs`, `crates/config/src/evaluate.rs`: an endpoint needs one glob in `clients` or `servers`, not one in each, and the reviewed schema snapshot
+- [x] 9.2 `crates/core/src/setup.rs`: `GraphqlEndpoint::sides`, `entry` and `place`, the one home of the names the config check and the coverage lines give to a list
+- [x] 9.3 `crates/core/src/glob.rs`: `GlobError::in_option` becomes `at`, which takes the place as the message shows it; the config, the OpenAPI and the SQL connectors call it

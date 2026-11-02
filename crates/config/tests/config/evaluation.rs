@@ -332,7 +332,7 @@ fn an_external_is_checked_when_it_is_declared() {
     assert!(files.contains("needs `files`"), "{files}");
     let glob = declare("name = \"k\"\ncmd = [\"x\"]\nfiles = [\"[\"]");
     assert!(
-        glob.contains("`external.k.files` has the glob \"[\", which is not valid"),
+        glob.contains("`files` of `k` has the glob \"[\", which is not valid"),
         "{glob}"
     );
     let env = declare("name = \"k\"\ncmd = [\"x\"]\nfiles = [\"*.x\"]\nenv = [\"A=B\"]");
@@ -379,40 +379,53 @@ fn endpoints_enter_the_setup_in_the_order_of_the_file() {
     );
 }
 
-#[gsttt_scenario::scenario("config", "An endpoint needs a client glob and a server glob")]
+#[gsttt_scenario::scenario("config", "An endpoint needs one glob")]
 #[test]
-fn an_endpoint_needs_a_client_glob_and_a_server_glob() {
-    let declare = |fields: &str| failure(&format!("[[graphql_endpoints]]\n{fields}\n"));
-    let no_servers = declare("clients = [\"web/**\"]");
-    assert!(
-        no_servers.starts_with(".gsttt/config.toml:1:")
-            && no_servers.contains("missing field `servers`"),
-        "{no_servers}"
-    );
-    let no_clients = declare("servers = [\"api/**\"]");
-    assert!(
-        no_clients.contains("missing field `clients`"),
-        "{no_clients}"
-    );
-    let empty_clients = declare("clients = []\nservers = [\"api/**\"]");
-    assert!(
-        empty_clients.starts_with(".gsttt/config.toml:1:")
-            && empty_clients.contains("`graphql_endpoints[0].clients` needs at least one glob"),
-        "{empty_clients}"
-    );
-    let empty_servers = declare("clients = [\"web/**\"]\nservers = []");
-    assert!(
-        empty_servers.contains("`graphql_endpoints[0].servers` needs at least one glob"),
-        "{empty_servers}"
-    );
+fn an_endpoint_needs_one_glob() {
+    for fields in [
+        "",
+        "clients = []",
+        "servers = []",
+        "clients = []\nservers = []",
+    ] {
+        let message = failure(&format!("[[graphql_endpoints]]\n{fields}\n"));
+        assert!(
+            message.starts_with(".gsttt/config.toml:1:")
+                && message.contains(
+                    "`graphql_endpoints[0]` needs at least one glob in `clients` or `servers`"
+                ),
+            "{fields:?}: {message}"
+        );
+    }
     // The place in the list names the entry, as the second has no name of its own.
     let second = failure(
-        "[[graphql_endpoints]]\nclients = [\"a\"]\nservers = [\"b\"]\n\n[[graphql_endpoints]]\nclients = []\nservers = [\"b\"]\n",
+        "[[graphql_endpoints]]\nclients = [\"a\"]\n\n[[graphql_endpoints]]\nclients = []\nservers = []\n",
     );
     assert!(
-        second.starts_with(".gsttt/config.toml:5:")
-            && second.contains("`graphql_endpoints[1].clients`"),
+        second.starts_with(".gsttt/config.toml:4:") && second.contains("`graphql_endpoints[1]`"),
         "{second}"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "An endpoint may list one side only")]
+#[test]
+fn an_endpoint_may_list_one_side_only() {
+    let setup = Tree::with_config(
+        "[[graphql_endpoints]]\nclients = [\"web/**\"]\n\n[[graphql_endpoints]]\nclients = []\nservers = [\"api/**\"]\n",
+    )
+    .evaluate()
+    .unwrap();
+    let endpoints: Vec<(&[String], &[String])> = setup
+        .graphql_endpoints
+        .iter()
+        .map(|endpoint| (endpoint.clients.as_slice(), endpoint.servers.as_slice()))
+        .collect();
+    assert_eq!(
+        endpoints,
+        [
+            (["web/**".to_owned()].as_slice(), [].as_slice()),
+            ([].as_slice(), ["api/**".to_owned()].as_slice()),
+        ]
     );
 }
 

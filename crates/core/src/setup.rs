@@ -64,12 +64,32 @@ impl Default for Setup {
 )]
 #[serde(deny_unknown_fields)]
 pub struct GraphqlEndpoint {
-    /// Globs of the files that send operations to the endpoint. At least one.
-    #[schemars(length(min = 1))]
+    /// Globs of the files that send operations to the endpoint. Empty for an API that is called only from outside the repository.
+    #[serde(default)]
     pub clients: Vec<String>,
-    /// Globs of the files that resolve the operations of the endpoint. At least one.
-    #[schemars(length(min = 1))]
+    /// Globs of the files that resolve the operations of the endpoint. Empty for an API that is served outside the repository.
+    #[serde(default)]
     pub servers: Vec<String>,
+}
+
+impl GraphqlEndpoint {
+    /// The two lists with the names the config gives them, clients first.
+    #[must_use]
+    pub fn sides(&self) -> [(&'static str, &[String]); 2] {
+        [("clients", &self.clients), ("servers", &self.servers)]
+    }
+
+    /// Where the entry numbered `position` is in the config, as messages name it: `graphql_endpoints[0]`. An endpoint has no name, so its place in the list is its name.
+    #[must_use]
+    pub fn entry(position: usize) -> String {
+        format!("graphql_endpoints[{position}]")
+    }
+
+    /// Where the list `side` of the entry numbered `position` is in the config, as messages name it: `graphql_endpoints[0].servers`.
+    #[must_use]
+    pub fn place(position: usize, side: &str) -> String {
+        format!("{}.{side}", Self::entry(position))
+    }
 }
 
 /// A module turned on by the config: a `[ts]` table holding `tsconfig = "tsconfig.base.json"`.

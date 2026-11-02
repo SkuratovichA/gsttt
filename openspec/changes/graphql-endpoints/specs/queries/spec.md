@@ -57,6 +57,10 @@ With endpoints in the index, `impact` and `path` SHALL cross a GraphQL contract 
 - **THEN** a change of `api-a/users.ts` reaches `scripts/probe.ts`, and a path from `scripts/probe.ts` reaches the servers of both endpoints and `legacy/users.ts`
 - **AND** a change of `legacy/users.ts` reaches `scripts/probe.ts` and no page of an endpoint, and no path leads from `web-a/page.ts` to `legacy/users.ts`
 
+#### Scenario: An endpoint served outside the repository keeps its callers apart
+- **WHEN** the endpoint `a` has the clients `web-a/**` and no servers, `web-a/page.ts` calls `graphql Query.user`, `api/users.ts` serves it and matches no glob, and `api/users.ts` changes
+- **THEN** impact does not list `web-a/page.ts`
+
 #### Scenario: A file that serves one endpoint and calls another crosses both
 - **WHEN** the first endpoint has the clients `web/**` and the servers `gateway/**` and `schema-a/**`, the second has the clients `gateway/**` and the servers `api/**`, `gateway/graph.ts` serves and calls `graphql Query.user`, `schema-a/user.graphql` declares it, `api/users.ts` serves it, `web/page.ts` calls it, and `entry.ts` imports the gateway
 - **THEN** a path from `entry.ts` reaches `schema-a/user.graphql` and `api/users.ts`, each through the gateway

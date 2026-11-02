@@ -33,16 +33,20 @@ The setup SHALL have a fingerprint computed from its canonical JSON form, so tha
 ## ADDED Requirements
 
 ### Requirement: GraphQL endpoints
-A `[[graphql_endpoints]]` entry SHALL hold `clients` and `servers`, each a non-empty list of globs matched against repository-relative paths. The globs SHALL be checked as the config is read, and a missing key, an empty list or a glob that does not compile SHALL fail with the line of the entry, the place `graphql_endpoints[n].clients` or `graphql_endpoints[n].servers`, and, for a glob, the glob. The endpoints SHALL be kept in the index, so that a query reads them from the index it is asked of.
+A `[[graphql_endpoints]]` entry SHALL hold `clients` and `servers`, each a list of globs matched against repository-relative paths, and at least one glob in the two together. The globs SHALL be checked as the config is read, and an entry with no glob or a glob that does not compile SHALL fail with the line of the entry, its place `graphql_endpoints[n]`, and, for a glob, the list and the glob. The endpoints SHALL be kept in the index, so that a query reads them from the index it is asked of.
 
 #### Scenario: Endpoints enter the setup in the order of the file
 - **WHEN** the config has two `[[graphql_endpoints]]` entries, the first with `servers = ["b/**"]` and `clients = ["a/**", "c/*.ts"]`, the second with `clients = ["d/**"]` and `servers = ["e/**"]`
 - **THEN** the setup lists the first entry and then the second, each with its globs in the order written
 
-#### Scenario: An endpoint needs a client glob and a server glob
-- **WHEN** an entry has no `servers` or no `clients`, or has `clients = []` or `servers = []`
+#### Scenario: An endpoint needs one glob
+- **WHEN** an entry has neither key, or has `clients = []` and `servers = []`
 - **THEN** evaluation fails with a message that starts with `.gsttt/config.toml:` and the line of the entry
-- **AND** it names the missing key or, for an empty list, `graphql_endpoints[0].clients` or `graphql_endpoints[0].servers`, and says it needs at least one glob
+- **AND** it names `graphql_endpoints[0]` and says it needs at least one glob in `clients` or `servers`
+
+#### Scenario: An endpoint may list one side only
+- **WHEN** an entry has `clients = ["web/**"]` and no `servers`
+- **THEN** the setup holds the endpoint with those clients and no servers
 
 #### Scenario: An invalid glob of an endpoint is named
 - **WHEN** the first `[[graphql_endpoints]]` entry has `servers = ["api/**", "["]`

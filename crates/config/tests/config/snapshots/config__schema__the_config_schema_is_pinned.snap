@@ -226,27 +226,23 @@ expression: config_schema(&registry.connectors())
       "type": "object",
       "properties": {
         "clients": {
-          "description": "Globs of the files that send operations to the endpoint. At least one.",
+          "description": "Globs of the files that send operations to the endpoint. Empty for an API that is called only from outside the repository.",
           "type": "array",
           "items": {
             "type": "string"
           },
-          "minItems": 1
+          "default": []
         },
         "servers": {
-          "description": "Globs of the files that resolve the operations of the endpoint. At least one.",
+          "description": "Globs of the files that resolve the operations of the endpoint. Empty for an API that is served outside the repository.",
           "type": "array",
           "items": {
             "type": "string"
           },
-          "minItems": 1
+          "default": []
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "clients",
-        "servers"
-      ]
+      "additionalProperties": false
     }
   }
 }

@@ -338,8 +338,7 @@ fn check_external(
             "`{name}` needs `files`: the globs of the files it reads"
         ));
     }
-    glob_set(&external.files)
-        .map_err(|error| error.in_option(&format!("external.{name}.files")))?;
+    glob_set(&external.files).map_err(|error| error.at(&format!("`files` of `{name}`")))?;
     check_env(&external.env).map_err(|error| format!("`env` of `{name}` {error}"))?;
     external.options = options_object(&external.options)
         .map(|options| sorted(serde_json::Value::Object(options)))
@@ -347,19 +346,17 @@ fn check_external(
     Ok(())
 }
 
-/// What serde cannot check of an endpoint, the `position`th of the file: both sides list a glob at least, and every glob is valid. The message names the entry by its place in the list, because an endpoint has no name.
+/// What serde cannot check of an endpoint, the `position`th of the file: one glob at least in `clients` or `servers`, and every glob valid. A side may be empty, because a repository may hold only the callers of an API or only its servers. The message names the entry by its place in the list, because an endpoint has no name.
 fn check_endpoint(endpoint: &GraphqlEndpoint, position: usize) -> Result<(), String> {
-    for (side, verb, globs) in [
-        ("clients", "call", &endpoint.clients),
-        ("servers", "serve", &endpoint.servers),
-    ] {
-        let option = format!("graphql_endpoints[{position}].{side}");
-        if globs.is_empty() {
-            return Err(format!(
-                "`{option}` needs at least one glob: the files that {verb} the endpoint, relative to the repository root"
-            ));
-        }
-        glob_set(globs).map_err(|error| error.in_option(&option))?;
+    if endpoint.clients.is_empty() && endpoint.servers.is_empty() {
+        return Err(format!(
+            "`{}` needs at least one glob in `clients` or `servers`: the files that call or serve the endpoint, relative to the repository root",
+            GraphqlEndpoint::entry(position)
+        ));
+    }
+    for (side, globs) in endpoint.sides() {
+        let place = format!("`{}`", GraphqlEndpoint::place(position, side));
+        glob_set(globs).map_err(|error| error.at(&place))?;
     }
     Ok(())
 }

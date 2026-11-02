@@ -91,7 +91,16 @@ fn every_table_the_reader_checks_is_closed() {
     assert_eq!(external["additionalProperties"], false);
     let endpoint = followed(&schema, &schema["properties"]["graphql_endpoints"]["items"]);
     assert_eq!(endpoint["additionalProperties"], false);
-    assert_eq!(endpoint["required"], json!(["clients", "servers"]));
+    // Either side may be left out: a repository may hold only the callers of an API, or only its servers.
+    assert_eq!(endpoint["required"], Value::Null);
+    for side in ["clients", "servers"] {
+        assert_eq!(endpoint["properties"][side]["default"], json!([]), "{side}");
+        assert_eq!(
+            endpoint["properties"][side]["minItems"],
+            Value::Null,
+            "{side}"
+        );
+    }
     // The options of an external are a table of named values, which the reader refuses to take as anything else.
     assert_eq!(external["properties"]["options"]["type"], "object");
 }

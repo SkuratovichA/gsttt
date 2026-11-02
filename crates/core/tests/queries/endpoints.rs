@@ -191,6 +191,29 @@ fn without_endpoints_a_graphql_contract_meets_every_site() {
     );
 }
 
+#[scenario(
+    "queries",
+    "An endpoint served outside the repository keeps its callers apart"
+)]
+#[test]
+fn an_endpoint_served_outside_the_repository_keeps_its_callers_apart() {
+    let tree = || {
+        Tree::new()
+            .calls("web-a/page.ts", USER)
+            .serves("api/users.ts", USER)
+    };
+    // Without the endpoint the page and the server meet.
+    assert_eq!(
+        seen(&run(&tree().build(), &["api/users.ts"])),
+        [row("web-a/page.ts", 1, "calls graphql Query.user")]
+    );
+
+    let index = tree().endpoint(&["web-a/**"], &[]).build();
+
+    assert_eq!(seen(&run(&index, &["api/users.ts"])), Vec::new());
+    no_chain(&index, "web-a/page.ts", "api/users.ts");
+}
+
 #[scenario("queries", "Endpoints do not scope other contracts")]
 #[test]
 fn endpoints_do_not_scope_other_contracts() {

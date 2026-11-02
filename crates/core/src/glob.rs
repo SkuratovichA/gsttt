@@ -19,14 +19,14 @@ pub enum GlobError {
 }
 
 impl GlobError {
-    /// The error as the message of an options error about the option `option`, which lists the globs.
+    /// The error as the message of a configuration error about the list of globs at `place`, which the caller words as the message shows it, backticks included.
     #[must_use]
-    pub fn in_option(&self, option: &str) -> String {
+    pub fn at(&self, place: &str) -> String {
         match self {
             Self::Invalid { pattern, source } => {
-                format!("`{option}` has the glob {pattern:?}, which is not valid: {source}")
+                format!("{place} has the glob {pattern:?}, which is not valid: {source}")
             }
-            Self::Build(source) => format!("`{option}` does not build: {source}"),
+            Self::Build(source) => format!("{place} does not build: {source}"),
         }
     }
 }
@@ -80,9 +80,9 @@ mod tests {
     }
 
     #[test]
-    fn the_message_names_the_option_and_the_pattern() {
+    fn the_message_names_the_place_and_the_pattern() {
         let invalid = glob_set(&owned(&["["])).unwrap_err();
-        let message = invalid.in_option("migrations");
+        let message = invalid.at("`migrations`");
         assert!(message.starts_with("`migrations` has the glob \"[\", which is not valid: "));
     }
 }
