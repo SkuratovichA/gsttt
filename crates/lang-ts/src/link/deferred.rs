@@ -1,6 +1,7 @@
-//! The sites the parse left to the link: those whose rule needed the value of a constant that another file declares, and the calls on a client or a router that another file makes, which are read on what that file makes under the name.
+//! The sites the parse left to the link: those whose rule needed the value of a constant that another file declares, and the calls on a client or a router that another file makes, which are read on what that file makes under the name, or on what this file makes with a name that another file declares.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
 
 use gsttt_core::FileId;
 use gsttt_core::connector::{LinkFile, LinkInput, LinkedFact};
@@ -8,7 +9,7 @@ use gsttt_core::fact::{ContractFact, UnresolvedSite};
 use gsttt_core::rules::{CallRule, Outcome, Pack, serves_http};
 
 use super::{Node, through};
-use crate::extra::{ClassRoute, Deferred, DeferredTarget, ExportedMaker, Route, RuleRef, TsExtra};
+use crate::extra::{ClassRoute, Deferred, DeferredTarget, LinkMaker, Route, RuleRef, TsExtra};
 use crate::shape::Shape;
 
 /// What the deferred sites of every file came to, once the constants they name were read and the clients and routers they are called on were found.
@@ -41,13 +42,20 @@ impl Resolved {
 /// Reads the constants that the deferred sites of every file name, finds what the files that make a client or a router a site is called on make of it, and applies the rule of each site again.
 pub(super) fn resolve(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Resolved {
     let mut resolved = Resolved::default();
+    let reader = Reader::new(input);
     for file in input.files() {
         for deferred in &file.extra.deferred {
             let mut shape = deferred.shape.clone();
-            shape.fill(|name| constant(input, file, name));
+            shape.fill(|name| reader.constant(file, name, None));
             let (outcome, served) = match &deferred.target {
                 DeferredTarget::Receiver { host } => {
-                    match on_made(input, packs, file, deferred, host, &shape) {
+                    match on_made(&reader, packs, file, deferred, host, &shape) {
+                        Some(read) => read,
+                        None => continue,
+                    }
+                }
+                DeferredTarget::Made { host } => {
+                    match on_own(&reader, packs, file, deferred, host, &shape) {
                         Some(read) => read,
                         None => continue,
                     }
@@ -86,6 +94,7 @@ pub(super) fn resolve(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Resolve
                     (
                         DeferredTarget::Own
                         | DeferredTarget::Receiver { .. }
+                        | DeferredTarget::Made { .. }
                         | DeferredTarget::Fallback { .. },
                         None,
                     ) => resolved.own.push(LinkedFact::found(file.id, fact)),
@@ -142,36 +151,76 @@ fn maker_of<'a>(
     input: &LinkInput<'a, TsExtra>,
     file: &LinkFile<'_, TsExtra>,
     host: &str,
-) -> Option<(Node, &'a ExportedMaker)> {
+) -> Option<(Node, &'a LinkMaker)> {
     // A member of the variable (`api.v1`) is not the variable.
     let (node, None) = imported(input, file, host)? else {
         return None;
     };
-    let makers = &input.get(node.0)?.extra.makers;
-    let found = makers
-        .binary_search_by(|maker| maker.name.as_str().cmp(&node.1))
+    let maker = made_in(input.get(node.0)?.extra, &node.1)?;
+    Some((node, maker))
+}
+
+/// The variable `name`, which the file that `extra` is of makes with a call that some rule takes a receiver from.
+fn made_in<'a>(extra: &'a TsExtra, name: &str) -> Option<&'a LinkMaker> {
+    let found = extra
+        .makers
+        .binary_search_by(|maker| maker.name.as_str().cmp(name))
         .ok()?;
-    Some((node, makers.get(found)?))
+    extra.makers.get(found)
 }
 
 /// What the rule of a call on `host` makes of the call when `host`, written in `file`, is a client or a router that another file makes: the prefix is the one the rule takes from the call that made it, read against the constants of the file that made it, and the call is a blind spot when a rule that serves routes finds a prefix there that is not text. The node is the router the route is served on, for a rule that serves routes. `None` when `host` is no such variable, or the rule takes no receiver from the call that made it.
 fn on_made(
-    input: &LinkInput<'_, TsExtra>,
+    reader: &Reader<'_, '_>,
     packs: &[Pack],
     file: &LinkFile<'_, TsExtra>,
     deferred: &Deferred,
     host: &str,
     shape: &Shape,
 ) -> Option<(Outcome, Option<Node>)> {
+    let (node, maker) = maker_of(reader.input, file, host)?;
+    let owner = reader.input.get(node.0)?;
+    on_maker(reader, packs, owner, node, maker, deferred, shape)
+}
+
+/// What the rule of a call on `host` makes of the call when `host` is a client or a router that `file` makes itself, with a call that names something another file declares. `None` when the file keeps no such variable, or the rule takes no receiver from the call that made it.
+fn on_own(
+    reader: &Reader<'_, '_>,
+    packs: &[Pack],
+    file: &LinkFile<'_, TsExtra>,
+    deferred: &Deferred,
+    host: &str,
+    shape: &Shape,
+) -> Option<(Outcome, Option<Node>)> {
+    let maker = made_in(file.extra, host)?;
+    on_maker(
+        reader,
+        packs,
+        file,
+        (file.id, host.to_owned()),
+        maker,
+        deferred,
+        shape,
+    )
+}
+
+/// What the rule of `deferred` makes of the call `shape` on the variable `maker` stands for, which `owner` declares as `node`.
+fn on_maker(
+    reader: &Reader<'_, '_>,
+    packs: &[Pack],
+    owner: &LinkFile<'_, TsExtra>,
+    node: Node,
+    maker: &LinkMaker,
+    deferred: &Deferred,
+    shape: &Shape,
+) -> Option<(Outcome, Option<Node>)> {
     let (pack, rule) = call_rule(packs, deferred.rule)?;
     let receiver = rule.receiver.as_ref()?;
-    let (node, maker) = maker_of(input, file, host)?;
     if !receiver.from.matches(&maker.callee) {
         return None;
     }
-    let owner = input.get(node.0)?;
     let mut made = maker.shape.clone();
-    made.fill(|name| constant(input, owner, name));
+    made.fill(|name| reader.constant(owner, name, None));
     let reading = receiver.reading(&made);
     let Ok(prefix) = rule.behind(&reading) else {
         return Some((Outcome::blind(deferred.line, &deferred.what), None));
@@ -232,20 +281,63 @@ fn imported<'n>(
     Some((through(input, file, binding, export, 0)?, path))
 }
 
-/// The text that `name`, written in `file`, stands for in the file it is imported from: `LOGIN_PATH` taken by name, `Env.API_URL` for a member, `ROUTES.users.byId` for a nested property, and `paths.LOGIN_PATH` for a constant taken through a namespace.
-fn constant(
-    input: &LinkInput<'_, TsExtra>,
-    file: &LinkFile<'_, TsExtra>,
-    name: &str,
-) -> Option<String> {
-    let ((defined_in, local), path) = imported(input, file, name)?;
-    let constants = &input.get(defined_in)?.extra.constants;
-    let key = match path {
-        Some(path) => format!("{local}.{path}"),
-        None => local,
-    };
-    let found = constants
-        .binary_search_by(|(known, _)| known.as_str().cmp(&key))
-        .ok()?;
-    constants.get(found).map(|(_, value)| value.clone())
+/// The constants a read is inside of, innermost first, so that a constant which comes back to itself through the names it is built from is cut.
+struct Inside<'r> {
+    constant: &'r Node,
+    outer: Option<&'r Inside<'r>>,
+}
+
+impl Inside<'_> {
+    fn contains(&self, node: &Node) -> bool {
+        self.constant == node || self.outer.is_some_and(|outer| outer.contains(node))
+    }
+}
+
+/// What the link reads of the constants of the files, and the text each constant read as once it was read. A constant that many others name is read once, not once for every way to it: a stored constant reads as text only when everything it names does, so a constant that names one on the way to itself reads as none whichever of them the read starts from, and what a constant reads as does not depend on the constants it is read inside of.
+struct Reader<'a, 'i> {
+    input: &'a LinkInput<'i, TsExtra>,
+    read: RefCell<HashMap<Node, Option<String>>>,
+}
+
+impl<'a, 'i> Reader<'a, 'i> {
+    fn new(input: &'a LinkInput<'i, TsExtra>) -> Self {
+        Self {
+            input,
+            read: RefCell::default(),
+        }
+    }
+
+    /// The text that `name`, written in `file`, stands for in the file it is imported from: `LOGIN_PATH` taken by name, `Env.API_URL` for a member, `ROUTES.users.byId` for a nested property, and `paths.LOGIN_PATH` for a constant taken through a namespace. A constant built from names that other files declare is read in the file that declares it, inside the constants in `inside`, and only when it reads whole: one that comes back to itself has no text.
+    fn constant(
+        &self,
+        file: &LinkFile<'_, TsExtra>,
+        name: &str,
+        inside: Option<&Inside<'_>>,
+    ) -> Option<String> {
+        let ((defined_in, local), path) = imported(self.input, file, name)?;
+        let key = match path {
+            Some(path) => format!("{local}.{path}"),
+            None => local,
+        };
+        let node = (defined_in, key);
+        if inside.is_some_and(|inside| inside.contains(&node)) {
+            return None;
+        }
+        if let Some(read) = self.read.borrow().get(&node) {
+            return read.clone();
+        }
+        let owner = self.input.get(defined_in)?;
+        let constants = &owner.extra.constants;
+        let found = constants
+            .binary_search_by(|(known, _)| known.as_str().cmp(&node.1))
+            .ok()?;
+        let (_, value) = constants.get(found)?;
+        let here = Inside {
+            constant: &node,
+            outer: inside,
+        };
+        let read = value.read(&|name| self.constant(owner, name, Some(&here)));
+        self.read.borrow_mut().insert(node, read.clone());
+        read
+    }
 }

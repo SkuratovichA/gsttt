@@ -16,7 +16,9 @@ use gsttt_core::fact::{
     ContractFact, Embedded, FileTags, Import, ImportFlags, ImportKind, Line, Symbols,
     UnresolvedReason, UnresolvedSite,
 };
-use gsttt_core::rules::{Access, CallRule, Outcome, Pack, Prefix, Reading, Site, serves_http};
+use gsttt_core::rules::{
+    Access, CallRule, Outcome, Pack, Prefix, Reading, Site, ValueExpr, serves_http,
+};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     AccessorProperty, Argument, ArrowFunctionExpression, AssignmentExpression, AssignmentTarget,
@@ -462,6 +464,16 @@ impl<'a> Analyzer<'_, 'a> {
             .then(|| (rule.reading(&maker.shape), host))
     }
 
+    /// Whether the call that made `host` here gives the prefix `rule` takes from it in an argument that holds a name another file declares.
+    fn made_on_names(&self, host: &str, rule: &Prefix) -> bool {
+        let Some(key) = &rule.key else {
+            return false;
+        };
+        self.makers
+            .get(host)
+            .is_some_and(|maker| maker.shape.holds_name(key))
+    }
+
     /// The receiver of `callee` when it is written on a name this file imports from a file of its project: `api` for `api.get`, `store.cache` for `store.cache.get`. A name imported from Node, or from a package that some active pack is for, is a library, and a rule reads a call on it as it is written.
     fn imported_receiver<'c>(&self, callee: &'c str) -> Option<&'c str> {
         let (host, _) = callee.rsplit_once('.')?;
@@ -564,6 +576,20 @@ impl<'a> Analyzer<'_, 'a> {
                             }
                             continue;
                         };
+                        // The prefix is read by the link, which sees the name, so a parse that reads none is no blind spot yet.
+                        if self.made_on_names(host, receiver) {
+                            self.defer(Deferred {
+                                rule: at,
+                                shape: site.clone(),
+                                prefix: None,
+                                line,
+                                what: callee.to_owned(),
+                                target: DeferredTarget::Made {
+                                    host: host.to_owned(),
+                                },
+                            });
+                            continue;
+                        }
                         let Ok(prefix) = rule.behind(&reading) else {
                             self.record(Outcome::blind(line, callee));
                             continue;
@@ -579,7 +605,7 @@ impl<'a> Analyzer<'_, 'a> {
                     line,
                     callee,
                 );
-                if waits_for_link(&outcome, site) {
+                if waits_for_link(&outcome, site, &rule.key, rule.method.as_ref(), None) {
                     let target = match host {
                         Some(host) if serves_http(&rule.kind, rule.role) => {
                             DeferredTarget::Host(host.to_owned())
@@ -901,7 +927,13 @@ impl<'a> Analyzer<'_, 'a> {
                         },
                     };
                     let outcome = rule.apply(&pack.name, &site, prefix.as_deref(), line, &name);
-                    if waits_for_link(&outcome, &site) {
+                    if waits_for_link(
+                        &outcome,
+                        &site,
+                        &rule.key,
+                        rule.method.as_ref(),
+                        rule.prefix.as_ref(),
+                    ) {
                         let class = self.classes.last().and_then(|frame| frame.name.clone());
                         let target = match class {
                             Some(class) if rule.class.is_some() && serves => {
@@ -1087,7 +1119,17 @@ impl<'a> Analyzer<'_, 'a> {
                 import.flags = import.flags.without(ImportFlags::REPLACES);
             }
         }
-        out.extra.makers = makers::exported(&makers, &out.extra.exports);
+        let waited: BTreeSet<&str> = out
+            .extra
+            .deferred
+            .iter()
+            .filter_map(|deferred| match &deferred.target {
+                DeferredTarget::Made { host } => Some(host.as_str()),
+                _ => None,
+            })
+            .collect();
+        let linked = makers::linked(&makers, &out.extra.exports, &waited);
+        out.extra.makers = linked;
         hosts.extend(
             makers
                 .into_iter()
@@ -1915,9 +1957,18 @@ fn decorator_call<'d, 'a>(decorator: &'d Decorator<'a>) -> Option<(String, &'d [
     }
 }
 
-/// Whether the rule that found `outcome` could not read `site` and some of the values it could not read are names that the link may read from the file that declares them.
-fn waits_for_link(outcome: &Outcome, site: &Shape) -> bool {
-    matches!(outcome, Outcome::Blind(_)) && site.has_names()
+/// Whether `site` waits for the link: a source of the `key` of the rule that read it, or of the `prefix` a decorator rule reads at the decorator, holds a name that another file may declare, or the rule found a contract and a source of its `method` holds one. The rule cannot tell what the name stands for here, so the link reads the site again with the names read.
+fn waits_for_link(
+    outcome: &Outcome,
+    site: &Shape,
+    key: &ValueExpr,
+    method: Option<&ValueExpr>,
+    prefix: Option<&ValueExpr>,
+) -> bool {
+    site.holds_name(key)
+        || prefix.is_some_and(|prefix| site.holds_name(prefix))
+        || (matches!(outcome, Outcome::Fact(_))
+            && method.is_some_and(|method| site.holds_name(method)))
 }
 
 /// The modules and controllers that the `controllers` and `imports` arrays of the `@Module` call list, as names: a plain name, or `forwardRef(() => Name)`. A module made by a call (`ConfigModule.forRoot()`), a spread and a member are left out.
@@ -2130,6 +2181,144 @@ method = "$arg2.method|GET"
         );
         assert_eq!(analysis.contracts.len(), 1);
         assert_eq!(analysis.extra.deferred, []);
+    }
+
+    #[test]
+    #[scenario("typescript", "A method that is an imported name defers nothing")]
+    fn a_call_that_no_rule_reads_defers_nothing_for_a_method_that_is_an_imported_name() {
+        let analysis =
+            analysis_of("import { M } from './verbs';\nfetch(compute(), { method: M.post });\n");
+        assert_eq!(analysis.contracts, []);
+        assert_eq!(
+            analysis
+                .unresolved
+                .iter()
+                .map(|site| (site.line, site.detail.as_str()))
+                .collect::<Vec<_>>(),
+            [(2, "fetch")]
+        );
+        assert_eq!(analysis.extra.deferred, []);
+    }
+
+    #[test]
+    fn a_name_that_a_parameter_hides_is_no_import_and_defers_nothing() {
+        let analysis = analysis_of(
+            "import { BASE } from './config';\nfunction list(BASE: string) { fetch(`${BASE}/users`); }\nfetch(`${BASE}/orders`);\nfetch(BASE);\n",
+        );
+        let keys: Vec<String> = analysis
+            .contracts
+            .iter()
+            .map(|fact| format!("{}@{}", fact.key, fact.line))
+            .collect();
+        assert_eq!(keys, ["http * /users@2", "http * /orders@3"]);
+        assert_eq!(analysis.unresolved.len(), 1);
+        assert_eq!(analysis.extra.deferred, []);
+        // The same calls wait for the link when nothing hides the import.
+        let analysis = analysis_of(
+            "import { BASE } from './config';\nfetch(`${BASE}/orders`);\nfetch(BASE);\n",
+        );
+        assert_eq!(analysis.extra.deferred.len(), 2);
+    }
+
+    #[test]
+    fn a_call_that_a_rule_reads_waits_for_the_link_when_its_method_is_an_imported_name() {
+        let analysis =
+            analysis_of("import { M } from './verbs';\nfetch('/orders', { method: M.post });\n");
+        assert_eq!(analysis.contracts, []);
+        assert!(matches!(
+            analysis.extra.deferred.as_slice(),
+            [Deferred {
+                target: DeferredTarget::Own,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn a_call_on_a_client_made_with_an_imported_base_waits_for_the_link_on_that_client() {
+        let analysis = analysis_of(
+            "import axios from 'axios';\nimport { API_URL } from './config';\nconst api = axios.create({ baseURL: API_URL });\napi.get('/users');\nconst plain = axios.create({ baseURL: '/b' });\nplain.get('/orders');\n",
+        );
+        assert!(matches!(
+            analysis.extra.deferred.as_slice(),
+            [Deferred { target: DeferredTarget::Made { host }, .. }] if host == "api"
+        ));
+        assert_eq!(
+            analysis
+                .extra
+                .makers
+                .iter()
+                .map(|maker| maker.name.as_str())
+                .collect::<Vec<_>>(),
+            ["api"]
+        );
+        // The client with a base it can read is read where it is made.
+        assert_eq!(analysis.contracts.len(), 1);
+    }
+
+    #[test]
+    fn a_decorator_whose_own_prefix_is_an_imported_name_waits_for_the_link() {
+        let pack = r#"name = "mounts"
+language = "ts"
+
+[[decorators]]
+decorator = "Route"
+kind = "http"
+role = "serves"
+key = "$member"
+method = "GET"
+prefix = "$arg1"
+"#;
+        let packs = gsttt_config::builtin_packs(&[("mounts", pack)]).unwrap();
+        let analyse = |code: &str| {
+            let allocator = Allocator::default();
+            let parsed = Parser::new(&allocator, code, oxc_span::SourceType::ts()).parse();
+            analyze(&parsed.program, code, &LineIndex::new(code), &packs)
+        };
+        let analysis = analyse(
+            "import { BASE } from './config';\nclass C {\n  @Route(BASE)\n  list() {}\n}\n",
+        );
+        // A prefix that is no text is a blind spot only if the link cannot read it either.
+        assert_eq!(analysis.unresolved, []);
+        assert_eq!(analysis.contracts, []);
+        assert!(matches!(
+            analysis.extra.deferred.as_slice(),
+            [Deferred {
+                rule: RuleRef::Decorator { .. },
+                target: DeferredTarget::Own,
+                ..
+            }]
+        ));
+        // A name that is not an import is a value no link can read.
+        let analysis = analyse("class C {\n  @Route(base())\n  list() {}\n}\n");
+        assert_eq!(analysis.extra.deferred, []);
+        assert_eq!(analysis.unresolved.len(), 1);
+    }
+
+    #[test]
+    fn a_router_made_with_an_imported_name_is_read_by_the_link_and_not_called_blind() {
+        let pack = r#"name = "mounts"
+language = "ts"
+
+[[calls]]
+callee = "app.get"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "GET"
+receiver = { from = "makeApp", key = "$arg1" }
+"#;
+        let packs = gsttt_config::builtin_packs(&[("mounts", pack)]).unwrap();
+        let code = "import { BASE } from './config';\nconst app = makeApp(BASE);\napp.get('/users', handler);\n";
+        let allocator = Allocator::default();
+        let parsed = Parser::new(&allocator, code, oxc_span::SourceType::ts()).parse();
+        let analysis = analyze(&parsed.program, code, &LineIndex::new(code), &packs);
+        // A route served behind a prefix that is not text is a blind spot, unless the link can still read the prefix.
+        assert_eq!(analysis.unresolved, []);
+        assert!(matches!(
+            analysis.extra.deferred.as_slice(),
+            [Deferred { target: DeferredTarget::Made { host }, .. }] if host == "app"
+        ));
     }
 
     #[test]
