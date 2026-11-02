@@ -195,5 +195,7 @@ pub fn build_index(
         coverage,
         info,
         http_prefixes: http_prefixes.to_vec(),
+        // The endpoints are the config's, which the engine sets once the index is built.
+        graphql_endpoints: Vec::new(),
     }
 }

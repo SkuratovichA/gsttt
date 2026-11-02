@@ -2,6 +2,7 @@
 #![cfg(test)]
 
 mod contracts;
+mod endpoints;
 mod http;
 mod impact;
 mod json;

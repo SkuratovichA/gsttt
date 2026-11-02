@@ -28,6 +28,8 @@ pub struct Setup {
     pub externals: Vec<ExternalSetup>,
     /// Path prefixes a gateway or proxy puts in front of routes, like `/api`: with it, a call to `/api/bookings` meets the route `/bookings`.
     pub http_prefixes: Vec<String>,
+    /// The GraphQL endpoints of the repository, which keep the operations of one API from meeting the schema of another that spells the same names.
+    pub graphql_endpoints: Vec<GraphqlEndpoint>,
 }
 
 impl Default for Setup {
@@ -42,8 +44,30 @@ impl Default for Setup {
             max_file_bytes: 2 * 1024 * 1024,
             externals: Vec::new(),
             http_prefixes: Vec::new(),
+            graphql_endpoints: Vec::new(),
         }
     }
+}
+
+/// One GraphQL API, one `[[graphql_endpoints]]` entry of the config: the files that call it and the files that serve it, as globs on repository-relative paths. A schema file that matches either list belongs to the endpoint too.
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct GraphqlEndpoint {
+    /// Globs of the files that send operations to the endpoint. At least one.
+    pub clients: Vec<String>,
+    /// Globs of the files that resolve the operations of the endpoint. At least one.
+    pub servers: Vec<String>,
 }
 
 /// A module turned on by the config: a `[ts]` table holding `tsconfig = "tsconfig.base.json"`.

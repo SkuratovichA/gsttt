@@ -556,7 +556,7 @@ struct Step<'w, 'a> {
     crossed: &'w mut Crossed,
     layer: Layer,
     /// The fewest hops through code of the parts of the frontier that leave each contract, when they differ.
-    leavers: Leavers,
+    leavers: Leavers<'a>,
     /// The hops through code of the parts the step reaches now: one more than the part they come from after a hop through code, as many after a hop across a contract.
     hops: u32,
 }
@@ -567,7 +567,7 @@ impl<'w, 'a> Step<'w, 'a> {
             walk,
             crossed,
             layer: Layer::default(),
-            leavers: Leavers::new(Direction::ToCallers),
+            leavers: Leavers::new(Direction::ToCallers, walk.crossing),
             hops: 0,
         }
     }
@@ -593,9 +593,14 @@ impl<'w, 'a> Step<'w, 'a> {
         if !self.leavers.start(codes) {
             return;
         }
-        for leave in files.iter().flat_map(|(_, leaving)| leaving) {
-            for &(role, code) in &leave.roles {
-                self.leavers.add(leave.contract, role, code);
+        for (fronts, leaving) in files {
+            let Some(file) = fronts.first().map(|front| front.unit.file) else {
+                continue;
+            };
+            for leave in leaving {
+                for &(role, code) in &leave.roles {
+                    self.leavers.add(file, leave.contract, role, code);
+                }
             }
         }
     }
@@ -655,7 +660,7 @@ impl<'w, 'a> Step<'w, 'a> {
             let crossed = self
                 .walk
                 .crossing
-                .cross_as(self.crossed, roles, leave.contract);
+                .cross_as(self.crossed, file, roles, leave.contract);
             self.arrive(file, leave.contract, first.code, &crossed);
         }
     }
@@ -1095,7 +1100,7 @@ impl<'w, 'a> Step<'w, 'a> {
     ) {
         for &(meeting, site) in sites {
             let file = site.file;
-            self.hops = self.leavers.arrival(contract, site.role, code);
+            self.hops = self.leavers.arrival(contract, site, code);
             let found = match self.walk.graph.symbols(file) {
                 Some(symbols) => self.place(file, symbols, site.line),
                 None => self.unit(file, Part::Whole),

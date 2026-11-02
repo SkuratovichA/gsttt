@@ -14,19 +14,19 @@ use serde_json::{json, to_value};
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];
 
-fn request(files: &[&str]) -> ImpactRequest {
+pub(super) fn request(files: &[&str]) -> ImpactRequest {
     ImpactRequest {
         files: files.iter().map(|path| (*path).to_owned()).collect(),
         ..ImpactRequest::default()
     }
 }
 
-fn run(index: &Index, files: &[&str]) -> Impact {
+pub(super) fn run(index: &Index, files: &[&str]) -> Impact {
     impact(index, Freshness::Fresh, &request(files))
 }
 
 /// Path, distance and reason of each entry, which is what a reader of the answer sees.
-fn rows(list: &[Affected]) -> Vec<(&str, u32, String)> {
+pub(super) fn rows(list: &[Affected]) -> Vec<(&str, u32, String)> {
     list.iter()
         .map(|entry| {
             (

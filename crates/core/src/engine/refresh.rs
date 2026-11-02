@@ -297,6 +297,9 @@ impl<'a> Engine<'a> {
             },
         };
         let mut index = build_index(repo, &output, modules, &self.setup.http_prefixes, info);
+        index
+            .graphql_endpoints
+            .clone_from(&self.setup.graphql_endpoints);
         index.info.timings.total = micros(started.elapsed());
         index.coverage.problems.extend(problems);
         index
