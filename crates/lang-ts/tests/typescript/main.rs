@@ -1,6 +1,7 @@
 //! Scenario tests of the TypeScript connector. Each one runs the whole pipeline on a small tree under `tests/fixtures/` and snapshots the output, so what the connector reads is reviewed like code.
 
 mod arrays;
+mod chains;
 mod constants;
 mod data;
 mod exports;

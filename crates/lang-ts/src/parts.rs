@@ -34,6 +34,17 @@ pub(crate) enum Reads {
     All,
 }
 
+impl Reads {
+    /// Whether `read`, what each piece reads as, is enough for the whole to read.
+    fn enough(self, read: &[Option<String>]) -> bool {
+        match self {
+            Self::Always => true,
+            Self::Any => read.iter().any(Option::is_some),
+            Self::All => read.iter().all(Option::is_some),
+        }
+    }
+}
+
 /// Why an expression is read, which decides what it does with a piece it cannot read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mode {
@@ -140,12 +151,7 @@ impl Part {
                     }
                     read.push(piece);
                 }
-                let enough = match reads {
-                    Reads::Always => true,
-                    Reads::Any => read.iter().any(Option::is_some),
-                    Reads::All => read.iter().all(Option::is_some),
-                };
-                enough.then(|| {
+                reads.enough(&read).then(|| {
                     read.iter()
                         .map(|text| text.as_deref().unwrap_or(COMPUTED))
                         .collect()
@@ -158,7 +164,32 @@ impl Part {
     pub(crate) fn lax(self) -> Option<String> {
         match self {
             Self::Text(text) => Some(text),
-            other => other.read(&|_| None),
+            Self::Computed | Self::Name(_) => None,
+            Self::Cat(reads, parts) => {
+                // The pieces are moved into the text of the first, so that a sum written `a + b + c + …`, which nests to the left, copies each byte once and not once for each level above it.
+                let mut read = Vec::with_capacity(parts.len());
+                let mut length = 0;
+                for part in parts {
+                    let piece = part.lax();
+                    length += piece.as_deref().map_or(COMPUTED.len(), str::len);
+                    if length > MAX_COMPOSED {
+                        return None;
+                    }
+                    read.push(piece);
+                }
+                if !reads.enough(&read) {
+                    return None;
+                }
+                let mut pieces = read.into_iter();
+                let mut text = pieces
+                    .next()
+                    .flatten()
+                    .unwrap_or_else(|| COMPUTED.to_owned());
+                for piece in pieces {
+                    text.push_str(piece.as_deref().unwrap_or(COMPUTED));
+                }
+                Some(text)
+            }
         }
     }
 }

@@ -590,7 +590,7 @@ fn parse(
                 path: file.path,
                 text: &text,
             };
-            contain(|| project.parse(&source)).unwrap_or_else(|message| {
+            contain_reading(text.len(), || project.parse(&source)).unwrap_or_else(|message| {
                 (
                     FileFacts::failed(ParseFailure::Panicked { message }),
                     Vec::new(),
@@ -691,14 +691,15 @@ fn read_embedded(
                     facts: Vec::new(),
                 };
             };
-            let facts = contain(|| reader.parse_embedded(document)).unwrap_or_else(|message| {
-                let message = format!(
-                    "{} document on line {}: {message}",
-                    document.lang, document.line
-                );
-                problems.push(problem(reader.as_ref(), Call::ParseEmbedded, message));
-                Vec::new()
-            });
+            let facts = contain_reading(document.text.len(), || reader.parse_embedded(document))
+                .unwrap_or_else(|message| {
+                    let message = format!(
+                        "{} document on line {}: {message}",
+                        document.lang, document.line
+                    );
+                    problems.push(problem(reader.as_ref(), Call::ParseEmbedded, message));
+                    Vec::new()
+                });
             // A reader counts lines from the first line of its document, the host file from its own.
             let facts = facts
                 .into_iter()
@@ -767,6 +768,22 @@ fn contain<T>(call: impl FnOnce() -> T) -> Result<T, String> {
             .or_else(|| payload.downcast_ref::<String>().cloned())
             .unwrap_or_else(|| "a panic without a message".to_owned())
     })
+}
+
+/// What a parse needs besides the nesting of its text.
+const BASE_STACK: usize = 1024 * 1024;
+
+/// Stack a parse can touch per byte of its text, at the deepest form a parser recurses on, one level per byte. Measured on the TypeScript, Python and Rust connectors.
+const STACK_PER_BYTE: usize = if cfg!(debug_assertions) {
+    6 * 1024
+} else {
+    3 * 1024
+};
+
+/// Runs a connector call that reads `len` bytes of text like [`contain`], on a stack that the nesting of that text cannot exhaust: a stack overflow aborts the process and no `catch_unwind` sees it. The stack grows only when the one at hand cannot hold the text, and only the pages a parse touches cost memory.
+fn contain_reading<T>(len: usize, call: impl FnOnce() -> T) -> Result<T, String> {
+    let needed = BASE_STACK.saturating_add(len.saturating_mul(STACK_PER_BYTE));
+    contain(|| stacker::maybe_grow(needed, needed, call))
 }
 
 pub(super) fn display_root(root: &str) -> &str {

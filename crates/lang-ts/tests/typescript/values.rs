@@ -446,3 +446,35 @@ fn a_method_that_is_an_imported_name_is_read_by_the_link() -> Result<(), Box<dyn
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+/// The number of operands in the sums of `deep_sums`: far more than a worker's stack holds levels of a left-nested `+`.
+const DEEP_SUM: usize = 5_000;
+
+#[scenario("indexing", "A deep value in a fact position survives the link")]
+#[test]
+fn a_deep_sum_in_a_url_is_linked_and_read_back_whole() -> Result<(), Box<dyn Error>> {
+    let tree = tempfile::tempdir()?;
+    fs::write(tree.path().join("package.json"), r#"{ "name": "deep" }"#)?;
+    fs::write(tree.path().join("i.ts"), "export const I = '/api';\n")?;
+    let with_name = format!("I{}", " + '/x'".repeat(DEEP_SUM));
+    let without = format!("'/y'{}", " + '/y'".repeat(DEEP_SUM));
+    fs::write(
+        tree.path().join("use.ts"),
+        format!("import {{ I }} from './i';\nfetch({with_name});\nfetch({without});\n"),
+    )?;
+    let json = run_tree_within(tree.path(), CYCLE_LIMIT)?;
+    let own = contracts(&json, "use.ts");
+    assert_eq!(
+        own,
+        [format!("calls http * {} @3", "/y".repeat(DEEP_SUM + 1))]
+    );
+    assert_eq!(
+        linked(&json),
+        [format!(
+            "calls http * /api{} @2 in use.ts",
+            "/x".repeat(DEEP_SUM)
+        )]
+    );
+    assert_eq!(problems(&json), NOTHING);
+    Ok(())
+}
