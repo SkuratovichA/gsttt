@@ -58,6 +58,14 @@ expression: config_schema(&registry.connectors())
       },
       "default": []
     },
+    "graphql_endpoints": {
+      "description": "The GraphQL APIs of the repository, each with the files that call it and the files that serve it. A GraphQL operation, field or type is then followed only between files of one endpoint, so that two APIs which spell the same names are not taken for one.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/GraphqlEndpoint"
+      },
+      "default": []
+    },
     "ts": {
       "$ref": "#/definitions/TsOptions"
     },
@@ -211,6 +219,31 @@ expression: config_schema(&registry.connectors())
           "type": "string",
           "const": "calls"
         }
+      ]
+    },
+    "GraphqlEndpoint": {
+      "description": "One GraphQL API, one `[[graphql_endpoints]]` entry of the config: the files that call it and the files that serve it, as globs on repository-relative paths. A schema file that matches either list belongs to the endpoint too.",
+      "type": "object",
+      "properties": {
+        "clients": {
+          "description": "Globs of the files that send operations to the endpoint. At least one.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "servers": {
+          "description": "Globs of the files that resolve the operations of the endpoint. At least one.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "clients",
+        "servers"
       ]
     }
   }

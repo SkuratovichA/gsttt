@@ -71,6 +71,7 @@ fn the_schema_closes_the_top_level() {
             "disable",
             "disable_packs",
             "external",
+            "graphql_endpoints",
             "ts",
             "python",
             "rust",
@@ -88,6 +89,9 @@ fn every_table_the_reader_checks_is_closed() {
     }
     let external = followed(&schema, &schema["properties"]["external"]["items"]);
     assert_eq!(external["additionalProperties"], false);
+    let endpoint = followed(&schema, &schema["properties"]["graphql_endpoints"]["items"]);
+    assert_eq!(endpoint["additionalProperties"], false);
+    assert_eq!(endpoint["required"], json!(["clients", "servers"]));
     // The options of an external are a table of named values, which the reader refuses to take as anything else.
     assert_eq!(external["properties"]["options"]["type"], "object");
 }
@@ -137,7 +141,14 @@ fn each_type_is_described_once_under_definitions() {
         .collect();
     assert_eq!(
         described,
-        BTreeSet::from(["ExternalSetup", "NoOptions", "Provide", "Role", "TsOptions"])
+        BTreeSet::from([
+            "ExternalSetup",
+            "GraphqlEndpoint",
+            "NoOptions",
+            "Provide",
+            "Role",
+            "TsOptions"
+        ])
     );
     // `python`, `rust` and `openapi` have the same options, so they point at the same description.
     let reference = json!({ "$ref": "#/definitions/NoOptions" });
