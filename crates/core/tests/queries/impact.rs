@@ -14,7 +14,16 @@ use serde_json::{json, to_value};
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];
 
+/// A request that walks to the end, because most tests of reasons and distances follow a whole chain. A test of the default asks with `by_default`.
 pub(super) fn request(files: &[&str]) -> ImpactRequest {
+    ImpactRequest {
+        depth: Some(u32::MAX),
+        ..by_default(files)
+    }
+}
+
+/// A request that gives no depth, so the walk takes the one hop through code it takes by default.
+fn by_default(files: &[&str]) -> ImpactRequest {
     ImpactRequest {
         files: files.iter().map(|path| (*path).to_owned()).collect(),
         ..ImpactRequest::default()
@@ -60,7 +69,7 @@ fn bookings() -> Tree {
 #[scenario("queries", "A change reaches importers of importers")]
 #[test]
 fn a_change_reaches_importers_of_importers() {
-    let answer = run(&chain(), &["a.ts"]);
+    let answer = impact(&chain(), Freshness::Fresh, &limited_to(2, &["a.ts"]));
 
     assert_eq!(
         rows(&answer.affected),
@@ -117,6 +126,41 @@ fn a_use_beside_the_mod_declaration_carries_impact() {
     );
 }
 
+#[scenario("queries", "A walk takes one hop unless a depth is given")]
+#[test]
+fn a_walk_takes_one_hop_unless_a_depth_is_given() {
+    let answer = impact(&chain(), Freshness::Fresh, &by_default(&["a.ts"]));
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(answer.depth, 1);
+    let text = answer.to_string();
+    assert!(
+        text.starts_with("impact of a.ts, within 1 hop through code\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "note: the walk stopped at the depth with callers left to follow; ask about a caller, or with a larger depth, to go on\n"
+        ),
+        "{text}"
+    );
+}
+
+#[scenario("queries", "A large depth runs the walk to the end")]
+#[test]
+fn a_large_depth_runs_the_walk_to_the_end() {
+    let index = Tree::new()
+        .imports("d.ts", "c.ts")
+        .imports("c.ts", "b.ts")
+        .imports("b.ts", "a.ts")
+        .build();
+
+    let answer = impact(&index, Freshness::Fresh, &limited_to(u32::MAX, &["a.ts"]));
+
+    assert_eq!(paths(&answer.affected), ["b.ts", "c.ts", "d.ts"]);
+    assert!(!answer.to_string().contains("the walk stopped"));
+}
+
 #[scenario("queries", "Depth limits the walk")]
 #[test]
 fn depth_limits_the_walk() {
@@ -128,11 +172,11 @@ fn depth_limits_the_walk() {
     let answer = impact(&chain(), Freshness::Fresh, &limited);
 
     assert_eq!(paths(&answer.affected), ["b.ts"]);
-    assert_eq!(answer.depth, Some(1));
+    assert_eq!(answer.depth, 1);
     assert!(
         answer
             .to_string()
-            .contains("impact of a.ts, within 1 hop through code; tests at any depth\n")
+            .contains("impact of a.ts, within 1 hop through code\n")
     );
 }
 
@@ -157,6 +201,11 @@ fn tested_chain() -> Tree {
         .tag("c.test.ts", FileTags::TEST)
 }
 
+/// Asks about `files` with exactly `depth` hops through code, for a test of a scenario that names its depth.
+fn within(depth: u32, index: &Index, files: &[&str]) -> Impact {
+    impact(index, Freshness::Fresh, &limited_to(depth, files))
+}
+
 fn limited_to(depth: u32, files: &[&str]) -> ImpactRequest {
     ImpactRequest {
         depth: Some(depth),
@@ -164,25 +213,50 @@ fn limited_to(depth: u32, files: &[&str]) -> ImpactRequest {
     }
 }
 
-#[scenario("queries", "A depth on a walk by files leaves the tests whole")]
+#[scenario("queries", "A test past the depth of a walk by files is counted")]
 #[test]
-fn a_depth_on_a_walk_by_files_leaves_the_tests_whole() {
+fn a_test_past_the_depth_of_a_walk_by_files_is_counted() {
     let index = tested_chain().build();
 
     let answer = impact(&index, Freshness::Fresh, &limited_to(1, &["a.ts"]));
 
     assert_eq!(paths(&answer.affected), ["b.ts"]);
-    assert_eq!(rows(&answer.tests), [row("c.test.ts", 3, "imports c.ts")]);
-    assert_eq!(answer.depth, Some(1));
+    assert_eq!(paths(&answer.tests), NONE);
+    assert_eq!(answer.tests_left_out, 1);
+    assert_eq!(answer.depth, 1);
     let text = answer.to_string();
-    assert!(
-        text.starts_with("impact of a.ts, within 1 hop through code; tests at any depth\n"),
-        "{text}"
-    );
-    assert!(
-        text.contains("c.test.ts  distance 3  imports c.ts"),
-        "{text}"
-    );
+    assert!(text.contains("1 test file left out\n"), "{text}");
+    assert!(!text.contains("c.test.ts"), "{text}");
+}
+
+#[scenario("queries", "A depth that reaches a test lists it")]
+#[test]
+fn a_depth_that_reaches_a_test_lists_it() {
+    let index = tested_chain().build();
+
+    let answer = impact(&index, Freshness::Fresh, &limited_to(3, &["a.ts"]));
+
+    assert_eq!(paths(&answer.affected), ["b.ts", "c.ts"]);
+    assert_eq!(rows(&answer.tests), [row("c.test.ts", 3, "imports c.ts")]);
+    assert_eq!(answer.tests_left_out, 0);
+}
+
+#[scenario("queries", "A test the depth reaches is listed beside one past it")]
+#[test]
+fn a_test_the_depth_reaches_is_listed_beside_one_past_it() {
+    let index = Tree::new()
+        .imports("a.test.ts", "a.ts")
+        .imports("b.ts", "a.ts")
+        .imports("b.test.ts", "b.ts")
+        .tag("a.test.ts", FileTags::TEST)
+        .tag("b.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = impact(&index, Freshness::Fresh, &by_default(&["a.ts"]));
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(paths(&answer.tests), ["a.test.ts"]);
+    assert_eq!(answer.tests_left_out, 1);
 }
 
 #[scenario("queries", "Tests left out past the depth are counted")]
@@ -219,13 +293,14 @@ fn the_footer_covers_the_tests_past_the_depth() {
 }
 
 #[test]
-fn a_depth_that_reaches_no_file_still_lists_the_tests_past_it() {
+fn a_depth_that_reaches_no_file_still_counts_the_tests_past_it() {
     let index = tested_chain().build();
 
     let answer = impact(&index, Freshness::Fresh, &limited_to(0, &["a.ts"]));
 
     assert_eq!(paths(&answer.affected), NONE);
-    assert_eq!(rows(&answer.tests), [row("c.test.ts", 3, "imports c.ts")]);
+    assert_eq!(paths(&answer.tests), NONE);
+    assert_eq!(answer.tests_left_out, 1);
     let text = answer.to_string();
     assert!(!text.contains("nothing is affected"), "{text}");
 }
@@ -256,7 +331,7 @@ fn an_answer_with_tests_past_the_depth_looks_for_no_misses() {
         "{:?}",
         looked.possible_misses
     );
-    assert_eq!(paths(&skipped.tests), ["src/a.test.ts"]);
+    assert_eq!(skipped.tests_left_out, 1);
     assert_eq!(skipped.possible_misses, Vec::new());
 }
 
@@ -923,7 +998,7 @@ fn the_reason_comes_from_the_file_with_the_smallest_path() {
         .build();
 
     // Asked in the opposite order, so that the order of the request is no part of the answer.
-    let answer = run(&index, &["b.ts", "a.ts"]);
+    let answer = within(2, &index, &["b.ts", "a.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -1136,7 +1211,7 @@ fn a_deleted_file_the_index_still_holds_is_traced() {
         },
         &ImpactRequest {
             deleted: vec!["a.ts".to_owned()],
-            ..ImpactRequest::default()
+            ..request(&[])
         },
     );
 
@@ -1191,25 +1266,32 @@ fn an_absent_path_is_listed_once_in_the_order_it_was_first_asked() {
 fn a_request_with_no_file_still_answers() {
     let answer = run(&chain(), &[]);
 
-    assert!(answer.to_string().starts_with("impact of no files\n"));
+    assert!(
+        answer
+            .to_string()
+            .starts_with("impact of no files, within 4,294,967,295 hops through code\n")
+    );
 }
 
 #[test]
 fn the_text_names_the_change_its_reach_and_the_footer() {
     let index = chain();
 
-    let text = run(&index, &["a.ts"]).to_string();
+    let text = impact(&index, Freshness::Fresh, &limited_to(2, &["a.ts"])).to_string();
 
     assert_eq!(
         text,
-        "impact of a.ts\n\
+        "impact of a.ts, within 2 hops through code\n\
          affected files (2):\n\
          b.ts  distance 1  imports a.ts\n\
          c.ts  distance 2  imports b.ts\n\
          coverage: ts read 3 of 3 files, 100% of imports resolved\n\
          fresh, 0 files dirty"
     );
-    assert_eq!(run(&index, &["a.ts"]).text(Entries::All), text);
+    assert_eq!(
+        impact(&index, Freshness::Fresh, &limited_to(2, &["a.ts"])).text(Entries::All),
+        text
+    );
 }
 
 fn reverse_distances(edges: &[(usize, usize)], size: usize, changed: usize) -> Vec<Option<u32>> {
@@ -1578,50 +1660,60 @@ fn with_tests(tree: Tree, tests: &[bool]) -> Index {
         .build()
 }
 
-/// That the depth leaves the tests of an answer about `names` in `files` whole. `plain` and `tagged` are one tree, the second with the files `is_test` picks tagged as tests. What a walk with no limit reaches in `plain`, where nothing is set apart, is the oracle: the tests of `tagged` at every depth are the entries of it whose path `is_test`, with the distance, reason, callers and load of that walk, the count of those left out is their number, and a larger depth drops no affected file.
-pub(super) fn depth_leaves_the_tests_whole(
+/// That the depth bounds the tests of an answer about `names` in `files` as it bounds the other files. `plain` and `tagged` are one tree, the second with the files `is_test` picks tagged as tests. What a walk of `plain`, where nothing is set apart, reaches within the depth is the oracle: the tests of `tagged` are the entries of the walk with no limit whose path `is_test` and which that walk reaches within the depth, with the distance, reason, callers and load of the walk with no limit, the others are counted as left out, and a larger depth drops no affected file.
+pub(super) fn depth_bounds_the_tests(
     plain: &Index,
     tagged: &Index,
     files: &[&str],
     names: &[&str],
     is_test: impl Fn(&str) -> bool,
 ) -> Result<(), TestCaseError> {
-    let ask = |index: &Index, depth: Option<u32>, no_tests: bool| {
+    let ask = |index: &Index, depth: u32, no_tests: bool| {
         let request = ImpactRequest {
             names: names.iter().map(|&name| name.to_owned()).collect(),
-            depth,
+            depth: Some(depth),
             no_tests,
             ..request(files)
         };
         impact(index, Freshness::Fresh, &request)
     };
-    // A walk by name takes one hop through code when no depth is asked, and a walk by files takes them all.
-    let unlimited = if names.is_empty() {
-        None
-    } else {
-        Some(u32::MAX)
-    };
-    let whole = ask(plain, unlimited, false);
-    let (expected_tests, expected_affected): (Vec<Affected>, Vec<Affected>) = whole
+    let whole = ask(plain, u32::MAX, false);
+    let all_tests: Vec<Affected> = whole
         .affected
         .iter()
+        .filter(|entry| is_test(&entry.path))
         .cloned()
-        .partition(|entry| is_test(&entry.path));
+        .collect();
 
     let mut smaller: BTreeSet<String> = BTreeSet::new();
-    for depth in [Some(0), Some(1), Some(2), Some(3), None] {
+    for depth in [0, 1, 2, 3, u32::MAX] {
+        let within: BTreeSet<String> = ask(plain, depth, false)
+            .affected
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect();
+        let expected_tests: Vec<Affected> = all_tests
+            .iter()
+            .filter(|entry| within.contains(&entry.path))
+            .cloned()
+            .collect();
         let answer = ask(tagged, depth, false);
-        prop_assert_eq!(&answer.tests, &expected_tests, "depth {:?}", depth);
-        prop_assert_eq!(answer.tests_left_out, 0);
-        let left_out = ask(tagged, depth, true);
-        prop_assert_eq!(left_out.tests, Vec::new(), "depth {:?}", depth);
+        prop_assert_eq!(&answer.tests, &expected_tests, "depth {}", depth);
         prop_assert_eq!(
-            left_out.tests_left_out as usize,
-            expected_tests.len(),
-            "depth {:?}",
+            answer.tests_left_out as usize,
+            all_tests.len() - expected_tests.len(),
+            "depth {}",
             depth
         );
-        prop_assert_eq!(&left_out.affected, &answer.affected, "depth {:?}", depth);
+        let left_out = ask(tagged, depth, true);
+        prop_assert_eq!(left_out.tests, Vec::new(), "depth {}", depth);
+        prop_assert_eq!(
+            left_out.tests_left_out as usize,
+            all_tests.len(),
+            "depth {}",
+            depth
+        );
+        prop_assert_eq!(&left_out.affected, &answer.affected, "depth {}", depth);
 
         let affected: BTreeSet<String> = answer
             .affected
@@ -1630,18 +1722,14 @@ pub(super) fn depth_leaves_the_tests_whole(
             .collect();
         prop_assert!(
             answer.affected.iter().all(|entry| !is_test(&entry.path)),
-            "depth {depth:?} lists a test among the affected files"
+            "depth {depth} lists a test among the affected files"
         );
-        if depth.is_some() {
-            prop_assert!(
-                smaller.is_subset(&affected),
-                "depth {depth:?} dropped {:?}",
-                smaller.difference(&affected).collect::<Vec<_>>()
-            );
-            smaller = affected;
-        } else if names.is_empty() {
-            prop_assert_eq!(&answer.affected, &expected_affected);
-        }
+        prop_assert!(
+            smaller.is_subset(&affected),
+            "depth {depth} dropped {:?}",
+            smaller.difference(&affected).collect::<Vec<_>>()
+        );
+        smaller = affected;
     }
     Ok(())
 }
@@ -1649,9 +1737,9 @@ pub(super) fn depth_leaves_the_tests_whole(
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
-    /// The depth bounds the affected files and never the tests, on a tree where imports name what they take and on one where they take everything, asked about the files and about a name.
+    /// The depth bounds the tests as it bounds the other files, on a tree where imports name what they take and on one where they take everything, asked about the files and about a name.
     #[test]
-    fn the_depth_never_bounds_the_tests(
+    fn the_depth_bounds_the_tests_as_the_other_files(
         case in case(),
         tests in prop::collection::vec(any::<bool>(), FILES),
     ) {
@@ -1662,8 +1750,8 @@ proptest! {
             (case.by_name(), with_tests(case.named_files(), &tests)),
         ];
         for (plain, tagged) in &trees {
-            depth_leaves_the_tests_whole(plain, tagged, &[&changed], &[], is_test)?;
-            depth_leaves_the_tests_whole(plain, tagged, &[&changed], &["a"], is_test)?;
+            depth_bounds_the_tests(plain, tagged, &[&changed], &[], is_test)?;
+            depth_bounds_the_tests(plain, tagged, &[&changed], &["a"], is_test)?;
         }
     }
 }
@@ -1711,7 +1799,7 @@ fn a_file_that_uses_an_affected_name_is_affected_in_all_its_names() {
         .imports_names("page.ts", "index.ts", &["fromB"])
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(3, &index, &["a.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -1733,7 +1821,7 @@ fn a_name_the_barrel_does_not_export_is_affected() {
         .imports_names("old.ts", "index.ts", &["gone"])
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(2, &index, &["a.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -1765,7 +1853,7 @@ fn a_re_export_of_a_name_the_barrel_does_not_export_is_affected() {
         .imports_names("other.ts", "outer.ts", &["stable"])
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(3, &index, &["a.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -1792,7 +1880,7 @@ fn two_sources() -> Tree {
 #[scenario("queries", "A barrel passes on only what it re-exports")]
 #[test]
 fn a_barrel_passes_on_only_what_it_re_exports() {
-    let answer = run(&two_sources().build(), &["a.ts"]);
+    let answer = within(2, &two_sources().build(), &["a.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -1816,7 +1904,7 @@ fn a_named_re_export_passes_on_its_alias() {
         .imports_names("y.ts", "index.ts", &["other"])
         .build();
 
-    let answer = run(&index, &["foo.ts"]);
+    let answer = within(2, &index, &["foo.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -1847,7 +1935,7 @@ fn chained_barrels_pass_names_on() {
         .imports_names("other.ts", "index.ts", &["fromB"])
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(3, &index, &["a.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -1870,7 +1958,7 @@ fn a_namespace_import_takes_every_name() {
         .imports_for_effect("side.ts", "index.ts")
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(2, &index, &["a.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -1890,7 +1978,7 @@ fn unknown_exports_keep_every_importer() {
         .imports_names("page.ts", "index.ts", &["thing"])
         .build();
 
-    let answer = run(&index, &["legacy.js"]);
+    let answer = within(2, &index, &["legacy.js"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -2018,7 +2106,7 @@ fn a_file_that_exports_nothing_more_still_reaches_the_importers_of_its_barrel() 
         .imports_names("page.ts", "index.ts", &["foo"])
         .build();
 
-    let answer = run(&index, &["only.ts"]);
+    let answer = within(2, &index, &["only.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -2042,7 +2130,7 @@ fn a_file_left_with_only_a_default_export_still_reaches_the_importers_of_its_bar
         .imports_names("page.ts", "index.ts", &["foo"])
         .build();
 
-    let answer = run(&index, &["only.ts"]);
+    let answer = within(2, &index, &["only.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -2068,7 +2156,7 @@ fn a_star_barrel_behind_a_star_barrel_reaches_the_importers_of_both() {
         .imports_names("page.ts", "index.ts", &["foo"])
         .build();
 
-    let answer = run(&index, &["only.ts"]);
+    let answer = within(3, &index, &["only.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -2120,7 +2208,7 @@ fn a_star_re_export_of_a_file_with_unknown_exports_is_followed_at_file_level() {
         .imports("app.py", "index.py")
         .build();
 
-    let by_name = run(&star, &["lib.py"]);
+    let by_name = within(2, &star, &["lib.py"]);
 
     assert_eq!(
         rows(&by_name.affected),
@@ -2129,10 +2217,10 @@ fn a_star_re_export_of_a_file_with_unknown_exports_is_followed_at_file_level() {
             row("app.py", 2, "imports index.py"),
         ]
     );
-    assert_eq!(by_name.affected, run(&plain, &["lib.py"]).affected);
+    assert_eq!(by_name.affected, within(2, &plain, &["lib.py"]).affected);
     assert_eq!(
         to_value(&by_name.affected).unwrap(),
-        to_value(&run(&plain, &["lib.py"]).affected).unwrap()
+        to_value(&within(2, &plain, &["lib.py"]).affected).unwrap()
     );
 }
 
@@ -2153,7 +2241,7 @@ fn a_named_re_export_of_a_file_with_unknown_exports_is_followed_at_file_level() 
         .imports_names("page.ts", "index.ts", &["thing"])
         .build();
 
-    let by_name = run(&named, &["legacy.js"]);
+    let by_name = within(2, &named, &["legacy.js"]);
 
     assert_eq!(
         rows(&by_name.affected),
@@ -2162,10 +2250,10 @@ fn a_named_re_export_of_a_file_with_unknown_exports_is_followed_at_file_level() 
             row("page.ts", 2, "imports thing from index.ts"),
         ]
     );
-    assert_eq!(by_name.affected, run(&plain, &["legacy.js"]).affected);
+    assert_eq!(by_name.affected, within(2, &plain, &["legacy.js"]).affected);
     assert_eq!(
         to_value(&by_name.affected).unwrap(),
-        to_value(&run(&plain, &["legacy.js"]).affected).unwrap()
+        to_value(&within(2, &plain, &["legacy.js"]).affected).unwrap()
     );
 }
 
@@ -2181,7 +2269,7 @@ fn a_barrel_that_re_exports_a_file_with_unknown_exports_has_unknown_exports_too(
         .imports_names("page.ts", "index.ts", &["thing"])
         .build();
 
-    let answer = run(&index, &["legacy.js"]);
+    let answer = within(2, &index, &["legacy.js"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -2276,7 +2364,7 @@ fn a_star_does_not_forward_default() {
         .imports_names("page.ts", "index.ts", &["default"])
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(2, &index, &["a.ts"]);
 
     assert_eq!(
         rows(&answer.affected),
@@ -2352,7 +2440,7 @@ fn a_test_that_has_another_way_to_the_change_is_listed() {
         .replaces("t.test.ts", "b.ts", 1)
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(2, &index, &["a.ts"]);
 
     assert_eq!(paths(&answer.affected), ["b.ts", "c.ts"]);
     assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
@@ -2366,7 +2454,7 @@ fn a_test_that_asks_for_the_actual_module_is_listed() {
         .imports_actual("t.test.ts", "b.ts", 2)
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(2, &index, &["a.ts"]);
 
     assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
 }
@@ -2376,7 +2464,7 @@ fn a_test_that_asks_for_the_actual_module_is_listed() {
 fn a_test_that_mocks_a_module_without_a_factory_is_listed() {
     let index = mocked_chain().mocks("t.test.ts", "b.ts", 1).build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(2, &index, &["a.ts"]);
 
     assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
 }
@@ -2393,7 +2481,7 @@ fn a_test_whose_helper_asks_for_the_replaced_module_as_it_is_is_listed() {
         .imports_actual("helper.ts", "b.ts", 1)
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(2, &index, &["a.ts"]);
 
     assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
 }
@@ -2434,7 +2522,7 @@ fn a_test_that_mocks_the_module_again_is_listed() {
         .mocks("t.test.ts", "b.ts", 2)
         .build();
 
-    let answer = run(&index, &["a.ts"]);
+    let answer = within(2, &index, &["a.ts"]);
 
     assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
 }
@@ -2455,12 +2543,12 @@ fn contracted_chain() -> Tree {
 )]
 #[test]
 fn a_test_that_replaces_the_module_on_the_way_to_a_contract_is_not_listed() {
-    let kept = run(&contracted_chain().build(), &["server.ts"]);
+    let kept = within(2, &contracted_chain().build(), &["server.ts"]);
     let index = contracted_chain()
         .replaces("t.test.ts", "api.ts", 1)
         .build();
 
-    let answer = run(&index, &["server.ts"]);
+    let answer = within(2, &index, &["server.ts"]);
 
     assert_eq!(paths(&kept.tests), ["t.test.ts"], "without the mock");
     assert_eq!(paths(&answer.affected), ["client.ts", "api.ts"]);
@@ -2562,7 +2650,7 @@ fn the_cut_keeps_what_the_walk_found_of_a_test_it_lists() {
         .replaces("t.test.ts", "b.ts", 1)
         .build();
 
-    let answer = impact(&index, Freshness::Fresh, &limited_to(1, &["a.ts"]));
+    let answer = impact(&index, Freshness::Fresh, &limited_to(2, &["a.ts"]));
 
     assert_eq!(paths(&answer.affected), ["b.ts", "c.ts"]);
     assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);

@@ -14,13 +14,13 @@ use gsttt_scenario::scenario;
 use proptest::prelude::*;
 use serde_json::{json, to_value};
 
-use super::impact::{Case, Take, case, depth_leaves_the_tests_whole, exported, file_path};
+use super::impact::{Case, Take, case, depth_bounds_the_tests, exported, file_path};
 
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];
 
 /// What a note says when the depth ended the walk with callers left to follow.
-const STOPPED: &str = "the walk stopped at the depth with callers left to follow, and only the tests are listed past it; ask about a caller by name, or with a larger depth, to go on";
+const STOPPED: &str = "the walk stopped at the depth with callers left to follow; ask about a caller, or with a larger depth, to go on";
 
 /// Asks about `names` declared in `files`, with the depth of the request left as given.
 fn ask_in(index: &Index, files: &[&str], names: &[&str], depth: Option<u32>) -> Impact {
@@ -246,7 +246,7 @@ fn the_answer_names_the_callers_and_their_lines() {
 
     let text = answer.text(Entries::Capped);
     assert!(
-        text.starts_with("impact of foo in a.ts, within 1 hop through code; tests at any depth\n"),
+        text.starts_with("impact of foo in a.ts, within 1 hop through code\n"),
         "{text}"
     );
     assert!(
@@ -894,12 +894,12 @@ fn a_larger_depth_follows_the_callers_of_callers() {
             row("c.ts", 2, "imports run from b.ts", &["main"]),
         ]
     );
-    assert_eq!(answer.depth, Some(2));
+    assert_eq!(answer.depth, 2);
 }
 
-#[scenario("queries", "A test past the depth of a walk by name is listed")]
+#[scenario("queries", "A test past the depth of a walk by name is counted")]
 #[test]
-fn a_test_past_the_depth_of_a_walk_by_name_is_listed() {
+fn a_test_past_the_depth_of_a_walk_by_name_is_counted() {
     let index = Tree::new()
         .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
         .exports("a.ts", &["foo"])
@@ -921,27 +921,16 @@ fn a_test_past_the_depth_of_a_walk_by_name_is_listed() {
         rows(&answer.affected),
         [row("b.ts", 1, "imports foo from a.ts", &["run"])]
     );
-    assert_eq!(
-        rows(&answer.tests),
-        [(
-            "c.test.ts",
-            3,
-            "imports main from c.ts".to_owned(),
-            Vec::new(),
-            Some(3)
-        )]
-    );
-    assert_eq!(answer.depth, Some(1));
+    assert_eq!(rows(&answer.tests), []);
+    assert_eq!(answer.tests_left_out, 1);
+    assert_eq!(answer.depth, 1);
     let text = answer.text(Entries::Capped);
     assert!(
-        text.starts_with("impact of foo in a.ts, within 1 hop through code; tests at any depth\n"),
+        text.starts_with("impact of foo in a.ts, within 1 hop through code\n"),
         "{text}"
     );
-    assert!(
-        text.contains("c.test.ts  distance 3  imports main from c.ts; at load\n"),
-        "{text}"
-    );
-    // The affected files are cut at the depth, so the note says the walk stopped and that only the tests lie past it.
+    assert!(text.contains("1 test file left out\n"), "{text}");
+    // The affected files are cut at the depth, so the note says the walk stopped.
     assert_eq!(notes(&answer), [STOPPED]);
 }
 
@@ -1836,7 +1825,7 @@ fn several_names_in_several_files_are_one_question() {
         ]
     );
     assert!(answer.text(Entries::Capped).starts_with(
-        "impact of foo, zed and nothing in a.ts and z.ts, within 1 hop through code; tests at any depth\n"
+        "impact of foo, zed and nothing in a.ts and z.ts, within 1 hop through code\n"
     ));
 }
 
@@ -1900,7 +1889,7 @@ fn a_depth_of_zero_lists_nothing_and_says_the_walk_stopped() {
     assert!(
         answer
             .text(Entries::Capped)
-            .starts_with("impact of foo in a.ts, within 0 hops through code; tests at any depth\n")
+            .starts_with("impact of foo in a.ts, within 0 hops through code\n")
     );
 }
 
@@ -2115,9 +2104,9 @@ proptest! {
 }
 
 proptest! {
-    /// On any tree, the depth of a walk by name bounds the affected files and never the tests: at every depth they are the tests a walk with no limit reaches, with its distances, callers and loads.
+    /// On any tree, the depth of a walk by name bounds the tests as it bounds the other files: at every depth they are the tests a walk with no limit reaches within it, with the distances, callers and loads of that walk.
     #[test]
-    fn the_depth_of_a_walk_by_name_never_bounds_its_tests(
+    fn the_depth_of_a_walk_by_name_bounds_its_tests(
         modules in prop::collection::vec(module(), FILES),
         tests in 0_u8..(1 << FILES),
     ) {
@@ -2125,7 +2114,7 @@ proptest! {
         let is_test = |path: &str| (0..FILES).any(|number| tests & (1 << number) != 0 && module_path(number) == path);
         for number in 0..FILES {
             for name in NAMES {
-                depth_leaves_the_tests_whole(&plain, &tagged, &[&module_path(number)], &[name], is_test)?;
+                depth_bounds_the_tests(&plain, &tagged, &[&module_path(number)], &[name], is_test)?;
             }
         }
     }
@@ -2402,7 +2391,7 @@ fn only_by_name(by_name: &Index, per_file: &Index, changed: &str, names: &[Strin
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     let mut by_name = listed(&ask(by_name, changed, &names, Some(u32::MAX)));
     by_name.remove(changed);
-    let per_file = listed(&ask(per_file, changed, &NONE, None));
+    let per_file = listed(&ask(per_file, changed, &NONE, Some(u32::MAX)));
     by_name.difference(&per_file).cloned().collect()
 }
 
@@ -2546,7 +2535,7 @@ proptest! {
         let names: Vec<&str> = written.asked.iter().map(String::as_str).collect();
         let mut by_name = listed(&ask(&written.index, &changed, &names, Some(u32::MAX)));
         by_name.remove(&changed);
-        let per_file = listed(&ask(&written.index, &changed, &NONE, None));
+        let per_file = listed(&ask(&written.index, &changed, &NONE, Some(u32::MAX)));
         prop_assert_eq!(&by_name, &per_file, "\n{:?}\n{}", case, written.shown);
         // Each import is used as `Local` or `Local.m`, both of which are uses of the member `m` that the changed file declares for each name.
         let members: Vec<&str> = written.members.keys().map(String::as_str).collect();
@@ -2677,10 +2666,10 @@ fn behind_a_route() -> Tree {
 )]
 #[test]
 fn a_test_that_replaces_the_module_on_the_way_to_a_contract_is_not_listed_by_name() {
-    let kept = ask(&behind_a_route().build(), "server.ts", &["handle"], None);
+    let kept = ask(&behind_a_route().build(), "server.ts", &["handle"], Some(2));
     let index = behind_a_route().replaces("t.test.ts", "api.ts", 1).build();
 
-    let answer = ask(&index, "server.ts", &["handle"], None);
+    let answer = ask(&index, "server.ts", &["handle"], Some(2));
 
     assert_eq!(paths(&kept.tests), ["t.test.ts"], "without the mock");
     assert_eq!(paths(&answer.affected), ["client.ts", "api.ts"]);
@@ -2689,13 +2678,13 @@ fn a_test_that_replaces_the_module_on_the_way_to_a_contract_is_not_listed_by_nam
 
 #[test]
 fn a_test_past_the_depth_that_replaces_another_module_is_listed_by_name_as_the_walk_found_it() {
-    // The test is three hops from `handle`, past the depth of 1, and what it replaces is not on its way to the change.
-    let without = ask(&behind_a_route().build(), "server.ts", &["handle"], None);
+    // The test is two hops through code from `handle`, which the depth of 2 follows, and what it replaces is not on its way to the change.
+    let without = ask(&behind_a_route().build(), "server.ts", &["handle"], Some(2));
     let index = behind_a_route()
         .replaces("t.test.ts", "other.ts", 2)
         .build();
 
-    let answer = ask(&index, "server.ts", &["handle"], None);
+    let answer = ask(&index, "server.ts", &["handle"], Some(2));
 
     assert_eq!(
         paths(&answer.affected),

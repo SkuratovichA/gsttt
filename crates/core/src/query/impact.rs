@@ -21,6 +21,9 @@ use super::render::{
 use super::replaced::Cut;
 use super::walk::{self, Cause, Hit, Walked, reach, reach_names};
 
+/// The hops through code a walk takes when the request gives no depth.
+const DEFAULT_DEPTH: u32 = 1;
+
 /// What a change is asked about.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ImpactRequest {
@@ -28,9 +31,9 @@ pub struct ImpactRequest {
     pub files: Vec<String>,
     /// The paths the caller knows were deleted. One the index still holds is traced like any changed file; one it no longer holds is listed, with the unresolved imports that may have pointed at it, and not traced.
     pub deleted: Vec<String>,
-    /// Stop the walk after this many hops through code from a changed file, for every file but the tests: the imports, and with `names` the uses of a name, the loads and the mocks. A hop across a contract is not one of them, so the walk crosses every contract it comes to. The tests are followed to every depth, because a test two callers away runs the change as surely as one at the first. A walk by name takes one hop through code when this is `None`.
+    /// Stop the walk after this many hops through code from a changed file, for every file and every test: the imports, and with `names` the uses of a name, the loads and the mocks. A hop across a contract is not one of them, so the walk crosses every contract it comes to. A walk takes one hop through code when this is `None`, and a large depth such as `u32::MAX` runs it to the end.
     pub depth: Option<u32>,
-    /// Declarations of the files in `files` to ask about instead of the files: a function, class, method (`Class.method`) or variable. The answer lists their direct callers, declaration by declaration, and every test that reaches them. A name a file does not declare reaches nothing and goes into a note.
+    /// Declarations of the files in `files` to ask about instead of the files: a function, class, method (`Class.method`) or variable. The answer lists their callers within the depth, declaration by declaration, and the tests among them. A name a file does not declare reaches nothing and goes into a note.
     pub names: Vec<String>,
     /// Leave the tests out of the answer, and count them instead. The walk is the same, so the footer still covers the tests it reached.
     pub no_tests: bool,
@@ -44,11 +47,11 @@ pub struct Impact {
     /// The names asked about in those files, each once, in the order asked. Left out when the files were asked about whole.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
-    /// The hops through code the affected files were allowed, `None` when the walk ran to a fixpoint. A walk by name always has one. The tests are followed to the end whatever it is.
-    pub depth: Option<u32>,
+    /// The hops through code the walk was allowed, which is one unless the request gave a depth. It bounds the tests as it bounds the other files.
+    pub depth: u32,
     /// The files the change reaches, nearest first and then by path, without the tests.
     pub affected: Vec<Affected>,
-    /// The files tagged as tests that the change reaches at any depth, in the same order, without a test that replaces every module it reaches the change by. Empty when the request left the tests out.
+    /// The files tagged as tests that the change reaches within the depth, in the same order, without a test that replaces every module it reaches the change by. Empty when the request left the tests out.
     pub tests: Vec<Affected>,
     /// How many files tagged as tests the change reaches that the request left out, not counting those that replace every module they reach it by. Left out when there are none.
     #[serde(skip_serializing_if = "is_zero")]
@@ -270,16 +273,10 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
             names.push(name.clone());
         }
     }
-    // A walk by name takes the direct callers unless a depth is asked.
-    let depth = if names.is_empty() {
-        request.depth
-    } else {
-        Some(request.depth.unwrap_or(1))
-    };
-    let walked = reach_asked(index, &crossing, &changed, &names, depth);
-    // The depth bounds the files to read and not the tests to run: a test two callers away runs the change as surely as one at the first, so the tests come from the walk the depth does not stop.
-    let to_the_end = depth.map(|_| reach_asked(index, &crossing, &changed, &names, None));
-    let tested = to_the_end.as_ref().unwrap_or(&walked);
+    let depth = request.depth.unwrap_or(DEFAULT_DEPTH);
+    let walked = reach_asked(index, &crossing, &changed, &names, Some(depth));
+    // The walk with no depth exists only to count what the depth leaves behind and to give each listed test the distance, the reason and the load it has at the end.
+    let to_the_end = reach_asked(index, &crossing, &changed, &names, None);
     let is_test = |hit: &Hit| graph.tags(hit.file).contains(FileTags::TEST);
     let affected = walked
         .hits
@@ -290,15 +287,17 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     let mut tests = Vec::new();
     let mut tests_left_out = 0;
     // A test that swaps a module for a factory mock runs none of its code, so it is listed only where it still reaches the change without that module.
-    let mut cut = Cut::new(index, &changed, &tested.across);
-    for hit in tested.hits.iter().filter(|hit| is_test(hit)) {
+    let mut cut = Cut::new(index, &changed, &to_the_end.across);
+    let mut within = IdSet::with_universe(graph.file_count());
+    within.extend(walked.hits.iter().map(|hit| hit.file));
+    for hit in to_the_end.hits.iter().filter(|hit| is_test(hit)) {
         if !cut.keeps(hit.file) {
             continue;
         }
         let Some(test) = entry(graph, hit) else {
             continue;
         };
-        if request.no_tests {
+        if request.no_tests || !within.contains(hit.file) {
             tests_left_out += 1;
         } else {
             tests.push(test);
@@ -309,7 +308,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         .iter()
         .filter_map(|&file| graph.path(file))
         .collect();
-    let misses = if walked.hits.is_empty() && tested.hits.is_empty() {
+    let misses = if walked.hits.is_empty() && to_the_end.hits.is_empty() {
         possible_misses(index, &changed_paths)
     } else {
         Vec::new()
@@ -330,6 +329,16 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         .map(|(path, _)| path)
         .collect();
 
+    // A walk by name says on its own that the depth stopped it; a walk by files says it here.
+    let mut stopped = walked.notes.clone();
+    if names.is_empty() && to_the_end.hits.len() > walked.hits.len() {
+        stopped.push(walk::Note::Stopped);
+    }
+    let notes = stopped
+        .into_iter()
+        .map(|walked| note(graph, walked))
+        .collect();
+
     Impact {
         changed: changed_paths.iter().map(ToString::to_string).collect(),
         names,
@@ -338,8 +347,8 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
             index,
             freshness,
             changed.iter().copied().chain(
-                std::iter::once(&walked)
-                    .chain(&to_the_end)
+                [&walked, &to_the_end]
+                    .into_iter()
                     .flat_map(|walk| walk.hits.iter().map(|hit| hit.file)),
             ),
         ),
@@ -348,11 +357,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         tests_left_out,
         deleted,
         unknown,
-        notes: walked
-            .notes
-            .into_iter()
-            .map(|walked| note(graph, walked))
-            .collect(),
+        notes,
         possible_misses: misses,
         searched: Searched::of(index),
     }
@@ -433,7 +438,7 @@ fn note(graph: &Graph, walked: walk::Note) -> Note {
             path(file)
         )),
         walk::Note::ThroughClass { members } => Note::ThroughClass(members),
-        walk::Note::Stopped => Note::Said("the walk stopped at the depth with callers left to follow, and only the tests are listed past it; ask about a caller by name, or with a larger depth, to go on".to_owned()),
+        walk::Note::Stopped => Note::Said("the walk stopped at the depth with callers left to follow; ask about a caller, or with a larger depth, to go on".to_owned()),
     }
 }
 
@@ -504,13 +509,7 @@ impl Answer for Impact {
         } else {
             write!(f, "impact of {} in {files}", summary(&self.names))?;
         }
-        if let Some(depth) = self.depth {
-            write!(
-                f,
-                ", within {} through code; tests at any depth",
-                noun(depth, "hop")
-            )?;
-        }
+        write!(f, ", within {} through code", noun(self.depth, "hop"))?;
         f.write_str("\n")?;
 
         let affected_line = |f: &mut fmt::Formatter<'_>, affected: &Affected| {
