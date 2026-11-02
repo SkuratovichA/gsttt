@@ -9,7 +9,7 @@
 - [x] 2.1 `crates/lang-ts/src/analyze/constants/scopes.rs`: the walk that finds what each function, block, loop, catch clause, class body and namespace binds, and reads the `const` of a scope as a constant
 - [x] 2.2 `crates/lang-ts/src/analyze/constants.rs`: `locals` replaces `rebound`, `Constants::local` finds the innermost scope that binds a name at an offset, and the readers of a constant and of an import ask it first
 - [x] 2.3 `crates/lang-ts/src/analyze/roots.rs`: `rebound` is removed, with its tests ported to the scopes in `constants.rs`
-- [x] 2.4 `crates/lang-ts/src/project.rs`: `READER_VERSION` 13 to 14
+- [x] 2.4 `crates/lang-ts/src/project.rs`: `READER_VERSION` 15 to 16
 - [x] 2.5 `crates/lang-ts/src/provides.rs`: the blind spots of a route path and of a URL
 - [x] 2.6 `crates/lang-ts/src/analyze/constants.rs` and `analyze.rs`: `spec_of` takes the position and answers none where a scope binds the name again, and `imported_receiver` passes the position of the call
 - [x] 2.7 `provides.rs` and `README.md`: the blind spots for a router, an app and a client named like a variable of a function say the file makes it

@@ -5,9 +5,10 @@ use std::mem;
 
 use oxc_ast::ast::{
     ArrowFunctionExpression, BindingIdentifier, BindingPattern, BlockStatement, CatchClause, Class,
-    Expression, ForInStatement, ForOfStatement, ForStatement, Function, Program, StaticBlock,
-    SwitchStatement, TSInterfaceDeclaration, TSModuleBlock, TSType, TSTypeAliasDeclaration,
-    TSTypeParameterDeclaration, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
+    Expression, ForInStatement, ForOfStatement, ForStatement, FormalParameters, Function,
+    FunctionBody, Program, StaticBlock, SwitchStatement, TSInterfaceDeclaration, TSModuleBlock,
+    TSType, TSTypeAliasDeclaration, TSTypeParameterDeclaration, VariableDeclaration,
+    VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::Span;
@@ -134,7 +135,11 @@ impl Scopes<'_> {
         let Some(scope) = frame.map(|frame| frame.span) else {
             return;
         };
-        let locals = self.constants.locals.entry(name.to_owned()).or_default();
+        // A name that a scope bound before is not copied again, and a minified bundle binds the same few names in every function.
+        let locals = match self.constants.locals.get_mut(name) {
+            Some(locals) => locals,
+            None => self.constants.locals.entry(name.to_owned()).or_default(),
+        };
         locals.constant |= constant;
         // The walk is in source order, so a scope that ended before this one started was noted before any binding of this one: stopping there keeps a name bound in every function of a minified bundle linear.
         if let Some(known) = locals
@@ -152,6 +157,16 @@ impl Scopes<'_> {
             values: BTreeMap::new(),
             rebound: false,
         });
+    }
+
+    /// Walks the parameters of a function and its body, the body in a scope inside that of the parameters: a default value does not see what the body declares.
+    fn parameters_and_body<'a>(
+        &mut self,
+        parameters: &FormalParameters<'a>,
+        body: &FunctionBody<'a>,
+    ) {
+        self.visit_formal_parameters(parameters);
+        self.within(body.span, true, |scopes| scopes.visit_function_body(body));
     }
 }
 
@@ -193,14 +208,17 @@ impl<'a> Visit<'a> for Scopes<'_> {
             {
                 scopes.bind(id.name.as_str(), false, false);
             }
-            scopes.visit_formal_parameters(&it.params);
-            scopes.visit_function_body(body);
+            scopes.parameters_and_body(&it.params, body);
         });
     }
 
     fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
         self.within(it.span, true, |scopes| {
-            walk::walk_arrow_function_expression(scopes, it);
+            match it.body.as_function_body() {
+                Some(body) => scopes.parameters_and_body(&it.params, body),
+                // An expression binds nothing of its own.
+                None => walk::walk_arrow_function_expression(scopes, it),
+            }
         });
     }
 

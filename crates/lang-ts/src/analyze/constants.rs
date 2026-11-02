@@ -911,20 +911,75 @@ mod tests {
             ),
             ["/a/x"]
         );
+        // A constant that names a `const` written below it, in a function around, reads as nothing: the scope hides the name of the file, and the initializer of the name is not read yet.
+        assert_eq!(
+            reads(
+                "const p = '/top'; function f() { const g = () => { const u = p + '/x'; read(u); }; const p = '/late'; }"
+            ),
+            ["-"]
+        );
+    }
+
+    #[test]
+    fn scopes_that_touch_or_start_together_answer_for_their_own_positions() {
+        assert_eq!(
+            reads("const p = '/top'; const g = (p) => (p) => read(p); read(p);"),
+            ["-", "/top"]
+        );
+        assert_eq!(
+            reads("function a(){const p='/a';read(p)}function b(){const p='/b';read(p)}"),
+            ["/a", "/b"]
+        );
+        assert_eq!(
+            reads("const p='/top';function a(){const p='/a';read(p)}function b(){read(p)}"),
+            ["/a", "/top"]
+        );
+    }
+
+    #[test]
+    fn a_default_value_does_not_see_what_the_body_of_its_function_declares() {
+        assert_eq!(
+            reads(
+                "const BASE = '/top'; function f(a = read(BASE)) { const BASE = '/b'; read(BASE); }"
+            ),
+            ["/top", "/b"]
+        );
+        assert_eq!(
+            reads(
+                "const BASE = '/top'; const f = (a = read(BASE)) => { const BASE = '/b'; read(BASE); };"
+            ),
+            ["/top", "/b"]
+        );
+        // A parameter is seen by the default values after it.
+        assert_eq!(
+            reads("const p = '/top'; function f(p, a = read(p)) {}"),
+            ["-"]
+        );
+        // The name of a function expression stands outside its body.
+        assert_eq!(
+            reads("const g = function g() { const g = '/x'; read(g); };"),
+            ["/x"]
+        );
     }
 
     proptest! {
         /// The answer for every position is the definition of a scope: the smallest of those around it. Each `true` opens a scope and each `false` closes the last one, so the scopes nest as a file's do, and only every third one binds the name.
         #[test]
         fn the_answer_at_every_position_is_the_innermost_scope_around_it(
-            steps in prop::collection::vec(any::<bool>(), 0..80)
+            steps in prop::collection::vec((any::<bool>(), any::<bool>()), 0..80)
         ) {
             let (mut open, mut spans, mut at) = (Vec::new(), Vec::new(), 0u32);
-            for step in steps {
-                at += 2;
-                if step {
+            // A step that does not advance makes two scopes start together, or one start where another ends. Two scopes on one span are one to the walk, which notes a second binding in it as `rebound`.
+            for (opens, advances) in steps {
+                if advances {
+                    at += 2;
+                }
+                if opens {
                     open.push(at);
-                } else if let Some(start) = open.pop() {
+                } else if let Some(start) = open.pop()
+                    && start < at
+                    && !spans.contains(&Span::new(start, at))
+                {
                     spans.push(Span::new(start, at));
                 }
             }
