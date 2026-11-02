@@ -118,6 +118,13 @@ expression: pack_schema()
         "test_double": {
           "description": "The injection token a test replaces with a stand-in: in a test file that provides one, as `{ provide: ConfigService, useValue: stub }` does, the call reaches the stand-in, so the rule reads nothing there. The TypeScript connector honours it.",
           "type": "string"
+        },
+        "receiver_types": {
+          "description": "Types the receiver of the call must be declared with: a variable, a parameter or a class property declared with one of them, or made with `new` of one, and `this.<name>` for a constructor parameter property. Empty: any receiver. Only the TypeScript connector knows a declared type, so in another language a rule that lists any reads nothing.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false,

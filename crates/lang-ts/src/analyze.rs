@@ -402,7 +402,7 @@ impl<'a> Analyzer<'_, 'a> {
                     let Some(root) = dotted(head) else {
                         break;
                     };
-                    if !(rule.root.matches(&root) || self.roots.is_typed_root(rule, &root)) {
+                    if !(rule.root.matches(&root) || self.roots.is_typed(&rule.root_types, &root)) {
                         continue;
                     }
                     let segments: Vec<Option<&str>> = tail.iter().map(Option::as_deref).collect();
@@ -499,6 +499,13 @@ impl<'a> Analyzer<'_, 'a> {
         for (pack_index, pack) in packs.iter().enumerate() {
             for (rule_index, rule) in pack.calls.iter().enumerate() {
                 if !rule.callee.matches(callee) {
+                    continue;
+                }
+                if !rule.receiver_types.is_empty()
+                    && !callee
+                        .rsplit_once('.')
+                        .is_some_and(|(host, _)| self.roots.is_typed(&rule.receiver_types, host))
+                {
                     continue;
                 }
                 if rule

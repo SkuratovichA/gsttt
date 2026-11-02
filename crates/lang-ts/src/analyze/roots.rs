@@ -1,4 +1,4 @@
-//! The names of a file that start a chain without being written as the root of a rule: `self` after `const self = this`, and `reader` or `this.db` when their declared type, or the class they are made of with `new`, is one the rules list as a root type. A name counts only when every binding of it in the file is of that kind, so `self` bound to `this` in one method and to a mock in another function is neither.
+//! The names of a file that a rule reads without their being written in it: `self` after `const self = this`, and `reader` or `this.db` when their declared type, or the class they are made of with `new`, is one the rules list as the root type of a chain or as the receiver type of a call. A name counts only when every binding of it in the file is of that kind, so `self` bound to `this` in one method and to a mock in another function is neither.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,12 +26,12 @@ const WRAPPERS: [&str; 6] = [
     "NonNullable",
 ];
 
-/// The names of one file that start a chain on top of the roots the rules list. Both sets hold per file, not per scope, and only for a name that nothing else binds anywhere in the file.
+/// The names of one file that a rule reads on top of the roots and callees the rules list. Both sets hold per file, not per scope, and only for a name that nothing else binds anywhere in the file.
 #[derive(Debug, Default)]
 pub(super) struct Roots<'p> {
     /// Names bound by `const self = this`.
     this_aliases: BTreeSet<String>,
-    /// Names declared with a root type of some rule, by name (`reader`, `this.db`), with the root types they were declared with.
+    /// Names declared with a type some rule lists, by name (`reader`, `this.db`), with the listed types they were declared with.
     typed: BTreeMap<String, Vec<&'p str>>,
 }
 
@@ -51,12 +51,12 @@ impl Roots<'_> {
         }
     }
 
-    /// Whether `root` is a name declared with one of the root types of `rule`.
-    pub(super) fn is_typed_root(&self, rule: &ChainRule, root: &str) -> bool {
-        self.typed.get(root).is_some_and(|declared| {
+    /// Whether `name` is declared with one of `types`, the root types of a chain rule or the receiver types of a call rule.
+    pub(super) fn is_typed(&self, types: &[String], name: &str) -> bool {
+        self.typed.get(name).is_some_and(|declared| {
             declared
                 .iter()
-                .any(|ty| rule.root_types.iter().any(|root_type| root_type == ty))
+                .any(|ty| types.iter().any(|listed| listed == ty))
         })
     }
 }
@@ -66,9 +66,19 @@ fn chain_rules(packs: &[Pack]) -> impl Iterator<Item = &ChainRule> {
     packs.iter().flat_map(|pack| &pack.chains)
 }
 
-/// The aliases of `this` and the typed roots of `program`. A project whose rules start at no `this` and list no root types skips the walk, and so does a file that binds no name which could start a chain.
+/// Every type some rule of `packs` lists: the root types of the chain rules and the receiver types of the call rules.
+fn listed_types(packs: &[Pack]) -> impl Iterator<Item = &str> {
+    let roots = chain_rules(packs).flat_map(|rule| &rule.root_types);
+    let receivers = packs
+        .iter()
+        .flat_map(|pack| &pack.calls)
+        .flat_map(|rule| &rule.receiver_types);
+    roots.chain(receivers).map(String::as_str)
+}
+
+/// The aliases of `this` and the typed names of `program`. A project whose rules start at no `this` and list no type skips the walk, and so does a file that binds no name which could start a chain or receive a call.
 pub(super) fn collect<'p>(program: &Program<'_>, packs: &'p [Pack]) -> Roots<'p> {
-    let reads_types = chain_rules(packs).any(|rule| !rule.root_types.is_empty());
+    let reads_types = listed_types(packs).next().is_some();
     let starts_at_this = chain_rules(packs).any(|rule| {
         rule.root
             .iter()
@@ -108,15 +118,15 @@ impl Name<'_> {
 
 /// What the walk saw, before the aliases of types are followed: a type alias may come after the name that uses it.
 struct Collector<'p, 'a> {
-    /// The packs, which list the root types.
+    /// The packs, which list the types.
     packs: &'p [Pack],
-    /// Whether some pack lists a root type: when none does, the types of the file are not read.
+    /// Whether some pack lists a type: when none does, the types of the file are not read.
     reads_types: bool,
     /// The names that the types of the bindings stand for at their head, the rows of one binding after another.
     heads: Vec<Cow<'a, str>>,
     /// A binding that has a type, with the rows of `heads` that hold the type.
     declared: Vec<(Name<'a>, Range<usize>)>,
-    /// Every name the file declares as a `type` alias, an `interface`, a `class` or an `enum`, with the names that its definition stands for at its head, which only a `type` alias has: such a name is the type the file says it is, never the root type of a pack that has the same name.
+    /// Every name the file declares as a `type` alias, an `interface`, a `class` or an `enum`, with the names that its definition stands for at its head, which only a `type` alias has: such a name is the type the file says it is, never the type of a pack that has the same name.
     types: BTreeMap<&'a str, Vec<Cow<'a, str>>>,
     /// Every name that `const name = this` binds.
     this_bound: BTreeSet<&'a str>,
@@ -180,15 +190,12 @@ impl<'p, 'a> Collector<'p, 'a> {
             .then(|| self.types.entry(name).or_default())
     }
 
-    /// The root type that some pack lists under `name`.
-    fn root_type(&self, name: &str) -> Option<&'p str> {
-        chain_rules(self.packs)
-            .flat_map(|rule| &rule.root_types)
-            .map(String::as_str)
-            .find(|root_type| *root_type == name)
+    /// The type that some pack lists under `name`.
+    fn listed_type(&self, name: &str) -> Option<&'p str> {
+        listed_types(self.packs).find(|listed| *listed == name)
     }
 
-    /// The declared names whose types stand for root types, with the root types, and the declared names whose types do not.
+    /// The declared names whose types stand for listed types, with those types, and the declared names whose types do not.
     fn resolve(&self) -> (BTreeMap<Name<'a>, Vec<&'p str>>, BTreeSet<Name<'a>>) {
         let mut typed: BTreeMap<Name<'a>, Vec<&'p str>> = BTreeMap::new();
         let mut untyped = BTreeSet::new();
@@ -204,7 +211,7 @@ impl<'p, 'a> Collector<'p, 'a> {
                     .map(Cow::as_ref),
             );
             let mut found = Vec::new();
-            self.root_types(&mut work, &mut seen, &mut found);
+            self.find_listed(&mut work, &mut seen, &mut found);
             if found.is_empty() {
                 untyped.insert(*name);
             } else {
@@ -214,7 +221,7 @@ impl<'p, 'a> Collector<'p, 'a> {
         (typed, untyped)
     }
 
-    /// The names that could start a chain: the declared names with a root type, and the names bound to `this`.
+    /// The names that could start a chain or receive a call: the declared names with a listed type, and the names bound to `this`.
     fn candidates(&self) -> BTreeSet<Name<'a>> {
         let (typed, _) = self.resolve();
         typed
@@ -242,8 +249,8 @@ impl<'p, 'a> Collector<'p, 'a> {
         }
     }
 
-    /// Empties `work`, a list of names, and adds to `found` the root types that they are, or stand for through the aliases of the file. A name the file declares is the type it says it is, which only a `type` alias can make a root type; a name the file does not declare is a root type when a pack lists it. `seen` holds the names already followed for this question and is never emptied during it, so that a chain of any length is followed, a cycle ends, and a union that names its own alias many times is read once. The names wait on a list and not on the stack, because a chain of a hundred thousand aliases must not need a hundred thousand frames.
-    fn root_types<'s>(
+    /// Empties `work`, a list of names, and adds to `found` the listed types that they are, or stand for through the aliases of the file. A name the file declares is the type it says it is, which only a `type` alias can make a listed type; a name the file does not declare is a listed type when a pack lists it. `seen` holds the names already followed for this question and is never emptied during it, so that a chain of any length is followed, a cycle ends, and a union that names its own alias many times is read once. The names wait on a list and not on the stack, because a chain of a hundred thousand aliases must not need a hundred thousand frames.
+    fn find_listed<'s>(
         &'s self,
         work: &mut Vec<&'s str>,
         seen: &mut BTreeSet<&'s str>,
@@ -255,7 +262,7 @@ impl<'p, 'a> Collector<'p, 'a> {
             }
             match self.types.get(head) {
                 Some(rows) => work.extend(rows.iter().map(Cow::as_ref)),
-                None => found.extend(self.root_type(head)),
+                None => found.extend(self.listed_type(head)),
             }
         }
     }

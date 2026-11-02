@@ -112,6 +112,10 @@ pub struct CallRule {
     // Left out when unset, for the reason given at `Pack::imports`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test_double: Option<String>,
+    /// Types the receiver of the call must be declared with: a variable, a parameter or a class property declared with one of them, or made with `new` of one, and `this.<name>` for a constructor parameter property. Empty: any receiver. Only the TypeScript connector knows a declared type, so in another language a rule that lists any reads nothing.
+    // Left out when empty, for the reason given at `Pack::imports`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub receiver_types: Vec<String>,
 }
 
 /// A decorator that names a contract: NestJS `@Get(":id")`, FastAPI `@router.get("/x")`, Flask `@bp.route("/x")`.

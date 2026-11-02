@@ -84,6 +84,12 @@ fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
             "an enum imported by name from @prisma/client and used as a value reads as a table of that name that no model declares; a model type that the file only imports, re-exports or writes in a type names no table",
         ],
         (ContractKind::Table, Role::Declares) => &["tables named at run time are not read"],
+        (ContractKind::Queue, Role::Calls) => &[
+            "the kafka pack reads a producer only when its receiver is declared with a type it lists (a parameter, a class property, a constructor parameter property, or a variable made with new): a producer held in a name with no declared type, such as const producer = kafka.producer(), is not read",
+        ],
+        (ContractKind::Queue, Role::Serves) => &[
+            "the kafka pack reads a consumer only when its receiver is declared with a type it lists, so const consumer = kafka.consumer() is not; topics given as an array to subscribe ({ topics: [...] }) are not read",
+        ],
         (ContractKind::Env, Role::Calls) => {
             &["variables read through an alias of the environment object are not seen"]
         }

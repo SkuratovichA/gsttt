@@ -6,6 +6,7 @@ mod exports;
 mod graphql;
 mod http;
 mod imports;
+mod kafka;
 mod packs;
 mod projects;
 mod receivers;

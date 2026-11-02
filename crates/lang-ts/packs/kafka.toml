@@ -1,0 +1,24 @@
+# Kafka: a consumer serves a topic and a producer calls it. A producer is named by the type its receiver is declared with, because `*.emit` also matches event emitters.
+name = "kafka"
+language = "ts"
+detect = ["kafkajs"]
+
+[[decorators]]
+decorator = ["EventPattern", "MessagePattern", "*.EventPattern", "*.MessagePattern"]
+kind = "queue"
+role = "serves"
+key = "$arg1"
+
+[[calls]]
+callee = ["*.emit", "*.send", "*.emitMessage", "*.*.emit", "*.*.send", "*.*.emitMessage"]
+receiver_types = ["ClientKafka", "ClientProxy", "KafkaProducerService", "Producer"]
+kind = "queue"
+role = "calls"
+key = "$arg1|$arg1.topic"
+
+[[calls]]
+callee = ["*.subscribe", "*.*.subscribe"]
+receiver_types = ["Consumer"]
+kind = "queue"
+role = "serves"
+key = "$arg1.topic"

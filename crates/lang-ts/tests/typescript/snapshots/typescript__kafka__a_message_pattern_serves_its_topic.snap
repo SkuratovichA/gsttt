@@ -1,0 +1,788 @@
+---
+source: crates/lang-ts/tests/typescript/kafka.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "queue t",
+          "line": 3,
+          "role": "serves",
+          "via": "kafka"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "listen"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Consumer"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Consumer"
+          ],
+          "spec": "kafkajs",
+          "to": {
+            "external": "kafkajs"
+          }
+        }
+      ],
+      "path": "src/consumer-subscribe.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "listen",
+            "uses": [
+              "Consumer"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "queue user.created",
+          "line": 4,
+          "role": "serves",
+          "via": "kafka"
+        },
+        {
+          "key": "queue user.get",
+          "line": 7,
+          "role": "serves",
+          "via": "kafka"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "Users"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "EventPattern",
+            "MessagePattern"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "EventPattern",
+            "MessagePattern"
+          ],
+          "spec": "@nestjs/microservices",
+          "to": {
+            "external": "@nestjs/microservices"
+          }
+        }
+      ],
+      "path": "src/consumer.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 9,
+            "line": 3,
+            "name": "Users",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 4,
+            "name": "Users.created",
+            "uses": [
+              "EventPattern"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 7,
+            "name": "Users.get",
+            "uses": [
+              "MessagePattern"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "EventPattern",
+          "MessagePattern"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Notifier"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "EventEmitter2"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "EventEmitter2"
+          ],
+          "spec": "@nestjs/event-emitter",
+          "to": {
+            "unresolved": {
+              "reason": "unknown-package"
+            }
+          }
+        }
+      ],
+      "path": "src/emitter.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 9,
+            "line": 3,
+            "name": "Notifier",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Notifier.constructor",
+            "uses": [
+              "EventEmitter2"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 6,
+            "name": "Notifier.notify",
+            "uses": [
+              "EventEmitter2.emit"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "queue user.deleted",
+          "line": 8,
+          "role": "calls",
+          "via": "kafka"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "Events"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Inject"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Inject"
+          ],
+          "spec": "@nestjs/common",
+          "to": {
+            "external": "@nestjs/common"
+          }
+        },
+        {
+          "exported": [
+            "ClientKafka"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "ClientKafka"
+          ],
+          "spec": "@nestjs/microservices",
+          "to": {
+            "external": "@nestjs/microservices"
+          }
+        }
+      ],
+      "path": "src/producer-field.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 10,
+            "line": 4,
+            "name": "Events",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Events.kafka",
+            "uses": [
+              "ClientKafka",
+              "Inject"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 7,
+            "name": "Events.publish",
+            "uses": [
+              "ClientKafka.emit",
+              "Events.kafka"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Inject"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "queue t",
+          "line": 4,
+          "role": "calls",
+          "via": "kafka"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "write"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Producer"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Producer"
+          ],
+          "spec": "kafkajs",
+          "to": {
+            "external": "kafkajs"
+          }
+        }
+      ],
+      "path": "src/producer-param.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 3,
+            "name": "write",
+            "uses": [
+              "Producer"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "queue user.created",
+          "line": 7,
+          "role": "calls",
+          "via": "kafka"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "Publisher"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "ClientKafka"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "ClientKafka"
+          ],
+          "spec": "@nestjs/microservices",
+          "to": {
+            "external": "@nestjs/microservices"
+          }
+        }
+      ],
+      "path": "src/producer-property.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 9,
+            "line": 3,
+            "name": "Publisher",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Publisher.constructor",
+            "uses": [
+              "ClientKafka"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 6,
+            "name": "Publisher.publish",
+            "uses": [
+              "ClientKafka.emit"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "queue t",
+          "line": 5,
+          "role": "calls",
+          "via": "kafka"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "Sender"
+      ],
+      "imports": [],
+      "path": "src/producer-service.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 7,
+            "line": 1,
+            "name": "Sender",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Sender.constructor",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 4,
+            "name": "Sender.send",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "KafkaSender",
+        "LocalSender"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "ClientKafka"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "ClientKafka"
+          ],
+          "spec": "@nestjs/microservices",
+          "to": {
+            "external": "@nestjs/microservices"
+          }
+        },
+        {
+          "exported": [
+            "EventEmitter2"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "EventEmitter2"
+          ],
+          "spec": "@nestjs/event-emitter",
+          "to": {
+            "unresolved": {
+              "reason": "unknown-package"
+            }
+          }
+        }
+      ],
+      "path": "src/two-classes.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 10,
+            "line": 4,
+            "name": "KafkaSender",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "KafkaSender.constructor",
+            "uses": [
+              "ClientKafka"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 7,
+            "name": "KafkaSender.publish",
+            "uses": [
+              "ClientKafka.emit"
+            ]
+          },
+          {
+            "end": 18,
+            "line": 12,
+            "name": "LocalSender",
+            "uses": []
+          },
+          {
+            "end": 13,
+            "line": 13,
+            "name": "LocalSender.constructor",
+            "uses": [
+              "EventEmitter2"
+            ]
+          },
+          {
+            "end": 17,
+            "line": 15,
+            "name": "LocalSender.publish",
+            "uses": [
+              "EventEmitter2.emit"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "kafka",
+        "local"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Producer"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Producer"
+          ],
+          "spec": "kafkajs",
+          "to": {
+            "external": "kafkajs"
+          }
+        },
+        {
+          "exported": [
+            "EventEmitter2"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "EventEmitter2"
+          ],
+          "spec": "@nestjs/event-emitter",
+          "to": {
+            "unresolved": {
+              "reason": "unknown-package"
+            }
+          }
+        }
+      ],
+      "path": "src/two-kinds.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 6,
+            "line": 4,
+            "name": "kafka",
+            "uses": [
+              "Producer"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 8,
+            "name": "local",
+            "uses": [
+              "EventEmitter2"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "write"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Kafka"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Kafka"
+          ],
+          "spec": "kafkajs",
+          "to": {
+            "external": "kafkajs"
+          }
+        }
+      ],
+      "path": "src/untyped.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "kafka",
+            "uses": [
+              "Kafka"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "producer",
+            "uses": [
+              "kafka"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "write",
+            "uses": [
+              "producer"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Kafka",
+          "kafka"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "file-system routes (Next.js, Remix, SvelteKit) are not read",
+            "routers mounted from another package, and constants imported from another package, are not followed: the link reads one project at a time",
+            "a route path is read from a string, a template or a concatenation, and from a constant (a const, an enum member, a static property or a property of a constant object) declared in the same file or in a file of the same project that it is imported from; a path held in a function-local value, or in a key that an object spread follows, is not read",
+            "a static property or an object property that the program assigns again is read with the value it declares",
+            "a NestJS global prefix is applied only when it is a string or a constant of the same file set on an app that NestFactory.create(<name>) makes in the same file, and the exclude option is not read, so excluded routes get the prefix too; RouterModule paths are not read",
+            "NestJS modules are followed through @Module imports and controllers written as names or forwardRef(() => Name); modules made by a call (forRoot, register), names read from a namespace (ns.Module) and anonymous default exports are not",
+            "a NestJS controller serves the routes of the class it extends only when that class is named directly (not ns.Base), carries no @Controller of its own, and is its direct base",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the file that registers the route, or be imported from a file of the same project that makes it; a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a router or app the file imports or makes is read as that one",
+            "a mount on an app or router imported from another file (importedApp.use('/x', router)) is not read: only an app or router made in the same file takes a mount, and the routes of a router that no read mount reaches are served at the paths they are written with",
+            "a mount path is read from a string or a constant of the same file, not from an imported constant, and a mount path array with an element that is not text is read for its other elements only",
+            "a NestJS controller whose @Controller prefix is not text (an imported constant, a call) serves no route and is reported as a site the file could not read: its own routes and those of the class it extends are not served",
+            "routers that mount each other in a cycle are followed until the cycle closes"
+          ],
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a client the file imports or makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "resolvers built at run time are not read",
+            "schema-first resolvers outside a resolvers map are not read"
+          ],
+          "kind": "graphql",
+          "role": "serves",
+          "via": [
+            "nestjs"
+          ]
+        },
+        {
+          "blind_spots": [
+            "the kafka pack reads a consumer only when its receiver is declared with a type it lists, so const consumer = kafka.consumer() is not; topics given as an array to subscribe ({ topics: [...] }) are not read"
+          ],
+          "kind": "queue",
+          "role": "serves",
+          "via": [
+            "kafka"
+          ]
+        },
+        {
+          "blind_spots": [
+            "the kafka pack reads a producer only when its receiver is declared with a type it lists (a parameter, a class property, a constructor parameter property, or a variable made with new): a producer held in a name with no declared type, such as const producer = kafka.producer(), is not read"
+          ],
+          "kind": "queue",
+          "role": "calls",
+          "via": [
+            "kafka"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}
