@@ -15,6 +15,7 @@ mod projects;
 mod raw_sql;
 mod receivers;
 mod resolution;
+mod scopes;
 mod support;
 mod symbols;
 mod trpc;

@@ -156,13 +156,17 @@ fn an_imported_name_the_link_cannot_read_keeps_its_reading() -> Result<(), Box<d
 #[scenario("typescript", "A name that a local binds again is no import")]
 fn a_name_that_a_local_binds_again_is_no_import() -> Result<(), Box<dyn Error>> {
     let json = run("values-shadow")?;
-    // The parameter hides the import in its function, and the file is not read by scope, so the import is read nowhere in it.
-    assert_eq!(linked(&json), NOTHING);
+    // The parameter hides the import in its function only: the sites outside it still read the import, through the link.
     assert_eq!(
-        contracts(&json, "src/users.ts"),
-        ["calls http * /users @4", "calls http * /orders @7",]
+        linked(&json),
+        [
+            "calls http * /api/v1/orders @7 in src/users.ts",
+            "calls http * /api/v1 @8 in src/users.ts",
+            "calls http * /api/v1/items @11 in src/users.ts",
+        ]
     );
-    assert_eq!(unread(&json, "src/users.ts"), ["@8 non-literal fetch"]);
+    assert_eq!(contracts(&json, "src/users.ts"), ["calls http * /users @4"]);
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
     insta::assert_json_snapshot!(json);
     Ok(())
 }

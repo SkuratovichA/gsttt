@@ -100,23 +100,6 @@ pub(super) fn collect<'p>(program: &Program<'_>, packs: &'p [Pack]) -> Roots<'p>
     second.finish()
 }
 
-/// The names of `names` that the file binds more than once. An import binds its name once, so a second binding of any kind, a parameter, a variable, a function or a class, hides the import wherever it is in scope, and the walk keeps no scope: the name is no import for the whole file.
-pub(super) fn rebound<'a>(
-    program: &Program<'a>,
-    names: impl IntoIterator<Item = &'a str>,
-) -> BTreeSet<String> {
-    let mut walk = Collector::new(&[], false, names.into_iter().map(Name::Local).collect());
-    walk.visit_program(program);
-    walk.others
-        .iter()
-        .filter(|&(&name, &count)| {
-            // `const name = this` is a binding that the count leaves out.
-            count > 1 || matches!(name, Name::Local(local) if walk.this_bound.contains(local))
-        })
-        .map(|(name, _)| name.key())
-        .collect()
-}
-
 /// What a binding binds: a name in scope, or the property `this.<name>` of a class.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Name<'a> {
@@ -500,66 +483,5 @@ fn reference_heads<'a>(
         }
         TSTypeName::IdentifierReference(name) => found(Cow::Borrowed(name.name.as_str())),
         qualified => found(Cow::Owned(qualified.to_string())),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use oxc_allocator::Allocator;
-    use oxc_parser::Parser;
-    use oxc_span::SourceType;
-
-    use super::rebound;
-
-    /// The names of `watched` that `code` binds more than once, in name order.
-    fn rebound_in(code: &str, watched: &[&'static str]) -> Vec<String> {
-        let allocator = Allocator::default();
-        let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
-        rebound(&parsed.program, watched.iter().copied())
-            .into_iter()
-            .collect()
-    }
-
-    #[test]
-    fn a_name_that_is_bound_again_anywhere_in_the_file_is_rebound() {
-        for code in [
-            "import { A } from 'a'; function f(A: string) {}",
-            "import { A } from 'a'; const f = (A) => A;",
-            "import { A } from 'a'; function f({ A }) {}",
-            "import { A } from 'a'; function f() { const A = 1; }",
-            "import { A } from 'a'; function f() { let [A] = []; }",
-            "import { A } from 'a'; function A() {}",
-            "import { A } from 'a'; class B { m() { class A {} } }",
-            "import { A } from 'a'; try {} catch (A) {}",
-            "import { A } from 'a'; class B { constructor(private A: string) {} }",
-            "import { A } from 'a'; function f() { const A = this; }",
-            "import { A } from 'a'; function f() { for (const A of []) {} }",
-            "import { A } from 'a'; enum A { X }",
-        ] {
-            assert_eq!(rebound_in(code, &["A"]), ["A"], "{code}");
-        }
-    }
-
-    #[test]
-    fn a_name_that_nothing_binds_again_is_not_rebound() {
-        for code in [
-            "import { A } from 'a'; fetch(A);",
-            "import { A } from 'a'; type A2 = A; interface B { A: string }",
-            "import { A } from 'a'; const o = { A: 1, B: A }; o.A;",
-            "import { A } from 'a'; class B { A = 1; m() { return this.A; } }",
-            "import { A } from 'a'; type F = (A: string) => void;",
-            "import { A } from 'a'; declare function f(A: string): void;",
-            "import { A } from 'a'; function f<A>(x: A) {}",
-            "import { A } from 'a'; function f(B: string) {}",
-        ] {
-            assert_eq!(rebound_in(code, &["A"]), Vec::<String>::new(), "{code}");
-        }
-    }
-
-    #[test]
-    fn only_the_names_asked_for_are_followed() {
-        let code = "import { A, B } from 'x'; function f(A, B) {} function g(C) {}";
-        assert_eq!(rebound_in(code, &["A", "B"]), ["A", "B"]);
-        assert_eq!(rebound_in(code, &["A", "C"]), ["A"]);
     }
 }

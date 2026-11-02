@@ -50,16 +50,11 @@ expression: json
           "line": 4,
           "role": "calls",
           "via": "fetch"
-        },
-        {
-          "key": "http * /orders",
-          "line": 7,
-          "role": "calls",
-          "via": "fetch"
         }
       ],
       "embedded": [],
       "exports": [
+        "items",
         "list"
       ],
       "imports": [
@@ -93,6 +88,14 @@ expression: json
             "uses": [
               "BASE"
             ]
+          },
+          {
+            "end": 12,
+            "line": 10,
+            "name": "items",
+            "uses": [
+              "BASE"
+            ]
           }
         ],
         "exports": [],
@@ -101,18 +104,32 @@ expression: json
         ]
       },
       "tags": 0,
-      "unresolved": [
-        {
-          "detail": "fetch",
-          "line": 8,
-          "reason": {
-            "reason": "non-literal"
-          }
-        }
-      ]
+      "unresolved": []
     }
   ],
-  "linked": [],
+  "linked": [
+    {
+      "file": "src/users.ts",
+      "key": "http * /api/v1/orders",
+      "line": 7,
+      "role": "calls",
+      "via": "fetch"
+    },
+    {
+      "file": "src/users.ts",
+      "key": "http * /api/v1",
+      "line": 8,
+      "role": "calls",
+      "via": "fetch"
+    },
+    {
+      "file": "src/users.ts",
+      "key": "http * /api/v1/items",
+      "line": 11,
+      "role": "calls",
+      "via": "fetch"
+    }
+  ],
   "problems": [],
   "projects": [
     {
@@ -120,8 +137,8 @@ expression: json
       "provides": [
         {
           "blind_spots": [
-            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
-            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a client the file imports or makes is read as that one"
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name, and a constant of another package, are not read",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
           ],
           "kind": "http",
           "role": "calls",

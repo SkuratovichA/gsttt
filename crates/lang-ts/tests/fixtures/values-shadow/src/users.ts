@@ -6,3 +6,7 @@ export function list(BASE: string) {
 
 fetch(`${BASE}/orders`);
 fetch(BASE);
+
+export function items() {
+  return fetch(`${BASE}/items`);
+}

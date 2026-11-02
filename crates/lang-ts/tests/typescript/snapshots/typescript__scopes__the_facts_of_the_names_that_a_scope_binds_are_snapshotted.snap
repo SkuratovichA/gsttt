@@ -1,0 +1,208 @@
+---
+source: crates/lang-ts/tests/typescript/scopes.rs
+expression: "run(\"scopes-hidden\")?"
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "http * /local",
+          "line": 9,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /api",
+          "line": 31,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /api",
+          "line": 35,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /api",
+          "line": 38,
+          "role": "calls",
+          "via": "fetch"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "callback",
+        "destructured",
+        "hoisted",
+        "mutable",
+        "param",
+        "shadow",
+        "typed"
+      ],
+      "imports": [],
+      "path": "src/api.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "BASE",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 3,
+            "name": "param",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 7,
+            "name": "shadow",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 15,
+            "line": 12,
+            "name": "mutable",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 20,
+            "line": 17,
+            "name": "destructured",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 27,
+            "line": 22,
+            "name": "hoisted",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 32,
+            "line": 29,
+            "name": "typed",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 36,
+            "line": 34,
+            "name": "callback",
+            "uses": [
+              "BASE"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "BASE"
+        ]
+      },
+      "tags": 0,
+      "unresolved": [
+        {
+          "detail": "fetch",
+          "line": 4,
+          "reason": {
+            "reason": "non-literal"
+          }
+        },
+        {
+          "detail": "fetch",
+          "line": 14,
+          "reason": {
+            "reason": "non-literal"
+          }
+        },
+        {
+          "detail": "fetch",
+          "line": 19,
+          "reason": {
+            "reason": "non-literal"
+          }
+        },
+        {
+          "detail": "fetch",
+          "line": 26,
+          "reason": {
+            "reason": "non-literal"
+          }
+        }
+      ]
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name, and a constant of another package, are not read",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}
