@@ -40,7 +40,7 @@ Asked about names, `impact` SHALL take no name through a mock, because a test th
 ## ADDED Requirements
 
 ### Requirement: Tests that replace a module
-A test that replaces a module with a mock that has a factory runs none of its code, so `impact` SHALL list the test only when imports that enter no replaced module lead from it to a changed file, or to a file the walk reached across a contract. A module the test also takes by another mock call, or as the actual module, SHALL NOT count as replaced. A test that is listed SHALL keep the walk's distance, reason, callers and load, and one left out SHALL NOT be counted among the tests left out.
+A test that replaces a module with a factory mock runs none of its code, so `impact` SHALL list it only when imports lead from it to a changed file, or to a file the walk reached across a contract, entering no replaced module except by asking for the actual module. A module the test also takes by another mock call, or as the actual module, SHALL NOT count as replaced. A listed test SHALL keep the walk's distance, reason, callers and load, and one cut SHALL NOT count among the tests left out.
 
 #### Scenario: A test that replaces the only way to the change is not listed
 - **WHEN** `b.ts` imports `a.ts`, `t.test.ts` imports `b.ts` and has `vi.mock('./b', () => ({}))` at its top level, and `a.ts` changes
@@ -52,6 +52,10 @@ A test that replaces a module with a mock that has a factory runs none of its co
 
 #### Scenario: A test that asks for the actual module is listed
 - **WHEN** `b.ts` imports `a.ts`, `t.test.ts` imports `b.ts` and has `vi.mock('./b', async () => ({ ...(await vi.importActual('./b')) }))` at its top level, and `a.ts` changes
+- **THEN** impact lists `t.test.ts` among the tests at distance 2
+
+#### Scenario: A test whose helper asks for the replaced module as it is is listed
+- **WHEN** `b.ts` imports `a.ts`, `t.test.ts` imports `b.ts` and `helper.ts` and has `vi.mock('./b', () => ({}))` at its top level, `helper.ts` takes `b.ts` through `vi.importActual('./b')`, and `a.ts` changes
 - **THEN** impact lists `t.test.ts` among the tests at distance 2
 
 #### Scenario: A test that mocks a module without a factory is listed

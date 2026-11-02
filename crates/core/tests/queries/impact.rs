@@ -2381,6 +2381,51 @@ fn a_test_that_mocks_a_module_without_a_factory_is_listed() {
     assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
 }
 
+#[scenario(
+    "queries",
+    "A test whose helper asks for the replaced module as it is is listed"
+)]
+#[test]
+fn a_test_whose_helper_asks_for_the_replaced_module_as_it_is_is_listed() {
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .imports("t.test.ts", "helper.ts")
+        .imports_actual("helper.ts", "b.ts", 1)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+#[test]
+fn a_helper_that_also_imports_the_replaced_module_still_asks_for_it_as_it_is() {
+    // The edge of the graph keeps a flag only when every import behind it carries it, so this one has no mark of the actual module.
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .imports("t.test.ts", "helper.ts")
+        .imports("helper.ts", "b.ts")
+        .imports_actual("helper.ts", "b.ts", 2)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+#[test]
+fn a_helper_that_only_imports_the_replaced_module_gets_the_mock_too() {
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .imports("t.test.ts", "helper.ts")
+        .imports("helper.ts", "b.ts")
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(paths(&answer.tests), NONE);
+}
+
 #[scenario("queries", "A test that mocks the module again is listed")]
 #[test]
 fn a_test_that_mocks_the_module_again_is_listed() {
@@ -2581,7 +2626,7 @@ enum Loads {
     Bare,
 }
 
-/// The files a test runs, by what the edges say and nothing else: itself, and every file that a file it runs loads, except the modules it replaces. It replaces a module when it mocks it with a factory and neither asks for the module as it is nor mocks it any other way. Grown to a fixed point, not walked.
+/// The files a test runs, by what the edges say and nothing else: itself, and every file that a file it runs loads, except the modules it replaces, which run only where a file it runs asks for them as they are. It replaces a module when it mocks it with a factory and neither asks for the module as it is nor mocks it any other way. Grown to a fixed point, not walked.
 fn files_run_by(files: usize, test: usize, edges: &[(usize, usize, Loads)]) -> Vec<bool> {
     let replaced = |file: usize| {
         let by_test = |wanted: fn(Loads) -> bool| {
@@ -2596,8 +2641,8 @@ fn files_run_by(files: usize, test: usize, edges: &[(usize, usize, Loads)]) -> V
     runs[test] = true;
     loop {
         let before = runs.clone();
-        for &(from, to, _) in edges {
-            if runs[from] && !replaced(to) {
+        for &(from, to, loads) in edges {
+            if runs[from] && (loads == Loads::Actual || !replaced(to)) {
                 runs[to] = true;
             }
         }
@@ -2610,7 +2655,7 @@ fn files_run_by(files: usize, test: usize, edges: &[(usize, usize, Loads)]) -> V
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1024))]
 
-    /// On any graph, a test is listed exactly when the files it runs include the changed one, where it does not run a module it replaces unless it also asks for the module as it is or mocks it another way, and a test that replaces nothing is listed whenever the change reaches it.
+    /// On any graph, a test is listed exactly when the files it runs include the changed one, where it does not run a module it replaces unless it also asks for the module as it is or mocks it another way, or a file it runs asks for the module as it is, and a test that replaces nothing is listed whenever the change reaches it.
     #[test]
     fn a_replaced_module_cuts_exactly_the_tests_it_stands_between(
         edges in prop::collection::vec(

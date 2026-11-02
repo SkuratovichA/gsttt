@@ -308,8 +308,13 @@ impl Graph {
         self.dependents.row(file.index())
     }
 
-    /// Whether `from` is one of the `goals` or imports one, directly or through other files, without entering a file of `avoid`, which is sorted. A goal that is also avoided is not entered. The imports followed are those of the walk over files: a type-only import is, and a Rust `mod` declaration is not.
-    pub fn reaches_avoiding(&self, from: FileId, goals: &IdSet<FileId>, avoid: &[FileId]) -> bool {
+    /// Whether `from` is one of the `goals` or imports one, directly or through other files, without taking an import that `avoid` refuses, given the importer and the file it imports. A goal that only such an import leads to is not entered. The imports followed are those of the walk over files: a type-only import is, and a Rust `mod` declaration is not.
+    pub fn reaches_avoiding(
+        &self,
+        from: FileId,
+        goals: &IdSet<FileId>,
+        avoid: impl Fn(FileId, FileId) -> bool,
+    ) -> bool {
         if goals.contains(from) {
             return true;
         }
@@ -318,8 +323,7 @@ impl Graph {
         let mut pending = vec![from];
         while let Some(file) = pending.pop() {
             for &(next, edge) in self.dependencies(file) {
-                if edge.is_structural() || avoid.binary_search(&next).is_ok() || !seen.insert(next)
-                {
+                if edge.is_structural() || avoid(file, next) || !seen.insert(next) {
                     continue;
                 }
                 if goals.contains(next) {
@@ -1007,43 +1011,58 @@ mod tests {
         FileId::from_raw(file)
     }
 
+    /// Refuses every import of one of `files`, whoever makes it.
+    fn into(files: &[u32]) -> impl Fn(FileId, FileId) -> bool + '_ {
+        move |_, to| files.iter().any(|&file| id(file) == to)
+    }
+
     #[test]
     fn a_goal_is_reached_through_the_files_that_are_not_avoided() {
         let graph = chain(&[(0, 1), (1, 3), (0, 2), (2, 3)], ImportKind::Static);
-        assert!(graph.reaches_avoiding(id(0), &goals(&[3]), &[]));
+        assert!(graph.reaches_avoiding(id(0), &goals(&[3]), into(&[])));
         assert!(
-            graph.reaches_avoiding(id(0), &goals(&[3]), &[id(1)]),
+            graph.reaches_avoiding(id(0), &goals(&[3]), into(&[1])),
             "the way through c.ts is left"
         );
-        assert!(!graph.reaches_avoiding(id(0), &goals(&[3]), &[id(1), id(2)]));
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[3]), into(&[1, 2])));
     }
 
     #[test]
     fn a_goal_that_is_avoided_is_not_entered() {
         let graph = chain(&[(0, 1), (1, 2)], ImportKind::Static);
-        assert!(!graph.reaches_avoiding(id(0), &goals(&[1]), &[id(1)]));
-        assert!(!graph.reaches_avoiding(id(0), &goals(&[2]), &[id(1)]));
-        assert!(graph.reaches_avoiding(id(0), &goals(&[2]), &[]));
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[1]), into(&[1])));
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[2]), into(&[1])));
+        assert!(graph.reaches_avoiding(id(0), &goals(&[2]), into(&[])));
+    }
+
+    #[test]
+    fn an_import_is_refused_for_its_importer_and_not_for_the_file_it_imports() {
+        let graph = chain(&[(0, 1), (0, 2), (2, 1), (1, 3)], ImportKind::Static);
+        let from_the_start = |from: FileId, to: FileId| from == id(0) && to == id(1);
+        assert!(
+            graph.reaches_avoiding(id(0), &goals(&[3]), from_the_start),
+            "c.ts still imports b.ts"
+        );
     }
 
     #[test]
     fn a_file_that_is_a_goal_reaches_it_without_an_import() {
         let graph = chain(&[], ImportKind::Static);
-        assert!(graph.reaches_avoiding(id(4), &goals(&[4]), &[id(4)]));
-        assert!(!graph.reaches_avoiding(id(4), &goals(&[3]), &[]));
+        assert!(graph.reaches_avoiding(id(4), &goals(&[4]), into(&[4])));
+        assert!(!graph.reaches_avoiding(id(4), &goals(&[3]), into(&[])));
     }
 
     #[test]
     fn a_cycle_ends() {
         let graph = chain(&[(0, 1), (1, 2), (2, 0)], ImportKind::Static);
-        assert!(!graph.reaches_avoiding(id(0), &goals(&[4]), &[]));
-        assert!(graph.reaches_avoiding(id(0), &goals(&[2]), &[]));
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[4]), into(&[])));
+        assert!(graph.reaches_avoiding(id(0), &goals(&[2]), into(&[])));
     }
 
     #[test]
     fn a_module_declaration_is_no_way_to_the_child() {
         let graph = chain(&[(0, 1)], ImportKind::Module);
-        assert!(!graph.reaches_avoiding(id(0), &goals(&[1]), &[]));
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[1]), into(&[])));
     }
 
     #[test]
@@ -1055,6 +1074,6 @@ mod tests {
             &plain(ImportKind::Static, ImportFlags::TYPE_ONLY),
         );
         let graph = builder.build();
-        assert!(graph.reaches_avoiding(id(0), &goals(&[1]), &[]));
+        assert!(graph.reaches_avoiding(id(0), &goals(&[1]), into(&[])));
     }
 }
