@@ -1,4 +1,4 @@
-export const PREFIX = 'auth';
+export const PREFIX = compute();
 export const LOGIN = 'login';
 
 export function prefix() {

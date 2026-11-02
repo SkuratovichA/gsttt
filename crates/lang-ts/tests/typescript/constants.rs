@@ -1,10 +1,15 @@
 //! Constants read where a rule reads text: in the file that declares them, and in the files that import them.
 
 use std::error::Error;
+use std::fs;
+use std::time::Duration;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, contracts, linked, run, sites, unread};
+use crate::support::{NOTHING, contracts, linked, run, run_tree_within, sites, unread};
+
+/// More time than any tree of this file takes to index.
+const LIMIT: Duration = Duration::from_secs(60);
 
 #[test]
 #[scenario("typescript", "A constant in the same file is read")]
@@ -237,5 +242,191 @@ fn a_name_that_is_no_constant_leaves_the_site_unread() -> Result<(), Box<dyn Err
     assert_eq!(contracts(&json, "src/api.ts"), NOTHING);
     assert_eq!(sites("constants-not-constant")?, NOTHING);
     insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An imported const prefix serves its routes under it")]
+fn an_imported_const_prefix_serves_its_routes_under_it() -> Result<(), Box<dyn Error>> {
+    let json = run("controller-prefix-const")?;
+    assert_eq!(
+        sites("controller-prefix-const")?,
+        [
+            "serves http GET /users/list @6 in src/users.controller.ts",
+            "serves http GET /users/{} @9 in src/users.controller.ts",
+        ]
+    );
+    assert_eq!(unread(&json, "src/users.controller.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A property, a member, an object path and a template of imported names give the prefix"
+)]
+fn a_property_a_member_an_object_path_and_a_template_of_imported_names_give_the_prefix()
+-> Result<(), Box<dyn Error>> {
+    let json = run("controller-prefix-forms")?;
+    assert_eq!(
+        sites("controller-prefix-forms")?,
+        [
+            "serves http GET /api/v1/d @24 in src/forms.controller.ts",
+            "serves http GET /items/b @12 in src/forms.controller.ts",
+            "serves http GET /orders/a @6 in src/forms.controller.ts",
+            "serves http GET /users/c @18 in src/forms.controller.ts",
+        ]
+    );
+    assert_eq!(unread(&json, "src/forms.controller.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "An array with an imported element serves each path once"
+)]
+fn an_array_with_an_imported_element_serves_each_path_once() -> Result<(), Box<dyn Error>> {
+    let json = run("controller-prefix-array")?;
+    assert_eq!(
+        sites("controller-prefix-array")?,
+        [
+            "serves http GET /literal/x @6 in src/users.controller.ts",
+            "serves http GET /users/x @6 in src/users.controller.ts",
+        ]
+    );
+    assert_eq!(unread(&json, "src/users.controller.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An imported method path under an imported prefix")]
+fn an_imported_method_path_under_an_imported_prefix() -> Result<(), Box<dyn Error>> {
+    let json = run("controller-prefix-method-path")?;
+    assert_eq!(
+        sites("controller-prefix-method-path")?,
+        ["serves http GET /users/login @6 in src/users.controller.ts"]
+    );
+    assert_eq!(unread(&json, "src/users.controller.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A base class in another file is served under an imported prefix"
+)]
+fn a_base_class_in_another_file_is_served_under_an_imported_prefix() -> Result<(), Box<dyn Error>> {
+    let json = run("controller-prefix-base")?;
+    assert_eq!(
+        sites("controller-prefix-base")?,
+        [
+            "serves http GET /users/{} @4 in src/user.controller.base.ts",
+            "serves http GET /users/{} @5 in src/user.controller.ts",
+        ]
+    );
+    assert_eq!(contracts(&json, "src/user.controller.base.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/user.controller.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "An array with one unreadable and one readable element serves the readable one"
+)]
+fn an_array_with_one_unreadable_and_one_readable_element_serves_the_readable_one()
+-> Result<(), Box<dyn Error>> {
+    let json = run("controller-prefix-array-unread")?;
+    assert_eq!(
+        sites("controller-prefix-array-unread")?,
+        ["serves http GET /users/x @6 in src/users.controller.ts"]
+    );
+    assert_eq!(
+        unread(&json, "src/users.controller.ts"),
+        ["@4 non-literal @Controller([USERS, OTHER])"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An imported prefix composes with the global prefix")]
+fn an_imported_prefix_composes_with_the_global_prefix() -> Result<(), Box<dyn Error>> {
+    let json = run("controller-prefix-global")?;
+    assert_eq!(
+        sites("controller-prefix-global")?,
+        ["serves http GET /api/users/x @6 in src/users.controller.ts"]
+    );
+    assert_eq!(unread(&json, "src/users.controller.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A method path that stays unread under two prefixes is one unread site"
+)]
+fn a_method_path_that_stays_unread_under_two_prefixes_is_one_unread_site()
+-> Result<(), Box<dyn Error>> {
+    let json = run("controller-prefix-method-unread")?;
+    assert_eq!(
+        sites("controller-prefix-method-unread")?,
+        [
+            "serves http GET /admin/x @9 in src/users.controller.ts",
+            "serves http GET /users/x @9 in src/users.controller.ts",
+        ]
+    );
+    assert_eq!(
+        unread(&json, "src/users.controller.ts"),
+        ["@6 non-literal Get"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A changed constant moves the routes of a controller that did not change"
+)]
+fn a_changed_constant_moves_the_routes_of_a_controller_that_did_not_change()
+-> Result<(), Box<dyn Error>> {
+    let tree = tempfile::tempdir()?;
+    fs::create_dir(tree.path().join("src"))?;
+    fs::write(
+        tree.path().join("package.json"),
+        r#"{ "name": "api", "dependencies": { "@nestjs/common": "^11.0.0" } }"#,
+    )?;
+    let controller = "import { Controller, Get } from '@nestjs/common';\nimport { USERS } from './routes';\n\n@Controller(USERS)\nexport class UsersController {\n  @Get('x')\n  x() {}\n}\n";
+    fs::write(tree.path().join("src/users.controller.ts"), controller)?;
+    fs::write(
+        tree.path().join("src/routes.ts"),
+        "export const USERS = 'users';\n",
+    )?;
+    let before = run_tree_within(tree.path(), LIMIT)?;
+    assert_eq!(
+        linked(&before),
+        ["serves http GET /users/x @6 in src/users.controller.ts"]
+    );
+    fs::write(
+        tree.path().join("src/routes.ts"),
+        "export const USERS = 'people';\n",
+    )?;
+    assert_eq!(
+        fs::read_to_string(tree.path().join("src/users.controller.ts"))?,
+        controller
+    );
+    let after = run_tree_within(tree.path(), LIMIT)?;
+    assert_eq!(
+        linked(&after),
+        ["serves http GET /people/x @6 in src/users.controller.ts"]
+    );
     Ok(())
 }

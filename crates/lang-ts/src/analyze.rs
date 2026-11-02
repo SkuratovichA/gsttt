@@ -46,12 +46,12 @@ use self::symbols::Recorder;
 use crate::builtins::is_builtin;
 use crate::extra::{
     Binding, ClassRoute, Deferred, DeferredTarget, Export, ExportTarget, ImportedMount, Inherit,
-    Mount, MountTarget, Route, RuleRef, TsExtra,
+    Mount, MountTarget, Route, RuleRef, TsExtra, WaitingPrefix,
 };
 use crate::pathing::{is_relative, split_package};
 use crate::shape::{
-    COMPUTED, Shape, chain_of, dotted, dotted_name, field_name, literal_text, member_chain,
-    property_name, property_str, static_chain, template_text, text_with,
+    COMPUTED, ClassPrefix, Shape, chain_of, dotted, dotted_name, field_name, literal_text,
+    member_chain, property_name, property_str, static_chain, template_text, text_with,
 };
 
 /// Everything one file says on its own.
@@ -130,35 +130,18 @@ struct ClassDecorator {
     span: Span,
 }
 
-/// What a class decorator gives as the prefixes of the routes of its class.
-struct ClassPrefix {
-    /// The text of each prefix, once each: one empty text when the decorator carries none.
-    texts: Vec<String>,
-    /// The decorator holds a prefix that is not text here, so the routes of the class under it are not known.
-    unread: bool,
-}
+impl ClassDecorator {
+    /// The sites the class prefix `rule` reads in the decorator: one for each path of an array of paths.
+    fn sites(&self, rule: &Prefix) -> Cow<'_, [Shape]> {
+        rule.key.as_ref().map_or_else(
+            || Cow::Borrowed(std::slice::from_ref(&self.shape)),
+            |key| self.shape.each(key),
+        )
+    }
 
-impl ClassPrefix {
-    /// What `decorator` gives under the class prefix `rule` that names it: a prefix for each element of an array of paths.
-    fn of(rule: &Prefix, decorator: &ClassDecorator) -> Self {
-        let sites = rule.key.as_ref().map_or_else(
-            || Cow::Borrowed(std::slice::from_ref(&decorator.shape)),
-            |key| decorator.shape.each(key),
-        );
-        let mut prefix = Self {
-            texts: Vec::new(),
-            unread: false,
-        };
-        for site in sites.iter() {
-            match rule.reading(site).as_prefix() {
-                Some(text) if prefix.texts.iter().all(|known| known != text) => {
-                    prefix.texts.push(text.to_owned());
-                }
-                Some(_) => {}
-                None => prefix.unread = true,
-            }
-        }
-        prefix
+    /// What the decorator gives under the class prefix `rule`.
+    fn prefix(&self, rule: &Prefix) -> ClassPrefix {
+        ClassPrefix::read(rule, &self.sites(rule))
     }
 }
 
@@ -173,6 +156,8 @@ struct DecoratorAt<'a> {
     serves: bool,
     /// The routes belong to a class without the decorator, which a controller in another file may extend.
     inherited: bool,
+    /// The routes belong to this class, behind a prefix that names a constant of another file: the link reads the site under each text of the prefix.
+    under: Option<String>,
 }
 
 /// The packs that switch on reading that no rule describes, by name, found once per file.
@@ -775,7 +760,9 @@ impl<'a> Analyzer<'_, 'a> {
 
     /// Keeps a site for the link phase to read, with every trace of its target that a site read here leaves.
     fn defer(&mut self, deferred: Deferred) {
-        if let DeferredTarget::Class { class, .. } = &deferred.target {
+        if let DeferredTarget::Class { class, .. } | DeferredTarget::ClassUnder { class } =
+            &deferred.target
+        {
             self.hosts.insert(class.clone());
         }
         self.out.extra.deferred.push(deferred);
@@ -806,6 +793,15 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
+    /// The plain name the innermost class extends; `None` for no base or a dotted one (`ns.Base`).
+    fn plain_base(&self) -> Option<&str> {
+        self.classes
+            .last()?
+            .heritage
+            .as_deref()
+            .filter(|base| !base.contains('.'))
+    }
+
     /// A class that extends a plain name and carries the class decorator of an http serves rule serves the routes of that base class under the prefix of the decorator. The base class may be in another file, so the link phase resolves the name.
     fn inherit(&mut self, name: &str) {
         let packs = self.packs;
@@ -819,18 +815,14 @@ impl<'a> Analyzer<'_, 'a> {
             return;
         };
         // A prefix that is not read gives no route to the class, so it gives none to inherit either: `unread_prefixes` has reported it.
-        let prefixes = ClassPrefix::of(rule, decorator).texts;
-        if prefixes.is_empty() {
+        let read = decorator.prefix(rule);
+        // A prefix that names a constant of another file gives its inherited routes in the link too.
+        if read.waits || read.texts.is_empty() {
             return;
         }
+        let prefixes = read.texts;
         let line = self.line(decorator.span.start);
-        let Some(base) = self
-            .classes
-            .last()
-            .and_then(|frame| frame.heritage.as_deref())
-            .filter(|base| !base.contains('.'))
-            .map(str::to_owned)
-        else {
+        let Some(base) = self.plain_base().map(str::to_owned) else {
             return;
         };
         self.hosts.insert(name.to_owned());
@@ -844,20 +836,45 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
-    /// One site this file could not read for each decorator of the innermost class whose route prefix is not text, although many route rules may share the prefix: the class serves no route.
+    /// One site this file could not read for each decorator of the innermost class whose route prefix is not text, although many route rules may share the prefix: the class serves no route. A prefix that names a constant of another file is left to the link when a named class serves routes under it.
     fn unread_prefixes(&mut self) {
         let packs = self.packs;
-        let mut spans: Vec<Span> = packs
-            .iter()
-            .flat_map(|pack| &pack.decorators)
-            .filter_map(|rule| rule.class.as_ref())
-            .filter_map(|prefix| {
-                let decorator = self.class_decorator(prefix)?;
-                ClassPrefix::of(prefix, decorator)
-                    .unread
-                    .then_some(decorator.span)
-            })
-            .collect();
+        let class = self.classes.last().and_then(|frame| frame.name.clone());
+        let base = self.plain_base().map(str::to_owned);
+        let mut spans = Vec::new();
+        let mut waiting = Vec::new();
+        for (pack_index, pack) in packs.iter().enumerate() {
+            for (rule_index, rule) in pack.decorators.iter().enumerate() {
+                let Some(prefix) = &rule.class else {
+                    continue;
+                };
+                let Some(decorator) = self.class_decorator(prefix) else {
+                    continue;
+                };
+                let read = decorator.prefix(prefix);
+                match &class {
+                    Some(class) if read.waits && serves_http(&rule.kind, rule.role) => {
+                        waiting.push(WaitingPrefix {
+                            class: class.clone(),
+                            base: base.clone(),
+                            rule: RuleRef::Decorator {
+                                pack: pack_index,
+                                rule: rule_index,
+                            },
+                            sites: decorator.sites(prefix).iter().map(Shape::stored).collect(),
+                            line: self.line(decorator.span.start),
+                            detail: self.snippet(decorator.span),
+                        });
+                    }
+                    _ if read.unread => spans.push(decorator.span),
+                    _ => {}
+                }
+            }
+        }
+        for prefix in waiting {
+            self.hosts.insert(prefix.class.clone());
+            self.out.extra.waiting_prefixes.push(prefix);
+        }
         spans.sort_by_key(|span| span.start);
         spans.dedup();
         for span in spans {
@@ -1003,8 +1020,15 @@ impl<'a> Analyzer<'_, 'a> {
                         continue;
                     }
                     let serves = serves_http(&rule.kind, rule.role);
+                    let under = rule
+                        .class
+                        .as_ref()
+                        .filter(|_| serves)
+                        .and_then(|class| self.waiting_class(class));
                     let (prefixes, inherited) = match &rule.class {
                         None => (vec![None], false),
+                        // The link reads the prefix, and whatever text this file read of an array of paths is read there with the rest.
+                        Some(_) if under.is_some() => (vec![None], false),
                         Some(class) => match self.class_prefix(class) {
                             // A controller with several prefixes serves every route under each of them, and one prefix it cannot read leaves the others.
                             Some(ClassPrefix { texts, .. }) if !texts.is_empty() => {
@@ -1025,6 +1049,7 @@ impl<'a> Analyzer<'_, 'a> {
                         name: &name,
                         serves,
                         inherited,
+                        under,
                     };
                     // An array of paths is read as one site for each path.
                     let sites = site.each(&rule.key);
@@ -1047,6 +1072,19 @@ impl<'a> Analyzer<'_, 'a> {
         prefix: Option<&str>,
         at: &DecoratorAt<'_>,
     ) {
+        if let Some(class) = &at.under {
+            self.defer(Deferred {
+                rule: at.rule,
+                shape: site.stored(),
+                prefix: None,
+                line: at.line,
+                what: at.name.to_owned(),
+                target: DeferredTarget::ClassUnder {
+                    class: class.clone(),
+                },
+            });
+            return;
+        }
         let outcome = rule.apply(pack, site, prefix, at.line, at.name);
         if waits_for_link(
             &outcome,
@@ -1107,10 +1145,16 @@ impl<'a> Analyzer<'_, 'a> {
             .find(|decorator| rule.from.matches(&decorator.name))
     }
 
+    /// The name of the innermost class when its prefix through the decorator `rule` names a constant of another file.
+    fn waiting_class(&self, rule: &Prefix) -> Option<String> {
+        let name = self.classes.last()?.name.clone()?;
+        self.class_prefix(rule)?.waits.then_some(name)
+    }
+
     /// The prefix the innermost class gives through the decorator `rule` names; `None` when it carries none.
     fn class_prefix(&self, rule: &Prefix) -> Option<ClassPrefix> {
         let decorator = self.class_decorator(rule)?;
-        Some(ClassPrefix::of(rule, decorator))
+        Some(decorator.prefix(rule))
     }
 
     /// The assign rules for `target = value`; a class field counts when the class extends one the rule names.

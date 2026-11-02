@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::num::NonZeroU32;
 
 use gsttt_core::contract::{has_parent_segment, path_after_origin, without_query_and_fragment};
-use gsttt_core::rules::{Site, ValueExpr, ValueSource};
+use gsttt_core::rules::{Prefix, Site, ValueExpr, ValueSource};
 use oxc_ast::ast::{
     Argument, BinaryExpression, ChainElement, Expression, FormalParameter, MemberExpression,
     NewExpression, ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
@@ -17,6 +17,40 @@ use crate::parts::{MAX_COMPOSED, Mode, Part, Reads};
 
 /// How a computed part of a template or a concatenation is written in the text a rule reads.
 pub(crate) const COMPUTED: &str = "${}";
+
+/// What a class decorator gives as the prefixes of the routes of its class.
+pub(crate) struct ClassPrefix {
+    /// The text of each prefix, once each: one empty text when the decorator carries none.
+    pub(crate) texts: Vec<String>,
+    /// The decorator holds a prefix that is not text here, so the routes of the class under it are not known.
+    pub(crate) unread: bool,
+    /// Some prefix names a constant of another file, which only the link can read.
+    pub(crate) waits: bool,
+}
+
+impl ClassPrefix {
+    /// What the sites of a class decorator give under the class prefix `rule` that names it, one site for each path of an array of paths as [`Shape::each`] tells them apart.
+    pub(crate) fn read(rule: &Prefix, sites: &[Shape]) -> Self {
+        let mut prefix = Self {
+            texts: Vec::new(),
+            unread: false,
+            waits: rule
+                .key
+                .as_ref()
+                .is_some_and(|key| sites.iter().any(|site| site.holds_name(key))),
+        };
+        for site in sites {
+            match rule.reading(site).as_prefix() {
+                Some(text) if prefix.texts.iter().all(|known| known != text) => {
+                    prefix.texts.push(text.to_owned());
+                }
+                Some(_) => {}
+                None => prefix.unread = true,
+            }
+        }
+        prefix
+    }
+}
 
 /// A call or a decorator as the rules read it: the last segment of what is called, the declaration it sits on, and the text of each argument.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

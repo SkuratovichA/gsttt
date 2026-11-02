@@ -6,12 +6,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use gsttt_core::FileId;
 use gsttt_core::connector::{LinkFile, LinkInput, LinkedFact};
 use gsttt_core::fact::{ContractFact, UnresolvedSite};
-use gsttt_core::rules::{CallRule, Outcome, Pack, serves_http};
+use gsttt_core::rules::{CallRule, DecoratorRule, Outcome, Pack, serves_http};
 
 use super::{Node, through};
-use crate::extra::{ClassRoute, Deferred, DeferredTarget, LinkMaker, Route, RuleRef, TsExtra};
+use crate::extra::{
+    ClassRoute, Deferred, DeferredTarget, Inherit, LinkMaker, Route, RuleRef, TsExtra,
+    WaitingPrefix,
+};
 use crate::parts::Part;
-use crate::shape::Shape;
+use crate::shape::{ClassPrefix, Shape};
 
 /// What the deferred sites of every file came to, once the constants they name were read and the clients and routers they are called on were found.
 #[derive(Default)]
@@ -22,6 +25,8 @@ pub(super) struct Resolved {
     routes: BTreeMap<FileId, Vec<Route>>,
     /// Routes that a decorator declares, by file, which wait for the prefixes of the modules that reach the class.
     class_routes: BTreeMap<FileId, Vec<ClassRoute>>,
+    /// The controllers whose prefix the link read, by file, which may extend a class that declares routes in another file.
+    inherits: BTreeMap<FileId, Vec<Inherit>>,
     /// Routes that a file serves on an app or router another file makes, by the file that registers the route, the router as its own file knows it, and the route as the rules found it, which wait for the prefixes the mounts of the router give it.
     pub(super) served: Vec<(FileId, Node, ContractFact)>,
     /// The sites whose rule still could not read them.
@@ -38,6 +43,114 @@ impl Resolved {
     pub(super) fn class_routes_of(&self, file: FileId) -> &[ClassRoute] {
         self.class_routes.get(&file).map_or(&[], Vec::as_slice)
     }
+
+    /// The controllers of `file` that extend a plain name under a prefix the link read.
+    pub(super) fn inherits_of(&self, file: FileId) -> &[Inherit] {
+        self.inherits.get(&file).map_or(&[], Vec::as_slice)
+    }
+
+    /// Puts the contract a deferred site with `target` came to where the target says. `served` is the router the rule served the route on, when it does.
+    fn place(
+        &mut self,
+        file: FileId,
+        target: &DeferredTarget,
+        served: Option<Node>,
+        outcome: Outcome,
+    ) {
+        match outcome {
+            Outcome::Fact(fact) => match (target, served) {
+                (_, Some(node)) => self.served.push((file, node, fact)),
+                (DeferredTarget::Host(host), None) => {
+                    self.routes.entry(file).or_default().push(Route {
+                        host: host.clone(),
+                        fact,
+                    });
+                }
+                (DeferredTarget::Class { class, inherited }, None) => {
+                    self.class_route(file, class, fact, *inherited);
+                }
+                (DeferredTarget::ClassUnder { class }, None) => {
+                    self.class_route(file, class, fact, false);
+                }
+                (
+                    DeferredTarget::Own
+                    | DeferredTarget::Receiver { .. }
+                    | DeferredTarget::Made { .. }
+                    | DeferredTarget::Fallback { .. },
+                    None,
+                ) => self.own.push(LinkedFact::found(file, fact)),
+            },
+            Outcome::Blind(site) => self.unread.push((file, site)),
+            Outcome::Skip => {}
+        }
+    }
+
+    fn class_route(&mut self, file: FileId, class: &str, fact: ContractFact, inherited: bool) {
+        self.class_routes.entry(file).or_default().push(ClassRoute {
+            class: class.to_owned(),
+            fact,
+            inherited,
+        });
+    }
+
+    /// Keeps `site` as unread, once: a site read under several prefixes of a class stays unread under each.
+    fn blind(&mut self, file: FileId, site: UnresolvedSite) {
+        // The sites of one file are pushed together, so the tail holds every site of `file` that could match.
+        let known = self
+            .unread
+            .iter()
+            .rev()
+            .take_while(|(owner, _)| *owner == file)
+            .any(|(_, known)| known.line == site.line && known.detail == site.detail);
+        if !known {
+            self.unread.push((file, site));
+        }
+    }
+
+    /// Reads the class prefixes `file` left to the link, reports the ones that stay unread, and keeps what the controllers that extend a class get from the rest. The texts of each prefix are in the result, in the order of `file.extra.waiting_prefixes`.
+    fn read_prefixes<'f>(
+        &mut self,
+        reader: &Reader<'_, '_>,
+        packs: &[Pack],
+        file: &'f LinkFile<'_, TsExtra>,
+    ) -> Vec<(&'f WaitingPrefix, Vec<String>)> {
+        let mut read = Vec::new();
+        for waiting in &file.extra.waiting_prefixes {
+            let Some(rule) =
+                decorator_rule(packs, waiting.rule).and_then(|(_, rule)| rule.class.as_ref())
+            else {
+                continue;
+            };
+            let mut sites = waiting.sites.clone();
+            for site in &mut sites {
+                site.fill(|name| reader.constant(file, name));
+            }
+            let prefix = ClassPrefix::read(rule, &sites);
+            if prefix.unread {
+                self.blind(
+                    file.id,
+                    UnresolvedSite::non_literal(waiting.line, waiting.detail.clone()),
+                );
+            }
+            // The controller gives its inherited routes once, though several rules wait on its prefix.
+            let first = read
+                .iter()
+                .all(|(known, _): &(&WaitingPrefix, Vec<String>)| known.class != waiting.class);
+            if let (true, Some(base)) = (first, &waiting.base) {
+                let inherits = self.inherits.entry(file.id).or_default();
+                for text in &prefix.texts {
+                    inherits.push(Inherit {
+                        class: waiting.class.clone(),
+                        base: base.clone(),
+                        prefix: text.clone(),
+                        line: waiting.line,
+                    });
+                }
+            }
+            read.push((waiting, prefix.texts));
+        }
+        read
+    }
 }
 
 /// Reads the constants that the deferred sites of every file name, finds what the files that make a client or a router a site is called on make of it, and applies the rule of each site again.
@@ -45,9 +158,25 @@ pub(super) fn resolve(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Resolve
     let mut resolved = Resolved::default();
     let reader = Reader::new(input);
     for file in input.files() {
+        let prefixes = resolved.read_prefixes(&reader, packs, file);
         for deferred in &file.extra.deferred {
             let mut shape = deferred.shape.clone();
             shape.fill(|name| reader.constant(file, name));
+            // A route of a class whose prefix the link read is served under each text of it.
+            if let DeferredTarget::ClassUnder { class } = &deferred.target {
+                let texts = prefixes
+                    .iter()
+                    .find(|(waiting, _)| waiting.class == *class && waiting.rule == deferred.rule)
+                    .map_or(&[][..], |(_, texts)| texts.as_slice());
+                for text in texts {
+                    match apply(packs, deferred, Some(text), &shape) {
+                        Some(Outcome::Blind(site)) => resolved.blind(file.id, site),
+                        Some(outcome) => resolved.place(file.id, &deferred.target, None, outcome),
+                        None => {}
+                    }
+                }
+                continue;
+            }
             let (outcome, served) = match &deferred.target {
                 DeferredTarget::Receiver { host } => {
                     match on_made(&reader, packs, file, deferred, host, &shape) {
@@ -72,37 +201,7 @@ pub(super) fn resolve(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Resolve
                     None => continue,
                 },
             };
-            match outcome {
-                Outcome::Fact(fact) => match (&deferred.target, served) {
-                    (_, Some(node)) => resolved.served.push((file.id, node, fact)),
-                    (DeferredTarget::Host(host), None) => {
-                        resolved.routes.entry(file.id).or_default().push(Route {
-                            host: host.clone(),
-                            fact,
-                        });
-                    }
-                    (DeferredTarget::Class { class, inherited }, None) => {
-                        resolved
-                            .class_routes
-                            .entry(file.id)
-                            .or_default()
-                            .push(ClassRoute {
-                                class: class.clone(),
-                                fact,
-                                inherited: *inherited,
-                            });
-                    }
-                    (
-                        DeferredTarget::Own
-                        | DeferredTarget::Receiver { .. }
-                        | DeferredTarget::Made { .. }
-                        | DeferredTarget::Fallback { .. },
-                        None,
-                    ) => resolved.own.push(LinkedFact::found(file.id, fact)),
-                },
-                Outcome::Blind(site) => resolved.unread.push((file.id, site)),
-                Outcome::Skip => {}
-            }
+            resolved.place(file.id, &deferred.target, served, outcome);
         }
     }
     resolved
@@ -116,6 +215,17 @@ fn call_rule(packs: &[Pack], at: RuleRef) -> Option<(&Pack, &CallRule)> {
             Some((pack, pack.calls.get(rule)?))
         }
         RuleRef::Decorator { .. } => None,
+    }
+}
+
+/// The decorator rule at `at` and the pack it is in. `None` when the packs have no such rule, which the cache keeps from happening because it is keyed by the packs.
+fn decorator_rule(packs: &[Pack], at: RuleRef) -> Option<(&Pack, &DecoratorRule)> {
+    match at {
+        RuleRef::Decorator { pack, rule } => {
+            let pack = packs.get(pack)?;
+            Some((pack, pack.decorators.get(rule)?))
+        }
+        RuleRef::Call { .. } => None,
     }
 }
 
@@ -136,15 +246,8 @@ fn apply(
             &deferred.what,
         ));
     }
-    let RuleRef::Decorator { pack, rule } = deferred.rule else {
-        return None;
-    };
-    let pack = packs.get(pack)?;
-    Some(
-        pack.decorators
-            .get(rule)?
-            .apply(&pack.name, shape, prefix, deferred.line, &deferred.what),
-    )
+    let (pack, rule) = decorator_rule(packs, deferred.rule)?;
+    Some(rule.apply(&pack.name, shape, prefix, deferred.line, &deferred.what))
 }
 
 /// The variable that `host`, written in `file`, is imported as, when the file it leads to makes it with a call that some rule takes a receiver from, and the node it is in that file.

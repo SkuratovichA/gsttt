@@ -34,6 +34,9 @@ pub struct TsExtra {
     /// Controllers that extend a plain name, which may be a class that declares routes in another file.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub inherits: Vec<Inherit>,
+    /// Class prefixes that name a constant of another file, which the link reads.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) waiting_prefixes: Vec<WaitingPrefix>,
     /// tRPC routers declared in this file.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub routers: Vec<TrpcRouter>,
@@ -49,6 +52,20 @@ pub struct TsExtra {
     /// The sites left to the link, in source order: those whose rule reads a name imported from another file, those on a name imported from another file that a rule reads only on the receiver it was made as, and those on a client or a router of this file made with a name imported from another file.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) deferred: Vec<Deferred>,
+}
+
+/// A class prefix that names a constant of another file, which the link reads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct WaitingPrefix {
+    pub(crate) class: String,
+    /// The plain name the class extends, whose routes it serves under the prefix.
+    pub(crate) base: Option<String>,
+    pub(crate) rule: RuleRef,
+    /// One site for each path of an array of paths, as `Shape::each` told them apart.
+    pub(crate) sites: Vec<Shape>,
+    pub(crate) line: Line,
+    /// The decorator as written, for the unread site.
+    pub(crate) detail: String,
 }
 
 /// A variable made by a call that a call rule takes the receiver of its calls from: `export const api = axios.create({ baseURL: '/api' })`.
@@ -94,6 +111,8 @@ pub(crate) enum DeferredTarget {
     Host(String),
     /// A route that a decorator on a member of a class declares.
     Class { class: String, inherited: bool },
+    /// A route that a decorator on a member of a class declares, behind a prefix of the class that names a constant of another file: it is read under each text the link reads for that prefix.
+    ClassUnder { class: String },
     /// A call on a name imported from another file, read on the receiver that file makes under the name, whose rule needs one.
     Receiver { host: String },
     /// A call on a client or a router that this file makes with a call that names something another file declares, read on the receiver the link finds: `api.get('/users')` after `const api = axios.create({ baseURL: API_URL })`.
