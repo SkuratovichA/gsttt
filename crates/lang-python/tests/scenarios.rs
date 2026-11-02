@@ -2855,7 +2855,7 @@ method = "GET"
 fn a_relative_request_that_is_not_read_says_why() {
     let tree = index("relative_without_base");
     let unresolved = &tree.file("client.py").facts.unresolved;
-    assert!(!unresolved.is_empty());
+    assert_ne!(unresolved.len(), 0);
     for site in unresolved {
         assert_eq!(
             site.reason.to_string(),

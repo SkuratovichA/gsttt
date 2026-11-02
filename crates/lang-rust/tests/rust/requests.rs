@@ -2,7 +2,6 @@
 
 use gsttt_scenario::scenario;
 use insta::assert_json_snapshot;
-use serde_json::json;
 
 use crate::support::index;
 

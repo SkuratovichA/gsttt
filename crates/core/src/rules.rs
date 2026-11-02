@@ -2103,14 +2103,8 @@ mod tests {
 
     #[test]
     fn a_relative_target_is_decided_as_the_probe_table_says() {
-        let rooted = |target: &str| {
-            relative(
-                false,
-                Some(super::RelativeWithoutBase::Rooted),
-                None,
-                target,
-            )
-        };
+        let rooted =
+            |target: &str| relative(false, Some(RelativeWithoutBase::Rooted), None, target);
         for (target, expected) in [
             (".", "skip"),
             ("./", "skip"),
