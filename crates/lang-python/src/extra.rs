@@ -32,7 +32,8 @@ pub(crate) struct Route {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RouterPrefix {
     pub(crate) var: String,
-    pub(crate) prefix: String,
+    /// `None` when the constructor gives a prefix that is not text, `APIRouter(prefix=settings.API_PREFIX)`, so that the path behind the router is not known.
+    pub(crate) prefix: Option<String>,
 }
 
 /// `app.include_router(bookings.router, prefix="/api")`, `app.register_blueprint(bp, url_prefix="/api")` or Django's `path("api/", include("bookings.urls"))`.

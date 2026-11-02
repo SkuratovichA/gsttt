@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 
 use gsttt_core::contract::ContractKind;
 use gsttt_core::fact::Line;
-use gsttt_core::rules::Site;
+use gsttt_core::rules::{Site, ValueSource};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::str_prefix::StringLiteralPrefix;
 use ruff_python_ast::{
@@ -342,6 +342,20 @@ pub(crate) fn dict_value<'a>(expr: &'a Expr, prop: &str) -> Option<&'a Expr> {
     })
 }
 
+/// Whether `value` is something the program computes at run time: it is neither text nor `None`, which is what leaving an argument out comes to.
+fn is_computed_value(value: &Expr) -> bool {
+    text_of(value).is_none() && !value.is_none_literal_expr()
+}
+
+/// Whether the argument `arg` holds a computed value at `$argN`, or at `$argN.prop` when `prop` is given. A dict literal is read through its keys, so it holds a value only under a key it has; any other argument has no keys to see, so a computed one is the value of every property.
+fn holds_in_argument(arg: &Expr, prop: Option<&str>) -> bool {
+    match (arg, prop) {
+        (Expr::Dict(_), None) => false,
+        (Expr::Dict(_), Some(prop)) => dict_value(arg, prop).is_some_and(is_computed_value),
+        (_, _) => is_computed_value(arg),
+    }
+}
+
 /// The dotted name of a `Name` or an attribute chain: `os.environ`, `self.router`. A chain that starts at something else, such as a call or a subscript, has `?` for that segment so that `*` patterns still match: `Session().execute` is `?.execute`. `None` when the expression is not a name at all.
 pub(crate) fn dotted(expr: &Expr) -> Option<String> {
     let mut name = String::new();
@@ -409,10 +423,6 @@ impl Site for CallSite<'_> {
         text_of(self.positional(position)?)
     }
 
-    fn has_arg(&self, position: NonZeroU32) -> bool {
-        self.positional(position).is_some()
-    }
-
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         dict_prop(self.positional(position)?, prop)
     }
@@ -423,6 +433,19 @@ impl Site for CallSite<'_> {
 
     fn member(&self) -> Option<Cow<'_, str>> {
         self.member.map(Cow::Borrowed)
+    }
+
+    fn holds(&self, source: &ValueSource) -> bool {
+        match source {
+            ValueSource::Arg(position) => self
+                .positional(*position)
+                .is_some_and(|arg| holds_in_argument(arg, None)),
+            ValueSource::ArgProp(position, prop) => self
+                .positional(*position)
+                .is_some_and(|arg| holds_in_argument(arg, Some(prop))),
+            ValueSource::Keyword(name) => self.keyword_value(name).is_some_and(is_computed_value),
+            ValueSource::Callee | ValueSource::Member | ValueSource::Literal(_) => false,
+        }
     }
 }
 
@@ -465,10 +488,6 @@ impl Site for EmbedSite<'_> {
         self.document(self.call.positional(position))
     }
 
-    fn has_arg(&self, position: NonZeroU32) -> bool {
-        self.call.positional(position).is_some()
-    }
-
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         let dict = self.call.positional(position)?;
         self.document(dict_value(dict, prop))
@@ -480,6 +499,11 @@ impl Site for EmbedSite<'_> {
 
     fn member(&self) -> Option<Cow<'_, str>> {
         self.call.member()
+    }
+
+    /// Judged on the plain text of the call, as reading a document sets the line it starts on and a question must not move it.
+    fn holds(&self, source: &ValueSource) -> bool {
+        self.call.holds(source)
     }
 }
 
@@ -504,10 +528,6 @@ impl Site for AssignSite<'_> {
         text_of(self.value?)
     }
 
-    fn has_arg(&self, position: NonZeroU32) -> bool {
-        position == NonZeroU32::MIN && self.value.is_some()
-    }
-
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         if position != NonZeroU32::MIN {
             return None;
@@ -527,6 +547,28 @@ impl Site for AssignSite<'_> {
             return None;
         }
         Some(literal_of(value).unwrap_or(Cow::Borrowed(COMPUTED)))
+    }
+
+    /// A keyword holds nothing here: one that is not a literal comes back from [`Site::keyword`] as computed text already.
+    fn holds(&self, source: &ValueSource) -> bool {
+        match source {
+            ValueSource::Arg(position) => {
+                *position == NonZeroU32::MIN
+                    && self
+                        .value
+                        .is_some_and(|value| holds_in_argument(value, None))
+            }
+            ValueSource::ArgProp(position, prop) => {
+                *position == NonZeroU32::MIN
+                    && self
+                        .value
+                        .is_some_and(|value| holds_in_argument(value, Some(prop)))
+            }
+            ValueSource::Callee
+            | ValueSource::Member
+            | ValueSource::Keyword(_)
+            | ValueSource::Literal(_) => false,
+        }
     }
 }
 

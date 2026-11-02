@@ -15,7 +15,7 @@ use gsttt_core::fact::{
     ContractFact, Embedded, Import, ImportFlags, ImportKind, Line, Symbols, UnresolvedReason,
     UnresolvedSite,
 };
-use gsttt_core::rules::{CallRule, Outcome, Pack, Prefix, Site};
+use gsttt_core::rules::{CallRule, Outcome, Pack, Prefix, Reading, Site};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     AccessorProperty, Argument, ArrowFunctionExpression, AssignmentExpression, AssignmentTarget,
@@ -131,9 +131,10 @@ enum ClassPrefix {
 impl ClassPrefix {
     /// What `decorator` gives under the class prefix `rule` that names it.
     fn of(rule: &Prefix, decorator: &ClassDecorator) -> Self {
-        match &rule.key {
-            Some(key) if decorator.shape.unread(key) => Self::Unread,
-            _ => Self::Text(rule.read(&decorator.shape)),
+        match rule.reading(&decorator.shape) {
+            Reading::Text(prefix) => Self::Text(prefix),
+            Reading::Absent => Self::Text(String::new()),
+            Reading::Unread => Self::Unread,
         }
     }
 }

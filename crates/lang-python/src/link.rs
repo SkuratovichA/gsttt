@@ -62,7 +62,7 @@ enum Why {
     TooDeep,
     /// The walk reached its bound, or the way was one of those beyond the ones kept.
     TooMany,
-    /// The mount gives a prefix that is not a literal, so the path behind it is not known.
+    /// The mount, or the router it mounts the route under, gives a prefix that is not text, so the path behind it is not known.
     Prefix,
 }
 
@@ -80,8 +80,8 @@ struct Cut<'a> {
 struct Mounts<'a> {
     /// The mounts by the router they mount.
     parents: BTreeMap<Router<'a>, Vec<Parent<'a>>>,
-    /// The prefix each router declares for itself.
-    own: BTreeMap<Router<'a>, &'a str>,
+    /// The prefix each router declares for itself, `None` when it is not text.
+    own: BTreeMap<Router<'a>, Option<&'a str>>,
 }
 
 /// What `link` made, and the ways it could not follow.
@@ -165,7 +165,7 @@ impl<'a> Mounts<'a> {
                 }
             }
             for router in &file.extra.routers {
-                own.insert((file.id, router.var.as_str()), router.prefix.as_str());
+                own.insert((file.id, router.var.as_str()), router.prefix.as_deref());
             }
         }
         for mounts in parents.values_mut() {
@@ -174,8 +174,9 @@ impl<'a> Mounts<'a> {
         Self { parents, own }
     }
 
-    fn own_prefix(&self, router: Router<'a>) -> &'a str {
-        self.own.get(&router).copied().unwrap_or_default()
+    /// The prefix `router` declares for itself, empty when it declares none, and `None` when it declares one that is not text.
+    fn own_prefix(&self, router: Router<'a>) -> Option<&'a str> {
+        self.own.get(&router).copied().unwrap_or(Some(""))
     }
 
     /// Every prefix `start` is served behind, sorted: one for each way up through the mounts to a router nobody mounts, the first [`MAX_WAYS`] by path when there are more. A router that no mount reaches is served behind its own prefix. One whose every way up is cut is mounted, by a mount that cannot be followed to its end, so it is served behind no prefix that is known.
@@ -215,7 +216,17 @@ impl<'a> Climb<'_, 'a, '_> {
         trail: &mut Vec<Router<'a>>,
         via: Option<Cut<'a>>,
     ) {
-        let own = self.mounts.own_prefix(node);
+        let Some(own) = self.mounts.own_prefix(node) else {
+            // Every way through a router with a prefix nobody read is cut, as one through a mount with such a prefix is. The router the climb started from is not a way: `parse` keeps no route of it.
+            self.ended += 1;
+            if let Some(mount) = via {
+                self.cuts.insert(Cut {
+                    why: Why::Prefix,
+                    ..mount
+                });
+            }
+            return;
+        };
         let Some(parents) = self.mounts.parents.get(&node) else {
             self.ended += 1;
             self.ways
@@ -356,7 +367,15 @@ mod tests {
         fn declare(&mut self, router: &str, prefix: &str) {
             self.extra.routers.push(RouterPrefix {
                 var: router.to_owned(),
-                prefix: prefix.to_owned(),
+                prefix: Some(prefix.to_owned()),
+            });
+        }
+
+        /// A router whose constructor gives a prefix that is not text.
+        fn declare_unread(&mut self, router: &str) {
+            self.extra.routers.push(RouterPrefix {
+                var: router.to_owned(),
+                prefix: None,
             });
         }
 
@@ -464,6 +483,26 @@ mod tests {
             .map(|cut| (cut.line, cut.why))
             .collect();
         assert_eq!(cuts, [(7, Why::Prefix)]);
+    }
+
+    #[test]
+    fn no_way_goes_through_a_router_whose_own_prefix_is_not_text() {
+        let mut project = Project::new();
+        project.declare("child", "/items");
+        project.declare_unread("api");
+        project.mount("api", "child", "/v2");
+        project.mount("app", "api", "/top");
+        project.mount("app", "child", "/direct");
+        project.route("child", "/{}");
+        let composed = project.compose();
+        // The way through `api` would lose its prefix; the one that does not pass it is whole.
+        assert_eq!(keys(&composed), ["GET /direct/items/{}"]);
+        let cuts: Vec<(&str, Why)> = composed
+            .cuts
+            .iter()
+            .map(|cut| (cut.router, cut.why))
+            .collect();
+        assert_eq!(cuts, [("child", Why::Prefix)]);
     }
 
     /// `count` layers of two routers, each router mounted into both routers of the layer above, so that `a0` is reached in 2^`count` ways and has the route `/leaf`. The mounts are written from the lowest layer up, or the other way round.

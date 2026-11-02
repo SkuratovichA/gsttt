@@ -817,6 +817,21 @@ fn a_fastapi_route_with_the_trace_method() {
     );
 }
 
+#[test]
+fn a_fastapi_api_route_whose_methods_are_not_text_serves_any_method() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        (
+            "app.py",
+            "from fastapi import FastAPI\n\napp = FastAPI()\nMETHODS = [\"GET\", \"POST\"]\n\n\n@app.api_route(\"/held\", methods=METHODS)\ndef held():\n    return \"ok\"\n\n\n@app.api_route(\"/plain\")\ndef plain():\n    return \"ok\"\n",
+        ),
+    ]);
+    assert_eq!(
+        tree.contracts("app.py"),
+        ["serves http * /held@7", "serves http * /plain@12"]
+    );
+}
+
 #[gsttt_scenario::scenario("python", "A Flask blueprint serves under its prefix")]
 #[test]
 fn a_flask_blueprint_serves_under_its_prefix() {
@@ -827,6 +842,34 @@ fn a_flask_blueprint_serves_under_its_prefix() {
     insta::assert_json_snapshot!(
         "a_flask_blueprint_serves_under_its_prefix",
         json!({ "app": tree.file_json("app.py"), "linked": tree.json["linked"] })
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A Flask route whose methods are not text serves any method")]
+#[test]
+fn a_flask_route_whose_methods_are_not_text_serves_any_method() {
+    let tree = index_files(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"shop\"\ndependencies = [\"flask\"]\n",
+        ),
+        (
+            "app.py",
+            "from flask import Flask\n\napp = Flask(__name__)\nMETHODS = [\"GET\", \"POST\"]\n\n\n@app.route(\"/held\", methods=METHODS)\ndef held():\n    return \"ok\"\n\n\n@app.route(\"/plain\")\ndef plain():\n    return \"ok\"\n\n\n@app.route(\"/post\", methods=[\"POST\"])\ndef post():\n    return \"ok\"\n",
+        ),
+    ]);
+    // The methods in the variable are not known, so the route is served on any method; the route without `methods` is a `GET` and the one with a list is read from it.
+    assert_eq!(
+        tree.contracts("app.py"),
+        [
+            "serves http * /held@7",
+            "serves http GET /plain@12",
+            "serves http POST /post@17"
+        ]
+    );
+    insta::assert_json_snapshot!(
+        "a_flask_route_whose_methods_are_not_text_serves_any_method",
+        tree.file_json("app.py")
     );
 }
 
@@ -1727,7 +1770,7 @@ fn blind_spots_are_reported() {
     let blind_spots = tree.blind_spots();
     for words in [
         "Flask routes with several methods beyond the first",
-        "Flask routes whose methods are held in a variable, which are read as GET",
+        "Flask routes whose methods are held in a variable, which are read as any method",
         "prefixes held in variables",
         "Django default table names",
         "execute and executemany calls on a receiver of more than three segments",
@@ -2014,6 +2057,84 @@ fn a_prefix_that_is_not_a_literal_cuts_the_chain() {
         ["serves http GET /v2/items/{}@6"]
     );
     assert_eq!(tree.unread("app/main.py"), ["L7 app.include_router"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A router whose prefix is not text serves none of its routes"
+)]
+#[test]
+fn a_router_whose_prefix_is_not_text_serves_none_of_its_routes() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/users.py",
+            "from fastapi import APIRouter\n\nfrom app import child\nfrom app.config import settings\n\nrouter = APIRouter(prefix=settings.API_PREFIX)\nrouter.include_router(child.router)\n\n\n@router.get(\"/users\")\ndef list_users():\n    return []\n\n\n@router.post(\"/users\")\ndef add_user():\n    return {}\n",
+        ),
+        (
+            "app/child.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter(prefix=\"/child\")\n\n\n@router.get(\"/leaf\")\ndef leaf():\n    return {}\n",
+        ),
+        (
+            "app/dynamic.py",
+            "from fastapi import APIRouter\n\nfrom app.config import get_prefix\n\nrouter = APIRouter(prefix=get_prefix())\n\n\n@router.get(\"/dynamic\")\ndef dynamic():\n    return {}\n",
+        ),
+        (
+            "app/ok.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter(prefix=\"/ok\")\n\n\n@router.get(\"/ping\")\ndef ping():\n    return {}\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import dynamic, ok, users\n\napp = FastAPI()\napp.include_router(users.router)\napp.include_router(dynamic.router)\napp.include_router(ok.router)\n",
+        ),
+    ]);
+    // The prefix is held in a setting or comes from a call, so the routes of the router are served at paths that are not known and none of them is served, at its own path or behind a mount.
+    assert_eq!(tree.contracts("app/users.py"), Vec::<String>::new());
+    assert_eq!(tree.linked("app/users.py"), Vec::<String>::new());
+    assert_eq!(tree.contracts("app/dynamic.py"), Vec::<String>::new());
+    assert_eq!(tree.linked("app/dynamic.py"), Vec::<String>::new());
+    // Each route is an unread site of its file.
+    assert_eq!(
+        tree.unread("app/users.py"),
+        ["L10 router.get", "L15 router.post"]
+    );
+    assert_eq!(tree.unread("app/dynamic.py"), ["L8 router.get"]);
+    // A router the unread one includes has no known way to be served either, while a router with a prefix that is text is served as before.
+    assert_eq!(tree.linked("app/child.py"), Vec::<String>::new());
+    assert_eq!(tree.linked("app/ok.py"), ["serves http GET /ok/ping@6"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A class decorator whose prefix is not text leaves its routes unread"
+)]
+#[test]
+fn a_class_decorator_whose_prefix_is_not_text_leaves_its_routes_unread() {
+    let pack = r#"name = "views"
+language = "python"
+
+[[decorators]]
+decorator = "route"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "GET"
+class = { from = "controller", key = "$arg1" }
+"#;
+    let tree = index_files_with(
+        &[(
+            "views.py",
+            "from framework import controller, route\n\nBASE = \"/base\"\n\n\n@controller(BASE)\nclass Held:\n    @route(\"/a\")\n    def a(self):\n        return 1\n\n\n@controller(\"/fixed\")\nclass Written:\n    @route(\"/b\")\n    def b(self):\n        return 1\n\n\n@controller\nclass Bare:\n    @route(\"/c\")\n    def c(self):\n        return 1\n",
+        )],
+        builtin_packs(&[("views", pack)]).unwrap(),
+    );
+    // The class of the first route carries a prefix that is not text, so the route is not served at the path it was written with: it is an unread site, while a class with a prefix that is text and one with none are read.
+    assert_eq!(
+        tree.contracts("views.py"),
+        ["serves http GET /fixed/b@15", "serves http GET /c@22"]
+    );
+    assert_eq!(tree.unread("views.py"), ["L8 route"]);
 }
 
 #[test]

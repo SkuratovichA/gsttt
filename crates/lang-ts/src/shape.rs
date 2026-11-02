@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::num::NonZeroU32;
 
 use gsttt_core::contract::{path_after_origin, without_query_and_fragment};
-use gsttt_core::rules::{Site, ValueExpr, ValueSource};
+use gsttt_core::rules::{Site, ValueSource};
 use oxc_ast::ast::{
     Argument, ChainElement, Expression, FormalParameter, MemberExpression, NewExpression,
     ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
@@ -135,28 +135,6 @@ impl Shape {
         }
     }
 
-    /// Whether `key` yields no text here although it names a value the site holds: an argument that is neither text nor an object literal, or a property of an object literal that is not text.
-    ///
-    /// `ValueExpr::eval` gives `None` both for that and for a value the site does not carry (`@Controller()`, `@Controller({ version: '1' })`), and only the first is a blind spot.
-    pub(crate) fn unread(&self, key: &ValueExpr) -> bool {
-        key.eval(self).is_none()
-            && key.sources().iter().any(|source| match source {
-                ValueSource::Arg(position) => self
-                    .arg_at(*position)
-                    .is_some_and(|arg| arg.value.text.is_none() && !arg.object),
-                ValueSource::ArgProp(position, prop) => self.arg_at(*position).is_some_and(|arg| {
-                    if arg.object {
-                        arg.props
-                            .iter()
-                            .any(|(name, value)| name == prop && value.text.is_none())
-                    } else {
-                        arg.value.text.is_none()
-                    }
-                }),
-                _ => false,
-            })
-    }
-
     fn arg_at(&self, position: NonZeroU32) -> Option<&Arg> {
         self.args
             .get(usize::try_from(position.get().checked_sub(1)?).ok()?)
@@ -176,10 +154,6 @@ impl Site for Shape {
             .map(Cow::Borrowed)
     }
 
-    fn has_arg(&self, position: NonZeroU32) -> bool {
-        self.arg_at(position).is_some()
-    }
-
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
         let (_, value) = self
             .arg_at(position)?
@@ -195,6 +169,27 @@ impl Site for Shape {
 
     fn member(&self) -> Option<Cow<'_, str>> {
         self.member.as_deref().map(Cow::Borrowed)
+    }
+
+    fn holds(&self, source: &ValueSource) -> bool {
+        match source {
+            ValueSource::Arg(position) => self
+                .arg_at(*position)
+                .is_some_and(|arg| arg.value.text.is_none() && !arg.object),
+            ValueSource::ArgProp(position, prop) => self.arg_at(*position).is_some_and(|arg| {
+                if arg.object {
+                    arg.props
+                        .iter()
+                        .any(|(name, value)| name == prop && value.text.is_none())
+                } else {
+                    arg.value.text.is_none()
+                }
+            }),
+            ValueSource::Callee
+            | ValueSource::Member
+            | ValueSource::Keyword(_)
+            | ValueSource::Literal(_) => false,
+        }
     }
 }
 
@@ -494,7 +489,7 @@ fn push_computed(
 #[cfg(test)]
 mod tests {
     use gsttt_core::contract::normalize_http_path;
-    use gsttt_core::rules::ValueExpr;
+    use gsttt_core::rules::{Reading, ValueExpr};
     use oxc_allocator::Allocator;
     use oxc_ast::ast::{Expression, Statement};
     use oxc_parser::Parser;
@@ -773,7 +768,7 @@ mod tests {
             ("{ path: PREFIX }", true),
         ] {
             assert_eq!(
-                controller(arguments).unread(&key),
+                key.read(&controller(arguments)) == Reading::Unread,
                 unread,
                 "@Controller({arguments})"
             );
@@ -781,15 +776,16 @@ mod tests {
     }
 
     #[test]
-    fn a_literal_fallback_keeps_the_value_it_gives_and_is_never_unread() {
+    fn a_literal_stands_in_only_for_a_value_the_site_does_not_carry() {
         let method = "$arg2.method|GET".parse::<ValueExpr>().unwrap();
-        for arguments in [
-            "'/x'",
-            "'/x', {}",
-            "'/x', options",
-            "'/x', { method: verb }",
+        for (arguments, reading) in [
+            ("'/x'", Reading::Text("GET".to_owned())),
+            ("'/x', {}", Reading::Text("GET".to_owned())),
+            ("'/x', options", Reading::Unread),
+            ("'/x', { method: verb }", Reading::Unread),
+            ("'/x', { method: 'PUT' }", Reading::Text("PUT".to_owned())),
         ] {
-            assert!(!controller(arguments).unread(&method), "{arguments}");
+            assert_eq!(method.read(&controller(arguments)), reading, "{arguments}");
         }
     }
 

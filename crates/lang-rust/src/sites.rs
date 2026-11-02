@@ -9,8 +9,11 @@ mod routers;
 #[cfg(test)]
 mod tests;
 
+use gsttt_core::contract::Role;
 use gsttt_core::fact::{ContractFact, Embedded, Import, UnresolvedSite};
-use gsttt_core::rules::{AssignRule, CallRule, ChainRule, DecoratorRule, EmbedRule, Outcome, Pack};
+use gsttt_core::rules::{
+    AssignRule, CallRule, ChainRule, DecoratorRule, EmbedRule, Outcome, Pack, Reading,
+};
 use gsttt_core::text::LineIndex;
 use ra_ap_edition::Edition;
 use ra_ap_syntax::{SyntaxKind, SyntaxNode};
@@ -309,9 +312,14 @@ impl<'a> Reader<'a> {
         let prefix = match &rule.receiver {
             // A receiver the file does not show to be what the rule wants is not a site at all.
             Some(receiver) => match self.gate(candidate, receiver) {
-                // A prefix that is empty is no prefix, so a request still has to name a URL to count.
-                Some(prefix) => Some(prefix).filter(|prefix| !prefix.is_empty()),
                 None => return,
+                // A route behind a prefix that is not text is served at a path nobody read. A client behind one loses its origin and keeps the path after it, which is still right.
+                Some(Reading::Unread) if rule.role == Role::Serves => {
+                    outcomes.add(Outcome::blind(candidate.line, &candidate.callee));
+                    return;
+                }
+                // A prefix that is empty is no prefix, so a request still has to name a URL to count.
+                Some(reading) => reading.text().filter(|prefix| !prefix.is_empty()),
             },
             None => None,
         };

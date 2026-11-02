@@ -294,6 +294,25 @@ fn index(position: NonZeroU32) -> Option<usize> {
     usize::try_from(position.get() - 1).ok()
 }
 
+impl View<'_> {
+    fn positional(&self, position: NonZeroU32) -> Option<&ast::Expr> {
+        self.site.positional.get(index(position)?)
+    }
+
+    fn keyword_value(&self, name: &str) -> Option<&ast::Expr> {
+        let (_, value) = self
+            .site
+            .keywords
+            .iter()
+            .find(|(keyword, _)| keyword == name)?;
+        Some(value)
+    }
+
+    fn text(&self, expr: &ast::Expr) -> Option<String> {
+        text_of(expr, false, self.site.edition)
+    }
+}
+
 impl Site for View<'_> {
     fn callee_last(&self) -> Option<Cow<'_, str>> {
         self.site
@@ -304,12 +323,7 @@ impl Site for View<'_> {
     }
 
     fn arg(&self, position: NonZeroU32) -> Option<Cow<'_, str>> {
-        let argument = self.site.positional.get(index(position)?)?;
-        text_of(argument, false, self.site.edition).map(Cow::Owned)
-    }
-
-    fn has_arg(&self, position: NonZeroU32) -> bool {
-        index(position).is_some_and(|at| self.site.positional.get(at).is_some())
+        self.text(self.positional(position)?).map(Cow::Owned)
     }
 
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
@@ -318,7 +332,7 @@ impl Site for View<'_> {
                 .verb
                 .filter(|(at, _)| *at == position)
                 .map(|(_, verb)| Cow::Borrowed(verb)),
-            "last" => match self.site.positional.get(index(position)?)? {
+            "last" => match self.positional(position)? {
                 ast::Expr::PathExpr(path) => segments(&path.path()?)?.pop().map(Cow::Owned),
                 _ => None,
             },
@@ -327,16 +341,29 @@ impl Site for View<'_> {
     }
 
     fn keyword(&self, name: &str) -> Option<Cow<'_, str>> {
-        let (_, value) = self
-            .site
-            .keywords
-            .iter()
-            .find(|(keyword, _)| keyword == name)?;
-        text_of(value, false, self.site.edition).map(Cow::Owned)
+        self.text(self.keyword_value(name)?).map(Cow::Owned)
     }
 
     fn member(&self) -> Option<Cow<'_, str>> {
         self.site.member.as_deref().map(Cow::Borrowed)
+    }
+
+    /// The verb a rule is applied for is not written at the site, so `$arg1.method` holds nothing.
+    fn holds(&self, source: &ValueSource) -> bool {
+        match source {
+            ValueSource::Arg(position) => self
+                .positional(*position)
+                .is_some_and(|arg| self.text(arg).is_none()),
+            ValueSource::ArgProp(position, prop) => {
+                prop == "last"
+                    && self.positional(*position).is_some()
+                    && self.arg_prop(*position, prop).is_none()
+            }
+            ValueSource::Keyword(name) => self
+                .keyword_value(name)
+                .is_some_and(|value| self.text(value).is_none()),
+            ValueSource::Callee | ValueSource::Member | ValueSource::Literal(_) => false,
+        }
     }
 }
 

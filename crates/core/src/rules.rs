@@ -186,12 +186,16 @@ pub struct Prefix {
 }
 
 impl Prefix {
-    /// The prefix at `maker`, the decorator or call that `from` matched. Empty when `key` is unset or yields nothing there, which includes a prefix held in a variable: connectors list that among their blind spots.
-    pub fn read(&self, maker: &(impl Site + ?Sized)) -> String {
+    /// What `key` reads at `maker`, the decorator or call that `from` matched: [`Reading::Absent`] when `key` is unset. A connector that would serve or call a route at a wrong path behind a prefix it cannot read asks for this and treats [`Reading::Unread`] as a blind spot.
+    pub fn reading(&self, maker: &(impl Site + ?Sized)) -> Reading {
         self.key
             .as_ref()
-            .and_then(|key| key.eval(maker))
-            .unwrap_or_default()
+            .map_or(Reading::Absent, |key| key.read(maker))
+    }
+
+    /// The prefix at `maker`, empty when `key` is unset or yields nothing there. A prefix held in a variable reads as empty too, which suits the base of a client, whose origin is often an environment variable and whose path after it is still right; a router's or a class's prefix goes to [`Prefix::reading`].
+    pub fn read(&self, maker: &(impl Site + ?Sized)) -> String {
+        self.reading(maker).text().unwrap_or_default()
     }
 }
 
@@ -261,7 +265,7 @@ impl Case {
 /// - `$arg2.method`: a property of an argument that is an object literal, or a dict literal in Python.
 /// - `$member`: the name of the declaration a decorator or attribute sits on, `bookings` in `@Query() bookings()`.
 /// - `$prefix`: a keyword argument, `prefix=…` in Python.
-/// - Anything without `$` is literal text standing in for an argument that is absent, never for one that is present but not text: `$arg2.method|GET` falls back to `GET`, `$arg1|` reads no argument as empty text and `f(PATH)` as nothing.
+/// - Anything without `$` is literal text standing in for a value the site does not carry, never for one it carries and cannot read as text: `$arg2.method|GET` falls back to `GET` for `f(url)` and `f(url, {})` and reads nothing for `f(url, options)` and `f(url, { method: verb })`, and `$arg1|` reads no argument as empty text and `f(PATH)` as nothing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ValueExpr(Vec<ValueSource>);
@@ -294,8 +298,6 @@ pub trait Site {
     fn callee_last(&self) -> Option<Cow<'_, str>>;
     /// The argument at `position`, counting from 1, as text: a string literal, or a template, f-string or concatenation with each computed part written as `${}`; a list, array or tuple literal gives its first element that is one of those. `None` for anything else.
     fn arg(&self, position: NonZeroU32) -> Option<Cow<'_, str>>;
-    /// Whether the site has an argument at `position`, counting from 1, whatever its form.
-    fn has_arg(&self, position: NonZeroU32) -> bool;
     /// The property `prop` of the argument at `position` when that argument is an object or dict literal, as text the way [`Site::arg`] gives it.
     fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>>;
     /// The keyword argument `name`, in languages that have them.
@@ -304,26 +306,64 @@ pub trait Site {
     fn member(&self) -> Option<Cow<'_, str>> {
         None
     }
+    /// Whether the site carries a value at `source` that it cannot read as text, as opposed to carrying none there.
+    ///
+    /// - [`ValueSource::Arg`]: an argument at that position that is neither text nor an object or dict literal, which is read through its properties.
+    /// - [`ValueSource::ArgProp`]: an object or dict literal at that position whose property is there and is not text, or an argument that is neither text nor such a literal, whose properties nothing can see. A literal without the property holds nothing there.
+    /// - [`ValueSource::Keyword`]: a keyword argument that is there and is not text.
+    /// - [`ValueSource::Callee`], [`ValueSource::Member`] and [`ValueSource::Literal`] hold nothing.
+    fn holds(&self, source: &ValueSource) -> bool;
+}
+
+/// What a [`ValueExpr`] reads at a site. `None` from [`ValueExpr::eval`] covers both of the last two, and only [`Reading::Unread`] means the site has a value that the connector could not read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Reading {
+    /// The text of the first alternative that yields one.
+    Text(String),
+    /// The site carries no value for any alternative: `@Controller()` has no prefix.
+    Absent,
+    /// The site carries a value that is not text here and no alternative gives text: `@Controller(PREFIX)`, `APIRouter(prefix=settings.PREFIX)`.
+    Unread,
+}
+
+impl Reading {
+    /// The text, when there is some.
+    pub fn text(self) -> Option<String> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Absent | Self::Unread => None,
+        }
+    }
 }
 
 impl ValueExpr {
-    /// The first alternative that yields text at `site`.
+    /// What this expression reads at `site`: the first alternative that yields text, tried left to right. A literal counts only when the site holds no value at an alternative before it, so that it stands in for a value that is absent and never for one that is there and unread. Without text, the reading is [`Reading::Unread`] when the site held a value at some alternative and [`Reading::Absent`] when it held none.
+    pub fn read(&self, site: &(impl Site + ?Sized)) -> Reading {
+        let mut held = false;
+        for source in &self.0 {
+            let text = match source {
+                ValueSource::Callee => site.callee_last(),
+                ValueSource::Member => site.member(),
+                ValueSource::Arg(position) => site.arg(*position),
+                ValueSource::ArgProp(position, prop) => site.arg_prop(*position, prop),
+                ValueSource::Keyword(name) => site.keyword(name),
+                ValueSource::Literal(text) => (!held).then_some(Cow::Borrowed(text.as_str())),
+            };
+            if let Some(text) = text {
+                return Reading::Text(text.into_owned());
+            }
+            held = held || site.holds(source);
+        }
+        if held {
+            Reading::Unread
+        } else {
+            Reading::Absent
+        }
+    }
+
+    /// The text [`ValueExpr::read`] finds at `site`, for a caller that does not tell an absent value from an unread one.
     pub fn eval(&self, site: &(impl Site + ?Sized)) -> Option<String> {
-        let mut unreadable = false;
-        self.0.iter().find_map(|source| match source {
-            ValueSource::Callee => site.callee_last().map(Cow::into_owned),
-            ValueSource::Member => site.member().map(Cow::into_owned),
-            ValueSource::Arg(position) => {
-                let text = site.arg(*position).map(Cow::into_owned);
-                unreadable |= text.is_none() && site.has_arg(*position);
-                text
-            }
-            ValueSource::ArgProp(position, prop) => {
-                site.arg_prop(*position, prop).map(Cow::into_owned)
-            }
-            ValueSource::Keyword(name) => site.keyword(name).map(Cow::into_owned),
-            ValueSource::Literal(text) => (!unreadable).then(|| text.clone()),
-        })
+        self.read(site).text()
     }
 
     pub fn sources(&self) -> &[ValueSource] {
@@ -462,6 +502,15 @@ impl Outcome {
             Self::Blind(_) | Self::Skip => None,
         }
     }
+
+    /// A blind spot at `line`; `what` names the site as written: the callee, decorator, root or target.
+    pub fn blind(line: Line, what: &str) -> Self {
+        Self::Blind(UnresolvedSite {
+            line,
+            reason: UnresolvedReason::NonLiteral,
+            detail: what.to_owned(),
+        })
+    }
 }
 
 /// The verbs an HTTP method expression may yield; anything else means the site is not a route or a request.
@@ -497,7 +546,7 @@ impl Spec<'_> {
             _ => None,
         };
         let Some(key) = self.key.eval(site) else {
-            return blind(line, what);
+            return Outcome::blind(line, what);
         };
         let key = key.trim();
         match self.kind {
@@ -509,12 +558,12 @@ impl Spec<'_> {
                 let target =
                     prefix.map_or(Cow::Borrowed(key), |prefix| join(self.kind, prefix, key));
                 if is_computed(&target) && !has_literal_segment(&normalize_http_path(&target)) {
-                    return blind(line, what);
+                    return Outcome::blind(line, what);
                 }
             }
             ContractKind::Http => {}
             _ if key.is_empty() => return Outcome::Skip,
-            _ if is_computed(key) => return blind(line, what),
+            _ if is_computed(key) => return Outcome::blind(line, what),
             // A key that is no variable name, such as `database.host`, is a path into a loaded configuration.
             ContractKind::Env if !is_ident(key) => return Outcome::Skip,
             _ => {}
@@ -551,14 +600,6 @@ fn has_literal_segment(path: &str) -> bool {
         .any(|segment| !segment.is_empty() && segment != PARAMETER)
 }
 
-fn blind(line: Line, what: &str) -> Outcome {
-    Outcome::Blind(UnresolvedSite {
-        line,
-        reason: UnresolvedReason::NonLiteral,
-        detail: what.to_owned(),
-    })
-}
-
 /// The outcome of a rule that gives no prefix and no method: `key` is a contract of `kind`.
 fn named(kind: &ContractKind, role: Role, key: &str, line: Line, pack: &str) -> Outcome {
     Outcome::Fact(ContractFact {
@@ -591,7 +632,7 @@ impl CallRule {
 }
 
 impl DecoratorRule {
-    /// What this rule makes of a decorator, attribute or annotation that matched [`DecoratorRule::decorator`]. `prefix` joins what the connector read for [`DecoratorRule::class`] and then [`DecoratorRule::receiver`]; [`DecoratorRule::prefix`] is read here and joined after it.
+    /// What this rule makes of a decorator, attribute or annotation that matched [`DecoratorRule::decorator`]. `prefix` joins what the connector read for [`DecoratorRule::class`] and then [`DecoratorRule::receiver`]; [`DecoratorRule::prefix`] is read here and joined after it, and a value there that the connector cannot read as text makes the decorator a blind spot.
     pub fn apply(
         &self,
         pack: &str,
@@ -600,7 +641,12 @@ impl DecoratorRule {
         line: Line,
         decorator: &str,
     ) -> Outcome {
-        let own = self.prefix.as_ref().and_then(|expr| expr.eval(site));
+        let own = match self.prefix.as_ref().map(|expr| expr.read(site)) {
+            Some(Reading::Text(own)) => Some(own),
+            None | Some(Reading::Absent) => None,
+            // Joining nothing would serve the contract at a path that is not its own.
+            Some(Reading::Unread) => return Outcome::blind(line, decorator),
+        };
         let prefix = match (prefix, own.as_deref()) {
             (Some(outer), Some(inner)) => Some(join(&self.kind, outer, inner)),
             (outer, inner) => outer.or(inner).map(Cow::Borrowed),
@@ -645,7 +691,7 @@ impl ChainRule {
         let mut parts: Vec<&str> = Vec::new();
         for segment in segments {
             match segment {
-                None => return blind(line, root),
+                None => return Outcome::blind(line, root),
                 Some(segment) if self.terminals.iter().any(|terminal| terminal == segment) => break,
                 Some(_) if parts.len() == limit => break,
                 Some(segment) => parts.push(segment),
@@ -732,10 +778,6 @@ mod tests {
                 .map(Cow::Borrowed)
         }
 
-        fn has_arg(&self, position: NonZeroU32) -> bool {
-            self.args.get(position.get() as usize - 1).is_some()
-        }
-
         fn arg_prop(&self, _: NonZeroU32, _: &str) -> Option<Cow<'_, str>> {
             None
         }
@@ -749,6 +791,15 @@ mod tests {
 
         fn member(&self) -> Option<Cow<'_, str>> {
             self.member.map(Cow::Borrowed)
+        }
+
+        fn holds(&self, source: &ValueSource) -> bool {
+            match source {
+                ValueSource::Arg(position) => {
+                    self.args.get(position.get() as usize - 1) == Some(&None)
+                }
+                _ => false,
+            }
         }
     }
 
@@ -1102,10 +1153,6 @@ mod tests {
             (position.get() == 1).then(|| "/bookings/${}".into())
         }
 
-        fn has_arg(&self, position: NonZeroU32) -> bool {
-            position.get() <= 2
-        }
-
         fn arg_prop(&self, position: NonZeroU32, prop: &str) -> Option<Cow<'_, str>> {
             (position.get() == 2 && prop == "method").then(|| "PUT".into())
         }
@@ -1113,6 +1160,79 @@ mod tests {
         fn keyword(&self, name: &str) -> Option<Cow<'_, str>> {
             (name == "prefix").then(|| "/api".into())
         }
+
+        fn holds(&self, _: &ValueSource) -> bool {
+            false
+        }
+    }
+
+    /// What a [`Probe`] carries at one place.
+    #[derive(Clone, Copy)]
+    enum Slot {
+        Text(&'static str),
+        Absent,
+        Unread,
+    }
+
+    impl Slot {
+        fn text(self) -> Option<Cow<'static, str>> {
+            match self {
+                Self::Text(text) => Some(Cow::Borrowed(text)),
+                Self::Absent | Self::Unread => None,
+            }
+        }
+
+        fn unread(self) -> bool {
+            matches!(self, Self::Unread)
+        }
+    }
+
+    /// A site whose first argument, the property `p` of its second and its keyword `k` are each text, absent or unread, on a callee `post` and a member `bookings`.
+    struct Probe {
+        arg: Slot,
+        prop: Slot,
+        keyword: Slot,
+    }
+
+    impl Site for Probe {
+        fn callee_last(&self) -> Option<Cow<'_, str>> {
+            Some("post".into())
+        }
+
+        fn arg(&self, _: NonZeroU32) -> Option<Cow<'_, str>> {
+            self.arg.text()
+        }
+
+        fn arg_prop(&self, _: NonZeroU32, _: &str) -> Option<Cow<'_, str>> {
+            self.prop.text()
+        }
+
+        fn keyword(&self, _: &str) -> Option<Cow<'_, str>> {
+            self.keyword.text()
+        }
+
+        fn member(&self) -> Option<Cow<'_, str>> {
+            Some("bookings".into())
+        }
+
+        fn holds(&self, source: &ValueSource) -> bool {
+            match source {
+                ValueSource::Arg(_) => self.arg.unread(),
+                ValueSource::ArgProp(..) => self.prop.unread(),
+                ValueSource::Keyword(_) => self.keyword.unread(),
+                ValueSource::Callee | ValueSource::Member | ValueSource::Literal(_) => false,
+            }
+        }
+    }
+
+    const SLOTS: [Slot; 3] = [Slot::Text("t"), Slot::Absent, Slot::Unread];
+
+    fn probe(arg: Slot, prop: Slot, keyword: Slot) -> Probe {
+        Probe { arg, prop, keyword }
+    }
+
+    fn unread_arg() -> Probe {
+        probe(Slot::Unread, Slot::Absent, Slot::Absent)
     }
 
     fn expr(text: &str) -> ValueExpr {
@@ -1183,6 +1303,186 @@ mod tests {
         );
         assert_eq!(expr("$callee").eval(&FakeSite).as_deref(), Some("post"));
         assert_eq!(expr("$arg4").eval(&FakeSite), None);
+    }
+
+    #[gsttt_scenario::scenario(
+        "contract-formats",
+        "A literal stands in only for a value the site does not carry"
+    )]
+    #[test]
+    fn a_literal_stands_in_only_for_a_value_the_site_does_not_carry() {
+        let request = rule(serde_json::json!({
+            "callee": "*.post", "kind": "http", "role": "calls", "key": "$arg1", "method": "$arg2.method|GET",
+        }));
+        let apply = |method: Slot| {
+            let site = probe(Slot::Text("/x"), method, Slot::Absent);
+            key(request.apply("api", &site, None, 7, "api.post"))
+        };
+        assert_eq!(apply(Slot::Absent), "http GET /x");
+        assert_eq!(apply(Slot::Unread), "http * /x");
+        assert_eq!(apply(Slot::Text("PUT")), "http PUT /x");
+    }
+
+    #[gsttt_scenario::scenario(
+        "contract-formats",
+        "A decorator whose own prefix is not text is unread"
+    )]
+    #[test]
+    fn a_decorator_whose_own_prefix_is_not_text_is_unread() {
+        let rule: DecoratorRule = serde_json::from_value(serde_json::json!({
+            "decorator": "Controller", "kind": "http", "role": "serves",
+            "key": "$arg1", "method": "GET", "prefix": "$arg2.prefix",
+        }))
+        .unwrap();
+        let apply = |prefix: Slot| {
+            let site = probe(Slot::Text("/x"), prefix, Slot::Absent);
+            rule.apply("nestjs", &site, Some("/api"), 4, "Controller")
+        };
+        let Outcome::Blind(site) = apply(Slot::Unread) else {
+            panic!("a prefix that is not text is a blind spot")
+        };
+        assert_eq!(site.line, 4);
+        assert_eq!(site.detail, "Controller");
+        assert_eq!(key(apply(Slot::Absent)), "http GET /api/x");
+        assert_eq!(key(apply(Slot::Text("v1"))), "http GET /api/v1/x");
+    }
+
+    #[test]
+    fn read_tells_a_value_the_site_lacks_from_one_it_cannot_read() {
+        let (text, absent, unread) = (Slot::Text("t"), Slot::Absent, Slot::Unread);
+        let cases = [
+            (
+                "$callee",
+                probe(unread, unread, unread),
+                Reading::Text("post".into()),
+            ),
+            (
+                "$member",
+                probe(unread, unread, unread),
+                Reading::Text("bookings".into()),
+            ),
+            (
+                "GET",
+                probe(unread, unread, unread),
+                Reading::Text("GET".into()),
+            ),
+            (
+                "$arg1",
+                probe(text, absent, absent),
+                Reading::Text("t".into()),
+            ),
+            ("$arg1", probe(absent, text, text), Reading::Absent),
+            ("$arg1", probe(unread, text, text), Reading::Unread),
+            (
+                "$arg2.p",
+                probe(absent, text, absent),
+                Reading::Text("t".into()),
+            ),
+            ("$arg2.p", probe(text, absent, text), Reading::Absent),
+            ("$arg2.p", probe(text, unread, text), Reading::Unread),
+            ("$k", probe(absent, absent, text), Reading::Text("t".into())),
+            ("$k", probe(text, text, absent), Reading::Absent),
+            ("$k", probe(text, text, unread), Reading::Unread),
+            (
+                "$arg1|GET",
+                probe(absent, absent, absent),
+                Reading::Text("GET".into()),
+            ),
+            ("$arg1|GET", probe(unread, absent, absent), Reading::Unread),
+            (
+                "$arg1|GET",
+                probe(text, absent, absent),
+                Reading::Text("t".into()),
+            ),
+            (
+                "$arg2.p|$k|GET",
+                probe(absent, unread, text),
+                Reading::Text("t".into()),
+            ),
+            (
+                "$arg2.p|$k|GET",
+                probe(absent, unread, absent),
+                Reading::Unread,
+            ),
+            (
+                "$arg2.p|$k|GET",
+                probe(absent, absent, unread),
+                Reading::Unread,
+            ),
+            (
+                "$arg2.p|$k|GET",
+                probe(absent, absent, absent),
+                Reading::Text("GET".into()),
+            ),
+            ("$arg1|$k", probe(absent, absent, absent), Reading::Absent),
+            ("$arg1|$k", probe(unread, absent, absent), Reading::Unread),
+            (
+                "$arg1|",
+                probe(absent, absent, absent),
+                Reading::Text(String::new()),
+            ),
+            ("$arg1|", probe(unread, absent, absent), Reading::Unread),
+        ];
+        for (text, site, expected) in cases {
+            assert_eq!(expr(text).read(&site), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn eval_is_the_text_of_the_reading_and_nothing_else() {
+        let exprs = [
+            "$callee",
+            "$member",
+            "GET",
+            "$arg1",
+            "$arg2.p",
+            "$k",
+            "$arg1|GET",
+            "$arg2.p|$k|GET",
+            "$arg1|$k",
+            "$arg1|",
+        ];
+        for text in exprs {
+            let expr = expr(text);
+            for arg in SLOTS {
+                for prop in SLOTS {
+                    for keyword in SLOTS {
+                        let site = probe(arg, prop, keyword);
+                        let expected = match expr.read(&site) {
+                            Reading::Text(text) => Some(text),
+                            Reading::Absent | Reading::Unread => None,
+                        };
+                        assert_eq!(expr.eval(&site), expected, "{text}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_prefix_that_is_not_text_is_unread_and_one_that_is_not_there_is_absent() {
+        let prefix: Prefix = serde_json::from_value(serde_json::json!({
+            "from": "APIRouter", "key": "$prefix",
+        }))
+        .unwrap();
+        let unkeyed: Prefix =
+            serde_json::from_value(serde_json::json!({ "from": "APIRouter" })).unwrap();
+        let read = |arg, keyword| probe(arg, Slot::Absent, keyword);
+        assert_eq!(
+            prefix.reading(&read(Slot::Absent, Slot::Text("/v1"))),
+            Reading::Text("/v1".into())
+        );
+        assert_eq!(
+            prefix.reading(&read(Slot::Absent, Slot::Absent)),
+            Reading::Absent
+        );
+        assert_eq!(
+            prefix.reading(&read(Slot::Absent, Slot::Unread)),
+            Reading::Unread
+        );
+        assert_eq!(unkeyed.reading(&unread_arg()), Reading::Absent);
+        assert_eq!(prefix.read(&read(Slot::Absent, Slot::Unread)), "");
+        assert_eq!(prefix.read(&read(Slot::Absent, Slot::Text("/v1"))), "/v1");
     }
 
     #[test]

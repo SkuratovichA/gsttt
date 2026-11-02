@@ -9,7 +9,7 @@ use gsttt_core::fact::{
     ErrorCount, FileFacts, Import, ImportFlags, ImportKind, Line, ParseFailure, ParseStatus,
     UnresolvedReason, UnresolvedSite,
 };
-use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Site};
+use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Reading, Site};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
@@ -291,14 +291,20 @@ impl<'a> Collector<'a> {
                     };
                     let mut prefix = None;
                     if let Some(class) = &rule.class {
-                        let Some(read) = self.class_prefix(class) else {
+                        let Some(reading) = self.class_prefix(class) else {
+                            continue;
+                        };
+                        let Some(read) = self.behind(reading, line, name.written()) else {
                             continue;
                         };
                         prefix = Some(read);
                     }
                     let mut router = None;
                     if let Some(maker) = &rule.receiver {
-                        let Some(read) = self.receiver_prefix(maker, receiver) else {
+                        let Some(reading) = self.receiver_prefix(maker, receiver) else {
+                            continue;
+                        };
+                        let Some(read) = self.behind(reading, line, name.written()) else {
                             continue;
                         };
                         if self.is_router(receiver) {
@@ -328,12 +334,12 @@ impl<'a> Collector<'a> {
         }
     }
 
-    /// The prefix a decorator rule's `class` reads from the decorators of the class around the statement.
-    fn class_prefix(&self, class: &Prefix) -> Option<String> {
+    /// What a decorator rule's `class` reads from the decorators of the class around the statement.
+    fn class_prefix(&self, class: &Prefix) -> Option<Reading> {
         let frame = self.top_class()?;
         frame.decorators.iter().find_map(|(callee, arguments)| {
             let matched = callee.matching(&class.from)?;
-            Some(class.read(&CallSite {
+            Some(class.reading(&CallSite {
                 callee: matched,
                 arguments: *arguments,
                 member: None,
@@ -341,10 +347,22 @@ impl<'a> Collector<'a> {
         })
     }
 
-    /// The prefix a rule's `receiver` reads from the call that made `var`, when `var` is a name of this file made by one of the callees the rule names.
-    fn receiver_prefix(&self, maker: &Prefix, var: Option<&str>) -> Option<String> {
+    /// What a rule's `receiver` reads from the call that made `var`, when `var` is a name of this file made by one of the callees the rule names.
+    fn receiver_prefix(&self, maker: &Prefix, var: Option<&str>) -> Option<Reading> {
         let binding = self.bindings.get(var?)?;
         prefix_made_by(maker, &binding.callee, binding.arguments)
+    }
+
+    /// The prefix a decorator rule is applied behind, empty when the class or the maker carries none. One that is not text leaves the decorator an unread site and no prefix: the route would be served at a path that is not its own.
+    fn behind(&mut self, reading: Reading, line: Line, decorator: &str) -> Option<String> {
+        match reading {
+            Reading::Text(prefix) => Some(prefix),
+            Reading::Absent => Some(String::new()),
+            Reading::Unread => {
+                self.unresolved(line, decorator);
+                None
+            }
+        }
     }
 
     /// Whether `var` is a name of this file made by a router constructor, as opposed to an application or a client.
@@ -353,7 +371,7 @@ impl<'a> Collector<'a> {
             .is_some_and(|binding| is_router_type(&binding.callee))
     }
 
-    /// The prefix each router variable of the file declares in its own constructor, read the way the packs read the receiver of a route. A router without a prefix is left out, which `link` reads as the empty prefix.
+    /// The prefix each router variable of the file declares in its own constructor, read the way the packs read the receiver of a route. A router without a prefix is left out, which `link` reads as the empty prefix; one whose prefix is not text is kept without one, so that `link` follows no way through it.
     fn router_prefixes(&self) -> Vec<RouterPrefix> {
         let makers: Vec<&Prefix> = self
             .packs
@@ -364,20 +382,24 @@ impl<'a> Collector<'a> {
                 decorators.chain(calls).flatten()
             })
             .collect();
-        let mut routers: Vec<RouterPrefix> = self
-            .bindings
-            .iter()
-            .filter(|(_, binding)| is_router_type(&binding.callee))
-            .filter_map(|(var, binding)| {
-                let prefix = makers
-                    .iter()
-                    .find_map(|maker| prefix_made_by(maker, &binding.callee, binding.arguments))?;
-                (!prefix.is_empty()).then(|| RouterPrefix {
-                    var: var.clone(),
-                    prefix,
+        let mut routers: Vec<RouterPrefix> =
+            self.bindings
+                .iter()
+                .filter(|(_, binding)| is_router_type(&binding.callee))
+                .filter_map(|(var, binding)| {
+                    let prefix = match makers.iter().find_map(|maker| {
+                        prefix_made_by(maker, &binding.callee, binding.arguments)
+                    })? {
+                        Reading::Text(prefix) if !prefix.is_empty() => Some(prefix),
+                        Reading::Text(_) | Reading::Absent => return None,
+                        Reading::Unread => None,
+                    };
+                    Some(RouterPrefix {
+                        var: var.clone(),
+                        prefix,
+                    })
                 })
-            })
-            .collect();
+                .collect();
         // The map has no order, and the cache entry has to be the same for the same file.
         routers.sort_by(|a, b| a.var.cmp(&b.var));
         routers
@@ -441,8 +463,8 @@ impl<'a> Collector<'a> {
                         let Some(read) = read else {
                             continue;
                         };
-                        // A client made with no base URL adds nothing, so its calls are read as the module-level ones are, which is what tells a URL with no literal path.
-                        (!read.is_empty()).then_some(read)
+                        // A client made with no base URL adds nothing, so its calls are read as the module-level ones are, which is what tells a URL with no literal path. A base that is not text is the same: the origin is lost and the path after it is still right.
+                        read.text().filter(|read| !read.is_empty())
                     }
                     None => None,
                 };
@@ -801,10 +823,10 @@ fn leaves_unread(rule: &EmbedRule, matched: &str, argument: Option<&Expr>) -> bo
     !matches!(argument, Expr::Call(_)) && rule.callee.iter().any(|pattern| pattern == matched)
 }
 
-/// The prefix a rule's `receiver` reads from the call of `callee` that made the receiver, when the rule names that callee.
-fn prefix_made_by(maker: &Prefix, callee: &Name, arguments: &Arguments) -> Option<String> {
+/// What a rule's `receiver` reads from the call of `callee` that made the receiver, when the rule names that callee.
+fn prefix_made_by(maker: &Prefix, callee: &Name, arguments: &Arguments) -> Option<Reading> {
     let matched = callee.matching(&maker.from)?;
-    Some(maker.read(&CallSite {
+    Some(maker.reading(&CallSite {
         callee: matched,
         arguments: Some(arguments),
         member: None,
