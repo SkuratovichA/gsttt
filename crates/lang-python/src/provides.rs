@@ -138,11 +138,6 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
                 Role::Serves,
                 "variable names held in variables",
             ),
-            (
-                ContractKind::Env,
-                Role::Serves,
-                "variables written by os.environ.update(…), os.environ |= …, patch.dict(os.environ, …) or monkeypatch.setitem(os.environ, …)",
-            ),
             (ContractKind::Env, Role::Serves, STAR_IMPORTS),
         ],
         _ => Vec::new(),

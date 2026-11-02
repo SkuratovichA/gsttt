@@ -16,9 +16,9 @@ use gsttt_core::rules::{
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Arguments, Decorator, Expr, ExprCall, ExprContext, ExprSubscript, Identifier, PySourceType,
-    Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtImport,
-    StmtImportFrom, StmtTry, WithItem,
+    Arguments, Decorator, Expr, ExprCall, ExprContext, ExprSubscript, Identifier, Keyword,
+    Operator, PySourceType, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef,
+    StmtFunctionDef, StmtIf, StmtImport, StmtImportFrom, StmtTry, WithItem,
 };
 use ruff_python_parser::parse_unchecked_source;
 use ruff_text_size::{Ranged, TextSize};
@@ -279,6 +279,9 @@ impl<'a> Collector<'a> {
             Expr::Call(call) => (Some(call), Name::of(&call.func, &self.imports)),
             other => (None, Name::of(other, &self.imports)),
         };
+        if let (Some(call), Some(name)) = (call, &name) {
+            self.mapping_write(call, name, line);
+        }
         if let Some(name) = name {
             let receiver = receiver_of(name.written());
             let packs = self.packs;
@@ -449,6 +452,8 @@ impl<'a> Collector<'a> {
         if self.dynamic_import(call, callee, line) || self.mount(call, callee, line) {
             return;
         }
+        // Not a short circuit: a rule of a pack may read the same call, `session.update(…)`.
+        self.mapping_write(call, callee, line);
         let packs = self.packs;
         let mut unread = false;
         for pack in packs {
@@ -672,16 +677,113 @@ impl<'a> Collector<'a> {
             _ => None,
         };
         let line = self.line_of(subscript.start());
+        self.touch(&Mapping::Name(root), access, segment, line);
+    }
+
+    /// Lets the chain rules whose root is `mapping` read one touch of it as `access` says, at the key `segment`, which is `None` when the program computes it.
+    fn touch(&mut self, mapping: &Mapping<'_>, access: Access, segment: Option<&str>, line: Line) {
         let packs = self.packs;
         for pack in packs {
             for rule in &pack.chains {
-                if root.matching(&rule.root).is_some() {
-                    for outcome in rule.apply(&pack.name, access, &[segment], line, root.written())
+                if mapping.is_root(&rule.root) {
+                    for outcome in
+                        rule.apply(&pack.name, access, &[segment], line, mapping.written())
                     {
                         self.record(outcome, None);
                     }
                 }
             }
+        }
+    }
+
+    /// Reads `target` as the mapping a write goes to: a name, or the text `"os.environ"` that `patch.dict` also takes.
+    fn mapped(&mut self, target: &Expr, write: impl FnOnce(&mut Self, &Mapping<'_>)) {
+        match target {
+            Expr::StringLiteral(text) => write(self, &Mapping::Text(text.value.to_str())),
+            _ => self.named(target, |this, name| write(this, &Mapping::Name(name))),
+        }
+    }
+
+    /// A call that writes keys into a mapping: `patch.dict(target, values, **keys)`, `monkeypatch.setitem(target, key, value)`, `monkeypatch.delitem(target, key)` and `target.update(values, **keys)`. A target that no chain rule roots names nothing.
+    fn mapping_write(&mut self, call: &ExprCall, callee: &Name, line: Line) {
+        let arguments = &call.arguments;
+        let called = callee.imported();
+        if (called == "patch.dict" || called.ends_with(".patch.dict"))
+            && let Some(target) = arguments.find_argument_value("in_dict", 0)
+        {
+            let values = arguments.find_argument_value("values", 1);
+            let skip = ["in_dict", "values", "clear"];
+            self.mapped(target, |this, mapping| {
+                this.write_entries(mapping, values, &arguments.keywords, &skip, line);
+            });
+        }
+        if matches!(called, "monkeypatch.setitem" | "monkeypatch.delitem")
+            && let Some(target) = arguments.find_positional(0)
+        {
+            let key = match arguments.find_positional(1) {
+                Some(Expr::StringLiteral(key)) => Some(Some(key.value.to_str())),
+                Some(_) => Some(None),
+                None => None,
+            };
+            if let Some(key) = key {
+                self.mapped(target, |this, mapping| {
+                    this.touch(mapping, Access::Write, key, line);
+                });
+            }
+        }
+        let Expr::Attribute(attribute) = &*call.func else {
+            return;
+        };
+        if attribute.attr.as_str() != "update" {
+            return;
+        }
+        let values = arguments.find_positional(0);
+        self.mapped(&attribute.value, |this, mapping| {
+            this.write_entries(mapping, values, &arguments.keywords, &[], line);
+        });
+    }
+
+    /// `target |= values`.
+    fn merge_into(&mut self, assign: &StmtAugAssign) {
+        let line = self.line_of(assign.start());
+        self.mapped(&assign.target, |this, mapping| {
+            this.write_entries(mapping, Some(&assign.value), &[], &[], line);
+        });
+    }
+
+    /// Writes the keys of the dict literal `values` and the `keywords` that are not in `skip` into `mapping`. A key that is computed, an unpacking and values that are no dict literal are one unread site for the whole call.
+    fn write_entries(
+        &mut self,
+        mapping: &Mapping<'_>,
+        values: Option<&Expr>,
+        keywords: &[Keyword],
+        skip: &[&str],
+        line: Line,
+    ) {
+        let mut unread = false;
+        match values {
+            Some(Expr::Dict(dict)) => {
+                for item in &dict.items {
+                    match &item.key {
+                        Some(Expr::StringLiteral(key)) => {
+                            self.touch(mapping, Access::Write, Some(key.value.to_str()), line);
+                        }
+                        _ => unread = true,
+                    }
+                }
+            }
+            Some(_) => unread = true,
+            None => {}
+        }
+        for keyword in keywords {
+            match &keyword.arg {
+                Some(name) if skip.contains(&name.as_str()) => {}
+                Some(name) => self.touch(mapping, Access::Write, Some(name.as_str()), line),
+                None => unread = true,
+            }
+        }
+        if unread {
+            self.touch(mapping, Access::Write, None, line);
         }
     }
 
@@ -801,6 +903,10 @@ impl<'a> Visitor<'a> for Collector<'a> {
                 self.ann_assign(assign);
                 visitor::walk_stmt(self, stmt);
             }
+            Stmt::AugAssign(assign) if assign.op == Operator::BitOr => {
+                self.merge_into(assign);
+                visitor::walk_stmt(self, stmt);
+            }
             _ => visitor::walk_stmt(self, stmt),
         }
     }
@@ -844,6 +950,29 @@ impl<'a> Collector<'a> {
         }
         self.visit_body(&attempt.orelse);
         self.visit_body(&attempt.finalbody);
+    }
+}
+
+/// What a write goes to: a name, or text that spells one.
+enum Mapping<'e> {
+    Text(&'e str),
+    Name(&'e Name),
+}
+
+impl Mapping<'_> {
+    /// Whether `root` is this mapping, matched the way a subscript's root is.
+    fn is_root(&self, root: &OneOrMany) -> bool {
+        match self {
+            Self::Text(text) => root.matches(text),
+            Self::Name(name) => name.matching(root).is_some(),
+        }
+    }
+
+    fn written(&self) -> &str {
+        match self {
+            Self::Text(text) => text,
+            Self::Name(name) => name.written(),
+        }
     }
 }
 
