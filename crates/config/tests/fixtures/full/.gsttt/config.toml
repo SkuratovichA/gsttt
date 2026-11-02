@@ -19,3 +19,7 @@ kind = "http"
 role = "serves"
 via = ["ktor"]
 blind_spots = ["routes built at run time"]
+
+[[graphql_endpoints]]
+clients = ["web/**/*.ts"]
+servers = ["api/src/**/*.ts"]

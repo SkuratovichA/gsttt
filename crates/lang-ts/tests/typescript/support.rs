@@ -87,6 +87,7 @@ fn index_of(fixture: &str) -> Result<Index, Box<dyn Error>> {
         &output,
         &["ts"],
         &[],
+        &[],
         IndexInfo::default(),
     ))
 }

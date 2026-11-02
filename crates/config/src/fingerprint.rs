@@ -14,7 +14,7 @@ pub fn fingerprint(setup: &Setup) -> Result<u128, serde_json::Error> {
 
 #[cfg(test)]
 mod tests {
-    use gsttt_core::setup::ModuleSetup;
+    use gsttt_core::setup::{GraphqlEndpoint, ModuleSetup};
     use serde_json::json;
 
     use super::*;
@@ -40,6 +40,15 @@ mod tests {
         let mut prefixed = base.clone();
         prefixed.http_prefixes.push("/api".to_owned());
         assert_ne!(fingerprint(&base).unwrap(), fingerprint(&prefixed).unwrap());
+        let mut with_endpoint = base.clone();
+        with_endpoint.graphql_endpoints.push(GraphqlEndpoint {
+            clients: vec!["web/**".to_owned()],
+            servers: vec!["api/**".to_owned()],
+        });
+        assert_ne!(
+            fingerprint(&base).unwrap(),
+            fingerprint(&with_endpoint).unwrap()
+        );
         let mut with_module = base.clone();
         with_module.modules.push(ModuleSetup {
             module: "ts".to_owned(),

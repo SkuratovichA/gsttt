@@ -1,6 +1,6 @@
 //! The config of a repository: `.gsttt/config.toml` and the packs in `.gsttt/packs/`, read into a [`Setup`].
 //!
-//! Nothing in them is run. The top level of the config holds a fixed set of keys ([`Keys`]), a table for each module of the registry, which turns the module on with the table as its options, and the `[[external]]` entries. serde reads the keys, but only the registry knows the names of the modules, so the top level is sorted out here before anything is read into a type. A run reports one error, the first of these steps to fail: the syntax, an unknown key, an unknown module in `disable`, a value of the wrong type, the options of a module, and the declaration of an external.
+//! Nothing in them is run. The top level of the config holds a fixed set of keys ([`Keys`]), a table for each module of the registry, which turns the module on with the table as its options, the `[[external]]` entries and the `[[graphql_endpoints]]` entries. serde reads the keys, but only the registry knows the names of the modules, so the top level is sorted out here before anything is read into a type. A run reports one error, the first of these steps to fail: the syntax, an unknown key, an unknown module in `disable`, a value of the wrong type, the options of a module, and the declaration of an external or an endpoint.
 
 use std::fs;
 use std::io;
@@ -9,8 +9,9 @@ use std::path::Path;
 
 use gsttt_core::Setup;
 use gsttt_core::connector::DynConnector;
+use gsttt_core::glob::glob_set;
 use gsttt_core::rules::Pack;
-use gsttt_core::setup::{ExternalSetup, ModuleSetup};
+use gsttt_core::setup::{ExternalSetup, GraphqlEndpoint, ModuleSetup};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use toml::Spanned;
@@ -18,7 +19,7 @@ use toml::de::{DeTable, DeValue, ValueDeserializer};
 
 use crate::document::{Located, parse, read_typed};
 use crate::error::ConfigError;
-use crate::external::{check_env, check_name, glob_set, options_object};
+use crate::external::{check_env, check_name, options_object};
 use crate::pack::read_pack;
 use crate::source::read_source;
 
@@ -29,7 +30,7 @@ pub const CONFIG_PATH: &str = ".gsttt/config.toml";
 pub const PACKS_PATH: &str = ".gsttt/packs";
 
 /// The keys of the top level that are not modules, which is what [`Keys`] holds.
-pub(crate) const KEYS: [&str; 7] = [
+pub(crate) const KEYS: [&str; 8] = [
     "exclude",
     "http_prefixes",
     "max_file_bytes",
@@ -37,6 +38,7 @@ pub(crate) const KEYS: [&str; 7] = [
     "disable",
     "disable_packs",
     "external",
+    "graphql_endpoints",
 ];
 
 /// The config of a repository: these keys, and a table named after a module, like `[ts]`, which turns the module on and holds its options. A key that is left out keeps its default.
@@ -57,6 +59,8 @@ pub(crate) struct Keys {
     pub(crate) disable_packs: Vec<String>,
     /// Connectors that run as a command speaking JSON lines, for languages gsttt does not ship.
     pub(crate) external: Vec<ExternalSetup>,
+    /// The GraphQL APIs of the repository, each with the files that call it and the files that serve it. A GraphQL operation, field or type is then followed only between files of one endpoint, so that two APIs which spell the same names are not taken for one.
+    pub(crate) graphql_endpoints: Vec<GraphqlEndpoint>,
 }
 
 /// Reads `.gsttt/config.toml` and the packs in `.gsttt/packs/` under `root` into a [`Setup`]. A repository without them gets [`Setup::default`].
@@ -151,6 +155,8 @@ struct TopLevel<'text> {
     modules: Vec<ModuleTable<'text>>,
     /// Where each `[[external]]` entry starts in the file, in the file's order.
     externals: Vec<Range<usize>>,
+    /// Where each `[[graphql_endpoints]]` entry starts in the file, in the file's order.
+    endpoints: Vec<Range<usize>>,
 }
 
 fn read_config(text: &str, registry: &[&dyn DynConnector]) -> Result<Setup, Located> {
@@ -164,6 +170,7 @@ fn read_config(text: &str, registry: &[&dyn DynConnector]) -> Result<Setup, Loca
         keys,
         mut modules,
         externals,
+        endpoints,
     } = sort_out(document.into_inner(), &names)?;
     check_disable(&keys, &names)?;
     let keys: Keys = read_typed(Spanned::new(span, keys))?;
@@ -191,10 +198,19 @@ fn read_config(text: &str, registry: &[&dyn DynConnector]) -> Result<Setup, Loca
             .map_err(|message| Located::new(message, span))?;
         setup.externals.push(external);
     }
+    for (position, (endpoint, span)) in keys
+        .graphql_endpoints
+        .into_iter()
+        .zip(endpoints)
+        .enumerate()
+    {
+        check_endpoint(&endpoint, position).map_err(|message| Located::new(message, span))?;
+        setup.graphql_endpoints.push(endpoint);
+    }
     Ok(setup)
 }
 
-/// Splits the top level into the keys, the tables of the modules and the places of the externals. A key that is none of them is an error, and when there are several it is the first in the file that is named.
+/// Splits the top level into the keys, the tables of the modules and the places of the externals and the endpoints. A key that is none of them is an error, and when there are several it is the first in the file that is named.
 fn sort_out<'text>(
     table: DeTable<'text>,
     modules: &[&'static str],
@@ -203,6 +219,7 @@ fn sort_out<'text>(
         keys: DeTable::new(),
         modules: Vec::new(),
         externals: Vec::new(),
+        endpoints: Vec::new(),
     };
     let mut unknown: Option<(Range<usize>, String)> = None;
     for (key, value) in table {
@@ -219,10 +236,10 @@ fn sort_out<'text>(
                 value,
             });
         } else if KEYS.contains(&name) {
-            if name == "external"
-                && let DeValue::Array(entries) = value.get_ref()
-            {
-                top.externals = entries.iter().map(Spanned::span).collect();
+            match name {
+                "external" => top.externals = entry_spans(&value),
+                "graphql_endpoints" => top.endpoints = entry_spans(&value),
+                _ => {}
             }
             top.keys.insert(key, value);
         } else if unknown
@@ -242,6 +259,14 @@ fn sort_out<'text>(
             span,
         )),
         None => Ok(top),
+    }
+}
+
+/// Where each entry of an array of tables starts in the file, in the file's order. Whether the value is an array of tables is for reading it into [`Keys`] to say.
+fn entry_spans(value: &Spanned<DeValue<'_>>) -> Vec<Range<usize>> {
+    match value.get_ref() {
+        DeValue::Array(entries) => entries.iter().map(Spanned::span).collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -313,11 +338,26 @@ fn check_external(
             "`{name}` needs `files`: the globs of the files it reads"
         ));
     }
-    glob_set(&external.files).map_err(|error| format!("`files` of `{name}` {error}"))?;
+    glob_set(&external.files).map_err(|error| error.at(&format!("`files` of `{name}`")))?;
     check_env(&external.env).map_err(|error| format!("`env` of `{name}` {error}"))?;
     external.options = options_object(&external.options)
         .map(|options| sorted(serde_json::Value::Object(options)))
         .map_err(|error| format!("`options` of `{name}` {error}"))?;
+    Ok(())
+}
+
+/// What serde cannot check of an endpoint, the `position`th of the file: one glob at least in `clients` or `servers`, and every glob valid. A side may be empty, because a repository may hold only the callers of an API or only its servers. The message names the entry by its place in the list, because an endpoint has no name.
+fn check_endpoint(endpoint: &GraphqlEndpoint, position: usize) -> Result<(), String> {
+    if endpoint.clients.is_empty() && endpoint.servers.is_empty() {
+        return Err(format!(
+            "`{}` needs at least one glob in `clients` or `servers`: the files that call or serve the endpoint, relative to the repository root",
+            GraphqlEndpoint::entry(position)
+        ));
+    }
+    for (side, globs) in endpoint.sides() {
+        let place = format!("`{}`", GraphqlEndpoint::place(position, side));
+        glob_set(globs).map_err(|error| error.at(&place))?;
+    }
     Ok(())
 }
 

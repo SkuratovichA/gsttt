@@ -147,6 +147,7 @@ fn a_misspelt_key_is_named_with_the_known_keys() {
         "disable",
         "disable_packs",
         "external",
+        "graphql_endpoints",
     ] {
         assert!(message.contains(key), "{key} is missing in {message}");
     }
@@ -282,6 +283,11 @@ fn comments_do_not_change_the_fingerprint() {
         )
     };
     assert_ne!(print(&external(true)), print(&external(false)));
+    // So is a glob of a GraphQL endpoint, which decides what the queries cross.
+    let endpoint = |server: &str| {
+        format!("[[graphql_endpoints]]\nclients = [\"web/**\"]\nservers = [\"{server}\"]\n")
+    };
+    assert_ne!(print(&endpoint("api/**")), print(&endpoint("gateway/**")));
 }
 
 #[gsttt_scenario::scenario("config", "Moving a module's table does not change the fingerprint")]
@@ -325,7 +331,10 @@ fn an_external_is_checked_when_it_is_declared() {
     let files = declare("name = \"k\"\ncmd = [\"x\"]\nfiles = []");
     assert!(files.contains("needs `files`"), "{files}");
     let glob = declare("name = \"k\"\ncmd = [\"x\"]\nfiles = [\"[\"]");
-    assert!(glob.contains("holds `[`"), "{glob}");
+    assert!(
+        glob.contains("`files` of `k` has the glob \"[\", which is not valid"),
+        "{glob}"
+    );
     let env = declare("name = \"k\"\ncmd = [\"x\"]\nfiles = [\"*.x\"]\nenv = [\"A=B\"]");
     assert!(env.contains("`env` of `k`") && env.contains("A=B"), "{env}");
     let missing = declare("name = \"k\"");
@@ -336,6 +345,99 @@ fn an_external_is_checked_when_it_is_declared() {
     assert!(
         twice.starts_with(".gsttt/config.toml:6:") && twice.contains("`k` is declared twice"),
         "{twice}"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "Endpoints enter the setup in the order of the file")]
+#[test]
+fn endpoints_enter_the_setup_in_the_order_of_the_file() {
+    let setup = Tree::with_config(
+        "[[graphql_endpoints]]\nservers = [\"b/**\"]\nclients = [\"a/**\", \"c/*.ts\"]\n\n[[graphql_endpoints]]\nclients = [\"d/**\"]\nservers = [\"e/**\"]\n",
+    )
+    .evaluate()
+    .unwrap();
+    let endpoints: Vec<(&[String], &[String])> = setup
+        .graphql_endpoints
+        .iter()
+        .map(|endpoint| (endpoint.clients.as_slice(), endpoint.servers.as_slice()))
+        .collect();
+    let owned = |globs: &[&str]| {
+        globs
+            .iter()
+            .map(|glob| (*glob).to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        endpoints,
+        [
+            (
+                owned(&["a/**", "c/*.ts"]).as_slice(),
+                owned(&["b/**"]).as_slice()
+            ),
+            (owned(&["d/**"]).as_slice(), owned(&["e/**"]).as_slice()),
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("config", "An endpoint needs one glob")]
+#[test]
+fn an_endpoint_needs_one_glob() {
+    for fields in [
+        "",
+        "clients = []",
+        "servers = []",
+        "clients = []\nservers = []",
+    ] {
+        let message = failure(&format!("[[graphql_endpoints]]\n{fields}\n"));
+        assert!(
+            message.starts_with(".gsttt/config.toml:1:")
+                && message.contains(
+                    "`graphql_endpoints[0]` needs at least one glob in `clients` or `servers`"
+                ),
+            "{fields:?}: {message}"
+        );
+    }
+    // The place in the list names the entry, as the second has no name of its own.
+    let second = failure(
+        "[[graphql_endpoints]]\nclients = [\"a\"]\n\n[[graphql_endpoints]]\nclients = []\nservers = []\n",
+    );
+    assert!(
+        second.starts_with(".gsttt/config.toml:4:") && second.contains("`graphql_endpoints[1]`"),
+        "{second}"
+    );
+}
+
+#[gsttt_scenario::scenario("config", "An endpoint may list one side only")]
+#[test]
+fn an_endpoint_may_list_one_side_only() {
+    let setup = Tree::with_config(
+        "[[graphql_endpoints]]\nclients = [\"web/**\"]\n\n[[graphql_endpoints]]\nclients = []\nservers = [\"api/**\"]\n",
+    )
+    .evaluate()
+    .unwrap();
+    let endpoints: Vec<(&[String], &[String])> = setup
+        .graphql_endpoints
+        .iter()
+        .map(|endpoint| (endpoint.clients.as_slice(), endpoint.servers.as_slice()))
+        .collect();
+    assert_eq!(
+        endpoints,
+        [
+            (["web/**".to_owned()].as_slice(), [].as_slice()),
+            ([].as_slice(), ["api/**".to_owned()].as_slice()),
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("config", "An invalid glob of an endpoint is named")]
+#[test]
+fn an_invalid_glob_of_an_endpoint_is_named() {
+    let message =
+        failure("[[graphql_endpoints]]\nclients = [\"web/**\"]\nservers = [\"api/**\", \"[\"]\n");
+    assert!(message.starts_with(".gsttt/config.toml:1:"), "{message}");
+    assert!(
+        message.contains("`graphql_endpoints[0].servers` has the glob \"[\""),
+        "{message}"
     );
 }
 

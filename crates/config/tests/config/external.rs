@@ -978,7 +978,7 @@ fn an_external_needs_a_command_and_globs_that_parse() {
     broken.files = vec!["src/[".to_owned()];
     let error = External::new(&broken).unwrap_err().to_string();
     assert!(
-        error.contains("kotlin") && error.contains("src/["),
+        error.contains("kotlin") && error.contains("`files` has the glob \"src/[\""),
         "{error}"
     );
 }

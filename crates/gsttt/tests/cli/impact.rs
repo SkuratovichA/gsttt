@@ -1,7 +1,7 @@
 //! `impact` takes paths or `--changed`, passes what is gone as deleted, follows dependents as far as `--depth` lets it, and with `--name` lists the callers of a name.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gsttt_scenario::scenario;
 use serde_json::{Value, json as value};
@@ -373,6 +373,64 @@ fn assert_the_client_of_the_mutation_is_reached(answer: &Value) {
         value!({ "via": "contract", "role": "calls", "key": "graphql Mutation.issueInvoice" }),
         "{answer}"
     );
+}
+
+/// What `impact` of the resolver of the endpoint `a` lists: the clients, as the binary prints them.
+fn clients_of_the_resolver(sandbox: &Sandbox, repo: &Path) -> Vec<String> {
+    let answer = json(&sandbox.run_in(repo, &["--json", "impact", "api-a/user.resolver.ts"]));
+    paths(&answer["affected"])
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn the_endpoints_of_the_config_scope_a_graphql_change() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "package.json",
+        "{ \"dependencies\": { \"@nestjs/graphql\": \"^12.0.0\", \"graphql-tag\": \"^2.12.0\" } }\n",
+    );
+    for side in ["a", "b"] {
+        write(
+            &repo,
+            &format!("api-{side}/user.resolver.ts"),
+            "import { Query, Resolver } from '@nestjs/graphql';\n\n@Resolver()\nexport class UserResolver {\n  @Query()\n  user() {\n    return null;\n  }\n}\n",
+        );
+        write(
+            &repo,
+            &format!("web-{side}/client.ts"),
+            "import gql from 'graphql-tag';\n\nexport const USER = gql`query User { user }`;\n",
+        );
+    }
+
+    // Without endpoints the query is served by every resolver and called by every client.
+    assert_eq!(
+        clients_of_the_resolver(&sandbox, &repo),
+        ["web-a/client.ts", "web-b/client.ts"]
+    );
+
+    write(
+        &repo,
+        ".gsttt/config.toml",
+        "[[graphql_endpoints]]\nclients = [\"web-a/**\"]\nservers = [\"api-a/**\"]\n\n[[graphql_endpoints]]\nclients = [\"web-b/**\"]\nservers = [\"api-b/**\"]\n",
+    );
+    // The first run after the edit builds the index again and stores it with the endpoints.
+    assert_eq!(
+        clients_of_the_resolver(&sandbox, &repo),
+        ["web-a/client.ts"]
+    );
+    let stored = json(&sandbox.run_in(&repo, &["--json", "index"]));
+    assert_eq!(stored["unchanged"], true, "{stored}");
+    // The next one reads that snapshot, and the endpoints in it scope the change as before.
+    assert_eq!(
+        clients_of_the_resolver(&sandbox, &repo),
+        ["web-a/client.ts"]
+    );
+    let still = json(&sandbox.run_in(&repo, &["--json", "index"]));
+    assert_eq!(still["unchanged"], true, "{still}");
 }
 
 #[test]

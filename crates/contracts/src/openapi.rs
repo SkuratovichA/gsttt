@@ -139,7 +139,7 @@ impl Connector for OpenApi {
 fn build_globs(patterns: &[String]) -> Result<GlobSet, ConnectorError> {
     glob_set(patterns).map_err(|error| ConnectorError::Options {
         connector: "openapi".into(),
-        message: error.in_option("files"),
+        message: error.at("`files`"),
     })
 }
 

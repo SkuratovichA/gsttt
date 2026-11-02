@@ -55,5 +55,15 @@ expression: setup
   ],
   "http_prefixes": [
     "/api"
+  ],
+  "graphql_endpoints": [
+    {
+      "clients": [
+        "web/**/*.ts"
+      ],
+      "servers": [
+        "api/src/**/*.ts"
+      ]
+    }
   ]
 }

@@ -11,6 +11,7 @@ mod neighbours;
 mod render;
 mod report;
 mod route;
+mod scope;
 mod walk;
 
 pub use contracts::{ContractLookup, ContractLookupError, Found, Match, Site, contract};

@@ -28,6 +28,8 @@ pub struct Setup {
     pub externals: Vec<ExternalSetup>,
     /// Path prefixes a gateway or proxy puts in front of routes, like `/api`: with it, a call to `/api/bookings` meets the route `/bookings`.
     pub http_prefixes: Vec<String>,
+    /// The GraphQL endpoints of the repository, which keep the operations of one API from meeting the schema of another that spells the same names.
+    pub graphql_endpoints: Vec<GraphqlEndpoint>,
 }
 
 impl Default for Setup {
@@ -42,7 +44,51 @@ impl Default for Setup {
             max_file_bytes: 2 * 1024 * 1024,
             externals: Vec::new(),
             http_prefixes: Vec::new(),
+            graphql_endpoints: Vec::new(),
         }
+    }
+}
+
+/// One GraphQL API, one `[[graphql_endpoints]]` entry of the config: the files that call it and the files that serve it, as globs on repository-relative paths. A schema file that matches either list belongs to the endpoint too.
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct GraphqlEndpoint {
+    /// Globs of the files that send operations to the endpoint. Empty for an API that is called only from outside the repository.
+    #[serde(default)]
+    pub clients: Vec<String>,
+    /// Globs of the files that resolve the operations of the endpoint. Empty for an API that is served outside the repository.
+    #[serde(default)]
+    pub servers: Vec<String>,
+}
+
+impl GraphqlEndpoint {
+    /// The two lists with the names the config gives them, clients first.
+    #[must_use]
+    pub fn sides(&self) -> [(&'static str, &[String]); 2] {
+        [("clients", &self.clients), ("servers", &self.servers)]
+    }
+
+    /// Where the entry numbered `position` is in the config, as messages name it: `graphql_endpoints[0]`. An endpoint has no name, so its place in the list is its name.
+    #[must_use]
+    pub fn entry(position: usize) -> String {
+        format!("graphql_endpoints[{position}]")
+    }
+
+    /// Where the list `side` of the entry numbered `position` is in the config, as messages name it: `graphql_endpoints[0].servers`.
+    #[must_use]
+    pub fn place(position: usize, side: &str) -> String {
+        format!("{}.{side}", Self::entry(position))
     }
 }
 

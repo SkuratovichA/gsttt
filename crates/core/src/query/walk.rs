@@ -84,7 +84,7 @@ pub(super) fn reach(
         graph,
         crossing,
         crossed: Crossed::new(Direction::ToCallers, graph),
-        leavers: Leavers::new(Direction::ToCallers),
+        leavers: Leavers::new(Direction::ToCallers, crossing),
         seen: IdSet::with_universe(graph.file_count()),
         whole: IdSet::with_universe(graph.file_count()),
         held: HashMap::default(),
@@ -129,7 +129,7 @@ struct Walk<'a> {
     /// The contracts crossed so far, from declarers and servers towards callers.
     crossed: Crossed,
     /// The fewest hops through code of the files of the layer being expanded that leave each contract.
-    leavers: Leavers,
+    leavers: Leavers<'a>,
     /// The files reached in at least one name, and the changed files.
     seen: IdSet<FileId>,
     /// The files reached in every name: the changed files, and those that use an affected name or sit across a contract. Only these cross contracts.
@@ -166,7 +166,8 @@ impl Walk<'_> {
         for front in whole() {
             for &contract in self.graph.contracts_of(front.file) {
                 for site in sites_of(self.graph.sites(contract), front.file) {
-                    self.leavers.add(contract, site.role, front.code);
+                    self.leavers
+                        .add(front.file, contract, site.role, front.code);
                 }
             }
         }
@@ -218,7 +219,7 @@ impl Walk<'_> {
                         role: site.role,
                         contract: meeting,
                     };
-                    let arrival = self.leavers.arrival(contract, site.role, code);
+                    let arrival = self.leavers.arrival(contract, site, code);
                     self.take_all(site.file, cause, arrival);
                 }
             }

@@ -8,6 +8,7 @@ use crate::coverage::Coverage;
 use crate::fact::{ParseStatus, ResolvedImport, UnresolvedSite};
 use crate::graph::Graph;
 use crate::ids::{FileId, Id, ProjectId};
+use crate::setup::GraphqlEndpoint;
 
 /// Everything a query reads. `records` has one entry per file of the graph, by [`FileId`], and `projects` one per [`ProjectId`]; the accessors return `None` past either.
 #[derive(
@@ -30,6 +31,8 @@ pub struct Index {
     pub info: IndexInfo,
     /// [`Setup::http_prefixes`](crate::setup::Setup::http_prefixes) of the run, so a query that answers from a snapshot matches HTTP paths the way the config asked.
     pub http_prefixes: Vec<String>,
+    /// [`Setup::graphql_endpoints`](crate::setup::Setup::graphql_endpoints) of the run, so a query that answers from a snapshot crosses a GraphQL contract only within an endpoint, as the config asked.
+    pub graphql_endpoints: Vec<GraphqlEndpoint>,
 }
 
 /// A project as answers name it.

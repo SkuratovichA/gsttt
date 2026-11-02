@@ -17,6 +17,7 @@ use crate::fact::{
 };
 use crate::graph::{ContractSite, GraphBuilder};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
+use crate::setup::GraphqlEndpoint;
 use crate::{FileId, ProjectId, RepoPath};
 
 pub mod json;
@@ -221,6 +222,7 @@ pub struct Tree {
     /// Connector names in the order they were first used, which stands for the registry order.
     connectors: Vec<String>,
     prefixes: Vec<String>,
+    endpoints: Vec<GraphqlEndpoint>,
     head: Option<String>,
     dirty: u32,
 }
@@ -459,6 +461,16 @@ impl Tree {
         self
     }
 
+    /// A GraphQL endpoint the index records, with the globs of the files that call it and of the files that serve it, which a query that answers from it crosses GraphQL contracts within.
+    pub fn endpoint(mut self, clients: &[&str], servers: &[&str]) -> Self {
+        let owned = |globs: &[&str]| globs.iter().map(|glob| (*glob).to_owned()).collect();
+        self.endpoints.push(GraphqlEndpoint {
+            clients: owned(clients),
+            servers: owned(servers),
+        });
+        self
+    }
+
     /// The commit the index was built at and how many files differed from it.
     pub fn commit(mut self, head: &str, dirty: u32) -> Self {
         self.head = Some(head.to_owned());
@@ -588,6 +600,7 @@ impl Tree {
                 ..IndexInfo::default()
             },
             http_prefixes: self.prefixes,
+            graphql_endpoints: self.endpoints,
         }
     }
 }

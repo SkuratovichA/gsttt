@@ -9,10 +9,12 @@ use super::pipeline::{Output, display_root};
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{Line, ParseStatus, UnresolvedReason, UnresolvedSite};
+use crate::glob::glob_set;
 use crate::graph::{ContractSite, GraphBuilder};
 use crate::ids::{FileId, Id};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
 use crate::repo::RepoView;
+use crate::setup::GraphqlEndpoint;
 
 /// Builds the index of the files of `repo` from what the pipeline found. `ran` names the connectors that took part in registry order, so one that opened no project still has its line in the coverage. The time the build took is added to `info` as the graph phase.
 pub fn build_index(
@@ -20,6 +22,7 @@ pub fn build_index(
     output: &Output,
     ran: &[&str],
     http_prefixes: &[String],
+    graphql_endpoints: &[GraphqlEndpoint],
     mut info: IndexInfo,
 ) -> Index {
     let started = Instant::now();
@@ -184,6 +187,9 @@ pub fn build_index(
         }
     }
     coverage.problems = output.problems.iter().map(ToString::to_string).collect();
+    coverage
+        .problems
+        .extend(unmatched_endpoint_globs(repo, graphql_endpoints));
     coverage.finish();
 
     let graph = graph.build();
@@ -195,5 +201,52 @@ pub fn build_index(
         coverage,
         info,
         http_prefixes: http_prefixes.to_vec(),
+        graphql_endpoints: graphql_endpoints.to_vec(),
     }
+}
+
+/// One problem line for each glob of an endpoint that matches no file of `repo`: such a glob is valid, so only the coverage can say that the files it meant belong to no endpoint. Done once here, never per query, and not at all while no endpoint lists a glob. The walk of the files stops at the file that matches the last glob still unmatched. A list that does not build is the config check's to report, and gives no line.
+fn unmatched_endpoint_globs(repo: &RepoView, endpoints: &[GraphqlEndpoint]) -> Vec<String> {
+    let mut globs = Vec::new();
+    for (position, endpoint) in endpoints.iter().enumerate() {
+        for (side, patterns) in endpoint.sides() {
+            for pattern in patterns {
+                globs.push((GraphqlEndpoint::place(position, side), pattern));
+            }
+        }
+    }
+    if globs.is_empty() {
+        return Vec::new();
+    }
+    let patterns: Vec<String> = globs.iter().map(|(_, glob)| (*glob).clone()).collect();
+    let Ok(set) = glob_set(&patterns) else {
+        return Vec::new();
+    };
+    let mut matched = vec![false; globs.len()];
+    let mut unmatched = globs.len();
+    let mut hits = Vec::new();
+    for (_, path) in repo.files() {
+        set.matches_into(path.as_str(), &mut hits);
+        for &glob in &hits {
+            if let Some(seen) = matched.get_mut(glob)
+                && !*seen
+            {
+                *seen = true;
+                unmatched = unmatched.saturating_sub(1);
+            }
+        }
+        if unmatched == 0 {
+            break;
+        }
+    }
+    globs
+        .into_iter()
+        .zip(matched)
+        .filter(|(_, matched)| !matched)
+        .map(|((place, glob), _)| {
+            format!(
+                "`{place}` has the glob {glob:?}, which matches no indexed file (git-ignored and excluded files are not indexed)"
+            )
+        })
+        .collect()
 }

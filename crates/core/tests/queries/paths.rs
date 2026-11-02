@@ -10,7 +10,7 @@ use gsttt_core::testing::{Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
 
-fn route(index: &Index, from: &str, to: &str) -> Route {
+pub(super) fn route(index: &Index, from: &str, to: &str) -> Route {
     path(index, Freshness::Fresh, from, to)
 }
 
@@ -28,7 +28,7 @@ fn steps(route: &Route) -> Vec<(&str, Option<String>)> {
         .collect()
 }
 
-fn files(route: &Route) -> Vec<&str> {
+pub(super) fn files(route: &Route) -> Vec<&str> {
     route.steps.iter().map(|step| step.path.as_str()).collect()
 }
 

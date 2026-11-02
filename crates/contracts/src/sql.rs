@@ -160,7 +160,7 @@ impl Connector for Sql {
 fn migration_globs(patterns: &[String]) -> Result<GlobSet, ConnectorError> {
     glob_set(patterns).map_err(|error| ConnectorError::Options {
         connector: "sql".into(),
-        message: error.in_option("migrations"),
+        message: error.at("`migrations`"),
     })
 }
 
