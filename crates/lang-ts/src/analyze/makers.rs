@@ -1,7 +1,7 @@
 //! The variables a file makes with a call, found before the walk: `const app = express()`, `this.http = axios.create()`.
 
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::rules::{Pack, serves_http};
 use oxc_ast::ast::{
@@ -13,7 +13,7 @@ use oxc_syntax::scope::{ScopeFlags, ScopeId};
 
 use super::constants::exported_locals;
 use super::{Constants, peel};
-use crate::extra::{Export, ExportedMaker};
+use crate::extra::{Export, LinkMaker};
 use crate::shape::{Shape, chain_of, dotted, field_name, this_key};
 
 /// The callee that makes a NestJS app, whose root module the global prefix of the app is mounted on.
@@ -34,13 +34,21 @@ pub(super) struct Maker {
     pub(super) top_level: bool,
 }
 
-/// The makers of `makers` declared at the top level of the file that a call rule takes a receiver from and that `exports` name as a local, in the order of their names, for the files that import them.
-pub(super) fn exported(makers: &BTreeMap<String, Maker>, exports: &[Export]) -> Vec<ExportedMaker> {
+/// The makers of `makers` that a call rule takes a receiver from and that the link reads, in the order of their names: those declared at the top level that `exports` name as a local, for the files that import them, and those a call of the file waits on (`waited`), whose names are declared wherever.
+pub(super) fn linked(
+    makers: &BTreeMap<String, Maker>,
+    exports: &[Export],
+    waited: &BTreeSet<&str>,
+) -> Vec<LinkMaker> {
     let locals = exported_locals(exports);
     makers
         .iter()
-        .filter(|(name, maker)| maker.top_level && maker.receiver && locals.contains(name.as_str()))
-        .map(|(name, maker)| ExportedMaker {
+        .filter(|(name, maker)| {
+            maker.receiver
+                && ((maker.top_level && locals.contains(name.as_str()))
+                    || waited.contains(name.as_str()))
+        })
+        .map(|(name, maker)| LinkMaker {
             name: name.clone(),
             callee: maker.callee.clone(),
             shape: maker.shape.clone(),

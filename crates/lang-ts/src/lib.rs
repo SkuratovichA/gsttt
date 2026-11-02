@@ -8,6 +8,7 @@ pub mod extra;
 mod link;
 mod manifest;
 mod options;
+mod parts;
 mod pathing;
 mod project;
 mod provides;

@@ -1,27 +1,32 @@
 //! The text a name stands for in the file that declares it, found before anything else is read, and the names the file imports.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use oxc_ast::ast::{
     BindingPattern, Class, ClassElement, Declaration, ExportDefaultDeclarationKind, Expression,
     ImportDeclaration, ImportDeclarationSpecifier, ObjectPropertyKind, Program, Statement,
-    TSEnumMemberName, VariableDeclarationKind,
+    TSEnumMemberName, TSModuleReference, VariableDeclarationKind,
 };
-use oxc_syntax::operator::BinaryOperator;
 
+use super::roots::rebound;
 use super::symbols::base_name;
+use super::{load_of, peel};
 use crate::extra::{Export, ExportTarget};
-use crate::shape::{dotted_name, field_name, property_str, template_with};
+use crate::parts::{Mode, Part};
+use crate::shape::{dotted_name, field_name, literal_text, part_of, property_str};
 
 /// The top-level constants of a file by the name they are read under, and the names the file imports.
 #[derive(Debug, Default)]
 pub(crate) struct Constants {
-    /// `BASE`, `Env.API_URL`, `Routes.LOGIN` and `ROUTES.users.byId` to the text they stand for.
-    values: BTreeMap<String, String>,
+    /// `BASE`, `Env.API_URL`, `Routes.LOGIN` and `ROUTES.users.byId` to the text they stand for, which is put together from names that other files declare when the constant is built from some.
+    values: BTreeMap<String, Part>,
     /// The first segment of each name in `values`, so that a name that starts with anything else is known to be no constant before a string is built for it.
     roots: BTreeSet<String>,
     /// The local names an import binds, each with the specifier of the module it takes the name from.
     imported: BTreeMap<String, String>,
+    /// The imported names that the file binds again, as a parameter, a variable, a function or a class. The file is not read by scope, so such a name is no import for the value a rule reads anywhere in it.
+    rebound: BTreeSet<String>,
     /// The enum whose members are being read, while they are.
     scope: Option<EnumScope>,
 }
@@ -37,18 +42,18 @@ impl Constants {
     /// The constants `program` declares at its top level, in declaration order, so that a value may use a constant above it, and the names its imports bind.
     pub(crate) fn collect(program: &Program<'_>) -> Self {
         let mut constants = Self::default();
+        // Every import is known before a constant is read: an `import` is hoisted, so a constant may name one that is written below it, and a name that `require` binds is the module's wherever it is read.
+        for statement in &program.body {
+            constants.imports(statement);
+        }
+        if !constants.imported.is_empty() {
+            let names = constants.imported.keys().map(String::as_str);
+            constants.rebound = rebound(program, names);
+        }
         // One buffer holds the name of every declaration in turn, so that the names of the many declarations that hold no text cost nothing.
         let mut path = String::new();
         for statement in &program.body {
             match statement {
-                Statement::ImportDeclaration(import) => {
-                    let Some(spec) = import.source.value.as_str() else {
-                        continue;
-                    };
-                    for local in import_locals(import) {
-                        constants.import(local, spec);
-                    }
-                }
                 Statement::ExportDeclaration(export) => {
                     constants.declaration(&export.declaration, &mut path);
                 }
@@ -69,6 +74,64 @@ impl Constants {
         constants
     }
 
+    /// Notes the names that `statement` binds to a module: those of an `import`, of `import x = require('y')`, and of `const { a } = require('y')` and its dynamic kin, as the walk of the file binds them.
+    fn imports(&mut self, statement: &Statement<'_>) {
+        let declaration = match statement {
+            Statement::ImportDeclaration(import) => {
+                if let Some(spec) = import.source.value.as_str() {
+                    for local in import_locals(import) {
+                        self.import(local, spec);
+                    }
+                }
+                return;
+            }
+            Statement::ExportDeclaration(export) => &export.declaration,
+            other => match other.as_declaration() {
+                Some(declaration) => declaration,
+                None => return,
+            },
+        };
+        match declaration {
+            Declaration::TSImportEqualsDeclaration(equals) => {
+                if let TSModuleReference::ExternalModuleReference(reference) =
+                    &equals.module_reference
+                    && let Some(spec) = reference.expression.value.as_str()
+                {
+                    self.import(equals.id.name.as_str(), spec);
+                }
+            }
+            Declaration::VariableDeclaration(variables) => {
+                for declarator in &variables.declarations {
+                    if let Some(init) = &declarator.init
+                        && let Some(load) = load_of(peel(init))
+                        && let Some(spec) = load.argument.and_then(literal_text)
+                    {
+                        self.loaded(&declarator.id, &spec);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Notes the names that `pattern` takes from the module `spec` that a load hands back: `x` of `const x = require('y')`, and each name of `{ a, b: c }` that is written as a name and bound to one.
+    fn loaded(&mut self, pattern: &BindingPattern<'_>, spec: &str) {
+        match pattern {
+            BindingPattern::BindingIdentifier(local) => self.import(local.name.as_str(), spec),
+            BindingPattern::ObjectPattern(object) => {
+                for property in &object.properties {
+                    if !property.computed
+                        && property_str(&property.key).is_some()
+                        && let BindingPattern::BindingIdentifier(local) = &property.value
+                    {
+                        self.import(local.name.as_str(), spec);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Notes that the file binds `local` to something the module `spec` exports.
     pub(super) fn import(&mut self, local: &str, spec: &str) {
         if !self.imported.contains_key(local) {
@@ -81,8 +144,8 @@ impl Constants {
         self.imported.get(local).map(String::as_str)
     }
 
-    /// The text that `expr` stands for when it is a name or a chain of names that a constant of this file is read under.
-    pub(crate) fn value(&self, expr: &Expression<'_>) -> Option<&str> {
+    /// What `expr` stands for when it is a name or a chain of names that a constant of this file is read under, or that starts from a name the file imports: `Env.API_URL` for `Env.API_URL`, which the link phase reads. A constant is lent, not copied, so a use of it costs nothing until a part of it is kept.
+    pub(crate) fn part(&self, expr: &Expression<'_>) -> Option<Cow<'_, Part>> {
         if let Some(scope) = &self.scope
             && let Expression::Identifier(identifier) = expr.get_inner_expression()
             && scope.members.contains(identifier.name.as_str())
@@ -91,24 +154,36 @@ impl Constants {
             return self
                 .values
                 .get(&format!("{}.{}", scope.name, identifier.name))
-                .map(String::as_str);
+                .map(Cow::Borrowed);
         }
+        self.constant(expr).map(Cow::Borrowed).or_else(|| {
+            self.imported_name(expr)
+                .map(|name| Cow::Owned(Part::Name(name)))
+        })
+    }
+
+    /// The constant of this file that `expr` is the name of.
+    fn constant(&self, expr: &Expression<'_>) -> Option<&Part> {
         if self.values.is_empty() || !self.roots.contains(base_name(expr)?) {
             return None;
         }
-        self.values.get(&*dotted_name(expr)?).map(String::as_str)
+        self.values.get(&*dotted_name(expr)?)
     }
 
-    /// The name that `expr` writes when it is a name or a chain of names that starts from a name the file imports: `Env.API_URL` for `Env.API_URL`.
-    pub(crate) fn imported_name(&self, expr: &Expression<'_>) -> Option<String> {
-        if self.imported.is_empty() || !self.imported.contains_key(base_name(expr)?) {
+    /// The name that `expr` writes when it is a name or a chain of names that starts from a name the file imports, and binds nowhere else: `Env.API_URL` for `Env.API_URL`.
+    fn imported_name(&self, expr: &Expression<'_>) -> Option<String> {
+        if self.imported.is_empty() {
             return None;
         }
-        dotted_name(expr).map(std::borrow::Cow::into_owned)
+        let base = base_name(expr)?;
+        if !self.imported.contains_key(base) || self.rebound.contains(base) {
+            return None;
+        }
+        dotted_name(expr).map(Cow::into_owned)
     }
 
     /// The constants whose first segment `exports` name as a local, sorted by name, to be read by the files that import them.
-    pub(crate) fn exported(&self, exports: &[Export]) -> Vec<(String, String)> {
+    pub(crate) fn exported(&self, exports: &[Export]) -> Vec<(String, Part)> {
         let locals = exported_locals(exports);
         self.values
             .iter()
@@ -185,7 +260,7 @@ impl Constants {
     /// Records `init` under `path`, or, for an object literal, each of its properties under `path` and the key. A spread may give any key another value, so it takes back the keys read above it, and the keys below it stay.
     fn add(&mut self, path: &mut String, init: &Expression<'_>) {
         let Expression::ObjectExpression(object) = init.get_inner_expression() else {
-            if let Some(value) = self.literal(init) {
+            if let Some(value) = part_of(init, self, Mode::Declare) {
                 self.insert(path, value);
             }
             return;
@@ -224,33 +299,12 @@ impl Constants {
         });
     }
 
-    fn insert(&mut self, path: &str, value: String) {
+    fn insert(&mut self, path: &str, value: Part) {
         let root = root_of(path);
         if !self.roots.contains(root) {
             self.roots.insert(root.to_owned());
         }
         self.values.insert(path.to_owned(), value);
-    }
-
-    /// The text of a string, a template or a concatenation whose every part is a constant declared above; `None` when any part is anything else. What a use of the name reads is [`text_with`](crate::shape::text_with), which writes `${}` for a part it does not know; a declaration is a constant only when nothing is unknown, and wherever this gives text so does that, the same.
-    fn literal(&self, expr: &Expression<'_>) -> Option<String> {
-        match expr.get_inner_expression() {
-            Expression::StringLiteral(text) => text.value.as_str().map(str::to_owned),
-            Expression::TemplateLiteral(template) => {
-                let mut complete = true;
-                let text = template_with(template, |part, text| match self.value(part) {
-                    Some(value) => text.push_str(value),
-                    None => complete = false,
-                });
-                complete.then_some(text)
-            }
-            Expression::BinaryExpression(binary) if binary.operator == BinaryOperator::Addition => {
-                let mut text = self.literal(&binary.left)?;
-                text.push_str(&self.literal(&binary.right)?);
-                Some(text)
-            }
-            other => self.value(other).map(str::to_owned),
-        }
     }
 }
 
@@ -316,9 +370,16 @@ mod tests {
     use oxc_span::SourceType;
     use proptest::prelude::*;
 
+    use std::collections::BTreeMap;
+
+    use gsttt_core::fact::FileTags;
+    use gsttt_core::text::LineIndex;
+
     use super::Constants;
+    use crate::analyze::analyze;
     use crate::extra::{Export, ExportTarget};
-    use crate::shape::text_with;
+    use crate::parts::{Mode, Part};
+    use crate::shape::part_of;
 
     fn constants_of(code: &str) -> Constants {
         let allocator = Allocator::default();
@@ -326,12 +387,15 @@ mod tests {
         Constants::collect(&parsed.program)
     }
 
-    /// The constants of `code` as `name=value` lines in name order.
+    /// The constants of `code` as `name=value` lines in name order, with a name that another file declares written `<NAME>`.
     fn read(code: &str) -> Vec<String> {
         constants_of(code)
             .values
             .iter()
-            .map(|(name, value)| format!("{name}={value}"))
+            .map(|(name, value)| {
+                let text = value.read(&|name| Some(format!("<{name}>")));
+                format!("{name}={}", text.unwrap_or_default())
+            })
             .collect()
     }
 
@@ -400,7 +464,7 @@ mod tests {
         }];
         assert_eq!(
             constants_of(code).exported(&exports),
-            [("Routes.LOGIN".to_owned(), "/login".to_owned())]
+            [("Routes.LOGIN".to_owned(), Part::Text("/login".to_owned()))]
         );
         assert_eq!(
             read("export default class { static LOGIN = '/login'; }"),
@@ -418,17 +482,168 @@ mod tests {
         );
     }
 
-    /// The expressions the generator below writes, over the constants `A`, `B` and `O` and a name no constant stands for.
+    #[test]
+    fn a_constant_built_from_a_name_another_file_declares_is_put_together_at_the_link() {
+        let code = "import { BASE, Env } from './config'; const T = `${BASE}/t`; const P = BASE + '/p'; const E = `${Env.API}/e`; const A = BASE;";
+        assert_eq!(
+            read(code),
+            ["A=<BASE>", "E=<Env.API>/e", "P=<BASE>/p", "T=<BASE>/t"]
+        );
+    }
+
+    #[test]
+    fn a_constant_built_from_such_a_constant_is_put_together_too() {
+        let code = "import { BASE } from './config'; const T = `${BASE}/t`; const U = `${T}/u`; const V = T + '/v';";
+        assert_eq!(read(code), ["T=<BASE>/t", "U=<BASE>/t/u", "V=<BASE>/t/v"]);
+    }
+
+    #[test]
+    fn a_constant_with_a_part_that_is_no_text_is_no_constant_whatever_else_it_names() {
+        assert_eq!(
+            read(
+                "import { BASE } from './config'; const T = `${BASE}/${id()}`; const U = BASE + f();"
+            ),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_name_that_a_sibling_of_the_enum_hides_is_no_import() {
+        assert_eq!(
+            read("import { A } from './a'; enum E { A = 1, B = A }"),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_constant_may_name_an_import_written_below_it() {
+        assert_eq!(
+            read("const U = `${BASE}/u`; const V = BASE + '/v'; import { BASE } from './config';"),
+            ["U=<BASE>/u", "V=<BASE>/v"]
+        );
+        assert_eq!(
+            read("const U = `${ns.BASE}/u`; import * as ns from './config';"),
+            ["U=<ns.BASE>/u"]
+        );
+    }
+
+    #[test]
+    fn a_constant_may_name_what_a_require_binds() {
+        assert_eq!(
+            read("const U = `${BASE}/u`; const { BASE } = require('./config');"),
+            ["U=<BASE>/u"]
+        );
+        assert_eq!(
+            read("const { BASE } = require('./config'); const U = `${BASE}/u`;"),
+            ["U=<BASE>/u"]
+        );
+        assert_eq!(
+            read("import config = require('./config'); const U = `${config.BASE}/u`;"),
+            ["U=<config.BASE>/u"]
+        );
+    }
+
+    /// The local names `code` binds, with the module each takes its name from, as the walk of the file binds them.
+    fn walk_binds(code: &str) -> BTreeMap<String, String> {
+        let allocator = Allocator::default();
+        let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
+        analyze(
+            &parsed.program,
+            code,
+            &LineIndex::new(code),
+            &[],
+            FileTags::NONE,
+        )
+        .extra
+        .bindings
+        .into_iter()
+        .map(|binding| (binding.local, binding.spec))
+        .collect()
+    }
+
+    /// `Constants::collect` binds the names that the walk of the file does, by its own reading of the same forms, so the order of the two never changes what a name stands for.
+    #[test]
+    fn the_names_collected_before_the_walk_are_the_names_the_walk_binds() {
+        for code in [
+            "import a, { b, c as d } from 'x'; import * as ns from 'y'; import type { T } from 'z';",
+            "import e = require('e'); export import f = require('f');",
+            "const g = require('g'); let h = require('h'); var i = (require('i') as T);",
+            "const { j, k: l, 'm': n, ...rest } = require('j');",
+            "const { [key]: o, p = 1, q: [r] } = require('o');",
+            "const s = await import('s'); const t = jest.requireActual('t'); const u = import('u');",
+            "export const v = require('v'); export const { w } = require('w');",
+            "const x = require(name); const [y] = require('y'); const z = require(`z`);",
+            "import { A } from './a'; const B = require('./b'); const { C } = require('./c');",
+        ] {
+            assert_eq!(constants_of(code).imported, walk_binds(code), "{code}");
+        }
+    }
+
+    /// What the expression `source` reads as after the declarations of `prelude`, as the initializer of a constant and as a use.
+    fn both(prelude: &str, source: &str) -> (Option<Part>, Option<Part>) {
+        let allocator = Allocator::default();
+        let code = format!("{prelude}\n({source});");
+        let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
+        let constants = Constants::collect(&parsed.program);
+        let Some(oxc_ast::ast::Statement::ExpressionStatement(statement)) =
+            parsed.program.body.last()
+        else {
+            panic!("no expression in {code}");
+        };
+        (
+            part_of(&statement.expression, &constants, Mode::Declare),
+            part_of(&statement.expression, &constants, Mode::Use),
+        )
+    }
+
+    #[test]
+    fn a_constant_that_holds_a_name_is_read_as_a_whole_or_not_at_all_by_a_declaration() {
+        let prelude = "import { IMP } from './imp'; const C = `${IMP}/c`;";
+        let (declared, used) = both(prelude, "`${C}/x`");
+        let nothing = |_: &str| None;
+        assert_eq!(declared.and_then(|part| part.read(&nothing)), None);
+        assert_eq!(
+            used.and_then(|part| part.read(&nothing)),
+            Some("${}/x".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_name_that_does_not_read_leaves_a_declaration_no_text_and_a_use_a_computed_part() {
+        let prelude = "import { IMP } from './imp';";
+        let nothing = |_: &str| None;
+        let (declared, used) = both(prelude, "`/a/${IMP}`");
+        assert_eq!(declared.and_then(|part| part.read(&nothing)), None);
+        assert_eq!(
+            used.and_then(|part| part.read(&nothing)),
+            Some("/a/${}".to_owned())
+        );
+        let (declared, used) = both(prelude, "'/a' + UNKNOWN");
+        assert_eq!(declared, None);
+        assert_eq!(used, Some(Part::Text("/a${}".to_owned())));
+    }
+
+    #[test]
+    fn a_template_with_no_name_is_one_text() {
+        assert_eq!(
+            both("const A = '/a';", "`/x/${A}/${f()}/y`").1,
+            Some(Part::Text("/x//a/${}/y".to_owned()))
+        );
+    }
+
+    /// The expressions the generator below writes, over the constants `A`, `B`, `C` and `O`, a name another file declares and a name no constant stands for.
     fn expression() -> impl Strategy<Value = String> {
         let leaf = prop_oneof![
             "[a-z/]{0,4}".prop_map(|text| format!("'{text}'")),
             "[a-z/]{0,4}".prop_map(|text| format!("`{text}`")),
             Just("A".to_owned()),
             Just("B".to_owned()),
+            Just("C".to_owned()),
             Just("O.p".to_owned()),
             Just("O.q.r".to_owned()),
             Just("O.q".to_owned()),
             Just("UNKNOWN".to_owned()),
+            Just("IMP".to_owned()),
             Just("1".to_owned()),
         ];
         leaf.prop_recursive(3, 12, 2, |inner| {
@@ -443,19 +658,22 @@ mod tests {
     }
 
     proptest! {
-        /// What a declaration reads as a constant is what a use of the expression reads: the two evaluators never disagree on text.
+        /// What a declaration reads as a constant is what a use of the expression reads: the two never disagree on text, whether the link reads the name another file declares or reads nothing, and `C` is a constant that holds such a name.
         #[test]
         fn wherever_a_declaration_reads_text_a_use_reads_the_same(source in expression()) {
-            let prelude = "const A = '/a'; const B = `${A}/b`; const O = { p: '/p', q: { r: '/r' } };";
-            let allocator = Allocator::default();
-            let code = format!("{prelude}\n({source});");
-            let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
-            let constants = Constants::collect(&parsed.program);
-            let Some(oxc_ast::ast::Statement::ExpressionStatement(statement)) = parsed.program.body.last() else {
-                panic!("no expression in {code}");
-            };
-            if let Some(declared) = constants.literal(&statement.expression) {
-                prop_assert_eq!(text_with(&statement.expression, &constants), Some(declared), "{}", source);
+            let prelude = "import { IMP } from './imp'; const A = '/a'; const B = `${A}/b`; const C = `${IMP}/c`; const O = { p: '/p', q: { r: '/r' } };";
+            let (declared, used) = both(prelude, &source);
+            for resolved in [Some("IMP"), None] {
+                let resolve = |name: &str| (Some(name) == resolved).then(|| "/imp".to_owned());
+                if let Some(text) = declared.as_ref().and_then(|part| part.read(&resolve)) {
+                    prop_assert_eq!(
+                        used.as_ref().and_then(|part| part.read(&resolve)),
+                        Some(text),
+                        "{} with {:?} read",
+                        source,
+                        resolved
+                    );
+                }
             }
         }
     }

@@ -3,6 +3,7 @@
 use gsttt_core::fact::{ContractFact, Line};
 use serde::{Deserialize, Serialize};
 
+use crate::parts::Part;
 use crate::shape::Shape;
 
 /// Per-file data for the link phase: the names a file takes from other files, what it exports, the routers it makes and mounts, the NestJS modules and controllers it declares, the tRPC routers it declares, the constants it exports, the clients and routers it makes and exports, and the sites that wait for other files. Empty parts are left out of the cached bytes.
@@ -38,18 +39,18 @@ pub struct TsExtra {
     pub procedures: Vec<String>,
     /// The top-level constants of this file whose first name it exports, by the name they are read under (`ROUTES.users.byId`), sorted by name, so that the link can read them for the files that import them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub constants: Vec<(String, String)>,
-    /// The variables of this file made by a call that some call rule takes a receiver from, whose name the file exports as a local, sorted by name, so that the link can read a call on them in the files that import them.
+    pub(crate) constants: Vec<(String, Part)>,
+    /// The variables of this file made by a call that some call rule takes a receiver from, sorted by name, so that the link can read a call on them: those whose name the file exports as a local, for the files that import them, and those a call of this file waits on because the call that made them names something another file declares.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) makers: Vec<ExportedMaker>,
-    /// The sites left to the link, in source order: those whose rule reads a name imported from another file, and those on a name imported from another file that a rule reads only on the receiver it was made as.
+    pub(crate) makers: Vec<LinkMaker>,
+    /// The sites left to the link, in source order: those whose rule reads a name imported from another file, those on a name imported from another file that a rule reads only on the receiver it was made as, and those on a client or a router of this file made with a name imported from another file.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) deferred: Vec<Deferred>,
 }
 
 /// A variable made by a call that a call rule takes the receiver of its calls from: `export const api = axios.create({ baseURL: '/api' })`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct ExportedMaker {
+pub(crate) struct LinkMaker {
     /// The name it is declared under in this file, `default` for `export default axios.create()`.
     pub(crate) name: String,
     /// The callee of the call that made it, as written: `axios.create`.
@@ -92,6 +93,8 @@ pub(crate) enum DeferredTarget {
     Class { class: String, inherited: bool },
     /// A call on a name imported from another file, read on the receiver that file makes under the name, whose rule needs one.
     Receiver { host: String },
+    /// A call on a client or a router that this file makes with a call that names something another file declares, read on the receiver the link finds: `api.get('/users')` after `const api = axios.create({ baseURL: API_URL })`.
+    Made { host: String },
     /// A call on a name imported from another file, read as a rule without a receiver reads it, unless the name is a receiver the rules in `rivals` read it on.
     Fallback { host: String, rivals: Vec<RuleRef> },
 }

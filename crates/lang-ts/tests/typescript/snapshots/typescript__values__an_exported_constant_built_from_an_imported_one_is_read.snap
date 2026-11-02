@@ -1,0 +1,224 @@
+---
+source: crates/lang-ts/tests/typescript/values.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "ORDERS",
+            "PATHS",
+            "USERS"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "ORDERS",
+            "PATHS",
+            "USERS"
+          ],
+          "spec": "./routes",
+          "to": {
+            "file": "src/routes.ts"
+          }
+        }
+      ],
+      "path": "src/client.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": [
+          "ORDERS",
+          "PATHS",
+          "USERS"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "BASE"
+      ],
+      "imports": [],
+      "path": "src/config.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "BASE",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "ORDERS",
+        "PATHS",
+        "USERS"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "BASE"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "BASE"
+          ],
+          "spec": "./config",
+          "to": {
+            "file": "src/config.ts"
+          }
+        }
+      ],
+      "path": "src/routes.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "USERS",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "ORDERS",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "PATHS",
+            "uses": [
+              "BASE"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [
+    {
+      "file": "src/client.ts",
+      "key": "http * /api/v1/users",
+      "line": 3,
+      "role": "calls",
+      "via": "fetch"
+    },
+    {
+      "file": "src/client.ts",
+      "key": "http * /api/v1/orders",
+      "line": 4,
+      "role": "calls",
+      "via": "fetch"
+    },
+    {
+      "file": "src/client.ts",
+      "key": "http * /api/v1/items",
+      "line": 5,
+      "role": "calls",
+      "via": "fetch"
+    },
+    {
+      "file": "src/client.ts",
+      "key": "http * /api/v1/users/1",
+      "line": 6,
+      "role": "calls",
+      "via": "fetch"
+    }
+  ],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a client the file imports or makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

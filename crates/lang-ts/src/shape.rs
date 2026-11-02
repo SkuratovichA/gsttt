@@ -4,15 +4,16 @@ use std::borrow::Cow;
 use std::num::NonZeroU32;
 
 use gsttt_core::contract::{has_parent_segment, path_after_origin, without_query_and_fragment};
-use gsttt_core::rules::{Site, ValueSource};
+use gsttt_core::rules::{Site, ValueExpr, ValueSource};
 use oxc_ast::ast::{
-    Argument, ChainElement, Expression, FormalParameter, MemberExpression, NewExpression,
-    ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
+    Argument, BinaryExpression, ChainElement, Expression, FormalParameter, MemberExpression,
+    NewExpression, ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
 };
 use oxc_syntax::operator::BinaryOperator;
 use serde::{Deserialize, Serialize};
 
 use crate::analyze::Constants;
+use crate::parts::{MAX_COMPOSED, Mode, Part, Reads};
 
 /// How a computed part of a template or a concatenation is written in the text a rule reads.
 pub(crate) const COMPUTED: &str = "${}";
@@ -44,36 +45,40 @@ struct Arg {
     spread: bool,
 }
 
-/// What a rule can read of an expression: its text when it has one, and otherwise the name it is written as when that name starts from an import of the file, which the link phase may be able to read.
+/// What a rule can read of an expression: its text when it has one, and the pieces that text is put together from when some of them are names that start from an import of the file, which the link phase may be able to read.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 struct Value {
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    parts: Option<Part>,
 }
 
 impl Value {
     fn of(expr: &Expression<'_>, constants: &Constants) -> Self {
-        let text = text_with(expr, constants);
-        let name = match text {
-            Some(_) => None,
-            None => constants.imported_name(expr),
-        };
-        Self { text, name }
+        Self::from_part(part_of(expr, constants, Mode::Use))
+    }
+
+    fn from_part(part: Option<Part>) -> Self {
+        match part {
+            None => Self::default(),
+            Some(Part::Text(text)) => Self::text(Some(text)),
+            Some(part) => Self {
+                text: part.read(&|_| None),
+                parts: Some(part),
+            },
+        }
     }
 
     fn text(text: Option<String>) -> Self {
-        Self { text, name: None }
+        Self { text, parts: None }
     }
 
-    /// Reads the name of a value that has no text with `resolve`.
+    /// Reads the pieces of a value with `resolve`.
     fn fill(&mut self, resolve: &impl Fn(&str) -> Option<String>) {
-        if self.text.is_none()
-            && let Some(name) = &self.name
-        {
-            self.text = resolve(name);
+        if let Some(parts) = &self.parts {
+            self.text = parts.read(resolve);
         }
     }
 }
@@ -104,14 +109,16 @@ impl Shape {
         }
     }
 
-    /// Whether some value has no text and is written as a name that starts from an import of the file.
-    pub(crate) fn has_names(&self) -> bool {
-        self.args.iter().any(|arg| {
-            arg.value.name.is_some() || arg.props.iter().any(|(_, value)| value.name.is_some())
+    /// Whether some source of `expr` holds a name that starts from an import of the file: the argument, or the property of the object literal, that it reads.
+    pub(crate) fn holds_name(&self, expr: &ValueExpr) -> bool {
+        expr.sources().iter().any(|source| {
+            self.any_value(source, |value| {
+                value.is_some_and(|value| value.parts.is_some())
+            })
         })
     }
 
-    /// Gives the text `resolve` finds for each name that has none yet.
+    /// Reads again every value that holds a name, with the text `resolve` finds for the names.
     pub(crate) fn fill(&mut self, resolve: impl Fn(&str) -> Option<String>) {
         for arg in &mut self.args {
             arg.value.fill(&resolve);
@@ -163,6 +170,35 @@ impl Shape {
         };
         self.spread.is_some_and(|spread| spread < position)
     }
+
+    /// Whether `pred` is true of some value that `source` reads: `Some(value)` for a value the call writes, and `None` for a value that a spread may give in place of what is written. An object literal written as an argument is no value of its own; its properties are.
+    fn any_value(&self, source: &ValueSource, pred: impl Fn(Option<&Value>) -> bool) -> bool {
+        match source {
+            ValueSource::Arg(position) => {
+                (self.unpacked(*position) && pred(None))
+                    || self
+                        .arg_at(*position)
+                        .is_some_and(|arg| !arg.object && pred(Some(&arg.value)))
+            }
+            ValueSource::ArgProp(position, prop) => {
+                (self.unpacked(*position) && pred(None))
+                    || self.arg_at(*position).is_some_and(|arg| {
+                        if !arg.object {
+                            return pred(Some(&arg.value));
+                        }
+                        (arg.spread && pred(None))
+                            || arg
+                                .props
+                                .iter()
+                                .any(|(name, value)| name == prop && pred(Some(value)))
+                    })
+            }
+            ValueSource::Callee
+            | ValueSource::Member
+            | ValueSource::Keyword(_)
+            | ValueSource::Literal(_) => false,
+        }
+    }
 }
 
 impl Site for Shape {
@@ -196,32 +232,9 @@ impl Site for Shape {
     }
 
     fn holds(&self, source: &ValueSource) -> bool {
-        match source {
-            ValueSource::Arg(position) => {
-                self.unpacked(*position)
-                    || self
-                        .arg_at(*position)
-                        .is_some_and(|arg| arg.value.text.is_none() && !arg.object)
-            }
-            ValueSource::ArgProp(position, prop) => {
-                self.unpacked(*position)
-                    || self.arg_at(*position).is_some_and(|arg| {
-                        if arg.object {
-                            arg.spread
-                                || arg
-                                    .props
-                                    .iter()
-                                    .any(|(name, value)| name == prop && value.text.is_none())
-                        } else {
-                            arg.value.text.is_none()
-                        }
-                    })
-            }
-            ValueSource::Callee
-            | ValueSource::Member
-            | ValueSource::Keyword(_)
-            | ValueSource::Literal(_) => false,
-        }
+        self.any_value(source, |value| {
+            value.is_none_or(|value| value.text.is_none())
+        })
     }
 }
 
@@ -286,50 +299,142 @@ pub(crate) fn this_key(name: &str) -> String {
     format!("this.{name}")
 }
 
-/// The text of a string, a template or a concatenation, with each computed part written `${}` unless it is a name that `constants` give the text of; the first element that has text for an array; the URL that `new URL(path, base)` builds, alone or followed by `.href`, `.pathname` or `.toString()`. `None` for anything else.
+/// The text of a string, a template or a concatenation, with each computed part written `${}` unless it is a name that `constants` give the text of, and each name that another file declares written `${}` as well; the first element that has text for an array; the URL that `new URL(path, base)` builds, alone or followed by `.href`, `.pathname` or `.toString()`. `None` for anything else.
 pub(crate) fn text_with(expr: &Expression<'_>, constants: &Constants) -> Option<String> {
+    part_of(expr, constants, Mode::Use)?.lax()
+}
+
+/// What `expr` reads as, put together from its pieces when some are names that another file declares, so that the link phase can read them: for a use, what [`text_with`] gives, and for the initializer of a constant, the text only when every piece of it reads, as a constant is. `None` when it has no text.
+pub(crate) fn part_of(expr: &Expression<'_>, constants: &Constants, mode: Mode) -> Option<Part> {
     match expr.get_inner_expression() {
-        Expression::StringLiteral(text) => text.value.as_str().map(str::to_owned),
-        Expression::TemplateLiteral(template) => Some(template_with(template, |part, text| {
-            text.push_str(constants.value(part).unwrap_or(COMPUTED));
-        })),
-        Expression::BinaryExpression(binary) if binary.operator == BinaryOperator::Addition => {
-            let left = text_with(&binary.left, constants);
-            let right = text_with(&binary.right, constants);
-            if left.is_none() && right.is_none() {
-                return None;
-            }
-            Some(format!(
-                "{}{}",
-                left.as_deref().unwrap_or(COMPUTED),
-                right.as_deref().unwrap_or(COMPUTED)
-            ))
+        Expression::StringLiteral(text) => {
+            text.value.as_str().map(|text| Part::Text(text.to_owned()))
         }
-        Expression::ArrayExpression(array) => array.elements.iter().find_map(|element| {
-            element
-                .as_expression()
-                .and_then(|element| text_with(element, constants))
-        }),
-        Expression::NewExpression(new) => url_text(new, constants),
+        Expression::TemplateLiteral(template) => template_part(template, constants, mode),
+        Expression::BinaryExpression(binary) if binary.operator == BinaryOperator::Addition => {
+            sum_part(binary, constants, mode)
+        }
+        // An array, a URL and the text of a URL may hold a part that reads as no text, which a constant is not allowed to.
+        Expression::ArrayExpression(array) if mode == Mode::Use => array
+            .elements
+            .iter()
+            .find_map(|element| {
+                element
+                    .as_expression()
+                    .and_then(|element| text_with(element, constants))
+            })
+            .map(Part::Text),
+        Expression::NewExpression(new) if mode == Mode::Use => {
+            url_text(new, constants).map(Part::Text)
+        }
         // A member of a constant object may be called `href` too, so a URL that is not there leaves the name to the constants.
         inner @ Expression::StaticMemberExpression(member)
-            if matches!(member.property.name.as_str(), "href" | "pathname") =>
+            if mode == Mode::Use
+                && matches!(member.property.name.as_str(), "href" | "pathname") =>
         {
             url_object_text(&member.object, constants)
-                .or_else(|| constants.value(inner).map(str::to_owned))
+                .map(Part::Text)
+                .or_else(|| constants.part(inner).map(Cow::into_owned))
         }
-        Expression::CallExpression(call) if call.arguments.is_empty() => {
+        Expression::CallExpression(call) if mode == Mode::Use && call.arguments.is_empty() => {
             match call.callee.get_inner_expression() {
                 Expression::StaticMemberExpression(member)
                     if member.property.name.as_str() == "toString" =>
                 {
-                    url_object_text(&member.object, constants)
+                    url_object_text(&member.object, constants).map(Part::Text)
                 }
                 _ => None,
             }
         }
-        other => constants.value(other).map(str::to_owned),
+        other => constants.part(other).map(Cow::into_owned),
     }
+}
+
+/// What `a + b + c` reads as. The operands nest to the left, one level for each `+`, and a sum of thousands of them is not a depth to recurse to, so the left spine is walked down to the first operand and then up again, which puts the operands together in the order that reading each left operand first would. A piece that reads as no text is `${}` in a use, and leaves a constant no constant.
+fn sum_part(first: &BinaryExpression<'_>, constants: &Constants, mode: Mode) -> Option<Part> {
+    let operand = |part: Option<Part>| match part {
+        None if mode == Mode::Use => Some(Part::Computed),
+        part => part,
+    };
+    // The right operands from the outermost `+` inwards, and the operand that is the left of the innermost.
+    let mut rights = vec![&first.right];
+    let mut innermost = &first.left;
+    while let Expression::BinaryExpression(binary) = innermost.get_inner_expression() {
+        if binary.operator != BinaryOperator::Addition {
+            break;
+        }
+        rights.push(&binary.right);
+        innermost = &binary.left;
+    }
+    let mut sum = part_of(innermost, constants, mode);
+    for right in rights.into_iter().rev() {
+        let left = operand(sum)?;
+        let right = operand(part_of(right, constants, mode))?;
+        sum = append(left, right, mode.sum());
+    }
+    sum
+}
+
+/// `left` followed by `right`, as one level of pieces when `left` is already a sum of the same kind that reads as the sum of `left` and `right` would: a constant reads when all its pieces do, which is no matter how they are grouped, and a concatenation that holds a text reads always. So a long sum, which nests to the left, stays as flat as it is written and the depth a part may nest is for the sums written in parentheses and the templates inside one another.
+fn append(left: Part, right: Part, reads: Reads) -> Option<Part> {
+    match left {
+        Part::Cat(own, mut parts)
+            if own == reads
+                && (reads == Reads::All
+                    || parts.iter().any(|part| matches!(part, Part::Text(_)))) =>
+        {
+            parts.push(right);
+            Part::cat(reads, parts)
+        }
+        left => Part::cat(reads, vec![left, right]),
+    }
+}
+
+/// What a template reads as. The text is kept in one string until a piece holds a name, so that the common template, with none, allocates the string it reads as and nothing else. What the holes add to the template is limited to [`MAX_COMPOSED`] bytes, and the template is no text past it, because a constant that names another twice doubles at every step; the text the template is written with is never counted, since the file bounds it.
+fn template_part(
+    template: &TemplateLiteral<'_>,
+    constants: &Constants,
+    mode: Mode,
+) -> Option<Part> {
+    // `text` is the run of text since the last piece that holds a name; `parts` is what came before it.
+    let mut text = String::new();
+    let mut parts = Vec::new();
+    let mut budget = MAX_COMPOSED;
+    for piece in pieces(template) {
+        let hole = match piece {
+            Piece::Text(chunk) => {
+                text.push_str(chunk);
+                continue;
+            }
+            Piece::Hole(hole) => hole,
+        };
+        let Some(part) = constants.part(hole) else {
+            match mode {
+                Mode::Use => text.push_str(COMPUTED),
+                Mode::Declare => return None,
+            }
+            continue;
+        };
+        if let Part::Text(chunk) = &*part {
+            budget = budget.checked_sub(chunk.len())?;
+            text.push_str(chunk);
+            continue;
+        }
+        if !part.fits(&mut budget) {
+            return None;
+        }
+        if !text.is_empty() {
+            parts.push(Part::Text(std::mem::take(&mut text)));
+        }
+        parts.push(part.into_owned());
+    }
+    if parts.is_empty() {
+        return Some(Part::Text(text));
+    }
+    if !text.is_empty() {
+        parts.push(Part::Text(text));
+    }
+    Part::cat(mode.template(), parts)
 }
 
 /// The URL that `expr` builds when it is `new URL(…)`, possibly in parentheses.
@@ -399,29 +504,43 @@ pub(crate) fn literal_text(expr: &Expression<'_>) -> Option<String> {
 
 /// The text of a template with `placeholder` where each expression stood.
 pub(crate) fn template_text(template: &TemplateLiteral<'_>, placeholder: &str) -> String {
-    template_with(template, |_, text| text.push_str(placeholder))
+    pieces(template)
+        .map(|piece| match piece {
+            Piece::Text(text) => text,
+            Piece::Hole(_) => placeholder,
+        })
+        .collect()
 }
 
-/// The text of a template, with what `fill` writes where each expression stood.
-pub(crate) fn template_with(
-    template: &TemplateLiteral<'_>,
-    mut fill: impl FnMut(&Expression<'_>, &mut String),
-) -> String {
-    let mut text = String::new();
-    for (index, quasi) in template.quasis.iter().enumerate() {
-        if let Some(part) = index
-            .checked_sub(1)
-            .and_then(|before| template.expressions.get(before))
-        {
-            fill(part, &mut text);
-        }
-        let raw = quasi.value.raw.as_str();
-        text.push_str(match quasi.value.cooked {
-            Some(cooked) => cooked.as_str().unwrap_or(raw),
-            None => raw,
-        });
-    }
-    text
+/// One piece of a template, in source order.
+pub(crate) enum Piece<'t, 'a> {
+    /// The text between expressions, as the source means it.
+    Text(&'t str),
+    /// An expression, `${…}`.
+    Hole(&'t Expression<'a>),
+}
+
+/// The pieces of `template` in source order, without the texts that are empty.
+pub(crate) fn pieces<'t, 'a>(
+    template: &'t TemplateLiteral<'a>,
+) -> impl Iterator<Item = Piece<'t, 'a>> {
+    template
+        .quasis
+        .iter()
+        .enumerate()
+        .flat_map(move |(index, quasi)| {
+            let hole = index
+                .checked_sub(1)
+                .and_then(|before| template.expressions.get(before))
+                .map(Piece::Hole);
+            let raw = quasi.value.raw.as_str();
+            let text = match quasi.value.cooked {
+                Some(cooked) => cooked.as_str().unwrap_or(raw),
+                None => raw,
+            };
+            hole.into_iter()
+                .chain((!text.is_empty()).then_some(Piece::Text(text)))
+        })
 }
 
 /// The names of a chain of member accesses from its base, `process.env.A` as `["process", "env", "A"]`, with `None` for a segment that is computed. `None` when the chain does not start from a name, `this` or `import.meta`.
@@ -523,16 +642,21 @@ fn push_computed(
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+    use std::num::NonZeroU32;
+
     use gsttt_core::contract::normalize_http_path;
-    use gsttt_core::rules::{Reading, ValueExpr};
+    use gsttt_core::rules::{Reading, Site, ValueExpr};
     use oxc_allocator::Allocator;
     use oxc_ast::ast::{Expression, Statement};
     use oxc_parser::Parser;
     use oxc_span::SourceType;
     use proptest::prelude::*;
 
-    use super::{Arg, Shape, Value, text_with, url_join};
+    use super::{Arg, Shape, Value, part_of, text_with, url_join};
     use crate::analyze::Constants;
+    use crate::extra::{Deferred, DeferredTarget, RuleRef, TsExtra};
+    use crate::parts::{MAX_COMPOSED, MAX_DEPTH, Mode, Part, Reads};
 
     #[test]
     fn a_path_with_an_origin_is_the_url() {
@@ -718,7 +842,7 @@ mod tests {
     fn named(name: &str) -> Value {
         Value {
             text: None,
-            name: Some(name.to_owned()),
+            parts: Some(Part::Name(name.to_owned())),
         }
     }
 
@@ -743,6 +867,10 @@ mod tests {
         }
     }
 
+    fn key(source: &str) -> ValueExpr {
+        source.parse().unwrap()
+    }
+
     #[test]
     fn the_names_of_a_shape_survive_the_cache() {
         let shape = with_names();
@@ -761,20 +889,155 @@ mod tests {
             }],
             spread: None,
         };
-        assert!(!shape.has_names());
-        assert!(!serde_json::to_string(&shape).unwrap().contains("name"));
+        assert!(!shape.holds_name(&key("$arg1")));
+        assert!(!serde_json::to_string(&shape).unwrap().contains("parts"));
     }
 
     #[test]
-    fn fill_reads_a_name_only_when_the_value_has_no_text() {
+    fn a_shape_holds_the_names_of_the_values_an_expression_reads_and_no_others() {
+        let shape = with_names();
+        assert!(shape.holds_name(&key("$arg1")));
+        assert!(shape.holds_name(&key("$arg2.path")));
+        assert!(shape.holds_name(&key("$arg3|$arg1")));
+        assert!(!shape.holds_name(&key("$arg2")));
+        assert!(!shape.holds_name(&key("$arg2.method|GET")));
+        assert!(!shape.holds_name(&key("$callee|$member")));
+    }
+
+    #[test]
+    fn fill_reads_again_every_value_that_holds_a_name() {
         let mut shape = with_names();
-        assert!(shape.has_names());
         shape.fill(|name| (name == "paths.LOGIN").then(|| "/login".to_owned()));
         assert_eq!(shape.args[0].value.text.as_deref(), Some("/login"));
         // The first argument was read, the property is still a name nothing could read.
         assert_eq!(shape.args[1].value.text.as_deref(), Some("/x"));
         assert_eq!(shape.args[1].props[0].1.text, None);
-        assert!(shape.args[1].props[0].1.name.is_some());
+        assert!(shape.args[1].props[0].1.parts.is_some());
+    }
+
+    /// The call `fetch(<arguments>)` after `prelude`, as the parse reads it.
+    fn fetch_after(prelude: &str, arguments: &str) -> Shape {
+        let allocator = Allocator::default();
+        let code = format!("{prelude}\nfetch({arguments});");
+        let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
+        let constants = Constants::collect(&parsed.program);
+        let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.last() else {
+            panic!("no call in {code}");
+        };
+        let Expression::CallExpression(call) = &statement.expression else {
+            panic!("no call in {code}");
+        };
+        Shape::of_call("fetch", call.arguments.iter(), &constants)
+    }
+
+    /// What the first argument of `fetch(<arguments>)` reads as after `prelude`, before and after the link reads `BASE` as `/api/v1` and no other name.
+    fn first_argument(prelude: &str, arguments: &str) -> (Option<String>, Option<String>) {
+        let mut shape = fetch_after(prelude, arguments);
+        let one = NonZeroU32::MIN;
+        let parsed = shape.arg(one).map(Cow::into_owned);
+        shape.fill(|name| (name == "BASE").then(|| "/api/v1".to_owned()));
+        (parsed, shape.arg(one).map(Cow::into_owned))
+    }
+
+    const IMPORT: &str = "import { BASE, OTHER } from './config';";
+
+    #[test]
+    fn a_template_with_an_imported_name_is_read_with_the_name_at_the_link() {
+        assert_eq!(
+            first_argument(IMPORT, "`${BASE}/users`"),
+            (
+                Some("${}/users".to_owned()),
+                Some("/api/v1/users".to_owned())
+            )
+        );
+        assert_eq!(
+            first_argument(IMPORT, "`${OTHER}/users`"),
+            (Some("${}/users".to_owned()), Some("${}/users".to_owned()))
+        );
+    }
+
+    #[test]
+    fn a_concatenation_with_an_imported_name_is_read_with_the_name_at_the_link() {
+        assert_eq!(
+            first_argument(IMPORT, "BASE + '/users'"),
+            (
+                Some("${}/users".to_owned()),
+                Some("/api/v1/users".to_owned())
+            )
+        );
+        assert_eq!(
+            first_argument(IMPORT, "'/x' + OTHER + BASE"),
+            (Some("/x${}${}".to_owned()), Some("/x${}/api/v1".to_owned()))
+        );
+    }
+
+    #[test]
+    fn a_concatenation_of_operands_that_are_no_text_is_no_text() {
+        assert_eq!(
+            first_argument(IMPORT, "BASE + OTHER"),
+            (None, Some("/api/v1${}".to_owned()))
+        );
+        assert_eq!(first_argument(IMPORT, "OTHER + OTHER"), (None, None));
+        assert_eq!(first_argument(IMPORT, "compute() + OTHER"), (None, None));
+    }
+
+    #[test]
+    fn a_nested_concatenation_of_operands_that_are_no_text_is_one_computed_part() {
+        assert_eq!(
+            first_argument(IMPORT, "(OTHER + OTHER) + '/x'"),
+            (Some("${}/x".to_owned()), Some("${}/x".to_owned()))
+        );
+        assert_eq!(
+            first_argument("", "(compute() + compute()) + '/x'"),
+            (Some("${}/x".to_owned()), Some("${}/x".to_owned()))
+        );
+    }
+
+    #[test]
+    fn a_bare_imported_name_is_no_text_until_the_link_reads_it() {
+        assert_eq!(
+            first_argument(IMPORT, "BASE"),
+            (None, Some("/api/v1".to_owned()))
+        );
+        assert_eq!(first_argument(IMPORT, "OTHER"), (None, None));
+    }
+
+    #[test]
+    fn a_constant_built_from_an_imported_name_is_text_only_when_the_link_reads_the_name() {
+        let prelude = format!("{IMPORT}\nconst USERS = `${{BASE}}/users`;\nconst ALIAS = BASE;");
+        assert_eq!(
+            first_argument(&prelude, "USERS"),
+            (None, Some("/api/v1/users".to_owned()))
+        );
+        assert_eq!(
+            first_argument(&prelude, "ALIAS"),
+            (None, Some("/api/v1".to_owned()))
+        );
+        assert_eq!(
+            first_argument(&prelude, "`${USERS}/x`"),
+            (Some("${}/x".to_owned()), Some("/api/v1/users/x".to_owned()))
+        );
+        let prelude = format!("{IMPORT}\nconst USERS = `${{OTHER}}/users`;");
+        assert_eq!(first_argument(&prelude, "USERS"), (None, None));
+    }
+
+    #[test]
+    fn a_name_inside_an_array_or_a_url_is_not_followed() {
+        assert_eq!(
+            first_argument(IMPORT, "[BASE, '/x']"),
+            (Some("/x".to_owned()), Some("/x".to_owned()))
+        );
+        assert_eq!(
+            first_argument(IMPORT, "new URL(`${BASE}/x`, 'https://a.test/')"),
+            (Some("${}/x".to_owned()), Some("${}/x".to_owned()))
+        );
+    }
+
+    #[test]
+    fn only_the_sources_of_a_key_decide_whether_a_name_matters() {
+        let shape = fetch_after(IMPORT, "compute(), { method: BASE }");
+        assert!(!shape.holds_name(&key("$arg1")));
+        assert!(shape.holds_name(&key("$arg2.method|GET")));
     }
 
     /// The shape of the decorator `@Controller(<arguments>)` as the parse reads it, with no constant in scope.
@@ -824,6 +1087,28 @@ mod tests {
             ("'/x', { method: 'PUT' }", Reading::Text("PUT".to_owned())),
         ] {
             assert_eq!(method.read(&controller(arguments)), reading, "{arguments}");
+        }
+    }
+
+    #[test]
+    fn a_spread_may_give_any_value_but_never_a_name() {
+        let method = key("$arg2.method");
+        for (arguments, unread, name) in [
+            ("'/x', { ...options }", true, false),
+            ("'/x', { method: BASE }", true, true),
+            ("'/x', { method: BASE, ...options }", true, true),
+            ("'/x', ...rest", true, false),
+            ("...args", true, false),
+            ("'/x', { method: 'PUT' }", false, false),
+            ("'/x', {}", false, false),
+        ] {
+            let shape = fetch_after(IMPORT, arguments);
+            assert_eq!(
+                method.read(&shape) == Reading::Unread,
+                unread,
+                "{arguments}"
+            );
+            assert_eq!(shape.holds_name(&method), name, "{arguments}");
         }
     }
 
@@ -879,5 +1164,171 @@ mod tests {
                 .unwrap()
                 .contains("object")
         );
+    }
+
+    /// `levels` pieces of `Cat`, one inside the other, around a name.
+    fn nested(levels: usize) -> Part {
+        (0..levels).fold(Part::Name("BASE".to_owned()), |inner, _| {
+            Part::Cat(Reads::Always, vec![inner, Part::Text("/x".to_owned())])
+        })
+    }
+
+    /// The link data of a file that keeps `part` in the deepest place a part is kept: a property of an object argument of a deferred site.
+    fn extra_holding(part: Part) -> TsExtra {
+        TsExtra {
+            deferred: vec![Deferred {
+                rule: RuleRef::Call { pack: 0, rule: 0 },
+                shape: Shape {
+                    last: Some("fetch".to_owned()),
+                    member: None,
+                    args: vec![Arg {
+                        value: Value::default(),
+                        object: true,
+                        props: vec![(
+                            "url".to_owned(),
+                            Value {
+                                text: None,
+                                parts: Some(part),
+                            },
+                        )],
+                        spread: false,
+                    }],
+                    spread: None,
+                },
+                prefix: None,
+                line: 1,
+                what: "fetch".to_owned(),
+                target: DeferredTarget::Own,
+            }],
+            ..TsExtra::default()
+        }
+    }
+
+    fn reads_back(levels: usize) -> bool {
+        let extra = extra_holding(nested(levels));
+        let bytes = serde_json::to_vec(&extra).unwrap();
+        serde_json::from_slice::<TsExtra>(&bytes).is_ok_and(|read| read == extra)
+    }
+
+    #[test]
+    fn a_part_at_the_depth_limit_is_read_back() {
+        assert!(reads_back(MAX_DEPTH));
+    }
+
+    #[test]
+    fn the_depth_limit_keeps_clear_of_what_serde_json_refuses() {
+        let refused = (MAX_DEPTH..MAX_DEPTH * 2).find(|&levels| !reads_back(levels));
+        assert!(
+            refused.is_some_and(|levels| levels > MAX_DEPTH),
+            "a part of {refused:?} levels is the first that does not read back"
+        );
+    }
+
+    /// What `source` reads as in `mode`, with the names that `IMPORT` binds. The constants are collected from the import alone: the walk that collects them from a file recurses into every expression, and a sum of thousands of operands is not what this reads.
+    fn sum_in(source: &str, mode: Mode) -> Option<Part> {
+        let allocator = Allocator::default();
+        let imports = Parser::new(&allocator, IMPORT, SourceType::ts()).parse();
+        let constants = Constants::collect(&imports.program);
+        let code = format!("({source});");
+        let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
+        let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.last() else {
+            panic!("no expression in {code}");
+        };
+        part_of(&statement.expression, &constants, mode)
+    }
+
+    /// `terms` operands of a sum: the digits in turn as strings, and the name `OTHER` at every thousandth. The source, and the text the sum reads as when `OTHER` reads as `X`.
+    fn long_sum(terms: usize) -> (String, String) {
+        let mut source = Vec::new();
+        let mut text = String::new();
+        for term in 0..terms {
+            if term % 1000 == 999 {
+                source.push("OTHER".to_owned());
+                text.push('X');
+            } else {
+                source.push(format!("'{}'", term % 10));
+                text.push_str(&(term % 10).to_string());
+            }
+        }
+        (source.join(" + "), text)
+    }
+
+    #[test]
+    fn a_sum_of_thousands_of_operands_is_read_on_a_small_stack() {
+        let (source, text) = long_sum(5000);
+        let read = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(move || {
+                let x = |name: &str| (name == "OTHER").then(|| "X".to_owned());
+                let used = sum_in(&source, Mode::Use).unwrap();
+                let declared = sum_in(&source, Mode::Declare).unwrap();
+                let flat = |part: &Part| {
+                    matches!(part, Part::Cat(_, parts) if parts.iter().all(|piece| !matches!(piece, Part::Cat(..))))
+                };
+                (
+                    used.read(&x),
+                    used.read(&|_| None),
+                    declared.read(&x),
+                    declared.read(&|_| None),
+                    flat(&used) && flat(&declared),
+                )
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(read.0.as_deref(), Some(text.as_str()));
+        assert_eq!(read.1, Some(text.replace('X', "${}")));
+        assert_eq!(read.2.as_deref(), Some(text.as_str()));
+        assert_eq!(read.3, None);
+        assert!(read.4, "a long sum nests no deeper than it is written");
+    }
+
+    #[test]
+    fn a_sum_that_holds_a_piece_with_no_text_is_a_use_with_a_hole_and_no_constant() {
+        for source in [
+            "'a' + compute() + 'b' + OTHER + 'c'",
+            "(compute() + compute()) + 'a' + 'b'",
+        ] {
+            let used = sum_in(source, Mode::Use).and_then(Part::lax);
+            assert!(used.is_some_and(|text| text.contains("${}")), "{source}");
+            assert_eq!(sum_in(source, Mode::Declare), None, "{source}");
+        }
+        assert_eq!(
+            sum_in("'a' + compute() + 'b'", Mode::Use).and_then(Part::lax),
+            Some("a${}b".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_sum_of_names_that_read_as_no_text_is_one_computed_part_where_it_is_grouped() {
+        assert_eq!(
+            first_argument(IMPORT, "OTHER + OTHER + '/x'"),
+            (Some("${}/x".to_owned()), Some("${}/x".to_owned()))
+        );
+        assert_eq!(
+            first_argument(IMPORT, "'/a' + OTHER + OTHER + '/x'"),
+            (Some("/a${}${}/x".to_owned()), Some("/a${}${}/x".to_owned()))
+        );
+    }
+
+    #[test]
+    fn what_a_template_adds_to_a_text_is_limited_and_the_text_it_is_written_with_is_not() {
+        let most = "x".repeat(MAX_COMPOSED / 4 * 3);
+        let prelude = format!("const A = '{most}';");
+        assert_eq!(length_in(&prelude, "`${A}`"), Some(most.len()));
+        assert_eq!(length_in(&prelude, "`${A}${A}`"), None);
+        // A constant is no constant past the limit either.
+        let doubled = format!("{prelude}\nconst B = `${{A}}${{A}}`;");
+        assert_eq!(length_in(&doubled, "B"), None);
+        // The text a template is written with is its own, and the file bounds it.
+        let written = "y".repeat(MAX_COMPOSED + 1);
+        assert_eq!(length_in("", &format!("`{written}`")), Some(written.len()));
+    }
+
+    /// The length of the text the first argument of a `fetch` reads as, written after `prelude`.
+    fn length_in(prelude: &str, arguments: &str) -> Option<usize> {
+        fetch_after(prelude, arguments)
+            .arg(NonZeroU32::MIN)
+            .map(|text| text.len())
     }
 }

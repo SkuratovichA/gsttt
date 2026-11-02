@@ -394,6 +394,16 @@ pub(crate) fn linked(json: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The problems that the run recorded, which the CLI prints one to a line.
+pub(crate) fn problems(json: &Value) -> Vec<&str> {
+    json.get("problems")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect()
+}
+
 /// The sites of the file at `path` that were not read: `@<line> <reason> <detail>`. The sites the parse could not read come first, then the ones the link could not.
 pub(crate) fn unread(json: &Value, path: &str) -> Vec<String> {
     let parsed = file(json, path)
