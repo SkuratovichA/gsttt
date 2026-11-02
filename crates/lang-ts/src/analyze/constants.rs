@@ -1,5 +1,7 @@
 //! The text a name stands for in the file that declares it, found before anything else is read, and the names the file imports.
 
+mod scopes;
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -8,15 +10,15 @@ use oxc_ast::ast::{
     ImportDeclaration, ImportDeclarationSpecifier, ObjectPropertyKind, Program, Statement,
     TSEnumMemberName, TSModuleReference, VariableDeclarationKind,
 };
+use oxc_span::{GetSpan, Span};
 
-use super::roots::rebound;
 use super::symbols::base_name;
 use super::{load_of, peel};
 use crate::extra::{Export, ExportTarget};
 use crate::parts::{Mode, Part};
 use crate::shape::{dotted_name, field_name, literal_text, part_of, property_str};
 
-/// The top-level constants of a file by the name they are read under, and the names the file imports.
+/// The constants of a file by the name they are read under, those of its top level and those of its functions and blocks, and the names the file imports.
 #[derive(Debug, Default)]
 pub(crate) struct Constants {
     /// `BASE`, `Env.API_URL`, `Routes.LOGIN` and `ROUTES.users.byId` to the text they stand for, which is put together from names that other files declare when the constant is built from some.
@@ -25,10 +27,26 @@ pub(crate) struct Constants {
     roots: BTreeSet<String>,
     /// The local names an import binds, each with the specifier of the module it takes the name from.
     imported: BTreeMap<String, String>,
-    /// The imported names that the file binds again, as a parameter, a variable, a function or a class. The file is not read by scope, so such a name is no import for the value a rule reads anywhere in it.
-    rebound: BTreeSet<String>,
+    /// What each scope below the top level binds, by name: a parameter, a variable, a function, a class, a catch clause. A name read inside such a scope is what the innermost scope around it binds it to, and the constants of the file and the imports are no answer there. Only the names that can change an answer are kept.
+    locals: BTreeMap<String, Vec<Local>>,
     /// The enum whose members are being read, while they are.
     scope: Option<EnumScope>,
+}
+
+/// What one scope below the top level of the file binds under one name.
+#[derive(Debug)]
+struct Local {
+    /// Where the binding is visible: the whole function, block or loop that declares it, not only the part after the declaration, because a closure may use a constant written below it.
+    scope: Span,
+    /// The constants the binding stands for, under the dotted names they are read by like `values` of the file. None for a binding that is no text (a parameter, a `let`, a function) or that the scope binds twice: the name is hidden there and stands for nothing.
+    values: BTreeMap<String, Part>,
+}
+
+/// Where `Constants::add` writes what it reads: the constants of the file, or those of the scope last recorded under a name.
+#[derive(Clone, Copy)]
+enum Home<'a> {
+    File,
+    Local(&'a str),
 }
 
 /// The enum being read: a bare name in the initializer of a member is the member of that name, when the enum has declared one above, as TypeScript scopes it.
@@ -45,10 +63,6 @@ impl Constants {
         // Every import is known before a constant is read: an `import` is hoisted, so a constant may name one that is written below it, and a name that `require` binds is the module's wherever it is read.
         for statement in &program.body {
             constants.imports(statement);
-        }
-        if !constants.imported.is_empty() {
-            let names = constants.imported.keys().map(String::as_str);
-            constants.rebound = rebound(program, names);
         }
         // One buffer holds the name of every declaration in turn, so that the names of the many declarations that hold no text cost nothing.
         let mut path = String::new();
@@ -71,6 +85,8 @@ impl Constants {
                 }
             }
         }
+        // The scopes are read last, so that a constant of a function may be built from a constant of the top level.
+        scopes::collect(&mut constants, program);
         constants
     }
 
@@ -139,9 +155,10 @@ impl Constants {
         }
     }
 
-    /// The specifier of the module that `local` is imported from, when the file imports the name.
-    pub(super) fn spec_of(&self, local: &str) -> Option<&str> {
-        self.imported.get(local).map(String::as_str)
+    /// The specifier of the module that `local` is imported from, when the file imports the name and no scope around the position `at` binds it again.
+    pub(super) fn spec_of(&self, local: &str, at: u32) -> Option<&str> {
+        let spec = self.imported.get(local)?;
+        self.local(local, at).is_none().then_some(spec.as_str())
     }
 
     /// What `expr` stands for when it is a name or a chain of names that a constant of this file is read under, or that starts from a name the file imports: `Env.API_URL` for `Env.API_URL`, which the link phase reads. A constant is lent, not copied, so a use of it costs nothing until a part of it is kept.
@@ -162,24 +179,38 @@ impl Constants {
         })
     }
 
-    /// The constant of this file that `expr` is the name of.
+    /// The constant that `expr` is the name of where it stands: one of the scope around it that binds the name, and else one of the top level of the file.
     fn constant(&self, expr: &Expression<'_>) -> Option<&Part> {
-        if self.values.is_empty() || !self.roots.contains(base_name(expr)?) {
+        if self.values.is_empty() && self.locals.is_empty() {
+            return None;
+        }
+        let base = base_name(expr)?;
+        // A scope that binds the name answers for it, also with nothing: the constant of the file is hidden there.
+        if let Some(local) = self.local(base, expr.span().start) {
+            return local.values.get(&*dotted_name(expr)?);
+        }
+        if !self.roots.contains(base) {
             return None;
         }
         self.values.get(&*dotted_name(expr)?)
     }
 
-    /// The name that `expr` writes when it is a name or a chain of names that starts from a name the file imports, and binds nowhere else: `Env.API_URL` for `Env.API_URL`.
+    /// The name that `expr` writes when it is a name or a chain of names that starts from a name the file imports, and no scope around it binds again: `Env.API_URL` for `Env.API_URL`.
     fn imported_name(&self, expr: &Expression<'_>) -> Option<String> {
         if self.imported.is_empty() {
             return None;
         }
-        let base = base_name(expr)?;
-        if !self.imported.contains_key(base) || self.rebound.contains(base) {
-            return None;
-        }
+        self.spec_of(base_name(expr)?, expr.span().start)?;
         dotted_name(expr).map(Cow::into_owned)
+    }
+
+    /// The innermost scope around the position `at` that binds `name` below the top level of the file.
+    fn local(&self, name: &str, at: u32) -> Option<&Local> {
+        self.locals
+            .get(name)?
+            .iter()
+            .filter(|local| local.scope.start <= at && at < local.scope.end)
+            .min_by_key(|local| local.scope.size())
     }
 
     /// The constants whose first segment `exports` name as a local, sorted by name, to be read by the files that import them.
@@ -203,7 +234,7 @@ impl Constants {
                         && may_hold_text(init)
                     {
                         rewrite(path, &[id.name.as_str()]);
-                        self.add(path, init);
+                        self.add(Home::File, path, init);
                     }
                 }
             }
@@ -226,7 +257,7 @@ impl Constants {
                         && may_hold_text(init)
                     {
                         rewrite(path, &[declared.id.name.as_str(), name]);
-                        self.add(path, init);
+                        self.add(Home::File, path, init);
                     }
                     // The member is a sibling for the initializers below it, whether or not it holds text.
                     if let Some(scope) = &mut self.scope {
@@ -252,16 +283,16 @@ impl Constants {
                 && may_hold_text(init)
             {
                 rewrite(path, &[id.name.as_str(), name]);
-                self.add(path, init);
+                self.add(Home::File, path, init);
             }
         }
     }
 
-    /// Records `init` under `path`, or, for an object literal, each of its properties under `path` and the key. A spread may give any key another value, so it takes back the keys read above it, and the keys below it stay.
-    fn add(&mut self, path: &mut String, init: &Expression<'_>) {
+    /// Records `init` under `path` in `home`, or, for an object literal, each of its properties under `path` and the key. A spread may give any key another value, so it takes back the keys read above it, and the keys below it stay.
+    fn add(&mut self, home: Home<'_>, path: &mut String, init: &Expression<'_>) {
         let Expression::ObjectExpression(object) = init.get_inner_expression() else {
             if let Some(value) = part_of(init, self, Mode::Declare) {
-                self.insert(path, value);
+                self.insert(home, path, value);
             }
             return;
         };
@@ -269,7 +300,7 @@ impl Constants {
             let property = match property {
                 ObjectPropertyKind::ObjectProperty(property) => property,
                 ObjectPropertyKind::SpreadProperty(_) => {
-                    self.forget_below(path);
+                    self.forget_below(home, path);
                     continue;
                 }
             };
@@ -285,26 +316,45 @@ impl Constants {
             let length = path.len();
             path.push('.');
             path.push_str(key);
-            self.add(path, &property.value);
+            self.add(home, path, &property.value);
             path.truncate(length);
         }
     }
 
-    /// Forgets every name below `path`.
-    fn forget_below(&mut self, path: &str) {
-        self.values.retain(|name, _| {
-            !name
-                .strip_prefix(path)
-                .is_some_and(|rest| rest.starts_with('.'))
-        });
+    /// The constants that `home` collects.
+    fn table(&mut self, home: Home<'_>) -> Option<&mut BTreeMap<String, Part>> {
+        match home {
+            Home::File => Some(&mut self.values),
+            Home::Local(name) => self
+                .locals
+                .get_mut(name)?
+                .last_mut()
+                .map(|local| &mut local.values),
+        }
     }
 
-    fn insert(&mut self, path: &str, value: Part) {
-        let root = root_of(path);
-        if !self.roots.contains(root) {
-            self.roots.insert(root.to_owned());
+    /// Forgets every name below `path`.
+    fn forget_below(&mut self, home: Home<'_>, path: &str) {
+        if let Some(values) = self.table(home) {
+            values.retain(|name, _| {
+                !name
+                    .strip_prefix(path)
+                    .is_some_and(|rest| rest.starts_with('.'))
+            });
         }
-        self.values.insert(path.to_owned(), value);
+    }
+
+    fn insert(&mut self, home: Home<'_>, path: &str, value: Part) {
+        // Only the constants of the file have roots: a scope is looked up by the name it binds.
+        if matches!(home, Home::File) {
+            let root = root_of(path);
+            if !self.roots.contains(root) {
+                self.roots.insert(root.to_owned());
+            }
+        }
+        if let Some(values) = self.table(home) {
+            values.insert(path.to_owned(), value);
+        }
     }
 }
 
@@ -366,6 +416,8 @@ fn root_of(name: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use oxc_allocator::Allocator;
+    use oxc_ast::ast::{Argument, CallExpression, Expression};
+    use oxc_ast_visit::{Visit, walk};
     use oxc_parser::Parser;
     use oxc_span::SourceType;
     use proptest::prelude::*;
@@ -541,6 +593,236 @@ mod tests {
             read("import config = require('./config'); const U = `${config.BASE}/u`;"),
             ["U=<config.BASE>/u"]
         );
+    }
+
+    /// Collects what every `read(<expression>)` call of a program is the name of, in source order: its text, `<NAME>` for a name that another file declares, `-` for nothing.
+    struct Reads<'c> {
+        constants: &'c Constants,
+        found: Vec<String>,
+    }
+
+    impl<'a> Visit<'a> for Reads<'_> {
+        fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+            if let Expression::Identifier(callee) = &it.callee
+                && callee.name == "read"
+                && let Some(argument) = it.arguments.first().and_then(Argument::as_expression)
+            {
+                let text = self
+                    .constants
+                    .part(argument)
+                    .and_then(|part| part.read(&|name| Some(format!("<{name}>"))));
+                self.found.push(text.unwrap_or_else(|| "-".to_owned()));
+            }
+            walk::walk_call_expression(self, it);
+        }
+    }
+
+    /// What each `read(...)` call of `code` stands for, with the constants of `code` collected as the file is read.
+    fn reads(code: &str) -> Vec<String> {
+        let allocator = Allocator::default();
+        let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
+        let constants = Constants::collect(&parsed.program);
+        let mut reads = Reads {
+            constants: &constants,
+            found: Vec::new(),
+        };
+        reads.visit_program(&parsed.program);
+        reads.found
+    }
+
+    #[test]
+    fn a_name_that_a_scope_binds_again_is_no_import_in_that_scope() {
+        assert_eq!(reads("import { A } from 'a'; read(A);"), ["<A>"]);
+        for code in [
+            "function f(A: string) { read(A); }",
+            "const f = (A) => read(A);",
+            "function f({ A }) { read(A); }",
+            "function f() { const A = 1; read(A); }",
+            "function f() { let [A] = []; read(A); }",
+            "function f() { function A() {} read(A); }",
+            "class B { m() { class A {} read(A); } }",
+            "try {} catch (A) { read(A); }",
+            "class B { constructor(private A: string) { read(A); } }",
+            "function f() { const A = this; read(A); }",
+            "function f() { for (const A of []) { read(A); } }",
+            "function f() { enum A { X } read(A); }",
+        ] {
+            let code = format!("import {{ A }} from 'a'; {code}");
+            assert_eq!(reads(&code), ["-"], "{code}");
+        }
+    }
+
+    #[test]
+    fn a_name_that_nothing_binds_again_is_still_an_import() {
+        for code in [
+            "type A2 = A; interface B { A: string } read(A);",
+            "const o = { A: 1, B: A }; o.A; read(A);",
+            "class B { A = 1; m() { read(A); } }",
+            "type F = (A: string) => void; read(A);",
+            "declare function f(A: string): void; function g() { read(A); }",
+            "abstract class C { abstract m(A: string): void; n() { read(A); } }",
+            "function f<A>(x: A) { read(A); }",
+            "function f(B: string) { read(A); }",
+            "function f() { let g: (A: string) => void; read(A); }",
+            "function f(callback: (A: string) => void) { read(A); }",
+        ] {
+            let code = format!("import {{ A }} from 'a'; {code}");
+            assert_eq!(reads(&code), ["<A>"], "{code}");
+        }
+    }
+
+    #[test]
+    fn a_binding_hides_a_name_in_its_scope_only() {
+        assert_eq!(
+            reads("import { A } from 'a'; function f(A) { read(A); } read(A);"),
+            ["-", "<A>"]
+        );
+        assert_eq!(
+            reads("const p = '/top'; function f(p) { read(p); } read(p);"),
+            ["-", "/top"]
+        );
+        assert_eq!(
+            reads("const p = '/top'; try {} catch (p) { read(p); } read(p);"),
+            ["-", "/top"]
+        );
+        assert_eq!(
+            reads("const p = '/top'; for (const p of ps) { read(p); } read(p);"),
+            ["-", "/top"]
+        );
+        assert_eq!(
+            reads("const p = '/top'; switch (x) { case 1: { let p = 1; read(p); } } read(p);"),
+            ["-", "/top"]
+        );
+    }
+
+    #[test]
+    fn the_name_of_a_class_or_function_expression_is_bound_inside_it_only() {
+        assert_eq!(
+            reads("const C = '/c'; const k = class C { m() { read(C); } }; read(C);"),
+            ["-", "/c"]
+        );
+        assert_eq!(
+            reads("const F = '/f'; const g = function F() { read(F); }; read(F);"),
+            ["-", "/f"]
+        );
+    }
+
+    #[test]
+    fn a_name_is_what_the_innermost_scope_around_it_binds_it_to() {
+        assert_eq!(
+            reads(
+                "const p = '/top'; function f() { const p = '/mid'; { const p = '/in'; read(p); } read(p); } read(p);"
+            ),
+            ["/in", "/mid", "/top"]
+        );
+        assert_eq!(
+            reads("const p = '/top'; function f() { const p = '/mid'; { let p = 1; read(p); } }"),
+            ["-"]
+        );
+    }
+
+    #[test]
+    fn a_var_is_bound_in_the_whole_function_and_a_let_in_its_block() {
+        assert_eq!(
+            reads("const p = '/top'; function f() { if (x) { var p = 1; } read(p); } read(p);"),
+            ["-", "/top"]
+        );
+        assert_eq!(
+            reads("const p = '/top'; function f() { if (x) { let p = 1; } read(p); }"),
+            ["/top"]
+        );
+    }
+
+    #[test]
+    fn a_local_constant_is_read_like_a_constant_of_the_file() {
+        assert_eq!(reads("function f() { const p = '/a'; read(p); }"), ["/a"]);
+        assert_eq!(
+            reads(
+                "function f() { const o = { a: { b: '/ab' }, c: '/c' }; read(o.a.b); read(o.c); read(o.a); read(o.d); }"
+            ),
+            ["/ab", "/c", "-", "-"]
+        );
+        assert_eq!(
+            reads(
+                "const B = '/b'; function f() { const u = B + '/x'; const v = `${u}/y`; read(v); }"
+            ),
+            ["/b/x/y"]
+        );
+        assert_eq!(
+            reads("import { A } from 'a'; function f() { const u = A + '/x'; read(u); }"),
+            ["<A>/x"]
+        );
+        // A name outside the function it is declared in stands for nothing.
+        assert_eq!(reads("function f() { const p = '/a'; } read(p);"), ["-"]);
+    }
+
+    #[test]
+    fn a_closure_reads_a_constant_declared_below_it() {
+        assert_eq!(
+            reads("function f() { const g = () => read(p); const p = '/late'; }"),
+            ["/late"]
+        );
+        assert_eq!(
+            reads("function f() { const p = '/o'; function g() { read(p); } }"),
+            ["/o"]
+        );
+    }
+
+    #[test]
+    fn a_local_that_reads_no_text_hides_the_name_it_shadows() {
+        // A parameter makes the text computed, and a declaration needs a text that is not.
+        assert_eq!(
+            reads("const B = '/b'; function f(B) { const u = B + '/x'; read(u); }"),
+            ["-"]
+        );
+        // The name is bound before its initializer is read.
+        assert_eq!(
+            reads("const B = '/b'; function f() { const B = B + '/x'; read(B); }"),
+            ["-"]
+        );
+        assert_eq!(
+            reads("const B = '/b'; function f() { let B = '/x'; read(B); }"),
+            ["-"]
+        );
+        assert_eq!(
+            reads("const B = '/b'; function f() { const { B } = o; read(B); }"),
+            ["-"]
+        );
+    }
+
+    #[test]
+    fn a_name_bound_twice_in_one_scope_reads_as_nothing() {
+        assert_eq!(
+            reads("function f() { const p = '/a'; function p() {} read(p); }"),
+            ["-"]
+        );
+        assert_eq!(
+            reads("function f() { function p() {} const p = '/a'; read(p); }"),
+            ["-"]
+        );
+    }
+
+    #[test]
+    fn what_a_scope_binds_is_kept_only_when_it_can_change_an_answer() {
+        let code = "import { A, B } from 'x'; const T = '/t'; function f(A, B, T, U) {} function g(C) { const D = '/d'; }";
+        let locals = constants_of(code);
+        let kept: Vec<_> = locals.locals.keys().map(String::as_str).collect();
+        // `A` and `B` hide an import, `T` a constant of the file and `D` is a constant read in its scope.
+        assert_eq!(kept, ["A", "B", "D", "T"]);
+    }
+
+    #[test]
+    fn a_constant_of_a_scope_is_no_constant_of_the_file() {
+        let constants = constants_of("function f() { const p = '/a'; } const q = '/q';");
+        assert_eq!(
+            constants
+                .values
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["q"]
+        );
+        assert_eq!(constants.exported(&[]), []);
     }
 
     /// The local names `code` binds, with the module each takes its name from, as the walk of the file binds them.

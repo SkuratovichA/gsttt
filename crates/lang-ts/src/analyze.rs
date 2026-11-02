@@ -500,11 +500,11 @@ impl<'a> Analyzer<'_, 'a> {
             .is_some_and(|maker| maker.shape.holds_name(key))
     }
 
-    /// The receiver of `callee` when it is written on a name this file imports from a file of its project: `api` for `api.get`, `store.cache` for `store.cache.get`. A name imported from Node, or from a package that some active pack is for, is a library, and a rule reads a call on it as it is written.
-    fn imported_receiver<'c>(&self, callee: &'c str) -> Option<&'c str> {
+    /// The receiver of `callee` when it is written on a name this file imports from a file of its project: `api` for `api.get`, `store.cache` for `store.cache.get`. A name imported from Node, or from a package that some active pack is for, is a library, and a rule reads a call on it as it is written. A scope around the call `at` that binds the name again leaves no import.
+    fn imported_receiver<'c>(&self, callee: &'c str, at: u32) -> Option<&'c str> {
         let (host, _) = callee.rsplit_once('.')?;
         let root = host.split('.').next().unwrap_or(host);
-        let spec = self.constants.spec_of(root)?;
+        let spec = self.constants.spec_of(root, at)?;
         (!is_library(self.packs, spec)).then_some(host)
     }
 
@@ -567,7 +567,8 @@ impl<'a> Analyzer<'_, 'a> {
                     rule: rule_index,
                 };
                 // The receiver may be a client or a router that another file makes, which only the link can see.
-                let from_file = *imported.get_or_insert_with(|| self.imported_receiver(callee));
+                let from_file =
+                    *imported.get_or_insert_with(|| self.imported_receiver(callee, it.span.start));
                 let (prefix, host) = match (&rule.receiver, from_file) {
                     (None, Some(from_file)) => {
                         let rivals = self.rivals(callee, rule, it.arguments.len());
@@ -663,7 +664,7 @@ impl<'a> Analyzer<'_, 'a> {
         if let Some(host) = callee.strip_suffix(".use") {
             if self.makers.get(host).is_some_and(|maker| maker.serves) {
                 self.mount(host, it, line);
-            } else if let Some(host) = self.imported_receiver(callee) {
+            } else if let Some(host) = self.imported_receiver(callee, it.span.start) {
                 self.imported_mount(host, it, line);
             }
         }
@@ -2364,18 +2365,20 @@ method = "$arg2.method|GET"
     }
 
     #[test]
-    fn a_name_that_a_parameter_hides_is_no_import_and_defers_nothing() {
+    fn a_name_that_a_parameter_hides_is_no_import_in_its_function_only() {
         let analysis = analysis_of(
-            "import { BASE } from './config';\nfunction list(BASE: string) { fetch(`${BASE}/users`); }\nfetch(`${BASE}/orders`);\nfetch(BASE);\n",
+            "import { BASE } from './config';\nfunction list(BASE: string) { fetch(`${BASE}/users`); fetch(BASE); }\nfetch(`${BASE}/orders`);\nfetch(BASE);\n",
         );
         let keys: Vec<String> = analysis
             .contracts
             .iter()
             .map(|fact| format!("{}@{}", fact.key, fact.line))
             .collect();
-        assert_eq!(keys, ["http * /users@2", "http * /orders@3"]);
+        // Inside the function the parameter answers: its template reads past the name and its bare call is unread.
+        assert_eq!(keys, ["http * /users@2"]);
         assert_eq!(analysis.unresolved.len(), 1);
-        assert_eq!(analysis.extra.deferred, []);
+        // Outside it the import is still the name, so both calls wait for the link.
+        assert_eq!(analysis.extra.deferred.len(), 2);
         // The same calls wait for the link when nothing hides the import.
         let analysis = analysis_of(
             "import { BASE } from './config';\nfetch(`${BASE}/orders`);\nfetch(BASE);\n",

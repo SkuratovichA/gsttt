@@ -1,0 +1,182 @@
+---
+source: crates/lang-ts/tests/typescript/scopes.rs
+expression: "run(\"scopes-locals\")?"
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "http * /a",
+          "line": 5,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /api/x/y",
+          "line": 11,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /first",
+          "line": 17,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /second",
+          "line": 20,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /later",
+          "line": 25,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /outer",
+          "line": 33,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /users",
+          "line": 40,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /orders",
+          "line": 41,
+          "role": "calls",
+          "via": "fetch"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "branches",
+        "built",
+        "later",
+        "outer",
+        "plain",
+        "routes"
+      ],
+      "imports": [],
+      "path": "src/api.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "BASE",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 3,
+            "name": "plain",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 8,
+            "name": "built",
+            "uses": [
+              "BASE"
+            ]
+          },
+          {
+            "end": 22,
+            "line": 14,
+            "name": "branches",
+            "uses": []
+          },
+          {
+            "end": 28,
+            "line": 24,
+            "name": "later",
+            "uses": []
+          },
+          {
+            "end": 36,
+            "line": 30,
+            "name": "outer",
+            "uses": []
+          },
+          {
+            "end": 42,
+            "line": 38,
+            "name": "routes",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name, and a constant of another package, are not read",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}
