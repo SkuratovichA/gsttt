@@ -18,7 +18,7 @@ use super::lookup::{Miss, find, possible_misses};
 use super::render::{
     Answer, Entries, Footer, Searched, display_as_text, list, name_list, name_sentence,
 };
-use super::walk::{self, Cause, Hit, reach, reach_names};
+use super::walk::{self, Cause, Hit, Walked, reach, reach_names};
 
 /// What a change is asked about.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -27,9 +27,9 @@ pub struct ImpactRequest {
     pub files: Vec<String>,
     /// The paths the caller knows were deleted. One the index still holds is traced like any changed file; one it no longer holds is listed, with the unresolved imports that may have pointed at it, and not traced.
     pub deleted: Vec<String>,
-    /// Stop the walk after this many hops through code from a changed file: the imports, and with `names` the uses of a name, the loads and the mocks. A hop across a contract is not one of them, so the walk crosses every contract it comes to. A walk by name takes one hop through code when this is `None`.
+    /// Stop the walk after this many hops through code from a changed file, for every file but the tests: the imports, and with `names` the uses of a name, the loads and the mocks. A hop across a contract is not one of them, so the walk crosses every contract it comes to. The tests are followed to every depth, because a test two callers away runs the change as surely as one at the first. A walk by name takes one hop through code when this is `None`.
     pub depth: Option<u32>,
-    /// Declarations of the files in `files` to ask about instead of the files: a function, class, method (`Class.method`) or variable. The answer lists their direct callers, declaration by declaration. A name a file does not declare reaches nothing and goes into a note.
+    /// Declarations of the files in `files` to ask about instead of the files: a function, class, method (`Class.method`) or variable. The answer lists their direct callers, declaration by declaration, and every test that reaches them. A name a file does not declare reaches nothing and goes into a note.
     pub names: Vec<String>,
     /// Leave the tests out of the answer, and count them instead. The walk is the same, so the footer still covers the tests it reached.
     pub no_tests: bool,
@@ -43,11 +43,11 @@ pub struct Impact {
     /// The names asked about in those files, each once, in the order asked. Left out when the files were asked about whole.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
-    /// The hops through code the walk was allowed, `None` when it ran to a fixpoint. A walk by name always has one.
+    /// The hops through code the affected files were allowed, `None` when the walk ran to a fixpoint. A walk by name always has one. The tests are followed to the end whatever it is.
     pub depth: Option<u32>,
     /// The files the change reaches, nearest first and then by path, without the tests.
     pub affected: Vec<Affected>,
-    /// The files tagged as tests that the change reaches, in the same order. Empty when the request left the tests out.
+    /// The files tagged as tests that the change reaches at any depth, in the same order. Empty when the request left the tests out.
     pub tests: Vec<Affected>,
     /// How many files tagged as tests the change reaches that the request left out. Left out when there are none.
     #[serde(skip_serializing_if = "is_zero")]
@@ -269,40 +269,33 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
             names.push(name.clone());
         }
     }
-    let (hits, notes, depth): (Vec<Hit>, Vec<walk::Note>, Option<u32>) = if names.is_empty() {
-        let reached = reach(graph, &crossing, &changed, request.depth);
-        (
-            reached.into_iter().map(Hit::from).collect(),
-            Vec::new(),
-            request.depth,
-        )
+    // A walk by name takes the direct callers unless a depth is asked.
+    let depth = if names.is_empty() {
+        request.depth
     } else {
-        // A walk by name takes the direct callers unless a depth is asked.
-        let depth = request.depth.unwrap_or(1);
-        let walked = reach_names(index, &crossing, &changed, &names, depth);
-        (walked.hits, walked.notes, Some(depth))
+        Some(request.depth.unwrap_or(1))
     };
-    let mut affected = Vec::new();
+    let walked = reach_asked(index, &crossing, &changed, &names, depth);
+    // The depth bounds the files to read and not the tests to run: a test two callers away runs the change as surely as one at the first, so the tests come from the walk the depth does not stop.
+    let to_the_end = depth.map(|_| reach_asked(index, &crossing, &changed, &names, None));
+    let tested = to_the_end.as_ref().unwrap_or(&walked);
+    let is_test = |hit: &Hit| graph.tags(hit.file).contains(FileTags::TEST);
+    let affected = walked
+        .hits
+        .iter()
+        .filter(|hit| !is_test(hit))
+        .filter_map(|hit| entry(graph, hit))
+        .collect();
     let mut tests = Vec::new();
     let mut tests_left_out = 0;
-    for hit in &hits {
-        // A file without a path cannot be named in the answer, so it is the only one the walk reaches and the answer leaves out.
-        let Some(path) = graph.path(hit.file) else {
+    for hit in tested.hits.iter().filter(|hit| is_test(hit)) {
+        let Some(test) = entry(graph, hit) else {
             continue;
         };
-        let entry = Affected {
-            path: path.to_string(),
-            distance: hit.distance,
-            reason: reason(graph, &hit.cause),
-            callers: callers(graph, hit),
-            load: hit.load.map(|distance| Load { distance }),
-        };
-        if !graph.tags(hit.file).contains(FileTags::TEST) {
-            affected.push(entry);
-        } else if request.no_tests {
+        if request.no_tests {
             tests_left_out += 1;
         } else {
-            tests.push(entry);
+            tests.push(test);
         }
     }
 
@@ -310,7 +303,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         .iter()
         .filter_map(|&file| graph.path(file))
         .collect();
-    let misses = if hits.is_empty() {
+    let misses = if walked.hits.is_empty() && tested.hits.is_empty() {
         possible_misses(index, &changed_paths)
     } else {
         Vec::new()
@@ -338,23 +331,58 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         footer: Footer::new(
             index,
             freshness,
-            changed
-                .iter()
-                .copied()
-                .chain(hits.iter().map(|hit| hit.file)),
+            changed.iter().copied().chain(
+                std::iter::once(&walked)
+                    .chain(&to_the_end)
+                    .flat_map(|walk| walk.hits.iter().map(|hit| hit.file)),
+            ),
         ),
         affected,
         tests,
         tests_left_out,
         deleted,
         unknown,
-        notes: notes
+        notes: walked
+            .notes
             .into_iter()
             .map(|walked| note(graph, walked))
             .collect(),
         possible_misses: misses,
         searched: Searched::of(index),
     }
+}
+
+/// One walk of `impact`, by the files or by the names asked about, stopped by `depth` or run to the end when there is none.
+fn reach_asked(
+    index: &Index,
+    crossing: &Crossing<'_>,
+    changed: &[FileId],
+    names: &[String],
+    depth: Option<u32>,
+) -> Walked {
+    if names.is_empty() {
+        Walked {
+            hits: reach(&index.graph, crossing, changed, depth)
+                .into_iter()
+                .map(Hit::from)
+                .collect(),
+            notes: Vec::new(),
+        }
+    } else {
+        reach_names(index, crossing, changed, names, depth)
+    }
+}
+
+/// The entry of the answer for a file the walk reached. A file without a path cannot be named in the answer, so it is the only one the walk reaches and the answer leaves out.
+fn entry(graph: &Graph, hit: &Hit) -> Option<Affected> {
+    let path = graph.path(hit.file)?;
+    Some(Affected {
+        path: path.to_string(),
+        distance: hit.distance,
+        reason: reason(graph, &hit.cause),
+        callers: callers(graph, hit),
+        load: hit.load.map(|distance| Load { distance }),
+    })
 }
 
 /// The absent paths with whether each was reported deleted, in the order they were first asked. The map holds them by path, which is the order of nothing a person typed.
@@ -405,7 +433,7 @@ fn note(graph: &Graph, walked: walk::Note) -> Note {
             path(file)
         )),
         walk::Note::ThroughClass { members } => Note::ThroughClass(members),
-        walk::Note::Stopped => Note::Said("the walk stopped with callers left to follow; ask about a caller by name, or with a larger depth, to go on".to_owned()),
+        walk::Note::Stopped => Note::Said("the walk stopped at the depth with callers left to follow, and only the tests are listed past it; ask about a caller by name, or with a larger depth, to go on".to_owned()),
     }
 }
 
@@ -477,7 +505,11 @@ impl Answer for Impact {
             write!(f, "impact of {} in {files}", summary(&self.names))?;
         }
         if let Some(depth) = self.depth {
-            write!(f, ", within {} through code", noun(depth, "hop"))?;
+            write!(
+                f,
+                ", within {} through code; tests at any depth",
+                noun(depth, "hop")
+            )?;
         }
         f.write_str("\n")?;
 

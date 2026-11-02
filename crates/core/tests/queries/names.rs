@@ -14,13 +14,13 @@ use gsttt_scenario::scenario;
 use proptest::prelude::*;
 use serde_json::{json, to_value};
 
-use super::impact::{Case, Take, case, exported, file_path};
+use super::impact::{Case, Take, case, depth_leaves_the_tests_whole, exported, file_path};
 
 /// What an empty list of paths is compared with, because clippy asks `assert_eq!` over `is_empty` in a test.
 const NONE: [&str; 0] = [];
 
 /// What a note says when the depth ended the walk with callers left to follow.
-const STOPPED: &str = "the walk stopped with callers left to follow; ask about a caller by name, or with a larger depth, to go on";
+const STOPPED: &str = "the walk stopped at the depth with callers left to follow, and only the tests are listed past it; ask about a caller by name, or with a larger depth, to go on";
 
 /// Asks about `names` declared in `files`, with the depth of the request left as given.
 fn ask_in(index: &Index, files: &[&str], names: &[&str], depth: Option<u32>) -> Impact {
@@ -246,7 +246,7 @@ fn the_answer_names_the_callers_and_their_lines() {
 
     let text = answer.text(Entries::Capped);
     assert!(
-        text.starts_with("impact of foo in a.ts, within 1 hop through code\n"),
+        text.starts_with("impact of foo in a.ts, within 1 hop through code; tests at any depth\n"),
         "{text}"
     );
     assert!(
@@ -895,6 +895,54 @@ fn a_larger_depth_follows_the_callers_of_callers() {
         ]
     );
     assert_eq!(answer.depth, Some(2));
+}
+
+#[scenario("queries", "A test past the depth of a walk by name is listed")]
+#[test]
+fn a_test_past_the_depth_of_a_walk_by_name_is_listed() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .symbols("b.ts", Code::new().declaration("run", (3, 5), &["foo"]))
+        .exports("b.ts", &["run"])
+        .imports_names("c.ts", "b.ts", &["run"])
+        .symbols("c.ts", Code::new().declaration("main", (1, 3), &["run"]))
+        .exports("c.ts", &["main"])
+        .imports_names("c.test.ts", "c.ts", &["main"])
+        .symbols("c.test.ts", Code::new().on_load(&["main"]))
+        .exports("c.test.ts", &[])
+        .tag("c.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = ask(&index, "a.ts", &["foo"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("b.ts", 1, "imports foo from a.ts", &["run"])]
+    );
+    assert_eq!(
+        rows(&answer.tests),
+        [(
+            "c.test.ts",
+            3,
+            "imports main from c.ts".to_owned(),
+            Vec::new(),
+            Some(3)
+        )]
+    );
+    assert_eq!(answer.depth, Some(1));
+    let text = answer.text(Entries::Capped);
+    assert!(
+        text.starts_with("impact of foo in a.ts, within 1 hop through code; tests at any depth\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("c.test.ts  distance 3  imports main from c.ts; at load\n"),
+        "{text}"
+    );
+    // The affected files are cut at the depth, so the note says the walk stopped and that only the tests lie past it.
+    assert_eq!(notes(&answer), [STOPPED]);
 }
 
 #[scenario("queries", "A caller reached farther than its file says its distance")]
@@ -1788,7 +1836,7 @@ fn several_names_in_several_files_are_one_question() {
         ]
     );
     assert!(answer.text(Entries::Capped).starts_with(
-        "impact of foo, zed and nothing in a.ts and z.ts, within 1 hop through code\n"
+        "impact of foo, zed and nothing in a.ts and z.ts, within 1 hop through code; tests at any depth\n"
     ));
 }
 
@@ -1852,7 +1900,7 @@ fn a_depth_of_zero_lists_nothing_and_says_the_walk_stopped() {
     assert!(
         answer
             .text(Entries::Capped)
-            .starts_with("impact of foo in a.ts, within 0 hops through code\n")
+            .starts_with("impact of foo in a.ts, within 0 hops through code; tests at any depth\n")
     );
 }
 
@@ -1968,8 +2016,8 @@ fn module_path(number: usize) -> String {
     format!("f{number}.ts")
 }
 
-/// The index of the files of `modules`, each with declarations of its own.
-fn random_tree(modules: &[Module]) -> Index {
+/// The index of the files of `modules`, each with declarations of its own, and the files that the bits of `tests` pick, by number, tagged as tests.
+fn random_tree(modules: &[Module], tests: u8) -> Index {
     let mut tree = Tree::new();
     for (number, module) in modules.iter().enumerate() {
         let path = module_path(number);
@@ -1983,6 +2031,9 @@ fn random_tree(modules: &[Module]) -> Index {
             exported |= module.exports & (1 << at);
         }
         tree = tree.symbols(&path, code).exports(&path, &picked(exported));
+        if tests & (1 << number) != 0 {
+            tree = tree.tag(&path, FileTags::TEST);
+        }
         for (target, &mask) in module.imports.iter().enumerate() {
             if mask != 0 && target != number {
                 tree = tree.imports_names(&path, &module_path(target), &picked(mask));
@@ -2021,7 +2072,7 @@ proptest! {
     /// On any tree, a larger depth keeps what a smaller one found, each file, caller and load at the same distance, lists nothing beyond the depth, lists nearest first, puts no caller or load nearer than the entry that holds it, and gives the same answer twice.
     #[test]
     fn a_larger_depth_keeps_what_a_smaller_one_found(modules in prop::collection::vec(module(), FILES)) {
-        let index = random_tree(&modules);
+        let index = random_tree(&modules, 0);
         for number in 0..FILES {
             for name in NAMES {
                 let path = module_path(number);
@@ -2058,6 +2109,23 @@ proptest! {
                     }
                     nearer = now;
                 }
+            }
+        }
+    }
+}
+
+proptest! {
+    /// On any tree, the depth of a walk by name bounds the affected files and never the tests: at every depth they are the tests a walk with no limit reaches, with its distances, callers and loads.
+    #[test]
+    fn the_depth_of_a_walk_by_name_never_bounds_its_tests(
+        modules in prop::collection::vec(module(), FILES),
+        tests in 0_u8..(1 << FILES),
+    ) {
+        let (plain, tagged) = (random_tree(&modules, 0), random_tree(&modules, tests));
+        let is_test = |path: &str| (0..FILES).any(|number| tests & (1 << number) != 0 && module_path(number) == path);
+        for number in 0..FILES {
+            for name in NAMES {
+                depth_leaves_the_tests_whole(&plain, &tagged, &[&module_path(number)], &[name], is_test)?;
             }
         }
     }

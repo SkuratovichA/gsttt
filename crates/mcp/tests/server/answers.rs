@@ -25,7 +25,7 @@ fn imported_by(count: usize, padding: usize) -> Fake {
 /// The first line of an answer that was cut to fit the budget.
 fn cut_line() -> String {
     format!(
-        "cut: lists shortened to fit this answer in {} characters; the \"more\" counts say what they leave out. Ask a narrower question for the rest: fewer files, or a smaller depth.",
+        "cut: lists shortened to fit this answer in {} characters; the \"more\" counts say what they leave out. Ask a narrower question for the rest: fewer files, a smaller depth, or the tests left out.",
         thousands(BUDGET)
     )
 }
@@ -517,7 +517,7 @@ async fn impact_takes_names_and_answers_as_the_command_line_does() {
     assert!(
         reply
             .text
-            .starts_with("impact of foo in a.ts, within 1 hop through code\n"),
+            .starts_with("impact of foo in a.ts, within 1 hop through code; tests at any depth\n"),
         "{}",
         reply.text
     );
@@ -614,7 +614,7 @@ async fn depth_goes_further_than_the_direct_callers_of_a_name() {
     assert!(!near.text.contains("c.ts"), "{}", near.text);
     assert!(
         near.text
-            .contains("the walk stopped with callers left to follow"),
+            .contains("the walk stopped at the depth with callers left to follow"),
         "{}",
         near.text
     );
