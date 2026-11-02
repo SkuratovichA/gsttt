@@ -28,7 +28,7 @@ pub(crate) fn is_code(path: &str) -> bool {
 }
 
 /// Parses `file`. A file whose parse cannot go on has the line of its first error blanked and is parsed again, so the imports above and below one bad line survive; only a file that still fails after that is reported as failed.
-pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtra> {
+pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack], tags: FileTags) -> Parsed<TsExtra> {
     let source_type =
         SourceType::from_path(file.path.as_str()).unwrap_or_else(|_| SourceType::ts());
     let index = LineIndex::new(file.text);
@@ -54,7 +54,7 @@ pub(crate) fn parse_code(file: &SourceFile<'_>, packs: &[Pack]) -> Parsed<TsExtr
             })
             .collect();
         if !parsed.fatal_error {
-            let analysis = analyze::analyze(&parsed.program, &text, &index, packs);
+            let analysis = analyze::analyze(&parsed.program, &text, &index, packs, tags);
             // The lines blanked by the earlier attempts are errors of the file, and so are the ones this parse still reports.
             for (line, _) in &errors {
                 error_lines.note(*line);

@@ -1,6 +1,7 @@
 //! One syntax tree read for imports, exports, contracts, embedded documents and what the link phase needs.
 
 mod constants;
+mod doubles;
 mod makers;
 mod maps;
 mod roots;
@@ -11,8 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use gsttt_core::fact::{
-    ContractFact, Embedded, Import, ImportFlags, ImportKind, Line, Symbols, UnresolvedReason,
-    UnresolvedSite,
+    ContractFact, Embedded, FileTags, Import, ImportFlags, ImportKind, Line, Symbols,
+    UnresolvedReason, UnresolvedSite,
 };
 use gsttt_core::rules::{Access, CallRule, Outcome, Pack, Prefix, Reading, Site, serves_http};
 use gsttt_core::text::LineIndex;
@@ -70,6 +71,7 @@ pub(crate) fn analyze(
     text: &str,
     index: &LineIndex,
     packs: &[Pack],
+    tags: FileTags,
 ) -> Analysis {
     let gates = Gates::of(packs);
     let constants = Constants::collect(program);
@@ -80,6 +82,7 @@ pub(crate) fn analyze(
         makers: makers::collect(program, text, packs, gates.nestjs, &constants),
         constants,
         roots: roots::collect(program, packs),
+        doubles: doubles::collect(program, text, packs, tags),
         symbols: Recorder::collect(program, index),
         done: BTreeSet::new(),
         names: BTreeMap::new(),
@@ -169,6 +172,8 @@ struct Analyzer<'p, 'a> {
     constants: Constants,
     /// The aliases of `this` and the names declared with a root type, found before the walk because a class may use `self` above the method that binds it.
     roots: Roots<'p>,
+    /// The tokens this test file provides a stand-in for, found before the walk because a read may come above the provider.
+    doubles: BTreeSet<&'p str>,
     /// The table of the top-level bindings, found before the walk, and what the walk finds against it: the declarations, what each uses and what the file runs as it loads.
     symbols: Recorder<'a>,
     /// Starts of the calls whose meaning another visit already took, so they are read once.
@@ -464,6 +469,13 @@ impl<'a> Analyzer<'_, 'a> {
         for (pack_index, pack) in packs.iter().enumerate() {
             for (rule_index, rule) in pack.calls.iter().enumerate() {
                 if !rule.callee.matches(callee) {
+                    continue;
+                }
+                if rule
+                    .test_double
+                    .as_deref()
+                    .is_some_and(|token| self.doubles.contains(token))
+                {
                     continue;
                 }
                 let site: &Shape = lazy.get_or_insert_with(|| {
@@ -1924,7 +1936,13 @@ mod tests {
     fn analysis_in(code: &str, source_type: oxc_span::SourceType) -> Analysis {
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, source_type).parse();
-        analyze(&parsed.program, code, &LineIndex::new(code), &packs())
+        analyze(
+            &parsed.program,
+            code,
+            &LineIndex::new(code),
+            &packs(),
+            FileTags::NONE,
+        )
     }
 
     #[test]
@@ -1963,7 +1981,13 @@ method = "$arg2.method|GET"
         let code = "client.request('/plain');\nclient.request('/post', { method: 'POST' });\nclient.request('/options', { ...options });\nclient.request('/rest', ...rest);\nclient.request(...args);\nclient.request('/own', { ...options, method: 'PUT' });\n";
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, oxc_span::SourceType::ts()).parse();
-        let analysis = analyze(&parsed.program, code, &LineIndex::new(code), &packs);
+        let analysis = analyze(
+            &parsed.program,
+            code,
+            &LineIndex::new(code),
+            &packs,
+            FileTags::NONE,
+        );
         let calls: Vec<String> = analysis
             .contracts
             .iter()

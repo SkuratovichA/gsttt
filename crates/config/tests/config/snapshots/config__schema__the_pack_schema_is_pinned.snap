@@ -114,6 +114,10 @@ expression: pack_schema()
               "$ref": "#/definitions/Prefix"
             }
           ]
+        },
+        "test_double": {
+          "description": "The injection token a test replaces with a stand-in: in a test file that provides one, as `{ provide: ConfigService, useValue: stub }` does, the call reaches the stand-in, so the rule reads nothing there. The TypeScript connector honours it.",
+          "type": "string"
         }
       },
       "additionalProperties": false,
