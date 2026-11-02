@@ -154,6 +154,10 @@ pub struct ChainRule {
     // Left out when empty, for the reason given at `Pack::imports`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub root_types: Vec<String>,
+    /// Calls whose callback receives a root: the first parameter of a function given as the first argument of a call that one of these patterns matches starts a chain too. `*.$transaction` makes `db` a root in `prisma.$transaction(async (db) => …)`. Read by the TypeScript connector.
+    // Left out when empty, for the reason given at `Pack::imports`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub callback_roots: Vec<String>,
     #[schemars(with = "String")]
     pub kind: ContractKind,
     /// The role of a site that reads the chain: `process.env.API_URL` in an expression.
@@ -1406,6 +1410,36 @@ mod tests {
         );
         let plain = chain(serde_json::json!({ "root": "tx", "kind": "table", "role": "calls" }));
         assert_eq!(plain.root_types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_chain_rule_may_list_callback_roots() {
+        let chain =
+            |value: serde_json::Value| -> ChainRule { serde_json::from_value(value).unwrap() };
+        let called = chain(serde_json::json!({
+            "root": "tx", "callback_roots": ["*.$transaction", "*.*.$transaction"],
+            "kind": "table", "role": "calls",
+        }));
+        assert_eq!(
+            called.callback_roots,
+            ["*.$transaction", "*.*.$transaction"]
+        );
+        assert!(
+            called
+                .callback_roots
+                .iter()
+                .any(|pattern| callee_matches(pattern, "this.prisma.$transaction"))
+        );
+        assert!(
+            !called
+                .callback_roots
+                .iter()
+                .any(|pattern| callee_matches(pattern, "items.forEach"))
+        );
+        let plain = chain(serde_json::json!({ "root": "tx", "kind": "table", "role": "calls" }));
+        assert_eq!(plain.callback_roots, Vec::<String>::new());
+        let json = serde_json::to_value(&plain).unwrap();
+        assert!(json.get("callback_roots").is_none());
     }
 
     /// What `rule` makes of `segments` touched as `access`, as the roles and keys of its facts and the number of unread sites.

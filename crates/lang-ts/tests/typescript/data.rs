@@ -681,3 +681,66 @@ role = "calls"
 key = "$arg1"
 test_double = "Settings"
 "#;
+
+#[test]
+#[scenario(
+    "typescript",
+    "The parameter of a transaction callback is a root whatever its name"
+)]
+fn the_parameter_of_a_transaction_callback_is_a_root_whatever_its_name()
+-> Result<(), Box<dyn Error>> {
+    let json = run("prisma-callback-roots")?;
+    assert_eq!(contracts(&json, "src/untyped.ts"), ["calls table user @7"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A function expression on a nested receiver gives a root"
+)]
+fn a_function_expression_on_a_nested_receiver_gives_a_root() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-callback-roots")?;
+    assert_eq!(
+        contracts(&json, "src/nested.ts"),
+        ["calls table booking @6"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A callback parameter that the file binds elsewhere too is no root"
+)]
+fn a_callback_parameter_that_the_file_binds_elsewhere_too_is_no_root() -> Result<(), Box<dyn Error>>
+{
+    let json = run("prisma-callback-roots")?;
+    assert_eq!(contracts(&json, "src/shared.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "The callback of another call is no root")]
+fn the_callback_of_another_call_is_no_root() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-callback-roots")?;
+    assert_eq!(contracts(&json, "src/others.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A destructured callback parameter names no client")]
+fn a_destructured_callback_parameter_names_no_client() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-callback-roots")?;
+    assert_eq!(contracts(&json, "src/destructured.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "The array form of a transaction reads as before")]
+fn the_array_form_of_a_transaction_reads_as_before() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-callback-roots")?;
+    assert_eq!(contracts(&json, "src/array.ts"), ["calls table user @6"]);
+    Ok(())
+}

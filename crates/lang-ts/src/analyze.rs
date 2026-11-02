@@ -404,7 +404,10 @@ impl<'a> Analyzer<'_, 'a> {
                     let Some(root) = dotted(head) else {
                         break;
                     };
-                    if !(rule.root.matches(&root) || self.roots.is_typed(&rule.root_types, &root)) {
+                    if !(rule.root.matches(&root)
+                        || self.roots.is_typed(&rule.root_types, &root)
+                        || self.roots.is_typed(&rule.callback_roots, &root))
+                    {
                         continue;
                     }
                     let segments: Vec<Option<&str>> = tail.iter().map(Option::as_deref).collect();

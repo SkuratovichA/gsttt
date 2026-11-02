@@ -435,6 +435,11 @@ expression: packs
           "PrismaService",
           "Prisma.TransactionClient"
         ],
+        "callback_roots": [
+          "*.$transaction",
+          "*.*.$transaction",
+          "*.*.*.$transaction"
+        ],
         "kind": "table",
         "role": "calls",
         "segments": 1,
