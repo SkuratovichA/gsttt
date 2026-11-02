@@ -1396,12 +1396,11 @@ mod tests {
 
     #[test]
     fn a_role_that_is_read_and_written_is_one_fact_and_one_listed_role() {
-        let mut rule = env_chain(Some("calls"));
+        let rule = env_chain(Some("calls"));
         assert_eq!(
             touch(&rule, Access::ReadWrite, &[Some("API_URL")]),
             (vec!["calls env API_URL".to_owned()], 0, 0)
         );
-        rule.written = Some(Role::Calls);
         let pack = Pack {
             name: "env".to_owned(),
             language: "ts".to_owned(),
