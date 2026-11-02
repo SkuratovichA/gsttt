@@ -59,6 +59,19 @@ pub enum RelativeWithoutBase {
     Unread,
 }
 
+/// What a document given to a call means when its text has a computed part, a `${}` in the text a connector hands over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ComputedText {
+    /// The call is an unread site, because the document is not the one the code runs. This is what a rule does when `computed` is unset.
+    Unread,
+    /// The computed part is written as the placeholder of the language, so `SELECT id FROM t WHERE id = ${id}` is read as `SELECT id FROM t WHERE id = ?`.
+    Placeholder,
+}
+
+/// The mark a connector writes in the text of a template for a part that is computed at run time.
+const COMPUTED_MARK: &str = "${}";
+
 impl Pack {
     /// Whether a project whose manifest lists `dependencies` gets this pack. Python names arrive normalised (PEP 503: lower case, runs of `-_.` as `-`).
     pub fn applies_to<'a>(&self, mut dependencies: impl Iterator<Item = &'a str>) -> bool {
@@ -206,6 +219,10 @@ pub struct EmbedRule {
     #[serde(default)]
     #[schemars(with = "Option<String>")]
     pub text: Option<ValueExpr>,
+    /// What a computed part of the text means: `unread` when unset, `placeholder` to read the document with the part written as the placeholder of the language (`?` in SQL). Set it where the callee is found on things that hold no SQL as well, since the text is then the only judge.
+    // Left out when unset, for the reason given at `Pack::imports`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub computed: Option<ComputedText>,
 }
 
 impl EmbedRule {
@@ -981,6 +998,12 @@ impl EmbedRule {
                 text,
                 via: pack.to_owned(),
             }),
+            Some(text) if self.computed == Some(ComputedText::Placeholder) => Ok(Embedded {
+                lang: self.lang.clone(),
+                line,
+                text: text.replace(COMPUTED_MARK, self.computed_part()),
+                via: pack.to_owned(),
+            }),
             _ => Err(UnresolvedSite::non_literal(line, callee)),
         }
     }
@@ -1327,6 +1350,43 @@ mod tests {
                 (ContractKind::Graphql, Role::Calls),
                 (ContractKind::Other("yaml".to_owned()), Role::Calls),
             ]
+        );
+    }
+
+    #[test]
+    fn a_computed_part_is_a_placeholder_only_where_the_rule_says_so() {
+        let rule = |extra: serde_json::Value| -> EmbedRule {
+            let mut json = serde_json::json!({ "callee": "*.query", "lang": "sql" });
+            json.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            serde_json::from_value(json).unwrap()
+        };
+        let site = call("pool.query", &[Some("SELECT id FROM ${} WHERE id = ${}")]);
+        let read = |rule: &EmbedRule| rule.apply("sql-drivers", &site, 3, "pool.query");
+        assert!(read(&rule(serde_json::json!({}))).is_err());
+        assert!(read(&rule(serde_json::json!({ "computed": "unread" }))).is_err());
+        assert_eq!(
+            read(&rule(serde_json::json!({ "computed": "placeholder" })))
+                .unwrap()
+                .text,
+            "SELECT id FROM ? WHERE id = ?"
+        );
+        let graphql = EmbedRule {
+            lang: "graphql".to_owned(),
+            ..rule(serde_json::json!({ "computed": "placeholder" }))
+        };
+        assert_eq!(
+            graphql
+                .apply(
+                    "p",
+                    &call("c.query", &[Some("{ a(id: ${}) }")]),
+                    1,
+                    "c.query"
+                )
+                .unwrap()
+                .text,
+            "{ a(id: ) }"
         );
     }
 

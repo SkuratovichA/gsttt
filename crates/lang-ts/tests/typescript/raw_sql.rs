@@ -163,3 +163,91 @@ fn the_prisma_pack_is_credited_with_the_sql_it_finds() -> Result<(), Box<dyn Err
     );
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A driver query is read as SQL")]
+fn a_driver_query_is_read_as_sql() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert_eq!(
+        embedded(&json, "src/users.ts"),
+        [
+            "sql @4 SELECT id FROM users WHERE id = $1",
+            "sql @8 DELETE FROM sessions"
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A query kept in a constant is read")]
+fn a_query_kept_in_a_constant_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert_eq!(
+        embedded(&json, "src/constant.ts"),
+        ["sql @5 SELECT id FROM accounts"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A call with no text in its first argument records nothing"
+)]
+fn a_call_with_no_text_in_its_first_argument_records_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert_eq!(embedded(&json, "src/silent.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/silent.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+fn a_literal_that_is_no_sql_is_read_and_unread_nowhere() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert_eq!(embedded(&json, "src/shell.ts"), ["sql @3 ls -la"]);
+    assert_eq!(unread(&json, "src/shell.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A query template is read with its computed parts as placeholders"
+)]
+fn a_query_template_is_read_with_its_computed_parts_as_placeholders() -> Result<(), Box<dyn Error>>
+{
+    let json = run("sql-drivers")?;
+    assert_eq!(
+        embedded(&json, "src/template.ts"),
+        [
+            "sql @3 SELECT id FROM orders WHERE id = ?",
+            "sql @5 SELECT id FROM ?"
+        ]
+    );
+    assert_eq!(unread(&json, "src/template.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A project without a SQL driver reads no query")]
+fn a_project_without_a_sql_driver_reads_no_query() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers-absent")?;
+    assert_eq!(embedded(&json, "src/users.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "The sql-drivers pack is credited with the tables it finds"
+)]
+fn the_sql_drivers_pack_is_credited_with_the_tables_it_finds() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert!(
+        provides(&json, ".").contains(&"table calls via sql-drivers".to_owned()),
+        "{:?}",
+        provides(&json, ".")
+    );
+    Ok(())
+}

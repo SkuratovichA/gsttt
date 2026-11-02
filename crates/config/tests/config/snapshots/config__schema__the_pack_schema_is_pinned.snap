@@ -348,12 +348,35 @@ expression: pack_schema()
         "text": {
           "description": "For a call, where the document is; `$arg1` when unset. A tagged template is the document itself.",
           "type": "string"
+        },
+        "computed": {
+          "description": "What a computed part of the text means: `unread` when unset, `placeholder` to read the document with the part written as the placeholder of the language (`?` in SQL). Set it where the callee is found on things that hold no SQL as well, since the text is then the only judge.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ComputedText"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "callee",
         "lang"
+      ]
+    },
+    "ComputedText": {
+      "description": "What a document given to a call means when its text has a computed part, a `${}` in the text a connector hands over.",
+      "oneOf": [
+        {
+          "description": "The call is an unread site, because the document is not the one the code runs. This is what a rule does when `computed` is unset.",
+          "type": "string",
+          "const": "unread"
+        },
+        {
+          "description": "The computed part is written as the placeholder of the language, so `SELECT id FROM t WHERE id = ${id}` is read as `SELECT id FROM t WHERE id = ?`.",
+          "type": "string",
+          "const": "placeholder"
+        }
       ]
     },
     "AssignRule": {

@@ -1,0 +1,22 @@
+# SQL drivers: the first argument of `query`, `execute`, `prepare` and `exec` on a receiver of up to three segments (`pool.query`, `this.pool.query`, `this.db.pool.query`), read when it is a literal or a template. A computed part of a template is written as `?` (`computed = "placeholder"`), because the usual query of a driver is `SELECT … WHERE id = ${id}`. `text` stays unset: these method names are also found on things that hold no SQL, such as `client.query({ query })` of a GraphQL client, so a first argument with no text at all records nothing, as it does in the `dbapi` pack of Python.
+name = "sql-drivers"
+language = "ts"
+detect = ["pg", "mysql", "mysql2", "better-sqlite3", "sqlite3", "@neondatabase/serverless"]
+
+[[embeds]]
+callee = [
+  "*.query",
+  "*.*.query",
+  "*.*.*.query",
+  "*.execute",
+  "*.*.execute",
+  "*.*.*.execute",
+  "*.prepare",
+  "*.*.prepare",
+  "*.*.*.prepare",
+  "*.exec",
+  "*.*.exec",
+  "*.*.*.exec",
+]
+lang = "sql"
+computed = "placeholder"
