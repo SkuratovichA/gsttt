@@ -19,6 +19,7 @@ pub mod contract;
 pub mod coverage;
 pub mod engine;
 pub mod fact;
+pub mod glob;
 pub mod graph;
 pub mod ids;
 pub mod index;

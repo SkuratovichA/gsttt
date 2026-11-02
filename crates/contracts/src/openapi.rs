@@ -4,13 +4,14 @@
 
 use std::collections::BTreeSet;
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use gsttt_core::connector::{
     Connector, ConnectorError, Erased, LinkInput, Linked, LinkedFact, Meta, Parsed, Project,
     Provide, SourceFile,
 };
 use gsttt_core::contract::{ContractKind, Role, path_after_origin, without_query_and_fragment};
 use gsttt_core::fact::{ContractFact, FileFacts, Import, ImportKind, Line, Resolution};
+use gsttt_core::glob::glob_set;
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
@@ -136,22 +137,10 @@ impl Connector for OpenApi {
 }
 
 fn build_globs(patterns: &[String]) -> Result<GlobSet, ConnectorError> {
-    let options_error = |message: String| ConnectorError::Options {
+    glob_set(patterns).map_err(|error| ConnectorError::Options {
         connector: "openapi".into(),
-        message,
-    };
-    let mut builder = GlobSetBuilder::new();
-    for pattern in patterns {
-        let glob = Glob::new(pattern).map_err(|error| {
-            options_error(format!(
-                "`files` has the glob {pattern:?}, which is not valid: {error}"
-            ))
-        })?;
-        builder.add(glob);
-    }
-    builder
-        .build()
-        .map_err(|error| options_error(format!("`files` does not build: {error}")))
+        message: error.in_option("files"),
+    })
 }
 
 /// The YAML and JSON files that the `$ref`s of the documents reach, and those of the files they reach in turn. A document that cannot be searched is skipped and logged: the references it holds are not followed, and the engine still reads the document itself and reports why it failed.

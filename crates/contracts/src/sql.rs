@@ -2,12 +2,15 @@
 //!
 //! `CREATE`, `ALTER` and `DROP` of a table or view, and `CREATE INDEX … ON`, declare `table <name>`, and a rename declares the new name as well; queries and statements that change rows call the tables they name, leaving out the names of common table expressions. Statements are read one by one, so a statement that does not parse, or has a string or comment that is never closed, is counted and the others still count.
 //!
+//! A `.sql` file under the `migrations` globs changes the schema and does not use it, so every table it names is declared, once, and none is called.
+//!
 //! The connector always opens a project, even where no file is claimed, because code in any language can embed SQL.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::ops::ControlFlow;
 
+use globset::GlobSet;
 use gsttt_core::connector::{
     Connector, ConnectorError, Erased, Meta, Parsed, Project, Provide, SourceFile,
 };
@@ -16,6 +19,7 @@ use gsttt_core::fact::{
     ContractFact, Embedded, ErrorCount, FileFacts, Import, Line, ParseStatus, Resolution,
     UnresolvedReason,
 };
+use gsttt_core::glob::glob_set;
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
@@ -83,6 +87,8 @@ pub static SQL: Erased<Sql> = Erased(Sql);
 pub struct SqlOptions {
     /// The SQL dialect every statement is read with: `postgresql` (the default), `mysql`, `sqlite`, `mssql`, `bigquery`, `snowflake`, `redshift`, `clickhouse`, `duckdb`, `hive`, `databricks`, `spark`, `oracle`, `teradata`, `ansi` or `generic`.
     pub dialect: Option<String>,
+    /// The globs of the files that are migrations, matched against the repository path: a migration declares every table it names and calls none, because it changes the schema and does not use it. The default is `**/migrations/**` and `**/migration/**`, and an empty list reads no file as a migration. Only `.sql` files are matched; SQL embedded in code is always read as queries.
+    pub migrations: Option<Vec<String>>,
 }
 
 /// The project of the `sql` connector.
@@ -90,7 +96,14 @@ pub struct SqlOptions {
 pub struct SqlProject {
     /// The grammar every statement is read with.
     dialect: &'static (dyn Dialect + Sync),
+    /// The paths of the files that are migrations.
+    migrations: GlobSet,
 }
+
+/// The files that are migrations when the `migrations` option is not set: the directories of Prisma, Flyway, golang-migrate, sqlx, Supabase and dbmate.
+///
+/// Options reach the key of a fact as the user wrote them, so a change to this list needs a bump of the `version` of the connector.
+const DEFAULT_MIGRATIONS: [&str; 2] = ["**/migrations/**", "**/migration/**"];
 
 fn claims(path: &RepoPath) -> bool {
     path.extension() == Some("sql")
@@ -103,7 +116,7 @@ impl Connector for Sql {
     fn meta(&self) -> Meta {
         Meta {
             name: "sql",
-            version: 1,
+            version: 2,
             summary: "Tables declared by migrations and called by queries, in files and embedded in code",
             extensions: &["sql"],
         }
@@ -132,8 +145,23 @@ impl Connector for Sql {
                 DIALECTS.map(|(known, _)| known).join(", ")
             ),
         })?;
-        Ok(vec![SqlProject { dialect }])
+        let migrations = match &options.migrations {
+            Some(patterns) => migration_globs(patterns)?,
+            None => migration_globs(&DEFAULT_MIGRATIONS.map(str::to_owned))?,
+        };
+        Ok(vec![SqlProject {
+            dialect,
+            migrations,
+        }])
     }
+}
+
+/// The `migrations` option as a set of globs.
+fn migration_globs(patterns: &[String]) -> Result<GlobSet, ConnectorError> {
+    glob_set(patterns).map_err(|error| ConnectorError::Options {
+        connector: "sql".into(),
+        message: error.in_option("migrations"),
+    })
 }
 
 impl Project for SqlProject {
@@ -148,7 +176,7 @@ impl Project for SqlProject {
     }
 
     fn salt(&self) -> u64 {
-        // The dialect is an option, and the options are part of the key of every fact.
+        // The options, the dialect and the migration globs among them, are part of the key of every fact.
         0
     }
 
@@ -157,7 +185,11 @@ impl Project for SqlProject {
             provide(
                 ContractKind::Table,
                 Role::Declares,
-                &["CREATE, ALTER and DROP of tables and views", "CREATE INDEX"],
+                &[
+                    "CREATE, ALTER and DROP of tables and views",
+                    "CREATE INDEX",
+                    "every table a migration names, including those its INSERT, UPDATE and views use",
+                ],
                 &[
                     "tables created by ORM migrations written in code",
                     "tables created inside stored procedures",
@@ -166,7 +198,7 @@ impl Project for SqlProject {
             provide(
                 ContractKind::Table,
                 Role::Calls,
-                &["SQL files", "SQL embedded in code"],
+                &["SQL files that are not migrations", "SQL embedded in code"],
                 &[
                     "SQL built from strings at run time",
                     "statements the SQL parser does not read",
@@ -177,7 +209,10 @@ impl Project for SqlProject {
     }
 
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
-        let (contracts, status) = read(self.dialect, file.text);
+        let (mut contracts, status) = read(self.dialect, file.text);
+        if self.migrations.is_match(file.path.as_str()) {
+            declare_only(&mut contracts);
+        }
         Parsed::new(FileFacts {
             status,
             contracts,
@@ -247,6 +282,17 @@ fn read(dialect: &dyn Dialect, text: &str) -> (Vec<ContractFact>, ParseStatus) {
     });
     facts.dedup_by(|a, b| a.line == b.line && a.key == b.key && a.role == b.role);
     (facts, errors.status())
+}
+
+/// Turns every call into a declaration of the same table, kept once at the first line that names it.
+///
+/// The facts come in source order, so the first of each key is the earliest.
+fn declare_only(facts: &mut Vec<ContractFact>) {
+    for fact in facts.iter_mut() {
+        fact.role = Role::Declares;
+    }
+    let mut seen = BTreeSet::new();
+    facts.retain(|fact| seen.insert(fact.key.clone()));
 }
 
 /// A token moved down by the lines of the text before the one it was read from.
