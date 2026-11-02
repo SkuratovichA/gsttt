@@ -121,11 +121,11 @@ pub struct ChainRule {
     pub case: Option<Case>,
 }
 
-/// Names imported from a package that each name a contract: `import type { Tenant } from '@prisma/client'` names the table of the model `Tenant`, because the package exports one type per model.
+/// Names imported from a package that each name a contract: `import { BookingStatus } from '@prisma/client'` names the table `bookingstatus` once the file uses `BookingStatus` as a value, and a type, a re-export or a name the file never uses names nothing.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImportRule {
-    /// Package specifiers, as written in the import: `@prisma/client`. A name imported from one of them is the key, at the line of the import, and so is a name re-exported from it by name. A namespace import, a default import and a side-effect import name nothing.
+    /// Package specifiers, as written in the import: `@prisma/client`. A name imported from one of them that the file uses as a value is the key, at the line of the import. A namespace import, a default import and a side-effect import name nothing.
     pub from: OneOrMany,
     #[schemars(with = "String")]
     pub kind: ContractKind,
@@ -664,7 +664,7 @@ impl ImportRule {
         self.from.iter().any(|from| from == spec)
     }
 
-    /// What this rule makes of `name`, which the file takes from a package it reads: the exported name, not the local one. A name the rule excepts names nothing.
+    /// What this rule makes of `name`, which the file takes from a package it reads and uses as a value: the exported name, not the local one. A name the rule excepts names nothing.
     pub fn apply(&self, pack: &str, name: &str, line: Line) -> Outcome {
         if name.is_empty() || self.except.iter().any(|except| except == name) {
             return Outcome::Skip;

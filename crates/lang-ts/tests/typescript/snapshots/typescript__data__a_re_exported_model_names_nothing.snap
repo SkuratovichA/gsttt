@@ -17,61 +17,60 @@ expression: json
       "unresolved": []
     },
     {
-      "contracts": [
-        {
-          "key": "table tenant",
-          "line": 1,
-          "role": "calls",
-          "via": "prisma"
-        },
-        {
-          "key": "table tenantbranch",
-          "line": 1,
-          "role": "calls",
-          "via": "prisma"
-        },
-        {
-          "key": "table bookingstatus",
-          "line": 7,
-          "role": "calls",
-          "via": "prisma"
-        }
-      ],
+      "contracts": [],
       "embedded": [],
       "exports": [
-        "Pair"
+        "BookingStatus"
       ],
       "imports": [
-        {
-          "exported": [
-            "Tenant",
-            "Branch",
-            "Prisma",
-            "PrismaClient"
-          ],
-          "flags": 1,
-          "kind": "static",
-          "line": 1,
-          "names": [
-            "Tenant",
-            "TenantBranch",
-            "Prisma",
-            "PrismaClient"
-          ],
-          "spec": "@prisma/client",
-          "to": {
-            "external": "@prisma/client"
-          }
-        },
         {
           "exported": [
             "BookingStatus"
           ],
           "flags": 0,
           "kind": "static",
-          "line": 7,
+          "line": 1,
           "names": [
             "BookingStatus"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/listed.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Prisma",
+        "Tenant"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Tenant",
+            "Prisma"
+          ],
+          "flags": 1,
+          "kind": "re-export",
+          "line": 1,
+          "names": [
+            "Tenant",
+            "Prisma"
           ],
           "spec": "@prisma/client",
           "to": {
@@ -85,20 +84,43 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [
-          {
-            "end": 9,
-            "line": 9,
-            "name": "Pair",
-            "uses": [
-              "BookingStatus",
-              "Branch",
-              "Prisma",
-              "PrismaClient",
-              "Tenant"
-            ]
+        "declared": [],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "T"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "T"
+          ],
+          "flags": 0,
+          "kind": "re-export",
+          "line": 1,
+          "names": [
+            "Tenant"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
           }
-        ],
+        }
+      ],
+      "path": "src/renamed.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
         "exports": [],
         "on_load": []
       },

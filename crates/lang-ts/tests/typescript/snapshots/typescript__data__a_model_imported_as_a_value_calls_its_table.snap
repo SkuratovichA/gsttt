@@ -19,7 +19,7 @@ expression: json
     {
       "contracts": [
         {
-          "key": "table tenant",
+          "key": "table bookingstatus",
           "line": 1,
           "role": "calls",
           "via": "prisma"
@@ -27,21 +27,18 @@ expression: json
       ],
       "embedded": [],
       "exports": [
-        "Prisma",
-        "Tenant"
+        "confirmed"
       ],
       "imports": [
         {
           "exported": [
-            "Tenant",
-            "Prisma"
+            "BookingStatus"
           ],
-          "flags": 1,
-          "kind": "re-export",
+          "flags": 0,
+          "kind": "static",
           "line": 1,
           "names": [
-            "Tenant",
-            "Prisma"
+            "BookingStatus"
           ],
           "spec": "@prisma/client",
           "to": {
@@ -55,7 +52,16 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "confirmed",
+            "uses": [
+              "BookingStatus"
+            ]
+          }
+        ],
         "exports": [],
         "on_load": []
       },
@@ -65,7 +71,7 @@ expression: json
     {
       "contracts": [
         {
-          "key": "table tenant",
+          "key": "table bookingstatus",
           "line": 1,
           "role": "calls",
           "via": "prisma"
@@ -73,18 +79,18 @@ expression: json
       ],
       "embedded": [],
       "exports": [
-        "T"
+        "confirmed"
       ],
       "imports": [
         {
           "exported": [
-            "T"
+            "Status"
           ],
           "flags": 0,
-          "kind": "re-export",
+          "kind": "static",
           "line": 1,
           "names": [
-            "Tenant"
+            "BookingStatus"
           ],
           "spec": "@prisma/client",
           "to": {
@@ -98,7 +104,16 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "confirmed",
+            "uses": [
+              "Status"
+            ]
+          }
+        ],
         "exports": [],
         "on_load": []
       },

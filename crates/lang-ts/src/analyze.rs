@@ -27,8 +27,8 @@ use oxc_ast::ast::{
     MemberExpression, MethodDefinition, ModuleExportName, NewExpression, ObjectProperty,
     ObjectPropertyKind, PrivateInExpression, Program, PropertyDefinition, SimpleAssignmentTarget,
     TSExportAssignment, TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier,
-    TSModuleBlock, TSModuleReference, TaggedTemplateExpression, UnaryExpression,
-    VariableDeclarator,
+    TSModuleBlock, TSModuleReference, TSType, TSTypeName, TaggedTemplateExpression,
+    UnaryExpression, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
@@ -88,6 +88,7 @@ pub(crate) fn analyze(
         hosts: BTreeSet::new(),
         exports_unknown: false,
         module_depth: 0,
+        imported: Vec::new(),
         out: Analysis::default(),
     };
     analyzer.visit_program(program);
@@ -180,7 +181,19 @@ struct Analyzer<'p, 'a> {
     exports_unknown: bool,
     /// How many `namespace` and `declare module` bodies the walk is in, whose `export`s are theirs and not the file's.
     module_depth: u32,
+    /// The names the file imports from a package an import rule reads, which name their contract once the file is known to use the local name as a value.
+    imported: Vec<Imported>,
     out: Analysis,
+}
+
+/// A name an import takes from a package that an import rule reads.
+struct Imported {
+    spec: String,
+    /// The name the package exports, which is the key and not the name the file gives it.
+    name: String,
+    local: String,
+    /// The line of the import.
+    line: Line,
 }
 
 impl<'a> Analyzer<'_, 'a> {
@@ -365,15 +378,32 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
-    /// Applies the import rules to a name the file takes from the package `spec`; `line` is the line of the import.
-    fn import_rules(&mut self, spec: &str, name: &str, line: Line) {
+    /// Applies the import rules to the names the file imports and uses as a value; a type, a re-export and a name the file never uses name nothing.
+    fn import_rules(&mut self) {
         let packs = self.packs;
-        for pack in packs {
-            for rule in pack.imports.iter().filter(|rule| rule.reads(spec)) {
-                let outcome = rule.apply(&pack.name, name, line);
-                self.record(outcome);
+        for imported in std::mem::take(&mut self.imported) {
+            if !self.symbols.used_as_value(&imported.local) {
+                continue;
+            }
+            for pack in packs {
+                for rule in pack
+                    .imports
+                    .iter()
+                    .filter(|rule| rule.reads(&imported.spec))
+                {
+                    let outcome = rule.apply(&pack.name, &imported.name, imported.line);
+                    self.record(outcome);
+                }
             }
         }
+    }
+
+    /// Whether an import rule reads the names imported from the package `spec`.
+    fn packs_read(&self, spec: &str) -> bool {
+        self.packs
+            .iter()
+            .flat_map(|pack| &pack.imports)
+            .any(|rule| rule.reads(spec))
     }
 
     /// The prefix the call that made the receiver of `callee` gives, and the receiver's name, when the receiver was made in this file by a call that `rule` names.
@@ -951,7 +981,8 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
-    fn finish(self) -> Analysis {
+    fn finish(mut self) -> Analysis {
+        self.import_rules();
         let Self {
             makers,
             symbols,
@@ -1031,6 +1062,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         };
         let mut import = Import::new(spec, kind, line);
         let mut all_type = true;
+        let type_declaration = matches!(it.import_kind, ImportOrExportKind::Type);
         for specifier in it.specifiers.iter().flatten() {
             let (local, name, is_type) = match specifier {
                 ImportDeclarationSpecifier::ImportSpecifier(item) => (
@@ -1047,15 +1079,18 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             };
             all_type &= is_type;
             self.bind(local, spec, &name);
-            if is_member(&name) {
-                self.import_rules(spec, &name, line);
+            if !is_type && !type_declaration && is_member(&name) && self.packs_read(spec) {
+                self.imported.push(Imported {
+                    spec: spec.to_owned(),
+                    name: name.clone(),
+                    local: local.to_owned(),
+                    line,
+                });
             }
             import.names.push(name);
             import.exported.push(local.to_owned());
         }
-        if matches!(it.import_kind, ImportOrExportKind::Type)
-            || (all_type && !import.names.is_empty())
-        {
+        if type_declaration || (all_type && !import.names.is_empty()) {
             import.flags = import.flags | ImportFlags::TYPE_ONLY;
         }
         self.out.imports.push(import);
@@ -1089,9 +1124,6 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 name: name.clone(),
             };
             self.export(&exported, target);
-            if is_member(&name) {
-                self.import_rules(spec, &name, line);
-            }
             import.names.push(name);
             import.exported.push(exported);
         }
@@ -1199,16 +1231,13 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         walk::walk_import_expression(self, it);
     }
 
-    /// `typeof import('x')` and `import('x').T` in a type bind nothing and run nothing, but the file depends on `x`. Without a qualifier the type is the module itself, which is the name `*` of a namespace import. The name it takes from `x` reaches the import rules as the name of `import { T } from 'x'` does.
+    /// `typeof import('x')` and `import('x').T` in a type bind nothing and run nothing, but the file depends on `x`. Without a qualifier the type is the module itself, which is the name `*` of a namespace import. A type is no use of a value, so it reaches no import rule.
     fn visit_ts_import_type(&mut self, it: &TSImportType<'a>) {
         if let Some(spec) = it.source.value.as_str() {
             let line = self.line(it.source.span.start);
             let mut import = Import::new(spec, ImportKind::Static, line);
             import.flags = import.flags | ImportFlags::TYPE_ONLY;
             let name = it.qualifier.as_ref().map_or("*", first_name);
-            if is_member(name) {
-                self.import_rules(spec, name, line);
-            }
             import.names.push(name.to_owned());
             self.out.imports.push(import);
         }
@@ -1445,6 +1474,19 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             self.symbols.statement(position);
             self.visit_statement(statement);
         }
+    }
+
+    fn visit_ts_type(&mut self, it: &TSType<'a>) {
+        let outer = self.symbols.enter_type();
+        walk::walk_ts_type(self, it);
+        self.symbols.leave_type(outer);
+    }
+
+    /// The name of a type reference, and of an `implements` or an interface `extends`, which are types and not values even where the walk meets them outside a `TSType`.
+    fn visit_ts_type_name(&mut self, it: &TSTypeName<'a>) {
+        let outer = self.symbols.enter_type();
+        walk::walk_ts_type_name(self, it);
+        self.symbols.leave_type(outer);
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
@@ -1846,5 +1888,58 @@ mod tests {
             analysis.extra.deferred.as_slice(),
             [Deferred { target: DeferredTarget::Receiver { host }, .. }] if host == "api"
         ));
+    }
+
+    /// The tables the file `code` calls for the model `Tenant` imported by name from the client.
+    fn tables_called_by(code: &str) -> usize {
+        analysis_of(&format!(
+            "import {{ Tenant }} from '@prisma/client';\n{code}\n"
+        ))
+        .contracts
+        .len()
+    }
+
+    #[test]
+    fn a_name_in_a_type_position_is_no_use_of_the_value() {
+        for code in [
+            "export function f(tenant: Tenant) {}",
+            "export function f(): Tenant { throw new Error(); }",
+            "declare function g<T>(): T;\nexport const t = g<Tenant>();",
+            "interface Row extends Tenant {}",
+            "export class Row implements Tenant {}",
+            "export type Shape = typeof Tenant;",
+            "declare const x: unknown;\nexport const t = x satisfies Tenant;",
+            "declare const x: unknown;\nexport const t = x as Tenant;",
+            "export type Alias = Tenant[];",
+            "export declare function h(tenant: Tenant): void;",
+        ] {
+            assert_eq!(tables_called_by(code), 0, "{code}");
+        }
+    }
+
+    #[test]
+    fn a_name_in_a_value_position_is_a_use_of_the_value() {
+        for code in [
+            "export const status = Tenant.ACTIVE;",
+            "export const t = typeof Tenant;",
+            "export default Tenant;",
+            "export class Row extends Tenant {}",
+            "export enum Kind { A = Tenant.A }",
+            "export const t = [Tenant];",
+        ] {
+            assert_eq!(tables_called_by(code), 1, "{code}");
+        }
+    }
+
+    #[test]
+    fn a_re_export_is_no_use_of_the_value() {
+        for code in [
+            "export { Tenant };",
+            "export { Tenant as T };",
+            "export { Tenant as T } from '@prisma/client';",
+            "export type { Tenant } from '@prisma/client';",
+        ] {
+            assert_eq!(tables_called_by(code), 0, "{code}");
+        }
     }
 }
