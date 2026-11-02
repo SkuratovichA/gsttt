@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, contracts, run, run_tree_within, run_within, unread};
+use crate::support::{NOTHING, contracts, run, run_tree_within, run_with_pack, run_within, unread};
 
 #[test]
 #[scenario("typescript", "A Prisma call names its table")]
@@ -604,3 +604,80 @@ fn a_prisma_client_named_db_or_tx_names_its_table() -> Result<(), Box<dyn Error>
     );
     Ok(())
 }
+
+#[test]
+#[scenario(
+    "typescript",
+    "A read of a ConfigService a test provides is no environment read"
+)]
+fn a_read_of_a_config_service_a_test_provides_is_no_environment_read() -> Result<(), Box<dyn Error>>
+{
+    let json = run("nestjs-config-double")?;
+    assert_eq!(contracts(&json, "src/provided.spec.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/provided.spec.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A read of an overridden ConfigService is no environment read"
+)]
+fn a_read_of_an_overridden_config_service_is_no_environment_read() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-config-double")?;
+    assert_eq!(contracts(&json, "src/overridden.spec.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/overridden.spec.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A test on the real ConfigService keeps its reads")]
+fn a_test_on_the_real_config_service_keeps_its_reads() -> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-config-double")?;
+    assert_eq!(
+        contracts(&json, "src/real.spec.ts"),
+        ["calls env API_URL @9"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A file that is no test keeps its reads though it provides a stand-in"
+)]
+fn a_file_that_is_no_test_keeps_its_reads_though_it_provides_a_stand_in()
+-> Result<(), Box<dyn Error>> {
+    let json = run("nestjs-config-double")?;
+    assert_eq!(
+        contracts(&json, "src/app.module.ts"),
+        ["calls env API_URL @5"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A project pack names the token its test replaces")]
+fn a_project_pack_names_the_token_its_test_replaces() -> Result<(), Box<dyn Error>> {
+    let json = run_with_pack("nestjs-config-double", SETTINGS_PACK)?;
+    assert_eq!(contracts(&json, "src/settings-double.spec.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/settings-double.spec.ts"), NOTHING);
+    assert_eq!(
+        contracts(&json, "src/settings-plain.spec.ts"),
+        ["calls env PORT @3"]
+    );
+    Ok(())
+}
+
+/// A project pack whose rule reads `settings.read('X')` as the variable X, unless a test provides `Settings` itself.
+const SETTINGS_PACK: &str = r#"
+name = "fixture"
+language = "ts"
+
+[[calls]]
+callee = "settings.read"
+kind = "env"
+role = "calls"
+key = "$arg1"
+test_double = "Settings"
+"#;

@@ -102,7 +102,7 @@ impl Project for TsProject {
         if is_json(file.path.file_name()) {
             return parse_json(file.path, file.text, tags);
         }
-        let mut parsed = parse_code(file, &self.packs);
+        let mut parsed = parse_code(file, &self.packs, tags);
         parsed.facts.tags = tags;
         parsed
     }

@@ -102,6 +102,10 @@ pub struct CallRule {
     /// A prefix taken from the call that made the receiver: `router = APIRouter(prefix="/x")` before `router.get("/y")`.
     #[serde(default)]
     pub receiver: Option<Prefix>,
+    /// The injection token a test replaces with a stand-in: in a test file that provides one, as `{ provide: ConfigService, useValue: stub }` does, the call reaches the stand-in, so the rule reads nothing there. The TypeScript connector honours it.
+    // Left out when unset, for the reason given at `Pack::imports`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_double: Option<String>,
 }
 
 /// A decorator that names a contract: NestJS `@Get(":id")`, FastAPI `@router.get("/x")`, Flask `@bp.route("/x")`.

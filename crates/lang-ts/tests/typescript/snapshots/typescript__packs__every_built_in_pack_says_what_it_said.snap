@@ -315,7 +315,8 @@ expression: packs
         "role": "calls",
         "key": "$arg1",
         "method": null,
-        "receiver": null
+        "receiver": null,
+        "test_double": "ConfigService"
       }
     ],
     "decorators": [],
