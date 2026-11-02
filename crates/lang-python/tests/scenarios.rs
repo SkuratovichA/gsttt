@@ -1660,6 +1660,214 @@ os.environ.pop(NAME, None)
     assert_eq!(tree.unresolved_lines("computed.py"), [2, 3, 4]);
 }
 
+#[gsttt_scenario::scenario("python", "patch.dict serves the keys and keywords it sets")]
+#[test]
+fn patch_dict_serves_the_keys_and_keywords_it_sets() {
+    let tree = index_files(&[(
+        "patched.py",
+        r#"import os
+from unittest import mock
+from unittest.mock import patch as p
+
+
+def test_it(mocker):
+    with patch.dict(os.environ, {"A": "1", "B": "2"}):
+        pass
+    mock.patch.dict(os.environ, values={"C": "3"}, D="4")
+    p.dict(in_dict=os.environ, E="5")
+    mocker.patch.dict(os.environ, {"F": "6"}, clear=True)
+    patch.dict(os.environ, clear=True)
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("patched.py"),
+        [
+            "serves env A@7",
+            "serves env B@7",
+            "serves env C@9",
+            "serves env D@9",
+            "serves env E@10",
+            "serves env F@11",
+        ]
+    );
+    assert_eq!(tree.unresolved_lines("patched.py"), Vec::<u32>::new());
+}
+
+#[gsttt_scenario::scenario("python", "patch.dict as a decorator serves its keys")]
+#[test]
+fn patch_dict_as_a_decorator_serves_its_keys() {
+    let tree = index_files(&[(
+        "decorated.py",
+        r#"import os
+from unittest.mock import patch
+
+
+@patch.dict(os.environ, {"A": "1"})
+def test_function():
+    pass
+
+
+@patch.dict(os.environ, {"B": "2"}, C="3")
+class TestBooking:
+    pass
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("decorated.py"),
+        ["serves env A@5", "serves env B@10", "serves env C@10"]
+    );
+    assert_eq!(tree.unresolved_lines("decorated.py"), Vec::<u32>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A mapping named by a string is written")]
+#[test]
+fn a_mapping_named_by_a_string_is_written() {
+    let tree = index_files(&[(
+        "named.py",
+        r#"from unittest.mock import patch
+
+patch.dict("os.environ", {"A": "1"})
+patch.dict("settings", {"B": "2"})
+"#,
+    )]);
+    assert_eq!(tree.contracts("named.py"), ["serves env A@3"]);
+    assert_eq!(tree.unresolved_lines("named.py"), Vec::<u32>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A mapping write without values names nothing")]
+#[test]
+fn a_mapping_write_without_values_names_nothing() {
+    let tree = index_files(&[(
+        "bare.py",
+        r"import os
+from unittest.mock import patch
+
+patch.dict(os.environ)
+patch.dict(os.environ, clear=True)
+os.environ.update()
+print(os.environ)
+",
+    )]);
+    assert_eq!(tree.contracts("bare.py"), Vec::<String>::new());
+    assert_eq!(tree.unresolved_lines("bare.py"), Vec::<u32>::new());
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A computed key in a mapping write is one unread site per call"
+)]
+#[test]
+fn a_computed_key_in_a_mapping_write_is_one_unread_site_per_call() {
+    let tree = index_files(&[(
+        "computed_keys.py",
+        r#"import os
+from unittest.mock import patch
+
+patch.dict(os.environ, {"A": "1", NAME: "2", **BASE, OTHER: "3"})
+patch.dict(os.environ, {"B": "1"}, **extra)
+patch.dict(os.environ, values)
+patch.dict(os.environ, dict(C="1"))
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("computed_keys.py"),
+        ["serves env A@4", "serves env B@5"]
+    );
+    assert_eq!(tree.unresolved_lines("computed_keys.py"), [4, 5, 6, 7]);
+}
+
+#[gsttt_scenario::scenario("python", "monkeypatch.setitem and delitem write one key")]
+#[test]
+fn monkeypatch_setitem_and_delitem_write_one_key() {
+    let tree = index_files(&[(
+        "items.py",
+        r#"import os
+
+
+def test_it(monkeypatch):
+    monkeypatch.setitem(os.environ, "A", "1")
+    monkeypatch.delitem(os.environ, "B")
+    monkeypatch.setitem(os.environ, NAME, "2")
+    monkeypatch.delitem(os.environ, NAME)
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("items.py"),
+        ["serves env A@5", "serves env B@6"]
+    );
+    assert_eq!(tree.unresolved_lines("items.py"), [7, 8]);
+}
+
+#[gsttt_scenario::scenario("python", "update and |= serve the keys they set")]
+#[test]
+fn update_and_bitor_serve_the_keys_they_set() {
+    let tree = index_files(&[(
+        "merged.py",
+        r#"import os
+from os import environ
+
+os.environ.update({"A": "1"}, B="2")
+environ |= {"C": "3"}
+os.environ |= {"D": "4", NAME: "5"}
+os.environ.update(extra)
+os.environ.update({"E": "6"}, **extra)
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("merged.py"),
+        [
+            "serves env A@4",
+            "serves env B@4",
+            "serves env C@5",
+            "serves env D@6",
+            "serves env E@8"
+        ]
+    );
+    assert_eq!(tree.unresolved_lines("merged.py"), [6, 7, 8]);
+}
+
+#[gsttt_scenario::scenario("python", "A write into another mapping names nothing")]
+#[test]
+fn a_write_into_another_mapping_names_nothing() {
+    let tree = index_files(&[(
+        "other.py",
+        r#"from unittest.mock import patch
+
+d = {}
+patch.dict(settings, {"A": "1", NAME: "2"}, B="3")
+d.update({"C": 1}, **extra)
+d |= {"D": 1}
+
+
+def test_it(monkeypatch):
+    monkeypatch.setitem(config, "E", 1)
+    monkeypatch.setitem(config, NAME, 1)
+"#,
+    )]);
+    assert_eq!(tree.contracts("other.py"), Vec::<String>::new());
+    assert_eq!(tree.unresolved_lines("other.py"), Vec::<u32>::new());
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A read inside the values of a mapping write is still a read"
+)]
+#[test]
+fn a_read_inside_the_values_of_a_mapping_write_is_still_a_read() {
+    let tree = index_files(&[(
+        "nested.py",
+        r#"import os
+from unittest.mock import patch
+
+patch.dict(os.environ, {"A": os.environ["B"]})
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("nested.py"),
+        ["serves env A@4", "calls env B@4"]
+    );
+}
+
 #[gsttt_scenario::scenario("python", "The fields of a settings subclass are a blind spot")]
 #[test]
 fn the_fields_of_a_settings_subclass_are_a_blind_spot() {
@@ -2950,4 +3158,25 @@ fn a_call_rule_that_lists_receiver_types_reads_nothing() {
     let tree = index_files_with(&files, builtin_packs(&[("queue", &typed)]).unwrap());
     assert_eq!(tree.contracts("send.py"), Vec::<String>::new());
     assert_eq!(tree.unread("send.py"), Vec::<String>::new());
+}
+
+/// A rule of a pack on a method named `update` is still applied to a call that is no mapping write.
+#[test]
+fn a_rule_on_an_update_method_still_reads_its_call() {
+    let pack = r#"
+name = "sessions"
+language = "python"
+
+[[calls]]
+callee = "*.update"
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "GET"
+"#;
+    let tree = index_files_with(
+        &[("sessions.py", "session.update(\"/x\")\n")],
+        builtin_packs(&[("sessions", pack)]).unwrap(),
+    );
+    assert_eq!(tree.contracts("sessions.py"), ["calls http GET /x@1"]);
 }

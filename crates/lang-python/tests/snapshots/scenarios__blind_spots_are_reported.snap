@@ -80,8 +80,7 @@ expression: "tree.json[\"projects\"]"
         ],
         "blind_spots": [
           "names brought in by a star import, which are not matched to the module they come from",
-          "variable names held in variables",
-          "variables written by os.environ.update(…), os.environ |= …, patch.dict(os.environ, …) or monkeypatch.setitem(os.environ, …)"
+          "variable names held in variables"
         ]
       },
       {
