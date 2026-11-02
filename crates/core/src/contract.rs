@@ -284,6 +284,9 @@ pub fn without_query_and_fragment(url: &str) -> &str {
     url.split_once(['?', '#']).map_or(url, |(before, _)| before)
 }
 
+/// The segment that stands for a computed or named part of an HTTP path in a normalised key: `/users/{}`.
+pub(crate) const PARAMETER: &str = "{}";
+
 /// Puts an HTTP path in the form servers and clients are matched on.
 ///
 /// - A scheme and host go: `https://api.example.com/v1/x` becomes `/v1/x`, and so does `${}://${}/v1/x` with a scheme and host written as placeholders. Only text that starts with an origin has a host, see [`path_after_origin`]: in `/a?next=https://b/c` the path `/a` stays, and the host of `http://h?next=/a` ends at the `?`, so that path is `/`.
@@ -309,7 +312,11 @@ pub fn normalize_http_path(raw: &str) -> String {
         .filter(|segment| !segment.is_empty())
     {
         out.push('/');
-        out.push_str(if is_param(segment) { "{}" } else { segment });
+        out.push_str(if is_param(segment) {
+            PARAMETER
+        } else {
+            segment
+        });
     }
     if out.is_empty() {
         out.push('/');

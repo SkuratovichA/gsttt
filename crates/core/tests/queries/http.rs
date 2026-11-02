@@ -106,6 +106,30 @@ fn parameters_meet_literals_on_either_side() {
     assert!(matcher.meets(&key("http GET /{}/{}"), &key("http GET /a/b")));
 }
 
+#[scenario("queries", "Literals that meet only parameters make no match")]
+#[test]
+fn literals_that_meet_only_parameters_make_no_match() {
+    let matcher = HttpMatcher::default();
+    let call = key("http POST /{}/messages");
+    let route = key("http POST /u/{}");
+
+    assert!(!matcher.meets(&call, &route));
+    assert!(!matcher.meets(&route, &call));
+    assert!(matcher.meets(&key("http GET /bookings/{}"), &key("http GET /bookings/me")));
+}
+
+#[scenario("queries", "A path of parameters alone meets a literal path")]
+#[test]
+fn a_path_of_parameters_alone_meets_a_literal_path() {
+    let matcher = HttpMatcher::default();
+    for (parameters, literals) in [("/{}", "/users"), ("/{}/{}", "/a/b")] {
+        let parameters = key(&format!("http GET {parameters}"));
+        let literals = key(&format!("http GET {literals}"));
+        assert!(matcher.meets(&parameters, &literals));
+        assert!(matcher.meets(&literals, &parameters));
+    }
+}
+
 #[test]
 fn other_kinds_meet_by_equality() {
     let matcher = matcher(&["/api"]);
@@ -159,6 +183,26 @@ proptest! {
     #[test]
     fn a_key_meets_itself(a in http_key(), prefixes in prefixes()) {
         prop_assert!(HttpMatcher::new(&prefixes).meets(&a, &a));
+    }
+
+    #[test]
+    fn a_key_meets_itself_with_literals_made_parameters(
+        a in http_key(),
+        wildcard in any::<bool>(),
+        mask in prop::collection::vec(any::<bool>(), 4),
+        prefixes in prefixes(),
+    ) {
+        let (method, path) = a.http_parts().unwrap();
+        let blurred: Vec<&str> = path
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .zip(mask)
+            .map(|(segment, blur)| if blur { "{}" } else { segment })
+            .collect();
+        let b = ContractKey::http(if wildcard { "*" } else { method }, &format!("/{}", blurred.join("/")));
+        let matcher = HttpMatcher::new(&prefixes);
+        prop_assert!(matcher.meets(&a, &b));
+        prop_assert!(matcher.meets(&b, &a));
     }
 
     #[test]
