@@ -205,39 +205,48 @@ pub fn build_index(
     }
 }
 
-/// One problem line for each glob of an endpoint that matches no file of `repo`: such a glob is valid, so only the coverage can say that the files it meant belong to no endpoint. Done once here, never per query. A list that does not build is the config check's to report, and gives no line.
+/// One problem line for each glob of an endpoint that matches no file of `repo`: such a glob is valid, so only the coverage can say that the files it meant belong to no endpoint. Done once here, never per query, and not at all while no endpoint lists a glob. The walk of the files stops at the file that matches the last glob still unmatched. A list that does not build is the config check's to report, and gives no line.
 fn unmatched_endpoint_globs(repo: &RepoView, endpoints: &[GraphqlEndpoint]) -> Vec<String> {
     let mut globs = Vec::new();
-    let mut places = Vec::new();
-    for (number, endpoint) in endpoints.iter().enumerate() {
-        for (list, patterns) in [
-            ("clients", &endpoint.clients),
-            ("servers", &endpoint.servers),
-        ] {
+    for (position, endpoint) in endpoints.iter().enumerate() {
+        for (side, patterns) in endpoint.sides() {
             for pattern in patterns {
-                globs.push(pattern.clone());
-                places.push(format!("graphql_endpoints[{number}].{list}"));
+                globs.push((GraphqlEndpoint::place(position, side), pattern));
             }
         }
     }
-    let Ok(set) = glob_set(&globs) else {
+    if globs.is_empty() {
+        return Vec::new();
+    }
+    let patterns: Vec<String> = globs.iter().map(|(_, glob)| (*glob).clone()).collect();
+    let Ok(set) = glob_set(&patterns) else {
         return Vec::new();
     };
     let mut matched = vec![false; globs.len()];
+    let mut unmatched = globs.len();
     let mut hits = Vec::new();
     for (_, path) in repo.files() {
         set.matches_into(path.as_str(), &mut hits);
         for &glob in &hits {
-            if let Some(seen) = matched.get_mut(glob) {
+            if let Some(seen) = matched.get_mut(glob)
+                && !*seen
+            {
                 *seen = true;
+                unmatched = unmatched.saturating_sub(1);
             }
+        }
+        if unmatched == 0 {
+            break;
         }
     }
     globs
-        .iter()
-        .zip(&places)
-        .zip(&matched)
-        .filter(|(_, matched)| !**matched)
-        .map(|((glob, place), _)| format!("`{place}` has the glob {glob:?}, which matches no file"))
+        .into_iter()
+        .zip(matched)
+        .filter(|(_, matched)| !matched)
+        .map(|((place, glob), _)| {
+            format!(
+                "`{place}` has the glob {glob:?}, which matches no indexed file (git-ignored and excluded files are not indexed)"
+            )
+        })
         .collect()
 }

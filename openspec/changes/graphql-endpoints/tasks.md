@@ -50,3 +50,5 @@
 - [x] 9.1 `crates/core/src/setup.rs`, `crates/config/src/evaluate.rs`: an endpoint needs one glob in `clients` or `servers`, not one in each, and the reviewed schema snapshot
 - [x] 9.2 `crates/core/src/setup.rs`: `GraphqlEndpoint::sides`, `entry` and `place`, the one home of the names the config check and the coverage lines give to a list
 - [x] 9.3 `crates/core/src/glob.rs`: `GlobError::in_option` becomes `at`, which takes the place as the message shows it; the config, the OpenAPI and the SQL connectors call it
+- [x] 9.4 `crates/core/src/engine/build.rs`: no `GlobSet` while no endpoint lists a glob, one list of places and globs, and the walk of the files stops once every glob has matched
+- [x] 9.5 The coverage line of a glob that matches no file says that git-ignored and excluded files are not indexed; the test names two endpoints

@@ -2081,20 +2081,22 @@ mod tests {
     fn a_glob_of_an_endpoint_that_matches_no_file_is_named_in_the_coverage() {
         let rig = Rig::new();
         let dir = init_repo(&ENDPOINT_FILES);
-        // Paths are relative to the repository root and have no `./`, so the first endpoint has no server.
+        // Paths are relative to the repository root and have no `./`, so the first endpoint has no server and the second no client.
         let setup = setup_with(vec![
             endpoint("web-a/**", "./api-a/**"),
-            endpoint("web-b/**", "api-b/**"),
+            endpoint("./web-b/**", "api-b/**"),
         ]);
-        let line =
-            "`graphql_endpoints[0].servers` has the glob \"./api-a/**\", which matches no file";
+        let lines = [
+            "`graphql_endpoints[0].servers` has the glob \"./api-a/**\", which matches no indexed file (git-ignored and excluded files are not indexed)",
+            "`graphql_endpoints[1].clients` has the glob \"./web-b/**\", which matches no indexed file (git-ignored and excluded files are not indexed)",
+        ];
 
         let first = index(&rig, &dir, &setup).unwrap();
         let second = index(&rig, &dir, &setup).unwrap();
 
-        assert_eq!(first.index.coverage.problems, [line]);
+        assert_eq!(first.index.coverage.problems, lines);
         assert!(second.unchanged);
-        assert_eq!(second.index.coverage.problems, [line]);
+        assert_eq!(second.index.coverage.problems, lines);
     }
 
     #[gsttt_scenario::scenario("config", "A file in no endpoint gives no line")]
