@@ -1044,6 +1044,40 @@ fn a_client_with_no_base_url_leaves_a_computed_url_unread() {
     );
 }
 
+#[gsttt_scenario::scenario("python", "A relative request with no base URL is unread")]
+#[test]
+fn a_relative_request_with_no_base_url_is_unread() {
+    let tree = index("relative_without_base");
+    assert_eq!(
+        tree.unread("client.py"),
+        ["L8 requests.get", "L12 ?.get", "L16 ?.get"]
+    );
+    insta::assert_json_snapshot!(
+        "a_relative_request_with_no_base_url_is_unread",
+        tree.file_json("client.py")
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A client with an unread base URL calls the relative path")]
+#[test]
+fn a_client_with_an_unread_base_url_calls_the_relative_path() {
+    let tree = index("relative_without_base");
+    assert!(
+        tree.contracts("client.py")
+            .contains(&"calls http GET /items@20".to_owned())
+    );
+}
+
+#[gsttt_scenario::scenario("python", "An absolute request is unchanged by relative requests")]
+#[test]
+fn an_absolute_request_is_unchanged_by_relative_requests() {
+    let tree = index("relative_without_base");
+    assert!(
+        tree.contracts("client.py")
+            .contains(&"calls http GET /x@24".to_owned())
+    );
+}
+
 #[gsttt_scenario::scenario("python", "A URL whose path is only computed segments is a blind spot")]
 #[test]
 fn a_url_whose_path_is_only_computed_segments_is_a_blind_spot() {

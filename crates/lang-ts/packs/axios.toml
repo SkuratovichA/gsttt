@@ -1,6 +1,7 @@
 # axios: calls on the default client, on a client made by axios.create (its baseURL is the prefix) and axios(config).
 name = "axios"
 language = "ts"
+relative_without_base = "rooted"
 detect = ["axios"]
 
 [[calls]]

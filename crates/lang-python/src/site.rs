@@ -1039,7 +1039,7 @@ mod tests {
             member: None,
         };
         let joined = join_prefixes(&ContractKind::Http, "/a", "/b");
-        let Outcome::Fact(fact) = rule.apply("test", &site, Some(&joined), 1, "f") else {
+        let Outcome::Fact(fact) = rule.apply("test", None, &site, Some(&joined), 1, "f") else {
             panic!("no fact");
         };
         assert_eq!(fact.key.key(), "GET /a/b/y");

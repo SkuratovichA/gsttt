@@ -122,6 +122,7 @@ fn a_pack_file_has_a_schema() {
             "embeds",
             "assigns",
             "imports",
+            "relative_without_base",
         ])
     );
     // The rules of each kind are tables that refuse unknown keys as well.

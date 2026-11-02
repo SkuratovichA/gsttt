@@ -515,14 +515,21 @@ impl<'a> Analyzer<'_, 'a> {
                             }
                             continue;
                         };
-                        let Some(prefix) = rule.behind(&reading).map(str::to_owned) else {
+                        let Ok(prefix) = rule.behind(&reading) else {
                             self.record(Outcome::blind(line, callee));
                             continue;
                         };
-                        (Some(prefix), Some(host))
+                        (prefix.map(str::to_owned), Some(host))
                     }
                 };
-                let outcome = rule.apply(&pack.name, site, prefix.as_deref(), line, callee);
+                let outcome = rule.apply(
+                    &pack.name,
+                    pack.relative_without_base,
+                    site,
+                    prefix.as_deref(),
+                    line,
+                    callee,
+                );
                 if waits_for_link(&outcome, site) {
                     let target = match host {
                         Some(host) if serves_http(&rule.kind, rule.role) => {

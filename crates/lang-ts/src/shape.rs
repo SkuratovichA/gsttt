@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 
-use gsttt_core::contract::{path_after_origin, without_query_and_fragment};
+use gsttt_core::contract::{has_parent_segment, path_after_origin, without_query_and_fragment};
 use gsttt_core::rules::{Site, ValueSource};
 use oxc_ast::ast::{
     Argument, ChainElement, Expression, FormalParameter, MemberExpression, NewExpression,
@@ -369,10 +369,7 @@ pub(crate) fn url_join(path: &str, base: Option<&str>) -> Option<String> {
     if path.starts_with('/') {
         return Some(format!("{COMPUTED}{path}"));
     }
-    if without_query_and_fragment(path)
-        .split('/')
-        .any(|segment| segment == "..")
-    {
+    if has_parent_segment(without_query_and_fragment(path)) {
         return None;
     }
     let relative = path.strip_prefix("./").unwrap_or(path);

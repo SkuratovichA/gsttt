@@ -198,6 +198,65 @@ fn a_client_with_no_base_url_leaves_a_computed_url_unread() -> Result<(), Box<dy
 }
 
 #[test]
+#[scenario("typescript", "A relative request with no base calls the rooted path")]
+fn a_relative_request_with_no_base_calls_the_rooted_path() -> Result<(), Box<dyn Error>> {
+    let json = run("relative-without-base")?;
+    let contracts = contracts(&json, "src/api.ts");
+    for expected in [
+        "calls http * /items @6",
+        "calls http GET /users @7",
+        "calls http GET /users/me @8",
+        "calls http * /items/{} @9",
+        "calls http GET /users @17",
+    ] {
+        assert!(
+            contracts.iter().any(|found| found == expected),
+            "{expected} in {contracts:?}"
+        );
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A relative request that cannot be rooted is unread")]
+fn a_relative_request_that_cannot_be_rooted_is_unread() -> Result<(), Box<dyn Error>> {
+    let json = run("relative-without-base")?;
+    assert_eq!(
+        unread(&json, "src/api.ts"),
+        ["@10 non-literal fetch", "@14 non-literal fetch"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A request target that names no path is no request")]
+fn a_request_target_that_names_no_path_is_no_request() -> Result<(), Box<dyn Error>> {
+    let json = run("relative-without-base")?;
+    let contracts = contracts(&json, "src/api.ts");
+    assert!(
+        !contracts
+            .iter()
+            .any(|found| found.ends_with("@11") || found.ends_with("@12")),
+        "{contracts:?}"
+    );
+    assert!(
+        !unread(&json, "src/api.ts")
+            .iter()
+            .any(|found| found.starts_with("@11") || found.starts_with("@12"))
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An absolute request is unchanged by relative requests")]
+fn an_absolute_request_is_unchanged_by_relative_requests() -> Result<(), Box<dyn Error>> {
+    let json = run("relative-without-base")?;
+    assert!(contracts(&json, "src/api.ts").contains(&"calls http * /x @13".to_owned()));
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "A router mounted under several paths serves under each")]
 fn a_router_mounted_under_several_paths_serves_under_each() -> Result<(), Box<dyn Error>> {
     let json = run("express-mount-forms")?;

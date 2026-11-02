@@ -466,13 +466,23 @@ impl<'a> Collector<'a> {
                         let Some(read) = read else {
                             continue;
                         };
-                        // A client made with no base URL adds nothing, so its calls are read as the module-level ones are, which is what tells a URL with no literal path. A base that is not text is the same: the origin is lost and the path after it is still right.
-                        read.text().filter(|read| !read.is_empty())
+                        // A client whose base is not text still calls the path it names, but a route would be served at a path nobody read.
+                        let Ok(base) = rule.behind(&read) else {
+                            self.unresolved(line, callee.written());
+                            continue;
+                        };
+                        base.map(str::to_owned)
                     }
                     None => None,
                 };
-                let outcome =
-                    rule.apply(&pack.name, &site, prefix.as_deref(), line, callee.written());
+                let outcome = rule.apply(
+                    &pack.name,
+                    pack.relative_without_base,
+                    &site,
+                    prefix.as_deref(),
+                    line,
+                    callee.written(),
+                );
                 // Several rules may read one call, as `os.environ.pop` is both read and served, and every one of them reports the same blind spot: a call whose name is computed is one unread site.
                 if matches!(outcome, Outcome::Blind(_)) {
                     if unread {

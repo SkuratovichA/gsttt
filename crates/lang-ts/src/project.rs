@@ -183,6 +183,7 @@ mod tests {
             embeds: Vec::new(),
             assigns: Vec::new(),
             imports: Vec::new(),
+            relative_without_base: None,
         }
     }
 

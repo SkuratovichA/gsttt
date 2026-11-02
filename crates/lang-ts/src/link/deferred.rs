@@ -117,7 +117,14 @@ fn apply(
     shape: &Shape,
 ) -> Option<Outcome> {
     if let Some((pack, rule)) = call_rule(packs, deferred.rule) {
-        return Some(rule.apply(&pack.name, shape, prefix, deferred.line, &deferred.what));
+        return Some(rule.apply(
+            &pack.name,
+            pack.relative_without_base,
+            shape,
+            prefix,
+            deferred.line,
+            &deferred.what,
+        ));
     }
     let RuleRef::Decorator { pack, rule } = deferred.rule else {
         return None;
@@ -166,13 +173,14 @@ fn on_made(
     let mut made = maker.shape.clone();
     made.fill(|name| constant(input, owner, name));
     let reading = receiver.reading(&made);
-    let Some(prefix) = rule.behind(&reading) else {
+    let Ok(prefix) = rule.behind(&reading) else {
         return Some((Outcome::blind(deferred.line, &deferred.what), None));
     };
     let outcome = rule.apply(
         &pack.name,
+        pack.relative_without_base,
         shape,
-        Some(prefix),
+        prefix,
         deferred.line,
         &deferred.what,
     );

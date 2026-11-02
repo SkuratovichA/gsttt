@@ -310,21 +310,21 @@ impl<'a> Reader<'a> {
             // A receiver the file does not show to be what the rule wants is not a site at all.
             Some(receiver) => match self.gate(candidate, receiver) {
                 None => return,
-                Some(reading) => match rule.behind(&reading) {
+                Some(reading) => {
                     // A route behind a prefix that is not text is served at a path nobody read.
-                    None => {
+                    let Ok(prefix) = rule.behind(&reading) else {
                         outcomes.add(Outcome::blind(candidate.line, &candidate.callee));
                         return;
-                    }
-                    // A prefix that is empty is no prefix, so a request still has to name a URL to count.
-                    Some(prefix) => Some(prefix.to_owned()).filter(|prefix| !prefix.is_empty()),
-                },
+                    };
+                    prefix.map(str::to_owned)
+                }
             },
             None => None,
         };
         let per_verb = apply_per_verb(rule, prepared, |view| {
             rule.apply(
                 &pack.name,
+                pack.relative_without_base,
                 view,
                 prefix.as_deref(),
                 candidate.line,

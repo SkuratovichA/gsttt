@@ -13,7 +13,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::contract::{
-    ContractKey, ContractKind, PARAMETER, Role, normalize_http_path, path_after_origin,
+    ContractKey, ContractKind, PARAMETER, Role, has_parent_segment, normalize_http_path,
+    path_after_origin, without_query_and_fragment,
 };
 use crate::fact::{ContractFact, Embedded, Line, UnresolvedSite};
 
@@ -42,6 +43,20 @@ pub struct Pack {
     // Left out when empty, unlike the lists above, so that a pack written before this rule existed serialises as it did: the hash of the packs that keys the cache and the pinned packs of the other languages do not move.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<ImportRule>,
+    /// What a request of this pack means when its target is relative and no base URL goes before it. Unset: a client the pack takes a receiver for is read as `rooted`, and a call with no receiver is no request.
+    // Left out when unset, for the reason given at `Pack::imports`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_without_base: Option<RelativeWithoutBase>,
+}
+
+/// What a request with a relative target and no base URL means, for every client of a pack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelativeWithoutBase {
+    /// It resolves against the page, so `fetch('items')` calls `/items`.
+    Rooted,
+    /// It fails at run time, so coverage names the site as unread.
+    Unread,
 }
 
 impl Pack {
@@ -367,6 +382,10 @@ impl Reading {
     }
 }
 
+/// The base of a receiver is there and a rule that serves routes cannot read it, so the route would be served at a path that is not its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UnreadBase;
+
 /// Whether a rule of this kind and role finds the routes an HTTP server serves.
 pub fn serves_http(kind: &ContractKind, role: Role) -> bool {
     *kind == ContractKind::Http && role == Role::Serves
@@ -561,6 +580,7 @@ const HTTP_METHODS: [&str; 11] = [
 #[derive(Clone, Copy)]
 struct Spec<'r> {
     pack: &'r str,
+    relative: Option<RelativeWithoutBase>,
     kind: &'r ContractKind,
     role: Role,
     key: &'r ValueExpr,
@@ -587,11 +607,15 @@ impl Spec<'_> {
         let Some(key) = self.key.eval(site) else {
             return Outcome::blind(line, what);
         };
-        let key = key.trim();
+        let mut key = key.trim();
         match self.kind {
             ContractKind::Http if matches!(self.role, Role::Calls) => {
                 if prefix.is_none() && !looks_like_url(key) {
-                    return Outcome::Skip;
+                    match relative_target(key, self.relative) {
+                        Relative::Names(path) => key = path,
+                        Relative::Unread => return Outcome::blind(line, what),
+                        Relative::NoPath => return Outcome::Skip,
+                    }
                 }
                 // A target of placeholders alone, the root included, would meet every served route of its length, whatever base the receiver puts before it.
                 let target =
@@ -619,6 +643,45 @@ impl Spec<'_> {
 fn is_http_method(method: &str) -> bool {
     let method = method.trim().to_ascii_uppercase();
     HTTP_METHODS.contains(&method.as_str())
+}
+
+/// What a relative request target with no base URL makes of the site, see [`relative_target`].
+#[derive(Debug, PartialEq, Eq)]
+enum Relative<'k> {
+    /// The site calls this path, which the normaliser roots.
+    Names(&'k str),
+    /// The site calls a path that nobody can read: the site is a blind spot.
+    Unread,
+    /// The site names no path, or the pack does not take a relative target for a request: the site is no contract.
+    NoPath,
+}
+
+/// What `target`, a request target that is no URL and no absolute path, means when no base goes before it, under the `setting` of its pack.
+///
+/// - An empty target, one that starts with `?` or `#`, or one with a scheme (`data:…`, `mailto:…`, `localhost:3000/x`: a `:` before the first `/`, `?` or `#`) names no path, under every setting.
+/// - A `..` segment needs a directory that nobody read, so it is unread unless the pack sets nothing.
+/// - Otherwise the target without its leading `./` is the path under `rooted`, and the site is unread under `unread`.
+fn relative_target(target: &str, setting: Option<RelativeWithoutBase>) -> Relative<'_> {
+    let before_path = target.find(['/', '?', '#']).unwrap_or(target.len());
+    let names_scheme = target
+        .get(..before_path)
+        .is_some_and(|head| head.contains(':'));
+    if target.is_empty() || target.starts_with(['?', '#']) || names_scheme {
+        return Relative::NoPath;
+    }
+    let Some(setting) = setting else {
+        return Relative::NoPath;
+    };
+    let mut path = target;
+    while let Some(rest) = path.strip_prefix("./") {
+        path = rest;
+    }
+    if setting == RelativeWithoutBase::Unread
+        || has_parent_segment(without_query_and_fragment(path))
+    {
+        return Relative::Unread;
+    }
+    Relative::Names(path)
 }
 
 /// Whether a request target names a URL or an absolute path rather than, say, a cache key.
@@ -650,19 +713,22 @@ fn named(kind: &ContractKind, role: Role, key: &str, line: Line, pack: &str) -> 
 }
 
 impl CallRule {
-    /// The prefix a call of this rule is applied behind when the prefix of its [`CallRule::receiver`] reads as `reading`: empty when the receiver gives none. `None` for one that is not text under a rule that serves HTTP routes, because a route would be served at a path that is not its own and the call is a blind spot. Under any other rule it stands for no prefix: the base of a client is still the origin, and the path after it is right.
-    pub fn behind<'r>(&self, reading: &'r Reading) -> Option<&'r str> {
-        match (reading.as_prefix(), serves_http(&self.kind, self.role)) {
-            (Some(prefix), _) => Some(prefix),
-            (None, true) => None,
-            (None, false) => Some(""),
+    /// The prefix a call of this rule is applied behind when the prefix of its [`CallRule::receiver`] reads as `reading`: `None` for a receiver that has no base, or an empty one. An error for one that is not text under a rule that serves HTTP routes, because a route would be served at a path that is not its own and the call is a blind spot. Under any other rule it is an empty prefix: the base of a client is still the origin, and the path after it is right.
+    pub fn behind<'r>(&self, reading: &'r Reading) -> Result<Option<&'r str>, UnreadBase> {
+        match reading {
+            Reading::Absent => Ok(None),
+            Reading::Text(text) => Ok(Some(text.as_str()).filter(|text| !text.is_empty())),
+            Reading::Unread if serves_http(&self.kind, self.role) => Err(UnreadBase),
+            // A client whose base is there and unread still calls the path it names.
+            Reading::Unread => Ok(Some("")),
         }
     }
 
-    /// What this rule makes of a call whose callee matched [`CallRule::callee`]. `prefix` is what the connector read for [`CallRule::receiver`]; `callee` is the callee as written.
+    /// What this rule makes of a call whose callee matched [`CallRule::callee`]. `prefix` is what [`CallRule::behind`] made of what the connector read for [`CallRule::receiver`]; `callee` is the callee as written; `relative` is the [`Pack::relative_without_base`] of the pack, which a rule with a receiver reads as `rooted` when the pack sets none.
     pub fn apply(
         &self,
         pack: &str,
+        relative: Option<RelativeWithoutBase>,
         site: &(impl Site + ?Sized),
         prefix: Option<&str>,
         line: Line,
@@ -670,6 +736,7 @@ impl CallRule {
     ) -> Outcome {
         Spec {
             pack,
+            relative: relative.or(self.receiver.as_ref().map(|_| RelativeWithoutBase::Rooted)),
             kind: &self.kind,
             role: self.role,
             key: &self.key,
@@ -701,6 +768,7 @@ impl DecoratorRule {
         };
         Spec {
             pack,
+            relative: None,
             kind: &self.kind,
             role: self.role,
             key: &self.key,
@@ -721,6 +789,7 @@ impl AssignRule {
     ) -> Outcome {
         Spec {
             pack,
+            relative: None,
             kind: &self.kind,
             role: self.role,
             key: &self.key,
@@ -958,7 +1027,7 @@ mod tests {
             let callee = format!("app.{verb}");
             let site = call(&callee, &[Some("/x")]);
             assert_eq!(
-                key(serves.apply("express", &site, None, 1, &callee)),
+                key(serves.apply("express", None, &site, None, 1, &callee)),
                 format!("http {} /x", verb.to_ascii_uppercase())
             );
         }
@@ -975,7 +1044,7 @@ mod tests {
         }));
         let site = call("api.get", &[Some("${}/users/${}")]);
         assert_eq!(
-            key(get.apply("api", &site, None, 7, site.callee)),
+            key(get.apply("api", None, &site, None, 7, site.callee)),
             "http GET /users/{}"
         );
     }
@@ -994,7 +1063,7 @@ mod tests {
             let site = call("api.get", &args);
             assert!(
                 matches!(
-                    get.apply("api", &site, None, 7, site.callee),
+                    get.apply("api", None, &site, None, 7, site.callee),
                     Outcome::Blind(_)
                 ),
                 "{target} is a blind spot"
@@ -1007,8 +1076,16 @@ mod tests {
         let get = rule(serde_json::json!({
             "callee": "*.get", "kind": "env", "role": "calls", "key": "$arg1",
         }));
-        let apply =
-            |name: &str| get.apply("cfg", &call("cfg.get", &[Some(name)]), None, 3, "cfg.get");
+        let apply = |name: &str| {
+            get.apply(
+                "cfg",
+                None,
+                &call("cfg.get", &[Some(name)]),
+                None,
+                3,
+                "cfg.get",
+            )
+        };
         assert_eq!(key(apply("API_URL")), "env API_URL");
         for path in ["database.host", "a-b", "A B"] {
             assert_eq!(apply(path), Outcome::Skip, "{path}");
@@ -1024,7 +1101,7 @@ mod tests {
         let apply = |prefix: Option<&str>, target: &str| {
             let args = [Some(target)];
             let site = call("api.get", &args);
-            get.apply("api", &site, prefix, 7, site.callee)
+            get.apply("api", None, &site, prefix, 7, site.callee)
         };
         assert!(matches!(apply(Some(""), "${}${}"), Outcome::Blind(_)));
         assert!(matches!(apply(Some("${}"), "${}"), Outcome::Blind(_)));
@@ -1039,7 +1116,7 @@ mod tests {
         let get = rule(serde_json::json!({
             "callee": "*.get", "kind": "http", "role": "calls", "key": "$arg1", "method": "$callee",
         }));
-        let apply = |site: &Call<'_>| get.apply("api", site, None, 7, site.callee);
+        let apply = |site: &Call<'_>| get.apply("api", None, site, None, 7, site.callee);
         assert_eq!(apply(&call("cache.get", &[Some("user")])), Outcome::Skip);
         // A `://` inside a query string is no origin, so this is a cache key and no URL.
         assert_eq!(
@@ -1075,6 +1152,7 @@ mod tests {
         assert_eq!(
             any.apply(
                 "express",
+                None,
                 &call("app.listen", &[None]),
                 None,
                 1,
@@ -1611,7 +1689,7 @@ mod tests {
         }));
         let apply = |method: Slot| {
             let site = probe(Slot::Text("/x"), method, Slot::Absent);
-            key(request.apply("api", &site, None, 7, "api.post"))
+            key(request.apply("api", None, &site, None, 7, "api.post"))
         };
         assert_eq!(apply(Slot::Absent), "http GET /x");
         assert_eq!(apply(Slot::Unread), "http * /x");
@@ -1655,19 +1733,21 @@ mod tests {
             let rule = rule(serde_json::json!({
                 "callee": "x.*", "kind": kind, "role": role, "key": "$arg1",
             }));
-            rule.behind(&reading).map(str::to_owned)
+            rule.behind(&reading)
+                .map(|prefix| prefix.map(str::to_owned))
         };
         let unread = |kind, role| behind(kind, role, Reading::Unread);
-        assert_eq!(unread("http", "serves"), None);
-        assert_eq!(unread("http", "calls"), Some(String::new()));
-        assert_eq!(unread("graphql", "serves"), Some(String::new()));
-        assert_eq!(unread("graphql", "calls"), Some(String::new()));
+        assert_eq!(unread("http", "serves"), Err(UnreadBase));
+        assert_eq!(unread("http", "calls"), Ok(Some(String::new())));
+        assert_eq!(unread("graphql", "serves"), Ok(Some(String::new())));
+        assert_eq!(unread("graphql", "calls"), Ok(Some(String::new())));
         for (kind, role) in [("http", "serves"), ("http", "calls"), ("graphql", "serves")] {
             assert_eq!(
                 behind(kind, role, Reading::Text("/api".into())),
-                Some("/api".into())
+                Ok(Some("/api".into()))
             );
-            assert_eq!(behind(kind, role, Reading::Absent), Some(String::new()));
+            assert_eq!(behind(kind, role, Reading::Absent), Ok(None));
+            assert_eq!(behind(kind, role, Reading::Text(String::new())), Ok(None));
         }
     }
 
@@ -1864,5 +1944,162 @@ mod tests {
         );
         let typo = serde_json::json!({ "name": "x", "language": "ts", "call": [] });
         assert!(serde_json::from_value::<Pack>(typo).is_err());
+    }
+
+    /// What a client request makes of `target` behind `base`, with a `receiver` rule or without one, under the `pack` setting.
+    fn relative(
+        receiver: bool,
+        pack: Option<RelativeWithoutBase>,
+        base: Option<&Reading>,
+        target: &str,
+    ) -> String {
+        let mut value = serde_json::json!({
+            "callee": "*.get", "kind": "http", "role": "calls", "key": "$arg1", "method": "$callee",
+        });
+        if receiver {
+            value["receiver"] = serde_json::json!({ "from": "make" });
+        }
+        let get = rule(value);
+        let args = [Some(target)];
+        let site = call("c.get", &args);
+        let prefix = match base {
+            Some(reading) => match get.behind(reading) {
+                Ok(prefix) => prefix,
+                Err(UnreadBase) => return "blind".to_owned(),
+            },
+            None => None,
+        };
+        match get.apply("api", pack, &site, prefix, 7, "c.get") {
+            Outcome::Fact(fact) => fact.key.to_string(),
+            Outcome::Blind(_) => "blind".to_owned(),
+            Outcome::Skip => "skip".to_owned(),
+        }
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A relative request with no base follows the pack")]
+    #[test]
+    fn a_relative_request_with_no_base_follows_the_pack() {
+        use super::RelativeWithoutBase::{Rooted, Unread};
+        let absent = Reading::Absent;
+        let empty = Reading::Text(String::new());
+        // No receiver in the rule.
+        assert_eq!(
+            relative(false, Some(Rooted), None, "items"),
+            "http GET /items"
+        );
+        assert_eq!(relative(false, Some(Unread), None, "items"), "blind");
+        assert_eq!(relative(false, None, None, "items"), "skip");
+        // A receiver made with no base, or an empty one.
+        for base in [&absent, &empty] {
+            assert_eq!(
+                relative(true, Some(Rooted), Some(base), "items"),
+                "http GET /items"
+            );
+            assert_eq!(relative(true, Some(Unread), Some(base), "items"), "blind");
+            assert_eq!(relative(true, None, Some(base), "items"), "http GET /items");
+        }
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A client whose base cannot be read calls the path")]
+    #[test]
+    fn a_client_whose_base_cannot_be_read_calls_the_path() {
+        use super::RelativeWithoutBase::{Rooted, Unread};
+        let unread = Reading::Unread;
+        for pack in [Some(Rooted), Some(Unread), None] {
+            assert_eq!(
+                relative(true, pack, Some(&unread), "items"),
+                "http GET /items"
+            );
+        }
+        let text = Reading::Text("/api".into());
+        for pack in [Some(Rooted), Some(Unread), None] {
+            assert_eq!(
+                relative(true, pack, Some(&text), "items"),
+                "http GET /api/items"
+            );
+        }
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A relative request that climbs out of its directory is unread"
+    )]
+    #[test]
+    fn a_relative_request_that_climbs_out_of_its_directory_is_unread() {
+        use super::RelativeWithoutBase::{Rooted, Unread};
+        for pack in [Some(Rooted), Some(Unread)] {
+            assert_eq!(relative(false, pack, None, "../items"), "blind");
+            assert_eq!(relative(false, pack, None, "a/../items?x=1"), "blind");
+        }
+        assert_eq!(relative(false, None, None, "../items"), "skip");
+        assert_eq!(relative(true, None, None, "../items"), "blind");
+        assert_eq!(
+            relative(false, Some(Rooted), None, "items?back=../x"),
+            "http GET /items"
+        );
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A request target that names no path is no request")]
+    #[test]
+    fn a_request_target_that_names_no_path_is_no_request() {
+        use super::RelativeWithoutBase::{Rooted, Unread};
+        for pack in [Some(Rooted), Some(Unread), None] {
+            for target in [
+                "",
+                "?x=1",
+                "#top",
+                "data:text/plain,x",
+                "mailto:a@b.c",
+                "localhost:3000/x",
+            ] {
+                assert_eq!(relative(true, pack, None, target), "skip", "{target}");
+                assert_eq!(relative(false, pack, None, target), "skip", "{target}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_rooted_target_loses_its_leading_dot_and_keeps_its_computed_parts() {
+        use super::RelativeWithoutBase::Rooted;
+        assert_eq!(
+            relative(false, Some(Rooted), None, "./items"),
+            "http GET /items"
+        );
+        assert_eq!(
+            relative(false, Some(Rooted), None, "items/${id}"),
+            "http GET /items/{}"
+        );
+        assert_eq!(relative(false, Some(Rooted), None, "./${id}"), "blind");
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn a_relative_target_never_panics_and_is_rooted_clean(target in "[a-z.:/?#$&{}=]{0,12}") {
+            for setting in [None, Some(RelativeWithoutBase::Rooted), Some(RelativeWithoutBase::Unread)] {
+                if let Relative::Names(path) = relative_target(&target, setting) {
+                    proptest::prop_assert!(!path.starts_with("./"));
+                    proptest::prop_assert!(!has_parent_segment(without_query_and_fragment(path)));
+                    proptest::prop_assert_eq!(setting, Some(RelativeWithoutBase::Rooted));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn packs_take_a_relative_setting_and_nothing_else() {
+        let pack = |value: serde_json::Value| {
+            serde_json::from_value::<Pack>(serde_json::json!({
+                "name": "x", "language": "ts", "relative_without_base": value,
+            }))
+        };
+        assert_eq!(
+            pack("rooted".into()).unwrap().relative_without_base,
+            Some(RelativeWithoutBase::Rooted)
+        );
+        assert_eq!(
+            pack("unread".into()).unwrap().relative_without_base,
+            Some(RelativeWithoutBase::Unread)
+        );
+        assert!(pack("skipped".into()).is_err());
     }
 }

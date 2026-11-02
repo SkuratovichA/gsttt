@@ -284,6 +284,11 @@ pub fn without_query_and_fragment(url: &str) -> &str {
     url.split_once(['?', '#']).map_or(url, |(before, _)| before)
 }
 
+/// Whether the path `path`, which has no query string or fragment, has a `..` segment, which climbs out of a directory that the text does not hold.
+pub fn has_parent_segment(path: &str) -> bool {
+    path.split('/').any(|segment| segment == "..")
+}
+
 /// The segment that stands for a computed or named part of an HTTP path in a normalised key: `/users/{}`.
 pub(crate) const PARAMETER: &str = "{}";
 

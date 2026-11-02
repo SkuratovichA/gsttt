@@ -64,3 +64,25 @@ fn a_builder_chain_and_a_request_method_are_clients() {
     let out = index("reqwest");
     assert_json_snapshot!(out.sites("src/builder.rs"));
 }
+
+#[scenario("rust", "A relative request with no base is unread")]
+#[test]
+fn a_relative_request_with_no_base_is_unread() {
+    let out = index("relative_without_base");
+    let unresolved = out.sites("src/client.rs")["unresolved"].clone();
+    let lines: Vec<_> = unresolved
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|site| site["line"].clone())
+        .collect();
+    assert_eq!(lines, [2, 7]);
+    assert_json_snapshot!(out.sites("src/client.rs"));
+}
+
+#[scenario("rust", "An absolute request is unchanged by relative requests")]
+#[test]
+fn an_absolute_request_is_unchanged_by_relative_requests() {
+    let out = index("relative_without_base");
+    assert_eq!(out.contracts("src/client.rs"), ["11 calls http GET /x"]);
+}
