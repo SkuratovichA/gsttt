@@ -10,15 +10,7 @@ use gsttt_core::rules::Pack;
 pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut groups: BTreeMap<(ContractKind, Role), BTreeSet<&str>> = BTreeMap::new();
     for pack in packs {
-        let rules = pack
-            .calls
-            .iter()
-            .map(|rule| (&rule.kind, rule.role))
-            .chain(pack.decorators.iter().map(|rule| (&rule.kind, rule.role)))
-            .chain(pack.chains.iter().map(|rule| (&rule.kind, rule.role)))
-            .chain(pack.assigns.iter().map(|rule| (&rule.kind, rule.role)))
-            .chain(pack.imports.iter().map(|rule| (&rule.kind, rule.role)));
-        for (kind, role) in rules {
+        for (kind, role) in pack.contracts() {
             groups
                 .entry((kind.clone(), role))
                 .or_default()
@@ -90,6 +82,10 @@ fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
         (ContractKind::Env, Role::Calls) => {
             &["variables read through an alias of the environment object are not seen"]
         }
+        (ContractKind::Env, Role::Serves) => &[
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen",
+        ],
         _ => &[],
     };
     spots.iter().map(|spot| (*spot).to_owned()).collect()

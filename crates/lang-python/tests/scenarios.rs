@@ -1525,11 +1525,92 @@ class Settings(BaseSettings):
 #[test]
 fn setting_a_default_for_an_environment_variable_reads_it() {
     let tree = index("environment");
+    let calls: Vec<String> = tree
+        .contracts("defaults.py")
+        .into_iter()
+        .filter(|fact| fact.starts_with("calls "))
+        .collect();
     assert_eq!(
-        tree.contracts("defaults.py"),
-        ["calls env DJANGO_SETTINGS_MODULE@4", "calls env PORT@5",]
+        calls,
+        ["calls env DJANGO_SETTINGS_MODULE@4", "calls env PORT@5"]
     );
     assert_eq!(tree.unresolved_lines("defaults.py"), [6]);
+}
+
+#[gsttt_scenario::scenario("python", "A write of an environment variable serves it")]
+#[test]
+fn a_write_of_an_environment_variable_serves_it() {
+    let tree = index_files(&[(
+        "setup.py",
+        r#"import os
+
+
+os.environ["A"] = "x"
+os.environ["B"] += ":y"
+del os.environ["C"]
+os.putenv("D", "z")
+os.unsetenv("E")
+
+
+def test_it(monkeypatch):
+    monkeypatch.setenv("F", "1")
+    monkeypatch.delenv("G")
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("setup.py"),
+        [
+            "serves env A@4",
+            "serves env B@5",
+            "serves env C@6",
+            "serves env D@7",
+            "serves env E@8",
+            "serves env F@12",
+            "serves env G@13",
+        ]
+    );
+    assert_eq!(tree.unread("setup.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "Setting a default or popping a variable calls and serves it"
+)]
+#[test]
+fn setting_a_default_or_popping_a_variable_calls_and_serves_it() {
+    let tree = index_files(&[(
+        "defaults.py",
+        r#"import os
+os.environ.setdefault("PORT", "8000")
+os.environ.pop("TOKEN", None)
+"#,
+    )]);
+    assert_eq!(
+        tree.contracts("defaults.py"),
+        [
+            "calls env PORT@2",
+            "serves env PORT@2",
+            "calls env TOKEN@3",
+            "serves env TOKEN@3",
+        ]
+    );
+    assert_eq!(tree.unread("defaults.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A computed name in a write is one unread site")]
+#[test]
+fn a_computed_name_in_a_write_is_one_unread_site() {
+    let tree = index_files(&[(
+        "computed.py",
+        r#"import os
+os.environ[NAME] = "x"
+os.environ.setdefault(NAME, "y")
+os.environ.pop(NAME, None)
+"#,
+    )]);
+    assert_eq!(tree.contracts("computed.py"), Vec::<String>::new());
+    // `setdefault` and `pop` match a calling rule and a serving rule, and each call still leaves one site.
+    assert_eq!(tree.unresolved_lines("computed.py"), [2, 3, 4]);
 }
 
 #[gsttt_scenario::scenario("python", "The fields of a settings subclass are a blind spot")]

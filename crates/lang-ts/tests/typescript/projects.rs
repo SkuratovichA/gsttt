@@ -91,6 +91,7 @@ fn blind_spots_are_reported() -> Result<(), Box<dyn Error>> {
             "graphql serves via nestjs",
             "trpc serves via trpc",
             "trpc calls via trpc",
+            "env serves via env",
             "env calls via env",
         ]
     );

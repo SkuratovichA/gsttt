@@ -14,24 +14,24 @@ use gsttt_core::fact::{
     ContractFact, Embedded, Import, ImportFlags, ImportKind, Line, Symbols, UnresolvedReason,
     UnresolvedSite,
 };
-use gsttt_core::rules::{CallRule, Outcome, Pack, Prefix, Reading, Site, serves_http};
+use gsttt_core::rules::{Access, CallRule, Outcome, Pack, Prefix, Reading, Site, serves_http};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     AccessorProperty, Argument, ArrowFunctionExpression, AssignmentExpression, AssignmentTarget,
     AssignmentTargetPropertyIdentifier, BindingIdentifier, BindingPattern, CallExpression, Class,
     ClassBody, Declaration, Decorator, ExportAllDeclaration, ExportDeclaration,
     ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportFromDeclaration,
-    ExportNamedDeclaration, Expression, FormalParameter, Function, IdentifierReference,
-    ImportDeclaration, ImportDeclarationSpecifier, ImportExpression, ImportOrExportKind,
-    MemberExpression, MethodDefinition, ModuleExportName, NewExpression, ObjectProperty,
-    ObjectPropertyKind, PrivateInExpression, Program, PropertyDefinition, SimpleAssignmentTarget,
-    TSExportAssignment, TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier,
-    TSModuleBlock, TSModuleReference, TSType, TSTypeName, TaggedTemplateExpression,
-    UnaryExpression, VariableDeclarator,
+    ExportNamedDeclaration, Expression, ExpressionStatement, FormalParameter, Function,
+    IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ImportExpression,
+    ImportOrExportKind, MemberExpression, MethodDefinition, ModuleExportName, NewExpression,
+    ObjectProperty, ObjectPropertyKind, PrivateInExpression, Program, PropertyDefinition,
+    SimpleAssignmentTarget, TSExportAssignment, TSImportEqualsDeclaration, TSImportType,
+    TSImportTypeQualifier, TSModuleBlock, TSModuleReference, TSType, TSTypeName,
+    TaggedTemplateExpression, UnaryExpression, UpdateExpression, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
-use oxc_syntax::operator::UnaryOperator;
+use oxc_syntax::operator::{AssignmentOperator, UnaryOperator};
 use oxc_syntax::scope::ScopeFlags;
 
 pub(crate) use self::constants::Constants;
@@ -88,6 +88,8 @@ pub(crate) fn analyze(
         exports_unknown: false,
         module_depth: 0,
         imported: Vec::new(),
+        access: None,
+        discarded: None,
         out: Analysis::default(),
     };
     analyzer.visit_program(program);
@@ -182,6 +184,10 @@ struct Analyzer<'p, 'a> {
     module_depth: u32,
     /// The names the file imports from a package an import rule reads, which name their contract once the file is known to use the local name as a value.
     imported: Vec<Imported>,
+    /// How the next member expression the walk reaches is touched, set by what writes it just before the walk goes in and taken by that member expression first of all, so that a computed key or an argument inside it is read.
+    access: Option<Access>,
+    /// The expression that the last expression statement is made of, parentheses peeled: its value is dropped, so a compound assignment or an update that is exactly this expression only writes.
+    discarded: Option<Span>,
     out: Analysis,
 }
 
@@ -341,12 +347,12 @@ impl<'a> Analyzer<'_, 'a> {
             } else {
                 property_name(&property.key)
             });
-            self.chain_rules(&names, offset);
+            self.chain_rules(&names, offset, Access::Read);
         }
     }
 
-    /// Applies the chain rules to every root the chain starts with: a root a rule lists, a name declared with one of its root types, or the alias of `this` that the chain starts with, read as `this`. A rule that lists terminals needs one of them after the first segment, so `trpc.useUtils()` and `prisma.$transaction()` name nothing.
-    fn chain_rules(&mut self, names: &[Option<String>], offset: u32) {
+    /// Applies the chain rules to every root the chain starts with, touched as `access` says: a root a rule lists, a name declared with one of its root types, or the alias of `this` that the chain starts with, read as `this`. A rule that lists terminals needs one of them after the first segment, so `trpc.useUtils()` and `prisma.$transaction()` name nothing.
+    fn chain_rules(&mut self, names: &[Option<String>], offset: u32, access: Access) {
         let line = self.line(offset);
         let packs = self.packs;
         let names = self.roots.through_this(names);
@@ -371,8 +377,9 @@ impl<'a> Analyzer<'_, 'a> {
                     if !rule.terminals.is_empty() && !ended {
                         continue;
                     }
-                    let outcome = rule.apply(&pack.name, &segments, line, &root);
-                    self.record(outcome);
+                    for outcome in rule.apply(&pack.name, access, &segments, line, &root) {
+                        self.record(outcome);
+                    }
                 }
             }
         }
@@ -959,6 +966,15 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
+    /// How a compound assignment or an update at `span` touches its target. As an expression statement of its own it drops the value, so it only writes; anywhere else the value can be used and the old value is read too.
+    fn modification(&self, span: Span) -> Access {
+        if self.discarded == Some(span) {
+            Access::Write
+        } else {
+            Access::ReadWrite
+        }
+    }
+
     /// Walks what is computed inside a chain of member accesses, `a[b()].c[d]`, and the types written on the way down, `(a as T).c`, and nothing else of it. The chain itself goes through the wrappers, as `chain_of` reads it.
     fn walk_spine(&mut self, expr: &Expression<'a>) {
         match expr {
@@ -1301,7 +1317,20 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             self.commonjs_export(&target, &it.right);
             self.assignment(&target, &it.right, it.span.start, false);
         }
+        if it.operator != AssignmentOperator::Assign {
+            self.access = Some(self.modification(it.span));
+        }
         walk::walk_assignment_expression(self, it);
+    }
+
+    fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
+        self.access = Some(self.modification(it.span));
+        walk::walk_update_expression(self, it);
+    }
+
+    fn visit_expression_statement(&mut self, it: &ExpressionStatement<'a>) {
+        self.discarded = Some(it.expression.without_parentheses().span());
+        walk::walk_expression_statement(self, it);
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
@@ -1335,6 +1364,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_member_expression(&mut self, it: &MemberExpression<'a>) {
+        let access = self.access.take().unwrap_or(Access::Read);
         let Some(names) = member_chain(it) else {
             match it {
                 MemberExpression::PrivateFieldExpression(member) => {
@@ -1359,7 +1389,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             walk::walk_member_expression(self, it);
             return;
         };
-        self.chain_rules(&names, it.span().start);
+        self.chain_rules(&names, it.span().start, access);
         self.symbols.chain(&names);
         // The links below this one are parts of the same chain: only what is computed inside it is still to walk.
         match it {
@@ -1549,7 +1579,10 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         if let Some(base) = symbols::target_base(it) {
             self.symbols.write(base);
         }
+        // A compound assignment or an update has said how it touches its target; every other target, in a destructuring or in the head of a loop, is stored into.
+        self.access.get_or_insert(Access::Write);
         walk::walk_simple_assignment_target(self, it);
+        self.access = None;
     }
 
     fn visit_assignment_target_property_identifier(
@@ -1561,12 +1594,16 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_unary_expression(&mut self, it: &UnaryExpression<'a>) {
-        if it.operator == UnaryOperator::Delete
-            && let Some(base) = symbols::base_name(&it.argument)
-        {
-            self.symbols.write(base);
+        if it.operator == UnaryOperator::Delete {
+            if let Some(base) = symbols::base_name(&it.argument) {
+                self.symbols.write(base);
+            }
+            if is_member_access(&it.argument) {
+                self.access = Some(Access::Write);
+            }
         }
         walk::walk_unary_expression(self, it);
+        self.access = None;
     }
 
     fn visit_private_in_expression(&mut self, it: &PrivateInExpression<'a>) {
@@ -1580,6 +1617,14 @@ fn peel<'e, 'a>(expr: &'e Expression<'a>) -> &'e Expression<'a> {
     match expr.get_inner_expression() {
         Expression::AwaitExpression(awaited) => peel(&awaited.argument),
         inner => inner,
+    }
+}
+
+/// Whether `expr`, with parentheses and type assertions taken off, is a member access, so that the walk reaches a member expression for it first.
+fn is_member_access(expr: &Expression<'_>) -> bool {
+    match expr.get_inner_expression() {
+        Expression::ChainExpression(chain) => chain.expression.is_member_expression(),
+        other => other.is_member_expression(),
     }
 }
 

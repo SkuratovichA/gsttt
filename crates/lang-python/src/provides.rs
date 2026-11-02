@@ -133,27 +133,20 @@ fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
                 "an alias written inside a field's annotation",
             ),
             (ContractKind::Env, Role::Calls, STAR_IMPORTS),
+            (
+                ContractKind::Env,
+                Role::Serves,
+                "variable names held in variables",
+            ),
+            (
+                ContractKind::Env,
+                Role::Serves,
+                "variables written by os.environ.update(…) or os.environ |= …",
+            ),
+            (ContractKind::Env, Role::Serves, STAR_IMPORTS),
         ],
         _ => Vec::new(),
     }
-}
-
-/// The kinds of contract the rules of `pack` name, with the role they give them.
-fn kinds(pack: &Pack) -> impl Iterator<Item = (ContractKind, Role)> + '_ {
-    let calls = pack.calls.iter().map(|rule| (rule.kind.clone(), rule.role));
-    let decorators = pack
-        .decorators
-        .iter()
-        .map(|rule| (rule.kind.clone(), rule.role));
-    let chains = pack
-        .chains
-        .iter()
-        .map(|rule| (rule.kind.clone(), rule.role));
-    let assigns = pack
-        .assigns
-        .iter()
-        .map(|rule| (rule.kind.clone(), rule.role));
-    calls.chain(decorators).chain(chains).chain(assigns)
 }
 
 /// What is known of one kind and role while the packs are read; sets keep the words sorted and free of repeats.
@@ -167,9 +160,9 @@ struct Entry<'a> {
 pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut entries: BTreeMap<(ContractKind, Role), Entry<'_>> = BTreeMap::new();
     for pack in packs {
-        for kind_and_role in kinds(pack) {
+        for (kind, role) in pack.contracts() {
             entries
-                .entry(kind_and_role)
+                .entry((kind.clone(), role))
                 .or_default()
                 .via
                 .insert(pack.name.as_str());

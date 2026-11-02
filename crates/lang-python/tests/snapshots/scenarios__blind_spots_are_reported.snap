@@ -71,6 +71,18 @@ expression: "tree.json[\"projects\"]"
       },
       {
         "kind": "env",
+        "role": "serves",
+        "via": [
+          "env"
+        ],
+        "blind_spots": [
+          "names brought in by a star import, which are not matched to the module they come from",
+          "variable names held in variables",
+          "variables written by os.environ.update(…) or os.environ |= …"
+        ]
+      },
+      {
+        "kind": "env",
         "role": "calls",
         "via": [
           "env"

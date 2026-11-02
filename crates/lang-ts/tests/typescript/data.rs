@@ -441,6 +441,88 @@ fn a_computed_configuration_name_is_a_blind_spot() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
+#[scenario("typescript", "A write of an environment variable serves it")]
+fn a_write_of_an_environment_variable_serves_it() -> Result<(), Box<dyn Error>> {
+    let json = run("environment-writes")?;
+    assert_eq!(
+        contracts(&json, "src/setup.ts"),
+        [
+            "serves env A @1",
+            "serves env B @2",
+            "serves env C @3",
+            "serves env D @4",
+            "serves env F @5",
+        ]
+    );
+    assert_eq!(unread(&json, "src/setup.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "Every form of assignment target is a write")]
+fn every_form_of_assignment_target_is_a_write() -> Result<(), Box<dyn Error>> {
+    let json = run("environment-writes")?;
+    assert_eq!(
+        contracts(&json, "src/forms.ts"),
+        [
+            "serves env G @1",
+            "serves env H @2",
+            "serves env I @3",
+            "serves env J @4",
+            "serves env K @5",
+            "serves env L @6",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An assignment used as a value reads and serves")]
+fn an_assignment_used_as_a_value_reads_and_serves() -> Result<(), Box<dyn Error>> {
+    let json = run("environment-writes")?;
+    assert_eq!(
+        contracts(&json, "src/read-write.ts"),
+        [
+            "calls env API_URL @1",
+            "serves env API_URL @1",
+            "calls env RETRIES @2",
+            "serves env RETRIES @2",
+            "calls env COUNT @3",
+            "serves env COUNT @3",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A computed name in a write is one unread site")]
+fn a_computed_name_in_a_write_is_one_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("environment-writes")?;
+    assert_eq!(contracts(&json, "src/computed.ts"), ["calls env TARGET @1"]);
+    let sites = unread(&json, "src/computed.ts");
+    assert_eq!(sites.len(), 2, "{sites:?}");
+    assert!(
+        sites.iter().any(|site| site.starts_with("@1 ")),
+        "{sites:?}"
+    );
+    assert!(
+        sites.iter().any(|site| site.starts_with("@2 ")),
+        "{sites:?}"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A write to a Prisma client names no table")]
+fn a_write_to_a_prisma_client_names_no_table() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-write")?;
+    assert_eq!(contracts(&json, "src/mock.ts"), ["calls table booking @7"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
 fn a_prisma_client_named_db_or_tx_names_its_table() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-roots")?;
     let facts = contracts(&json, "src/repo.ts");

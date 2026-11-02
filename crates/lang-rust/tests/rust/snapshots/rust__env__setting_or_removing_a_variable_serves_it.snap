@@ -1,0 +1,40 @@
+---
+source: crates/lang-rust/tests/rust/env.rs
+expression: "out.sites(\"src/main.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "env A",
+      "line": 4,
+      "role": "serves",
+      "via": "env"
+    },
+    {
+      "key": "env B",
+      "line": 5,
+      "role": "serves",
+      "via": "env"
+    },
+    {
+      "key": "env C",
+      "line": 6,
+      "role": "serves",
+      "via": "env"
+    },
+    {
+      "key": "env D",
+      "line": 7,
+      "role": "serves",
+      "via": "env"
+    },
+    {
+      "key": "env E",
+      "line": 9,
+      "role": "serves",
+      "via": "env"
+    }
+  ],
+  "embedded": [],
+  "unresolved": []
+}

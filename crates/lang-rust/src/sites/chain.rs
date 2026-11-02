@@ -4,7 +4,7 @@
 //!
 //! An assignment is a `const`, a `static`, a `let`, a field given a value in a struct literal, or `target = value`. The target is the last name written, and the value is the first argument of the site. Where Python has a base class, Rust has the trait of the enclosing `impl` block, which is what a rule's `class` is matched against.
 
-use gsttt_core::rules::{AssignRule, Pack, callee_matches};
+use gsttt_core::rules::{Access, AssignRule, Pack, callee_matches};
 use ra_ap_edition::Edition;
 use ra_ap_syntax::ast::{self, HasName};
 use ra_ap_syntax::{AstNode, SyntaxKind, SyntaxNode};
@@ -34,11 +34,14 @@ impl Reader<'_> {
             .chain(rest.iter().map(Option::as_deref))
             .collect();
         let line = line_at(self.lines, node.text_range().start());
+        let access = access(node);
         let mut outcomes = Outcomes::default();
         for (pack, rule) in &self.chains {
             for pattern in rule.root.iter() {
                 if let Some((written, after)) = split_root(pattern, &names) {
-                    outcomes.add(rule.apply(&pack.name, after, line, &written));
+                    for outcome in rule.apply(&pack.name, access, after, line, &written) {
+                        outcomes.add(outcome);
+                    }
                 }
             }
         }
@@ -111,6 +114,27 @@ fn continues(node: &SyntaxNode) -> bool {
         return extends.is_some_and(|inner| *inner.syntax() == current);
     }
     false
+}
+
+/// How the site touches the chain that ends at `node`: the left side of an assignment, `=` or a compound operator, writes it, and every other place reads it. A compound assignment is `()` in Rust, so nothing reads the old value through it.
+fn access(node: &SyntaxNode) -> Access {
+    let mut current = node.clone();
+    while let Some(parent) = current.parent() {
+        if parent.kind() == SyntaxKind::PAREN_EXPR {
+            current = parent;
+            continue;
+        }
+        let assigned = ast::BinExpr::cast(parent).is_some_and(|expr| {
+            matches!(expr.op_kind(), Some(ast::BinaryOp::Assignment { .. }))
+                && expr.lhs().is_some_and(|lhs| *lhs.syntax() == current)
+        });
+        return if assigned {
+            Access::Write
+        } else {
+            Access::Read
+        };
+    }
+    Access::Read
 }
 
 /// The names of a chain: its root path and what follows.

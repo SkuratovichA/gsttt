@@ -50,6 +50,23 @@ impl Pack {
         self.detect.is_empty()
             || dependencies.any(|dependency| self.detect.iter().any(|name| name == dependency))
     }
+
+    /// The kind and the role of every contract the rules of this pack name, once for each role a rule gives: a chain that is also named when it is written (`written`) lists both. A connector adds the contracts it finds without a rule, as Rust does for an embedded document.
+    pub fn contracts(&self) -> impl Iterator<Item = (&ContractKind, Role)> {
+        let chains = self.chains.iter().flat_map(|rule| {
+            [Some(rule.role), rule.written]
+                .into_iter()
+                .flatten()
+                .map(move |role| (&rule.kind, role))
+        });
+        self.calls
+            .iter()
+            .map(|rule| (&rule.kind, rule.role))
+            .chain(self.decorators.iter().map(|rule| (&rule.kind, rule.role)))
+            .chain(chains)
+            .chain(self.assigns.iter().map(|rule| (&rule.kind, rule.role)))
+            .chain(self.imports.iter().map(|rule| (&rule.kind, rule.role)))
+    }
 }
 
 /// A call that names a contract: `fetch("/x")`, `axios.get("/x")`, `requests.post(url=…)`, `app.get("/x", h)`.
@@ -111,7 +128,12 @@ pub struct ChainRule {
     pub root_types: Vec<String>,
     #[schemars(with = "String")]
     pub kind: ContractKind,
+    /// The role of a site that reads the chain: `process.env.API_URL` in an expression.
     pub role: Role,
+    /// The role of a site that writes the chain: `process.env.API_URL = "x"`. Unset: a write names nothing, so `prisma.user.findMany = vi.fn()` is no query. A site that both reads and writes the chain, as in `const url = (process.env.API_URL ??= "x")`, names the key with both roles.
+    // Left out when unset, for the reason given at `Pack::imports`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub written: Option<Role>,
     /// How many segments after the root make the key. Unset: every segment up to a terminal or the end of the chain.
     #[serde(default)]
     pub segments: Option<NonZeroU32>,
@@ -709,29 +731,74 @@ impl AssignRule {
     }
 }
 
+/// How a site touches a member chain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// The value of the chain is used: `process.env.API_URL` in an expression.
+    Read,
+    /// A value is stored in the chain and its old value is not used: `process.env.API_URL = "x"`, `del os.environ["API_URL"]`, and a compound assignment whose value is dropped, `process.env.API_URL ??= "x";`.
+    Write,
+    /// A value is stored in the chain and the expression also gives a value that depends on the old one: `const url = (process.env.API_URL ??= "x")`.
+    ReadWrite,
+}
+
 impl ChainRule {
-    /// What this rule makes of a member chain that starts at one of its roots. `segments` follow the root in order, `None` where a segment is computed (`process.env[name]`); `root` is the root as written.
-    pub fn apply(&self, pack: &str, segments: &[Option<&str>], line: Line, root: &str) -> Outcome {
+    /// What this rule makes of a member chain that starts at one of its roots, touched as `access` says. `segments` follow the root in order, `None` where a segment is computed (`process.env[name]`); `root` is the root as written.
+    ///
+    /// A read names the key with [`ChainRule::role`], a write with [`ChainRule::written`] and a read-write with both, so it gives up to two outcomes. A rule with no role for the access gives [`Outcome::Skip`] alone, and a computed segment gives one blind spot whatever the access.
+    pub fn apply(
+        &self,
+        pack: &str,
+        access: Access,
+        segments: &[Option<&str>],
+        line: Line,
+        root: &str,
+    ) -> impl Iterator<Item = Outcome> + use<> {
+        let roles = match access {
+            Access::Read => [Some(self.role), None],
+            Access::Write => [None, self.written],
+            Access::ReadWrite => [Some(self.role), self.written],
+        };
+        let outcomes = if roles == [None, None] {
+            [Some(Outcome::Skip), None]
+        } else {
+            match self.key(segments) {
+                Err(Computed) => [Some(Outcome::blind(line, root)), None],
+                Ok(None) => [Some(Outcome::Skip), None],
+                Ok(Some(key)) => {
+                    roles.map(|role| role.map(|role| named(&self.kind, role, &key, line, pack)))
+                }
+            }
+        };
+        outcomes.into_iter().flatten()
+    }
+
+    /// The key the chain makes: `Ok(None)` when the segments hold none, `Err` when one of them is computed.
+    fn key(&self, segments: &[Option<&str>]) -> Result<Option<String>, Computed> {
         let limit = self.segments.map_or(usize::MAX, |count| {
             usize::try_from(count.get()).unwrap_or(usize::MAX)
         });
         let mut parts: Vec<&str> = Vec::new();
         for segment in segments {
             match segment {
-                None => return Outcome::blind(line, root),
+                None => return Err(Computed),
                 Some(segment) if self.terminals.iter().any(|terminal| terminal == segment) => break,
                 Some(_) if parts.len() == limit => break,
                 Some(segment) => parts.push(segment),
             }
         }
         if parts.is_empty() {
-            return Outcome::Skip;
+            return Ok(None);
         }
         let joined = parts.join(".");
-        let key = self.case.map_or(joined.clone(), |case| case.apply(&joined));
-        named(&self.kind, self.role, &key, line, pack)
+        Ok(Some(
+            self.case.map_or(joined.clone(), |case| case.apply(&joined)),
+        ))
     }
 }
+
+/// A segment of a chain is computed, so the key cannot be read.
+struct Computed;
 
 impl ImportRule {
     /// Whether the rule reads the names imported from the package `spec`.
@@ -1016,6 +1083,20 @@ mod tests {
         assert_eq!(get(&[]), "http GET /bookings");
     }
 
+    /// The outcomes of a read of a chain, which are one.
+    fn read(
+        rule: &ChainRule,
+        pack: &str,
+        segments: &[Option<&str>],
+        line: Line,
+        root: &str,
+    ) -> Outcome {
+        let mut outcomes = rule.apply(pack, Access::Read, segments, line, root);
+        let outcome = outcomes.next().unwrap();
+        assert_eq!(outcomes.next(), None, "a read of a chain is one outcome");
+        outcome
+    }
+
     #[test]
     fn chains_stop_at_terminals_and_change_case() {
         let chain =
@@ -1024,7 +1105,8 @@ mod tests {
             "root": "prisma", "kind": "table", "role": "calls", "segments": 1,
         }));
         assert_eq!(
-            key(prisma.apply(
+            key(read(
+                &prisma,
                 "prisma",
                 &[Some("bookingItem"), Some("findMany")],
                 2,
@@ -1036,7 +1118,8 @@ mod tests {
             "root": "ctx.loaders", "kind": "graphql", "role": "calls", "segments": 1, "case": "upper-first",
         }));
         assert_eq!(
-            key(models.apply(
+            key(read(
+                &models,
                 "dataloader",
                 &[Some("booking"), Some("load")],
                 2,
@@ -1048,7 +1131,8 @@ mod tests {
             "root": "trpc", "kind": "trpc", "role": "calls", "terminals": ["useQuery", "useUtils"],
         }));
         assert_eq!(
-            key(trpc.apply(
+            key(read(
+                &trpc,
                 "trpc",
                 &[Some("booking"), Some("get"), Some("useQuery")],
                 2,
@@ -1057,17 +1141,17 @@ mod tests {
             "trpc booking.get"
         );
         assert_eq!(
-            trpc.apply("trpc", &[Some("useUtils")], 2, "trpc"),
+            read(&trpc, "trpc", &[Some("useUtils")], 2, "trpc"),
             Outcome::Skip
         );
         let env =
             chain(serde_json::json!({ "root": "process.env", "kind": "env", "role": "calls" }));
         assert_eq!(
-            key(env.apply("env", &[Some("API_URL")], 4, "process.env")),
+            key(read(&env, "env", &[Some("API_URL")], 4, "process.env")),
             "env API_URL"
         );
         assert!(matches!(
-            env.apply("env", &[None], 4, "process.env"),
+            read(&env, "env", &[None], 4, "process.env"),
             Outcome::Blind(_)
         ));
     }
@@ -1164,6 +1248,124 @@ mod tests {
         );
         let plain = chain(serde_json::json!({ "root": "tx", "kind": "table", "role": "calls" }));
         assert_eq!(plain.root_types, Vec::<String>::new());
+    }
+
+    /// What `rule` makes of `segments` touched as `access`, as the roles and keys of its facts and the number of unread sites.
+    fn touch(
+        rule: &ChainRule,
+        access: Access,
+        segments: &[Option<&str>],
+    ) -> (Vec<String>, usize, usize) {
+        let mut facts = Vec::new();
+        let (mut blind, mut skipped) = (0, 0);
+        for outcome in rule.apply("env", access, segments, 4, "process.env") {
+            match outcome {
+                Outcome::Fact(fact) => facts.push(format!("{} {}", fact.role, fact.key)),
+                Outcome::Blind(_) => blind += 1,
+                Outcome::Skip => skipped += 1,
+            }
+        }
+        (facts, blind, skipped)
+    }
+
+    fn env_chain(written: Option<&str>) -> ChainRule {
+        let mut value = serde_json::json!({
+            "root": "process.env", "kind": "env", "role": "calls", "segments": 1,
+        });
+        if let Some(role) = written {
+            value["written"] = role.into();
+        }
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A read, a write and a read-write of one chain")]
+    #[test]
+    fn a_chain_is_named_by_the_role_of_the_access() {
+        let rule = env_chain(Some("serves"));
+        let name = [Some("API_URL")];
+        assert_eq!(
+            touch(&rule, Access::Read, &name),
+            (vec!["calls env API_URL".to_owned()], 0, 0)
+        );
+        assert_eq!(
+            touch(&rule, Access::Write, &name),
+            (vec!["serves env API_URL".to_owned()], 0, 0)
+        );
+        assert_eq!(
+            touch(&rule, Access::ReadWrite, &name),
+            (
+                vec![
+                    "calls env API_URL".to_owned(),
+                    "serves env API_URL".to_owned()
+                ],
+                0,
+                0
+            )
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A write under a rule with no written role names nothing"
+    )]
+    #[test]
+    fn a_write_under_a_rule_with_no_written_role_names_nothing() {
+        let rule = env_chain(None);
+        for segments in [&[Some("API_URL")][..], &[None][..], &[][..]] {
+            assert_eq!(
+                touch(&rule, Access::Write, segments),
+                (Vec::new(), 0, 1),
+                "{segments:?}"
+            );
+        }
+        assert_eq!(
+            touch(&rule, Access::ReadWrite, &[Some("API_URL")]),
+            (vec!["calls env API_URL".to_owned()], 0, 0),
+            "a read-write still reads"
+        );
+        let packed = serde_json::to_value(&rule).unwrap();
+        assert!(
+            packed.get("written").is_none(),
+            "a rule without it serialises as before, so the hash of the packs does not move"
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A computed segment is one unread site whatever the access"
+    )]
+    #[test]
+    fn a_computed_segment_is_one_unread_site_whatever_the_access() {
+        let rule = env_chain(Some("serves"));
+        for access in [Access::Read, Access::Write, Access::ReadWrite] {
+            assert_eq!(
+                touch(&rule, access, &[None]),
+                (Vec::new(), 1, 0),
+                "{access:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pack_lists_the_role_of_a_write_beside_the_role_of_a_read() {
+        let pack: Pack = serde_json::from_value(serde_json::json!({
+            "name": "env", "language": "ts",
+            "chains": [{ "root": "process.env", "kind": "env", "role": "calls", "written": "serves" }],
+            "calls": [{ "callee": "vi.stubEnv", "kind": "env", "role": "serves", "key": "$arg1" }],
+        }))
+        .unwrap();
+        let listed: Vec<(String, Role)> = pack
+            .contracts()
+            .map(|(kind, role)| (kind.to_string(), role))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("env".to_owned(), Role::Serves),
+                ("env".to_owned(), Role::Calls),
+                ("env".to_owned(), Role::Serves)
+            ]
+        );
     }
 
     struct FakeSite;
