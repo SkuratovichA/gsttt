@@ -36,7 +36,7 @@ pub struct Pack {
     pub embeds: Vec<EmbedRule>,
     #[serde(default)]
     pub assigns: Vec<AssignRule>,
-    /// Packages whose imported names each name a contract: the model types of `@prisma/client`. Only the TypeScript connector reads them.
+    /// Packages whose imported names each name a contract, for a name the file uses as a value: the enums of `@prisma/client`, and no model type, which is a type. Only the TypeScript connector reads them.
     // Left out when empty, unlike the lists above, so that a pack written before this rule existed serialises as it did: the hash of the packs that keys the cache and the pinned packs of the other languages do not move.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<ImportRule>,

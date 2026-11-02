@@ -21,7 +21,7 @@ A pack MAY name a contract for each name a file takes from a package. With the `
 #### Scenario: A model used only as a type names nothing
 - **WHEN** `src/declared.ts` has `import type { Tenant } from '@prisma/client'` and `src/inline.ts` has `import { type Tenant, PrismaClient } from '@prisma/client'`
 - **AND** `src/annotated.ts` has `import { Tenant } from '@prisma/client'` and uses `Tenant` only as a parameter type, a return type and a type argument
-- **AND** `src/types.ts` has `import('@prisma/client').Tenant`, `import('@prisma/client').TenantBranch[]` and `typeof import('@prisma/client')`
+- **AND** `src/types.ts` has `import('@prisma/client').Tenant` on line 1, `import('@prisma/client').TenantBranch[]`, `import('@prisma/client').Prisma.TenantWhereInput` on line 3 and `typeof import('@prisma/client')`
 - **THEN** none of the files calls a table
 
 #### Scenario: A re-exported model names nothing
@@ -31,3 +31,15 @@ A pack MAY name a contract for each name a file takes from a package. With the `
 #### Scenario: A namespace import of the client names nothing
 - **WHEN** `src/client.ts` has `import * as client from '@prisma/client'`, a default import of it, `import { default as other } from '@prisma/client'`, `import '@prisma/client'`, `export * from '@prisma/client'`, `export * as models from '@prisma/client'` and `export { default as Client } from '@prisma/client'`
 - **THEN** the file calls no table
+
+### Requirement: Uses of an imported name as a value
+A file uses an imported name as a value when its code names the local name outside every type. A name written in a type is no use of the value, and neither is a re-export, `import type`, an import type, or a field typed with the name, so `this.field` is no use of it.
+
+#### Scenario: A name in a value position is a use
+- **WHEN** a file imports `Tenant` from `@prisma/client` and has `Tenant()`, `[Tenant]`, `Tenant.ACTIVE`, `typeof Tenant` as an expression, `export default Tenant`, `class Row extends Tenant`, `enum Kind { A = Tenant.A }`, `Tenant as unknown`, `Tenant satisfies object`, `Tenant!`, `{ Tenant }`, `{ ...Tenant }`, `<Tenant />`, `(t = Tenant) => t`, a class property `x = Tenant`, `import Alias = Tenant.Inner`, or `Tenant.fields` in a method beside a parameter typed `Map<Box<string>, Tenant>`
+- **THEN** each file calls `table tenant`
+
+#### Scenario: A name outside a value position is no use
+- **WHEN** a file imports `Tenant` from `@prisma/client` and uses it as a parameter or return type, in `implements Tenant`, in `interface Row extends Tenant`, as the type argument `g<Tenant>()`, in `typeof Tenant` written in a type, in `Tenant[]`, in the types of `satisfies` and `as`, in an ambient `declare function` signature, as the type of a constructor parameter property read as `this.tenant`, in `export { Tenant }` or `export { Tenant as T }`
+- **AND** a file has `import type { Tenant }`, `import { type Tenant }`, `export type Row = import('@prisma/client').Tenant`, `export { Tenant as T } from '@prisma/client'` or `export type { Tenant } from '@prisma/client'`
+- **THEN** none of the files calls a table

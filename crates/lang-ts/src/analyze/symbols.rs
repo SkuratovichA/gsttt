@@ -623,16 +623,21 @@ impl<'a> Recorder<'a> {
     /// A name the file's code refers to.
     pub(super) fn reference(&mut self, name: &str) {
         if let Some(&binding) = self.names.get(name) {
+            self.mark_value(binding);
             self.note(binding);
         }
     }
 
-    fn note(&mut self, binding: usize) {
+    /// Records that the source names `binding` itself outside a type. A use through `this.field` does not: the type of the field is no use of the value of the name it is written with.
+    fn mark_value(&mut self, binding: usize) {
         if !self.in_type
             && let Some(entry) = self.entries.get_mut(binding)
         {
             entry.used_as_value = true;
         }
+    }
+
+    fn note(&mut self, binding: usize) {
         if matches!(self.place.load, Load::Called | Load::Always)
             && self.on_load.last() != Some(&binding)
         {
@@ -670,6 +675,7 @@ impl<'a> Recorder<'a> {
         let Some(&binding) = self.names.get(root.as_str()) else {
             return;
         };
+        self.mark_value(binding);
         self.note(binding);
         if let Some(member) = second {
             self.member_use(binding, false, member);

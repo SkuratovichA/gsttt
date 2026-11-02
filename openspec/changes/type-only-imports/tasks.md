@@ -17,4 +17,9 @@
 
 ## 4. The tests
 
-- [x] 4.1 Fixtures and snapshots of the three scenarios that change, and the unit tests of the type and value positions
+- [x] 4.1 Fixtures and snapshots of the three scenarios that change, and the table-driven unit tests of the value positions and the other positions
+
+## 5. The review
+
+- [x] 5.1 A use through `this.field` is no use of the import; `import A = Tenant.B` is one; the unit tests are two tables, one per scenario of `Uses of an imported name as a value`
+- [x] 5.2 The text of the pack field, the README and the coverage answer follow the new rule

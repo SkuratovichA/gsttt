@@ -60,7 +60,7 @@ expression: pack_schema()
       "default": []
     },
     "imports": {
-      "description": "Packages whose imported names each name a contract: the model types of `@prisma/client`. Only the TypeScript connector reads them.",
+      "description": "Packages whose imported names each name a contract, for a name the file uses as a value: the enums of `@prisma/client`, and no model type, which is a type. Only the TypeScript connector reads them.",
       "type": "array",
       "items": {
         "$ref": "#/definitions/ImportRule"

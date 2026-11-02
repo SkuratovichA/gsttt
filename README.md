@@ -96,8 +96,8 @@ Every number, with the command that measured it, is in [`bench/results/benchmark
 - tRPC routers merged or built at run time, router entries that are spread, read from a member (`other.router`) or built by another call, and clients named anything other than `trpc` or `api`.
 - Raw SQL and query builders, and Prisma clients under a root other than the chain roots of the `prisma` pack, unless the file reaches the client through an alias of `this` or declares the name with one of the root types of the pack, directly or through a `type` alias of the same file. A name that the file also binds anywhere else to anything but `this` or a root type is not read (`function a(tx2: PrismaClient)` beside `items.map(tx2 => tx2)` reads no table), and a root type that the file declares as a type of its own is that local type.
 - A Prisma root type that a file imports under another name (`PrismaClient as Base`), reaches through a renamed namespace (`P.TransactionClient`), writes as `typeof` a name, or aliases as an import type (`type Db = import('@prisma/client').PrismaClient`).
-- The model types of a Prisma client generated to a custom `output` path, or of a package that re-exports the client with `export * from '@prisma/client'`: only the imports from `@prisma/client` itself name a table.
-- An enum imported by name from `@prisma/client` reads as a table of that name that no model declares, because the import does not say which names are models.
+- The model types of a Prisma client generated to a custom `output` path, or of a package that re-exports the client with `export * from '@prisma/client'`: only the names a file imports from `@prisma/client` itself and uses as a value name a table.
+- An enum imported by name from `@prisma/client` and used as a value reads as a table of that name that no model declares, because the import does not say which names are models. A model type that the file only imports, re-exports or writes in a type names no table.
 - Environment variables read through an alias of the environment object.
 
 </details>
