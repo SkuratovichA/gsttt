@@ -33,7 +33,7 @@ A pack MAY name a contract for each name a file takes from a package. With the `
 - **THEN** the file calls no table
 
 ### Requirement: Uses of an imported name as a value
-A file uses an imported name as a value when its code names the local name outside every type. A name written in a type is no use of the value, and neither is a re-export, `import type`, an import type, or a field typed with the name, so `this.field` is no use of it.
+A file uses an imported name as a value when its code names the local name outside every type. A name written in a type SHALL be no use of the value, and neither SHALL be a re-export, `import type`, an import type, or a field typed with the name, so `this.field` is no use of it.
 
 #### Scenario: A name in a value position is a use
 - **WHEN** a file imports `Tenant` from `@prisma/client` and has `Tenant()`, `[Tenant]`, `Tenant.ACTIVE`, `typeof Tenant` as an expression, `export default Tenant`, `class Row extends Tenant`, `enum Kind { A = Tenant.A }`, `Tenant as unknown`, `Tenant satisfies object`, `Tenant!`, `{ Tenant }`, `{ ...Tenant }`, `<Tenant />`, `(t = Tenant) => t`, a class property `x = Tenant`, `import Alias = Tenant.Inner`, or `Tenant.fields` in a method beside a parameter typed `Map<Box<string>, Tenant>`
