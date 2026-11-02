@@ -655,8 +655,8 @@ fn a_member_is_used_as_the_type_of_the_field_is_written() -> Result<(), Box<dyn 
     );
     assert_eq!(
         of("Notifier.indexed"),
-        Some(vec!["services"]),
-        "a computed key names no member, so the field is read as a value"
+        Some(vec!["services.MailQueue"]),
+        "a computed key names no member, so the field is read as a value, and its type is used by its name"
     );
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -812,5 +812,40 @@ fn a_name_bound_twice_in_a_scope_holds_no_class() -> Result<(), Box<dyn Error>> 
         !used.iter().any(|used| used.ends_with(".cancel")),
         "{used:?}"
     );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A qualified type name is used by its whole name")]
+fn a_qualified_type_name_is_used_by_its_whole_name() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-qualified")?;
+    let path = "src/types.ts";
+    assert_eq!(uses(&json, path, "typed"), Some(vec!["lib.Foo"]));
+    assert_eq!(uses(&json, path, "wrapped"), Some(vec!["lib.Bar"]));
+    assert_eq!(uses(&json, path, "queried"), Some(vec!["lib.helper"]));
+    assert_eq!(uses(&json, path, "onlyType"), Some(vec!["T.Foo"]));
+    assert_eq!(
+        uses(&json, path, "escapes"),
+        Some(vec!["lib.Foo"]),
+        "a value of the type that goes elsewhere is a use of the type, not of the namespace"
+    );
+    assert_eq!(
+        uses(&json, path, "passed"),
+        Some(vec!["consume", "lib.Foo"])
+    );
+    assert_eq!(uses(&json, path, "escapesType"), Some(vec!["T.Foo"]));
+    assert_eq!(
+        uses(&json, path, "unbound"),
+        Some(vec![]),
+        "a root that is no binding records nothing"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A JSX member is used by its whole name")]
+fn a_jsx_member_is_used_by_its_whole_name() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-qualified")?;
+    assert_eq!(uses(&json, "src/view.tsx", "jsx"), Some(vec!["lib.Comp"]));
     Ok(())
 }

@@ -724,17 +724,25 @@ impl<'a> Recorder<'a> {
     /// A use of the type `head`, written as the source writes it, for its `member`, or for the type alone when there is none. A class of the file that declares the member is used through that member; any other type through an entry made for `Type.member`. The member [`TYPE_ONLY`] uses the type and none of its members.
     pub(super) fn through_class(&mut self, head: &str, member: Option<&str>) {
         let (root, qualified) = match head.split_once('.') {
-            Some((root, _)) => (root, true),
-            None => (head, false),
+            Some((root, rest)) => (root, Some(rest)),
+            None => (head, None),
         };
         let Some(&binding) = self.names.get(root) else {
             return;
         };
+        // A qualified head used for itself is the use of the name it writes, `lib.Foo`, and not of the bare root, which the walk reads as every name of the namespace.
+        if let Some(rest) = qualified
+            && member.is_none_or(|member| member == TYPE_ONLY)
+        {
+            let used = self.typed_entry(root, rest);
+            self.note(used);
+            return;
+        }
         let Some(member) = member else {
             self.note(binding);
             return;
         };
-        let declared = if qualified {
+        let declared = if qualified.is_some() {
             None
         } else {
             self.member_entry(binding, false, member)

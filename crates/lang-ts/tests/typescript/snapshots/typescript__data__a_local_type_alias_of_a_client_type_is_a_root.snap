@@ -60,7 +60,7 @@ expression: json
             "line": 3,
             "name": "Client",
             "uses": [
-              "Prisma"
+              "Prisma.TransactionClient"
             ]
           },
           {

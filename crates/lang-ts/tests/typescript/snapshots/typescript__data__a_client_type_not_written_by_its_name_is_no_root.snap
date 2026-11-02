@@ -100,7 +100,7 @@ expression: json
             "line": 3,
             "name": "find",
             "uses": [
-              "P.TransactionClient.",
+              "P.TransactionClient",
               "P.TransactionClient.tenant"
             ]
           }
