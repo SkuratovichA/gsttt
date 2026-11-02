@@ -54,7 +54,10 @@ expression: "tree.json[\"projects\"]"
       {
         "kind": "table",
         "role": "calls",
-        "via": [],
+        "via": [
+          "dbapi",
+          "sqlalchemy"
+        ],
         "blind_spots": [
           "SQL built by a function call",
           "SQL held in a variable",

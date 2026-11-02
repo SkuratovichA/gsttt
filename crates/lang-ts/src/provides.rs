@@ -11,10 +11,13 @@ pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut groups: BTreeMap<(ContractKind, Role), BTreeSet<&str>> = BTreeMap::new();
     for pack in packs {
         // The import rules are read here and by no other connector, so the pack does not list them.
-        let imports = pack.imports.iter().map(|rule| (&rule.kind, rule.role));
-        for (kind, role) in pack.contracts().chain(imports) {
+        let imports = pack
+            .imports
+            .iter()
+            .map(|rule| (rule.kind.clone(), rule.role));
+        for contract in pack.contracts().chain(imports) {
             groups
-                .entry((kind.clone(), role))
+                .entry(contract)
                 .or_default()
                 .insert(pack.name.as_str());
         }

@@ -4,7 +4,7 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{contracts, embedded, run};
+use crate::support::{contracts, embedded, provides, run};
 
 #[test]
 #[scenario("typescript", "A resolver method serves a root field")]
@@ -63,5 +63,16 @@ fn a_tagged_template_is_an_embedded_document() -> Result<(), Box<dyn Error>> {
         ["graphql @5 query Bookings { bookings { id } }"]
     );
     insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "The graphql pack is credited with the documents it finds"
+)]
+fn the_graphql_pack_is_credited_with_the_documents_it_finds() -> Result<(), Box<dyn Error>> {
+    let json = run("tagged-template")?;
+    assert!(provides(&json, ".").contains(&"graphql calls via graphql".to_owned()));
     Ok(())
 }
