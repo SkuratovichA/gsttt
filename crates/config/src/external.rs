@@ -12,12 +12,13 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use gsttt_core::connector::{
     Connector, ConnectorError, Meta, Parsed, Project, Provide, SourceFile, salt_of,
 };
 use gsttt_core::engine::keys::canonical_json;
 use gsttt_core::fact::{FileFacts, Import, ParseFailure, Resolution, UnresolvedReason};
+use gsttt_core::glob::{GlobError as CoreGlobError, glob_set as core_glob_set};
 use gsttt_core::rules::Pack;
 use gsttt_core::setup::ExternalSetup;
 use gsttt_core::{FileId, RepoPath, RepoView};
@@ -248,22 +249,24 @@ pub(crate) struct GlobError {
     source: globset::Error,
 }
 
-impl GlobError {
-    fn new(source: globset::Error) -> Self {
-        Self {
-            glob: source.glob().unwrap_or_default().to_owned(),
-            source,
+impl From<CoreGlobError> for GlobError {
+    fn from(error: CoreGlobError) -> Self {
+        match error {
+            CoreGlobError::Invalid { pattern, source } => Self {
+                glob: pattern,
+                source,
+            },
+            CoreGlobError::Build(source) => Self {
+                glob: source.glob().unwrap_or_default().to_owned(),
+                source,
+            },
         }
     }
 }
 
 /// The globs of an external as one set.
 pub(crate) fn glob_set(patterns: &[String]) -> Result<GlobSet, GlobError> {
-    let mut set = GlobSetBuilder::new();
-    for pattern in patterns {
-        set.add(Glob::new(pattern).map_err(GlobError::new)?);
-    }
-    set.build().map_err(GlobError::new)
+    core_glob_set(patterns).map_err(GlobError::from)
 }
 
 /// The longest name an external may have. The name is kept for the life of the process (see [`intern`]), so its length is bounded.

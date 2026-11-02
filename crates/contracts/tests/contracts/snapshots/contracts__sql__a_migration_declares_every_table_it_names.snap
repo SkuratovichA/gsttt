@@ -1,0 +1,86 @@
+---
+source: crates/contracts/tests/contracts/sql.rs
+expression: run.snapshot()
+---
+{
+  "projects": [
+    {
+      "connector": "sql",
+      "root": "."
+    }
+  ],
+  "files": [
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "table tenant",
+          "role": "calls",
+          "line": 1,
+          "via": "sql"
+        },
+        {
+          "key": "table branch",
+          "role": "calls",
+          "line": 2,
+          "via": "sql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "db/schema/001_tenants.sql",
+      "project": "sql ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "table tenant",
+          "role": "declares",
+          "line": 1,
+          "via": "sql"
+        },
+        {
+          "key": "table branch",
+          "role": "declares",
+          "line": 3,
+          "via": "sql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "prisma/migrations/20240101000000_init/migration.sql",
+      "project": "sql ."
+    },
+    {
+      "status": {
+        "status": "ok"
+      },
+      "tags": 0,
+      "imports": [],
+      "contracts": [
+        {
+          "key": "table tenant",
+          "role": "calls",
+          "line": 1,
+          "via": "sql"
+        }
+      ],
+      "embedded": [],
+      "unresolved": [],
+      "path": "src/queries/report.sql",
+      "project": "sql ."
+    }
+  ],
+  "linked": [],
+  "unclaimed": [],
+  "problems": []
+}

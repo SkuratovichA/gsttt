@@ -191,3 +191,78 @@ fn embedded_sql_is_read_without_an_sql_file() {
     );
     insta::assert_json_snapshot!(run.snapshot());
 }
+
+const INIT: &str = "prisma/migrations/20240101000000_init/migration.sql";
+
+#[gsttt_scenario::scenario("contract-formats", "A migration declares every table it names")]
+#[test]
+fn a_migration_declares_every_table_it_names() {
+    let run = Run::new("sql_migration_globs", &[module(&SQL)]);
+    assert_eq!(run.status(INIT), &ParseStatus::Ok);
+    assert_eq!(
+        run.sites(INIT),
+        vec!["declares table tenant @1", "declares table branch @3"]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
+#[gsttt_scenario::scenario("contract-formats", "A query outside the migrations calls its tables")]
+#[test]
+fn a_query_outside_the_migrations_calls_its_tables() {
+    let run = Run::new("sql_migration_globs", &[module(&SQL)]);
+    assert_eq!(
+        run.sites("src/queries/report.sql"),
+        vec!["calls table tenant @1"]
+    );
+}
+
+#[gsttt_scenario::scenario("contract-formats", "The migrations option replaces the default globs")]
+#[test]
+fn the_migrations_option_replaces_the_default_globs() {
+    let custom = with_options(&SQL, json!({ "migrations": ["db/schema/**"] }));
+    let run = Run::new("sql_migration_globs", &[custom]);
+    assert_eq!(
+        run.sites("db/schema/001_tenants.sql"),
+        vec!["declares table tenant @1", "declares table branch @2"]
+    );
+    assert_eq!(
+        run.sites(INIT),
+        vec![
+            "declares table tenant @1",
+            "calls table tenant @2",
+            "calls table branch @3"
+        ]
+    );
+    insta::assert_json_snapshot!(run.snapshot());
+}
+
+#[gsttt_scenario::scenario("contract-formats", "An empty migrations list reads no migration")]
+#[test]
+fn an_empty_migrations_list_reads_no_migration() {
+    let none = with_options(&SQL, json!({ "migrations": [] }));
+    let run = Run::new("sql_migration_globs", &[none]);
+    assert_eq!(
+        run.sites(INIT),
+        vec![
+            "declares table tenant @1",
+            "calls table tenant @2",
+            "calls table branch @3"
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("contract-formats", "An invalid migrations glob is an options error")]
+#[test]
+fn an_invalid_migrations_glob_is_an_options_error() {
+    let repo = fixture("sql_migration_globs");
+    let invalid = with_options(&SQL, json!({ "migrations": ["db/**", "["] }));
+    let error = try_run(&repo, &[invalid]).unwrap_err();
+    let ConnectorError::Options { connector, message } = &error else {
+        panic!("expected an options error, got {error:?}");
+    };
+    assert_eq!(connector, "sql");
+    assert!(
+        message.starts_with("`migrations` has the glob \"[\""),
+        "{message}"
+    );
+}

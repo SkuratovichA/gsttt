@@ -106,7 +106,8 @@ expression: provides
         "role": "declares",
         "via": [
           "CREATE, ALTER and DROP of tables and views",
-          "CREATE INDEX"
+          "CREATE INDEX",
+          "every table a migration names, including those its INSERT, UPDATE and views use"
         ],
         "blind_spots": [
           "tables created by ORM migrations written in code",
@@ -117,7 +118,7 @@ expression: provides
         "kind": "table",
         "role": "calls",
         "via": [
-          "SQL files",
+          "SQL files that are not migrations",
           "SQL embedded in code"
         ],
         "blind_spots": [
