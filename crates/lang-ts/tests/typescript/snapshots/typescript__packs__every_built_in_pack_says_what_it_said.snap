@@ -508,6 +508,43 @@ expression: packs
     ]
   },
   {
+    "name": "sql-drivers",
+    "language": "ts",
+    "detect": [
+      "pg",
+      "mysql",
+      "mysql2",
+      "better-sqlite3",
+      "sqlite3",
+      "@neondatabase/serverless"
+    ],
+    "calls": [],
+    "decorators": [],
+    "chains": [],
+    "embeds": [
+      {
+        "callee": [
+          "*.query",
+          "*.*.query",
+          "*.*.*.query",
+          "*.execute",
+          "*.*.execute",
+          "*.*.*.execute",
+          "*.prepare",
+          "*.*.prepare",
+          "*.*.*.prepare",
+          "*.exec",
+          "*.*.exec",
+          "*.*.*.exec"
+        ],
+        "lang": "sql",
+        "text": null,
+        "computed": "placeholder"
+      }
+    ],
+    "assigns": []
+  },
+  {
     "name": "trpc",
     "language": "ts",
     "detect": [

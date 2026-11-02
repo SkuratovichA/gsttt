@@ -27,6 +27,7 @@ pub const PACKS: &[(&str, &str)] = &[
     ("nestjs", include_str!("../packs/nestjs.toml")),
     ("nestjs-config", include_str!("../packs/nestjs-config.toml")),
     ("prisma", include_str!("../packs/prisma.toml")),
+    ("sql-drivers", include_str!("../packs/sql-drivers.toml")),
     ("trpc", include_str!("../packs/trpc.toml")),
     ("typeorm", include_str!("../packs/typeorm.toml")),
 ];

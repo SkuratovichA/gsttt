@@ -36,14 +36,24 @@ pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     }
     groups
         .into_iter()
-        .map(|((kind, role), via)| Provide {
-            blind_spots: blind_spots(&kind, role),
-            via: via.into_iter().map(str::to_owned).collect(),
-            kind,
-            role,
+        .map(|((kind, role), via)| {
+            let mut blind_spots = blind_spots(&kind, role);
+            // Said only for a project that has the pack, so the projects of the other table packs keep their answer.
+            if kind == ContractKind::Table && role == Role::Calls && via.contains("sql-drivers") {
+                blind_spots.insert(0, SQL_DRIVERS_BLIND_SPOT.to_owned());
+            }
+            Provide {
+                blind_spots,
+                via: via.into_iter().map(str::to_owned).collect(),
+                kind,
+                role,
+            }
         })
         .collect()
 }
+
+/// What the `sql-drivers` pack does not read.
+const SQL_DRIVERS_BLIND_SPOT: &str = "SQL drivers are read from a literal or a template given to query, execute, prepare or exec; a query given as an object (pool.query({ text })) is not read, and a statement whose table or whole clause is computed does not parse and names no table";
 
 fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
     let spots: &[&str] = match (kind, role) {
@@ -114,7 +124,7 @@ mod tests {
             .into_iter()
             .find(|provide| provide.kind == ContractKind::Table && provide.role == Role::Calls)
             .unwrap();
-        assert_eq!(prisma.via, ["prisma"]);
+        assert_eq!(prisma.via, ["prisma", "sql-drivers"]);
         let only_imports = Pack {
             chains: Vec::new(),
             calls: Vec::new(),
