@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::contract::{ContractKey, Role};
 use crate::fact::{FileTags, Import, ImportFlags, ImportKind, Line, Symbols};
-use crate::ids::{ContractId, FileId, Id, NameId};
+use crate::ids::{ContractId, FileId, Id, IdSet, NameId};
 use crate::path::RepoPath;
 
 pub use symbols::{Declaration, FileSymbols};
@@ -306,6 +306,33 @@ impl Graph {
     /// The files that import `file`.
     pub fn dependents(&self, file: FileId) -> &[(FileId, Edge)] {
         self.dependents.row(file.index())
+    }
+
+    /// Whether `from` is one of the `goals` or imports one, directly or through other files, without taking an import that `avoid` refuses, given the importer and the file it imports. A goal that only such an import leads to is not entered. The imports followed are those of the walk over files: a type-only import is, and a Rust `mod` declaration is not.
+    pub fn reaches_avoiding(
+        &self,
+        from: FileId,
+        goals: &IdSet<FileId>,
+        avoid: impl Fn(FileId, FileId) -> bool,
+    ) -> bool {
+        if goals.contains(from) {
+            return true;
+        }
+        let mut seen = IdSet::with_universe(self.file_count());
+        seen.insert(from);
+        let mut pending = vec![from];
+        while let Some(file) = pending.pop() {
+            for &(next, edge) in self.dependencies(file) {
+                if edge.is_structural() || avoid(file, next) || !seen.insert(next) {
+                    continue;
+                }
+                if goals.contains(next) {
+                    return true;
+                }
+                pending.push(next);
+            }
+        }
+        false
     }
 
     pub fn contract_count(&self) -> usize {
@@ -962,5 +989,91 @@ mod tests {
         let get_id = graph.contract_id(&get).unwrap();
         assert_eq!(graph.sites(get_id).len(), 2);
         assert_eq!(graph.contracts_of(FileId::from_raw(1)).len(), 2);
+    }
+
+    /// The files `a.ts` to `e.ts` with the imports `(from, to)`, each a plain static import.
+    fn chain(imports: &[(u32, u32)], kind: ImportKind) -> Graph {
+        let mut builder = GraphBuilder::new(paths(&["a.ts", "b.ts", "c.ts", "d.ts", "e.ts"]));
+        for &(from, to) in imports {
+            let import = Import::new("./x", kind, 1);
+            builder.import(FileId::from_raw(from), FileId::from_raw(to), &import);
+        }
+        builder.build()
+    }
+
+    fn goals(files: &[u32]) -> IdSet<FileId> {
+        let mut set = IdSet::with_universe(5);
+        set.extend(files.iter().map(|&file| FileId::from_raw(file)));
+        set
+    }
+
+    fn id(file: u32) -> FileId {
+        FileId::from_raw(file)
+    }
+
+    /// Refuses every import of one of `files`, whoever makes it.
+    fn into(files: &[u32]) -> impl Fn(FileId, FileId) -> bool + '_ {
+        move |_, to| files.iter().any(|&file| id(file) == to)
+    }
+
+    #[test]
+    fn a_goal_is_reached_through_the_files_that_are_not_avoided() {
+        let graph = chain(&[(0, 1), (1, 3), (0, 2), (2, 3)], ImportKind::Static);
+        assert!(graph.reaches_avoiding(id(0), &goals(&[3]), into(&[])));
+        assert!(
+            graph.reaches_avoiding(id(0), &goals(&[3]), into(&[1])),
+            "the way through c.ts is left"
+        );
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[3]), into(&[1, 2])));
+    }
+
+    #[test]
+    fn a_goal_that_is_avoided_is_not_entered() {
+        let graph = chain(&[(0, 1), (1, 2)], ImportKind::Static);
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[1]), into(&[1])));
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[2]), into(&[1])));
+        assert!(graph.reaches_avoiding(id(0), &goals(&[2]), into(&[])));
+    }
+
+    #[test]
+    fn an_import_is_refused_for_its_importer_and_not_for_the_file_it_imports() {
+        let graph = chain(&[(0, 1), (0, 2), (2, 1), (1, 3)], ImportKind::Static);
+        let from_the_start = |from: FileId, to: FileId| from == id(0) && to == id(1);
+        assert!(
+            graph.reaches_avoiding(id(0), &goals(&[3]), from_the_start),
+            "c.ts still imports b.ts"
+        );
+    }
+
+    #[test]
+    fn a_file_that_is_a_goal_reaches_it_without_an_import() {
+        let graph = chain(&[], ImportKind::Static);
+        assert!(graph.reaches_avoiding(id(4), &goals(&[4]), into(&[4])));
+        assert!(!graph.reaches_avoiding(id(4), &goals(&[3]), into(&[])));
+    }
+
+    #[test]
+    fn a_cycle_ends() {
+        let graph = chain(&[(0, 1), (1, 2), (2, 0)], ImportKind::Static);
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[4]), into(&[])));
+        assert!(graph.reaches_avoiding(id(0), &goals(&[2]), into(&[])));
+    }
+
+    #[test]
+    fn a_module_declaration_is_no_way_to_the_child() {
+        let graph = chain(&[(0, 1)], ImportKind::Module);
+        assert!(!graph.reaches_avoiding(id(0), &goals(&[1]), into(&[])));
+    }
+
+    #[test]
+    fn a_type_only_import_is_a_way() {
+        let mut builder = GraphBuilder::new(paths(&["a.ts", "b.ts"]));
+        builder.import(
+            id(0),
+            id(1),
+            &plain(ImportKind::Static, ImportFlags::TYPE_ONLY),
+        );
+        let graph = builder.build();
+        assert!(graph.reaches_avoiding(id(0), &goals(&[1]), into(&[])));
     }
 }

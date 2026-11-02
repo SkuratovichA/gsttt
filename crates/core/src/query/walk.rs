@@ -73,13 +73,15 @@ struct Held {
 ///
 /// The depth bounds the hops through code, which are the imports. A hop across a contract is a hop in the distance and not in the depth: every file the walk reaches crosses its contracts, and the file across carries the hops through code of the file it came from. Each file, and each name that reaches a barrel, carries the hops through code of the way it was first reached by, the fewest of the equally near ways found in one layer, and takes a hop through code only while they are fewer than the depth.
 ///
+/// The walk also hands back the files it met across a contract, which the tests of the answer are judged against: a test that replaces a module still runs a file the walk crossed to.
+///
 /// An import that records names is followed by name. A file that uses a name the change can reach is reached in all its names. A file that only re-exports is reached in the names it passes on, and passes on those and no others, so an `export *` barrel stops fanning out to importers of names the change cannot touch. A star re-export always reaches its importer, and holds it with no names when there is nothing to pass on. A file whose names do not grow is not visited again.
 pub(super) fn reach(
     graph: &Graph,
     crossing: &Crossing<'_>,
     changed: &[FileId],
     depth: Option<u32>,
-) -> Vec<Reached> {
+) -> Walked {
     let mut walk = Walk {
         graph,
         crossing,
@@ -94,6 +96,7 @@ pub(super) fn reach(
         depth,
         distance: 0,
         reached: Vec::new(),
+        across: Vec::new(),
         fresh: BTreeMap::new(),
         next: Vec::new(),
     };
@@ -120,7 +123,13 @@ pub(super) fn reach(
     }
     walk.reached
         .sort_unstable_by_key(|reached| (reached.distance, reached.file));
-    walk.reached
+    walk.across.sort_unstable();
+    walk.across.dedup();
+    Walked {
+        hits: walk.reached.into_iter().map(Hit::from).collect(),
+        notes: Vec::new(),
+        across: walk.across,
+    }
 }
 
 struct Walk<'a> {
@@ -146,6 +155,8 @@ struct Walk<'a> {
     /// The distance of the files being reached now.
     distance: u32,
     reached: Vec<Reached>,
+    /// The files the walk met across a contract, in the order it crossed them.
+    across: Vec<FileId>,
     /// The files that became whole in this layer, each with the fewest hops through code of the ways that made it whole.
     fresh: BTreeMap<FileId, u32>,
     /// The barrels that were reached in some names for the first time or whose names grew in this layer, each time with the hops through code of the way. A barrel that became whole in this layer is in `fresh`.
@@ -220,6 +231,7 @@ impl Walk<'_> {
                         contract: meeting,
                     };
                     let arrival = self.leavers.arrival(contract, site, code);
+                    self.across.push(site.file);
                     self.take_all(site.file, cause, arrival);
                 }
             }

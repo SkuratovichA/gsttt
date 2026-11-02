@@ -2555,3 +2555,169 @@ proptest! {
         prop_assert_eq!(by_member, per_file, "asked about the members\n{:?}\n{}", case, written.shown);
     }
 }
+
+/// `config.ts` loads `load` of `a.ts` as it loads, and `setup.ts`, which is not a test, mocks `config.ts` without a factory, or with one when `replacing`.
+fn mocked_config(replacing: bool) -> Index {
+    let tree = Tree::new()
+        .symbols("a.ts", Code::new().declaration("load", (1, 3), &[]))
+        .exports("a.ts", &["load"])
+        .imports_names("config.ts", "a.ts", &["load"])
+        .symbols(
+            "config.ts",
+            Code::new()
+                .declaration("config", (1, 1), &["load"])
+                .on_load(&["load"]),
+        )
+        .exports("config.ts", &["config"])
+        .symbols("setup.ts", Code::new())
+        .exports("setup.ts", &[]);
+    let tree = if replacing {
+        tree.replaces("setup.ts", "config.ts", 1)
+    } else {
+        tree.mocks("setup.ts", "config.ts", 1)
+    };
+    tree.build()
+}
+
+#[scenario(
+    "queries",
+    "A file reached at load does not reach the files that replace it"
+)]
+#[test]
+fn a_file_reached_at_load_does_not_reach_the_files_that_replace_it() {
+    let kept = ask(&mocked_config(false), "a.ts", &["load"], Some(2));
+    let answer = ask(&mocked_config(true), "a.ts", &["load"], Some(2));
+
+    assert_eq!(
+        paths(&kept.affected),
+        ["config.ts", "setup.ts"],
+        "a mock without a factory loads the module to mock it"
+    );
+    assert_eq!(
+        rows(&answer.affected),
+        [(
+            "config.ts",
+            1,
+            "imports load from a.ts".to_owned(),
+            vec!["config"],
+            Some(1)
+        )]
+    );
+    assert_eq!(paths(&answer.tests), NONE);
+}
+
+/// `b.ts` imports `foo` of `a.ts` and was read past syntax errors, so it is followed whole, and `setup.ts` mocks it without a factory, or with one when `replacing`. `setup.ts` records declarations, or was read past syntax errors itself when `recovered`.
+fn mocked_whole_file(replacing: bool, recovered: bool) -> Index {
+    let tree = Tree::new()
+        .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+        .exports("a.ts", &["foo"])
+        .imports_names("b.ts", "a.ts", &["foo"])
+        .recovered("b.ts", 1, 3);
+    let tree = if replacing {
+        tree.replaces("setup.ts", "b.ts", 1)
+    } else {
+        tree.mocks("setup.ts", "b.ts", 1)
+    };
+    if recovered {
+        tree.recovered("setup.ts", 1, 3)
+    } else {
+        tree.symbols("setup.ts", Code::new())
+            .exports("setup.ts", &[])
+    }
+    .build()
+}
+
+#[scenario("queries", "A mock that replaces a file followed whole is no caller")]
+#[test]
+fn a_mock_that_replaces_a_file_followed_whole_is_no_caller() {
+    for recovered in [false, true] {
+        let kept = ask(
+            &mocked_whole_file(false, recovered),
+            "a.ts",
+            &["foo"],
+            Some(2),
+        );
+        let answer = ask(
+            &mocked_whole_file(true, recovered),
+            "a.ts",
+            &["foo"],
+            Some(2),
+        );
+
+        assert_eq!(
+            paths(&kept.affected),
+            ["b.ts", "setup.ts"],
+            "a mock without a factory is a caller, recovered {recovered}"
+        );
+        assert_eq!(paths(&answer.affected), ["b.ts"], "recovered {recovered}");
+    }
+}
+
+/// `server.ts` declares `handle` and serves `GET /x`, `client.ts` calls it in `send`, `api.ts` uses `send` in `post`, and the test calls `post` as it loads.
+fn behind_a_route() -> Tree {
+    Tree::new()
+        .symbols("server.ts", Code::new().declaration("handle", (1, 5), &[]))
+        .exports("server.ts", &["handle"])
+        .site("server.ts", "http GET /x", Role::Serves, 3)
+        .symbols("client.ts", Code::new().declaration("send", (1, 4), &[]))
+        .exports("client.ts", &["send"])
+        .site("client.ts", "http GET /x", Role::Calls, 2)
+        .imports_names("api.ts", "client.ts", &["send"])
+        .symbols("api.ts", Code::new().declaration("post", (1, 4), &["send"]))
+        .exports("api.ts", &["post"])
+        .imports_names("t.test.ts", "api.ts", &["post"])
+        .symbols("t.test.ts", Code::new().on_load(&["post"]))
+        .exports("t.test.ts", &[])
+        .tag("t.test.ts", FileTags::TEST)
+}
+
+#[scenario(
+    "queries",
+    "A test that replaces the module on the way to a contract is not listed by name"
+)]
+#[test]
+fn a_test_that_replaces_the_module_on_the_way_to_a_contract_is_not_listed_by_name() {
+    let kept = ask(&behind_a_route().build(), "server.ts", &["handle"], None);
+    let index = behind_a_route().replaces("t.test.ts", "api.ts", 1).build();
+
+    let answer = ask(&index, "server.ts", &["handle"], None);
+
+    assert_eq!(paths(&kept.tests), ["t.test.ts"], "without the mock");
+    assert_eq!(paths(&answer.affected), ["client.ts", "api.ts"]);
+    assert_eq!(paths(&answer.tests), NONE);
+}
+
+#[test]
+fn a_test_past_the_depth_that_replaces_another_module_is_listed_by_name_as_the_walk_found_it() {
+    // The test is three hops from `handle`, past the depth of 1, and what it replaces is not on its way to the change.
+    let without = ask(&behind_a_route().build(), "server.ts", &["handle"], None);
+    let index = behind_a_route()
+        .replaces("t.test.ts", "other.ts", 2)
+        .build();
+
+    let answer = ask(&index, "server.ts", &["handle"], None);
+
+    assert_eq!(
+        paths(&answer.affected),
+        ["client.ts", "api.ts"],
+        "within the depth"
+    );
+    assert_eq!(paths(&answer.tests), ["t.test.ts"]);
+    assert_eq!(
+        answer.tests, without.tests,
+        "as the walk to the end found it"
+    );
+}
+
+#[test]
+fn a_test_that_reaches_a_file_met_across_a_contract_is_listed_by_name() {
+    let index = behind_a_route()
+        .imports_names("t.test.ts", "client.ts", &["send"])
+        .symbols("t.test.ts", Code::new().on_load(&["post", "send"]))
+        .replaces("t.test.ts", "api.ts", 1)
+        .build();
+
+    let answer = ask(&index, "server.ts", &["handle"], None);
+
+    assert_eq!(paths(&answer.tests), ["t.test.ts"]);
+}

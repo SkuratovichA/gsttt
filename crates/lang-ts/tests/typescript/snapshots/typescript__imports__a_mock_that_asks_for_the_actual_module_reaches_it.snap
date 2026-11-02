@@ -49,7 +49,7 @@ expression: json
       "exports": [],
       "imports": [
         {
-          "flags": 0,
+          "flags": 16,
           "kind": "mock",
           "line": 1,
           "names": [],
@@ -59,7 +59,7 @@ expression: json
           }
         },
         {
-          "flags": 0,
+          "flags": 32,
           "kind": "dynamic",
           "line": 2,
           "names": [],

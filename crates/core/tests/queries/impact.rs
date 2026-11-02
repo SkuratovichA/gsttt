@@ -1350,6 +1350,11 @@ impl Case {
 
     /// The tree behind [`Case::by_name`], before it is built, for a test to tag files in.
     fn named_files(&self) -> Tree {
+        self.named_files_mocking(false)
+    }
+
+    /// The same tree, with every mock one whose factory replaces the module when `replacing`.
+    fn named_files_mocking(&self, replacing: bool) -> Tree {
         let mut tree = Tree::new();
         for (number, own) in self.own.iter().enumerate() {
             tree = tree.read_by("ts", &file_path(number));
@@ -1366,6 +1371,7 @@ impl Case {
                 Take::Named(names) => tree.imports_names(&importer, &target, names),
                 Take::ReExport(pairs) => tree.re_exports(&importer, &target, pairs),
                 Take::Star => tree.re_exports_all(&importer, &target),
+                Take::Mock if replacing => tree.replaces(&importer, &target, 1),
                 Take::Mock => tree.mocks(&importer, &target, 1),
                 Take::Dynamic(names) => tree.imports_dynamically(&importer, &target, names),
                 Take::Require(names) => tree.requires(&importer, &target, names),
@@ -2310,4 +2316,467 @@ fn a_barrel_with_unknown_exports_in_its_star_chain_keeps_every_importer_by_name(
         rows(&known.affected),
         [row("mid.ts", 1, "re-exports fromA from a.ts")]
     );
+}
+
+/// `b.ts` imports `a.ts` and the test `t.test.ts` imports `b.ts`, so the test is two hops from `a.ts`.
+fn mocked_chain() -> Tree {
+    Tree::new()
+        .imports("b.ts", "a.ts")
+        .imports("t.test.ts", "b.ts")
+        .tag("t.test.ts", FileTags::TEST)
+}
+
+#[scenario(
+    "queries",
+    "A test that replaces the only way to the change is not listed"
+)]
+#[test]
+fn a_test_that_replaces_the_only_way_to_the_change_is_not_listed() {
+    let index = mocked_chain().replaces("t.test.ts", "b.ts", 1).build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(paths(&answer.affected), ["b.ts"]);
+    assert_eq!(paths(&answer.tests), NONE);
+    assert_eq!(answer.tests_left_out, 0);
+    let text = answer.to_string();
+    assert!(!text.contains("t.test.ts"), "{text}");
+}
+
+#[scenario("queries", "A test that has another way to the change is listed")]
+#[test]
+fn a_test_that_has_another_way_to_the_change_is_listed() {
+    let index = mocked_chain()
+        .imports("c.ts", "a.ts")
+        .imports("t.test.ts", "c.ts")
+        .replaces("t.test.ts", "b.ts", 1)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(paths(&answer.affected), ["b.ts", "c.ts"]);
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+#[scenario("queries", "A test that asks for the actual module is listed")]
+#[test]
+fn a_test_that_asks_for_the_actual_module_is_listed() {
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .imports_actual("t.test.ts", "b.ts", 2)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+#[scenario("queries", "A test that mocks a module without a factory is listed")]
+#[test]
+fn a_test_that_mocks_a_module_without_a_factory_is_listed() {
+    let index = mocked_chain().mocks("t.test.ts", "b.ts", 1).build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+#[scenario(
+    "queries",
+    "A test whose helper asks for the replaced module as it is is listed"
+)]
+#[test]
+fn a_test_whose_helper_asks_for_the_replaced_module_as_it_is_is_listed() {
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .imports("t.test.ts", "helper.ts")
+        .imports_actual("helper.ts", "b.ts", 1)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+#[test]
+fn a_helper_that_also_imports_the_replaced_module_still_asks_for_it_as_it_is() {
+    // The edge of the graph keeps a flag only when every import behind it carries it, so this one has no mark of the actual module.
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .imports("t.test.ts", "helper.ts")
+        .imports("helper.ts", "b.ts")
+        .imports_actual("helper.ts", "b.ts", 2)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+#[test]
+fn a_helper_that_only_imports_the_replaced_module_gets_the_mock_too() {
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .imports("t.test.ts", "helper.ts")
+        .imports("helper.ts", "b.ts")
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(paths(&answer.tests), NONE);
+}
+
+#[scenario("queries", "A test that mocks the module again is listed")]
+#[test]
+fn a_test_that_mocks_the_module_again_is_listed() {
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .mocks("t.test.ts", "b.ts", 2)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+/// `server.ts` serves `GET /x` and `client.ts` calls it. `api.ts` imports `client.ts`, and the test imports `api.ts`.
+fn contracted_chain() -> Tree {
+    Tree::new()
+        .serves("server.ts", "http GET /x")
+        .calls("client.ts", "http GET /x")
+        .imports("api.ts", "client.ts")
+        .imports("t.test.ts", "api.ts")
+        .tag("t.test.ts", FileTags::TEST)
+}
+
+#[scenario(
+    "queries",
+    "A test that replaces the module on the way to a contract is not listed"
+)]
+#[test]
+fn a_test_that_replaces_the_module_on_the_way_to_a_contract_is_not_listed() {
+    let kept = run(&contracted_chain().build(), &["server.ts"]);
+    let index = contracted_chain()
+        .replaces("t.test.ts", "api.ts", 1)
+        .build();
+
+    let answer = run(&index, &["server.ts"]);
+
+    assert_eq!(paths(&kept.tests), ["t.test.ts"], "without the mock");
+    assert_eq!(paths(&answer.affected), ["client.ts", "api.ts"]);
+    assert_eq!(paths(&answer.tests), NONE);
+}
+
+#[test]
+fn a_test_that_calls_the_contract_itself_is_listed_whatever_it_replaces() {
+    let index = contracted_chain()
+        .calls("t.test.ts", "http GET /x")
+        .replaces("t.test.ts", "api.ts", 1)
+        .build();
+
+    let answer = run(&index, &["server.ts"]);
+
+    assert_eq!(paths(&answer.tests), ["t.test.ts"]);
+}
+
+#[test]
+fn a_test_that_reaches_a_file_across_a_contract_by_an_import_first_is_listed() {
+    // `caller.ts` is reached by an import of `mid.ts` at the same distance as across `GET /y`, and the import comes first, yet the test runs it and with it the endpoint of `serve.ts`, which imports the change.
+    let index = Tree::new()
+        .imports("serve.ts", "a.ts")
+        .serves("serve.ts", "http GET /y")
+        .imports("mid.ts", "a.ts")
+        .imports("caller.ts", "mid.ts")
+        .calls("caller.ts", "http GET /y")
+        .imports("t.test.ts", "caller.ts")
+        .tag("t.test.ts", FileTags::TEST)
+        .replaces("t.test.ts", "mid.ts", 1)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(paths(&answer.tests), ["t.test.ts"]);
+    assert_eq!(
+        rows(&answer.affected)
+            .iter()
+            .find(|(path, ..)| *path == "caller.ts"),
+        Some(&row("caller.ts", 2, "imports mid.ts")),
+        "caller.ts is reached first by its import"
+    );
+}
+
+#[test]
+fn a_test_that_replaces_a_module_still_runs_the_modules_it_imports_besides() {
+    let index = Tree::new()
+        .imports("x.ts", "a.ts")
+        .imports("y.ts", "x.ts")
+        .imports("t.test.ts", "y.ts")
+        .imports("t.test.ts", "x.ts")
+        .replaces("t.test.ts", "y.ts", 1)
+        .tag("t.test.ts", FileTags::TEST)
+        .build();
+
+    let answer = run(&index, &["a.ts"]);
+
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports x.ts")]);
+}
+
+#[test]
+fn a_replaced_module_cuts_every_way_through_it() {
+    // `u.ts` reaches the change only through `b.ts`, which the test replaces, so the mock stands in for it in `u.ts` as well.
+    let index = Tree::new()
+        .imports("b.ts", "a.ts")
+        .imports("u.ts", "b.ts")
+        .imports("t.test.ts", "u.ts")
+        .imports("t.test.ts", "b.ts")
+        .replaces("t.test.ts", "b.ts", 1)
+        .tag("t.test.ts", FileTags::TEST)
+        .build();
+
+    assert_eq!(paths(&run(&index, &["a.ts"]).tests), NONE);
+}
+
+#[test]
+fn the_tests_left_out_are_counted_after_the_cut() {
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .imports("u.test.ts", "b.ts")
+        .tag("u.test.ts", FileTags::TEST)
+        .build();
+    let request = ImpactRequest {
+        no_tests: true,
+        ..request(&["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &request);
+
+    assert_eq!(paths(&answer.tests), NONE);
+    assert_eq!(answer.tests_left_out, 1, "only u.test.ts runs the change");
+}
+
+#[test]
+fn the_cut_keeps_what_the_walk_found_of_a_test_it_lists() {
+    let index = mocked_chain()
+        .imports("c.ts", "a.ts")
+        .imports("t.test.ts", "c.ts")
+        .replaces("t.test.ts", "b.ts", 1)
+        .build();
+
+    let answer = impact(&index, Freshness::Fresh, &limited_to(1, &["a.ts"]));
+
+    assert_eq!(paths(&answer.affected), ["b.ts", "c.ts"]);
+    assert_eq!(rows(&answer.tests), [row("t.test.ts", 2, "imports b.ts")]);
+}
+
+#[test]
+fn the_footer_still_covers_a_test_the_cut_left_out() {
+    let index = mocked_chain()
+        .replaces("t.test.ts", "b.ts", 1)
+        .read_by("extra", "t.test.ts")
+        .build();
+
+    let text = run(&index, &["a.ts"]).to_string();
+
+    assert!(!text.contains("t.test.ts"), "{text}");
+    assert!(text.contains("extra read 1 of 1 files"), "{text}");
+}
+
+#[test]
+fn the_depth_does_not_change_which_tests_the_cut_lists() {
+    let index = contracted_chain()
+        .replaces("t.test.ts", "api.ts", 1)
+        .build();
+
+    for depth in [0, 1, 5] {
+        let answer = impact(&index, Freshness::Fresh, &limited_to(depth, &["server.ts"]));
+
+        assert_eq!(paths(&answer.tests), NONE, "depth {depth}");
+    }
+}
+
+#[test]
+fn a_changed_test_is_no_different_for_the_module_it_replaces() {
+    // The walk never reaches a changed file, so a changed test is no hit and the cut is never asked about it: with the mock and without it the answer is the same, nothing listed for the test itself.
+    let plain = mocked_chain().build();
+    let replacing = mocked_chain().replaces("t.test.ts", "b.ts", 1).build();
+
+    for changed in [&["t.test.ts"][..], &["a.ts", "t.test.ts"]] {
+        let without = run(&plain, changed);
+        let with = run(&replacing, changed);
+
+        assert_eq!(paths(&with.tests), paths(&without.tests), "{changed:?}");
+        assert_eq!(with.tests_left_out, without.tests_left_out, "{changed:?}");
+        assert!(!paths(&with.tests).contains(&"t.test.ts"), "{changed:?}");
+    }
+}
+
+/// How many files the trees of the cut property have.
+const CUT_FILES: usize = 7;
+
+/// How a generated file loads another in the cut properties.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Loads {
+    /// A plain import.
+    Import,
+    /// A mock whose factory stands in for the module.
+    Replace,
+    /// A dynamic import of the module as it is.
+    Actual,
+    /// A mock that leaves the module as it is or runs it: one without a factory, an unmock, `importMock` or `createMockFromModule`, which all leave the same fact.
+    Bare,
+}
+
+/// The files a test runs, by what the edges say and nothing else: itself, and every file that a file it runs loads, except the modules it replaces, which run only where a file it runs asks for them as they are. It replaces a module when it mocks it with a factory and neither asks for the module as it is nor mocks it any other way. Grown to a fixed point, not walked.
+fn files_run_by(files: usize, test: usize, edges: &[(usize, usize, Loads)]) -> Vec<bool> {
+    let replaced = |file: usize| {
+        let by_test = |wanted: fn(Loads) -> bool| {
+            edges
+                .iter()
+                .any(|&(from, to, loads)| from == test && to == file && wanted(loads))
+        };
+        by_test(|loads| loads == Loads::Replace)
+            && !by_test(|loads| matches!(loads, Loads::Actual | Loads::Bare))
+    };
+    let mut runs = vec![false; files];
+    runs[test] = true;
+    loop {
+        let before = runs.clone();
+        for &(from, to, loads) in edges {
+            if runs[from] && (loads == Loads::Actual || !replaced(to)) {
+                runs[to] = true;
+            }
+        }
+        if runs == before {
+            return runs;
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1024))]
+
+    /// On any graph, a test is listed exactly when the files it runs include the changed one, where it does not run a module it replaces unless it also asks for the module as it is or mocks it another way, or a file it runs asks for the module as it is, and a test that replaces nothing is listed whenever the change reaches it.
+    #[test]
+    fn a_replaced_module_cuts_exactly_the_tests_it_stands_between(
+        edges in prop::collection::vec(
+            (
+                0..CUT_FILES,
+                0..CUT_FILES,
+                prop_oneof![
+                    3 => Just(Loads::Import),
+                    2 => Just(Loads::Replace),
+                    1 => Just(Loads::Actual),
+                    1 => Just(Loads::Bare),
+                ],
+            ),
+            0..24,
+        ),
+        tests in prop::collection::vec(any::<bool>(), CUT_FILES),
+        changed in 0..CUT_FILES,
+    ) {
+        let edges: Vec<_> = edges.into_iter().filter(|(from, to, _)| from != to).collect();
+        let name = |number: usize| format!("f{number}.ts");
+        let mut tree = Tree::new();
+        for (number, &is_test) in tests.iter().enumerate() {
+            tree = tree.read_by("ts", &name(number));
+            if is_test {
+                tree = tree.tag(&name(number), FileTags::TEST);
+            }
+        }
+        for &(from, to, loads) in &edges {
+            let (from, to) = (name(from), name(to));
+            tree = match loads {
+                Loads::Import => tree.imports(&from, &to),
+                Loads::Replace => tree.replaces(&from, &to, 1),
+                Loads::Actual => tree.imports_actual(&from, &to, 2),
+                Loads::Bare => tree.mocks(&from, &to, 3),
+            };
+        }
+        let index = tree.build();
+
+        let expected: BTreeSet<String> = (0..CUT_FILES)
+            .filter(|&number| tests[number] && number != changed)
+            .filter(|&number| files_run_by(CUT_FILES, number, &edges)[changed])
+            .map(name)
+            .collect();
+
+        let answer = run(&index, &[&name(changed)]);
+
+        let listed: BTreeSet<String> = answer
+            .tests
+            .iter()
+            .map(|entry| entry.path.clone())
+            .filter(|path| *path != name(changed))
+            .collect();
+        prop_assert_eq!(listed, expected);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    /// Making every mock of a generated tree one that replaces its module adds no file and no test to the answer by name, and the tests it lists are exactly those of the walk that run the change: by the edges and not by the names, the files such a test runs include the changed one, a module it replaces not among them unless it asks for it as it is or mocks it another way too.
+    #[test]
+    fn replacing_mocks_only_take_from_the_answer_by_name(
+        case in case(),
+        tests in prop::collection::vec(any::<bool>(), FILES),
+        mocks in prop::collection::vec(
+            (
+                0..FILES,
+                0..FILES,
+                prop_oneof![Just(Loads::Replace), Just(Loads::Bare), Just(Loads::Actual)],
+            ),
+            0..6,
+        ),
+    ) {
+        let mocks: Vec<_> = mocks.into_iter().filter(|(from, to, _)| from != to).collect();
+        let changed = file_path(case.changed);
+        let ask = |index: &Index| {
+            let request = ImpactRequest {
+                names: vec!["a".to_owned()],
+                depth: Some(u32::MAX),
+                ..request(&[&changed])
+            };
+            impact(index, Freshness::Fresh, &request)
+        };
+        let tree = |replacing: bool| {
+            mocks.iter().fold(case.named_files_mocking(replacing), |tree, &(from, to, loads)| {
+                let (from, to) = (file_path(from), file_path(to));
+                match loads {
+                    Loads::Replace if replacing => tree.replaces(&from, &to, 2),
+                    Loads::Replace | Loads::Bare => tree.mocks(&from, &to, 2),
+                    Loads::Actual => tree.imports_actual(&from, &to, 3),
+                    Loads::Import => tree.imports(&from, &to),
+                }
+            })
+        };
+        let plain = ask(&with_tests(tree(false), &tests));
+        let replacing = ask(&with_tests(tree(true), &tests));
+        // With no file tagged as a test the walk lists every file it reaches, so this is what it found before the cut left any test out.
+        let walked = ask(&with_tests(tree(true), &[false; FILES]));
+
+        let kept = |list: &[Affected]| -> BTreeSet<String> {
+            list.iter().map(|entry| entry.path.clone()).collect()
+        };
+        prop_assert!(kept(&replacing.affected).is_subset(&kept(&plain.affected)));
+        prop_assert!(kept(&replacing.tests).is_subset(&kept(&plain.tests)));
+
+        let edges: Vec<(usize, usize, Loads)> = case
+            .edges
+            .iter()
+            .map(|(from, to, take)| {
+                let loads = if matches!(take, Take::Mock) { Loads::Replace } else { Loads::Import };
+                (*from, *to, loads)
+            })
+            .chain(mocks.iter().copied())
+            .collect();
+        let found = kept(&walked.affected);
+        let expected: BTreeSet<String> = (0..FILES)
+            .filter(|&number| tests[number] && number != case.changed)
+            .filter(|&number| found.contains(&file_path(number)))
+            .filter(|&number| files_run_by(FILES, number, &edges)[case.changed])
+            .map(file_path)
+            .collect();
+        prop_assert_eq!(kept(&replacing.tests), expected);
+    }
 }

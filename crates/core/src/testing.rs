@@ -342,6 +342,24 @@ impl Tree {
         self.import(from, Import::new(to, ImportKind::Mock, line), file(to))
     }
 
+    /// `from` mocks the file `to` on `line` with a factory that does not use the module, as `vi.mock('to', () => ({}))` does: the test runs none of the code of `to`.
+    pub fn replaces(self, from: &str, to: &str, line: u32) -> Self {
+        let import = Import {
+            flags: ImportFlags::REPLACES,
+            ..Import::new(to, ImportKind::Mock, line)
+        };
+        self.import(from, import, file(to))
+    }
+
+    /// `from` asks for the file `to` as it is, past any mock, on `line`, as `vi.importActual('to')` does.
+    pub fn imports_actual(self, from: &str, to: &str, line: u32) -> Self {
+        let import = Import {
+            flags: ImportFlags::ACTUAL,
+            ..Import::new(to, ImportKind::Dynamic, line)
+        };
+        self.import(from, import, file(to))
+    }
+
     /// `from` re-exports names of the file `to`, as `export { source as exported } from 'to'` does, one `(exported, source)` pair per name. `("ns", "*")` is `export * as ns from 'to'`.
     pub fn re_exports(self, from: &str, to: &str, pairs: &[(&str, &str)]) -> Self {
         let import = Import {

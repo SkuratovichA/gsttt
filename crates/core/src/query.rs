@@ -9,6 +9,7 @@ mod impact;
 mod lookup;
 mod neighbours;
 mod render;
+mod replaced;
 mod report;
 mod route;
 mod scope;

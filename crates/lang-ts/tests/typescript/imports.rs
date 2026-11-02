@@ -4,7 +4,7 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, imports, run, status, unread};
+use crate::support::{NOTHING, imports, run, status, tests_run_by, unread};
 
 #[test]
 #[scenario("typescript", "Every import form is read")]
@@ -112,11 +112,156 @@ fn a_mocked_module_is_a_mock() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+#[scenario(
+    "typescript",
+    "A factory that does not use its parameter replaces the module"
+)]
+fn a_factory_that_does_not_use_its_parameter_replaces_the_module() -> Result<(), Box<dyn Error>> {
+    let json = run("replacing-mocks")?;
+    let expected: Vec<String> = (1..=3)
+        .map(|line| format!("./lib mock @{line} replaces -> file src/lib.ts"))
+        .collect();
+    assert_eq!(imports(&json, "src/replacing.test.ts"), expected);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A factory that uses its parameter does not replace the module"
+)]
+fn a_factory_that_uses_its_parameter_does_not_replace_the_module() -> Result<(), Box<dyn Error>> {
+    let json = run("partial-mocks")?;
+    let expected: Vec<String> = (1..=3)
+        .map(|line| format!("./lib mock @{line} -> file src/lib.ts"))
+        .collect();
+    assert_eq!(imports(&json, "src/partial.test.ts"), expected);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A mock without a factory does not replace the module")]
+fn a_mock_without_a_factory_does_not_replace_the_module() -> Result<(), Box<dyn Error>> {
+    let json = run("bare-mocks")?;
+    let expected: Vec<String> = (1..=3)
+        .map(|line| format!("./lib mock @{line} -> file src/lib.ts"))
+        .collect();
+    assert_eq!(imports(&json, "src/automock.test.ts"), expected);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A nested mock call does not replace the module")]
+fn a_nested_mock_call_does_not_replace_the_module() -> Result<(), Box<dyn Error>> {
+    let json = run("nested-mocks")?;
+    assert_eq!(
+        imports(&json, "src/nested.test.ts"),
+        [
+            "./lib mock @2 -> file src/lib.ts",
+            "./lib mock @5 -> file src/lib.ts",
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A mock that is not hoisted does not replace the module")]
+fn a_mock_that_is_not_hoisted_does_not_replace_the_module() -> Result<(), Box<dyn Error>> {
+    let json = run("late-mocks")?;
+    let expected: Vec<String> = (1..=3)
+        .map(|line| format!("./lib mock @{line} -> file src/lib.ts"))
+        .collect();
+    assert_eq!(imports(&json, "src/late.test.ts"), expected);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+/// The tests of `unsure-mocks` that replace `src/lib.ts` with a factory and also name it in another call of `vi` or `jest`, so that they may run its code. `src/replaced.test.ts` replaces it and does nothing else.
+const UNSURE: [&str; 13] = [
+    "create-mock",
+    "deep-unmock",
+    "do-mock",
+    "dont-mock",
+    "gen-mock",
+    "import-mock",
+    "jest-unmock",
+    "mocked-twice",
+    "require-mock",
+    "set-mock",
+    "unstable-mock",
+    "vi-do-unmock",
+    "vi-unmock",
+];
+
+#[test]
+fn a_test_that_also_names_a_replaced_module_in_another_mock_call_is_listed()
+-> Result<(), Box<dyn Error>> {
+    let expected = UNSURE.map(|name| format!("src/{name}.test.ts"));
+
+    let mut tests = tests_run_by("unsure-mocks", "src/dep.ts")?;
+    tests.sort();
+
+    assert_eq!(
+        tests, expected,
+        "only src/replaced.test.ts runs none of src/lib.ts"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A load named at run time leaves no mock replacing its module"
+)]
+fn a_load_named_at_run_time_leaves_no_mock_replacing_its_module() -> Result<(), Box<dyn Error>> {
+    let json = run("named-loads")?;
+    for name in [
+        "import-name",
+        "require-name",
+        "import-actual-name",
+        "require-actual-name",
+    ] {
+        assert_eq!(
+            imports(&json, &format!("src/{name}.test.ts")),
+            ["./lib mock @3 -> file src/lib.ts"],
+            "{name}"
+        );
+    }
+    assert_eq!(
+        imports(&json, "src/replaced.test.ts"),
+        ["./lib mock @1 replaces -> file src/lib.ts"]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_test_that_loads_a_module_named_at_run_time_is_listed() -> Result<(), Box<dyn Error>> {
+    let mut tests = tests_run_by("named-loads", "src/dep.ts")?;
+    tests.sort();
+
+    assert_eq!(
+        tests,
+        [
+            "src/import-actual-name.test.ts",
+            "src/import-name.test.ts",
+            "src/require-actual-name.test.ts",
+            "src/require-name.test.ts",
+        ],
+        "only src/replaced.test.ts loads nothing that may be src/lib.ts"
+    );
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "An actual module is a dynamic import")]
 fn an_actual_module_is_a_dynamic_import() -> Result<(), Box<dyn Error>> {
     let json = run("actual-modules")?;
     let expected: Vec<String> = (1..=2)
-        .map(|line| format!("./lib dynamic @{line} -> file src/lib.ts"))
+        .map(|line| format!("./lib dynamic @{line} actual -> file src/lib.ts"))
         .collect();
     assert_eq!(imports(&json, "src/actual.test.ts"), expected);
     insta::assert_json_snapshot!(json);
@@ -164,8 +309,8 @@ fn a_mock_that_asks_for_the_actual_module_reaches_it() -> Result<(), Box<dyn Err
     assert_eq!(
         imports(&json, "src/lib.test.ts"),
         [
-            "./lib mock @1 -> file src/lib.ts",
-            "./lib dynamic @2 -> file src/lib.ts",
+            "./lib mock @1 replaces -> file src/lib.ts",
+            "./lib dynamic @2 actual -> file src/lib.ts",
             "./lib static @2 type-only [*] -> file src/lib.ts",
             "./editor mock @5 -> file src/editor.ts",
             "./editor static @6 type-only [*] -> file src/editor.ts",
@@ -204,10 +349,10 @@ fn a_member_read_from_an_actual_module_is_the_name_it_takes() -> Result<(), Box<
     assert_eq!(
         imports(&json, "src/members.test.ts"),
         [
-            "./lib dynamic @1 [helper] -> file src/lib.ts",
-            "./lib dynamic @2 [other] -> file src/lib.ts",
-            "./lib dynamic @3 [third] -> file src/lib.ts",
-            "./lib dynamic @4 -> file src/lib.ts",
+            "./lib dynamic @1 actual [helper] -> file src/lib.ts",
+            "./lib dynamic @2 actual [other] -> file src/lib.ts",
+            "./lib dynamic @3 actual [third] -> file src/lib.ts",
+            "./lib dynamic @4 actual -> file src/lib.ts",
         ]
     );
     assert_eq!(unread(&json, "src/members.test.ts"), NOTHING);

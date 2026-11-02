@@ -44,6 +44,12 @@ macro_rules! flags {
             pub const fn intersection(self, other: Self) -> Self {
                 Self(self.0 & other.0)
             }
+
+            /// The flags set here and not in `other`.
+            #[must_use]
+            pub const fn without(self, other: Self) -> Self {
+                Self(self.0 & !other.0)
+            }
         }
 
         impl BitOr for $name {
@@ -82,6 +88,10 @@ mod flag_sets {
             TYPE_CHECKING = 2;
             /// Only compiled for tests: Rust `#[cfg(test)]`.
             TEST_ONLY = 3;
+            /// A mock whose factory stands in for the module, so that the importer runs none of its code: TS `vi.mock('x', () => ({}))`. A mock that has no factory, or whose factory asks for the module as it is, does not carry it.
+            REPLACES = 4;
+            /// A dynamic import that asks for the module as it is, past any mock of it: TS `vi.importActual('x')`, `jest.requireActual('x')`.
+            ACTUAL = 5;
         }
     }
 
@@ -655,6 +665,14 @@ mod tests {
         assert!(flags.contains(ImportFlags::TYPE_ONLY) && !flags.contains(ImportFlags::TEST_ONLY));
         assert_eq!(format!("{flags:?}"), r#"{"TYPE_ONLY", "OPTIONAL"}"#);
         assert!(ImportFlags::NONE.is_empty());
+    }
+
+    #[test]
+    fn a_flag_taken_out_leaves_the_others() {
+        let flags = ImportFlags::REPLACES | ImportFlags::TYPE_ONLY;
+        assert_eq!(flags.without(ImportFlags::REPLACES), ImportFlags::TYPE_ONLY);
+        assert_eq!(flags.without(ImportFlags::ACTUAL), flags);
+        assert_eq!(flags.without(flags), ImportFlags::NONE);
     }
 
     /// One failure of every kind.
