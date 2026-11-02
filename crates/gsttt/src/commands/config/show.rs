@@ -5,7 +5,7 @@ use std::fmt;
 use gsttt_core::Setup;
 use gsttt_core::engine::packs::merge_packs;
 use gsttt_core::query::{Answer, Entries};
-use gsttt_core::setup::Reason;
+use gsttt_core::setup::{GraphqlEndpoint, Reason};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -14,7 +14,7 @@ use crate::error::CliError;
 use crate::repository::{Repository, RepositoryError};
 use crate::streams::{Io, Outcome};
 
-/// `gsttt config show`: prints the modules with whether each is on and why, the options the config gives them, the packs they receive, the external connectors with whether the user trusts each, and the settings that apply to the whole run. Under `--json` it is one JSON document with the same parts.
+/// `gsttt config show`: prints the modules with whether each is on and why, the options the config gives them, the packs they receive, the external connectors with whether the user trusts each, the GraphQL endpoints, and the settings that apply to the whole run. Under `--json` it is one JSON document with the same parts.
 pub(in crate::commands) fn show(
     session: &Session<'_>,
     io: &mut Io<'_>,
@@ -94,6 +94,7 @@ struct Shown {
     exclude: Vec<String>,
     max_file_bytes: u64,
     http_prefixes: Vec<String>,
+    graphql_endpoints: Vec<GraphqlEndpoint>,
 }
 
 impl Shown {
@@ -141,6 +142,7 @@ impl Shown {
             exclude: setup.exclude.clone(),
             max_file_bytes: setup.max_file_bytes,
             http_prefixes: setup.http_prefixes.clone(),
+            graphql_endpoints: setup.graphql_endpoints.clone(),
         })
     }
 
@@ -176,6 +178,17 @@ impl Shown {
         lines.push(format!("exclude: {}", list(&self.exclude)));
         lines.push(format!("max_file_bytes: {}", self.max_file_bytes));
         lines.push(format!("http_prefixes: {}", list(&self.http_prefixes)));
+        lines.push("graphql_endpoints:".to_owned());
+        if self.graphql_endpoints.is_empty() {
+            lines.push(NONE_ENTRY.to_owned());
+        }
+        lines.extend(self.graphql_endpoints.iter().map(|endpoint| {
+            format!(
+                "  clients: {}; servers: {}",
+                list(&endpoint.clients),
+                list(&endpoint.servers)
+            )
+        }));
         lines
     }
 }

@@ -62,6 +62,45 @@ fn config_show_marks_an_untrusted_external() {
     );
 }
 
+#[scenario("cli", "config show lists the GraphQL endpoints")]
+#[test]
+fn config_show_lists_the_graphql_endpoints() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.repository();
+    let after_heading = |stdout: &str| -> Vec<String> {
+        stdout
+            .lines()
+            .skip_while(|line| *line != "graphql_endpoints:")
+            .skip(1)
+            .take_while(|line| line.starts_with("  "))
+            .map(str::to_owned)
+            .collect()
+    };
+
+    let without = sandbox.run_in(&root, &["config", "show"]);
+    assert_eq!(without.code, Some(0), "{without:?}");
+    assert_eq!(after_heading(&without.stdout), ["  (none)"], "{without:?}");
+
+    write(
+        &root,
+        CONFIG,
+        "[[graphql_endpoints]]\nclients = [\"web/**\"]\nservers = [\"api/**\", \"gateway/**\"]\n",
+    );
+    let text = sandbox.run_in(&root, &["config", "show"]);
+    assert_eq!(text.code, Some(0), "{text:?}");
+    assert_eq!(
+        after_heading(&text.stdout),
+        ["  clients: web/**; servers: api/**, gateway/**"],
+        "{text:?}"
+    );
+    let shown = json(&sandbox.run_in(&root, &["--json", "config", "show"]));
+    assert_eq!(
+        shown["graphql_endpoints"],
+        serde_json::json!([{ "clients": ["web/**"], "servers": ["api/**", "gateway/**"] }]),
+        "{shown}"
+    );
+}
+
 /// The built-in modules in the order the spec gives for the registry, written out here so that the test does not read the order from the code it checks. The unit test of the registry holds the same list as `ORDER`, because a test of the binary's library cannot share a constant with this one.
 const REGISTRY_ORDER: [&str; 9] = [
     "ts", "python", "rust", "openapi", "graphql", "proto", "prisma", "sql", "env",
