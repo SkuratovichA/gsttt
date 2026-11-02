@@ -124,6 +124,7 @@ expression: json
             "a mount on an app or router imported from another file (importedApp.use('/x', router)) is read only when the name is the app or router itself, not a member of it (server.app.use) and not a name from a package; the routes of a router that no read mount reaches are served at the paths they are written with",
             "a mount path is read from a string or a constant of the same file, not from an imported constant, and a mount path array with an element that is not text is read for its other elements only",
             "a NestJS controller whose @Controller prefix is not text (an imported constant, a call) serves no route and is reported as a site the file could not read: its own routes and those of the class it extends are not served",
+            "a NestJS @Controller({ path: [...] }) serves its routes under the first path of the array that is text only, where @Controller([...]) serves them under every path",
             "routers that mount each other in a cycle are followed until the cycle closes"
           ],
           "kind": "http",

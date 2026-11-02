@@ -177,7 +177,7 @@ expression: packs
         ],
         "kind": "http",
         "role": "serves",
-        "key": "$arg1",
+        "key": "$arg1[]",
         "method": "$callee",
         "receiver": {
           "from": [
@@ -343,14 +343,14 @@ expression: packs
         ],
         "kind": "http",
         "role": "serves",
-        "key": "$arg1|",
+        "key": "$arg1[]|",
         "method": "$callee",
         "class": {
           "from": [
             "Controller",
             "*.Controller"
           ],
-          "key": "$arg1|$arg1.path"
+          "key": "$arg1[]|$arg1.path"
         },
         "receiver": null,
         "prefix": null

@@ -351,7 +351,7 @@ impl Site for View<'_> {
     /// The verb a rule is applied for is not written at the site, so `$arg1.method` holds nothing.
     fn holds(&self, source: &ValueSource) -> bool {
         match source {
-            ValueSource::Arg(position) => self
+            ValueSource::Arg(position) | ValueSource::ArgEach(position) => self
                 .positional(*position)
                 .is_some_and(|arg| self.text(arg).is_none()),
             ValueSource::ArgProp(position, prop) => {
