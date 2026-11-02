@@ -165,3 +165,27 @@ impl<'a> Scopes<'a> {
         high == Scope::EMPTY || self.memo.borrow().shares(high, low)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::Tree;
+
+    #[test]
+    fn the_globs_are_compiled_by_the_first_ask_for_a_scope_and_not_before() {
+        let index = Tree::new()
+            .endpoint(&["web/**"], &["api/**"])
+            .serves("api/users.ts", "http GET /users")
+            .build();
+        let file = index.graph.file_id("api/users.ts").unwrap();
+        let http = ContractKey::parse("http GET /users").unwrap();
+
+        let scopes = Scopes::new(&index.graph, &index.graphql_endpoints);
+        assert!(scopes.compiled.get().is_none());
+        assert!(!scopes.applies(&http));
+        assert!(scopes.compiled.get().is_none());
+        let _ = scopes.of(file, Role::Serves);
+
+        assert!(scopes.compiled.get().is_some());
+    }
+}

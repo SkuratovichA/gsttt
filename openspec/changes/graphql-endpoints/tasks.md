@@ -52,3 +52,6 @@
 - [x] 9.3 `crates/core/src/glob.rs`: `GlobError::in_option` becomes `at`, which takes the place as the message shows it; the config, the OpenAPI and the SQL connectors call it
 - [x] 9.4 `crates/core/src/engine/build.rs`: no `GlobSet` while no endpoint lists a glob, one list of places and globs, and the walk of the files stops once every glob has matched
 - [x] 9.5 The coverage line of a glob that matches no file says that git-ignored and excluded files are not indexed; the test names two endpoints
+- [x] 9.6 `crates/core/src/query/scope.rs`: a unit test that the globs are compiled by the first ask for a scope and not before
+- [x] 9.7 `crates/gsttt/tests/cli/impact.rs`: the test asserts that the second run is answered from the snapshot
+- [x] 9.8 The delta specs name the files the tests have

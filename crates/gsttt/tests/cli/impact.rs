@@ -417,13 +417,20 @@ fn the_endpoints_of_the_config_scope_a_graphql_change() {
         ".gsttt/config.toml",
         "[[graphql_endpoints]]\nclients = [\"web-a/**\"]\nservers = [\"api-a/**\"]\n\n[[graphql_endpoints]]\nclients = [\"web-b/**\"]\nservers = [\"api-b/**\"]\n",
     );
-    // The first run after the edit builds the index again, the second answers from its snapshot.
-    for _ in 0..2 {
-        assert_eq!(
-            clients_of_the_resolver(&sandbox, &repo),
-            ["web-a/client.ts"]
-        );
-    }
+    // The first run after the edit builds the index again and stores it with the endpoints.
+    assert_eq!(
+        clients_of_the_resolver(&sandbox, &repo),
+        ["web-a/client.ts"]
+    );
+    let stored = json(&sandbox.run_in(&repo, &["--json", "index"]));
+    assert_eq!(stored["unchanged"], true, "{stored}");
+    // The next one reads that snapshot, and the endpoints in it scope the change as before.
+    assert_eq!(
+        clients_of_the_resolver(&sandbox, &repo),
+        ["web-a/client.ts"]
+    );
+    let still = json(&sandbox.run_in(&repo, &["--json", "index"]));
+    assert_eq!(still["unchanged"], true, "{still}");
 }
 
 #[test]
