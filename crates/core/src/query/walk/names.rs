@@ -1,6 +1,6 @@
 //! The walk behind `impact` asked about names: the declarations that refer to what a change reaches, hop by hop, in place of the files that import it.
 //!
-//! A hop goes from the declarations the walk has reached in a file to the declarations that refer to them, in the file itself and in the files that import them under the names the file exports them as. A barrel on the way, and a file that imports a name and exports it again, are listed and add no hop. Code that runs as a file loads is a caller of what it refers to, and a file reached at load reaches the files that load it. A file whose connector records no declarations is followed whole, as the walk over files follows every file.
+//! A hop goes from the declarations the walk has reached in a file to the declarations that refer to them, in the file itself and in the files that import them under the names the file exports them as. A barrel on the way that names what it passes on, and a file that imports a name and exports it again, are listed and add no hop; an `export *` names nothing and gets no row. Code that runs as a file loads is a caller of what it refers to, and a file reached at load reaches the files that load it. A file whose connector records no declarations is followed whole, as the walk over files follows every file.
 //!
 //! The depth bounds the hops through code: the declarations that refer to a name, the loads and the mocks. A hop across a contract counts in the distance and not in the depth, so every part the walk reaches crosses its contracts, and the part across carries the hops through code of the part it came from.
 
@@ -989,7 +989,7 @@ impl<'w, 'a> Step<'w, 'a> {
             .collect()
     }
 
-    /// Follows the `names` of `file` to the files that import them. A barrel that passes a name on, and a file that imports a name and exports it again, are listed and pass the name to their own importers within the same hop.
+    /// Follows the `names` of `file` to the files that import them. A barrel that names what it passes on, and a file that imports a name and exports it again, are listed and pass the name to their own importers within the same hop.
     ///
     /// The walk over files decides the same things in `follow`, `take_all`, `reaches` and `exported_by` of `crates/core/src/query/walk.rs`, and in `known`, `exported` and `visit_stars` of `crates/core/src/query/walk/exports.rs`. This is a second copy because it follows one name at a time, through the local an import binds it to so as to find the declarations that use it, which the edges of the graph do not record, and because a star hands a name on in the same hop, so it never works out X(file). The properties `a_walk_by_name_lists_no_file_the_walk_per_file_does_not` and `a_walk_by_every_name_lists_what_the_walk_per_file_does_when_every_import_is_used` in `crates/core/tests/queries/names.rs` hold the two against each other, on the trees where the design lets them agree.
     fn flow(&mut self, file: FileId, names: BTreeSet<Name<'a>>) {
@@ -1131,12 +1131,8 @@ impl<'w, 'a> Step<'w, 'a> {
             ImportKind::ReExportAll => {
                 // `export *` never forwards `default`.
                 if name.exported() != Some("default") {
-                    via.barrel = true;
-                    if let Some(exported) = name.exported()
-                        && let Some(id) = graph.name_id(exported)
-                    {
-                        via.passes.push((id, id));
-                    }
+                    // Asked about a name, it names nothing, so it gets no row; a file followed whole keeps it.
+                    via.barrel |= name == Name::Any;
                     work.push_back((importer, name));
                 }
             }
