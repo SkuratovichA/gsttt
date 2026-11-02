@@ -45,8 +45,8 @@ use self::roots::Roots;
 use self::symbols::Recorder;
 use crate::builtins::is_builtin;
 use crate::extra::{
-    Binding, ClassRoute, Deferred, DeferredTarget, Export, ExportTarget, Inherit, Mount,
-    MountTarget, Route, RuleRef, TsExtra,
+    Binding, ClassRoute, Deferred, DeferredTarget, Export, ExportTarget, ImportedMount, Inherit,
+    Mount, MountTarget, Route, RuleRef, TsExtra,
 };
 use crate::pathing::{is_relative, split_package};
 use crate::shape::{
@@ -204,6 +204,14 @@ struct Analyzer<'p, 'a> {
     /// The expressions whose value the code around them drops, parentheses peeled: a compound assignment or an update that is exactly one of them only writes. A mark lives while its parent is walked, so this holds as many as the nesting is deep.
     discarded: Vec<Span>,
     out: Analysis,
+}
+
+/// The arguments of a `host.use(…)` call that attach something.
+struct MountRead {
+    prefixes: Vec<String>,
+    targets: Vec<MountTarget>,
+    /// Some prefix is not text.
+    computed: bool,
 }
 
 /// A name an import takes from a package that an import rule reads.
@@ -651,10 +659,12 @@ impl<'a> Analyzer<'_, 'a> {
                 }
             }
         }
-        if let Some(host) = callee.strip_suffix(".use")
-            && self.makers.get(host).is_some_and(|maker| maker.serves)
-        {
-            self.mount(host, it, line);
+        if let Some(host) = callee.strip_suffix(".use") {
+            if self.makers.get(host).is_some_and(|maker| maker.serves) {
+                self.mount(host, it, line);
+            } else if let Some(host) = self.imported_receiver(callee) {
+                self.imported_mount(host, it, line);
+            }
         }
         if self.gates.nestjs
             && let Some(host) = callee.strip_suffix(".setGlobalPrefix")
@@ -819,6 +829,44 @@ impl<'a> Analyzer<'_, 'a> {
 
     /// `host.use([prefix], router…)`. A prefix may be an array of paths: the routers are mounted once under each literal element, and an element that is not a literal is a site the file could not read.
     fn mount(&mut self, host: &str, call: &CallExpression<'_>, line: Line) {
+        let Some(read) = self.read_mount(call) else {
+            return;
+        };
+        if read.computed {
+            self.unread(call.span, line, UnresolvedReason::NonLiteral);
+        }
+        for prefix in read.prefixes {
+            self.out.extra.mounts.push(Mount {
+                host: host.to_owned(),
+                prefix,
+                targets: read.targets.clone(),
+                line,
+            });
+        }
+    }
+
+    /// `host.use(…)` on a name imported from a file of the project. Whether `host` is a router or an app is the link's to say, so the parse keeps the candidate and reports nothing: `i18n.use(plugin)` must stay silent. The text of a computed prefix is kept, for the link to report it when `host` turns out to serve.
+    fn imported_mount(&mut self, host: &str, call: &CallExpression<'_>, line: Line) {
+        let Some(read) = self.read_mount(call) else {
+            return;
+        };
+        let detail = if read.computed {
+            self.snippet(call.span)
+        } else {
+            String::new()
+        };
+        self.out.extra.imported_mounts.push(ImportedMount {
+            host: host.to_owned(),
+            prefixes: read.prefixes,
+            targets: read.targets,
+            line,
+            computed: read.computed,
+            detail,
+        });
+    }
+
+    /// The prefixes and targets of a `host.use(…)` call, or `None` when it attaches no router, module or controller (`app.use(cors())`).
+    fn read_mount(&self, call: &CallExpression<'_>) -> Option<MountRead> {
         let mut prefixes = vec![String::new()];
         let mut targets = Vec::new();
         let mut computed = false;
@@ -861,19 +909,14 @@ impl<'a> Analyzer<'_, 'a> {
             }
         }
         if targets.is_empty() {
-            return;
+            return None;
         }
-        if computed || prefixes.iter().any(|prefix| prefix.contains(COMPUTED)) {
-            self.unread(call.span, line, UnresolvedReason::NonLiteral);
-        }
-        for prefix in prefixes {
-            self.out.extra.mounts.push(Mount {
-                host: host.to_owned(),
-                prefix,
-                targets: targets.clone(),
-                line,
-            });
-        }
+        computed |= prefixes.iter().any(|prefix| prefix.contains(COMPUTED));
+        Some(MountRead {
+            prefixes,
+            targets,
+            computed,
+        })
     }
 
     fn tagged(&mut self, it: &TaggedTemplateExpression<'_>, tag: &str) {

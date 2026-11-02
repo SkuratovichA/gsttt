@@ -7,6 +7,7 @@ mod graphql;
 mod http;
 mod imports;
 mod kafka;
+mod mounts;
 mod packs;
 mod projects;
 mod raw_sql;
