@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use gsttt_core::FileId;
 use gsttt_core::connector::{LinkFile, LinkInput, Linked, LinkedFact};
 use gsttt_core::contract::{ContractKey, ContractKind, Role};
-use gsttt_core::fact::{ContractFact, Line, Resolution};
+use gsttt_core::fact::{ContractFact, Line, Resolution, UnresolvedSite};
 use gsttt_core::rules::{Pack, contract_key};
 
 use self::deferred::Resolved;
@@ -24,7 +24,8 @@ type Node = (FileId, String);
 /// The facts that need other files: Express routes under the prefixes their routers are mounted at, NestJS controller routes behind the global prefix of the apps that reach them and the routes they inherit from a base class, tRPC procedures under the routers that compose them, and the contracts of the sites whose rule needed the value of an imported constant or the client or router that an imported name stands for. An Express route and a procedure are found only here, so they key no parsed fact again and the engine keeps every fact the parse returned. A NestJS route a controller declares is parsed as written, and a fact keyed again by [`LinkedFact::rekeyed`] takes its place. The sites that a rule still cannot read once the constants are known come back as unread sites of their file.
 pub(crate) fn link(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Linked {
     let resolved = deferred::resolve(input, packs);
-    let edges = parents(input);
+    let mut unread = Vec::new();
+    let edges = parents(input, &mut unread);
     let mut mounts = Mounts::new(&edges);
     let mut facts = express(input, &resolved, &mut mounts);
     facts.extend(nestjs(input, &resolved, &mut mounts));
@@ -36,10 +37,8 @@ pub(crate) fn link(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Linked {
             "mounts close a cycle, which adds no path of its own"
         );
     }
-    Linked {
-        facts,
-        unread: resolved.unread,
-    }
+    unread.extend(resolved.unread);
+    Linked { facts, unread }
 }
 
 /// The file a specifier written in `file` leads to.
@@ -116,7 +115,12 @@ fn export_of(
 }
 
 /// For every node that some mount attaches, the nodes it is attached to and the path of each mount: Express routers, NestJS modules and controllers, and the roots of the apps with a global prefix.
-fn parents(input: &LinkInput<'_, TsExtra>) -> BTreeMap<Node, Vec<(Node, String)>> {
+///
+/// A `.use` on a name imported from another file is a mount only when that name is a variable made by a call a rule serves routes on. A computed prefix there is a site the file could not read, added to `unread`.
+fn parents(
+    input: &LinkInput<'_, TsExtra>,
+    unread: &mut Vec<(FileId, UnresolvedSite)>,
+) -> BTreeMap<Node, Vec<(Node, String)>> {
     let mut parents: BTreeMap<Node, Vec<(Node, String)>> = BTreeMap::new();
     for file in input.files() {
         for mount in &file.extra.mounts {
@@ -126,6 +130,33 @@ fn parents(input: &LinkInput<'_, TsExtra>) -> BTreeMap<Node, Vec<(Node, String)>
                         .entry(child)
                         .or_default()
                         .push(((file.id, mount.host.clone()), mount.prefix.clone()));
+                }
+            }
+        }
+        for mount in &file.extra.imported_mounts {
+            let Some((host, _)) = deferred::maker_of(input, file, &mount.host) else {
+                continue;
+            };
+            if !input
+                .get(host.0)
+                .is_some_and(|owner| owner.extra.hosts.contains(&host.1))
+            {
+                continue;
+            }
+            if mount.computed {
+                unread.push((
+                    file.id,
+                    UnresolvedSite::non_literal(mount.line, &mount.detail),
+                ));
+            }
+            for target in &mount.targets {
+                if let Some(child) = mounted_host(input, file, target) {
+                    for prefix in &mount.prefixes {
+                        parents
+                            .entry(child.clone())
+                            .or_default()
+                            .push((host.clone(), prefix.clone()));
+                    }
                 }
             }
         }

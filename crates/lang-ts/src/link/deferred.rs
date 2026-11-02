@@ -148,7 +148,7 @@ fn apply(
 }
 
 /// The variable that `host`, written in `file`, is imported as, when the file it leads to makes it with a call that some rule takes a receiver from, and the node it is in that file.
-fn maker_of<'a>(
+pub(super) fn maker_of<'a>(
     input: &LinkInput<'a, TsExtra>,
     file: &LinkFile<'_, TsExtra>,
     host: &str,

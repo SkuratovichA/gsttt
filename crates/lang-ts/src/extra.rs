@@ -25,6 +25,9 @@ pub struct TsExtra {
     /// `host.use(prefix, router)` calls, the lists of a `@Module`, and `app.setGlobalPrefix(prefix)` on a NestJS app.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mounts: Vec<Mount>,
+    /// `host.use(prefix, router)` calls on a name imported from a file of the project, which the link keeps when that name turns out to be a router or an app.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub imported_mounts: Vec<ImportedMount>,
     /// Routes that NestJS classes declare, waiting for the prefixes of the modules that reach the class.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub class_routes: Vec<ClassRoute>,
@@ -167,6 +170,21 @@ pub struct Mount {
     pub prefix: String,
     pub targets: Vec<MountTarget>,
     pub line: Line,
+}
+
+/// A `host.use(prefix, targets…)` call on a name imported from a file of the project: a mount only if the link finds that the name is a router or an app.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportedMount {
+    /// The imported name the call is on, as written.
+    pub host: String,
+    /// The paths the targets are mounted under, `""` for none; a computed part is written `${}`.
+    pub prefixes: Vec<String>,
+    pub targets: Vec<MountTarget>,
+    pub line: Line,
+    /// Some prefix is not text, so the call is a site the file could not read when the host is a router or an app.
+    pub computed: bool,
+    /// The call as written, cut to one line, for that site; empty when no prefix is computed.
+    pub detail: String,
 }
 
 /// What a mount attaches to its host.

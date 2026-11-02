@@ -1,0 +1,247 @@
+---
+source: crates/lang-ts/tests/typescript/mounts.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "client"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "axios"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "axios",
+          "to": {
+            "external": "axios"
+          }
+        }
+      ],
+      "path": "src/client.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "client",
+            "uses": [
+              "axios"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "axios"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "router"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "express"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "express",
+          "to": {
+            "external": "express"
+          }
+        }
+      ],
+      "path": "src/router.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "router",
+            "uses": [
+              "express"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "express",
+          "router"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "env BASE",
+          "line": 5,
+          "role": "calls",
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "client"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "client"
+          ],
+          "spec": "./client",
+          "to": {
+            "file": "src/client.ts"
+          }
+        },
+        {
+          "exported": [
+            "router"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "router"
+          ],
+          "spec": "./router",
+          "to": {
+            "file": "src/router.ts"
+          }
+        }
+      ],
+      "path": "src/setup.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "on_load": [
+          "client",
+          "router"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [
+    {
+      "file": "src/router.ts",
+      "key": "http GET /users",
+      "line": 5,
+      "role": "serves",
+      "via": "express"
+    }
+  ],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "file-system routes (Next.js, Remix, SvelteKit) are not read",
+            "routers mounted from another package, and constants imported from another package, are not followed: the link reads one project at a time",
+            "a route path is read from a string, a template or a concatenation, and from a constant (a const, an enum member, a static property or a property of a constant object) declared in the same file or in a file of the same project that it is imported from; a path held in a function-local value, or in a key that an object spread follows, is not read",
+            "a static property or an object property that the program assigns again is read with the value it declares",
+            "a NestJS global prefix is applied only when it is a string or a constant of the same file set on an app that NestFactory.create(<name>) makes in the same file, and the exclude option is not read, so excluded routes get the prefix too; RouterModule paths are not read",
+            "NestJS modules are followed through @Module imports and controllers written as names or forwardRef(() => Name); modules made by a call (forRoot, register), names read from a namespace (ns.Module) and anonymous default exports are not",
+            "a NestJS controller serves the routes of the class it extends only when that class is named directly (not ns.Base), carries no @Controller of its own, and is its direct base",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the file that registers the route, or be imported from a file of the same project that makes it; a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a router or app the file imports or makes is read as that one",
+            "a mount on an app or router imported from another file (importedApp.use('/x', router)) is read only when the name is the app or router itself, not a member of it (server.app.use) and not a name from a package; the routes of a router that no read mount reaches are served at the paths they are written with",
+            "a mount path is read from a string or a constant of the same file, not from an imported constant, and a mount path array with an element that is not text is read for its other elements only",
+            "a NestJS controller whose @Controller prefix is not text (an imported constant, a call) serves no route and is reported as a site the file could not read: its own routes and those of the class it extends are not served",
+            "routers that mount each other in a cycle are followed until the cycle closes"
+          ],
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "express"
+          ]
+        },
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a client the file imports or makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "axios",
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}
