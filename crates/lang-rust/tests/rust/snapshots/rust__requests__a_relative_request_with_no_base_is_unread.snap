@@ -17,14 +17,16 @@ expression: "out.sites(\"src/client.rs\")"
       "detail": "reqwest.get",
       "line": 2,
       "reason": {
-        "reason": "non-literal"
+        "detail": "relative URL with no readable base",
+        "reason": "unsupported"
       }
     },
     {
       "detail": "client.get",
       "line": 7,
       "reason": {
-        "reason": "non-literal"
+        "detail": "relative URL with no readable base",
+        "reason": "unsupported"
       }
     }
   ]

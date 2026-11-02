@@ -63,6 +63,7 @@ expression: json
         "data",
         "dotted",
         "made",
+        "nested",
         "page",
         "plain",
         "query",
@@ -175,6 +176,14 @@ expression: json
             ]
           },
           {
+            "end": 15,
+            "line": 15,
+            "name": "nested",
+            "uses": [
+              "id"
+            ]
+          },
+          {
             "end": 16,
             "line": 16,
             "name": "unread",
@@ -204,14 +213,24 @@ expression: json
           "detail": "fetch",
           "line": 10,
           "reason": {
-            "reason": "non-literal"
+            "detail": "relative URL with no readable base",
+            "reason": "unsupported"
           }
         },
         {
           "detail": "fetch",
           "line": 14,
           "reason": {
-            "reason": "non-literal"
+            "detail": "relative URL with no readable base",
+            "reason": "unsupported"
+          }
+        },
+        {
+          "detail": "fetch",
+          "line": 15,
+          "reason": {
+            "detail": "relative URL with no readable base",
+            "reason": "unsupported"
           }
         }
       ]
@@ -233,6 +252,17 @@ expression: json
           "via": [
             "axios",
             "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
           ]
         },
         {

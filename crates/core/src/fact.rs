@@ -272,6 +272,15 @@ impl UnresolvedSite {
             detail: detail.into(),
         }
     }
+
+    /// A site at `line` that the connector reads no further than `construct`, with `detail` naming the code as written.
+    pub fn unsupported(line: Line, construct: &str, detail: impl Into<String>) -> Self {
+        Self {
+            line,
+            reason: UnresolvedReason::Unsupported(construct.to_owned()),
+            detail: detail.into(),
+        }
+    }
 }
 
 /// Everything one connector read out of one file. Pure data: the parse cache stores it by content hash.

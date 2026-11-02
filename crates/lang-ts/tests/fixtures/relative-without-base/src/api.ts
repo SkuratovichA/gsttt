@@ -12,6 +12,6 @@ export const data = () => fetch('data:text/plain,x');
 export const query = () => fetch('?x=1');
 export const absolute = () => fetch('https://a.test/x');
 export const dotted = () => fetch(`./${id}`);
-
+export const nested = () => fetch(`./${id}/y`);
 const unread = axios.create({ baseURL: BASE });
 export const behind = () => unread.get('users');

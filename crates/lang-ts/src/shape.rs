@@ -369,10 +369,10 @@ pub(crate) fn url_join(path: &str, base: Option<&str>) -> Option<String> {
     if path.starts_with('/') {
         return Some(format!("{COMPUTED}{path}"));
     }
-    if has_parent_segment(without_query_and_fragment(path)) {
+    if has_parent_segment(path) {
         return None;
     }
-    let relative = path.strip_prefix("./").unwrap_or(path);
+    let relative = path.trim_start_matches("./");
     let Some(base) = base else {
         return Some(format!("{COMPUTED}/{relative}"));
     };

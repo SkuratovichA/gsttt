@@ -13,8 +13,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::contract::{
-    ContractKey, ContractKind, PARAMETER, Role, has_parent_segment, normalize_http_path,
-    path_after_origin, without_query_and_fragment,
+    ContractKey, ContractKind, PARAMETER, Role, has_parent_segment, is_scheme, normalize_http_path,
+    path_after_origin,
 };
 use crate::fact::{ContractFact, Embedded, Line, UnresolvedSite};
 
@@ -565,6 +565,15 @@ impl Outcome {
         }
     }
 
+    /// A blind spot at `line` for a request whose target is relative and has no base that can be read: it is a literal, so it is not computed at run time, it fails or leads nowhere readable. `what` names the site as written.
+    pub fn relative_without_base(line: Line, what: &str) -> Self {
+        Self::Blind(UnresolvedSite::unsupported(
+            line,
+            "relative URL with no readable base",
+            what,
+        ))
+    }
+
     /// A blind spot at `line`; `what` names the site as written: the callee, decorator, root or target.
     pub fn blind(line: Line, what: &str) -> Self {
         Self::Blind(UnresolvedSite::non_literal(line, what))
@@ -610,10 +619,16 @@ impl Spec<'_> {
         let mut key = key.trim();
         match self.kind {
             ContractKind::Http if matches!(self.role, Role::Calls) => {
-                if prefix.is_none() && !looks_like_url(key) {
-                    match relative_target(key, self.relative) {
+                // An empty prefix is a base that is there and unread: the client calls the path it names, whatever its pack says of no base at all.
+                let relative = match prefix {
+                    None => Some(self.relative),
+                    Some("") => Some(Some(RelativeWithoutBase::Rooted)),
+                    Some(_) => None,
+                };
+                if let Some(setting) = relative.filter(|_| !looks_like_url(key)) {
+                    match relative_target(key, setting) {
                         Relative::Names(path) => key = path,
-                        Relative::Unread => return Outcome::blind(line, what),
+                        Relative::Unread => return Outcome::relative_without_base(line, what),
                         Relative::NoPath => return Outcome::Skip,
                     }
                 }
@@ -658,27 +673,24 @@ enum Relative<'k> {
 
 /// What `target`, a request target that is no URL and no absolute path, means when no base goes before it, under the `setting` of its pack.
 ///
-/// - An empty target, one that starts with `?` or `#`, or one with a scheme (`data:…`, `mailto:…`, `localhost:3000/x`: a `:` before the first `/`, `?` or `#`) names no path, under every setting.
-/// - A `..` segment needs a directory that nobody read, so it is unread unless the pack sets nothing.
-/// - Otherwise the target without its leading `./` is the path under `rooted`, and the site is unread under `unread`.
+/// - A leading `./` is dropped first. Then an empty target, `.`, one that starts with `?` or `#`, and one with a scheme (`data:…`, `mailto:…`, `localhost:3000/x`: a scheme before the first `/`, `?` or `#`) name no path, under every setting.
+/// - A pack that sets nothing leaves any other target no request.
+/// - Under `unread` the site is unread. Under `rooted` it is too when the path has a `..` segment, which needs a directory that nobody read, or when it would read as a URL only because a `./` went: the computed part in front of ``./${x}/y`` is a path segment, not the base URL the normaliser would take it for.
+/// - Otherwise the path is the target without its leading `./`.
 fn relative_target(target: &str, setting: Option<RelativeWithoutBase>) -> Relative<'_> {
-    let before_path = target.find(['/', '?', '#']).unwrap_or(target.len());
-    let names_scheme = target
-        .get(..before_path)
-        .is_some_and(|head| head.contains(':'));
-    if target.is_empty() || target.starts_with(['?', '#']) || names_scheme {
+    let head = target.split(['/', '?', '#']).next().unwrap_or_default();
+    let names_scheme = head
+        .split_once(':')
+        .is_some_and(|(scheme, _)| is_scheme(scheme));
+    let path = target.trim_start_matches("./");
+    if names_scheme || path.is_empty() || path == "." || path.starts_with(['?', '#']) {
         return Relative::NoPath;
     }
     let Some(setting) = setting else {
         return Relative::NoPath;
     };
-    let mut path = target;
-    while let Some(rest) = path.strip_prefix("./") {
-        path = rest;
-    }
-    if setting == RelativeWithoutBase::Unread
-        || has_parent_segment(without_query_and_fragment(path))
-    {
+    let reads_as_url = path.len() != target.len() && looks_like_url(path);
+    if setting == RelativeWithoutBase::Unread || reads_as_url || has_parent_segment(path) {
         return Relative::Unread;
     }
     Relative::Names(path)
@@ -1489,6 +1501,7 @@ mod tests {
             embeds: Vec::new(),
             assigns: Vec::new(),
             imports: Vec::new(),
+            relative_without_base: None,
         };
         assert_eq!(pack.contracts().count(), 1);
     }
@@ -2017,6 +2030,15 @@ mod tests {
                 relative(true, pack, Some(&text), "items"),
                 "http GET /api/items"
             );
+            // A base that is there and unread leaves the path to the same decision as no base, read as `rooted`.
+            assert_eq!(relative(true, pack, Some(&unread), "../items"), "blind");
+            for target in ["data:x", "", "./?x=1"] {
+                assert_eq!(
+                    relative(true, pack, Some(&unread), target),
+                    "skip",
+                    "{target}"
+                );
+            }
         }
     }
 
@@ -2054,6 +2076,12 @@ mod tests {
             ] {
                 assert_eq!(relative(true, pack, None, target), "skip", "{target}");
                 assert_eq!(relative(false, pack, None, target), "skip", "{target}");
+                let unread = Reading::Unread;
+                assert_eq!(
+                    relative(true, pack, Some(&unread), target),
+                    "skip",
+                    "{target}"
+                );
             }
         }
     }
@@ -2070,16 +2098,79 @@ mod tests {
             "http GET /items/{}"
         );
         assert_eq!(relative(false, Some(Rooted), None, "./${id}"), "blind");
+        assert_eq!(relative(false, Some(Rooted), None, "./${x}/y"), "blind");
+    }
+
+    #[test]
+    fn a_relative_target_is_decided_as_the_probe_table_says() {
+        let rooted = |target: &str| {
+            relative(
+                false,
+                Some(super::RelativeWithoutBase::Rooted),
+                None,
+                target,
+            )
+        };
+        for (target, expected) in [
+            (".", "skip"),
+            ("./", "skip"),
+            ("./?p=2", "skip"),
+            (".//x", "blind"),
+            ("././x", "http GET /x"),
+            ("a//b", "http GET /a/b"),
+            ("12:30/x", "http GET /12:30/x"),
+            ("users:list", "skip"),
+            ("localhost:3000/x", "skip"),
+            ("a/b:c", "http GET /a/b:c"),
+            ("./a:b", "http GET /a:b"),
+            ("items?x=../y", "http GET /items"),
+            ("items#../y", "http GET /items"),
+            ("./..", "blind"),
+            ("a/..", "blind"),
+        ] {
+            assert_eq!(rooted(target), expected, "{target}");
+        }
+    }
+
+    #[test]
+    fn a_relative_site_that_cannot_be_read_says_why() {
+        let Outcome::Blind(site) = Outcome::relative_without_base(3, "fetch") else {
+            panic!("not blind");
+        };
+        assert_eq!(
+            site.reason.to_string(),
+            "unsupported: relative URL with no readable base"
+        );
+        assert_eq!(site.detail, "fetch");
+    }
+
+    /// Targets made of segments that exercise the dot checks and the scheme check.
+    fn relative_targets() -> impl proptest::strategy::Strategy<Value = String> {
+        use proptest::prelude::*;
+        proptest::collection::vec(
+            prop_oneof![
+                Just(".".to_owned()),
+                Just("..".to_owned()),
+                "[a-z]{1,3}",
+                Just("${}".to_owned()),
+                Just("a:b".to_owned()),
+                Just("?q".to_owned()),
+            ],
+            0..5,
+        )
+        .prop_map(|segments| segments.join("/"))
     }
 
     proptest::proptest! {
         #[test]
-        fn a_relative_target_never_panics_and_is_rooted_clean(target in "[a-z.:/?#$&{}=]{0,12}") {
+        fn a_relative_target_never_panics_and_is_rooted_clean(target in relative_targets()) {
             for setting in [None, Some(RelativeWithoutBase::Rooted), Some(RelativeWithoutBase::Unread)] {
                 if let Relative::Names(path) = relative_target(&target, setting) {
-                    proptest::prop_assert!(!path.starts_with("./"));
-                    proptest::prop_assert!(!has_parent_segment(without_query_and_fragment(path)));
                     proptest::prop_assert_eq!(setting, Some(RelativeWithoutBase::Rooted));
+                    proptest::prop_assert!(!path.starts_with("./"));
+                    proptest::prop_assert!(!has_parent_segment(path));
+                    proptest::prop_assert!(path == target || !looks_like_url(path));
+                    proptest::prop_assert!(target.ends_with(path));
                 }
             }
         }

@@ -224,7 +224,11 @@ fn a_relative_request_that_cannot_be_rooted_is_unread() -> Result<(), Box<dyn Er
     let json = run("relative-without-base")?;
     assert_eq!(
         unread(&json, "src/api.ts"),
-        ["@10 non-literal fetch", "@14 non-literal fetch"]
+        [
+            "@10 unsupported fetch",
+            "@14 unsupported fetch",
+            "@15 unsupported fetch"
+        ]
     );
     Ok(())
 }

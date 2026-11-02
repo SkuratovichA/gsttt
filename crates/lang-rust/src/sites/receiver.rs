@@ -104,7 +104,7 @@ impl Reader<'_> {
                 self.traced()
                     .fields
                     .iter()
-                    .any(|(declared, ty)| *declared == name && type_names(ty, from))
+                    .any(|(declared, ty)| *declared == name && self.type_names(ty, from))
                     .then_some(Origin::Declared)
             }
             other => maker(&other, from).map(Origin::Call),
@@ -138,7 +138,7 @@ impl Reader<'_> {
             }
             return statement
                 .ty()
-                .is_some_and(|ty| type_names(&ty, from))
+                .is_some_and(|ty| self.type_names(&ty, from))
                 .then_some(Origin::Declared);
         }
         let parameter = function
@@ -146,12 +146,13 @@ impl Reader<'_> {
             .into_iter()
             .flat_map(|list| list.params())
             .any(|param| {
-                is_named(param.pat(), name) && param.ty().is_some_and(|ty| type_names(&ty, from))
+                is_named(param.pat(), name)
+                    && param.ty().is_some_and(|ty| self.type_names(&ty, from))
             });
         let item = traced
             .items
             .iter()
-            .any(|(declared, ty)| declared == name && type_names(ty, from));
+            .any(|(declared, ty)| declared == name && self.type_names(ty, from));
         (parameter || item).then_some(Origin::Declared)
     }
 }
@@ -175,18 +176,36 @@ fn is_named(pattern: Option<ast::Pat>, name: &str) -> bool {
     matches!(pattern, Some(ast::Pat::IdentPat(ident)) if ident.name().is_some_and(|bound| text(&bound) == name))
 }
 
-/// Whether a declared type mentions the type a `from` pattern constructs: `Client` and `reqwest::Client` both stand for `reqwest.Client.new`, and so does `LazyLock<Client>`.
-fn type_names(ty: &ast::Type, from: &OneOrMany) -> bool {
-    let wanted: Vec<&str> = from
-        .iter()
-        .filter_map(|pattern| pattern.rsplit_once('.').map(|(type_path, _)| type_path))
-        .collect();
-    ty.syntax()
-        .descendants()
-        .filter_map(ast::Path::cast)
-        .filter_map(|path| segments(&path))
-        .map(|names| names.join("."))
-        .any(|found| wanted.iter().any(|want| same_tail(&found, want)))
+impl Reader<'_> {
+    /// Whether a declared type mentions the type a `from` pattern constructs: `Client` and `reqwest::Client` both stand for `reqwest.Client.new`, and so does `LazyLock<Client>`. A name the file brought in with a `use` from another crate is the type of that crate, so `Client` after `use memcache::Client;` is not one.
+    fn type_names(&self, ty: &ast::Type, from: &OneOrMany) -> bool {
+        let wanted: Vec<&str> = from
+            .iter()
+            .filter_map(|pattern| pattern.rsplit_once('.').map(|(type_path, _)| type_path))
+            .collect();
+        ty.syntax()
+            .descendants()
+            .filter_map(ast::Path::cast)
+            .filter_map(|path| segments(&path))
+            .map(|names| self.through_use(names.join(".")))
+            .any(|(found, from_use)| {
+                wanted.iter().any(|want| {
+                    // A path a `use` of another crate spelled out is whole: a bare pattern such as `Client` must not match `memcache.Client`.
+                    (!from_use || want.split('.').count() >= found.split('.').count())
+                        && same_tail(&found, want)
+                })
+            })
+    }
+
+    /// The path a `use` of the file gives `written` and whether it did, when the `use` is from another crate. One from this crate (`crate::…`, `self::…`, `super::…`) may re-export a type of another, so the name stays as written.
+    fn through_use(&self, written: String) -> (String, bool) {
+        match self.brought_in(&written) {
+            Some(full) if !matches!(full.split('.').next(), Some("crate" | "self" | "super")) => {
+                (full, true)
+            }
+            _ => (written, false),
+        }
+    }
 }
 
 /// Whether the shorter of two dotted paths is the tail of the longer: `Client` and `reqwest.Client` agree.

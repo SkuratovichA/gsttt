@@ -2,6 +2,7 @@
 
 use gsttt_scenario::scenario;
 use insta::assert_json_snapshot;
+use serde_json::json;
 
 use crate::support::index;
 
@@ -77,7 +78,26 @@ fn a_relative_request_with_no_base_is_unread() {
         .map(|site| site["line"].clone())
         .collect();
     assert_eq!(lines, [2, 7]);
+    assert!(
+        unresolved
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|site| site["reason"]["detail"] == "relative URL with no readable base"),
+        "{unresolved}"
+    );
     assert_json_snapshot!(out.sites("src/client.rs"));
+}
+
+#[test]
+fn a_type_from_another_crate_is_no_client_and_one_from_reqwest_is() {
+    let out = index("relative_without_base");
+    // `use memcache::Client;` makes `Client` the cache's, whether a field, a parameter or a `let` is declared with it.
+    let cache = out.sites("src/cache.rs");
+    assert_eq!(cache["contracts"].as_array().unwrap().len(), 0, "{cache}");
+    assert_eq!(cache["unresolved"].as_array().unwrap().len(), 0, "{cache}");
+    let held = out.sites("src/held.rs");
+    assert_eq!(held["unresolved"][0]["line"], 4, "{held}");
 }
 
 #[scenario("rust", "An absolute request is unchanged by relative requests")]

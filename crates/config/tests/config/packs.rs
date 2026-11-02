@@ -148,6 +148,7 @@ fn a_relative_setting_that_is_neither_value_is_refused() {
         message.starts_with(".gsttt/packs/ktor.toml:5:"),
         "{message}"
     );
+    assert!(message.contains("relative_without_base"), "{message}");
     assert!(message.contains("skipped"), "{message}");
 }
 

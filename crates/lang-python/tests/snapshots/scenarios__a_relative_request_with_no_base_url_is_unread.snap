@@ -48,21 +48,24 @@ expression: "tree.file_json(\"client.py\")"
     {
       "line": 8,
       "reason": {
-        "reason": "non-literal"
+        "reason": "unsupported",
+        "detail": "relative URL with no readable base"
       },
       "detail": "requests.get"
     },
     {
       "line": 12,
       "reason": {
-        "reason": "non-literal"
+        "reason": "unsupported",
+        "detail": "relative URL with no readable base"
       },
       "detail": "?.get"
     },
     {
       "line": 16,
       "reason": {
-        "reason": "non-literal"
+        "reason": "unsupported",
+        "detail": "relative URL with no readable base"
       },
       "detail": "?.get"
     }

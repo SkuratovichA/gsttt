@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use gsttt_config::pack::builtin_packs;
+use gsttt_config::pack::{builtin_packs, read_pack};
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
 use gsttt_core::fact::{
@@ -2849,4 +2849,49 @@ method = "GET"
         included.linked("service/routes.py"),
         ["serves http GET /api/things@3"]
     );
+}
+
+#[test]
+fn a_relative_request_that_is_not_read_says_why() {
+    let tree = index("relative_without_base");
+    let unresolved = &tree.file("client.py").facts.unresolved;
+    assert!(!unresolved.is_empty());
+    for site in unresolved {
+        assert_eq!(
+            site.reason.to_string(),
+            "unsupported: relative URL with no readable base"
+        );
+    }
+}
+
+#[test]
+fn a_rule_that_serves_routes_on_a_receiver_with_an_unread_base_is_an_unread_site() {
+    // Before the base of a receiver could be unread, this route was served with no prefix; a path nobody read is no route.
+    let pack = r#"
+name = "ledger"
+language = "python"
+
+[[calls]]
+callee = "app.get"
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "GET"
+
+[calls.receiver]
+from = "make_app"
+key = "$root"
+"#;
+    let source = "import settings\n\napp = make_app(root=settings.ROOT)\napp.get(\"/things\")\n";
+    let mut packs = builtin_packs(PACKS).unwrap();
+    packs.push(read_pack("ledger.toml", pack).unwrap());
+    let tree = index_files_with(
+        &[
+            ("pyproject.toml", "[project]\nname = \"app\"\n"),
+            ("app.py", source),
+        ],
+        packs,
+    );
+    assert_eq!(tree.contracts("app.py"), Vec::<String>::new());
+    assert_eq!(tree.unresolved_lines("app.py"), [4]);
 }
