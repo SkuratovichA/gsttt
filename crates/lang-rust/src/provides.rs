@@ -94,7 +94,7 @@ struct Entry<'a> {
 pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut entries: BTreeMap<(ContractKind, Role), Entry<'_>> = BTreeMap::new();
     for pack in packs {
-        for contract in found_by(pack) {
+        for contract in pack.contracts() {
             entries.entry(contract).or_default().via.insert(&pack.name);
         }
     }
@@ -119,25 +119,4 @@ pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
                 .collect(),
         })
         .collect()
-}
-
-/// The contracts the rules of `pack` name, with the role each gives them, and the documents its embed rules find.
-fn found_by(pack: &Pack) -> impl Iterator<Item = (ContractKind, Role)> + '_ {
-    // The connector for the document's language reads what it holds. An embedded query is something the code runs, so it calls the contract.
-    let embeds = pack
-        .embeds
-        .iter()
-        .map(|rule| (embedded(&rule.lang), Role::Calls));
-    pack.contracts()
-        .map(|(kind, role)| (kind.clone(), role))
-        .chain(embeds)
-}
-
-/// The contract that a document of language `lang`, as the connector for it names the language in `embeds`, holds.
-fn embedded(lang: &str) -> ContractKind {
-    match lang {
-        "sql" => ContractKind::Table,
-        "graphql" => ContractKind::Graphql,
-        other => ContractKind::Other(other.to_owned()),
-    }
 }

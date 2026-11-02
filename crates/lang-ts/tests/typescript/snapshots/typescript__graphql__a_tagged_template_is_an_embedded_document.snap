@@ -109,6 +109,14 @@ expression: json
           ]
         },
         {
+          "blind_spots": [],
+          "kind": "graphql",
+          "role": "calls",
+          "via": [
+            "graphql"
+          ]
+        },
+        {
           "blind_spots": [
             "variables written through an alias of the environment object are not seen",
             "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"

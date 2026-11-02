@@ -66,8 +66,8 @@ impl Pack {
             || dependencies.any(|dependency| self.detect.iter().any(|name| name == dependency))
     }
 
-    /// The kind and the role of every contract the rules of this pack name, once for each role a rule gives: a chain that is also named when it is written (`written`) lists both. The `[[imports]]` rules are left out, since only the TypeScript connector reads them, and it adds them; a connector adds the contracts it finds without a rule, as Rust does for an embedded document.
-    pub fn contracts(&self) -> impl Iterator<Item = (&ContractKind, Role)> {
+    /// The kind and the role of every contract the rules of this pack find, once for each role a rule gives: a chain that is also named when it is written (`written`) lists both, and an embed rule calls the contract its document holds, because the code runs that document. The `[[imports]]` rules are left out, since only the TypeScript connector reads them, and it adds them.
+    pub fn contracts(&self) -> impl Iterator<Item = (ContractKind, Role)> + '_ {
         let chains = self.chains.iter().flat_map(|rule| {
             rule.roles(Access::ReadWrite)
                 .into_iter()
@@ -80,6 +80,12 @@ impl Pack {
             .chain(self.decorators.iter().map(|rule| (&rule.kind, rule.role)))
             .chain(chains)
             .chain(self.assigns.iter().map(|rule| (&rule.kind, rule.role)))
+            .map(|(kind, role)| (kind.clone(), role))
+            .chain(
+                self.embeds
+                    .iter()
+                    .map(|rule| (rule.contract_kind(), Role::Calls)),
+            )
     }
 }
 
@@ -192,6 +198,16 @@ pub struct EmbedRule {
     #[serde(default)]
     #[schemars(with = "Option<String>")]
     pub text: Option<ValueExpr>,
+}
+
+impl EmbedRule {
+    /// The kind of contract a document of this rule's language holds: `sql` holds tables, `graphql` holds operations, any other language is a kind of its own.
+    fn contract_kind(&self) -> ContractKind {
+        match self.lang.as_str() {
+            "sql" => ContractKind::Table,
+            other => ContractKind::parse(other),
+        }
+    }
 }
 
 /// An assignment that names a contract: SQLAlchemy `__tablename__ = "bookings"`, Django `db_table = "bookings"`.
@@ -1262,6 +1278,28 @@ mod tests {
             read(&env, "env", &[None], 4, "process.env"),
             Outcome::Blind(_)
         ));
+    }
+
+    #[test]
+    fn the_embed_rules_of_a_pack_name_the_contracts_of_their_documents() {
+        let pack: Pack = serde_json::from_value(serde_json::json!({
+            "name": "mixed",
+            "language": "python",
+            "embeds": [
+                { "callee": "*.execute", "lang": "sql" },
+                { "callee": "gql", "lang": "graphql" },
+                { "callee": "yaml", "lang": "yaml" },
+            ],
+        }))
+        .unwrap();
+        assert_eq!(
+            pack.contracts().collect::<Vec<_>>(),
+            vec![
+                (ContractKind::Table, Role::Calls),
+                (ContractKind::Graphql, Role::Calls),
+                (ContractKind::Other("yaml".to_owned()), Role::Calls),
+            ]
+        );
     }
 
     #[test]

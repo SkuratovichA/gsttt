@@ -160,9 +160,9 @@ struct Entry<'a> {
 pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut entries: BTreeMap<(ContractKind, Role), Entry<'_>> = BTreeMap::new();
     for pack in packs {
-        for (kind, role) in pack.contracts() {
+        for contract in pack.contracts() {
             entries
-                .entry((kind.clone(), role))
+                .entry(contract)
                 .or_default()
                 .via
                 .insert(pack.name.as_str());

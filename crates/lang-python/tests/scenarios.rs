@@ -2895,3 +2895,39 @@ key = "$root"
     assert_eq!(tree.contracts("app.py"), Vec::<String>::new());
     assert_eq!(tree.unresolved_lines("app.py"), [4]);
 }
+
+/// The packs behind the provides of the first project for one kind and role.
+fn via<'a>(tree: &'a Tree, kind: &ContractKind, role: Role) -> Vec<&'a str> {
+    tree.output.projects[0]
+        .provides
+        .iter()
+        .find(|provide| provide.kind == *kind && provide.role == role)
+        .map(|provide| provide.via.iter().map(String::as_str).collect())
+        .unwrap_or_default()
+}
+
+#[gsttt_scenario::scenario("python", "The dbapi pack is credited with the tables it finds")]
+#[test]
+fn the_dbapi_pack_is_credited_with_the_tables_it_finds() {
+    let tree = index_files(&[(
+        "db.py",
+        "def read(cursor):\n    cursor.execute(\"SELECT id FROM bookings\")\n",
+    )]);
+    assert_eq!(via(&tree, &ContractKind::Table, Role::Calls), ["dbapi"]);
+}
+
+#[gsttt_scenario::scenario("python", "The sqlalchemy pack is credited with the tables it finds")]
+#[test]
+fn the_sqlalchemy_pack_is_credited_with_the_tables_it_finds() {
+    let tree = index_files(&[
+        ("requirements.txt", "sqlalchemy\n"),
+        (
+            "db.py",
+            "from sqlalchemy import text\n\n\ndef read(connection):\n    connection.execute(text(\"SELECT id FROM bookings\"))\n",
+        ),
+    ]);
+    assert_eq!(
+        via(&tree, &ContractKind::Table, Role::Calls),
+        ["dbapi", "sqlalchemy"]
+    );
+}
