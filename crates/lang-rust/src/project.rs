@@ -15,9 +15,8 @@ use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
 use gsttt_core::text::LineIndex;
 use ra_ap_edition::Edition;
-use ra_ap_syntax::ast;
 
-use crate::depth::{MAX_DEPTH, too_deep_at};
+use crate::depth::{self, MAX_DEPTH};
 use crate::imports;
 use crate::link;
 use crate::manifest::Package;
@@ -145,14 +144,16 @@ impl Project for RustProject {
                 ..FileFacts::default()
             });
         }
-        if let Some(offset) = too_deep_at(file.text, self.edition) {
-            return Parsed::new(FileFacts::failed(ParseFailure::Syntax {
-                line: LineIndex::new(file.text).line_at(offset),
-                message: format!("nested deeper than {MAX_DEPTH} levels"),
-            }));
-        }
-        let parse = ast::SourceFile::parse(file.text, self.edition);
         let lines = LineIndex::new(file.text);
+        let parse = match depth::parse(file.text, self.edition) {
+            Ok(parse) => parse,
+            Err(offset) => {
+                return Parsed::new(FileFacts::failed(ParseFailure::Syntax {
+                    line: lines.line_at(offset),
+                    message: format!("nested deeper than {MAX_DEPTH} levels"),
+                }));
+            }
+        };
         let mut errors = ErrorCount::default();
         for error in parse.errors() {
             errors.note(line_at(&lines, error.range().start()));

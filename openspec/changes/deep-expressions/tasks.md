@@ -11,7 +11,7 @@
 
 ## 3. The cost of depth
 
-- [x] 3.1 Rust: `crates/lang-rust/src/depth.rs` measures the nesting before the tree is built, and `project.rs` fails a file past the limit
+- [x] 3.1 Rust: `crates/lang-rust/src/depth.rs` counts the levels of a file as its tree is built, and `project.rs` fails a file past the limit
 - [x] 3.2 TypeScript: a chain is matched against roots of at most 64 segments, and the connector goes one up
 - [x] 3.3 TypeScript: a sum of text pieces moves the pieces into the first
 

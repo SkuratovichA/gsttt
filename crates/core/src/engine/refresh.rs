@@ -145,6 +145,10 @@ impl<'a> Engine<'a> {
 
     /// Brings the stored index up to date with the tree and returns it.
     pub fn refresh(&self) -> Result<Refresh, IndexError> {
+        pipeline::on_stacks(pipeline::WORKER_STACK, || self.refresh_on_workers())
+    }
+
+    fn refresh_on_workers(&self) -> Result<Refresh, IndexError> {
         let started = Instant::now();
         let listed_at = files::unix_now();
         let snapshot_path = self.workspace.snapshot_path();

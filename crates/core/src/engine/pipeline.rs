@@ -773,6 +773,20 @@ fn contain<T>(call: impl FnOnce() -> T) -> Result<T, String> {
 /// What a parse needs besides the nesting of its text.
 const BASE_STACK: usize = 1024 * 1024;
 
+/// The stack of a worker of a run. A read asks [`contain_reading`] for stack in proportion to its text, and growing one costs system calls and fresh pages for each file, so a worker starts with enough for all but the largest files. Only the pages a read touches take memory.
+pub(super) const WORKER_STACK: usize = 256 * 1024 * 1024;
+
+/// Runs `run` in a pool whose workers have stacks of `size`. On a machine that refuses such stacks it runs in the global pool, where a read grows a stack of its own. The global pool is not the one given the stacks because a `build_global` that fails leaves it unusable for the rest of the process.
+pub(super) fn on_stacks<T: Send>(size: usize, run: impl FnOnce() -> T + Send) -> T {
+    match rayon::ThreadPoolBuilder::new().stack_size(size).build() {
+        Ok(pool) => pool.install(run),
+        Err(error) => {
+            tracing::debug!(%error, "the workers keep their default stacks");
+            run()
+        }
+    }
+}
+
 /// Stack a parse can touch per byte of its text, at the deepest form a parser recurses on, one level per byte. Measured on the TypeScript, Python and Rust connectors.
 const STACK_PER_BYTE: usize = if cfg!(debug_assertions) {
     6 * 1024
@@ -1272,6 +1286,31 @@ mod tests {
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 1, "{seen:?}");
         assert!(seen[0].contains("uncontained"), "{seen:?}");
+    }
+
+    #[test]
+    fn the_workers_of_a_run_have_the_stacks_it_asked_for() {
+        let least = on_stacks(WORKER_STACK, || {
+            (0..64)
+                .into_par_iter()
+                .map(|_| stacker::remaining_stack().unwrap())
+                .min()
+                .unwrap()
+        });
+        assert!(least > WORKER_STACK / 2, "{least} bytes left");
+    }
+
+    #[test]
+    fn stacks_the_machine_refuses_leave_the_run_on_the_global_pool() {
+        let refused = 1 << 60;
+        assert!(
+            rayon::ThreadPoolBuilder::new()
+                .stack_size(refused)
+                .build()
+                .is_err()
+        );
+        let sum = on_stacks(refused, || (1..4).into_par_iter().sum::<i32>());
+        assert_eq!(sum, 6);
     }
 
     #[test]
