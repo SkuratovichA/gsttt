@@ -420,34 +420,6 @@ An intersection that has a root type as one of its members SHALL be read as a ro
 - **THEN** `src/service.ts` calls `table tenant` at line 13 and `src/chain.ts` calls `table tenant` at lines 12, 16, 20, 24 and 30
 - **AND** `src/unrelated.ts` calls no table
 
-### Requirement: Imported model types
-A pack MAY name a contract for each name a file takes from a package. With the `prisma` pack, a name imported or re-exported by name from `@prisma/client` SHALL call the table of that name at the line of the import, as the package exports it and not as the file renames it, except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`. A namespace import, a default import, a side-effect import and `export *` SHALL name nothing.
-
-#### Scenario: An imported model type calls its table
-- **WHEN** `src/models.ts` has `import type { Tenant, TenantBranch as Branch, Prisma, PrismaClient } from '@prisma/client'` over lines 1 to 6 and `import { BookingStatus } from '@prisma/client'` on line 7
-- **THEN** the file calls `table tenant` and `table tenantbranch` at line 1
-- **AND** `Prisma` and `PrismaClient` name no table
-- **AND** the file calls `table bookingstatus` at line 7, because the import does not say whether a name is a model or an enum, so an enum reads as a table that no model declares
-
-#### Scenario: A re-exported model type calls its table
-- **WHEN** `src/models.ts` has `export type { Tenant, Prisma } from '@prisma/client'` on line 1
-- **AND** `src/renamed.ts` has `export { Tenant as T } from '@prisma/client'` on line 1
-- **THEN** `src/models.ts` calls `table tenant` at line 1 and no other table
-- **AND** `src/renamed.ts` calls `table tenant` at line 1 and not `table t`, because the table is named as the package exports the model and not as the file renames it
-
-#### Scenario: A namespace import of the client names nothing
-- **WHEN** `src/client.ts` has `import * as client from '@prisma/client'`, a default import of it, `import { default as other } from '@prisma/client'`, `import '@prisma/client'`, `export * from '@prisma/client'`, `export * as models from '@prisma/client'` and `export { default as Client } from '@prisma/client'`
-- **THEN** the file calls no table
-
-### Requirement: Import types reach the import rules
-An import type `import('@prisma/client').Tenant` SHALL be read as the import of the first name of its qualifier is, at the line of its specifier, and one without a qualifier SHALL name nothing.
-
-#### Scenario: An import type reaches the import rules
-- **WHEN** `src/types.ts` has `import('@prisma/client').Tenant` on line 1, `import('@prisma/client').TenantBranch[]` on line 2, `import('@prisma/client').Prisma.TenantWhereInput`, `import('@prisma/client').PrismaClient`, `typeof import('@prisma/client')` and `import('ui-kit').Tenant`
-- **AND** `src/declared.ts` has `import type { Tenant } from '@prisma/client'` on line 1
-- **THEN** `src/types.ts` calls `table tenant` at line 1 and `table tenantbranch` at line 2 and no other table
-- **AND** `src/declared.ts` calls `table tenant` at line 1, as the import type does
-
 ### Requirement: Model types of other packages
 A name taken from a package that `from` does not list SHALL name nothing, so the model types of a client generated to a custom `output` path, or of a package that re-exports the client with `export * from '@prisma/client'`, SHALL name no table.
 
@@ -826,3 +798,37 @@ A call that a rule reads on a receiver, written on a name the file imports from 
 - **WHEN** `app.ts` has `export const app = express()`, `http.ts` has `export const api = axios.create({ baseURL: '/b' })`, and `a.ts` imports both and calls `app.get('env')`, `app.get('/k')` and `api.get('/users', { params })`
 - **THEN** `a.ts` calls `http GET /b/users` at the line of `api.get`
 - **AND** `a.ts` serves no route, calls nothing else and has no unread site
+
+### Requirement: Imported model values
+A pack MAY name a contract for each name a file takes from a package. With the `prisma` pack, a name the file imports from `@prisma/client` and uses as a value SHALL call the table of that name at the line of the import, as the package exports it and not as the file renames it, except `Prisma`, `PrismaClient`, `PrismaPromise` and `$Enums`. A type, a re-export, a namespace import, a default import, a side-effect import and `export *` SHALL name nothing.
+
+#### Scenario: A model imported as a value calls its table
+- **WHEN** `src/models.ts` has `import { BookingStatus } from '@prisma/client'` on line 1 and reads `BookingStatus.CONFIRMED`
+- **AND** `src/renamed.ts` has `import { BookingStatus as Status } from '@prisma/client'` on line 1 and reads `Status.CONFIRMED`
+- **THEN** both files call `table bookingstatus` at line 1, and `src/renamed.ts` does not call `table status`, because the table is named as the package exports the name
+
+#### Scenario: A model used only as a type names nothing
+- **WHEN** `src/declared.ts` has `import type { Tenant } from '@prisma/client'` and `src/inline.ts` has `import { type Tenant, PrismaClient } from '@prisma/client'`
+- **AND** `src/annotated.ts` has `import { Tenant } from '@prisma/client'` and uses `Tenant` only as a parameter type, a return type and a type argument
+- **AND** `src/types.ts` has `import('@prisma/client').Tenant` on line 1, `import('@prisma/client').TenantBranch[]`, `import('@prisma/client').Prisma.TenantWhereInput` on line 3 and `typeof import('@prisma/client')`
+- **THEN** none of the files calls a table
+
+#### Scenario: A re-exported model names nothing
+- **WHEN** `src/models.ts` has `export type { Tenant, Prisma } from '@prisma/client'`, `src/renamed.ts` has `export { Tenant as T } from '@prisma/client'` and `src/listed.ts` has `import { BookingStatus } from '@prisma/client'` and `export { BookingStatus }`
+- **THEN** none of the files calls a table, because a re-export is not a use
+
+#### Scenario: A namespace import of the client names nothing
+- **WHEN** `src/client.ts` has `import * as client from '@prisma/client'`, a default import of it, `import { default as other } from '@prisma/client'`, `import '@prisma/client'`, `export * from '@prisma/client'`, `export * as models from '@prisma/client'` and `export { default as Client } from '@prisma/client'`
+- **THEN** the file calls no table
+
+### Requirement: Uses of an imported name as a value
+A file uses an imported name as a value when its code names the local name outside every type. A name written in a type SHALL be no use of the value, and neither SHALL be a re-export, `import type`, an import type, or a field typed with the name, so `this.field` is no use of it.
+
+#### Scenario: A name in a value position is a use
+- **WHEN** a file imports `Tenant` from `@prisma/client` and has `Tenant()`, `[Tenant]`, `Tenant.ACTIVE`, `typeof Tenant` as an expression, `export default Tenant`, `class Row extends Tenant`, `enum Kind { A = Tenant.A }`, `Tenant as unknown`, `Tenant satisfies object`, `Tenant!`, `{ Tenant }`, `{ ...Tenant }`, `<Tenant />`, `(t = Tenant) => t`, a class property `x = Tenant`, `import Alias = Tenant.Inner`, or `Tenant.fields` in a method beside a parameter typed `Map<Box<string>, Tenant>`
+- **THEN** each file calls `table tenant`
+
+#### Scenario: A name outside a value position is no use
+- **WHEN** a file imports `Tenant` from `@prisma/client` and uses it as a parameter or return type, in `implements Tenant`, in `interface Row extends Tenant`, as the type argument `g<Tenant>()`, in `typeof Tenant` written in a type, in `Tenant[]`, in the types of `satisfies` and `as`, in an ambient `declare function` signature, as the type of a constructor parameter property read as `this.tenant`, in `export { Tenant }` or `export { Tenant as T }`
+- **AND** a file has `import type { Tenant }`, `import { type Tenant }`, `export type Row = import('@prisma/client').Tenant`, `export { Tenant as T } from '@prisma/client'` or `export type { Tenant } from '@prisma/client'`
+- **THEN** none of the files calls a table
