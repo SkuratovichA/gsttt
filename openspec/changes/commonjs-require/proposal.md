@@ -6,7 +6,8 @@ A call on an HTTP client that another CommonJS file makes was read for some shap
 
 ## What Changes
 
-- A call assigned to `module.exports`, to `exports.name`, to `module.exports.name` or to a property of `module.exports = { name: call }` is a client made under the export name, as `export default <call>` is one made under `default`. The export is a local of that name, so the files that require it read their calls on it.
+- A call assigned to `module.exports`, to `exports.name`, to `module.exports.name` or to a property of `module.exports = { name: call }` is a client made under the export name, as `export default <call>` is one made under `default`. It is stored under a key of its own (`exports.client`), which no variable can carry, so a variable of the file with the same name keeps what it holds, and the files that require the export read their calls on it.
+- A variable declared with such an assignment is made by the same call: `const router = module.exports = express.Router()` serves its routes under its mount, because the export is the variable they are written on, and `const client = exports.client = axios.create(…)` is a client.
 - The reading of the assignment target (`module.exports`, `module.exports.x`, `exports.x`) is one function, `commonjs_exports`, which the export list and the makers of the file both use.
 - A member read from a name bound to `default`, as a `require` or a default import binds it, is the export of that name when the module has no `default` of its own: `clients.httpClient` reads the export `httpClient`, as `esModuleInterop` reads it. A module with a `default` is read as before.
 - A new requirement, `CommonJS clients`, with a scenario for each of the three shapes.
@@ -16,6 +17,6 @@ A call on an HTTP client that another CommonJS file makes was read for some shap
 
 - Capability `typescript`.
 - `crates/lang-ts/` (`shape.rs`, `analyze.rs`, `analyze/makers.rs`, `link/deferred.rs`, `project.rs`, fixtures, tests and snapshots).
-- A file that assigns a call to its exports lists them as unknown, as before, and now also stores that call as the local of the export name.
+- A file that assigns a call to its exports lists them as unknown, as before, and now also stores that call under the key of the export.
 - A mount of a name bound by `require` and followed by a member (`app.use('/x', routes.users)`) resolves through `define`, which reads a name as a whole, and is not changed here.
 - Indexes built by an earlier version are parsed again once.

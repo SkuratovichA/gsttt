@@ -14,7 +14,10 @@ use oxc_syntax::scope::{ScopeFlags, ScopeId};
 use super::constants::exported_locals;
 use super::{Constants, peel};
 use crate::extra::{Export, LinkMaker};
-use crate::shape::{Shape, chain_of, commonjs_exports, dotted, field_name, static_chain, this_key};
+use crate::shape::{
+    Shape, assigned_value, chain_of, commonjs_exports, dotted, export_key, field_name,
+    static_chain, this_key,
+};
 
 /// The callee that makes a NestJS app, whose root module the global prefix of the app is mounted on.
 pub(super) const NEST_FACTORY_CREATE: &str = "NestFactory.create";
@@ -150,7 +153,7 @@ impl<'a> Visit<'a> for Collector<'_> {
 
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let (BindingPattern::BindingIdentifier(id), Some(init)) = (&it.id, &it.init) {
-            self.add(id.name.as_str().to_owned(), init);
+            self.add(id.name.as_str().to_owned(), assigned_value(init));
         }
         walk::walk_variable_declarator(self, it);
     }
@@ -171,7 +174,7 @@ impl<'a> Visit<'a> for Collector<'_> {
                 && let Some(exports) = commonjs_exports(&target, &it.right)
             {
                 for (name, value) in exports {
-                    self.add(name, value);
+                    self.add(export_key(&name), value);
                 }
             }
         }

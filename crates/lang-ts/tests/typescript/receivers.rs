@@ -388,6 +388,44 @@ fn a_client_assigned_to_a_named_commonjs_export_is_called_by_a_file_that_require
 #[test]
 #[scenario(
     "typescript",
+    "A call assigned to an export leaves a variable of the same name as it is"
+)]
+fn a_call_assigned_to_an_export_leaves_a_variable_of_the_same_name_as_it_is()
+-> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("commonjs-export-beside-variable")?,
+        [
+            "calls http GET /collide/from-importer @3 in src/user.js",
+            "serves http GET /wrapped-route @4 in src/wrapped.js",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A variable declared with an assignment to an export is made by the same call"
+)]
+fn a_variable_declared_with_an_assignment_to_an_export_is_made_by_the_same_call()
+-> Result<(), Box<dyn Error>> {
+    assert_eq!(
+        sites("commonjs-chained-assignment")?,
+        [
+            "calls http GET /both/imported @4 in src/user.js",
+            "calls http GET /both/own @4 in src/client.js",
+            "calls http GET /renamed/imported @5 in src/user.js",
+            "calls http GET /renamed/own @4 in src/renamed.js",
+            "serves http GET /both/twice @4 in src/twice.js",
+            "serves http GET /mounted/chained @4 in src/router.js",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
     "A member of a required CommonJS module is read as its export"
 )]
 fn a_member_of_a_required_commonjs_module_is_read_as_its_export() -> Result<(), Box<dyn Error>> {

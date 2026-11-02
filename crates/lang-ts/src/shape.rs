@@ -9,7 +9,7 @@ use oxc_ast::ast::{
     Argument, BinaryExpression, ChainElement, Expression, FormalParameter, MemberExpression,
     NewExpression, ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
 };
-use oxc_syntax::operator::BinaryOperator;
+use oxc_syntax::operator::{AssignmentOperator, BinaryOperator};
 use serde::{Deserialize, Serialize};
 
 use crate::analyze::Constants;
@@ -407,6 +407,35 @@ pub(crate) fn this_key(name: &str) -> String {
     format!("this.{name}")
 }
 
+/// The name under which the call that a file assigns to its `CommonJS` export `name` is looked up: `exports.client` for `exports.client = axios.create()`. A variable of the file may share the name of the export and hold something else, and no variable can have this name.
+pub(crate) fn export_key(name: &str) -> String {
+    format!("exports.{name}")
+}
+
+/// Whether `local` is a name that [`export_key`] made, and no variable of the file.
+pub(crate) fn is_export_key(local: &str) -> bool {
+    local.starts_with("exports.")
+}
+
+/// The longest chain of assignments that [`assigned_value`] follows. A hand writes two or three, and a generated file of thousands must not cost a walk for each of them.
+const MAX_CHAINED_ASSIGNMENTS: usize = 8;
+
+/// What `expr` gives past the assignments around it: `express.Router()` for `module.exports = express.Router()`.
+pub(crate) fn assigned_value<'e, 'a>(expr: &'e Expression<'a>) -> &'e Expression<'a> {
+    let mut value = expr.get_inner_expression();
+    for _ in 0..MAX_CHAINED_ASSIGNMENTS {
+        match value {
+            Expression::AssignmentExpression(assignment)
+                if assignment.operator == AssignmentOperator::Assign =>
+            {
+                value = assignment.right.get_inner_expression();
+            }
+            _ => break,
+        }
+    }
+    value
+}
+
 /// The text of a string, a template or a concatenation, with each computed part written `${}` unless it is a name that `constants` give the text of, and each name that another file declares written `${}` as well; the first element that has text for an array; the URL that `new URL(path, base)` builds, alone or followed by `.href`, `.pathname` or `.toString()`. `None` for anything else.
 pub(crate) fn text_with(expr: &Expression<'_>, constants: &Constants) -> Option<String> {
     part_of(expr, constants, Mode::Use)?.lax()
@@ -695,7 +724,8 @@ pub(crate) fn commonjs_exports<'e, 'a>(
     value: &'e Expression<'a>,
 ) -> Option<Vec<(String, &'e Expression<'a>)>> {
     if target == "module.exports" {
-        let Expression::ObjectExpression(object) = value.get_inner_expression() else {
+        let value = assigned_value(value);
+        let Expression::ObjectExpression(object) = value else {
             return Some(vec![("default".to_owned(), value)]);
         };
         return Some(
@@ -714,7 +744,7 @@ pub(crate) fn commonjs_exports<'e, 'a>(
     let name = target
         .strip_prefix("exports.")
         .or_else(|| target.strip_prefix("module.exports."))?;
-    Some(vec![(name.to_owned(), value)])
+    Some(vec![(name.to_owned(), assigned_value(value))])
 }
 
 /// The names joined with dots, when none is computed.
