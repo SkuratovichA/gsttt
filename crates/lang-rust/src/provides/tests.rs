@@ -30,6 +30,7 @@ fn every_pack_is_credited_with_the_contracts_its_rules_name() {
             "grpc serves via []",
             "table declares via [sea_orm]",
             "table calls via [sqlx]",
+            "env serves via [env]",
             "env calls via [env]",
         ]
     );
@@ -47,6 +48,7 @@ fn a_project_without_packs_still_reports_what_it_cannot_see() {
             "grpc serves via []",
             "table declares via []",
             "table calls via []",
+            "env serves via []",
             "env calls via []",
         ]
     );

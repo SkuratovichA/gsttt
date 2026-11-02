@@ -248,7 +248,20 @@ expression: pack_schema()
           "type": "string"
         },
         "role": {
-          "$ref": "#/definitions/Role"
+          "description": "The role of a site that reads the chain: `process.env.API_URL` in an expression.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Role"
+            }
+          ]
+        },
+        "written": {
+          "description": "The role of a site that writes the chain: `process.env.API_URL = \"x\"`. Unset: a write names nothing, so `prisma.user.findMany = vi.fn()` is no query. A site that both reads and writes the chain, as in `const url = (process.env.API_URL ??= \"x\")`, names the key with both roles.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Role"
+            }
+          ]
         },
         "segments": {
           "description": "How many segments after the root make the key. Unset: every segment up to a terminal or the end of the chain.",

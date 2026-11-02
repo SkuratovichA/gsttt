@@ -279,6 +279,19 @@ expression: packs
         "key": "$arg1",
         "method": null,
         "receiver": null
+      },
+      {
+        "callee": [
+          "env.set_var",
+          "std.env.set_var",
+          "env.remove_var",
+          "std.env.remove_var"
+        ],
+        "kind": "env",
+        "role": "serves",
+        "key": "$arg1",
+        "method": null,
+        "receiver": null
       }
     ],
     "decorators": [

@@ -5,6 +5,7 @@ use gsttt_core::engine::build::build_index;
 use gsttt_core::engine::pipeline::{self, Module, Output};
 use gsttt_core::index::IndexInfo;
 use gsttt_core::repo::RepoView;
+use gsttt_core::rules::Pack;
 use gsttt_lang_rust::{PACKS, RUST};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -50,8 +51,17 @@ pub(crate) fn index(name: &str) -> Indexed {
 
 /// Indexes the tree under `root` with the built-in packs.
 pub(crate) fn index_at(root: &str) -> Indexed {
+    index_at_with(root, builtin_packs(PACKS).unwrap())
+}
+
+/// Indexes `tests/fixtures/<name>/` with `packs` in place of the built-in ones.
+pub(crate) fn index_with(name: &str, packs: Vec<Pack>) -> Indexed {
+    let root = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+    index_at_with(&root, packs)
+}
+
+fn index_at_with(root: &str, packs: Vec<Pack>) -> Indexed {
     let repo = RepoView::scan(root).unwrap();
-    let packs = builtin_packs(PACKS).unwrap();
     let modules = [Module {
         connector: &RUST,
         options: Value::Null,

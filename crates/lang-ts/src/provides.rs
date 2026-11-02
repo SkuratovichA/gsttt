@@ -10,15 +10,9 @@ use gsttt_core::rules::Pack;
 pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
     let mut groups: BTreeMap<(ContractKind, Role), BTreeSet<&str>> = BTreeMap::new();
     for pack in packs {
-        let rules = pack
-            .calls
-            .iter()
-            .map(|rule| (&rule.kind, rule.role))
-            .chain(pack.decorators.iter().map(|rule| (&rule.kind, rule.role)))
-            .chain(pack.chains.iter().map(|rule| (&rule.kind, rule.role)))
-            .chain(pack.assigns.iter().map(|rule| (&rule.kind, rule.role)))
-            .chain(pack.imports.iter().map(|rule| (&rule.kind, rule.role)));
-        for (kind, role) in rules {
+        // The import rules are read here and by no other connector, so the pack does not list them.
+        let imports = pack.imports.iter().map(|rule| (&rule.kind, rule.role));
+        for (kind, role) in pack.contracts().chain(imports) {
             groups
                 .entry((kind.clone(), role))
                 .or_default()
@@ -90,7 +84,39 @@ fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
         (ContractKind::Env, Role::Calls) => {
             &["variables read through an alias of the environment object are not seen"]
         }
+        (ContractKind::Env, Role::Serves) => &[
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen",
+        ],
         _ => &[],
     };
     spots.iter().map(|spot| (*spot).to_owned()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_import_rules_of_a_pack_are_listed() {
+        let packs = gsttt_config::builtin_packs(crate::PACKS).unwrap();
+        let prisma = provides(&packs)
+            .into_iter()
+            .find(|provide| provide.kind == ContractKind::Table && provide.role == Role::Calls)
+            .unwrap();
+        assert_eq!(prisma.via, ["prisma"]);
+        let only_imports = Pack {
+            chains: Vec::new(),
+            calls: Vec::new(),
+            ..packs
+                .into_iter()
+                .find(|pack| pack.name == "prisma")
+                .unwrap()
+        };
+        assert!(
+            !only_imports.imports.is_empty() && only_imports.contracts().next().is_none(),
+            "the pack lists none itself"
+        );
+        assert_eq!(provides(&[only_imports]).len(), 1, "the provides add them");
+    }
 }

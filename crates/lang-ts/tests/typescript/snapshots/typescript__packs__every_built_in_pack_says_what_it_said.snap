@@ -96,7 +96,18 @@ expression: packs
     "name": "env",
     "language": "ts",
     "detect": [],
-    "calls": [],
+    "calls": [
+      {
+        "callee": [
+          "vi.stubEnv"
+        ],
+        "kind": "env",
+        "role": "serves",
+        "key": "$arg1",
+        "method": null,
+        "receiver": null
+      }
+    ],
     "decorators": [],
     "chains": [
       {
@@ -106,6 +117,7 @@ expression: packs
         ],
         "kind": "env",
         "role": "calls",
+        "written": "serves",
         "segments": 1,
         "terminals": [],
         "case": null

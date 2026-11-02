@@ -1,0 +1,28 @@
+---
+source: crates/lang-rust/tests/rust/env.rs
+expression: "out.sites(\"src/main.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "env PORT",
+      "line": 2,
+      "role": "serves",
+      "via": "settings"
+    },
+    {
+      "key": "env RETRIES",
+      "line": 3,
+      "role": "serves",
+      "via": "settings"
+    },
+    {
+      "key": "env PORT",
+      "line": 4,
+      "role": "calls",
+      "via": "settings"
+    }
+  ],
+  "embedded": [],
+  "unresolved": []
+}

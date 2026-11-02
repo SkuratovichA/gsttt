@@ -11,7 +11,7 @@ use gsttt_core::fact::{
     UnresolvedReason, UnresolvedSite,
 };
 use gsttt_core::rules::{
-    EmbedRule, OneOrMany, Outcome, Pack, Prefix, Reading, ValueExpr, ValueSource,
+    Access, EmbedRule, OneOrMany, Outcome, Pack, Prefix, Reading, ValueExpr, ValueSource,
 };
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
@@ -446,6 +446,7 @@ impl<'a> Collector<'a> {
             return;
         }
         let packs = self.packs;
+        let mut unread = false;
         for pack in packs {
             for rule in &pack.calls {
                 let Some(matched) = callee.matching(&rule.callee) else {
@@ -472,6 +473,13 @@ impl<'a> Collector<'a> {
                 };
                 let outcome =
                     rule.apply(&pack.name, &site, prefix.as_deref(), line, callee.written());
+                // Several rules may read one call, as `os.environ.pop` is both read and served, and every one of them reports the same blind spot: a call whose name is computed is one unread site.
+                if matches!(outcome, Outcome::Blind(_)) {
+                    if unread {
+                        continue;
+                    }
+                    unread = true;
+                }
                 // A route a call declares, Django's `path()`, belongs to the module's URL list, which an including module mounts like a router.
                 self.record(outcome, Some(("", callee.written())));
             }
@@ -634,13 +642,13 @@ impl<'a> Collector<'a> {
         true
     }
 
-    fn subscript(&mut self, subscript: &ExprSubscript) {
+    fn subscript(&mut self, subscript: &ExprSubscript, access: Access) {
         self.named(&subscript.value, |this, root| {
-            this.read_subscript(subscript, root);
+            this.read_subscript(subscript, access, root);
         });
     }
 
-    fn read_subscript(&mut self, subscript: &ExprSubscript, root: &Name) {
+    fn read_subscript(&mut self, subscript: &ExprSubscript, access: Access, root: &Name) {
         let segment = match &*subscript.slice {
             Expr::StringLiteral(name) => Some(name.value.to_str()),
             _ => None,
@@ -650,8 +658,10 @@ impl<'a> Collector<'a> {
         for pack in packs {
             for rule in &pack.chains {
                 if root.matching(&rule.root).is_some() {
-                    let outcome = rule.apply(&pack.name, &[segment], line, root.written());
-                    self.record(outcome, None);
+                    for outcome in rule.apply(&pack.name, access, &[segment], line, root.written())
+                    {
+                        self.record(outcome, None);
+                    }
                 }
             }
         }
@@ -780,8 +790,10 @@ impl<'a> Visitor<'a> for Collector<'a> {
     fn visit_expr(&mut self, expr: &'a Expr) {
         match expr {
             Expr::Call(call) => self.call(call),
-            Expr::Subscript(subscript) if matches!(subscript.ctx, ExprContext::Load) => {
-                self.subscript(subscript);
+            Expr::Subscript(subscript) => {
+                if let Some(access) = access_of(subscript.ctx) {
+                    self.subscript(subscript, access);
+                }
             }
             _ => {}
         }
@@ -814,6 +826,15 @@ impl<'a> Collector<'a> {
         }
         self.visit_body(&attempt.orelse);
         self.visit_body(&attempt.finalbody);
+    }
+}
+
+/// How a subscript in `ctx` touches what it indexes. An assignment, an augmented assignment and `del` are statements, so they drop the value and only write; `Invalid` is code that does not parse.
+fn access_of(ctx: ExprContext) -> Option<Access> {
+    match ctx {
+        ExprContext::Load => Some(Access::Read),
+        ExprContext::Store | ExprContext::Del => Some(Access::Write),
+        ExprContext::Invalid => None,
     }
 }
 
