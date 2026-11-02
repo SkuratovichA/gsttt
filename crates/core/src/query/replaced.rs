@@ -1,27 +1,32 @@
 //! The tests that replace a module: a test that swaps a module for a factory mock runs none of that module's code, so a change reaches the test only by the imports that never enter one of the modules it replaces.
 
-use crate::fact::ImportFlags;
+use crate::fact::{Import, ImportFlags, ImportKind};
 use crate::ids::{FileId, IdSet};
 use crate::index::Index;
 
-/// The modules `test` replaces, sorted and once each: the files its factory mocks stand in for, without those it also loads as they are through an actual-module call anywhere in the test, which run their own code whatever the mock says. They are read from the imports of the test itself, because the edge of the graph keeps a flag only when every import behind it carries it. A test that replaces nothing allocates nothing.
+/// The modules `test` replaces, sorted and once each: the files its factory mocks stand in for, without those it also takes in a way that may run their code, whatever call made it. An import that asks for the module as it is, through an actual-module call, does; so does any other mock call that carries no `REPLACES`, which is a mock made without a factory, an unmock, `importMock`, `createMockFromModule` and the like, because the index does not tell what such a call loads. They are read from the imports of the test itself, because the edge of the graph keeps a flag only when every import behind it carries it. A test that replaces nothing allocates nothing.
 fn replaced_by(index: &Index, test: FileId) -> Vec<FileId> {
     let Some(record) = index.record(test) else {
         return Vec::new();
     };
-    let with = |flag: ImportFlags| {
+    let targets = |wanted: fn(&Import) -> bool| {
         record
             .imports
             .iter()
-            .filter(move |resolved| resolved.import.flags.contains(flag))
+            .filter(move |resolved| wanted(&resolved.import))
             .flat_map(|resolved| resolved.to.files().iter().copied())
     };
-    let mut replaced: Vec<FileId> = with(ImportFlags::REPLACES).collect();
+    let mut replaced: Vec<FileId> =
+        targets(|import| import.flags.contains(ImportFlags::REPLACES)).collect();
     if replaced.is_empty() {
         return replaced;
     }
-    let actual: Vec<FileId> = with(ImportFlags::ACTUAL).collect();
-    replaced.retain(|file| !actual.contains(file));
+    let unsure: Vec<FileId> = targets(|import| {
+        import.flags.contains(ImportFlags::ACTUAL)
+            || (import.kind == ImportKind::Mock && !import.flags.contains(ImportFlags::REPLACES))
+    })
+    .collect();
+    replaced.retain(|file| !unsure.contains(file));
     replaced.sort_unstable();
     replaced.dedup();
     replaced
@@ -47,7 +52,7 @@ impl<'a> Cut<'a> {
         }
     }
 
-    /// Whether `test` still runs a changed file or a file met across a contract: it replaces no module, or it reaches an entry by imports that never enter a module it replaces. A changed test is an entry itself.
+    /// Whether `test` still runs a changed file or a file met across a contract: it replaces no module, or it reaches an entry by imports that never enter a module it replaces. The walk never reaches a changed file, so a changed test is never asked about.
     pub(super) fn keeps(&mut self, test: FileId) -> bool {
         let replaced = replaced_by(self.index, test);
         if replaced.is_empty() {

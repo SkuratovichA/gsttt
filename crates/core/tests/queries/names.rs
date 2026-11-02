@@ -2688,6 +2688,28 @@ fn a_test_that_replaces_the_module_on_the_way_to_a_contract_is_not_listed_by_nam
 }
 
 #[test]
+fn a_test_past_the_depth_that_replaces_another_module_is_listed_by_name_as_the_walk_found_it() {
+    // The test is three hops from `handle`, past the depth of 1, and what it replaces is not on its way to the change.
+    let without = ask(&behind_a_route().build(), "server.ts", &["handle"], None);
+    let index = behind_a_route()
+        .replaces("t.test.ts", "other.ts", 2)
+        .build();
+
+    let answer = ask(&index, "server.ts", &["handle"], None);
+
+    assert_eq!(
+        paths(&answer.affected),
+        ["client.ts", "api.ts"],
+        "within the depth"
+    );
+    assert_eq!(paths(&answer.tests), ["t.test.ts"]);
+    assert_eq!(
+        answer.tests, without.tests,
+        "as the walk to the end found it"
+    );
+}
+
+#[test]
 fn a_test_that_reaches_a_file_met_across_a_contract_is_listed_by_name() {
     let index = behind_a_route()
         .imports_names("t.test.ts", "client.ts", &["send"])
