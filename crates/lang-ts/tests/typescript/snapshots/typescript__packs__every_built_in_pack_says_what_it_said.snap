@@ -459,7 +459,33 @@ expression: packs
         "case": null
       }
     ],
-    "embeds": [],
+    "embeds": [
+      {
+        "callee": [
+          "*.$queryRaw",
+          "*.*.$queryRaw",
+          "*.*.*.$queryRaw",
+          "*.$executeRaw",
+          "*.*.$executeRaw",
+          "*.*.*.$executeRaw",
+          "Prisma.sql"
+        ],
+        "lang": "sql",
+        "text": null
+      },
+      {
+        "callee": [
+          "*.$queryRawUnsafe",
+          "*.*.$queryRawUnsafe",
+          "*.*.*.$queryRawUnsafe",
+          "*.$executeRawUnsafe",
+          "*.*.$executeRawUnsafe",
+          "*.*.*.$executeRawUnsafe"
+        ],
+        "lang": "sql",
+        "text": "$arg1"
+      }
+    ],
     "assigns": [],
     "imports": [
       {

@@ -882,8 +882,10 @@ impl<'a> Analyzer<'_, 'a> {
                 if !rule.callee.matches(tag) {
                     continue;
                 }
-                let site: &Shape =
-                    lazy.get_or_insert_with(|| Shape::of_tag(tag, template_text(&it.quasi, "")));
+                // The first rule that matches fixes the text; a tag that two rules of different languages match reads the first one's placeholder.
+                let site: &Shape = lazy.get_or_insert_with(|| {
+                    Shape::of_tag(tag, template_text(&it.quasi, rule.computed_part()))
+                });
                 match rule.apply(&pack.name, site, line, tag) {
                     Ok(embedded) => self.out.embedded.push(embedded),
                     Err(blind) => self.out.unresolved.push(blind),
