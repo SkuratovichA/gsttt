@@ -9,10 +9,12 @@ use super::pipeline::{Output, display_root};
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{Line, ParseStatus, UnresolvedReason, UnresolvedSite};
+use crate::glob::glob_set;
 use crate::graph::{ContractSite, GraphBuilder};
 use crate::ids::{FileId, Id};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
 use crate::repo::RepoView;
+use crate::setup::GraphqlEndpoint;
 
 /// Builds the index of the files of `repo` from what the pipeline found. `ran` names the connectors that took part in registry order, so one that opened no project still has its line in the coverage. The time the build took is added to `info` as the graph phase.
 pub fn build_index(
@@ -20,6 +22,7 @@ pub fn build_index(
     output: &Output,
     ran: &[&str],
     http_prefixes: &[String],
+    graphql_endpoints: &[GraphqlEndpoint],
     mut info: IndexInfo,
 ) -> Index {
     let started = Instant::now();
@@ -184,6 +187,9 @@ pub fn build_index(
         }
     }
     coverage.problems = output.problems.iter().map(ToString::to_string).collect();
+    coverage
+        .problems
+        .extend(unmatched_endpoint_globs(repo, graphql_endpoints));
     coverage.finish();
 
     let graph = graph.build();
@@ -195,7 +201,43 @@ pub fn build_index(
         coverage,
         info,
         http_prefixes: http_prefixes.to_vec(),
-        // The endpoints are the config's, which the engine sets once the index is built.
-        graphql_endpoints: Vec::new(),
+        graphql_endpoints: graphql_endpoints.to_vec(),
     }
+}
+
+/// One problem line for each glob of an endpoint that matches no file of `repo`: such a glob is valid, so only the coverage can say that the files it meant belong to no endpoint. Done once here, never per query. A list that does not build is the config check's to report, and gives no line.
+fn unmatched_endpoint_globs(repo: &RepoView, endpoints: &[GraphqlEndpoint]) -> Vec<String> {
+    let mut globs = Vec::new();
+    let mut places = Vec::new();
+    for (number, endpoint) in endpoints.iter().enumerate() {
+        for (list, patterns) in [
+            ("clients", &endpoint.clients),
+            ("servers", &endpoint.servers),
+        ] {
+            for pattern in patterns {
+                globs.push(pattern.clone());
+                places.push(format!("graphql_endpoints[{number}].{list}"));
+            }
+        }
+    }
+    let Ok(set) = glob_set(&globs) else {
+        return Vec::new();
+    };
+    let mut matched = vec![false; globs.len()];
+    let mut hits = Vec::new();
+    for (_, path) in repo.files() {
+        set.matches_into(path.as_str(), &mut hits);
+        for &glob in &hits {
+            if let Some(seen) = matched.get_mut(glob) {
+                *seen = true;
+            }
+        }
+    }
+    globs
+        .iter()
+        .zip(&places)
+        .zip(&matched)
+        .filter(|(_, matched)| !**matched)
+        .map(|((glob, place), _)| format!("`{place}` has the glob {glob:?}, which matches no file"))
+        .collect()
 }

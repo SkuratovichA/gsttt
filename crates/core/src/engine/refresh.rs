@@ -296,10 +296,14 @@ impl<'a> Engine<'a> {
                 total: 0,
             },
         };
-        let mut index = build_index(repo, &output, modules, &self.setup.http_prefixes, info);
-        index
-            .graphql_endpoints
-            .clone_from(&self.setup.graphql_endpoints);
+        let mut index = build_index(
+            repo,
+            &output,
+            modules,
+            &self.setup.http_prefixes,
+            &self.setup.graphql_endpoints,
+            info,
+        );
         index.info.timings.total = micros(started.elapsed());
         index.coverage.problems.extend(problems);
         index
@@ -622,7 +626,9 @@ mod tests {
         Counters, Graphs, Notes, add_worktree, git, init_repo, touch, write,
     };
     use crate::fact::UnresolvedReason;
-    use crate::setup::ModuleSetup;
+    use crate::index::Freshness;
+    use crate::query::{ImpactRequest, impact};
+    use crate::setup::{GraphqlEndpoint, ModuleSetup};
 
     /// The two connectors of the fixtures, each with counters nobody else shares.
     struct Rig {
@@ -2008,5 +2014,102 @@ mod tests {
         assert_eq!(missing.count, 1);
         let file = run.index.graph.file_id("src/a.txt").unwrap();
         assert_eq!((missing.first.file, missing.first.line), (file, 3));
+    }
+
+    /// A server and a page of each of the two endpoints `a` and `b` resolve and query `graphql Query.user`, and a file of `legacy/` serves it too.
+    const ENDPOINT_FILES: [(&str, &str); 5] = [
+        ("api-a/users.txt", "fact 1 serves graphql Query.user\n"),
+        ("api-b/users.txt", "fact 1 serves graphql Query.user\n"),
+        ("web-a/page.txt", "fact 1 calls graphql Query.user\n"),
+        ("web-b/page.txt", "fact 1 calls graphql Query.user\n"),
+        ("legacy/users.txt", "fact 1 serves graphql Query.user\n"),
+    ];
+
+    fn endpoint(clients: &str, servers: &str) -> GraphqlEndpoint {
+        GraphqlEndpoint {
+            clients: vec![clients.to_owned()],
+            servers: vec![servers.to_owned()],
+        }
+    }
+
+    fn setup_with(endpoints: Vec<GraphqlEndpoint>) -> Setup {
+        Setup {
+            graphql_endpoints: endpoints,
+            ..Setup::default()
+        }
+    }
+
+    /// The files a change of `api-a/users.txt` reaches, as the index of `run` answers it.
+    fn reached_from_api_a(run: &Refresh) -> Vec<String> {
+        let request = ImpactRequest {
+            files: vec!["api-a/users.txt".to_owned()],
+            ..ImpactRequest::default()
+        };
+        impact(&run.index, Freshness::Fresh, &request)
+            .affected
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect()
+    }
+
+    #[gsttt_scenario::scenario("config", "The endpoints are kept in the index and in its snapshot")]
+    #[test]
+    fn the_endpoints_of_the_setup_reach_the_index_and_its_snapshot() {
+        let rig = Rig::new();
+        let dir = init_repo(&ENDPOINT_FILES);
+        let setup = setup_with(vec![
+            endpoint("web-a/**", "api-a/**"),
+            endpoint("web-b/**", "api-b/**"),
+        ]);
+
+        let first = index(&rig, &dir, &setup).unwrap();
+        let second = index(&rig, &dir, &setup).unwrap();
+
+        assert!(!first.unchanged);
+        assert!(second.unchanged, "the second run answers from the snapshot");
+        assert_eq!(second.index.graphql_endpoints, setup.graphql_endpoints);
+        // The page and the server of the other endpoint are not reached, and `legacy/` serves no one.
+        assert_eq!(reached_from_api_a(&first), ["web-a/page.txt"]);
+        assert_eq!(reached_from_api_a(&second), reached_from_api_a(&first));
+    }
+
+    #[gsttt_scenario::scenario(
+        "config",
+        "A glob of an endpoint that matches no file is named in the coverage"
+    )]
+    #[test]
+    fn a_glob_of_an_endpoint_that_matches_no_file_is_named_in_the_coverage() {
+        let rig = Rig::new();
+        let dir = init_repo(&ENDPOINT_FILES);
+        // Paths are relative to the repository root and have no `./`, so the first endpoint has no server.
+        let setup = setup_with(vec![
+            endpoint("web-a/**", "./api-a/**"),
+            endpoint("web-b/**", "api-b/**"),
+        ]);
+        let line =
+            "`graphql_endpoints[0].servers` has the glob \"./api-a/**\", which matches no file";
+
+        let first = index(&rig, &dir, &setup).unwrap();
+        let second = index(&rig, &dir, &setup).unwrap();
+
+        assert_eq!(first.index.coverage.problems, [line]);
+        assert!(second.unchanged);
+        assert_eq!(second.index.coverage.problems, [line]);
+    }
+
+    #[gsttt_scenario::scenario("config", "A file in no endpoint gives no line")]
+    #[test]
+    fn a_file_in_no_endpoint_gives_no_line_in_the_coverage() {
+        let rig = Rig::new();
+        // `legacy/users.txt` matches no glob, by design, and every glob matches a file.
+        let dir = init_repo(&ENDPOINT_FILES);
+        let setup = setup_with(vec![
+            endpoint("web-a/**", "api-a/**"),
+            endpoint("web-b/**", "api-b/**"),
+        ]);
+
+        let run = index(&rig, &dir, &setup).unwrap();
+
+        assert_eq!(run.index.coverage.problems, Vec::<String>::new());
     }
 }

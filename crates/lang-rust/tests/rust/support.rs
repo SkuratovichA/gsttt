@@ -104,6 +104,7 @@ impl Indexed {
             &self.output,
             &["rust"],
             &[],
+            &[],
             IndexInfo::default(),
         );
         let graph = &index.graph;

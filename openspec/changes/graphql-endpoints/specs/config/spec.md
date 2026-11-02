@@ -47,3 +47,19 @@ A `[[graphql_endpoints]]` entry SHALL hold `clients` and `servers`, each a non-e
 #### Scenario: An invalid glob of an endpoint is named
 - **WHEN** the first `[[graphql_endpoints]]` entry has `servers = ["api/**", "["]`
 - **THEN** evaluation fails with a message that starts with `.gsttt/config.toml:1:` and names `graphql_endpoints[0].servers` and the glob `[`
+
+#### Scenario: The endpoints are kept in the index and in its snapshot
+- **WHEN** the setup has the endpoint `a` with the clients `web-a/**` and the servers `api-a/**` and the endpoint `b` with `web-b/**` and `api-b/**`, a server and a page of each serve and call `graphql Query.user`, and the tree is indexed twice, the second time from the snapshot
+- **THEN** both indexes hold the endpoints, and a change of `api-a/users.ts` reaches the page of `a` and not the page of `b` in both
+
+### Requirement: A glob of an endpoint that matches no file is reported
+When the setup has endpoints, each glob of `clients` or `servers` that matches no file of the index SHALL be one line of the coverage problems, naming `graphql_endpoints[n].clients` or `graphql_endpoints[n].servers` and the glob. The lines SHALL be worked out when the index is built and kept in it. A file that no endpoint lists SHALL give no line.
+
+#### Scenario: A glob of an endpoint that matches no file is named in the coverage
+- **WHEN** the first of two endpoints has `servers = ["./api-a/**"]`, and paths are relative to the repository root and have no `./`
+- **THEN** the coverage problems hold one line, `` `graphql_endpoints[0].servers` has the glob "./api-a/**", which matches no file ``
+- **AND** an index read from the snapshot holds the same line
+
+#### Scenario: A file in no endpoint gives no line
+- **WHEN** every glob of the endpoints matches a file, and `legacy/users.ts` matches none of them
+- **THEN** the coverage problems hold no line about the endpoints
