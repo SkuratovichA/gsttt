@@ -213,13 +213,16 @@ impl<'a> Analyzer<'_, 'a> {
             .collect()
     }
 
-    fn bind(&mut self, local: &str, spec: &str, name: &str) {
+    /// Records that `local` is `name` of the package `spec`, and gives the place of the binding in `extra.bindings`.
+    fn bind(&mut self, local: &str, spec: &str, name: &str) -> usize {
         self.constants.import(local, spec);
+        let place = self.out.extra.bindings.len();
         self.out.extra.bindings.push(Binding {
             local: local.to_owned(),
             spec: spec.to_owned(),
             name: name.to_owned(),
         });
+        place
     }
 
     fn export(&mut self, name: &str, target: ExportTarget) {
@@ -1081,13 +1084,10 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 }
             };
             all_type &= is_type;
+            let binding = self.bind(local, spec, &name);
             if read_by_rules && !is_type && is_member(&name) {
-                self.imported.push(Imported {
-                    binding: self.out.extra.bindings.len(),
-                    line,
-                });
+                self.imported.push(Imported { binding, line });
             }
-            self.bind(local, spec, &name);
             import.names.push(name);
             import.exported.push(local.to_owned());
         }
