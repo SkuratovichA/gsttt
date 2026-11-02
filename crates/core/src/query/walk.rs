@@ -14,7 +14,7 @@ use crate::ids::{ContractId, FileId, IdSet, NameId};
 
 use super::cross::{Crossed, Crossing, Direction, Leavers, keep_fewest, sites_of};
 
-pub(super) use names::{Hit, Note, Walked, reach_names};
+pub(super) use names::{Hit, Note, Walked, reach_changed, reach_names};
 
 /// How the walk got to a file.
 #[derive(Clone, Debug, PartialEq, Eq)]

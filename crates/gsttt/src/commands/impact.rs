@@ -1,7 +1,6 @@
 //! `gsttt impact`: what a change affects, for the files named on the command line or the files git lists as changed.
 
 use gsttt_core::Loaded;
-use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::query::{self, ImpactRequest};
 
 use super::{Session, print};
@@ -34,13 +33,7 @@ fn request(session: &Session<'_>, args: &ImpactArgs) -> Result<ImpactRequest, Cl
         ..ImpactRequest::default()
     };
     if args.changed {
-        for change in session.repository.changed(args.base.as_deref())? {
-            let list = match change.kind {
-                ChangeKind::Deleted => &mut request.deleted,
-                ChangeKind::Modified | ChangeKind::Added => &mut request.files,
-            };
-            list.push(change.path.as_str().to_owned());
-        }
+        request.add_changes(&session.repository.changed(args.base.as_deref())?);
     } else {
         for argument in &args.paths {
             let target = session.argument(argument)?;

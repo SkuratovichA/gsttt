@@ -15,6 +15,7 @@ use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use super::declarations;
 use super::files::{FileState, Stamp};
 use crate::connector::{
     ConnectorError, DynConnector, DynProject, LinkFile, LinkInput, Linked, LinkedFact, Meta,
@@ -198,6 +199,17 @@ impl<'a> Assigned<'a> {
             .collect()
     }
 
+    /// The id of `path` and the project that took it, `None` when no project did.
+    pub fn project_of(&self, path: &RepoPath) -> Option<(FileId, &dyn DynProject)> {
+        // The files are in id order, which is path order.
+        let at = self
+            .owned
+            .binary_search_by(|file| file.path.cmp(path))
+            .ok()?;
+        let file = self.owned.get(at)?;
+        Some((file.id, self.projects.get(file.project)?.as_ref()))
+    }
+
     /// The files no project took, in id order.
     pub fn unclaimed(&self) -> &[FileId] {
         &self.unclaimed
@@ -218,6 +230,56 @@ pub struct Phases {
     pub resolve: Duration,
     /// The link phase.
     pub link: Duration,
+}
+
+/// A modified file whose old and new text are compared by declaration.
+pub(super) struct Pair<'a> {
+    pub path: &'a RepoPath,
+    pub id: FileId,
+    pub project: &'a dyn DynProject,
+    /// The text of the old version, `None` when it could not be read.
+    pub old: Option<String>,
+}
+
+/// The declarations that differ in each of `pairs`, in order, `None` for a file that cannot be compared. The new version is read from the work tree. A read, a parse or a connector that fails or panics leaves its file whole and no other.
+pub(super) fn changed_names(
+    repo: &RepoView,
+    pairs: &[Pair<'_>],
+    max_file_bytes: u64,
+) -> Vec<Option<Vec<String>>> {
+    pairs
+        .par_iter()
+        .map(|pair| {
+            let old = version(pair.project, pair, pair.old.as_deref()?)?;
+            let text = read(repo, pair.path, max_file_bytes, None).text.ok()?;
+            let new = version(pair.project, pair, &text)?;
+            declarations::changed_declarations(
+                declarations::Version {
+                    facts: &old.0,
+                    code: &old.1,
+                },
+                declarations::Version {
+                    facts: &new.0,
+                    code: &new.1,
+                },
+            )
+        })
+        .collect()
+}
+
+/// The facts and the blanked code of one version of a file, `None` when the connector gives no code or a call fails.
+fn version(project: &dyn DynProject, pair: &Pair<'_>, text: &str) -> Option<(FileFacts, String)> {
+    let source = SourceFile {
+        id: pair.id,
+        path: pair.path,
+        text,
+    };
+    contain_reading(text.len(), || {
+        let (facts, _) = project.parse(&source);
+        Some((facts, project.code(&source)?))
+    })
+    .ok()
+    .flatten()
 }
 
 /// What the parse phase made of a file.

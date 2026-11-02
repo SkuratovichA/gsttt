@@ -14,7 +14,7 @@ use crate::extra::TsExtra;
 use crate::options::TypeScriptOptions;
 use crate::pathing::{has_segment, is_config_name, is_json};
 use crate::shared::Shared;
-use crate::source::{is_code, parse_code};
+use crate::source::{blanked_code, is_code, parse_code};
 use crate::{link, provides, resolve};
 
 /// Changes whenever the facts this reader produces for the same text and packs could change.
@@ -105,6 +105,13 @@ impl Project for TsProject {
         let mut parsed = parse_code(file, &self.packs, tags);
         parsed.facts.tags = tags;
         parsed
+    }
+
+    fn code(&self, file: &SourceFile<'_>) -> Option<String> {
+        if is_json(file.path.file_name()) {
+            return None;
+        }
+        blanked_code(file)
     }
 
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution {

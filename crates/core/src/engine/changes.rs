@@ -21,6 +21,8 @@ pub enum ChangeKind {
 pub struct Change {
     pub path: RepoPath,
     pub kind: ChangeKind,
+    /// The declarations that differ between the two versions of a modified file. `None` when the file is changed whole: it was added or deleted, no connector claims it, or its two versions cannot be compared by declaration. `Some` and empty when no declaration differs.
+    pub names: Option<Vec<String>>,
 }
 
 /// The files of a tree with the blob id of each, in path order.
@@ -45,10 +47,12 @@ pub fn diff(from: &Listing, to: &Listing) -> Vec<Change> {
             None => changes.push(Change {
                 path: path.clone(),
                 kind: ChangeKind::Added,
+                names: None,
             }),
             Some(before) if before != id => changes.push(Change {
                 path: path.clone(),
                 kind: ChangeKind::Modified,
+                names: None,
             }),
             Some(_) => {}
         }
@@ -59,10 +63,24 @@ pub fn diff(from: &Listing, to: &Listing) -> Vec<Change> {
             .map(|path| Change {
                 path: path.clone(),
                 kind: ChangeKind::Deleted,
+                names: None,
             }),
     );
     changes.sort_by(|a, b| a.path.cmp(&b.path));
     changes
+}
+
+/// The text of each blob in `ids`, in the same order. `None` for an id that is not a blob id git can have, an object that cannot be read and a text that is not UTF-8.
+pub fn blob_texts(root: &Utf8Path, ids: &[ContentId]) -> Result<Vec<Option<String>>, ChangesError> {
+    let repo = open(root)?;
+    Ok(ids
+        .iter()
+        .map(|id| {
+            let oid = gix::ObjectId::try_from(id.as_bytes().as_slice()).ok()?;
+            let object = repo.find_object(oid).ok()?;
+            String::from_utf8(object.detach().data).ok()
+        })
+        .collect())
 }
 
 /// The commit HEAD points at, `None` before the first commit. A HEAD git cannot resolve is an error: it is not the same as a branch without commits.

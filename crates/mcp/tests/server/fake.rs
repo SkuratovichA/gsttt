@@ -120,8 +120,20 @@ impl Fake {
             .map(|&(path, kind)| Change {
                 path: RepoPath::normalize(path).expect("a path from the root"),
                 kind,
+                names: None,
             })
             .collect();
+        self
+    }
+
+    /// A source in which git lists `path` as changed in exactly the declarations `names`.
+    pub(crate) fn declared(mut self, path: &str, names: &[&str]) -> Self {
+        let path = RepoPath::normalize(path).expect("a path from the root");
+        for change in &mut self.inner().changes {
+            if change.path == path {
+                change.names = Some(names.iter().map(|name| (*name).to_owned()).collect());
+            }
+        }
         self
     }
 
