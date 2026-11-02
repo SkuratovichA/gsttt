@@ -993,7 +993,7 @@ impl<'w, 'a> Step<'w, 'a> {
             }
             // A test that mocks a module runs what replaces it, not the code of the module, so a mock takes no name. A file followed whole is called where a mock is written that does not replace it, as an import for side effects calls it; one that replaces it calls nothing of it.
             ImportKind::Mock => {
-                if name == Name::Any && !import.flags.contains(ImportFlags::REPLACES) {
+                if name == Name::Any && !replaces(import.flags) {
                     via.used |= self.place(importer, symbols, import.line);
                 }
             }
@@ -1161,7 +1161,7 @@ fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<
             via.whole |= take_names(graph, name, import, via);
         }
         ImportKind::Mock => {
-            if name == Name::Any && !import.flags.contains(ImportFlags::REPLACES) {
+            if name == Name::Any && !replaces(import.flags) {
                 via.taken = Taken::Everything;
                 via.whole = true;
             }
@@ -1173,10 +1173,15 @@ fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<
     }
 }
 
+/// Whether a mock with `flags` replaces its module with a factory, so the importer runs none of the code of that module.
+const fn replaces(flags: ImportFlags) -> bool {
+    flags.contains(ImportFlags::REPLACES)
+}
+
 /// Whether the importer of `edge` runs the code of the file it imports as it loads. A mock does, unless it replaces the file: the edge keeps a flag only when every import behind it carries it, so an edge that has `REPLACES` is made of mocks that replace the file and nothing else.
 fn loads(edge: Edge) -> bool {
     !edge.type_only()
-        && !edge.flags().contains(ImportFlags::REPLACES)
+        && !replaces(edge.flags())
         && [
             ImportKind::Static,
             ImportKind::ReExport,
