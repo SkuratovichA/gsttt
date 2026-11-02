@@ -18,6 +18,7 @@ use super::lookup::{Miss, find, possible_misses};
 use super::render::{
     Answer, Entries, Footer, Searched, display_as_text, list, name_list, name_sentence,
 };
+use super::replaced::Cut;
 use super::walk::{self, Cause, Hit, Walked, reach, reach_names};
 
 /// What a change is asked about.
@@ -47,9 +48,9 @@ pub struct Impact {
     pub depth: Option<u32>,
     /// The files the change reaches, nearest first and then by path, without the tests.
     pub affected: Vec<Affected>,
-    /// The files tagged as tests that the change reaches at any depth, in the same order. Empty when the request left the tests out.
+    /// The files tagged as tests that the change reaches at any depth, in the same order, without a test that replaces every module it reaches the change by. Empty when the request left the tests out.
     pub tests: Vec<Affected>,
-    /// How many files tagged as tests the change reaches that the request left out. Left out when there are none.
+    /// How many files tagged as tests the change reaches that the request left out, not counting those that replace every module they reach it by. Left out when there are none.
     #[serde(skip_serializing_if = "is_zero")]
     pub tests_left_out: u32,
     /// The paths reported deleted that the index no longer holds.
@@ -288,7 +289,12 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         .collect();
     let mut tests = Vec::new();
     let mut tests_left_out = 0;
+    // A test that swaps a module for a factory mock runs none of its code, so it is listed only where it still reaches the change without that module.
+    let mut cut = Cut::new(index, &changed, &tested.across);
     for hit in tested.hits.iter().filter(|hit| is_test(hit)) {
+        if !cut.keeps(hit.file) {
+            continue;
+        }
         let Some(test) = entry(graph, hit) else {
             continue;
         };
@@ -361,13 +367,7 @@ fn reach_asked(
     depth: Option<u32>,
 ) -> Walked {
     if names.is_empty() {
-        Walked {
-            hits: reach(&index.graph, crossing, changed, depth)
-                .into_iter()
-                .map(Hit::from)
-                .collect(),
-            notes: Vec::new(),
-        }
+        reach(&index.graph, crossing, changed, depth)
     } else {
         reach_names(index, crossing, changed, names, depth)
     }

@@ -61,6 +61,8 @@ pub(in crate::query) struct Walked {
     /// Nearest first, then by file.
     pub(in crate::query) hits: Vec<Hit>,
     pub(in crate::query) notes: Vec<Note>,
+    /// The files the walk met across a contract, sorted and once each, whether or not it listed them. A test that replaces a module still runs the code of one of these when it reaches it without the module.
+    pub(in crate::query) across: Vec<FileId>,
 }
 
 /// Every file that holds a declaration, or the load, that refers to the `names` of the declarations of `changed` within `depth` hops through code, or at any number of them when there is no depth, with the callers in each. The files of `changed` are listed only when their own code refers to the names.
@@ -77,6 +79,7 @@ pub(in crate::query) fn reach_names(
         crossing,
         depth,
         files: BTreeMap::new(),
+        across: BTreeSet::new(),
         through_class: BTreeSet::new(),
     };
     let mut crossed = Crossed::new(Direction::ToCallers, &index.graph);
@@ -109,6 +112,7 @@ pub(in crate::query) fn reach_names(
     Walked {
         hits,
         notes: notes.into_iter().collect(),
+        across: walk.across.into_iter().collect(),
     }
 }
 
@@ -233,6 +237,8 @@ struct Layer {
     /// Each part with the fewest hops through code of the ways the layer found it by.
     units: BTreeMap<Unit, u32>,
     candidates: Vec<Candidate>,
+    /// The files the layer met across a contract.
+    across: Vec<FileId>,
     /// Each member with its class.
     through_class: BTreeSet<(String, String)>,
 }
@@ -244,6 +250,8 @@ struct Walk<'a> {
     /// The hops through code a part may be reached by before the walk takes no more, none when there is no limit.
     depth: Option<u32>,
     files: BTreeMap<FileId, Touch>,
+    /// The files the walk met across a contract.
+    across: BTreeSet<FileId>,
     /// The members of classes the walk looked for the callers of through their class, each with its class.
     through_class: BTreeSet<(String, String)>,
 }
@@ -339,6 +347,7 @@ impl Walk<'_> {
     /// Records what the layer found at `distance`, and returns the parts of files it reached, which are the next layer's frontier.
     fn apply(&mut self, layer: Layer, distance: u32) -> Vec<Front> {
         self.through_class.extend(layer.through_class);
+        self.across.extend(layer.across);
         // A stable sort keeps the order the layer found the ways in, which is contract order within one file.
         let mut candidates = layer.candidates;
         candidates
@@ -466,7 +475,7 @@ struct Via<'a> {
     locals: Vec<Local<'a>>,
     /// What it passes on as a named re-export, as the name it takes and the name it exports.
     passes: Vec<(NameId, NameId)>,
-    /// Whether it uses a name beyond its locals: it exports one again, takes names by a dynamic import, a `require` or an import type, or calls a file followed whole where it mocks it.
+    /// Whether it uses a name beyond its locals: it exports one again, takes names by a dynamic import, a `require` or an import type, or calls a file followed whole where it mocks it without replacing it.
     used: bool,
     /// Whether it re-exports a name.
     barrel: bool,
@@ -982,9 +991,9 @@ impl<'w, 'a> Step<'w, 'a> {
                     via.used |= self.unit(importer, Part::Load);
                 }
             }
-            // A test that mocks a module runs what replaces it, not the code of the module, so a mock takes no name. A file followed whole is called where the mock is written, as an import for side effects calls it.
+            // A test that mocks a module runs what replaces it, not the code of the module, so a mock takes no name. A file followed whole is called where a mock is written that does not replace it, as an import for side effects calls it; one that replaces it calls nothing of it.
             ImportKind::Mock => {
-                if name == Name::Any {
+                if name == Name::Any && !import.flags.contains(ImportFlags::REPLACES) {
                     via.used |= self.place(importer, symbols, import.line);
                 }
             }
@@ -1022,7 +1031,7 @@ impl<'w, 'a> Step<'w, 'a> {
         found
     }
 
-    /// Every file that loads `file`, reached at load: a static import that is not type-only, a re-export, a side-effect import, a dynamic import and `require`, and every mock, because the index does not record whether a mock has a factory and one made without a factory loads the module to mock it.
+    /// Every file that loads `file`, reached at load: a static import that is not type-only, a re-export, a side-effect import, a dynamic import and `require`, and every mock that does not replace the file, because one made without a factory loads the module to mock it.
     fn loaders(&mut self, file: FileId) {
         let graph = self.walk.graph;
         for &(importer, edge) in graph.dependents(file) {
@@ -1100,6 +1109,7 @@ impl<'w, 'a> Step<'w, 'a> {
     ) {
         for &(meeting, site) in sites {
             let file = site.file;
+            self.layer.across.push(file);
             self.hops = self.leavers.arrival(contract, site, code);
             let found = match self.walk.graph.symbols(file) {
                 Some(symbols) => self.place(file, symbols, site.line),
@@ -1135,7 +1145,7 @@ fn takes_module(import: &Import) -> bool {
             .any(|name| name == "*" || (import.kind == ImportKind::Require && name == "default"))
 }
 
-/// An import of a file that records no declarations takes the file whole when it takes the name, and by its edge alone when it names nothing. A mock takes it whole only when the file is followed whole.
+/// An import of a file that records no declarations takes the file whole when it takes the name, and by its edge alone when it names nothing. A mock takes it whole only when the file is followed whole and the mock does not replace it.
 fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<'_>) {
     match import.kind {
         ImportKind::ReExportAll => {
@@ -1151,7 +1161,7 @@ fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<
             via.whole |= take_names(graph, name, import, via);
         }
         ImportKind::Mock => {
-            if name == Name::Any {
+            if name == Name::Any && !import.flags.contains(ImportFlags::REPLACES) {
                 via.taken = Taken::Everything;
                 via.whole = true;
             }
@@ -1163,9 +1173,10 @@ fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<
     }
 }
 
-/// Whether the importer of `edge` runs the code of the file it imports as it loads.
+/// Whether the importer of `edge` runs the code of the file it imports as it loads. A mock does, unless it replaces the file: the edge keeps a flag only when every import behind it carries it, so an edge that has `REPLACES` is made of mocks that replace the file and nothing else.
 fn loads(edge: Edge) -> bool {
     !edge.type_only()
+        && !edge.flags().contains(ImportFlags::REPLACES)
         && [
             ImportKind::Static,
             ImportKind::ReExport,

@@ -13,21 +13,21 @@
 
 ## 3. The walks
 
-- [ ] 3.1 `crates/core/src/query/walk.rs` and `crates/core/src/query/walk/names.rs`: both walks record the files they reached across a contract
-- [ ] 3.2 `crates/core/src/query/walk/names.rs`: a mock that replaces its module takes no name, is no load and is no caller of a file followed whole
+- [x] 3.1 `crates/core/src/query/walk.rs` and `crates/core/src/query/walk/names.rs`: both walks record the files they reached across a contract
+- [x] 3.2 `crates/core/src/query/walk/names.rs`: a mock that replaces its module takes no name, is no load and is no caller of a file followed whole
 
 ## 4. The filter
 
-- [ ] 4.1 `crates/core/src/graph.rs`: `Graph::reaches_avoiding`
-- [ ] 4.2 `crates/core/src/query/replaced.rs` and `crates/core/src/query/impact.rs`: the modules a test replaces, read from its own imports, and the filter over the tests of the walk with no depth
-- [ ] 4.3 `crates/core/src/testing.rs`: builders for a replacing mock and for an import that asks for the actual module
+- [x] 4.1 `crates/core/src/graph.rs`: `Graph::reaches_avoiding`
+- [x] 4.2 `crates/core/src/query/replaced.rs` and `crates/core/src/query/impact.rs`: the modules a test replaces, read from its own imports, and the filter over the tests of the walk with no depth
+- [x] 4.3 `crates/core/src/testing.rs`: builders for a replacing mock and for an import that asks for the actual module
 
 ## 5. The tests
 
-- [ ] 5.1 One test per scenario of `Tests that replace a module`, in `crates/core/tests/queries/impact.rs` and `crates/core/tests/queries/names.rs`, and one for each of the two scenarios added to `Callers at load` and `Mocks by name`
-- [ ] 5.2 Two properties over generated trees. By files, a test is listed exactly when it reaches the change by imports that enter none of the modules it replaces. By names, making every mock of a tree one that replaces its module adds no file and no test to the answer and leaves only tests that reach the change that way
-- [ ] 5.3 The tests that touch a mock keep their meaning: `crates/core/tests/queries/names.rs` and `crates/gsttt/tests/cli/impact.rs`
+- [x] 5.1 One test per scenario of `Tests that replace a module`, in `crates/core/tests/queries/impact.rs` and `crates/core/tests/queries/names.rs`, and one for each of the two scenarios added to `Callers at load` and `Mocks by name`
+- [x] 5.2 Two properties over generated trees. By files, a test is listed exactly when it reaches the change by imports that enter none of the modules it replaces. By names, making every mock of a tree one that replaces its module adds no file and no test to the answer and leaves only tests that reach the change that way
+- [x] 5.3 The tests that touch a mock keep their meaning: `crates/core/tests/queries/names.rs` and `crates/gsttt/tests/cli/impact.rs`
 
 ## 6. The wording
 
-- [ ] 6.1 `docs/architecture.md`
+- [x] 6.1 `docs/architecture.md`
