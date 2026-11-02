@@ -18,7 +18,7 @@ use gsttt_core::connector::{
 };
 use gsttt_core::engine::keys::canonical_json;
 use gsttt_core::fact::{FileFacts, Import, ParseFailure, Resolution, UnresolvedReason};
-use gsttt_core::glob::{GlobError as CoreGlobError, glob_set as core_glob_set};
+use gsttt_core::glob::glob_set;
 use gsttt_core::rules::Pack;
 use gsttt_core::setup::ExternalSetup;
 use gsttt_core::{FileId, RepoPath, RepoView};
@@ -62,7 +62,7 @@ impl External {
                 "`cmd` is empty: it needs the program and its arguments".to_owned(),
             ));
         };
-        let files = glob_set(&setup.files).map_err(|error| invalid(format!("`files` {error}")))?;
+        let files = glob_set(&setup.files).map_err(|error| invalid(error.in_option("files")))?;
         check_env(&setup.env).map_err(|error| invalid(format!("`env` {error}")))?;
         let options = options_object(&setup.options)
             .map_err(|error| invalid(format!("`options` {error}")))?;
@@ -239,34 +239,6 @@ impl Project for ExternalProject {
             Err(message) => Resolution::Unresolved(UnresolvedReason::Unsupported(message)),
         }
     }
-}
-
-/// A glob of an external's `files` that does not parse.
-#[derive(Debug, thiserror::Error)]
-#[error("holds `{glob}`: {source}")]
-pub(crate) struct GlobError {
-    glob: String,
-    source: globset::Error,
-}
-
-impl From<CoreGlobError> for GlobError {
-    fn from(error: CoreGlobError) -> Self {
-        match error {
-            CoreGlobError::Invalid { pattern, source } => Self {
-                glob: pattern,
-                source,
-            },
-            CoreGlobError::Build(source) => Self {
-                glob: source.glob().unwrap_or_default().to_owned(),
-                source,
-            },
-        }
-    }
-}
-
-/// The globs of an external as one set.
-pub(crate) fn glob_set(patterns: &[String]) -> Result<GlobSet, GlobError> {
-    core_glob_set(patterns).map_err(GlobError::from)
 }
 
 /// The longest name an external may have. The name is kept for the life of the process (see [`intern`]), so its length is bounded.

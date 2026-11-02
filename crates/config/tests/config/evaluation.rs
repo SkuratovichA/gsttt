@@ -331,7 +331,10 @@ fn an_external_is_checked_when_it_is_declared() {
     let files = declare("name = \"k\"\ncmd = [\"x\"]\nfiles = []");
     assert!(files.contains("needs `files`"), "{files}");
     let glob = declare("name = \"k\"\ncmd = [\"x\"]\nfiles = [\"[\"]");
-    assert!(glob.contains("holds `[`"), "{glob}");
+    assert!(
+        glob.contains("`external.k.files` has the glob \"[\", which is not valid"),
+        "{glob}"
+    );
     let env = declare("name = \"k\"\ncmd = [\"x\"]\nfiles = [\"*.x\"]\nenv = [\"A=B\"]");
     assert!(env.contains("`env` of `k`") && env.contains("A=B"), "{env}");
     let missing = declare("name = \"k\"");

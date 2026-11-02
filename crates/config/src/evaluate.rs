@@ -9,7 +9,7 @@ use std::path::Path;
 
 use gsttt_core::Setup;
 use gsttt_core::connector::DynConnector;
-use gsttt_core::glob::glob_set as core_glob_set;
+use gsttt_core::glob::glob_set;
 use gsttt_core::rules::Pack;
 use gsttt_core::setup::{ExternalSetup, GraphqlEndpoint, ModuleSetup};
 use schemars::JsonSchema;
@@ -19,7 +19,7 @@ use toml::de::{DeTable, DeValue, ValueDeserializer};
 
 use crate::document::{Located, parse, read_typed};
 use crate::error::ConfigError;
-use crate::external::{check_env, check_name, glob_set, options_object};
+use crate::external::{check_env, check_name, options_object};
 use crate::pack::read_pack;
 use crate::source::read_source;
 
@@ -338,7 +338,8 @@ fn check_external(
             "`{name}` needs `files`: the globs of the files it reads"
         ));
     }
-    glob_set(&external.files).map_err(|error| format!("`files` of `{name}` {error}"))?;
+    glob_set(&external.files)
+        .map_err(|error| error.in_option(&format!("external.{name}.files")))?;
     check_env(&external.env).map_err(|error| format!("`env` of `{name}` {error}"))?;
     external.options = options_object(&external.options)
         .map(|options| sorted(serde_json::Value::Object(options)))
@@ -358,7 +359,7 @@ fn check_endpoint(endpoint: &GraphqlEndpoint, position: usize) -> Result<(), Str
                 "`{option}` needs at least one glob: the files that {verb} the endpoint, relative to the repository root"
             ));
         }
-        core_glob_set(globs).map_err(|error| error.in_option(&option))?;
+        glob_set(globs).map_err(|error| error.in_option(&option))?;
     }
     Ok(())
 }
