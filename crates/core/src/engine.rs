@@ -4,6 +4,7 @@
 
 pub mod build;
 pub mod changes;
+mod declarations;
 pub mod files;
 pub mod keys;
 pub mod packs;

@@ -2,7 +2,6 @@
 //!
 //! The paths are read, and the changed files listed, before the index is refreshed, so that a call that cannot be answered does not first pay for an index. The answer is the text the command line prints, produced by the same functions in `gsttt-core`.
 
-use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::query::{self, Answer, Entries, ImpactRequest, LIST_CAP};
 use gsttt_core::text::thousands;
 use gsttt_core::{Freshness, Index, Loaded};
@@ -145,13 +144,7 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
             request.names = names;
         }
         Subject::Changed { base } => {
-            for change in source.changed(base.as_deref())? {
-                let named = match change.kind {
-                    ChangeKind::Deleted => &mut request.deleted,
-                    ChangeKind::Modified | ChangeKind::Added => &mut request.files,
-                };
-                named.push(change.path.into());
-            }
+            request.add_changes(&source.changed(base.as_deref())?);
         }
     }
     let Loaded { index, freshness } = source.refreshed()?;

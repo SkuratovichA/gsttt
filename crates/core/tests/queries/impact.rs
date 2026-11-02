@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use gsttt_core::contract::Role;
 use gsttt_core::fact::{FileTags, Import, ImportKind, UnresolvedReason};
 use gsttt_core::index::{Freshness, Index};
-use gsttt_core::query::{Affected, Answer, Entries, Impact, ImpactRequest, impact};
-use gsttt_core::testing::{To, Tree, file};
+use gsttt_core::query::{Affected, Answer, ChangedPart, Entries, Impact, ImpactRequest, impact};
+use gsttt_core::testing::{Code, To, Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
 use serde_json::{json, to_value};
@@ -2867,4 +2867,50 @@ proptest! {
             .collect();
         prop_assert_eq!(kept(&replacing.tests), expected);
     }
+}
+
+#[scenario(
+    "queries",
+    "A changed declaration is walked with the declarations of its file that use it"
+)]
+#[test]
+fn a_changed_declaration_is_walked_with_the_declarations_of_its_file_that_use_it() {
+    let index = Tree::new()
+        .symbols(
+            "lib.ts",
+            Code::new()
+                .declaration("render", (1, 3), &["helper"])
+                .declaration("helper", (5, 7), &[])
+                .declaration("unrelated", (9, 11), &[]),
+        )
+        .exports("lib.ts", &["render", "helper", "unrelated"])
+        .imports_names("a.ts", "lib.ts", &["render"])
+        .symbols("a.ts", Code::new().declaration("show", (1, 3), &["render"]))
+        .exports("a.ts", &[])
+        .imports_names("b.ts", "lib.ts", &["unrelated"])
+        .symbols(
+            "b.ts",
+            Code::new().declaration("other", (1, 3), &["unrelated"]),
+        )
+        .exports("b.ts", &[])
+        .build();
+    let asked = |names: &[&str]| ImpactRequest {
+        parts: vec![ChangedPart {
+            file: "lib.ts".to_owned(),
+            names: names.iter().map(|name| (*name).to_owned()).collect(),
+        }],
+        ..by_default(&["lib.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &asked(&["helper"]));
+
+    assert_eq!(paths(&answer.affected), ["a.ts"]);
+    assert_eq!(answer.parts[0].names, ["helper"]);
+    assert!(
+        answer
+            .to_string()
+            .starts_with("impact of helper in lib.ts, within 1 hop through code\n")
+    );
+    let nothing = impact(&index, Freshness::Fresh, &asked(&[]));
+    assert_eq!(paths(&nothing.affected), NONE);
 }

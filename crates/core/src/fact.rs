@@ -347,6 +347,21 @@ pub struct Symbols {
 /// What joins a class and a member of it in the name of a declaration: `Runner.start`, and `Runner.#start` for a private member. A connector writes member names with it and a walk by name splits them on it.
 pub const MEMBER_SEPARATOR: char = '.';
 
+/// `member` for the name `class.member`, when `name` is one.
+pub(crate) fn member_in<'n>(name: &'n str, class: &str) -> Option<&'n str> {
+    name.strip_prefix(class)?.strip_prefix(MEMBER_SEPARATOR)
+}
+
+/// Whether `name` is a member of `class`.
+pub(crate) fn member_of(name: &str, class: &str) -> bool {
+    member_in(name, class).is_some()
+}
+
+/// Whether `name` is `class` or one of its members.
+pub(crate) fn belongs_to(name: &str, class: &str) -> bool {
+    name == class || member_of(name, class)
+}
+
 /// One declaration of a file.
 #[derive(
     Clone,

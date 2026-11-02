@@ -134,13 +134,90 @@ impl<'a> Engine<'a> {
         Ok(detected)
     }
 
-    /// The files that differ from HEAD, or from the best common ancestor of HEAD and `base` when one is given.
+    /// The files that differ from HEAD, or from the best common ancestor of HEAD and `base` when one is given. Of a modified file that a connector can compare, the declarations that differ are named; any other file is changed whole.
     pub fn changed_files(&self, base: Option<&str>) -> Result<Vec<Change>, IndexError> {
+        pipeline::on_stacks(pipeline::WORKER_STACK, || {
+            self.changed_files_on_workers(base)
+        })
+    }
+
+    fn changed_files_on_workers(&self, base: Option<&str>) -> Result<Vec<Change>, IndexError> {
         let snapshot = Snapshot::open(self.workspace.snapshot_path().as_std_path());
-        let states = self
+        let mut states = self
             .listing(snapshot.as_ref().and_then(Snapshot::stored))?
             .files;
-        self.changes_since(&states, base)
+        let (mut changes, from) = self.changes_since(&states, base)?;
+        self.name_changes(&mut changes, &from, &mut states);
+        Ok(changes)
+    }
+
+    /// Fills the declarations that differ into the modified files of `changes` whose two versions a connector can compare. A file it cannot compare stays whole, and so does every file when the connectors do not open or git does not give an old version: this never fails the command.
+    fn name_changes(&self, changes: &mut [Change], from: &Listing, states: &mut [FileState]) {
+        if !changes
+            .iter()
+            .any(|change| change.kind == changes::ChangeKind::Modified)
+        {
+            return;
+        }
+        let repo = self.view_of(states);
+        let mut problems = Vec::new();
+        let modules = self.modules(&repo, &mut problems);
+        let Ok(assigned) = pipeline::assign_files(&repo, &modules, problems) else {
+            return;
+        };
+        let mut compared = Vec::new();
+        let mut blobs = Vec::new();
+        for (at, change) in changes.iter().enumerate() {
+            if change.kind != changes::ChangeKind::Modified {
+                continue;
+            }
+            let (Some(&blob), Some((id, project))) =
+                (from.get(&change.path), assigned.project_of(&change.path))
+            else {
+                continue;
+            };
+            blobs.push(blob);
+            compared.push((at, id, &change.path, project));
+        }
+        let Ok(olds) = changes::blob_texts(self.workspace.root(), &blobs) else {
+            return;
+        };
+        let pairs: Vec<_> = compared
+            .iter()
+            .zip(olds)
+            .map(|(&(_, id, path, project), old)| pipeline::Pair {
+                path,
+                id,
+                project,
+                old,
+            })
+            .collect();
+        let names = pipeline::changed_names(&repo, &pairs, self.setup.max_file_bytes);
+        let at: Vec<usize> = compared.iter().map(|&(at, ..)| at).collect();
+        for (at, names) in at.into_iter().zip(names) {
+            if let Some(change) = changes.get_mut(at) {
+                change.names = names;
+            }
+        }
+    }
+
+    /// The connectors the setup runs on `repo`, in registry order, each with its options and packs. A connector whose `detect` panics is left out, and the panic is a problem in `problems`.
+    fn modules(&self, repo: &RepoView, problems: &mut Vec<pipeline::Problem>) -> Vec<Module<'a>> {
+        let mut modules = Vec::new();
+        for &connector in self.connectors {
+            let name = connector.meta().name;
+            if self
+                .setup
+                .runs(name, || pipeline::detect(connector, repo, problems))
+            {
+                modules.push(Module {
+                    connector,
+                    options: self.setup.options(name).clone(),
+                    packs: merge_packs(self.builtin_packs, self.setup, name),
+                });
+            }
+        }
+        modules
     }
 
     /// Brings the stored index up to date with the tree and returns it.
@@ -162,20 +239,8 @@ impl<'a> Engine<'a> {
         let repo = self.view_of(&mut states);
         let listed = started.elapsed();
 
-        let mut modules = Vec::new();
         let mut detect_problems = Vec::new();
-        for &connector in self.connectors {
-            let name = connector.meta().name;
-            if self.setup.runs(name, || {
-                pipeline::detect(connector, &repo, &mut detect_problems)
-            }) {
-                modules.push(Module {
-                    connector,
-                    options: self.setup.options(name).clone(),
-                    packs: merge_packs(self.builtin_packs, self.setup, name),
-                });
-            }
-        }
+        let modules = self.modules(&repo, &mut detect_problems);
         let ran: Vec<&str> = modules
             .iter()
             .map(|module| module.connector.meta().name)
@@ -425,7 +490,7 @@ impl<'a> Engine<'a> {
             return 0;
         }
         match self.changes_since(states, None) {
-            Ok(changes) => to_u32(changes.len()),
+            Ok((changes, _)) => to_u32(changes.len()),
             Err(error) => {
                 problems.push(format!(
                     "the files that differ from HEAD are not counted: {error}"
@@ -463,7 +528,7 @@ impl<'a> Engine<'a> {
         &self,
         states: &[FileState],
         base: Option<&str>,
-    ) -> Result<Vec<Change>, IndexError> {
+    ) -> Result<(Vec<Change>, Listing), IndexError> {
         let root = self.workspace.root();
         let excluder = Excluder::new(root, &self.setup.exclude)?;
         let from = match base {
@@ -474,7 +539,7 @@ impl<'a> Engine<'a> {
             .iter()
             .map(|state| (state.path.clone(), state.stamp.id))
             .collect();
-        Ok(changes::diff(&from, &to))
+        Ok((changes::diff(&from, &to), from))
     }
 }
 

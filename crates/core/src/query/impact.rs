@@ -6,6 +6,7 @@ use std::fmt;
 use serde::{Serialize, Serializer};
 
 use crate::contract::Role;
+use crate::engine::changes::{Change, ChangeKind};
 use crate::fact::FileTags;
 use crate::graph::Graph;
 use crate::ids::{FileId, IdSet, NameId};
@@ -19,7 +20,7 @@ use super::render::{
     Answer, Entries, Footer, Searched, display_as_text, list, name_list, name_sentence,
 };
 use super::replaced::Cut;
-use super::walk::{self, Cause, Hit, Walked, reach, reach_names};
+use super::walk::{self, Cause, Hit, Walked, reach, reach_changed, reach_names};
 
 /// The hops through code a walk takes when the request gives no depth.
 const DEFAULT_DEPTH: u32 = 1;
@@ -37,6 +38,38 @@ pub struct ImpactRequest {
     pub names: Vec<String>,
     /// Leave the tests out of the answer, and count them instead. The walk is the same, so the footer still covers the tests it reached.
     pub no_tests: bool,
+    /// Files of `files` of which only these declarations changed. The walk starts from them and from the declarations of the file that use them, and a file with an entry that names nothing is not walked. A file without an entry is walked whole, and so is every file when `names` is given.
+    pub parts: Vec<ChangedPart>,
+}
+
+/// The declarations of one changed file that differ from the version before the change.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ChangedPart {
+    /// The path of the file, relative to the repository root.
+    pub file: String,
+    /// The declarations that changed, none when the file changed and no declaration did.
+    pub names: Vec<String>,
+}
+
+impl ImpactRequest {
+    /// Adds the files a tree differs in: the deleted ones to `deleted`, the others to `files`, and of a modified file whose changed declarations are known, those to `parts`.
+    pub fn add_changes(&mut self, changes: &[Change]) {
+        for change in changes {
+            let path = change.path.as_str().to_owned();
+            match change.kind {
+                ChangeKind::Deleted => self.deleted.push(path),
+                ChangeKind::Modified | ChangeKind::Added => {
+                    if let Some(names) = &change.names {
+                        self.parts.push(ChangedPart {
+                            file: path.clone(),
+                            names: names.clone(),
+                        });
+                    }
+                    self.files.push(path);
+                }
+            }
+        }
+    }
 }
 
 /// The files a change affects.
@@ -47,6 +80,9 @@ pub struct Impact {
     /// The names asked about in those files, each once, in the order asked. Left out when the files were asked about whole.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
+    /// The changed files the index holds of which only some declarations changed, in path order, each with its declarations in byte order. Left out when every file was asked about whole.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ChangedPart>,
     /// The hops through code the walk was allowed, which is one unless the request gave a depth. It bounds the tests as it bounds the other files.
     pub depth: u32,
     /// The files the change reaches, nearest first and then by path, without the tests.
@@ -273,10 +309,15 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
             names.push(name.clone());
         }
     }
+    let parts = parts_of(index, request, &seen);
     let depth = request.depth.unwrap_or(DEFAULT_DEPTH);
-    let walked = reach_asked(index, &crossing, &changed, &names, Some(depth));
+    let by_part: Vec<(FileId, &[String])> = parts
+        .iter()
+        .map(|(file, part)| (*file, part.names.as_slice()))
+        .collect();
+    let walked = reach_asked(index, &crossing, &changed, &names, &by_part, Some(depth));
     // The walk with no depth exists only to count what the depth leaves behind and to give each listed test the distance, the reason and the load it has at the end.
-    let to_the_end = reach_asked(index, &crossing, &changed, &names, None);
+    let to_the_end = reach_asked(index, &crossing, &changed, &names, &by_part, None);
     let is_test = |hit: &Hit| graph.tags(hit.file).contains(FileTags::TEST);
     let affected = walked
         .hits
@@ -331,7 +372,10 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
 
     // A walk by name says on its own that the depth stopped it; a walk by files says it here.
     let mut stopped = walked.notes.clone();
-    if names.is_empty() && to_the_end.hits.len() > walked.hits.len() {
+    if names.is_empty()
+        && !stopped.contains(&walk::Note::Stopped)
+        && to_the_end.hits.len() > walked.hits.len()
+    {
         stopped.push(walk::Note::Stopped);
     }
     let notes = stopped
@@ -342,6 +386,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     Impact {
         changed: changed_paths.iter().map(ToString::to_string).collect(),
         names,
+        parts: parts.into_iter().map(|(_, part)| part).collect(),
         depth,
         footer: Footer::new(
             index,
@@ -369,13 +414,45 @@ fn reach_asked(
     crossing: &Crossing<'_>,
     changed: &[FileId],
     names: &[String],
+    parts: &[(FileId, &[String])],
     depth: Option<u32>,
 ) -> Walked {
-    if names.is_empty() {
+    if !names.is_empty() {
+        reach_names(index, crossing, changed, names, depth)
+    } else if parts.is_empty() {
         reach(&index.graph, crossing, changed, depth)
     } else {
-        reach_names(index, crossing, changed, names, depth)
+        reach_changed(index, crossing, changed, parts, depth)
     }
+}
+
+/// The parts of the request that belong to a file the index holds and the request asks about, each with the file, in path order, with its names in byte order and once each.
+fn parts_of(
+    index: &Index,
+    request: &ImpactRequest,
+    asked: &IdSet<FileId>,
+) -> Vec<(FileId, ChangedPart)> {
+    let mut parts: Vec<(FileId, ChangedPart)> = Vec::new();
+    for part in &request.parts {
+        let Ok((file, path)) = find(index, &part.file) else {
+            continue;
+        };
+        if !asked.contains(file) || parts.iter().any(|(held, _)| *held == file) {
+            continue;
+        }
+        let mut names = part.names.clone();
+        names.sort_unstable();
+        names.dedup();
+        parts.push((
+            file,
+            ChangedPart {
+                file: path.to_string(),
+                names,
+            },
+        ));
+    }
+    parts.sort_by(|(_, left), (_, right)| left.file.cmp(&right.file));
+    parts
 }
 
 /// The entry of the answer for a file the walk reached. A file without a path cannot be named in the answer, so it is the only one the walk reaches and the answer leaves out.
@@ -494,6 +571,33 @@ fn spell_re_exports(graph: &Graph, names: &[(NameId, NameId)]) -> Option<Vec<Str
         .collect()
 }
 
+impl Impact {
+    /// What the header of the text says was asked when some files were asked about by declaration: each file with its declarations, then the others whole, joined by `, and of `. `None` when no file has a declaration named, so that the header reads as for whole files.
+    fn by_declaration(&self, asked: &[String]) -> Option<String> {
+        let named: Vec<&ChangedPart> = self
+            .parts
+            .iter()
+            .filter(|part| !part.names.is_empty())
+            .collect();
+        if named.is_empty() {
+            return None;
+        }
+        let whole: Vec<String> = asked
+            .iter()
+            .filter(|path| !self.parts.iter().any(|part| &part.file == *path))
+            .cloned()
+            .collect();
+        let mut subjects: Vec<String> = named
+            .iter()
+            .map(|part| format!("{} in {}", summary(&part.names), part.file))
+            .collect();
+        if !whole.is_empty() {
+            subjects.push(summary(&whole));
+        }
+        Some(subjects.join(", and of "))
+    }
+}
+
 impl Answer for Impact {
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         let mut asked = self.changed.clone();
@@ -504,10 +608,12 @@ impl Answer for Impact {
         } else {
             summary(&asked)
         };
-        if self.names.is_empty() {
-            write!(f, "impact of {files}")?;
-        } else {
+        if !self.names.is_empty() {
             write!(f, "impact of {} in {files}", summary(&self.names))?;
+        } else if let Some(subjects) = self.by_declaration(&asked) {
+            write!(f, "impact of {subjects}")?;
+        } else {
+            write!(f, "impact of {files}")?;
         }
         write!(f, ", within {} through code", noun(self.depth, "hop"))?;
         f.write_str("\n")?;
@@ -521,6 +627,13 @@ impl Answer for Impact {
         list(f, "tests", &self.tests, entries, affected_line)?;
         if self.tests_left_out > 0 {
             writeln!(f, "{} left out", noun(self.tests_left_out, "test file"))?;
+        }
+        for part in self.parts.iter().filter(|part| part.names.is_empty()) {
+            writeln!(
+                f,
+                "{} changes no declaration, so it is not traced",
+                part.file
+            )?;
         }
         for deleted in &self.deleted {
             writeln!(f, "{} is deleted, so it is not traced", deleted.path)?;

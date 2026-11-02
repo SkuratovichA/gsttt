@@ -975,3 +975,464 @@ fn a_namespace_import_is_a_caller_only_of_the_names_it_uses_in_typescript() {
         .map(|(_, callers)| callers.clone());
     assert_eq!(callers, Some(owned(&["build", "make"])), "{place:?}");
 }
+
+const FORMAT: &str = "export function formatUser(name: string): string {\n  return normalize(name).trim();\n}\n\nfunction normalize(text: string): string {\n  return text.toLowerCase();\n}\n\nexport function formatId(id: number): string {\n  return String(id);\n}\n";
+
+const PAGE: &str = "import { formatUser } from '../format';\n\nexport function renderPage(name: string): string {\n  return formatUser(name);\n}\n";
+
+const AUDIT: &str = "import { formatId } from '../format';\n\nexport function audit(id: number): string {\n  return formatId(id);\n}\n";
+
+/// A repository in which `src/format.ts` has two exported functions and a private helper of one of them. `src/users` imports `formatUser` and `src/admin` imports `formatId`, each from a file and from a test.
+fn formatting(sandbox: &Sandbox) -> PathBuf {
+    let repo = sandbox.repository();
+    write(&repo, "src/format.ts", FORMAT);
+    write(&repo, "src/users/page.ts", PAGE);
+    write(
+        &repo,
+        "src/users/page.test.ts",
+        &PAGE.replace("renderPage", "pageTest"),
+    );
+    write(&repo, "src/admin/audit.ts", AUDIT);
+    write(
+        &repo,
+        "src/admin/audit.test.ts",
+        &AUDIT.replace("audit", "auditTest"),
+    );
+    commit_all(&repo);
+    repo
+}
+
+/// The `--json` answer of `impact --changed` with `more` arguments.
+fn changed(sandbox: &Sandbox, repo: &Path, more: &[&str]) -> Value {
+    let mut args = vec!["--json", "impact", "--changed"];
+    args.extend_from_slice(more);
+    let run = sandbox.run_in(repo, &args);
+    assert_eq!(run.code, Some(0), "{run:?}");
+    json(&run)
+}
+
+/// The files listed as affected and as tests, sorted.
+fn reached(answer: &Value) -> Vec<&str> {
+    let mut listed = paths(&answer["affected"]);
+    listed.extend(paths(&answer["tests"]));
+    listed.sort_unstable();
+    listed
+}
+
+const USERS: [&str; 2] = ["src/users/page.test.ts", "src/users/page.ts"];
+
+const EVERYONE: [&str; 4] = [
+    "src/admin/audit.test.ts",
+    "src/admin/audit.ts",
+    "src/users/page.test.ts",
+    "src/users/page.ts",
+];
+
+#[scenario("cli", "--changed walks the declarations a patch changes")]
+#[test]
+fn changed_walks_the_declarations_a_patch_changes() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(
+        &repo,
+        "src/format.ts",
+        &FORMAT.replace(
+            "normalize(name).trim()",
+            "normalize(name).trim().slice(0, 40)",
+        ),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), USERS);
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "src/format.ts", "names": ["formatUser"] }])
+    );
+    let text = sandbox.run_in(&repo, &["impact", "--changed"]);
+    assert!(
+        text.stdout
+            .starts_with("impact of formatUser in src/format.ts, within 1 hop through code\n"),
+        "{text:?}"
+    );
+}
+
+#[scenario(
+    "cli",
+    "--changed follows a changed private helper to the declarations that use it"
+)]
+#[test]
+fn changed_follows_a_changed_private_helper_to_the_declarations_that_use_it() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(
+        &repo,
+        "src/format.ts",
+        &FORMAT.replace("text.toLowerCase()", "text.toUpperCase()"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), USERS);
+    let names = answer["parts"][0]["names"].as_array().unwrap();
+    assert!(names.contains(&value!("normalize")), "{answer}");
+}
+
+#[scenario("cli", "--changed does not trace a file where no declaration changed")]
+#[test]
+fn changed_does_not_trace_a_file_where_no_declaration_changed() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    let reindented = FORMAT
+        .replace("  return", "      return")
+        .replace("\n\n", "\n\n\n");
+    write(
+        &repo,
+        "src/format.ts",
+        &format!("// Formats names and ids.\n{reindented}"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(answer["changed"], value!(["src/format.ts"]));
+    assert_eq!(reached(&answer), Vec::<&str>::new());
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "src/format.ts", "names": [] }])
+    );
+    let text = sandbox.run_in(&repo, &["impact", "--changed"]);
+    assert!(
+        text.stdout
+            .contains("\nsrc/format.ts changes no declaration, so it is not traced\n"),
+        "{text:?}"
+    );
+}
+
+#[scenario(
+    "cli",
+    "--changed reads a multi-line import that gains a name only one declaration uses"
+)]
+#[test]
+fn changed_reads_a_multi_line_import_that_gains_a_name_only_one_declaration_uses() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(
+        &repo,
+        "src/text.ts",
+        "export const shout = (text: string) => text;\n",
+    );
+    let view = "import {\n  formatUser,\n} from './format';\n\nexport function show(name: string): string {\n  return formatUser(name);\n}\n\nexport function plain(): string {\n  return 'plain';\n}\n";
+    write(&repo, "src/view.ts", view);
+    write(
+        &repo,
+        "src/users/shown.ts",
+        "import { show } from '../view';\n\nexport const shown = show('a');\n",
+    );
+    write(
+        &repo,
+        "src/users/plain.ts",
+        "import { plain } from '../view';\n\nexport const flat = plain();\n",
+    );
+    commit_all(&repo);
+    write(
+        &repo,
+        "src/view.ts",
+        &view
+            .replace(
+                "  formatUser,\n}",
+                "  formatUser,\n} from './format';\nimport {\n  shout,\n}",
+            )
+            .replace("return formatUser(name)", "return shout(formatUser(name))"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), ["src/users/shown.ts"]);
+    assert_eq!(answer["parts"][0]["names"], value!(["show"]));
+}
+
+#[scenario(
+    "cli",
+    "--changed follows a re-pointed import to the declarations that use it"
+)]
+#[test]
+fn changed_follows_a_re_pointed_import_to_the_declarations_that_use_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(&repo, "src/a.ts", "export const clock = () => 1;\n");
+    write(&repo, "src/b.ts", "export const clock = () => 2;\n");
+    write(
+        &repo,
+        "src/user.ts",
+        "import { clock } from './a';\n\nexport function now() {\n  return clock();\n}\n\nexport function other() {\n  return 0;\n}\n",
+    );
+    write(
+        &repo,
+        "src/use-now.ts",
+        "import { now } from './user';\n\nexport const t = now();\n",
+    );
+    write(
+        &repo,
+        "src/use-other.ts",
+        "import { other } from './user';\n\nexport const o = other();\n",
+    );
+    commit_all(&repo);
+    let user = fs::read_to_string(repo.join("src/user.ts")).unwrap();
+    write(&repo, "src/user.ts", &user.replace("'./a'", "'./b'"));
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), ["src/use-now.ts"]);
+    assert_eq!(answer["parts"][0]["names"], value!(["now"]));
+}
+
+#[scenario(
+    "cli",
+    "--changed walks a file whole when a declaration is removed or renamed"
+)]
+#[test]
+fn changed_walks_a_file_whole_when_a_declaration_is_removed_or_renamed() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    let without_id = FORMAT.split("export function formatId").next().unwrap();
+    for edited in [
+        without_id.to_owned(),
+        FORMAT.replace("formatId", "formatIdent"),
+    ] {
+        write(&repo, "src/format.ts", &edited);
+
+        let answer = changed(&sandbox, &repo, &[]);
+
+        assert_eq!(reached(&answer), EVERYONE, "{answer}");
+        assert!(answer.get("parts").is_none(), "{answer}");
+        git(&repo, &["checkout", "--", "."]);
+    }
+}
+
+#[scenario(
+    "cli",
+    "--changed lists no importer of a new declaration nobody imports"
+)]
+#[test]
+fn changed_lists_no_importer_of_a_new_declaration_nobody_imports() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(
+        &repo,
+        "src/format.ts",
+        &format!(
+            "{FORMAT}\nexport function formatDate(date: Date): string {{\n  return date.toISOString();\n}}\n"
+        ),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), Vec::<&str>::new());
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "src/format.ts", "names": ["formatDate"] }])
+    );
+}
+
+#[scenario(
+    "cli",
+    "--changed walks a file whole when a side-effect import or a top-level statement changes"
+)]
+#[test]
+fn changed_walks_a_file_whole_when_a_side_effect_import_or_a_top_level_statement_changes() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(&repo, "src/polyfill.ts", "export {};\n");
+    write(&repo, "src/polyfill-next.ts", "export {};\n");
+    write(
+        &repo,
+        "src/format.ts",
+        &format!("import './polyfill';\n{FORMAT}"),
+    );
+    commit_all(&repo);
+    let committed = fs::read_to_string(repo.join("src/format.ts")).unwrap();
+    for edited in [
+        committed.replace("'./polyfill'", "'./polyfill-next'"),
+        format!("{committed}\nconsole.log('loaded');\n"),
+    ] {
+        write(&repo, "src/format.ts", &edited);
+
+        let answer = changed(&sandbox, &repo, &[]);
+
+        assert_eq!(reached(&answer), EVERYONE, "{answer}");
+        assert!(answer.get("parts").is_none(), "{answer}");
+        git(&repo, &["checkout", "--", "."]);
+    }
+}
+
+#[scenario(
+    "cli",
+    "--changed walks a changed file whole when its language records no declarations"
+)]
+#[test]
+fn changed_walks_a_changed_file_whole_when_its_language_records_no_declarations() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(&repo, "tools/job.py", "def run():\n    return 1\n");
+    write(&repo, "tools/main.py", "from job import run\n\nrun()\n");
+    commit_all(&repo);
+    write(&repo, "tools/job.py", "def run():\n    return 2\n");
+    write(&repo, "src/fresh.ts", "export const fresh = 1;\n");
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert!(answer.get("parts").is_none(), "{answer}");
+    let text = sandbox.run_in(&repo, &["impact", "--changed"]);
+    assert!(
+        text.stdout
+            .starts_with("impact of src/fresh.ts and tools/job.py, within 1 hop through code\n"),
+        "{text:?}"
+    );
+}
+
+#[scenario("cli", "--changed with --base compares with the merge base")]
+#[test]
+fn changed_with_base_compares_with_the_merge_base() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    git(&repo, &["branch", "-M", "main"]);
+    git(&repo, &["checkout", "--quiet", "-b", "topic"]);
+    write(
+        &repo,
+        "src/format.ts",
+        &FORMAT.replace("normalize(name).trim()", "normalize(name)"),
+    );
+    commit_all(&repo);
+    let topic = fs::read_to_string(repo.join("src/format.ts")).unwrap();
+    write(
+        &repo,
+        "src/format.ts",
+        &topic.replace("String(id)", "`${id}`"),
+    );
+
+    let from_head = changed(&sandbox, &repo, &[]);
+    assert_eq!(from_head["parts"][0]["names"], value!(["formatId"]));
+    assert_eq!(
+        reached(&from_head),
+        ["src/admin/audit.test.ts", "src/admin/audit.ts"]
+    );
+
+    let from_base = changed(&sandbox, &repo, &["--base", "main"]);
+    assert_eq!(
+        from_base["parts"][0]["names"],
+        value!(["formatId", "formatUser"])
+    );
+    assert_eq!(reached(&from_base), EVERYONE);
+}
+
+#[scenario(
+    "cli",
+    "--changed follows a changed method to its callers and not to the callers of another"
+)]
+#[test]
+fn changed_follows_a_changed_method_to_its_callers_and_not_to_the_callers_of_another() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    let service = "export class Service {\n  static make(): Service {\n    return new Service();\n  }\n\n  static place(order: string): string {\n    return order;\n  }\n}\n";
+    write(&repo, "src/service.ts", service);
+    write(
+        &repo,
+        "src/places.ts",
+        "import { Service } from './service';\n\nexport function placeOrder(order: string) {\n  return Service.place(order);\n}\n",
+    );
+    write(
+        &repo,
+        "src/makes.ts",
+        "import { Service } from './service';\n\nexport function makeService() {\n  return Service.make();\n}\n",
+    );
+    commit_all(&repo);
+    write(
+        &repo,
+        "src/service.ts",
+        &service.replace("return order;", "return order.trim();"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), ["src/places.ts"]);
+    assert_eq!(answer["parts"][0]["names"], value!(["Service.place"]));
+}
+
+#[scenario(
+    "cli",
+    "--changed walks a file whole when its new version does not parse"
+)]
+#[test]
+fn changed_walks_a_file_whole_when_its_new_version_does_not_parse() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(
+        &repo,
+        "src/format.ts",
+        &FORMAT.replace(
+            "formatUser(name: string): string {",
+            "formatUser(name: string {{",
+        ),
+    );
+
+    let run = sandbox.run_in(&repo, &["--json", "impact", "--changed"]);
+
+    assert_eq!(run.code, Some(0), "{run:?}");
+    let answer = json(&run);
+    assert_eq!(reached(&answer), EVERYONE, "{answer}");
+    assert!(answer.get("parts").is_none(), "{answer}");
+}
+
+#[scenario("cli", "--changed walks a file whole when a declaration moves")]
+#[test]
+fn changed_walks_a_file_whole_when_a_declaration_moves() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    let (user, id) = FORMAT.split_once("\nexport function formatId").unwrap();
+    write(
+        &repo,
+        "src/format.ts",
+        &format!("export function formatId{id}\n{user}"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), EVERYONE, "{answer}");
+    assert!(answer.get("parts").is_none(), "{answer}");
+}
+
+#[scenario("cli", "--changed reads the whitespace inside a template as a change")]
+#[test]
+fn changed_reads_the_whitespace_inside_a_template_as_a_change() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    let query = "export function render(id: number): string {\n  return `\n    SELECT *\n      FROM users\n     WHERE id = ${id}\n  `;\n}\n\nexport function quiet(): number {\n  return 1;\n}\n";
+    write(&repo, "src/sql.ts", query);
+    write(
+        &repo,
+        "src/sql-user.ts",
+        "import { render } from './sql';\n\nexport const text = render(1);\n",
+    );
+    commit_all(&repo);
+
+    write(
+        &repo,
+        "src/sql.ts",
+        &query.replace("      FROM", "         FROM"),
+    );
+    let inside = changed(&sandbox, &repo, &[]);
+    assert_eq!(reached(&inside), ["src/sql-user.ts"], "{inside}");
+    assert_eq!(inside["parts"][0]["names"], value!(["render"]));
+
+    write(
+        &repo,
+        "src/sql.ts",
+        &query.replace("  return 1;", "      return 1;"),
+    );
+    let outside = changed(&sandbox, &repo, &[]);
+    assert_eq!(reached(&outside), Vec::<&str>::new(), "{outside}");
+    assert_eq!(
+        outside["parts"],
+        value!([{ "file": "src/sql.ts", "names": [] }])
+    );
+}

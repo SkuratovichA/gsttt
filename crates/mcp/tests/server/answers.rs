@@ -3,7 +3,7 @@
 use gsttt_core::Freshness;
 use gsttt_core::engine::changes::ChangeKind;
 use gsttt_core::fact::FileTags;
-use gsttt_core::query::{self, Answer, Entries, ImpactRequest};
+use gsttt_core::query::{self, Answer, ChangedPart, Entries, ImpactRequest};
 use gsttt_core::testing::{Code, Tree};
 use gsttt_core::text::thousands;
 use gsttt_mcp::BUDGET;
@@ -439,6 +439,39 @@ async fn changed_asks_about_the_files_git_lists() {
         source.paths_read().is_empty(),
         "no path is read when git lists the files"
     );
+}
+
+#[scenario("mcp", "changed asks about the declarations a patch changes")]
+#[tokio::test]
+async fn changed_asks_about_the_declarations_a_patch_changes() {
+    let tree = Tree::new()
+        .symbols(
+            "lib/util.ts",
+            Code::new()
+                .declaration("render", (1, 3), &[])
+                .declaration("unrelated", (5, 7), &[]),
+        )
+        .exports("lib/util.ts", &["render", "unrelated"])
+        .imports_names("src/a.ts", "lib/util.ts", &["render"])
+        .imports_names("src/b.ts", "lib/util.ts", &["unrelated"]);
+    let source = Fake::over(tree.build())
+        .changes(&[("lib/util.ts", ChangeKind::Modified)])
+        .declared("lib/util.ts", &["render"]);
+    let session = Session::start(source.clone()).await;
+
+    let reply = session.call("impact", json!({ "changed": true })).await;
+
+    let request = ImpactRequest {
+        files: vec!["lib/util.ts".to_owned()],
+        parts: vec![ChangedPart {
+            file: "lib/util.ts".to_owned(),
+            names: vec!["render".to_owned()],
+        }],
+        ..ImpactRequest::default()
+    };
+    assert_eq!(reply.text, impact_text(&source, &request, Entries::Capped));
+    assert!(reply.text.contains("src/a.ts"), "{}", reply.text);
+    assert!(!reply.text.contains("src/b.ts"), "{}", reply.text);
 }
 
 #[tokio::test]

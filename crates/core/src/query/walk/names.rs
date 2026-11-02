@@ -7,7 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::contract::Role;
-use crate::fact::{Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR};
+use crate::fact::{
+    Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR, belongs_to, member_in, member_of,
+};
 use crate::graph::{ContractSite, Declaration, Edge, FileSymbols, Graph};
 use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
@@ -73,6 +75,136 @@ pub(in crate::query) fn reach_names(
     names: &[String],
     depth: Option<u32>,
 ) -> Walked {
+    walk_from(index, crossing, depth, |walk, notes| {
+        let mut asked = changed.to_vec();
+        asked.sort_unstable();
+        asked.dedup();
+        walk.start(&asked, names, notes)
+    })
+}
+
+/// What a changed file is walked from.
+enum Seed {
+    /// The file as a whole: nothing says which of its declarations changed.
+    Whole,
+    /// The declarations that changed with the declarations that depend on them in the file, and whether the code that runs as the file loads does.
+    Parts { decls: BTreeSet<usize>, load: bool },
+}
+
+/// Like [`reach_names`] for the files of `changed`, each walked from the declarations `parts` names for it. A file with no entry in `parts`, a file without declarations and a file with a name it does not declare are followed whole, and a file whose entry names nothing is not followed, because nothing in it changed. The declarations of the file that use a declaration walked from are walked from too, since they run its new code. When no file is walked by declaration, the walk is the one over files.
+pub(in crate::query) fn reach_changed(
+    index: &Index,
+    crossing: &Crossing<'_>,
+    changed: &[FileId],
+    parts: &[(FileId, &[String])],
+    depth: Option<u32>,
+) -> Walked {
+    let mut asked = changed.to_vec();
+    asked.sort_unstable();
+    asked.dedup();
+    let mut seeds: BTreeMap<FileId, Seed> = BTreeMap::new();
+    for file in asked {
+        let part = parts.iter().find(|&&(owner, _)| owner == file);
+        if let Some(seed) = seed_of(&index.graph, file, part.map(|&(_, names)| names)) {
+            seeds.insert(file, seed);
+        }
+    }
+    if seeds.values().all(|seed| matches!(seed, Seed::Whole)) {
+        let whole: Vec<FileId> = seeds.keys().copied().collect();
+        return super::reach(&index.graph, crossing, &whole, depth);
+    }
+    walk_from(index, crossing, depth, |walk, _| walk.start_seeds(&seeds))
+}
+
+/// Where the walk starts in `file`, `None` when nothing in it changed. `names` are the declarations that changed, `None` when the request does not say.
+fn seed_of(graph: &Graph, file: FileId, names: Option<&[String]>) -> Option<Seed> {
+    let Some(names) = names else {
+        return Some(Seed::Whole);
+    };
+    if names.is_empty() {
+        return None;
+    }
+    let Some(symbols) = graph.symbols(file) else {
+        return Some(Seed::Whole);
+    };
+    let mut decls = BTreeSet::new();
+    for name in names {
+        let before = decls.len();
+        decls.extend(
+            symbols
+                .declarations()
+                .enumerate()
+                .filter(|(_, decl)| decl.name() == name)
+                .map(|(index, _)| index),
+        );
+        if decls.len() == before {
+            return Some(Seed::Whole);
+        }
+    }
+    let (decls, load) = close_over(symbols, decls);
+    Some(Seed::Parts { decls, load })
+}
+
+/// The declarations of a file that run the new code of the `seeded` ones, with the seeded ones: those that use them, and those that use those, whether the file loads by calling them or not. Says whether the code that runs as the file loads is among them.
+fn close_over(symbols: FileSymbols<'_>, mut seeded: BTreeSet<usize>) -> (BTreeSet<usize>, bool) {
+    let mut pending: Vec<usize> = (0..symbols.len())
+        .filter(|index| !seeded.contains(index))
+        .collect();
+    let mut fresh: Vec<usize> = seeded.iter().copied().collect();
+    let mut load = false;
+    while !fresh.is_empty() {
+        let (names, classes) = referred(symbols, &fresh);
+        load = load || loads_any(symbols, &names, &classes);
+        fresh.clear();
+        pending.retain(|&index| {
+            let refers_to_fresh = uses_any(symbols, index, &names, &classes);
+            if refers_to_fresh {
+                fresh.push(index);
+            }
+            !refers_to_fresh
+        });
+        seeded.extend(fresh.iter().copied());
+    }
+    (seeded, load)
+}
+
+/// Whether the declaration at `index` refers to one of the `names` or `classes`.
+fn uses_any(symbols: FileSymbols<'_>, index: usize, names: &[&str], classes: &[&str]) -> bool {
+    symbols.declaration(index).is_some_and(|decl| {
+        decl.uses()
+            .any(|used| refers(names, classes, Some(decl.name()), used))
+    })
+}
+
+/// Whether the code that runs as the file loads refers to one of the `names` or `classes`.
+fn loads_any(symbols: FileSymbols<'_>, names: &[&str], classes: &[&str]) -> bool {
+    symbols
+        .on_load()
+        .any(|used| refers(names, classes, None, used))
+}
+
+/// The names of the declarations at `indices`, and the classes of those that are members, each sorted and once.
+fn referred<'g>(symbols: FileSymbols<'g>, indices: &[usize]) -> (Vec<&'g str>, Vec<&'g str>) {
+    let mut names: Vec<&str> = indices
+        .iter()
+        .filter_map(|&index| symbols.declaration(index))
+        .map(Declaration::name)
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    let mut classes: Vec<&str> = names.iter().filter_map(|name| class_of(name)).collect();
+    classes.sort_unstable();
+    classes.dedup();
+    (names, classes)
+}
+
+/// The walk from the parts `start` reaches first, run layer by layer until it reaches nothing new.
+fn walk_from(
+    index: &Index,
+    crossing: &Crossing<'_>,
+    depth: Option<u32>,
+    start: impl FnOnce(&mut Walk<'_>, &mut BTreeSet<Note>) -> Vec<Front>,
+) -> Walked {
     let mut walk = Walk {
         index,
         graph: &index.graph,
@@ -84,10 +216,7 @@ pub(in crate::query) fn reach_names(
     };
     let mut crossed = Crossed::new(Direction::ToCallers, &index.graph);
     let mut notes = BTreeSet::new();
-    let mut asked = changed.to_vec();
-    asked.sort_unstable();
-    asked.dedup();
-    let mut frontier = walk.start(&asked, names, &mut notes);
+    let mut frontier = start(&mut walk, &mut notes);
     let mut distance = 0;
     while !frontier.is_empty() {
         let layer = Step::new(&walk, &mut crossed).expand(&frontier);
@@ -294,6 +423,43 @@ impl Walk<'_> {
                         file,
                         name: name.clone(),
                     });
+                }
+            }
+        }
+        started
+            .into_iter()
+            .map(|unit| Front { unit, code: 0 })
+            .collect()
+    }
+
+    /// Marks what each seed names as reached at distance 0 and returns it as the first frontier. A file followed whole is reached whole.
+    fn start_seeds(&mut self, seeds: &BTreeMap<FileId, Seed>) -> Vec<Front> {
+        let mut started = BTreeSet::new();
+        for (&file, seed) in seeds {
+            let touch = self.files.entry(file).or_default();
+            match seed {
+                Seed::Whole => {
+                    touch.whole = Some(START);
+                    started.insert(Unit {
+                        file,
+                        part: Part::Whole,
+                    });
+                }
+                Seed::Parts { decls, load } => {
+                    for &index in decls {
+                        touch.decls.insert(index, START);
+                        started.insert(Unit {
+                            file,
+                            part: Part::Decl(index),
+                        });
+                    }
+                    if *load {
+                        touch.load = Some(START);
+                        started.insert(Unit {
+                            file,
+                            part: Part::Load,
+                        });
+                    }
                 }
             }
         }
@@ -744,16 +910,7 @@ impl<'w, 'a> Step<'w, 'a> {
 
     /// The declarations of `file` that refer to the `declared` ones reached, and its load when it does. A member `Class.member` is also referred to by the declarations outside `Class` that refer to the class, because a call through a value names no class. A class is referred to by the declarations outside it that use one of its members, `Class.other` as well as `Class.member`.
     fn callers_in(&mut self, file: FileId, symbols: FileSymbols<'a>, declared: &[usize]) {
-        let mut names: Vec<&'a str> = declared
-            .iter()
-            .filter_map(|&index| symbols.declaration(index))
-            .map(Declaration::name)
-            .collect();
-        names.sort_unstable();
-        names.dedup();
-        let mut classes: Vec<&'a str> = names.iter().filter_map(|name| class_of(name)).collect();
-        classes.sort_unstable();
-        classes.dedup();
+        let (names, classes) = referred(symbols, declared);
         for member in &names {
             if let Some(class) = class_of(member) {
                 self.layer
@@ -762,18 +919,12 @@ impl<'w, 'a> Step<'w, 'a> {
             }
         }
         let mut found = false;
-        for (index, decl) in symbols.declarations().enumerate() {
-            if decl
-                .uses()
-                .any(|used| refers(&names, &classes, Some(decl.name()), used))
-            {
+        for index in 0..symbols.len() {
+            if uses_any(symbols, index, &names, &classes) {
                 found |= self.unit(file, Part::Decl(index));
             }
         }
-        if symbols
-            .on_load()
-            .any(|used| refers(&names, &classes, None, used))
-        {
+        if loads_any(symbols, &names, &classes) {
             found |= self.unit(file, Part::Load);
         }
         if !found {
@@ -1237,21 +1388,6 @@ fn split_member(name: &str) -> Option<(&str, &str)> {
 /// `Class` for the member `Class.member`.
 fn class_of(name: &str) -> Option<&str> {
     split_member(name).map(|(class, _)| class)
-}
-
-/// `member` for the name `class.member`, when `name` is one.
-fn member_in<'n>(name: &'n str, class: &str) -> Option<&'n str> {
-    name.strip_prefix(class)?.strip_prefix(MEMBER_SEPARATOR)
-}
-
-/// Whether `name` is a member of `class`.
-fn member_of(name: &str, class: &str) -> bool {
-    member_in(name, class).is_some()
-}
-
-/// Whether `name` is `class` or one of its members.
-fn belongs_to(name: &str, class: &str) -> bool {
-    name == class || member_of(name, class)
 }
 
 #[cfg(test)]

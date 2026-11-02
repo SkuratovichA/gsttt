@@ -74,6 +74,11 @@ pub trait Project: Send + Sync + 'static {
     /// [`ParseStatus`]: crate::fact::ParseStatus
     fn parse(&self, file: &SourceFile<'_>) -> Parsed<Self::Extra>;
 
+    /// The text of `file` with its comments and import statements blanked line for line, which is what two versions of a file are compared on. `None` when the connector cannot give it, and the file is then changed whole.
+    fn code(&self, _file: &SourceFile<'_>) -> Option<String> {
+        None
+    }
+
     /// Runs once every file is parsed and before any is resolved, with the facts of this project's files: a Rust crate builds its module tree here.
     fn prepare(&mut self, files: &[PrepareFile<'_>]) {
         let _ = files;
@@ -332,6 +337,8 @@ pub trait DynProject: Send + Sync {
     fn provides(&self) -> Vec<Provide>;
     /// The facts, and the extra data as the JSON the cache stores (empty for the default value).
     fn parse(&self, file: &SourceFile<'_>) -> (FileFacts, Vec<u8>);
+    /// The text with comments and import statements blanked line for line, as [`Project::code`] gives it.
+    fn code(&self, file: &SourceFile<'_>) -> Option<String>;
     fn prepare(&mut self, files: &[PrepareFile<'_>]);
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution;
     /// Links with the extra data as JSON, the way [`DynProject::parse`] gave it.
@@ -461,6 +468,10 @@ impl<P: Project> DynProject for ErasedProject<P> {
             Vec::new()
         });
         (facts, bytes)
+    }
+
+    fn code(&self, file: &SourceFile<'_>) -> Option<String> {
+        self.project.code(file)
     }
 
     fn prepare(&mut self, files: &[PrepareFile<'_>]) {
