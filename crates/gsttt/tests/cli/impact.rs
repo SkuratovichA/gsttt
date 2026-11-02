@@ -794,3 +794,184 @@ fn asked_about_the_class_every_caller_of_a_member_is_listed() {
         assert!(listed.contains(&path), "{path}: {answer}");
     }
 }
+
+/// The `affected` entries of the impact of `name` declared in `src/svc.ts`, as each path with the names of its callers.
+fn callers_of(sandbox: &Sandbox, repo: &Path, name: &str) -> Vec<(String, Vec<String>)> {
+    let answer = json(&sandbox.run_in(repo, &["--json", "impact", "src/svc.ts", "--name", name]));
+    answer["affected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| {
+            let callers = entry["callers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|caller| caller["name"].as_str().unwrap().to_owned())
+                .collect();
+            (entry["path"].as_str().unwrap().to_owned(), callers)
+        })
+        .collect()
+}
+
+/// The real connector reading the namespace scenarios of the core tests: what `uses` holds for `lib.name`, `consume(lib)`, `lib[key]()` and `const { helper } = lib`.
+#[test]
+fn a_namespace_import_is_a_caller_only_of_the_names_it_uses_in_typescript() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/svc.ts",
+        "export function helper() {}\nexport function other() {}\nexport interface Foo {}\nexport function Comp() {}\nexport class Service {\n  place() {}\n  cancel() {}\n  static make() {\n    return new Service();\n  }\n}\n",
+    );
+    let namespace = "import * as lib from './svc';\n\n";
+    write(
+        &repo,
+        "src/a.ts",
+        &format!(
+            "{namespace}export function viaHelper() {{\n  lib.helper();\n}}\n\nexport function viaOther() {{\n  lib.other();\n}}\n"
+        ),
+    );
+    write(
+        &repo,
+        "src/b.ts",
+        &format!("{namespace}export function onlyOther() {{\n  lib.other();\n}}\n"),
+    );
+    write(
+        &repo,
+        "src/c.ts",
+        &format!(
+            "{namespace}declare function consume(value: unknown): void;\nexport function pass() {{\n  consume(lib);\n}}\n"
+        ),
+    );
+    write(
+        &repo,
+        "src/d.ts",
+        &format!(
+            "{namespace}export function pick(key: 'helper' | 'other') {{\n  lib[key]();\n}}\n"
+        ),
+    );
+    write(
+        &repo,
+        "src/e.ts",
+        &format!(
+            "{namespace}export function spread() {{\n  const {{ helper }} = lib;\n  helper();\n}}\n"
+        ),
+    );
+    write(
+        &repo,
+        "src/f.ts",
+        &format!(
+            "{namespace}export function build() {{\n  return new lib.Service().place();\n}}\n\nexport function make() {{\n  return lib.Service.make();\n}}\n"
+        ),
+    );
+
+    write(
+        &repo,
+        "src/g.ts",
+        &format!("{namespace}export function typed(x: lib.Foo) {{}}\n"),
+    );
+    write(
+        &repo,
+        "src/k.ts",
+        &format!(
+            "{namespace}declare function consume(value: unknown): void;\nexport function escapes(x: lib.Foo) {{\n  consume(x);\n  return x;\n}}\n"
+        ),
+    );
+    write(
+        &repo,
+        "src/l.ts",
+        "import type * as T from './svc';\n\nexport function escapesType(x: T.Foo) {\n  return x;\n}\n",
+    );
+    write(
+        &repo,
+        "src/h.tsx",
+        &format!("{namespace}export function jsx() {{\n  return <lib.Comp />;\n}}\n"),
+    );
+    write(
+        &repo,
+        "src/i.ts",
+        &format!("{namespace}export function queried(x: typeof lib.helper) {{}}\n"),
+    );
+    write(
+        &repo,
+        "src/j.ts",
+        "import type * as T from './svc';\n\nexport function onlyType(x: T.Foo) {}\n",
+    );
+
+    let helper = callers_of(&sandbox, &repo, "helper");
+    let listed = |path: &str| helper.iter().find(|(listed, _)| listed == path);
+    let owned = |names: &[&str]| {
+        names
+            .iter()
+            .map(|&name| name.to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        listed("src/a.ts").map(|(_, callers)| callers.clone()),
+        Some(owned(&["viaHelper"])),
+        "{helper:?}"
+    );
+    assert_eq!(listed("src/b.ts"), None, "{helper:?}");
+    for (path, name) in [
+        ("src/c.ts", "pass"),
+        ("src/d.ts", "pick"),
+        ("src/e.ts", "spread"),
+    ] {
+        assert_eq!(
+            listed(path).map(|(_, callers)| callers.clone()),
+            Some(owned(&[name])),
+            "{path}: {helper:?}"
+        );
+    }
+    assert_eq!(listed("src/f.ts"), None, "{helper:?}");
+    // A qualified type name and a JSX member are uses of the name they write, as a read of `lib.name` is.
+    assert_eq!(listed("src/g.ts"), None, "{helper:?}");
+    assert_eq!(listed("src/h.tsx"), None, "{helper:?}");
+    assert_eq!(listed("src/j.ts"), None, "{helper:?}");
+    assert_eq!(listed("src/k.ts"), None, "{helper:?}");
+    assert_eq!(listed("src/l.ts"), None, "{helper:?}");
+    assert_eq!(
+        listed("src/i.ts").map(|(_, callers)| callers.clone()),
+        Some(owned(&["queried"])),
+        "{helper:?}"
+    );
+
+    let foo = callers_of(&sandbox, &repo, "Foo");
+    let foo_callers = |path: &str| {
+        foo.iter()
+            .find(|(listed, _)| listed == path)
+            .map(|(_, callers)| callers.clone())
+    };
+    assert_eq!(foo_callers("src/g.ts"), Some(owned(&["typed"])), "{foo:?}");
+    assert_eq!(
+        foo_callers("src/j.ts"),
+        Some(owned(&["onlyType"])),
+        "{foo:?}"
+    );
+    assert_eq!(
+        foo_callers("src/k.ts"),
+        Some(owned(&["escapes"])),
+        "{foo:?}"
+    );
+    assert_eq!(
+        foo_callers("src/l.ts"),
+        Some(owned(&["escapesType"])),
+        "{foo:?}"
+    );
+    assert_eq!(foo_callers("src/i.ts"), None, "{foo:?}");
+
+    let comp = callers_of(&sandbox, &repo, "Comp");
+    let comp_callers = comp
+        .iter()
+        .find(|(path, _)| path == "src/h.tsx")
+        .map(|(_, callers)| callers.clone());
+    assert_eq!(comp_callers, Some(owned(&["jsx"])), "{comp:?}");
+
+    let place = callers_of(&sandbox, &repo, "Service.place");
+    let callers = place
+        .iter()
+        .find(|(path, _)| path == "src/f.ts")
+        .map(|(_, callers)| callers.clone());
+    assert_eq!(callers, Some(owned(&["build", "make"])), "{place:?}");
+}

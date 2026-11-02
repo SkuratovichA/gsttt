@@ -97,7 +97,7 @@ expression: json
               "JobQueue",
               "Local.",
               "MailQueue",
-              "services.MailQueue."
+              "services.MailQueue"
             ]
           },
           {
@@ -146,7 +146,7 @@ expression: json
             "line": 30,
             "name": "Notifier.indexed",
             "uses": [
-              "services"
+              "services.MailQueue"
             ]
           }
         ],

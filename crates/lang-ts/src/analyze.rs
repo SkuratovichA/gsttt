@@ -27,12 +27,12 @@ use oxc_ast::ast::{
     ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportFromDeclaration,
     ExportNamedDeclaration, Expression, ExpressionStatement, ForStatement, ForStatementInit,
     FormalParameter, Function, IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier,
-    ImportExpression, ImportOrExportKind, MemberExpression, MethodDefinition, ModuleExportName,
-    NewExpression, ObjectProperty, ObjectPropertyKind, PrivateInExpression, Program,
-    PropertyDefinition, SequenceExpression, SimpleAssignmentTarget, Statement, TSExportAssignment,
-    TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier, TSModuleBlock,
-    TSModuleReference, TSType, TSTypeAnnotation, TSTypeName, TaggedTemplateExpression,
-    UnaryExpression, UpdateExpression, VariableDeclarator,
+    ImportExpression, ImportOrExportKind, JSXMemberExpression, MemberExpression, MethodDefinition,
+    ModuleExportName, NewExpression, ObjectProperty, ObjectPropertyKind, PrivateInExpression,
+    Program, PropertyDefinition, SequenceExpression, SimpleAssignmentTarget, Statement,
+    TSExportAssignment, TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier,
+    TSModuleBlock, TSModuleReference, TSType, TSTypeAnnotation, TSTypeName,
+    TaggedTemplateExpression, UnaryExpression, UpdateExpression, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
@@ -51,8 +51,8 @@ use crate::extra::{
 use crate::pathing::{is_relative, split_package};
 use crate::shape::{
     COMPUTED, ClassPrefix, Shape, assigned_value, chain_of, commonjs_exports, dotted, dotted_name,
-    export_key, field_name, literal_text, member_chain, property_name, property_str, static_chain,
-    template_text, text_with,
+    export_key, field_name, jsx_chain, literal_text, member_chain, property_name, property_str,
+    static_chain, template_text, text_with, type_chain,
 };
 
 /// The most segments a chain rule's root can have. A root is tried at every length of the chain and each try reads the root again, so a chain of `n` names costs `n` squared without a limit, and no root a rule lists comes near this length.
@@ -1892,8 +1892,20 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     /// The name of a type reference, and of an `implements` or an interface `extends`, which are types and not values even where the walk meets them outside a `TSType`.
     fn visit_ts_type_name(&mut self, it: &TSTypeName<'a>) {
         let outer = self.symbols.enter_type();
-        walk::walk_ts_type_name(self, it);
+        // `lib.Foo` uses the name `lib.Foo` of a namespace, as the value `lib.Foo` does.
+        match type_chain(it) {
+            Some(names) if names.len() > 1 => self.symbols.chain(&names),
+            _ => walk::walk_ts_type_name(self, it),
+        }
         self.symbols.leave_type(outer);
+    }
+
+    /// `<lib.Comp />` uses `lib.Comp`, as the value `lib.Comp` does.
+    fn visit_jsx_member_expression(&mut self, it: &JSXMemberExpression<'a>) {
+        match jsx_chain(it) {
+            Some(names) => self.symbols.chain(&names),
+            None => walk::walk_jsx_member_expression(self, it),
+        }
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {

@@ -92,7 +92,7 @@ expression: json
             "line": 3,
             "name": "load",
             "uses": [
-              "Prisma"
+              "Prisma.TransactionClient"
             ]
           },
           {

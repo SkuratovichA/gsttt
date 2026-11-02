@@ -176,17 +176,18 @@ impl<'a> Name<'a> {
         }
     }
 
-    /// Whether an import that takes `taken` from the file gets this name. A namespace takes every name, and a member gets the import of its class.
+    /// Whether an import that takes `taken` from the file gets this name. A namespace takes every name, and a member gets the import of its class. What the importer then uses of it is `member_taken`: a namespace is a caller only of the names it uses.
     fn takes(self, taken: &str) -> bool {
         self.exported()
             .is_none_or(|name| taken == "*" || taken == name)
     }
 
-    /// The member an import that takes `taken` is about. A namespace holds the class under a name of its own, so a use of the namespace is not named after the member.
+    /// The part of what an import that takes `taken` binds that the importer must use to be a caller. A namespace holds the name under a name of its own, `ns.name`, so the importer uses that name, and for a member the class, because through a namespace a class is read as a whole. `Any` keeps every use.
     fn member_taken(self, taken: &str) -> Option<&'a str> {
         match self {
-            Self::Member(_, member) if taken != "*" => Some(member),
-            _ => None,
+            Self::Is(name) | Self::Member(name, _) if taken == "*" => Some(name),
+            Self::Member(_, member) => Some(member),
+            Self::Is(_) | Self::Any => None,
         }
     }
 
@@ -491,11 +492,14 @@ struct Local<'a> {
 }
 
 impl Local<'_> {
-    /// Whether a declaration that uses `used` refers to what the local stands for. A use of the local alone is a use of every member of it, and `Local.member` is a use of that member only.
+    /// Whether a declaration that uses `used` refers to what the local stands for. A use of the local alone is a use of every member of it, and `Local.member` is a use of that member only, which for a namespace is a name of the file and for a class a member of it.
     fn refers(&self, used: &str) -> bool {
         match self.member {
             None => belongs_to(used, self.name),
-            Some(member) => used == self.name || member_in(used, self.name) == Some(member),
+            Some(member) => {
+                used == self.name
+                    || member_in(used, self.name).is_some_and(|rest| belongs_to(rest, member))
+            }
         }
     }
 }

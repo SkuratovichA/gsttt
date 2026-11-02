@@ -2156,9 +2156,12 @@ fn reexported(case: &Case, file: usize) -> BTreeSet<&'static str> {
         .collect()
 }
 
-/// `name` as code uses it: by itself, or for one of its members, `name.m`, as a call through a field of the type does.
+/// The prefix of the local that `written` binds a namespace import to: `ns`, an edge and a position, joined by `_`.
+const NAMESPACE_LOCAL: &str = "ns_";
+
+/// `name` as code uses it: by itself, or for one of its members, `name.m`, as a call through a field of the type does. A namespace is used by itself, because `ns.m` would name a `m` of the file, which is no name the property asks about.
 fn as_used(name: &str, flip: &mut impl FnMut() -> bool) -> String {
-    if flip() {
+    if !name.starts_with(NAMESPACE_LOCAL) && flip() {
         format!("{name}.m")
     } else {
         name.to_owned()
@@ -2709,4 +2712,137 @@ fn a_test_that_reaches_a_file_met_across_a_contract_is_listed_by_name() {
     let answer = ask(&index, "server.ts", &["handle"], None);
 
     assert_eq!(paths(&answer.tests), ["t.test.ts"]);
+}
+
+/// `svc.ts` exports `helper` and `other`.
+fn svc() -> Tree {
+    Tree::new()
+        .symbols(
+            "svc.ts",
+            Code::new()
+                .declaration("helper", (1, 3), &[])
+                .declaration("other", (5, 7), &[]),
+        )
+        .exports("svc.ts", &["helper", "other"])
+}
+
+/// `path` imports the namespace of `svc.ts` as `lib` and declares one function for each `(name, uses)`.
+fn namespace_user(tree: Tree, path: &str, declared: &[(&str, &str)]) -> Tree {
+    let code = declared
+        .iter()
+        .zip(1u32..)
+        .fold(Code::new(), |code, (&(name, uses), at)| {
+            code.declaration(name, (at * 10, at * 10 + 2), &[uses])
+        });
+    tree.imports_as(path, "svc.ts", &[("*", "lib")])
+        .symbols(path, code)
+        .exports(path, &[])
+}
+
+#[scenario("queries", "A namespace import is a caller only of the names it uses")]
+#[test]
+fn a_namespace_import_is_a_caller_only_of_the_names_it_uses() {
+    let tree = namespace_user(
+        svc(),
+        "a.ts",
+        &[("viaHelper", "lib.helper"), ("viaOther", "lib.other")],
+    );
+    let index = namespace_user(tree, "b.ts", &[("onlyOther", "lib.other")]).build();
+
+    let answer = ask(&index, "svc.ts", &["helper"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("a.ts", 1, "imports svc.ts", &["viaHelper"])]
+    );
+}
+
+#[scenario("queries", "A namespace used as a value uses every name")]
+#[test]
+fn a_namespace_used_as_a_value_uses_every_name() {
+    let tree = namespace_user(svc(), "c.ts", &[("pass", "lib")]);
+    let index = namespace_user(tree, "d.ts", &[("pick", "lib")])
+        .imports_as("e.ts", "svc.ts", &[("*", "lib")])
+        .symbols("e.ts", Code::new().declaration("quiet", (1, 2), &[]))
+        .exports("e.ts", &[])
+        .build();
+
+    let answer = ask(&index, "svc.ts", &["helper"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("c.ts", 1, "imports svc.ts", &["pass"]),
+            row("d.ts", 1, "imports svc.ts", &["pick"]),
+        ]
+    );
+}
+
+#[scenario("queries", "A load reads through a namespace by the names it uses")]
+#[test]
+fn a_load_reads_through_a_namespace_by_the_names_it_uses() {
+    let index = svc()
+        .imports_as("boot.ts", "svc.ts", &[("*", "lib")])
+        .symbols("boot.ts", Code::new().on_load(&["lib.helper"]))
+        .exports("boot.ts", &[])
+        .build();
+    let loaded = |name| {
+        let answer = ask(&index, "svc.ts", &[name], None);
+        rows(&answer.affected)
+            .iter()
+            .find(|row| row.0 == "boot.ts")
+            .map(|row| row.4)
+    };
+
+    assert_eq!(loaded("helper"), Some(Some(1)));
+    assert_eq!(loaded("other"), None);
+}
+
+/// `page.ts` imports `name` from `barrel.ts`, and its `open` uses `name.helper` where `close` uses `name.other`.
+fn page_through(tree: Tree, name: &str) -> Index {
+    tree.imports_names("page.ts", "barrel.ts", &[name])
+        .symbols(
+            "page.ts",
+            Code::new()
+                .declaration("open", (1, 3), &[&format!("{name}.helper")])
+                .declaration("close", (5, 7), &[&format!("{name}.other")]),
+        )
+        .exports("page.ts", &[])
+        .build()
+}
+
+/// The callers listed in `page.ts` when `helper` of `svc.ts` is asked about with depth 2.
+fn page_callers(index: &Index) -> Option<Vec<String>> {
+    let answer = ask(index, "svc.ts", &["helper"], Some(2));
+    rows(&answer.affected)
+        .into_iter()
+        .find(|row| row.0 == "page.ts")
+        .map(|row| row.3.into_iter().map(str::to_owned).collect())
+}
+
+#[scenario("queries", "A name goes on through a namespace a barrel exports")]
+#[test]
+fn a_name_goes_on_through_a_namespace_a_barrel_exports() {
+    let tree = svc()
+        .re_exports("barrel.ts", "svc.ts", &[("ns", "*")])
+        .symbols("barrel.ts", Code::new())
+        .exports("barrel.ts", &["ns"]);
+
+    assert_eq!(
+        page_callers(&page_through(tree, "ns")),
+        Some(vec!["open".to_owned()])
+    );
+}
+
+#[test]
+fn a_name_goes_on_through_a_namespace_a_barrel_exports_from_a_local() {
+    let tree = svc()
+        .imports_as("barrel.ts", "svc.ts", &[("*", "lib")])
+        .symbols("barrel.ts", Code::new().exports_from("lib", "lib"))
+        .exports("barrel.ts", &["lib"]);
+
+    assert_eq!(
+        page_callers(&page_through(tree, "lib")),
+        Some(vec!["open".to_owned()])
+    );
 }

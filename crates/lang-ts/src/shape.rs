@@ -6,8 +6,9 @@ use std::num::NonZeroU32;
 use gsttt_core::contract::{has_parent_segment, path_after_origin, without_query_and_fragment};
 use gsttt_core::rules::{Prefix, Site, ValueExpr, ValueSource};
 use oxc_ast::ast::{
-    Argument, BinaryExpression, ChainElement, Expression, FormalParameter, MemberExpression,
-    NewExpression, ObjectPropertyKind, PropertyDefinition, PropertyKey, TemplateLiteral,
+    Argument, BinaryExpression, ChainElement, Expression, FormalParameter, JSXMemberExpression,
+    JSXMemberExpressionObject, MemberExpression, NewExpression, ObjectPropertyKind,
+    PropertyDefinition, PropertyKey, TSTypeName, TemplateLiteral,
 };
 use oxc_syntax::operator::{AssignmentOperator, BinaryOperator};
 use serde::{Deserialize, Serialize};
@@ -710,6 +711,46 @@ pub(crate) fn member_chain(member: &MemberExpression<'_>) -> Option<Vec<Option<S
         MemberExpression::PrivateFieldExpression(_) => false,
     };
     found.then_some(names)
+}
+
+/// The names of a type's qualified name, `lib.a.B` as `["lib", "a", "B"]`, in the form [`member_chain`] gives for the value `lib.a.B`. `None` for a name that starts from `this`.
+pub(crate) fn type_chain(name: &TSTypeName<'_>) -> Option<Vec<Option<String>>> {
+    fn push(name: &TSTypeName<'_>, names: &mut Vec<Option<String>>) -> bool {
+        match name {
+            TSTypeName::IdentifierReference(id) => names.push(Some(id.name.as_str().to_owned())),
+            TSTypeName::QualifiedName(qualified) => {
+                if !push(&qualified.left, names) {
+                    return false;
+                }
+                names.push(Some(qualified.right.name.as_str().to_owned()));
+            }
+            TSTypeName::ThisExpression(_) => return false,
+        }
+        true
+    }
+    let mut names = Vec::new();
+    push(name, &mut names).then_some(names)
+}
+
+/// The names of a JSX element name that is a member, `<lib.a.B />` as `["lib", "a", "B"]`. `None` for a name that starts from `this`.
+pub(crate) fn jsx_chain(member: &JSXMemberExpression<'_>) -> Option<Vec<Option<String>>> {
+    fn push(member: &JSXMemberExpression<'_>, names: &mut Vec<Option<String>>) -> bool {
+        match &member.object {
+            JSXMemberExpressionObject::IdentifierReference(id) => {
+                names.push(Some(id.name.as_str().to_owned()));
+            }
+            JSXMemberExpressionObject::MemberExpression(inner) => {
+                if !push(inner, names) {
+                    return false;
+                }
+            }
+            JSXMemberExpressionObject::ThisExpression(_) => return false,
+        }
+        names.push(Some(member.property.name.as_str().to_owned()));
+        true
+    }
+    let mut names = Vec::new();
+    push(member, &mut names).then_some(names)
 }
 
 /// The names of `object.property`.
