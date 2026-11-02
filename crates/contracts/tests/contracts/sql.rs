@@ -199,6 +199,7 @@ const INIT: &str = "prisma/migrations/20240101000000_init/migration.sql";
 fn a_migration_declares_every_table_it_names() {
     let run = Run::new("sql_migration_globs", &[module(&SQL)]);
     assert_eq!(run.status(INIT), &ParseStatus::Ok);
+    // The `ALTER TABLE` on line 4 names `tenant` again, and the file still declares it once.
     assert_eq!(
         run.sites(INIT),
         vec!["declares table tenant @1", "declares table branch @3"]
@@ -230,7 +231,8 @@ fn the_migrations_option_replaces_the_default_globs() {
         vec![
             "declares table tenant @1",
             "calls table tenant @2",
-            "calls table branch @3"
+            "calls table branch @3",
+            "declares table tenant @4"
         ]
     );
     insta::assert_json_snapshot!(run.snapshot());
@@ -246,7 +248,8 @@ fn an_empty_migrations_list_reads_no_migration() {
         vec![
             "declares table tenant @1",
             "calls table tenant @2",
-            "calls table branch @3"
+            "calls table branch @3",
+            "declares table tenant @4"
         ]
     );
 }
@@ -264,5 +267,29 @@ fn an_invalid_migrations_glob_is_an_options_error() {
     assert!(
         message.starts_with("`migrations` has the glob \"[\""),
         "{message}"
+    );
+}
+
+#[gsttt_scenario::scenario("contract-formats", "The singular migration directory is a migration")]
+#[test]
+fn the_singular_migration_directory_is_a_migration() {
+    let run = Run::new("sql_migration_globs", &[module(&SQL)]);
+    assert_eq!(
+        run.sites("db/migration/V1__seed.sql"),
+        vec!["declares table seed_rows @1"]
+    );
+}
+
+/// The host file sits under `migrations/`, and its embedded document still calls the table: only a `.sql` file is read as a migration.
+#[gsttt_scenario::scenario(
+    "contract-formats",
+    "SQL embedded in a file under migrations calls its tables"
+)]
+#[test]
+fn sql_embedded_in_a_file_under_migrations_calls_its_tables() {
+    let run = Run::new("sql_embedded_migration", &[module(&HOST), module(&SQL)]);
+    assert_eq!(
+        run.embedded("migrations/seed.py"),
+        vec![(Some("sql"), vec!["calls table bookings".to_owned()])]
     );
 }

@@ -18,6 +18,19 @@ pub enum GlobError {
     Build(#[source] globset::Error),
 }
 
+impl GlobError {
+    /// The error as the message of an options error about the option `option`, which lists the globs.
+    #[must_use]
+    pub fn in_option(&self, option: &str) -> String {
+        match self {
+            Self::Invalid { pattern, source } => {
+                format!("`{option}` has the glob {pattern:?}, which is not valid: {source}")
+            }
+            Self::Build(source) => format!("`{option}` does not build: {source}"),
+        }
+    }
+}
+
 /// The patterns as one set; an empty list gives a set that matches nothing.
 ///
 /// # Errors
@@ -64,5 +77,12 @@ mod tests {
         let error = glob_set(&owned(&["src/**", "["])).unwrap_err();
         assert!(matches!(&error, GlobError::Invalid { pattern, .. } if pattern == "["));
         assert!(error.to_string().starts_with("\"[\" is not a valid glob"));
+    }
+
+    #[test]
+    fn the_message_names_the_option_and_the_pattern() {
+        let invalid = glob_set(&owned(&["["])).unwrap_err();
+        let message = invalid.in_option("migrations");
+        assert!(message.starts_with("`migrations` has the glob \"[\", which is not valid: "));
     }
 }

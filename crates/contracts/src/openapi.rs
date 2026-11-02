@@ -11,7 +11,7 @@ use gsttt_core::connector::{
 };
 use gsttt_core::contract::{ContractKind, Role, path_after_origin, without_query_and_fragment};
 use gsttt_core::fact::{ContractFact, FileFacts, Import, ImportKind, Line, Resolution};
-use gsttt_core::glob::{GlobError, glob_set};
+use gsttt_core::glob::glob_set;
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
@@ -139,12 +139,7 @@ impl Connector for OpenApi {
 fn build_globs(patterns: &[String]) -> Result<GlobSet, ConnectorError> {
     glob_set(patterns).map_err(|error| ConnectorError::Options {
         connector: "openapi".into(),
-        message: match error {
-            GlobError::Invalid { pattern, source } => {
-                format!("`files` has the glob {pattern:?}, which is not valid: {source}")
-            }
-            GlobError::Build(source) => format!("`files` does not build: {source}"),
-        },
+        message: error.in_option("files"),
     })
 }
 

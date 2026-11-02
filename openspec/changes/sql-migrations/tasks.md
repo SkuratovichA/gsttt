@@ -20,3 +20,5 @@
 - [x] 4.3 A test for "The migrations option replaces the default globs"
 - [x] 4.4 A test for "An empty migrations list reads no migration"
 - [x] 4.5 A test for "An invalid migrations glob is an options error"
+- [x] 4.6 A test for "The singular migration directory is a migration"
+- [x] 4.7 A test and a fixture for "SQL embedded in a file under migrations calls its tables"

@@ -16,4 +16,5 @@ A migration changes the schema; it does not use it. Its `INSERT` and `UPDATE` st
 
 - Capability `contract-formats`.
 - `crates/core/src/glob.rs`, `crates/contracts/src/sql.rs`, `crates/contracts/src/openapi.rs`, `crates/config/src/external.rs`, the SQL tests and fixtures.
-- The `sql` options gain `migrations`, so the schema of the config changes. Files read by an earlier version are read again once.
+- The version bump reads every `.sql` file again once.
+- The requirements `SQL` and `Embedded SQL` say that the calls are made by a file that is not a migration, and that embedded SQL is read that way whatever the host file.

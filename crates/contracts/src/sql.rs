@@ -19,7 +19,7 @@ use gsttt_core::fact::{
     ContractFact, Embedded, ErrorCount, FileFacts, Import, Line, ParseStatus, Resolution,
     UnresolvedReason,
 };
-use gsttt_core::glob::{GlobError, glob_set};
+use gsttt_core::glob::glob_set;
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
@@ -101,6 +101,8 @@ pub struct SqlProject {
 }
 
 /// The files that are migrations when the `migrations` option is not set: the directories of Prisma, Flyway, golang-migrate, sqlx, Supabase and dbmate.
+///
+/// Options reach the key of a fact as the user wrote them, so a change to this list needs a bump of the `version` of the connector.
 const DEFAULT_MIGRATIONS: [&str; 2] = ["**/migrations/**", "**/migration/**"];
 
 fn claims(path: &RepoPath) -> bool {
@@ -158,12 +160,7 @@ impl Connector for Sql {
 fn migration_globs(patterns: &[String]) -> Result<GlobSet, ConnectorError> {
     glob_set(patterns).map_err(|error| ConnectorError::Options {
         connector: "sql".into(),
-        message: match error {
-            GlobError::Invalid { pattern, source } => {
-                format!("`migrations` has the glob {pattern:?}, which is not valid: {source}")
-            }
-            GlobError::Build(source) => format!("`migrations` does not build: {source}"),
-        },
+        message: error.in_option("migrations"),
     })
 }
 
@@ -179,7 +176,7 @@ impl Project for SqlProject {
     }
 
     fn salt(&self) -> u64 {
-        // The dialect is an option, and the options are part of the key of every fact.
+        // The options, the dialect and the migration globs among them, are part of the key of every fact.
         0
     }
 
@@ -291,11 +288,11 @@ fn read(dialect: &dyn Dialect, text: &str) -> (Vec<ContractFact>, ParseStatus) {
 ///
 /// The facts come in source order, so the first of each key is the earliest.
 fn declare_only(facts: &mut Vec<ContractFact>) {
-    let mut seen = BTreeSet::new();
-    facts.retain_mut(|fact| {
+    for fact in facts.iter_mut() {
         fact.role = Role::Declares;
-        seen.insert(fact.key.clone())
-    });
+    }
+    let mut seen = BTreeSet::new();
+    facts.retain(|fact| seen.insert(fact.key.clone()));
 }
 
 /// A token moved down by the lines of the text before the one it was read from.
