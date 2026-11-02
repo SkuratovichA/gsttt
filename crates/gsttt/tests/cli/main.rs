@@ -14,6 +14,7 @@ mod mcp;
 mod panics;
 mod paths;
 mod questions;
+mod raw_sql;
 mod repository;
 mod root;
 mod schema;

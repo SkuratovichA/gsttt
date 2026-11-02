@@ -34,3 +34,29 @@ from = "@prisma/client"
 kind = "table"
 role = "calls"
 except = ["Prisma", "PrismaClient", "PrismaPromise", "$Enums"]
+
+# Raw SQL: a template tagged with the query method (`` $queryRaw`…` ``, also with a type argument) and `Prisma.sql`. A receiver of up to three segments (`prisma.$queryRaw`, `this.prisma.$queryRaw`, `this.db.client.$queryRaw`); a pattern has a fixed number of segments, so a deeper receiver is not read. `$queryRaw` given anything but a template reads nothing at the call, because the `Prisma.sql` it is given is read where it stands.
+[[embeds]]
+callee = [
+  "*.$queryRaw",
+  "*.*.$queryRaw",
+  "*.*.*.$queryRaw",
+  "*.$executeRaw",
+  "*.*.$executeRaw",
+  "*.*.*.$executeRaw",
+  "Prisma.sql",
+]
+lang = "sql"
+
+# The `Unsafe` forms take the text as their first argument. `text` is set so that a text built at run time, a template with a computed part or a variable that holds no constant, is an unread site and not silence.
+[[embeds]]
+callee = [
+  "*.$queryRawUnsafe",
+  "*.*.$queryRawUnsafe",
+  "*.*.*.$queryRawUnsafe",
+  "*.$executeRawUnsafe",
+  "*.*.$executeRawUnsafe",
+  "*.*.*.$executeRawUnsafe",
+]
+lang = "sql"
+text = "$arg1"

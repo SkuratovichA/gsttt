@@ -205,6 +205,14 @@ pub struct EmbedRule {
 }
 
 impl EmbedRule {
+    /// What a computed part of a tagged template is written as in the document it reads, so that the document still parses: a placeholder in SQL, nothing in a language with no such thing.
+    pub fn computed_part(&self) -> &'static str {
+        match self.lang.as_str() {
+            "sql" => "?",
+            _ => "",
+        }
+    }
+
     /// The kind of contract a document of this rule's language holds: `sql` holds tables, `graphql` holds operations, any other language is a kind of its own.
     fn contract_kind(&self) -> ContractKind {
         match self.lang.as_str() {

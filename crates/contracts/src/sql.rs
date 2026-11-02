@@ -698,6 +698,23 @@ mod tests {
     }
 
     #[test]
+    fn a_computed_part_written_as_a_question_mark_still_parses() {
+        // The TypeScript connector writes `?` where a computed part of a SQL template stood, so that `` $queryRaw`… WHERE id = ${id}` `` reaches the parser as a statement.
+        let shapes = [
+            "SELECT id FROM a WHERE id = ?",
+            "SELECT id FROM a WHERE id IN (?, ?)",
+            "SELECT id FROM a LIMIT ?",
+            "SELECT id FROM a WHERE id = ?::uuid",
+        ];
+        for dialect in [DEFAULT_DIALECT, "postgresql", "mysql", "sqlite"] {
+            for shape in shapes {
+                let (sites, status) = read_in(dialect, shape);
+                assert_eq!(sites, vec![call(1, "a")], "{dialect}: {shape} ({status:?})");
+            }
+        }
+    }
+
+    #[test]
     fn native_syntax_is_tried_before_placeholders() {
         // The jsonb operator `?` reads as itself in PostgreSQL; the same character is a placeholder in a statement that does not parse with it.
         let operator = calls("postgresql", "SELECT 1 FROM docs WHERE data ? 'key';");

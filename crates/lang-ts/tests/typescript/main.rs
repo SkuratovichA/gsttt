@@ -9,6 +9,7 @@ mod imports;
 mod kafka;
 mod packs;
 mod projects;
+mod raw_sql;
 mod receivers;
 mod resolution;
 mod support;
