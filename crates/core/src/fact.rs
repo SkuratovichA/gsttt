@@ -44,6 +44,12 @@ macro_rules! flags {
             pub const fn intersection(self, other: Self) -> Self {
                 Self(self.0 & other.0)
             }
+
+            /// The flags set here and not in `other`.
+            #[must_use]
+            pub const fn without(self, other: Self) -> Self {
+                Self(self.0 & !other.0)
+            }
         }
 
         impl BitOr for $name {
@@ -659,6 +665,14 @@ mod tests {
         assert!(flags.contains(ImportFlags::TYPE_ONLY) && !flags.contains(ImportFlags::TEST_ONLY));
         assert_eq!(format!("{flags:?}"), r#"{"TYPE_ONLY", "OPTIONAL"}"#);
         assert!(ImportFlags::NONE.is_empty());
+    }
+
+    #[test]
+    fn a_flag_taken_out_leaves_the_others() {
+        let flags = ImportFlags::REPLACES | ImportFlags::TYPE_ONLY;
+        assert_eq!(flags.without(ImportFlags::REPLACES), ImportFlags::TYPE_ONLY);
+        assert_eq!(flags.without(ImportFlags::ACTUAL), flags);
+        assert_eq!(flags.without(flags), ImportFlags::NONE);
     }
 
     /// One failure of every kind.

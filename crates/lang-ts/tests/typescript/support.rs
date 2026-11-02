@@ -142,6 +142,16 @@ pub(crate) fn affected_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<
         .collect())
 }
 
+/// The tests a change to the file at `path` reaches in `fixture`, as `impact` lists them, in the order of the answer.
+pub(crate) fn tests_run_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let request = ImpactRequest {
+        files: vec![path.to_owned()],
+        ..ImpactRequest::default()
+    };
+    let answer = impact(&index_of(fixture)?, Freshness::Fresh, &request);
+    Ok(answer.tests.into_iter().map(|test| test.path).collect())
+}
+
 /// The roots of the projects, in the order of the output.
 pub(crate) fn roots(json: &Value) -> Vec<&str> {
     items(json, "projects")

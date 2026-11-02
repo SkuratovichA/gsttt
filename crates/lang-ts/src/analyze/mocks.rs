@@ -67,3 +67,100 @@ impl<'a> Visit<'a> for Uses<'_> {
         self.found |= name == self.first || (self.has_arguments && name == "arguments");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use oxc_allocator::Allocator;
+    use oxc_ast::ast::Statement;
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+
+    use super::*;
+
+    /// What `replaces` says of the second argument of the call `vi.mock('./b', <factory>)`.
+    fn replaces_factory(factory: &str) -> bool {
+        let code = format!("vi.mock('./b', {factory})");
+        let allocator = Allocator::default();
+        let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "{code}: {:?}",
+            parsed.diagnostics
+        );
+        let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.first() else {
+            panic!("{code} is no statement");
+        };
+        let Expression::CallExpression(call) = &statement.expression else {
+            panic!("{code} is no call");
+        };
+        replaces(call.arguments.get(1))
+    }
+
+    #[test]
+    fn a_factory_that_ignores_its_parameter_replaces_the_module() {
+        assert!(replaces_factory("() => ({})"));
+        assert!(replaces_factory("(original) => ({})"));
+        assert!(replaces_factory("function () { return {} }"));
+        assert!(replaces_factory("async (original) => { return {} }"));
+    }
+
+    #[test]
+    fn a_parameter_used_in_a_nested_closure_keeps_the_test() {
+        assert!(!replaces_factory("(original) => ({ run: () => original })"));
+        assert!(!replaces_factory(
+            "async (original) => ({ run: async () => (await original()).run() })"
+        ));
+    }
+
+    #[test]
+    fn a_first_parameter_with_a_default_value_is_a_name_like_any_other() {
+        // The default is read where it is written, and it uses nothing here; a default that loads the module is a load of its own.
+        assert!(replaces_factory("(original = {}) => ({})"));
+        assert!(!replaces_factory("(original = {}) => ({ original })"));
+        assert!(!replaces_factory("({ a } = {}) => ({})"));
+    }
+
+    #[test]
+    fn arguments_in_a_function_expression_is_the_first_parameter() {
+        assert!(!replaces_factory("function () { return arguments[0] }"));
+        assert!(!replaces_factory(
+            "function (original) { return arguments }"
+        ));
+        // An arrow function has no `arguments` of its own.
+        assert!(replaces_factory("() => ({ n: arguments.length })"));
+    }
+
+    #[test]
+    fn a_parameter_that_a_nested_function_shadows_keeps_the_test() {
+        // The inner `original` is another variable, but the check does not tell, so the test stays.
+        assert!(!replaces_factory(
+            "(original) => ({ run: (original) => original })"
+        ));
+        assert!(!replaces_factory(
+            "function (original) { var original = 1; return { original } }"
+        ));
+    }
+
+    #[test]
+    fn a_parenthesised_factory_is_read_as_the_factory_inside() {
+        assert!(replaces_factory("(() => ({}))"));
+        assert!(replaces_factory("((() => ({})))"));
+        assert!(!replaces_factory("((original) => original)"));
+    }
+
+    #[test]
+    fn a_factory_under_satisfies_or_as_is_read_as_the_factory_inside() {
+        assert!(replaces_factory("(() => ({})) satisfies Factory"));
+        assert!(replaces_factory("(() => ({})) as Factory"));
+        assert!(!replaces_factory(
+            "((original) => original) satisfies Factory"
+        ));
+    }
+
+    #[test]
+    fn a_factory_that_is_not_a_function_here_keeps_the_test() {
+        assert!(!replaces_factory("factory"));
+        assert!(!replaces_factory("{ spy: true }"));
+        assert!(!replaces_factory("makeFactory()"));
+    }
+}

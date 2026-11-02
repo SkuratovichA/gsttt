@@ -4,7 +4,7 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, imports, run, status, unread};
+use crate::support::{NOTHING, imports, run, status, tests_run_by, unread};
 
 #[test]
 #[scenario("typescript", "Every import form is read")]
@@ -177,6 +177,82 @@ fn a_mock_that_is_not_hoisted_does_not_replace_the_module() -> Result<(), Box<dy
         .collect();
     assert_eq!(imports(&json, "src/late.test.ts"), expected);
     insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+/// The tests of `unsure-mocks` that replace `src/lib.ts` with a factory and also name it in another call of `vi` or `jest`, so that they may run its code. `src/replaced.test.ts` replaces it and does nothing else.
+const UNSURE: [&str; 13] = [
+    "create-mock",
+    "deep-unmock",
+    "do-mock",
+    "dont-mock",
+    "gen-mock",
+    "import-mock",
+    "jest-unmock",
+    "mocked-twice",
+    "require-mock",
+    "set-mock",
+    "unstable-mock",
+    "vi-do-unmock",
+    "vi-unmock",
+];
+
+#[test]
+fn a_test_that_also_names_a_replaced_module_in_another_mock_call_is_listed()
+-> Result<(), Box<dyn Error>> {
+    let expected = UNSURE.map(|name| format!("src/{name}.test.ts"));
+
+    let mut tests = tests_run_by("unsure-mocks", "src/dep.ts")?;
+    tests.sort();
+
+    assert_eq!(
+        tests, expected,
+        "only src/replaced.test.ts runs none of src/lib.ts"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A load named at run time leaves no mock replacing its module"
+)]
+fn a_load_named_at_run_time_leaves_no_mock_replacing_its_module() -> Result<(), Box<dyn Error>> {
+    let json = run("named-loads")?;
+    for name in [
+        "import-name",
+        "require-name",
+        "import-actual-name",
+        "require-actual-name",
+    ] {
+        assert_eq!(
+            imports(&json, &format!("src/{name}.test.ts")),
+            ["./lib mock @3 -> file src/lib.ts"],
+            "{name}"
+        );
+    }
+    assert_eq!(
+        imports(&json, "src/replaced.test.ts"),
+        ["./lib mock @1 replaces -> file src/lib.ts"]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_test_that_loads_a_module_named_at_run_time_is_listed() -> Result<(), Box<dyn Error>> {
+    let mut tests = tests_run_by("named-loads", "src/dep.ts")?;
+    tests.sort();
+
+    assert_eq!(
+        tests,
+        [
+            "src/import-actual-name.test.ts",
+            "src/import-name.test.ts",
+            "src/require-actual-name.test.ts",
+            "src/require-name.test.ts",
+        ],
+        "only src/replaced.test.ts loads nothing that may be src/lib.ts"
+    );
     Ok(())
 }
 

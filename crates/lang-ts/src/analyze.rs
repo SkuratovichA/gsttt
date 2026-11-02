@@ -87,6 +87,7 @@ pub(crate) fn analyze(
         symbols: Recorder::collect(program, index),
         done: BTreeSet::new(),
         top_call: None,
+        names_a_load: false,
         names: BTreeMap::new(),
         classes: Vec::new(),
         gates,
@@ -182,6 +183,8 @@ struct Analyzer<'p, 'a> {
     done: BTreeSet<u32>,
     /// The start of the call that is a statement of its own, when the walk is in a statement of the file's top level that is one: a mock hoists to the top of the file only there.
     top_call: Option<u32>,
+    /// Whether the file takes a module by a name it does not spell out, as `import(name)`, `require(name)` and `vi.importActual(name)` do: such a load may be of a module a mock replaces, so none counts as replaced.
+    names_a_load: bool,
     /// The name a call is stored under, `appRouter` for `const appRouter = router({…})`, by the start of the call.
     names: BTreeMap<u32, String>,
     classes: Vec<ClassFrame>,
@@ -272,6 +275,7 @@ impl<'a> Analyzer<'_, 'a> {
         }
         let line = self.line(span.start);
         let Some(spec) = argument.and_then(literal_text) else {
+            self.names_a_load = true;
             self.unread(span, line, UnresolvedReason::NonLiteral);
             return;
         };
@@ -1068,8 +1072,14 @@ impl<'a> Analyzer<'_, 'a> {
             mut out,
             mut hosts,
             exports_unknown,
+            names_a_load,
             ..
         } = self;
+        if names_a_load {
+            for import in &mut out.imports {
+                import.flags = import.flags.without(ImportFlags::REPLACES);
+            }
+        }
         out.extra.makers = makers::exported(&makers, &out.extra.exports);
         hosts.extend(
             makers
@@ -1423,11 +1433,13 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             self.symbols.call_write(&names);
             if let Some(callee) = dotted(&names) {
                 // A module named at run time is neither an import nor a blind spot, so only a literal one goes to `load`.
-                if let Some(call) = module_call(&callee)
-                    && argument.and_then(literal_text).is_some()
-                {
-                    let flags = self.flags_of(&call, &callee, it);
-                    self.load(it.span, argument, call.kind(), flags, Taking::Nothing);
+                if let Some(call) = module_call(&callee) {
+                    if argument.and_then(literal_text).is_some() {
+                        let flags = self.flags_of(&call, &callee, it);
+                        self.load(it.span, argument, call.kind(), flags, Taking::Nothing);
+                    } else {
+                        self.names_a_load = true;
+                    }
                 }
                 self.call(it, &callee);
             }
