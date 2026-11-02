@@ -2,6 +2,7 @@
 
 use gsttt_config::builtin_packs;
 use gsttt_core::Setup;
+use gsttt_core::rules::RelativeWithoutBase;
 
 use crate::tree::{Tree, evaluate_at, fixture};
 
@@ -116,6 +117,47 @@ fn a_misspelt_rule_key_is_named_with_its_line() {
         "{message}"
     );
     assert!(message.contains("`calee`"), "{message}");
+}
+
+#[gsttt_scenario::scenario("config", "A pack sets what a relative request means")]
+#[test]
+fn a_pack_sets_what_a_relative_request_means() {
+    for (written, expected) in [
+        ("rooted", RelativeWithoutBase::Rooted),
+        ("unread", RelativeWithoutBase::Unread),
+    ] {
+        let tree = Tree::empty();
+        tree.write(".gsttt/packs/ktor.toml", &with_relative(written));
+        let setup = tree.evaluate().unwrap();
+        assert_eq!(setup.packs[0].relative_without_base, Some(expected));
+    }
+    let tree = Tree::empty();
+    tree.write(".gsttt/packs/ktor.toml", KTOR);
+    assert_eq!(
+        tree.evaluate().unwrap().packs[0].relative_without_base,
+        None
+    );
+}
+
+#[gsttt_scenario::scenario("config", "A relative setting that is neither value is refused")]
+#[test]
+fn a_relative_setting_that_is_neither_value_is_refused() {
+    let message = failure_of_pack(&with_relative("skipped"));
+    // The setting sits on the fifth line of the file.
+    assert!(
+        message.starts_with(".gsttt/packs/ktor.toml:5:"),
+        "{message}"
+    );
+    assert!(message.contains("relative_without_base"), "{message}");
+    assert!(message.contains("skipped"), "{message}");
+}
+
+/// [`KTOR`] with `relative_without_base` set to `value` on its fifth line.
+fn with_relative(value: &str) -> String {
+    KTOR.replace(
+        "[[calls]]",
+        &format!("relative_without_base = \"{value}\"\n\n[[calls]]"),
+    )
 }
 
 #[test]

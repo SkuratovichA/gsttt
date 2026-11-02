@@ -1,0 +1,283 @@
+---
+source: crates/lang-ts/tests/typescript/http.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "http * /items",
+          "line": 6,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http GET /users",
+          "line": 7,
+          "role": "calls",
+          "via": "axios"
+        },
+        {
+          "key": "http GET /users/me",
+          "line": 8,
+          "role": "calls",
+          "via": "axios"
+        },
+        {
+          "key": "http * /items/{}",
+          "line": 9,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http * /x",
+          "line": 13,
+          "role": "calls",
+          "via": "fetch"
+        },
+        {
+          "key": "http GET /users",
+          "line": 17,
+          "role": "calls",
+          "via": "axios"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "absolute",
+        "behind",
+        "climbing",
+        "data",
+        "dotted",
+        "made",
+        "nested",
+        "page",
+        "plain",
+        "query",
+        "template"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "axios"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "axios",
+          "to": {
+            "external": "axios"
+          }
+        }
+      ],
+      "path": "src/api.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "id",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "BASE",
+            "uses": []
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "bare",
+            "uses": [
+              "axios"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "page",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "plain",
+            "uses": [
+              "axios"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "made",
+            "uses": [
+              "bare"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "template",
+            "uses": [
+              "id"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "climbing",
+            "uses": []
+          },
+          {
+            "end": 11,
+            "line": 11,
+            "name": "data",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 12,
+            "name": "query",
+            "uses": []
+          },
+          {
+            "end": 13,
+            "line": 13,
+            "name": "absolute",
+            "uses": []
+          },
+          {
+            "end": 14,
+            "line": 14,
+            "name": "dotted",
+            "uses": [
+              "id"
+            ]
+          },
+          {
+            "end": 15,
+            "line": 15,
+            "name": "nested",
+            "uses": [
+              "id"
+            ]
+          },
+          {
+            "end": 16,
+            "line": 16,
+            "name": "unread",
+            "uses": [
+              "BASE",
+              "axios"
+            ]
+          },
+          {
+            "end": 17,
+            "line": 17,
+            "name": "behind",
+            "uses": [
+              "unread"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "BASE",
+          "axios"
+        ]
+      },
+      "tags": 0,
+      "unresolved": [
+        {
+          "detail": "fetch",
+          "line": 10,
+          "reason": {
+            "detail": "relative URL with no readable base",
+            "reason": "unsupported"
+          }
+        },
+        {
+          "detail": "fetch",
+          "line": 14,
+          "reason": {
+            "detail": "relative URL with no readable base",
+            "reason": "unsupported"
+          }
+        },
+        {
+          "detail": "fetch",
+          "line": 15,
+          "reason": {
+            "detail": "relative URL with no readable base",
+            "reason": "unsupported"
+          }
+        }
+      ]
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file or in a file of the same project that it is imported from; a URL held in a function-local value or a parameter, and a constant of another package, are not read",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the imports and the variables of the file with no scope resolution, so a parameter or a variable inside a function that is named like a client the file imports or makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "axios",
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

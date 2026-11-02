@@ -1,6 +1,7 @@
 # fetch: a request to a URL. The method is the `method` option, any method when it is missing.
 name = "fetch"
 language = "ts"
+relative_without_base = "rooted"
 
 [[calls]]
 callee = ["fetch", "window.fetch", "globalThis.fetch"]

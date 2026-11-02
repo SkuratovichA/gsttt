@@ -2,6 +2,7 @@
 name = "requests"
 language = "python"
 detect = ["requests"]
+relative_without_base = "unread"
 
 [[calls]]
 callee = [

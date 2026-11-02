@@ -2,6 +2,7 @@
 name = "reqwest"
 language = "rust"
 detect = ["reqwest"]
+relative_without_base = "unread"
 
 [[calls]]
 callee = ["reqwest.get", "reqwest.blocking.get"]

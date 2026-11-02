@@ -2,6 +2,7 @@
 name = "httpx"
 language = "python"
 detect = ["httpx"]
+relative_without_base = "unread"
 
 [[calls]]
 callee = [

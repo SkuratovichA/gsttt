@@ -64,7 +64,8 @@ expression: packs
     "decorators": [],
     "chains": [],
     "embeds": [],
-    "assigns": []
+    "assigns": [],
+    "relative_without_base": "rooted"
   },
   {
     "name": "drizzle",
@@ -192,7 +193,8 @@ expression: packs
     "decorators": [],
     "chains": [],
     "embeds": [],
-    "assigns": []
+    "assigns": [],
+    "relative_without_base": "rooted"
   },
   {
     "name": "graphql",

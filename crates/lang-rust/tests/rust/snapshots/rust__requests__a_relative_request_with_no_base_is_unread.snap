@@ -1,0 +1,33 @@
+---
+source: crates/lang-rust/tests/rust/requests.rs
+expression: "out.sites(\"src/client.rs\")"
+---
+{
+  "contracts": [
+    {
+      "key": "http GET /x",
+      "line": 11,
+      "role": "calls",
+      "via": "reqwest"
+    }
+  ],
+  "embedded": [],
+  "unresolved": [
+    {
+      "detail": "reqwest.get",
+      "line": 2,
+      "reason": {
+        "detail": "relative URL with no readable base",
+        "reason": "unsupported"
+      }
+    },
+    {
+      "detail": "client.get",
+      "line": 7,
+      "reason": {
+        "detail": "relative URL with no readable base",
+        "reason": "unsupported"
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 name = "axios"
 language = "ts"
 detect = ["axios"]
+relative_without_base = "rooted"
 
 [[calls]]
 callee = [

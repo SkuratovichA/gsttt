@@ -65,6 +65,14 @@ expression: pack_schema()
       "items": {
         "$ref": "#/definitions/ImportRule"
       }
+    },
+    "relative_without_base": {
+      "description": "What a request of this pack means when its target is relative and no base URL goes before it. Unset: a client the pack takes a receiver for is read as `rooted`, and a call with no receiver is no request.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/RelativeWithoutBase"
+        }
+      ]
     }
   },
   "additionalProperties": false,
@@ -409,6 +417,21 @@ expression: pack_schema()
         "from",
         "kind",
         "role"
+      ]
+    },
+    "RelativeWithoutBase": {
+      "description": "What a request with a relative target and no base URL means, for every client of a pack.",
+      "oneOf": [
+        {
+          "description": "It resolves against the page, so `fetch('items')` calls `/items`.",
+          "type": "string",
+          "const": "rooted"
+        },
+        {
+          "description": "It fails at run time, so coverage names the site as unread.",
+          "type": "string",
+          "const": "unread"
+        }
       ]
     }
   }

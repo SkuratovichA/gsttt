@@ -262,7 +262,7 @@ pub fn path_after_origin(url: &str) -> Option<&str> {
 }
 
 /// Whether `text` can be the scheme of a URL, see [`path_after_origin`].
-fn is_scheme(text: &str) -> bool {
+pub(crate) fn is_scheme(text: &str) -> bool {
     let mut characters = text.chars();
     characters
         .next()
@@ -282,6 +282,13 @@ fn split_host(rest: &str) -> (&str, &str) {
 /// `url` up to its query string or fragment, which start at the first `?` or `#`: `/a?x=1#top` and `/a#top?x=1` give `/a`, and a URL with neither is returned whole. Nothing is trimmed, so a caller decides whether whitespace goes before or after the cut.
 pub fn without_query_and_fragment(url: &str) -> &str {
     url.split_once(['?', '#']).map_or(url, |(before, _)| before)
+}
+
+/// Whether `url` has a `..` segment in its path, which climbs out of a directory that the text does not hold. A query string or fragment is not part of the path: `/a?back=../x` has none.
+pub fn has_parent_segment(url: &str) -> bool {
+    without_query_and_fragment(url)
+        .split('/')
+        .any(|segment| segment == "..")
 }
 
 /// The segment that stands for a computed or named part of an HTTP path in a normalised key: `/users/{}`.
