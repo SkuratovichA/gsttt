@@ -53,3 +53,7 @@ A drop in a field score was first explained as a stale snapshot of the index, bu
 ## A speed difference of 125 against 137 ms was noise
 
 One timing of each side gave 125 against 137 ms, and the difference was within the spread of repeated runs of one binary. Fix: time each side several times, alternating the two, and report the median and the spread.
+
+## A property test that failed on one seed was a bug in the code
+
+The property test of a base URL followed by a literal failed on some seeds in CI, twice in a day, and was first taken for a flaky generator. The case was `${x}0//{}`: a check that the protocol "contains a placeholder" stood where "is a placeholder" was meant, so `${x}0` passed for the protocol of an origin and the path was lost. Fix: treat a property test that fails on one seed as a bug in the code until shown otherwise, shrink it to its input, and pin that input in a plain deterministic test beside the property.
