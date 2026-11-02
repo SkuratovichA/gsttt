@@ -101,7 +101,7 @@ pub struct ImpactArgs {
     #[arg(long, value_name = "REV")]
     pub base: Option<String>,
 
-    /// Follow dependents at most N hops through code from a changed file, the tests excepted, which are followed to every depth; a hop across a contract does not count. With `--name` the default is 1
+    /// Follow dependents at most N hops through code from a changed file, one when left out; a hop across a contract does not count, and a large N runs to the end
     #[arg(long, value_name = "N")]
     pub depth: Option<u32>,
 
@@ -109,7 +109,7 @@ pub struct ImpactArgs {
     #[arg(long)]
     pub no_tests: bool,
 
-    /// Ask about a name that the paths declare, such as `getHash` or `Runner.start`, and get its direct callers and the tests that reach it. May be repeated, and needs paths
+    /// Ask about a name that the paths declare, such as `getHash` or `Runner.start`, and get its direct callers and the tests among them. May be repeated, and needs paths
     #[arg(long = "name", value_name = "NAME")]
     pub names: Vec<String>,
 }

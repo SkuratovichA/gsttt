@@ -467,7 +467,7 @@ async fn depth_limits_the_walk() {
         .call("impact", json!({ "paths": ["src/a.ts"], "depth": 1 }))
         .await;
     let far = session
-        .call("impact", json!({ "paths": ["src/a.ts"] }))
+        .call("impact", json!({ "paths": ["src/a.ts"], "depth": 3 }))
         .await;
 
     let one_hop = ImpactRequest {
@@ -477,6 +477,7 @@ async fn depth_limits_the_walk() {
     };
     let every_hop = ImpactRequest {
         files: vec!["src/a.ts".to_owned()],
+        depth: Some(3),
         ..ImpactRequest::default()
     };
     assert_eq!(near.text, impact_text(&source, &one_hop, Entries::Capped));
@@ -517,7 +518,7 @@ async fn impact_takes_names_and_answers_as_the_command_line_does() {
     assert!(
         reply
             .text
-            .starts_with("impact of foo in a.ts, within 1 hop through code; tests at any depth\n"),
+            .starts_with("impact of foo in a.ts, within 1 hop through code\n"),
         "{}",
         reply.text
     );

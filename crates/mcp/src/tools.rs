@@ -71,15 +71,15 @@ impl ToolName {
     const fn description(self) -> &'static str {
         match self {
             Self::Impact => {
-                "Lists the files that a change to some files can break: the files that import them, directly or \
-                 through other files, and the files that share a contract with them (an HTTP route, a GraphQL \
-                 operation, a gRPC method, a table, a queue or an environment variable). Tests the change reaches \
-                 are listed apart. Call it before changing a file that other code may use, and with `changed` set \
+                "Lists the files that a change to some files can break: the files that import them, and the files that \
+                 share a contract with them (an HTTP route, a GraphQL operation, a gRPC method, a table, a queue or \
+                 an environment variable). It goes one hop through code, so it lists the files that use what changed \
+                 directly; a larger `depth` goes through other files. Tests within the depth are listed apart, \
+                 and those past it are only counted. Call it before changing a file that other code may use, and with `changed` set \
                  to true before finishing a task, to see what your edits reach. A question about one function, \
                  class, method or variable is asked with its name in `names`, beside the file that declares it in \
                  `paths`: the answer then lists its direct callers, the declarations that refer to it and the lines \
-                 they start on, and every test that reaches it at any depth, so ask again about a caller to go \
-                 further. The answer ends with what the index \
+                 they start on, and the tests among them, so ask again about a caller to go further. The answer ends with what the index \
                  covered and how fresh it is."
             }
             Self::Dependents => {

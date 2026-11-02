@@ -128,10 +128,11 @@ pub(crate) fn sites(fixture: &str) -> Result<Vec<String>, Box<dyn Error>> {
     Ok(sites)
 }
 
-/// What a change to the file at `path` affects in `fixture`, as `<path> <distance> <reason>` in the order of the answer, without the tests.
+/// What a change to the file at `path` affects in `fixture`, to the end of the walk, as `<path> <distance> <reason>` in the order of the answer, without the tests.
 pub(crate) fn affected_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let request = ImpactRequest {
         files: vec![path.to_owned()],
+        depth: Some(u32::MAX),
         ..ImpactRequest::default()
     };
     let answer = impact(&index_of(fixture)?, Freshness::Fresh, &request);
@@ -142,10 +143,11 @@ pub(crate) fn affected_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<
         .collect())
 }
 
-/// The tests a change to the file at `path` reaches in `fixture`, as `impact` lists them, in the order of the answer.
+/// The tests a change to the file at `path` reaches in `fixture`, to the end of the walk, as `impact` lists them, in the order of the answer.
 pub(crate) fn tests_run_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let request = ImpactRequest {
         files: vec![path.to_owned()],
+        depth: Some(u32::MAX),
         ..ImpactRequest::default()
     };
     let answer = impact(&index_of(fixture)?, Freshness::Fresh, &request);

@@ -29,7 +29,8 @@ fn changed_includes_untracked_files() {
     assert_eq!(answer["changed"], value!(["app/new.ts"]));
     let text = sandbox.run_in(&repo, &["impact", "--changed"]);
     assert!(
-        text.stdout.starts_with("impact of app/new.ts\n"),
+        text.stdout
+            .starts_with("impact of app/new.ts, within 1 hop through code\n"),
         "{text:?}"
     );
 }
@@ -107,14 +108,16 @@ fn a_named_path_on_disk_is_traced_and_depth_limits_the_walk() {
         "import { a } from './a';\nexport const c = a;\n",
     );
 
-    let everything = json(&sandbox.run_in(&repo, &["--json", "impact", "lib/util.ts"]));
-    assert_eq!(paths(&everything["affected"]), ["app/a.ts", "app/c.ts"]);
-    assert_eq!(everything["depth"], Value::Null);
+    let by_default = json(&sandbox.run_in(&repo, &["--json", "impact", "lib/util.ts"]));
+    assert_eq!(paths(&by_default["affected"]), ["app/a.ts"]);
+    assert_eq!(by_default["depth"], 1);
 
-    let one_hop =
-        json(&sandbox.run_in(&repo, &["--json", "impact", "--depth", "1", "lib/util.ts"]));
-    assert_eq!(paths(&one_hop["affected"]), ["app/a.ts"]);
-    assert_eq!(one_hop["depth"], 1);
+    let everything = json(&sandbox.run_in(
+        &repo,
+        &["--json", "impact", "--depth", "4294967295", "lib/util.ts"],
+    ));
+    assert_eq!(paths(&everything["affected"]), ["app/a.ts", "app/c.ts"]);
+    assert_eq!(everything["depth"], 4_294_967_295_u32);
 }
 
 #[test]
@@ -155,7 +158,7 @@ fn names_go_to_the_query_for_every_path_and_a_walk_by_name_takes_one_hop_unless_
 
     let whole = json(&sandbox.run_in(&repo, &["--json", "impact", "lib/util.ts"]));
     assert!(whole.get("names").is_none(), "{whole}");
-    assert_eq!(whole["depth"], Value::Null);
+    assert_eq!(whole["depth"], 1);
 }
 
 #[scenario("cli", "A blank --name exits 2")]
@@ -242,9 +245,8 @@ fn name_asks_about_a_name() {
     let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--name", "foo"]);
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
-        text.stdout.starts_with(
-            "impact of foo in src/a.ts, within 1 hop through code; tests at any depth\n"
-        ),
+        text.stdout
+            .starts_with("impact of foo in src/a.ts, within 1 hop through code\n"),
         "{text:?}"
     );
     assert!(
@@ -637,7 +639,7 @@ fn name_asks_about_a_member_of_a_class() {
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
         text.stdout
-            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop through code; tests at any depth\n"),
+            .starts_with("impact of Runner.start in src/runner.ts, within 1 hop through code\n"),
         "{text:?}"
     );
     assert!(
@@ -679,7 +681,11 @@ fn nothing_changed_is_an_answer() {
 
     let run = sandbox.run_in(&repo, &["impact", "--changed"]);
     assert_eq!(run.code, Some(0), "{run:?}");
-    assert!(run.stdout.starts_with("impact of no files\n"), "{run:?}");
+    assert!(
+        run.stdout
+            .starts_with("impact of no files, within 1 hop through code\n"),
+        "{run:?}"
+    );
 }
 
 #[test]
