@@ -59,6 +59,28 @@ expression: packs
         "key": "$arg1.url|$arg1",
         "method": "$arg1.method|$arg2.method",
         "receiver": null
+      },
+      {
+        "callee": "axios.request",
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1.url",
+        "method": "$arg1.method",
+        "receiver": null
+      },
+      {
+        "callee": [
+          "*.request",
+          "*.*.request"
+        ],
+        "kind": "http",
+        "role": "calls",
+        "key": "$arg1.url",
+        "method": "$arg1.method",
+        "receiver": {
+          "from": "axios.create",
+          "key": "$arg1.baseURL"
+        }
       }
     ],
     "decorators": [],

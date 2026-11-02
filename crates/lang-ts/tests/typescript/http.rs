@@ -664,3 +664,60 @@ fn a_route_behind_a_global_prefix_keeps_the_facts_of_other_rules_on_its_line()
     );
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A request with a config is a call")]
+fn a_request_with_a_config_is_a_call() -> Result<(), Box<dyn Error>> {
+    let json = run("axios-request")?;
+    assert_eq!(
+        contracts(&json, "src/client.ts"),
+        ["calls http POST /bookings @3", "calls http * /users @4"]
+    );
+    assert_eq!(unread(&json, "src/client.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A request on a client made by axios.create is under its base"
+)]
+fn a_request_on_a_client_made_by_axios_create_is_under_its_base() -> Result<(), Box<dyn Error>> {
+    let json = run("axios-request-client")?;
+    assert_eq!(
+        contracts(&json, "src/client.ts"),
+        ["calls http DELETE /api/users @4"]
+    );
+    assert_eq!(unread(&json, "src/client.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A request whose config is not read is an unread site")]
+fn a_request_whose_config_is_not_read_is_an_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("axios-request-unread")?;
+    // A template with a literal path is read like the other rules read it; a config that is no object literal names no url, so the site is unread.
+    assert_eq!(contracts(&json, "src/client.ts"), ["calls http * /u/{} @7"]);
+    assert_eq!(
+        unread(&json, "src/client.ts"),
+        ["@6 non-literal axios.request"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A request on a receiver that no axios.create makes is silent"
+)]
+fn a_request_on_a_receiver_that_no_axios_create_makes_is_silent() -> Result<(), Box<dyn Error>> {
+    let json = run("axios-request-other-receiver")?;
+    assert_eq!(contracts(&json, "src/cache.ts"), NOTHING);
+    assert_eq!(linked(&json), NOTHING);
+    assert_eq!(unread(&json, "src/cache.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

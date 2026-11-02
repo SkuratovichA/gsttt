@@ -318,3 +318,17 @@ fn a_route_on_a_router_made_in_another_file_with_a_prefix_that_is_not_text_is_un
     assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A request on a client made in another file is called")]
+fn a_request_on_a_client_made_in_another_file_is_called() -> Result<(), Box<dyn Error>> {
+    let json = run("axios-request-imported")?;
+    assert_eq!(
+        linked(&json),
+        ["calls http GET /api/users @3 in src/users.ts"]
+    );
+    assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
+    assert_eq!(unread(&json, "src/users.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

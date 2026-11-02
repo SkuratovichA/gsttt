@@ -1,4 +1,4 @@
-# axios: calls on the default client, on a client made by axios.create (its baseURL is the prefix) and axios(config).
+# axios: calls on the default client, on a client made by axios.create (its baseURL is the prefix), axios(config) and request(config).
 name = "axios"
 language = "ts"
 detect = ["axios"]
@@ -48,3 +48,21 @@ kind = "http"
 role = "calls"
 key = "$arg1.url|$arg1"
 method = "$arg1.method|$arg2.method"
+
+[[calls]]
+callee = "axios.request"
+kind = "http"
+role = "calls"
+key = "$arg1.url"
+method = "$arg1.method"
+
+[[calls]]
+callee = [
+  "*.request",
+  "*.*.request",
+]
+kind = "http"
+role = "calls"
+key = "$arg1.url"
+method = "$arg1.method"
+receiver = { from = "axios.create", key = "$arg1.baseURL" }
