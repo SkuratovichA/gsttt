@@ -336,7 +336,7 @@ impl Project for PythonProject {
     }
 
     fn link(&self, input: &LinkInput<'_, PyExtra>) -> Linked {
-        crate::link::link(self, input).into()
+        crate::link::link(self, input)
     }
 }
 

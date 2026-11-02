@@ -1,6 +1,7 @@
 //! The per-file data the link step needs, cached with the facts: the routes declared on routers, the prefixes routers declare for themselves, where routers are mounted and what the file's imports bound.
 
 use gsttt_core::fact::{ContractFact, Line};
+use gsttt_core::rules::Reading;
 use serde::{Deserialize, Serialize};
 
 /// What `parse` keeps for `link`. Empty vectors are left out of the cache entry.
@@ -24,6 +25,8 @@ pub struct PyExtra {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Route {
     pub(crate) var: String,
+    /// The decorator as written, `router.get`, which names the route in a site `link` cannot read.
+    pub(crate) callee: String,
     /// The fact as the route's own decorator or call reads it: the router's own prefix is not in it, because whether that prefix applies depends on how the router is mounted.
     pub(crate) fact: ContractFact,
 }
@@ -32,8 +35,8 @@ pub(crate) struct Route {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RouterPrefix {
     pub(crate) var: String,
-    /// `None` when the constructor gives a prefix that is not text, `APIRouter(prefix=settings.API_PREFIX)`, so that the path behind the router is not known.
-    pub(crate) prefix: Option<String>,
+    /// [`Reading::Unread`] when the constructor gives a prefix that is not text, `APIRouter(prefix=settings.API_PREFIX)`, so that the path behind the router is not known. A router with no prefix, or an empty one, has no entry.
+    pub(crate) prefix: Reading,
 }
 
 /// `app.include_router(bookings.router, prefix="/api")`, `app.register_blueprint(bp, url_prefix="/api")` or Django's `path("api/", include("bookings.urls"))`.
@@ -42,13 +45,12 @@ pub(crate) struct Mount {
     pub(crate) line: Line,
     /// The router the mount is called on, `app` in `app.include_router(…)`; empty for Django.
     pub(crate) receiver: String,
+    /// The call as written, `app.include_router`, which names the mount in a site `link` cannot read.
+    pub(crate) callee: String,
     pub(crate) target: Target,
-    /// The prefix as written; `None` when there is none or when it is not a literal, which `unread_prefix` tells apart.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) prefix: Option<String>,
-    /// Whether the call gives a prefix that is not a literal, so that the path the mounted router is served at is not known.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) unread_prefix: bool,
+    /// The prefix the call gives: [`Reading::Unread`] when it is not text, so that the path the mounted router is served at is not known.
+    #[serde(default, skip_serializing_if = "Reading::is_absent")]
+    pub(crate) prefix: Reading,
     /// Whether the prefix replaces the mounted router's own, as Flask's `register_blueprint(url_prefix=…)` does, or comes before it, as FastAPI's `include_router(prefix=…)` and Django's `include` do.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) replaces: bool,

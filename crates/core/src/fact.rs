@@ -263,6 +263,17 @@ pub struct UnresolvedSite {
     pub detail: String,
 }
 
+impl UnresolvedSite {
+    /// A site at `line` whose value is not a literal, with `detail` naming the code as written.
+    pub fn non_literal(line: Line, detail: impl Into<String>) -> Self {
+        Self {
+            line,
+            reason: UnresolvedReason::NonLiteral,
+            detail: detail.into(),
+        }
+    }
+}
+
 /// Everything one connector read out of one file. Pure data: the parse cache stores it by content hash.
 #[derive(
     Clone,

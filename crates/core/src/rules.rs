@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::contract::{
     ContractKey, ContractKind, PARAMETER, Role, normalize_http_path, path_after_origin,
 };
-use crate::fact::{ContractFact, Embedded, Line, UnresolvedReason, UnresolvedSite};
+use crate::fact::{ContractFact, Embedded, Line, UnresolvedSite};
 
 /// The rules for one framework or library.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -64,7 +64,7 @@ pub struct CallRule {
     /// Where the key is: `$arg1`, `$arg1.url`, `$url|$arg1`.
     #[schemars(with = "String")]
     pub key: ValueExpr,
-    /// For HTTP, where the method is: `GET`, `$callee`, `$arg2.method|GET`. Unset: any method (`*`).
+    /// For HTTP, where the method is: `GET`, `$callee`, `$arg2.method|GET`. Unset: any method (`*`), as is a method the site holds but cannot read, such as `{ method: verb }` for `$arg2.method`.
     #[serde(default)]
     #[schemars(with = "Option<String>")]
     pub method: Option<ValueExpr>,
@@ -186,16 +186,11 @@ pub struct Prefix {
 }
 
 impl Prefix {
-    /// What `key` reads at `maker`, the decorator or call that `from` matched: [`Reading::Absent`] when `key` is unset. A connector that would serve or call a route at a wrong path behind a prefix it cannot read asks for this and treats [`Reading::Unread`] as a blind spot.
+    /// What `key` reads at `maker`, the decorator or call that `from` matched: [`Reading::Absent`] when `key` is unset. A connector that would serve a route at a wrong path behind a prefix it cannot read treats [`Reading::Unread`] as a blind spot. The base of a client it may read as empty, since the origin is often an environment variable and the path after it is still right.
     pub fn reading(&self, maker: &(impl Site + ?Sized)) -> Reading {
         self.key
             .as_ref()
             .map_or(Reading::Absent, |key| key.read(maker))
-    }
-
-    /// The prefix at `maker`, empty when `key` is unset or yields nothing there. A prefix held in a variable reads as empty too, which suits the base of a client, whose origin is often an environment variable and whose path after it is still right; a router's or a class's prefix goes to [`Prefix::reading`].
-    pub fn read(&self, maker: &(impl Site + ?Sized)) -> String {
-        self.reading(maker).text().unwrap_or_default()
     }
 }
 
@@ -316,23 +311,36 @@ pub trait Site {
 }
 
 /// What a [`ValueExpr`] reads at a site. `None` from [`ValueExpr::eval`] covers both of the last two, and only [`Reading::Unread`] means the site has a value that the connector could not read.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Reading {
     /// The text of the first alternative that yields one.
     Text(String),
     /// The site carries no value for any alternative: `@Controller()` has no prefix.
+    #[default]
     Absent,
     /// The site carries a value that is not text here and no alternative gives text: `@Controller(PREFIX)`, `APIRouter(prefix=settings.PREFIX)`.
     Unread,
 }
 
 impl Reading {
+    /// Whether the site carries no value, which is what a cached reading leaves out.
+    pub fn is_absent(&self) -> bool {
+        matches!(self, Self::Absent)
+    }
+
     /// The text, when there is some.
     pub fn text(self) -> Option<String> {
         match self {
             Self::Text(text) => Some(text),
             Self::Absent | Self::Unread => None,
         }
+    }
+}
+
+impl From<ValueSource> for ValueExpr {
+    /// The expression that reads one source, such as the keyword a connector names itself rather than a pack: `ValueSource::Keyword("prefix".into())` is `$prefix`.
+    fn from(source: ValueSource) -> Self {
+        Self(vec![source])
     }
 }
 
@@ -505,11 +513,7 @@ impl Outcome {
 
     /// A blind spot at `line`; `what` names the site as written: the callee, decorator, root or target.
     pub fn blind(line: Line, what: &str) -> Self {
-        Self::Blind(UnresolvedSite {
-            line,
-            reason: UnresolvedReason::NonLiteral,
-            detail: what.to_owned(),
-        })
+        Self::Blind(UnresolvedSite::non_literal(line, what))
     }
 }
 
@@ -744,11 +748,7 @@ impl EmbedRule {
                 text,
                 via: pack.to_owned(),
             }),
-            _ => Err(UnresolvedSite {
-                line,
-                reason: UnresolvedReason::NonLiteral,
-                detail: callee.to_owned(),
-            }),
+            _ => Err(UnresolvedSite::non_literal(line, callee)),
         }
     }
 }
@@ -756,6 +756,7 @@ impl EmbedRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fact::UnresolvedReason;
 
     /// A call as a connector would hand it over: `None` arguments are not literals.
     struct Call<'a> {
@@ -1481,8 +1482,6 @@ mod tests {
             Reading::Unread
         );
         assert_eq!(unkeyed.reading(&unread_arg()), Reading::Absent);
-        assert_eq!(prefix.read(&read(Slot::Absent, Slot::Unread)), "");
-        assert_eq!(prefix.read(&read(Slot::Absent, Slot::Text("/v1"))), "/v1");
     }
 
     #[test]

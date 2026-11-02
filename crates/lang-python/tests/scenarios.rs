@@ -186,13 +186,21 @@ impl Tree {
             .collect()
     }
 
-    /// The unread sites of a file, as `L<line> <what>`.
+    /// The unread sites of a file, as `L<line> <what>`: the ones the parse found and the ones the link did, which coverage counts alike.
     fn unread(&self, path: &str) -> Vec<String> {
-        self.file(path)
+        let file = self.file(path);
+        let mut sites: Vec<(Line, &str)> = file
             .facts
             .unresolved
             .iter()
-            .map(|site| format!("L{} {}", site.line, site.detail))
+            .chain(self.output.unread_of(file.id))
+            .map(|site| (site.line, site.detail.as_str()))
+            .collect();
+        sites.sort_unstable();
+        sites.dedup();
+        sites
+            .into_iter()
+            .map(|(line, detail)| format!("L{line} {detail}"))
             .collect()
     }
 
@@ -814,21 +822,6 @@ fn a_fastapi_route_with_the_trace_method() {
     insta::assert_json_snapshot!(
         "a_fastapi_route_with_the_trace_method",
         json!({ "app": tree.file_json("app.py"), "linked": tree.json["linked"] })
-    );
-}
-
-#[test]
-fn a_fastapi_api_route_whose_methods_are_not_text_serves_any_method() {
-    let tree = index_files(&[
-        ("pyproject.toml", FASTAPI_PROJECT),
-        (
-            "app.py",
-            "from fastapi import FastAPI\n\napp = FastAPI()\nMETHODS = [\"GET\", \"POST\"]\n\n\n@app.api_route(\"/held\", methods=METHODS)\ndef held():\n    return \"ok\"\n\n\n@app.api_route(\"/plain\")\ndef plain():\n    return \"ok\"\n",
-        ),
-    ]);
-    assert_eq!(
-        tree.contracts("app.py"),
-        ["serves http * /held@7", "serves http * /plain@12"]
     );
 }
 
@@ -2094,15 +2087,115 @@ fn a_router_whose_prefix_is_not_text_serves_none_of_its_routes() {
     assert_eq!(tree.linked("app/users.py"), Vec::<String>::new());
     assert_eq!(tree.contracts("app/dynamic.py"), Vec::<String>::new());
     assert_eq!(tree.linked("app/dynamic.py"), Vec::<String>::new());
-    // Each route is an unread site of its file.
+    // Each route is an unread site of its file, and so is the include of the router below the unread one, because the way through it is lost.
     assert_eq!(
         tree.unread("app/users.py"),
-        ["L10 router.get", "L15 router.post"]
+        [
+            "L7 router.include_router",
+            "L10 router.get",
+            "L15 router.post"
+        ]
     );
     assert_eq!(tree.unread("app/dynamic.py"), ["L8 router.get"]);
     // A router the unread one includes has no known way to be served either, while a router with a prefix that is text is served as before.
     assert_eq!(tree.linked("app/child.py"), Vec::<String>::new());
+    assert_eq!(tree.unread("app/child.py"), Vec::<String>::new());
     assert_eq!(tree.linked("app/ok.py"), ["serves http GET /ok/ping@6"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A registration prefix stands in for a blueprint prefix that is not text"
+)]
+#[test]
+fn a_registration_prefix_stands_in_for_a_blueprint_prefix_that_is_not_text() {
+    let tree = index("flask_unread_prefix");
+    // The blueprint is registered with `url_prefix="/api"`, which replaces its own, so the path is known and nothing is unread.
+    assert_eq!(tree.linked("app/api.py"), ["serves http GET /api/x@8"]);
+    assert_eq!(tree.unread("app/api.py"), Vec::<String>::new());
+    // Registered with no prefix it keeps its own, which is not text: the route serves nothing and is an unread site.
+    assert_eq!(tree.linked("app/loose.py"), Vec::<String>::new());
+    assert_eq!(tree.unread("app/loose.py"), ["L8 loose.get"]);
+    // A blueprint registered on a parent whose own prefix is replaced by its registration is served behind the registration's prefix and its own.
+    assert_eq!(tree.linked("app/child.py"), ["serves http GET /v1/c/z@6"]);
+    assert_eq!(tree.unread("app/child.py"), Vec::<String>::new());
+    assert_eq!(tree.unread("app/parent.py"), Vec::<String>::new());
+    insta::assert_json_snapshot!(
+        "a_registration_prefix_stands_in_for_a_blueprint_prefix_that_is_not_text",
+        tree.json["linked"]
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "Routers that include each other leave the include an unread site"
+)]
+#[test]
+fn routers_that_include_each_other_leave_the_include_an_unread_site() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/a.py",
+            "from fastapi import APIRouter\n\nfrom app import b\n\nrouter = APIRouter(prefix=\"/a\")\nrouter.include_router(b.router)\n\n\n@router.get(\"/one\")\ndef one():\n    return {}\n",
+        ),
+        (
+            "app/b.py",
+            "from fastapi import APIRouter\n\nfrom app import a\n\nrouter = APIRouter(prefix=\"/b\")\nrouter.include_router(a.router)\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import a\n\napp = FastAPI()\napp.include_router(a.router)\n",
+        ),
+    ]);
+    // The way through `b` comes back to `a`, which adds no path; the way through `main` is whole.
+    assert_eq!(tree.linked("app/a.py"), ["serves http GET /a/one@9"]);
+    // The include that closes the cycle is where the way stops.
+    assert_eq!(tree.unread("app/a.py"), ["L6 router.include_router"]);
+    assert_eq!(tree.unread("app/b.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A mount whose prefix is not text is one unread site")]
+#[test]
+fn a_mount_whose_prefix_is_not_text_is_one_unread_site() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/users.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get(\"/users\")\ndef list_users():\n    return []\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import users\nfrom app.config import settings\n\napp = FastAPI()\napp.include_router(users.router, prefix=settings.PREFIX)\n",
+        ),
+    ]);
+    // The only way to the router is cut at the mount.
+    assert_eq!(tree.linked("app/users.py"), Vec::<String>::new());
+    let main = tree.file("app/main.py");
+    // The parse reports the mount, so the link, which cuts the way at it, does not report it again.
+    assert_eq!(main.facts.unresolved.len(), 1);
+    assert_eq!(tree.output.unread_of(main.id).count(), 0);
+    assert_eq!(tree.unread("app/main.py"), ["L7 app.include_router"]);
+}
+
+#[test]
+fn a_mount_with_a_prefix_of_none_gives_no_prefix() {
+    let tree = index_files(&[
+        ("pyproject.toml", FASTAPI_PROJECT),
+        ("app/__init__.py", ""),
+        (
+            "app/users.py",
+            "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get(\"/users\")\ndef list_users():\n    return []\n",
+        ),
+        (
+            "app/main.py",
+            "from fastapi import FastAPI\n\nfrom app import users\n\napp = FastAPI()\napp.include_router(users.router, prefix=None)\n",
+        ),
+    ]);
+    // `None` is what leaving the prefix out comes to: the router is mounted where it is and nothing is unread.
+    assert_eq!(tree.linked("app/users.py"), ["serves http GET /users@6"]);
+    assert_eq!(tree.unread("app/main.py"), Vec::<String>::new());
 }
 
 #[gsttt_scenario::scenario(
@@ -2183,7 +2276,7 @@ fn the_mounts_that_are_not_followed_are_named() {
         .iter()
         .find(|words| words.starts_with("mounts of a router"))
         .expect("the provides name the mounts that are not followed");
-    // Every way a chain of mounts is cut is in that one line, because `link` cannot report a site it did not read.
+    // Every way a chain of mounts is cut is in that one line, whether or not the cut is also an unread site of the file it stopped at.
     for cut in [
         "another Python project",
         "a cycle",

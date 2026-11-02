@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 
 use gsttt_core::connector::{Parsed, SourceFile};
 use gsttt_core::contract::{ContractKind, Role};
@@ -9,7 +10,9 @@ use gsttt_core::fact::{
     ErrorCount, FileFacts, Import, ImportFlags, ImportKind, Line, ParseFailure, ParseStatus,
     UnresolvedReason, UnresolvedSite,
 };
-use gsttt_core::rules::{EmbedRule, OneOrMany, Outcome, Pack, Prefix, Reading, Site};
+use gsttt_core::rules::{
+    EmbedRule, OneOrMany, Outcome, Pack, Prefix, Reading, ValueExpr, ValueSource,
+};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
@@ -27,7 +30,7 @@ use crate::manifest::{ManifestError, read_pyproject};
 use crate::project::PythonProject;
 use crate::site::{
     AssignSite, COMPUTED, CallSite, EmbedSite, Source, dict_value, dotted, is_string_shaped,
-    join_prefixes, literal_of, text_of,
+    join_prefixes, literal_of,
 };
 
 /// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags, and with the status `manifest_status` gives it.
@@ -304,14 +307,14 @@ impl<'a> Collector<'a> {
                         let Some(reading) = self.receiver_prefix(maker, receiver) else {
                             continue;
                         };
-                        let Some(read) = self.behind(reading, line, name.written()) else {
-                            continue;
-                        };
                         if self.is_router(receiver) {
-                            // Whether a router's own prefix applies depends on how the router is mounted, and `link` knows that; the route keeps the path it was written with.
+                            // Whether a router's own prefix applies, and whether `link` can read it, depends on how the router is mounted, and `link` knows that; the route keeps the path it was written with.
                             prefix = Some(prefix.unwrap_or_default());
                             router = receiver;
                         } else {
+                            let Some(read) = self.behind(reading, line, name.written()) else {
+                                continue;
+                            };
                             prefix = Some(match prefix {
                                 Some(outer) => join_prefixes(&rule.kind, &outer, &read),
                                 None => read,
@@ -320,7 +323,7 @@ impl<'a> Collector<'a> {
                     }
                     let outcome =
                         rule.apply(&pack.name, &site, prefix.as_deref(), line, name.written());
-                    self.record(outcome, router);
+                    self.record(outcome, router.map(|var| (var, name.written())));
                 }
             }
         }
@@ -371,7 +374,7 @@ impl<'a> Collector<'a> {
             .is_some_and(|binding| is_router_type(&binding.callee))
     }
 
-    /// The prefix each router variable of the file declares in its own constructor, read the way the packs read the receiver of a route. A router without a prefix is left out, which `link` reads as the empty prefix; one whose prefix is not text is kept without one, so that `link` follows no way through it.
+    /// The prefix each router variable of the file declares in its own constructor, read the way the packs read the receiver of a route. A router without a prefix is left out, which `link` reads as the empty prefix; one whose prefix is not text is kept as unread, so that `link` follows no way through it unless a registration replaces the prefix.
     fn router_prefixes(&self) -> Vec<RouterPrefix> {
         let makers: Vec<&Prefix> = self
             .packs
@@ -382,39 +385,41 @@ impl<'a> Collector<'a> {
                 decorators.chain(calls).flatten()
             })
             .collect();
-        let mut routers: Vec<RouterPrefix> =
-            self.bindings
-                .iter()
-                .filter(|(_, binding)| is_router_type(&binding.callee))
-                .filter_map(|(var, binding)| {
-                    let prefix = match makers.iter().find_map(|maker| {
-                        prefix_made_by(maker, &binding.callee, binding.arguments)
-                    })? {
-                        Reading::Text(prefix) if !prefix.is_empty() => Some(prefix),
-                        Reading::Text(_) | Reading::Absent => return None,
-                        Reading::Unread => None,
-                    };
-                    Some(RouterPrefix {
-                        var: var.clone(),
-                        prefix,
-                    })
+        let mut routers: Vec<RouterPrefix> = self
+            .bindings
+            .iter()
+            .filter(|(_, binding)| is_router_type(&binding.callee))
+            .filter_map(|(var, binding)| {
+                let prefix = makers
+                    .iter()
+                    .find_map(|maker| prefix_made_by(maker, &binding.callee, binding.arguments))?;
+                let kept = match &prefix {
+                    Reading::Text(text) => !text.is_empty(),
+                    Reading::Absent => false,
+                    Reading::Unread => true,
+                };
+                kept.then(|| RouterPrefix {
+                    var: var.clone(),
+                    prefix,
                 })
-                .collect();
+            })
+            .collect();
         // The map has no order, and the cache entry has to be the same for the same file.
         routers.sort_by(|a, b| a.var.cmp(&b.var));
         routers
     }
 
-    /// Keeps what a rule made of a site. A route a rule finds on `router` is not a fact of the file: `link` serves it behind the prefixes of the mounts above the router.
-    fn record(&mut self, outcome: Outcome, router: Option<&str>) {
+    /// Keeps what a rule made of a site. A route a rule finds on `router`, the variable it is declared on and the callee that declares it as written, is not a fact of the file: `link` serves it behind the prefixes of the mounts above the router.
+    fn record(&mut self, outcome: Outcome, router: Option<(&str, &str)>) {
         match outcome {
             Outcome::Fact(fact) => match router {
-                Some(var)
+                Some((var, callee))
                     if matches!(fact.role, Role::Serves)
                         && matches!(fact.key.kind(), ContractKind::Http) =>
                 {
                     self.extra.routes.push(Route {
                         var: var.to_owned(),
+                        callee: callee.to_owned(),
                         fact,
                     });
                 }
@@ -471,7 +476,7 @@ impl<'a> Collector<'a> {
                 let outcome =
                     rule.apply(&pack.name, &site, prefix.as_deref(), line, callee.written());
                 // A route a call declares, Django's `path()`, belongs to the module's URL list, which an including module mounts like a router.
-                self.record(outcome, Some(""));
+                self.record(outcome, Some(("", callee.written())));
             }
             for rule in &pack.embeds {
                 let Some(matched) = callee.matching(&rule.callee) else {
@@ -538,7 +543,9 @@ impl<'a> Collector<'a> {
                 ("blueprint", "url_prefix"),
                 true,
             ),
-            "path" | "re_path" | "url" if self.has_pack("django") => self.include_mount(call, line),
+            "path" | "re_path" | "url" if self.has_pack("django") => {
+                self.include_mount(call, callee.written(), line)
+            }
             _ => false,
         }
     }
@@ -568,28 +575,24 @@ impl<'a> Collector<'a> {
             arguments: Some(&call.arguments),
             member: None,
         };
-        let mut prefix = None;
-        let mut unread_prefix = false;
-        if let Some(read) = site.keyword(keywords.1) {
-            prefix = Some(read.into_owned());
-        } else if call.arguments.find_keyword(keywords.1).is_some() {
+        let prefix = ValueExpr::from(ValueSource::Keyword(keywords.1.to_owned())).read(&site);
+        if prefix == Reading::Unread {
             // A prefix held in a variable: the router is still mounted, but not at a path that is known.
             self.unresolved(line, callee);
-            unread_prefix = true;
         }
         self.extra.mounts.push(Mount {
             line,
             receiver: receiver.to_owned(),
+            callee: callee.to_owned(),
             target: Target::Name(target),
             prefix,
-            unread_prefix,
             replaces,
         });
         true
     }
 
     /// `path("api/", include("bookings.urls"))`. Returns whether the call included something.
-    fn include_mount(&mut self, call: &ExprCall, line: Line) -> bool {
+    fn include_mount(&mut self, call: &ExprCall, callee: &str, line: Line) -> bool {
         let Some(Expr::Call(include)) = call.arguments.find_positional(1) else {
             return false;
         };
@@ -598,16 +601,23 @@ impl<'a> Collector<'a> {
         if !includes {
             return false;
         }
-        let mut prefix = None;
-        let mut unread_prefix = false;
-        if let Some(route) = call.arguments.find_positional(0).and_then(text_of) {
-            // The anchors of a `re_path` pattern are not part of the path.
-            let route = route.strip_prefix('^').unwrap_or(&route);
-            prefix = Some(route.strip_suffix('$').unwrap_or(route).to_owned());
-        } else {
-            self.unresolved(line, "path");
-            unread_prefix = true;
-        }
+        let site = CallSite {
+            callee,
+            arguments: Some(&call.arguments),
+            member: None,
+        };
+        let prefix = match ValueExpr::from(ValueSource::Arg(NonZeroU32::MIN)).read(&site) {
+            Reading::Text(route) => {
+                // The anchors of a `re_path` pattern are not part of the path.
+                let route = route.strip_prefix('^').unwrap_or(&route);
+                Reading::Text(route.strip_suffix('$').unwrap_or(route).to_owned())
+            }
+            Reading::Absent => Reading::Absent,
+            Reading::Unread => {
+                self.unresolved(line, "path");
+                Reading::Unread
+            }
+        };
         // `include(("bookings.urls", "bookings"))` names its module first, like `include("bookings.urls")`.
         match include.arguments.find_positional(0).and_then(literal_of) {
             Some(module) => {
@@ -616,9 +626,9 @@ impl<'a> Collector<'a> {
                 self.extra.mounts.push(Mount {
                     line,
                     receiver: String::new(),
+                    callee: callee.to_owned(),
                     target: Target::Module(module),
                     prefix,
-                    unread_prefix,
                     replaces: false,
                 });
             }
