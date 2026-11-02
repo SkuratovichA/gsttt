@@ -1,6 +1,6 @@
 //! Which GraphQL endpoint a site belongs to, so that a walk crosses a GraphQL contract only within an endpoint.
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
 use foldhash::fast::RandomState;
@@ -35,11 +35,12 @@ struct Endpoint {
     servers: GlobSet,
 }
 
-/// The scopes of the sites of one query, worked out for a file and a role the first time a walk asks, because most queries meet no GraphQL contract and none of them needs every file.
+/// The scopes of the sites of one query, worked out for a file and a role the first time a walk asks, because most queries meet no GraphQL contract and none of them needs every file. The globs are compiled by the first of those asks, so a query that never scopes compiles nothing.
 #[derive(Debug)]
 pub(super) struct Scopes<'a> {
     graph: &'a Graph,
-    endpoints: Vec<Endpoint>,
+    endpoints: &'a [GraphqlEndpoint],
+    compiled: OnceCell<Vec<Endpoint>>,
     memo: RefCell<Memo>,
 }
 
@@ -48,6 +49,7 @@ struct Memo {
     /// The endpoints of each scope, sorted. The scope numbered 0 is the empty one.
     sets: Vec<Vec<u32>>,
     scopes: BTreeMap<Vec<u32>, Scope>,
+    // Only probed, never iterated: AGENTS.md forbids iterating a hash map into output.
     sites: HashMap<(FileId, Role), Scope, RandomState>,
 }
 
@@ -83,23 +85,30 @@ impl Memo {
 
 impl<'a> Scopes<'a> {
     /// The scopes of the sites of `graph` under `endpoints`. With none, no contract is scoped and nothing is matched.
-    pub(super) fn new(graph: &'a Graph, endpoints: &[GraphqlEndpoint]) -> Self {
+    pub(super) fn new(graph: &'a Graph, endpoints: &'a [GraphqlEndpoint]) -> Self {
         Self {
             graph,
-            // The config checked every glob when it read them, so a set that does not build comes from an index made some other way and claims nothing.
-            endpoints: endpoints
-                .iter()
-                .map(|endpoint| Endpoint {
-                    clients: glob_set(&endpoint.clients).unwrap_or_default(),
-                    servers: glob_set(&endpoint.servers).unwrap_or_default(),
-                })
-                .collect(),
+            endpoints,
+            compiled: OnceCell::new(),
             memo: RefCell::new(Memo {
                 sets: vec![Vec::new()],
                 scopes: BTreeMap::new(),
                 sites: HashMap::default(),
             }),
         }
+    }
+
+    /// The endpoints with their globs compiled, on the first call. The config checked every glob when it read them, so a set that does not build comes from an index made some other way and claims nothing.
+    fn compiled(&self) -> &[Endpoint] {
+        self.compiled.get_or_init(|| {
+            self.endpoints
+                .iter()
+                .map(|endpoint| Endpoint {
+                    clients: glob_set(&endpoint.clients).unwrap_or_default(),
+                    servers: glob_set(&endpoint.servers).unwrap_or_default(),
+                })
+                .collect()
+        })
     }
 
     /// Whether the sites of the contract `key` have scopes: it is a GraphQL contract and the index has endpoints.
@@ -125,7 +134,7 @@ impl<'a> Scopes<'a> {
         };
         let claimed = |claims: &dyn Fn(&Endpoint) -> bool| -> Vec<u32> {
             (0..)
-                .zip(&self.endpoints)
+                .zip(self.compiled())
                 .filter(|&(_, endpoint)| claims(endpoint))
                 .map(|(number, _)| number)
                 .collect()

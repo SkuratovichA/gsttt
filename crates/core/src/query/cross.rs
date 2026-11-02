@@ -234,7 +234,7 @@ impl<'a> Crossing<'a> {
 
     /// [`Crossing::cross`] for a walk that leaves a file by some of its sites in `contract` and not all: `roles` are those of the sites it leaves by. A walk by name leaves a file by the sites of the declarations it reached.
     ///
-    /// Without scopes the role at the walk's own end of the order decides where a file leaves, because it reaches the most. A scoped contract is left by every role the file holds, because the file may serve one endpoint and call another.
+    /// Without scopes the first role of the file in the order of the walk decides where it leaves, because it reaches the most and its marks keep the next role from crossing again. A scoped contract is left by every role the file holds, because the file may serve one endpoint and call another.
     pub(super) fn cross_as(
         &self,
         crossed: &mut Crossed,
@@ -251,12 +251,10 @@ impl<'a> Crossing<'a> {
         let held = roles
             .into_iter()
             .fold(0_u8, |held, role| held | (1 << role as u8));
-        let mut decided = false;
         let leaving = direction.leaving().map(|role| {
-            if decided || held & (1 << role as u8) == 0 {
+            if held & (1 << role as u8) == 0 {
                 return None;
             }
-            decided = !scoped;
             let scope = if scoped {
                 self.scopes.of(file, role)
             } else {
