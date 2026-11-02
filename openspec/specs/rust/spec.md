@@ -353,3 +353,14 @@ With the `env` pack, `env::set_var`, `std::env::set_var`, `env::remove_var` and 
 #### Scenario: A chain rule with a written role serves what is assigned
 - **WHEN** a chain rule has the root `settings`, `role = "calls"` and `written = "serves"`, and a file has `settings.port = 8080;`, `settings.retries += 1;` and `let p = settings.port;`
 - **THEN** it serves `env PORT` and `env RETRIES` and calls `env PORT`
+
+### Requirement: Relative requests
+With the `reqwest` pack, a request whose URL is relative and has no base SHALL be an unread site, since it fails at run time: `reqwest::get("users")`, and `get("users")` on a receiver bound to `Client::new()`. An absolute URL SHALL be read as before.
+
+#### Scenario: A relative request with no base is unread
+- **WHEN** a file has `reqwest::get("users")` on line 2 and, on `let client = reqwest::Client::new();`, `client.get("users")` on line 7
+- **THEN** each is an unread site at its line
+
+#### Scenario: An absolute request is unchanged by relative requests
+- **WHEN** a file has `reqwest::get("https://a.test/x")` on line 11
+- **THEN** it calls `http GET /x` at line 11
