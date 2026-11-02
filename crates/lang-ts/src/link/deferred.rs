@@ -358,7 +358,7 @@ fn made_for(
     })
 }
 
-/// The export that `name`, written in `file`, reaches when its first segment is a name the file imports: the node where it is defined, and the rest of the name below it. A namespace names the export in the segment after it.
+/// The export that `name`, written in `file`, reaches when its first segment is a name the file imports: the node where it is defined, and the rest of the name below it. A namespace, and a `default` the module does not export, name the export in the segment after it.
 fn imported<'n>(
     input: &LinkInput<'_, TsExtra>,
     file: &LinkFile<'_, TsExtra>,
@@ -373,7 +373,12 @@ fn imported<'n>(
         .bindings
         .iter()
         .find(|binding| binding.local == root)?;
-    let (export, path) = if binding.name == "*" {
+    // A `require` or a default import of a CommonJS module binds `default`, and `clients.api` means the export `api` of the module when the module has no `default` of its own, as TypeScript's `esModuleInterop` reads it.
+    let names_the_export = binding.name == "*"
+        || (binding.name == "default"
+            && rest.is_some()
+            && through(input, file, binding, "default", 0).is_none());
+    let (export, path) = if names_the_export {
         let rest = rest?;
         match rest.split_once('.') {
             Some((export, path)) => (export, Some(path)),

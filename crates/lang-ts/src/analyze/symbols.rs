@@ -18,7 +18,7 @@ use oxc_span::{GetSpan, Span};
 use super::constants::import_locals;
 use super::roots::{constructed, heads};
 use crate::extra::{Export, ExportTarget};
-use crate::shape::{is_parameter_property, property_str};
+use crate::shape::{is_export_key, is_parameter_property, property_str};
 
 /// The methods that change what a collection, a map or an array holds: a function that calls one on a top-level variable writes it.
 const WRITERS: [&str; 12] = [
@@ -908,10 +908,12 @@ fn local_exports(exports: &[Export]) -> Vec<LocalExport> {
     let mut found: Vec<LocalExport> = exports
         .iter()
         .filter_map(|export| match &export.target {
-            ExportTarget::Local(local) if *local != export.name => Some(LocalExport {
-                name: export.name.clone(),
-                local: local.clone(),
-            }),
+            ExportTarget::Local(local) if *local != export.name && !is_export_key(local) => {
+                Some(LocalExport {
+                    name: export.name.clone(),
+                    local: local.clone(),
+                })
+            }
             _ => None,
         })
         .collect();
