@@ -975,3 +975,10 @@ A file that takes a module by a name it does not spell out, with `import(name)`,
 - **WHEN** `src/import-name.test.ts` has `vi.mock('./lib', () => ({}))` on line 3 and `await import(name)` on line 5, `src/require-name.test.ts` has `jest.mock('./lib', () => ({}))` on line 3 and `require(name)` on line 5, `src/import-actual-name.test.ts` has `vi.mock('./lib', () => ({}))` on line 3 and `await vi.importActual(name)` on line 5, `src/require-actual-name.test.ts` has `jest.mock('./lib', () => ({}))` on line 3 and `jest.requireActual(name)` on line 5, and `src/lib.ts` exists
 - **THEN** the mock of `./lib` on line 3 of each of the four files does not replace it
 - **AND** the mock of `./lib` in a file with no such load, `src/replaced.test.ts`, does
+
+### Requirement: Packs that find documents in the provides
+The provides of a project SHALL name every pack whose `[[embeds]]` rules find a document, in `via` of the calls of the contract that document holds.
+
+#### Scenario: The graphql pack is credited with the documents it finds
+- **WHEN** a project that depends on `graphql-tag` has a file with a `gql` tagged template
+- **THEN** the provides name `graphql` in `via` of the `graphql` calls
