@@ -161,7 +161,8 @@ expression: json
             "line": 30,
             "name": "reads",
             "uses": [
-              "PrismaClient"
+              "PrismaClient.",
+              "PrismaClient.tenant"
             ]
           }
         ],

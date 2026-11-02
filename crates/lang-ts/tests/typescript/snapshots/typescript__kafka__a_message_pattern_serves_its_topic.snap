@@ -58,7 +58,8 @@ expression: json
             "line": 3,
             "name": "listen",
             "uses": [
-              "Consumer"
+              "Consumer.",
+              "Consumer.subscribe"
             ]
           }
         ],
@@ -188,7 +189,7 @@ expression: json
             "line": 4,
             "name": "Notifier.constructor",
             "uses": [
-              "EventEmitter2"
+              "EventEmitter2."
             ]
           },
           {
@@ -333,7 +334,8 @@ expression: json
             "line": 3,
             "name": "write",
             "uses": [
-              "Producer"
+              "Producer.",
+              "Producer.send"
             ]
           }
         ],
@@ -391,7 +393,7 @@ expression: json
             "line": 4,
             "name": "Publisher.constructor",
             "uses": [
-              "ClientKafka"
+              "ClientKafka."
             ]
           },
           {
@@ -514,7 +516,7 @@ expression: json
             "line": 5,
             "name": "KafkaSender.constructor",
             "uses": [
-              "ClientKafka"
+              "ClientKafka."
             ]
           },
           {
@@ -536,7 +538,7 @@ expression: json
             "line": 13,
             "name": "LocalSender.constructor",
             "uses": [
-              "EventEmitter2"
+              "EventEmitter2."
             ]
           },
           {
@@ -607,7 +609,8 @@ expression: json
             "line": 4,
             "name": "kafka",
             "uses": [
-              "Producer"
+              "Producer.",
+              "Producer.send"
             ]
           },
           {
@@ -615,7 +618,8 @@ expression: json
             "line": 8,
             "name": "local",
             "uses": [
-              "EventEmitter2"
+              "EventEmitter2.",
+              "EventEmitter2.emit"
             ]
           }
         ],

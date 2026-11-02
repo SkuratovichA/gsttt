@@ -130,7 +130,8 @@ expression: json
             "line": 13,
             "name": "find",
             "uses": [
-              "Chain9"
+              "Chain9.",
+              "Chain9.tenant"
             ]
           }
         ],
@@ -216,7 +217,8 @@ expression: json
             "line": 8,
             "name": "loop",
             "uses": [
-              "Ping"
+              "Ping.",
+              "Ping.tenant"
             ]
           },
           {
@@ -224,7 +226,8 @@ expression: json
             "line": 12,
             "name": "escape",
             "uses": [
-              "Forth"
+              "Forth.",
+              "Forth.booking"
             ]
           }
         ],
@@ -259,7 +262,8 @@ expression: json
             "line": 3,
             "name": "find",
             "uses": [
-              "Wide"
+              "Wide.",
+              "Wide.tenant"
             ]
           }
         ],

@@ -91,7 +91,7 @@ expression: json
             "line": 7,
             "name": "View",
             "uses": [
-              "Props",
+              "Props.",
               "Widget",
               "helper",
               "useX"
@@ -128,7 +128,6 @@ expression: json
             "line": 20,
             "name": "d",
             "uses": [
-              "C",
               "C.s"
             ]
           }

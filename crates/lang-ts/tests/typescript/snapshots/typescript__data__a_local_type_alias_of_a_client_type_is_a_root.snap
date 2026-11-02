@@ -98,7 +98,8 @@ expression: json
             "line": 9,
             "name": "load",
             "uses": [
-              "Reader"
+              "Reader.",
+              "Reader.tenant"
             ]
           },
           {
@@ -106,7 +107,8 @@ expression: json
             "line": 13,
             "name": "pick",
             "uses": [
-              "Options"
+              "Options.",
+              "Options.tenant"
             ]
           },
           {
@@ -114,7 +116,8 @@ expression: json
             "line": 17,
             "name": "spin",
             "uses": [
-              "Loop"
+              "Loop.",
+              "Loop.tenant"
             ]
           }
         ],

@@ -68,8 +68,8 @@ expression: json
         ],
         "exports": [],
         "on_load": [
-          "api",
-          "app",
+          "api.get",
+          "app.get",
           "params"
         ]
       },
@@ -158,13 +158,13 @@ expression: json
             "line": 3,
             "name": "api",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,

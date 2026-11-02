@@ -95,9 +95,9 @@ expression: json
             "name": "Notifier.constructor",
             "uses": [
               "JobQueue",
-              "Local",
+              "Local.",
               "MailQueue",
-              "services"
+              "services.MailQueue."
             ]
           },
           {

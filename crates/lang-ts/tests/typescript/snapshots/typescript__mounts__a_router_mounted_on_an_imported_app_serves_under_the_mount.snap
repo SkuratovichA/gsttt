@@ -108,7 +108,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "app",
+          "app.use",
           "router"
         ]
       },
@@ -150,13 +150,13 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "express"
+              "express.Router"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "express",
+          "express.Router",
           "router"
         ]
       },

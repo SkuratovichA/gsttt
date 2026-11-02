@@ -59,7 +59,7 @@ expression: json
             "line": 4,
             "name": "Billing.constructor",
             "uses": [
-              "InvoiceService"
+              "InvoiceService."
             ]
           },
           {
@@ -73,7 +73,7 @@ expression: json
             "line": 8,
             "name": "Mailer.constructor",
             "uses": [
-              "MailQueue"
+              "MailQueue."
             ]
           },
           {

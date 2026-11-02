@@ -718,3 +718,79 @@ fn a_base_that_is_no_revision_exits_2() {
     );
     assert!(run.stderr.contains("--base"), "{run:?}");
 }
+
+/// A service with two members, a caller of each through a new instance, and a function that only takes the service as a parameter.
+fn write_order_service(repo: &Path) {
+    write(
+        repo,
+        "src/service.ts",
+        "export class OrderService {\n  place(id: string) {}\n  cancel(id: string) {}\n}\n",
+    );
+    write(
+        repo,
+        "src/refunds.ts",
+        "import { OrderService } from './service';\n\nexport function refund(id: string) {\n  new OrderService().cancel(id);\n}\n",
+    );
+    write(
+        repo,
+        "src/checkout.ts",
+        "import { OrderService } from './service';\n\nexport function pay(id: string) {\n  new OrderService().place(id);\n}\n",
+    );
+    write(
+        repo,
+        "src/keep.ts",
+        "import { OrderService } from './service';\n\nexport function keep(service: OrderService) {}\n",
+    );
+}
+
+#[scenario(
+    "queries",
+    "A caller of another member through a new instance is not listed"
+)]
+#[test]
+fn a_caller_of_another_member_through_a_new_instance_is_not_listed() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_order_service(&repo);
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/service.ts",
+            "--name",
+            "OrderService.place",
+        ],
+    ));
+    assert!(
+        paths(&answer["affected"]).contains(&"src/checkout.ts"),
+        "{answer}"
+    );
+    let affected = answer["affected"].to_string();
+    assert!(affected.contains("pay"), "{answer}");
+    assert!(!affected.contains("src/refunds.ts"), "{answer}");
+}
+
+#[scenario("queries", "Asked about the class, every caller of a member is listed")]
+#[test]
+fn asked_about_the_class_every_caller_of_a_member_is_listed() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_order_service(&repo);
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/service.ts",
+            "--name",
+            "OrderService",
+        ],
+    ));
+    let listed = paths(&answer["affected"]);
+    for path in ["src/checkout.ts", "src/refunds.ts", "src/keep.ts"] {
+        assert!(listed.contains(&path), "{path}: {answer}");
+    }
+}

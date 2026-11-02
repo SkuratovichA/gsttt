@@ -52,7 +52,7 @@ expression: json
             "line": 3,
             "name": "default",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           },
           {
@@ -60,13 +60,13 @@ expression: json
             "line": 4,
             "name": "get",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,
@@ -102,7 +102,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "client"
+          "client.get"
         ]
       },
       "tags": 0,
@@ -186,7 +186,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "clients"
+          "clients.httpClient"
         ]
       },
       "tags": 0,

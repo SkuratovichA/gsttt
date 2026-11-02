@@ -72,7 +72,7 @@ expression: "run(\"scopes-client\")?"
             "name": "users",
             "uses": [
               "BASE",
-              "axios"
+              "axios.create"
             ]
           },
           {
@@ -81,7 +81,7 @@ expression: "run(\"scopes-client\")?"
             "name": "make",
             "uses": [
               "BASE",
-              "axios"
+              "axios.create"
             ]
           }
         ],

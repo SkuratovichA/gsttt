@@ -147,9 +147,9 @@ expression: json
         ],
         "exports": [],
         "on_load": [
-          "bare",
-          "dynamic",
-          "fixed",
+          "bare.get",
+          "dynamic.get",
+          "fixed.get",
           "list"
         ]
       },

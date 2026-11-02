@@ -58,7 +58,8 @@ expression: json
             "line": 5,
             "name": "rename",
             "uses": [
-              "Tenant"
+              "Tenant",
+              "Tenant."
             ]
           },
           {

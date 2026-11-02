@@ -78,7 +78,7 @@ expression: json
             "name": "OrdersController",
             "uses": [
               "Controller",
-              "ROUTES"
+              "ROUTES.orders"
             ]
           },
           {
@@ -95,7 +95,7 @@ expression: json
             "name": "ItemsController",
             "uses": [
               "Controller",
-              "Paths"
+              "Paths.ITEMS"
             ]
           },
           {
@@ -146,8 +146,8 @@ expression: json
           "BASE",
           "Controller",
           "Get",
-          "Paths",
-          "ROUTES",
+          "Paths.ITEMS",
+          "ROUTES.orders",
           "USERS"
         ]
       },

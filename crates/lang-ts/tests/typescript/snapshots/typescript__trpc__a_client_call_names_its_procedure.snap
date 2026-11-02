@@ -60,7 +60,7 @@ expression: json
             "line": 3,
             "name": "Bookings",
             "uses": [
-              "api"
+              "api.booking"
             ]
           }
         ],

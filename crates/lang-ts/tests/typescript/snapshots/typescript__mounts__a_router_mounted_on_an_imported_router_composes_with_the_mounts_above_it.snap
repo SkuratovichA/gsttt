@@ -51,13 +51,13 @@ expression: json
             "line": 3,
             "name": "api",
             "uses": [
-              "express"
+              "express.Router"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "express"
+          "express.Router"
         ]
       },
       "tags": 0,
@@ -156,7 +156,7 @@ expression: json
         "exports": [],
         "on_load": [
           "api",
-          "app"
+          "app.use"
         ]
       },
       "tags": 0,
@@ -197,13 +197,13 @@ expression: json
             "line": 3,
             "name": "sub",
             "uses": [
-              "express"
+              "express.Router"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "express",
+          "express.Router",
           "sub"
         ]
       },
@@ -255,7 +255,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "api",
+          "api.use",
           "sub"
         ]
       },

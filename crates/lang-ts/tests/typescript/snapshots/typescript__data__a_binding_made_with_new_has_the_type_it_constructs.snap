@@ -201,8 +201,8 @@ expression: json
             "line": 5,
             "name": "find",
             "uses": [
-              "PrismaClient",
-              "client"
+              "PrismaClient.",
+              "PrismaClient.tenant"
             ]
           }
         ],
@@ -262,8 +262,8 @@ expression: json
             "line": 5,
             "name": "seed",
             "uses": [
-              "PrismaClient",
-              "client"
+              "PrismaClient.",
+              "PrismaClient.tenant"
             ]
           }
         ],

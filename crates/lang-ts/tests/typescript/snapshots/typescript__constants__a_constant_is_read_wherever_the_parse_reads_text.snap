@@ -127,14 +127,14 @@ expression: json
             "name": "http",
             "uses": [
               "API",
-              "axios"
+              "axios.create"
             ]
           }
         ],
         "exports": [],
         "on_load": [
           "API",
-          "axios",
+          "axios.create",
           "http"
         ]
       },
@@ -196,7 +196,7 @@ expression: json
             "name": "bootstrap",
             "uses": [
               "AppModule",
-              "NestFactory",
+              "NestFactory.create",
               "P"
             ]
           }
@@ -256,7 +256,7 @@ expression: json
             "line": 6,
             "name": "router",
             "uses": [
-              "express"
+              "express.Router"
             ]
           }
         ],
@@ -265,6 +265,7 @@ expression: json
           "MOUNT",
           "app",
           "express",
+          "express.Router",
           "router"
         ]
       },

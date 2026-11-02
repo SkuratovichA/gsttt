@@ -141,7 +141,7 @@ expression: json
             "line": 5,
             "name": "query",
             "uses": [
-              "Prisma"
+              "Prisma.sql"
             ]
           },
           {
@@ -156,7 +156,7 @@ expression: json
         ],
         "exports": [],
         "on_load": [
-          "Prisma",
+          "Prisma.sql",
           "PrismaClient"
         ]
       },
@@ -261,7 +261,7 @@ expression: json
             "line": 11,
             "name": "wrapped",
             "uses": [
-              "Prisma",
+              "Prisma.sql",
               "prisma"
             ]
           },

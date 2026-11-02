@@ -87,7 +87,7 @@ expression: json
             "line": 6,
             "name": "AppService.constructor",
             "uses": [
-              "ConfigService"
+              "ConfigService."
             ]
           },
           {
@@ -95,8 +95,9 @@ expression: json
             "line": 8,
             "name": "AppService.load",
             "uses": [
-              "ConfigService",
-              "ConfigService.get"
+              "ConfigService.",
+              "ConfigService.get",
+              "ConfigService.getOrThrow"
             ]
           }
         ],

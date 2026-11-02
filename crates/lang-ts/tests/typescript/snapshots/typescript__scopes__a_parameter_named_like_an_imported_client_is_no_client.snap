@@ -51,13 +51,13 @@ expression: json
             "line": 3,
             "name": "api",
             "uses": [
-              "axios"
+              "axios.create"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,
@@ -104,14 +104,14 @@ expression: json
             "line": 5,
             "name": "list",
             "uses": [
-              "Http",
-              "api"
+              "Http.",
+              "Http.get"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "api"
+          "api.get"
         ]
       },
       "tags": 0,

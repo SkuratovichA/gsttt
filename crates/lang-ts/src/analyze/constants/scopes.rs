@@ -5,15 +5,16 @@ use std::mem;
 
 use oxc_ast::ast::{
     ArrowFunctionExpression, BindingIdentifier, BindingPattern, BlockStatement, CatchClause, Class,
-    Expression, ForInStatement, ForOfStatement, ForStatement, FormalParameters, Function,
-    FunctionBody, Program, StaticBlock, SwitchStatement, TSInterfaceDeclaration, TSModuleBlock,
-    TSType, TSTypeAliasDeclaration, TSTypeParameterDeclaration, VariableDeclaration,
+    Expression, ForInStatement, ForOfStatement, ForStatement, FormalParameter, FormalParameters,
+    Function, FunctionBody, Program, StaticBlock, SwitchStatement, TSInterfaceDeclaration,
+    TSModuleBlock, TSType, TSTypeAliasDeclaration, TSTypeParameterDeclaration, VariableDeclaration,
     VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::Span;
 use oxc_syntax::scope::ScopeFlags;
 
+use super::super::roots::{declared_class, plain_class};
 use super::{Constants, Home, Local, Locals, may_hold_text, rewrite};
 
 /// Records in `constants` what each scope of `program` below its top level binds: first every name as hidden, then the constants among them, read the way those of the top level are. Two walks, because an initializer reads a name through the scopes around it, and one of them may bind that name further down. Drops the names that cannot change an answer, so that a file without a local of interest pays one check per lookup.
@@ -22,9 +23,10 @@ pub(super) fn collect(constants: &mut Constants, program: &Program<'_>) {
         constants,
         stack: Vec::new(),
         hoist: false,
+        class: None,
     }
     .visit_program(program);
-    constants.keep_locals(|locals| locals.constant);
+    constants.keep_locals(|locals| locals.constant || locals.held);
     for locals in constants.locals.values_mut() {
         locals.index();
     }
@@ -34,7 +36,9 @@ pub(super) fn collect(constants: &mut Constants, program: &Program<'_>) {
             path: String::new(),
         }
         .visit_program(program);
-        constants.keep_locals(|locals| locals.scopes.iter().any(|local| !local.values.is_empty()));
+        constants.keep_locals(|locals| {
+            locals.held || locals.scopes.iter().any(|local| !local.values.is_empty())
+        });
     }
 }
 
@@ -112,6 +116,8 @@ struct Scopes<'c> {
     stack: Vec<Frame>,
     /// Whether the names being walked belong to a `var`, which a block does not close.
     hoist: bool,
+    /// The class that the next name bound holds, set by the declarator or the parameter being walked.
+    class: Option<Box<str>>,
 }
 
 impl Scopes<'_> {
@@ -125,7 +131,7 @@ impl Scopes<'_> {
     }
 
     /// Notes that the scope around binds `name`: as hidden, and as `constant` when an initializer may give it text, which [`Initializers`] reads. A second binding of the name in the scope leaves it standing for nothing there. The top level of the file is no scope below it, so nothing is noted there.
-    fn bind(&mut self, name: &str, hoist: bool, constant: bool) {
+    fn bind(&mut self, name: &str, hoist: bool, constant: bool, class: Option<Box<str>>) {
         let mut frames = self.stack.iter().rev();
         let frame = if hoist {
             frames.find(|frame| frame.function)
@@ -141,6 +147,7 @@ impl Scopes<'_> {
             None => self.constants.locals.entry(name.to_owned()).or_default(),
         };
         locals.constant |= constant;
+        locals.held |= class.is_some();
         // The walk is in source order, so a scope that ended before this one started was noted before any binding of this one: stopping there keeps a name bound in every function of a minified bundle linear.
         if let Some(known) = locals
             .scopes
@@ -156,6 +163,7 @@ impl Scopes<'_> {
             scope,
             values: BTreeMap::new(),
             rebound: false,
+            class,
         });
     }
 
@@ -173,16 +181,37 @@ impl Scopes<'_> {
 impl<'a> Visit<'a> for Scopes<'_> {
     /// Every name that no visitor below classifies is bound to something other than text: a parameter, a destructured name, a function, a class, a catch clause.
     fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
-        self.bind(it.name.as_str(), self.hoist, false);
+        let class = self.class.take();
+        self.bind(it.name.as_str(), self.hoist, false, class);
+    }
+
+    /// A parameter with a plain class type holds that class, with or without a default value.
+    fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
+        if matches!(it.pattern, BindingPattern::BindingIdentifier(_)) {
+            self.class = it
+                .type_annotation
+                .as_deref()
+                .and_then(plain_class)
+                .map(|class| Box::from(&*class));
+        }
+        walk::walk_formal_parameter(self, it);
+        self.class = None;
     }
 
     fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
         for declarator in &it.declarations {
+            let class = (it.kind == VariableDeclarationKind::Const
+                && matches!(declarator.id, BindingPattern::BindingIdentifier(_)))
+            .then(|| declared_class(declarator))
+            .flatten()
+            .map(|class| Box::from(&*class));
             if let Some((id, _)) = text_constant(it.kind, declarator) {
-                self.bind(id.name.as_str(), false, true);
+                self.bind(id.name.as_str(), false, true, class);
             } else {
+                self.class = class;
                 self.hoist = it.kind == VariableDeclarationKind::Var;
                 self.visit_binding_pattern(&declarator.id);
+                self.class = None;
                 self.hoist = false;
             }
             if let Some(init) = &declarator.init {
@@ -200,13 +229,13 @@ impl<'a> Visit<'a> for Scopes<'_> {
         if it.is_function_declaration()
             && let Some(id) = &it.id
         {
-            self.bind(id.name.as_str(), false, false);
+            self.bind(id.name.as_str(), false, false, None);
         }
         self.within(it.span, true, |scopes| {
             if it.is_expression()
                 && let Some(id) = &it.id
             {
-                scopes.bind(id.name.as_str(), false, false);
+                scopes.bind(id.name.as_str(), false, false, None);
             }
             scopes.parameters_and_body(&it.params, body);
         });

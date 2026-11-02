@@ -113,13 +113,13 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "express"
+              "express.Router"
             ]
           }
         ],
         "exports": [],
         "on_load": [
-          "express"
+          "express.Router"
         ]
       },
       "tags": 0,
@@ -155,7 +155,7 @@ expression: json
         "declared": [],
         "exports": [],
         "on_load": [
-          "router"
+          "router.get"
         ]
       },
       "tags": 0,

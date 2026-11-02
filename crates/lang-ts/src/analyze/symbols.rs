@@ -20,6 +20,9 @@ use super::roots::{constructed, heads};
 use crate::extra::{Export, ExportTarget};
 use crate::shape::{is_export_key, is_parameter_property, property_str};
 
+/// The member that stands for a class used by its type alone: recorded as `Class.`, so that a question about the class reaches it and a question about one of its members does not.
+pub(super) const TYPE_ONLY: &str = "";
+
 /// The methods that change what a collection, a map or an array holds: a function that calls one on a top-level variable writes it.
 const WRITERS: [&str; 12] = [
     "set", "add", "delete", "clear", "push", "pop", "shift", "unshift", "splice", "sort",
@@ -676,9 +679,22 @@ impl<'a> Recorder<'a> {
             return;
         };
         self.mark_value(binding);
-        self.note(binding);
-        if let Some(member) = second {
-            self.member_use(binding, false, member);
+        let Some(member) = second else {
+            self.note(binding);
+            return;
+        };
+        let declared = self.member_entry(binding, false, member);
+        let imported = self
+            .entries
+            .get(binding)
+            .is_some_and(|entry| entry.kind == Kind::Import);
+        match declared {
+            Some(member) => self.note(member),
+            None if imported => {
+                let used = self.typed_entry(root, member);
+                self.note(used);
+            }
+            None => self.note(binding),
         }
     }
 
@@ -701,24 +717,36 @@ impl<'a> Recorder<'a> {
             return;
         };
         for head in types.iter() {
-            let (root, qualified) = match head.split_once('.') {
-                Some((root, _)) => (root, true),
-                None => (head.as_ref(), false),
-            };
-            let Some(&binding) = self.names.get(root) else {
-                continue;
-            };
-            let Some(member) = member else {
-                self.note(binding);
-                continue;
-            };
-            let declared = if qualified {
-                None
-            } else {
-                self.member_entry(binding, false, member)
-            };
-            let used = declared.unwrap_or_else(|| self.typed_entry(head, member));
-            self.note(used);
+            self.through_class(head, member);
+        }
+    }
+
+    /// A use of the type `head`, written as the source writes it, for its `member`, or for the type alone when there is none. A class of the file that declares the member is used through that member; any other type through an entry made for `Type.member`. The member [`TYPE_ONLY`] uses the type and none of its members.
+    pub(super) fn through_class(&mut self, head: &str, member: Option<&str>) {
+        let (root, qualified) = match head.split_once('.') {
+            Some((root, _)) => (root, true),
+            None => (head, false),
+        };
+        let Some(&binding) = self.names.get(root) else {
+            return;
+        };
+        let Some(member) = member else {
+            self.note(binding);
+            return;
+        };
+        let declared = if qualified {
+            None
+        } else {
+            self.member_entry(binding, false, member)
+        };
+        let used = declared.unwrap_or_else(|| self.typed_entry(head, member));
+        self.note(used);
+    }
+
+    /// Records that the source names the top-level `root` outside a type, as `new Root()` does.
+    pub(super) fn value_of(&mut self, root: &str) {
+        if let Some(&binding) = self.names.get(root) {
+            self.mark_value(binding);
         }
     }
 

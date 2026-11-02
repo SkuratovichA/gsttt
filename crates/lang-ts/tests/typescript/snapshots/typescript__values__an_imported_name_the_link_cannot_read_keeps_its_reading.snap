@@ -159,7 +159,7 @@ expression: json
             "name": "api",
             "uses": [
               "BASE",
-              "axios"
+              "axios.create"
             ]
           }
         ],
@@ -168,7 +168,7 @@ expression: json
           "BASE",
           "PATH",
           "api",
-          "axios"
+          "axios.create"
         ]
       },
       "tags": 0,
