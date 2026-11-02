@@ -73,6 +73,8 @@ struct Entry<'a> {
     uses: Vec<usize>,
     /// Whether the entry is a class with members of a name, so that `C.s` is looked up for the classes that have some.
     has_members: bool,
+    /// Whether code outside every type position refers to the entry, which is what makes an imported name a value of the file.
+    used_as_value: bool,
 }
 
 /// The code of one declaration, which is where the walk puts what it finds. A destructuring declares several names with one group, and an overload adds a group to a name that has one.
@@ -147,6 +149,8 @@ pub(super) struct Recorder<'a> {
     /// What the file refers to as it loads, in the order met.
     on_load: Vec<usize>,
     place: Place,
+    /// Whether the walk is inside a type, where a name is no use of its value.
+    in_type: bool,
     /// Whether the next function met is called on the spot, as `(() => {…})()` is.
     immediate: bool,
 }
@@ -444,6 +448,7 @@ impl<'a> Recorder<'a> {
             lines,
             uses: Vec::new(),
             has_members: false,
+            used_as_value: false,
         });
         self.entries.len().saturating_sub(1)
     }
@@ -597,10 +602,38 @@ impl<'a> Recorder<'a> {
         outer
     }
 
+    /// Enters a type, and gives back whether the walk was in one.
+    pub(super) fn enter_type(&mut self) -> bool {
+        std::mem::replace(&mut self.in_type, true)
+    }
+
+    /// Goes back to where the walk was, once the type has been walked.
+    pub(super) fn leave_type(&mut self, outer: bool) {
+        self.in_type = outer;
+    }
+
+    /// Whether the file uses the top-level name `name` outside every type: a call, an argument, `Name.member`, `typeof Name` as an expression, `export default Name`.
+    pub(super) fn used_as_value(&self, name: &str) -> bool {
+        self.names
+            .get(name)
+            .and_then(|&binding| self.entries.get(binding))
+            .is_some_and(|entry| entry.used_as_value)
+    }
+
     /// A name the file's code refers to.
     pub(super) fn reference(&mut self, name: &str) {
         if let Some(&binding) = self.names.get(name) {
+            self.mark_value(binding);
             self.note(binding);
+        }
+    }
+
+    /// Records that the source names `binding` itself outside a type. A use through `this.field` does not: the type of the field is no use of the value of the name it is written with.
+    fn mark_value(&mut self, binding: usize) {
+        if !self.in_type
+            && let Some(entry) = self.entries.get_mut(binding)
+        {
+            entry.used_as_value = true;
         }
     }
 
@@ -642,6 +675,7 @@ impl<'a> Recorder<'a> {
         let Some(&binding) = self.names.get(root.as_str()) else {
             return;
         };
+        self.mark_value(binding);
         self.note(binding);
         if let Some(member) = second {
             self.member_use(binding, false, member);

@@ -303,46 +303,43 @@ fn a_client_typed_as_prisma_client_or_prisma_service_is_a_root() -> Result<(), B
 }
 
 #[test]
-#[scenario("typescript", "An imported model type calls its table")]
-fn an_imported_model_type_calls_its_table() -> Result<(), Box<dyn Error>> {
-    let json = run("prisma-model-imports")?;
-    assert_eq!(
-        contracts(&json, "src/models.ts"),
-        [
-            "calls table tenant @1",
-            "calls table tenantbranch @1",
-            "calls table bookingstatus @7",
-        ]
-    );
+#[scenario("typescript", "A model imported as a value calls its table")]
+fn a_model_imported_as_a_value_calls_its_table() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-model-values")?;
+    for path in ["src/models.ts", "src/renamed.ts"] {
+        assert_eq!(
+            contracts(&json, path),
+            ["calls table bookingstatus @1"],
+            "{path}"
+        );
+    }
     insta::assert_json_snapshot!(json);
     Ok(())
 }
 
 #[test]
-#[scenario("typescript", "A re-exported model type calls its table")]
-fn a_re_exported_model_type_calls_its_table() -> Result<(), Box<dyn Error>> {
+#[scenario("typescript", "A model used only as a type names nothing")]
+fn a_model_used_only_as_a_type_names_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("prisma-model-types")?;
+    for path in [
+        "src/declared.ts",
+        "src/inline.ts",
+        "src/annotated.ts",
+        "src/types.ts",
+    ] {
+        assert_eq!(contracts(&json, path), NOTHING, "{path}");
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A re-exported model names nothing")]
+fn a_re_exported_model_names_nothing() -> Result<(), Box<dyn Error>> {
     let json = run("prisma-model-reexport")?;
-    assert_eq!(contracts(&json, "src/models.ts"), ["calls table tenant @1"]);
-    assert_eq!(
-        contracts(&json, "src/renamed.ts"),
-        ["calls table tenant @1"]
-    );
-    insta::assert_json_snapshot!(json);
-    Ok(())
-}
-
-#[test]
-#[scenario("typescript", "An import type reaches the import rules")]
-fn an_import_type_reaches_the_import_rules() -> Result<(), Box<dyn Error>> {
-    let json = run("prisma-import-type")?;
-    assert_eq!(
-        contracts(&json, "src/types.ts"),
-        ["calls table tenant @1", "calls table tenantbranch @2"]
-    );
-    assert_eq!(
-        contracts(&json, "src/declared.ts"),
-        ["calls table tenant @1"]
-    );
+    for path in ["src/models.ts", "src/renamed.ts", "src/listed.ts"] {
+        assert_eq!(contracts(&json, path), NOTHING, "{path}");
+    }
     insta::assert_json_snapshot!(json);
     Ok(())
 }

@@ -28,7 +28,7 @@ terminals = [
   "groupBy",
 ]
 
-# The client exports one type per model, so a file that imports the type of a model depends on its table, even when it never queries it.
+# A file that uses a name it imports from the client as a value reads that table, and one that only types it does not: tsc reports what a model change breaks in a type, and the chain rules above find the files that query the table.
 [[imports]]
 from = "@prisma/client"
 kind = "table"

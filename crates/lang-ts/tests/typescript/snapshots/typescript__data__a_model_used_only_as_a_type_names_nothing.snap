@@ -17,14 +17,71 @@ expression: json
       "unresolved": []
     },
     {
-      "contracts": [
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "loaded",
+        "rename"
+      ],
+      "imports": [
         {
-          "key": "table tenant",
+          "exported": [
+            "Tenant"
+          ],
+          "flags": 0,
+          "kind": "static",
           "line": 1,
-          "role": "calls",
-          "via": "prisma"
+          "names": [
+            "Tenant"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
         }
       ],
+      "path": "src/annotated.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "load",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "rename",
+            "uses": [
+              "Tenant"
+            ]
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "loaded",
+            "uses": [
+              "Tenant",
+              "load"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": [
+          "Tenant",
+          "load"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
       "embedded": [],
       "exports": [
         "Row"
@@ -69,28 +126,69 @@ expression: json
       "unresolved": []
     },
     {
-      "contracts": [
-        {
-          "key": "table tenant",
-          "line": 1,
-          "role": "calls",
-          "via": "prisma"
-        },
-        {
-          "key": "table tenantbranch",
-          "line": 2,
-          "role": "calls",
-          "via": "prisma"
-        }
-      ],
+      "contracts": [],
       "embedded": [],
       "exports": [
         "Client",
-        "Other",
+        "Row"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Tenant",
+            "PrismaClient"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Tenant",
+            "PrismaClient"
+          ],
+          "spec": "@prisma/client",
+          "to": {
+            "external": "@prisma/client"
+          }
+        }
+      ],
+      "path": "src/inline.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Row",
+            "uses": [
+              "Tenant"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Client",
+            "uses": [
+              "PrismaClient"
+            ]
+          }
+        ],
+        "exports": [],
+        "on_load": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Module",
         "Row",
         "Rows",
-        "Where",
-        "Whole"
+        "Where"
       ],
       "imports": [
         {
@@ -134,37 +232,11 @@ expression: json
           "kind": "static",
           "line": 4,
           "names": [
-            "PrismaClient"
-          ],
-          "spec": "@prisma/client",
-          "to": {
-            "external": "@prisma/client"
-          }
-        },
-        {
-          "flags": 1,
-          "kind": "static",
-          "line": 5,
-          "names": [
             "*"
           ],
           "spec": "@prisma/client",
           "to": {
             "external": "@prisma/client"
-          }
-        },
-        {
-          "flags": 1,
-          "kind": "static",
-          "line": 6,
-          "names": [
-            "Tenant"
-          ],
-          "spec": "ui-kit",
-          "to": {
-            "unresolved": {
-              "reason": "unknown-package"
-            }
           }
         }
       ],
@@ -196,19 +268,7 @@ expression: json
           {
             "end": 4,
             "line": 4,
-            "name": "Client",
-            "uses": []
-          },
-          {
-            "end": 5,
-            "line": 5,
-            "name": "Whole",
-            "uses": []
-          },
-          {
-            "end": 6,
-            "line": 6,
-            "name": "Other",
+            "name": "Module",
             "uses": []
           }
         ],
@@ -242,7 +302,7 @@ expression: json
             "clients under a root other than the chain roots of the pack are recognised only through an alias of this, or a name the same file declares with one of the root types of the pack, directly or through a type alias of that file; a name that the file also binds anywhere else to anything but this or a root type is not recognised (function a(tx2: PrismaClient) beside items.map(tx2 => tx2) reads no table), and a root type that the file declares as a type of its own is that local type",
             "a root type is not read when the file imports it under another name (PrismaClient as Base), reaches it through a renamed namespace (P.TransactionClient), writes it as typeof a name, or aliases an import type of it (type Db = import('@prisma/client').PrismaClient)",
             "model types are read only from the packages the pack names: those of a client generated to a custom output path, or of a package that re-exports the client with export * from '@prisma/client', name no table",
-            "an enum imported by name from @prisma/client reads as a table of that name that no model declares"
+            "an enum imported by name from @prisma/client and used as a value reads as a table of that name that no model declares; a model type that the file only imports, re-exports or writes in a type names no table"
           ],
           "kind": "table",
           "role": "calls",
