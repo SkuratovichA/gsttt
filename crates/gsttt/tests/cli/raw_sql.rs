@@ -1,4 +1,4 @@
-//! Raw SQL of a Prisma project, read through the whole pipeline: the TypeScript connector finds the document, the `sql` connector reads it, and the `prisma` connector reads the schema.
+//! Raw SQL, read through the whole pipeline (a Prisma project, the SQL drivers of TypeScript and the DB-API of Python): a language connector finds the document, the `sql` connector reads it, and the `prisma` connector reads the schema.
 
 use gsttt_scenario::scenario;
 
@@ -160,14 +160,14 @@ fn callers(sandbox: &Sandbox, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The unread sites of the TypeScript connector, from the answer of `coverage`.
-fn unread_sites(sandbox: &Sandbox) -> Vec<Value> {
+/// The unread sites of one connector, from the answer of `coverage`.
+fn unread_sites(sandbox: &Sandbox, name: &str) -> Vec<Value> {
     let run = sandbox.run(&["--json", "coverage"]);
     json(&run)["connectors"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|connector| connector["connector"] == "ts")
+        .filter(|connector| connector["connector"] == name)
         .flat_map(|connector| {
             connector["unread_sites"]
                 .as_array()
@@ -197,7 +197,7 @@ fn a_computed_table_names_no_table() {
         ["table orders", "table sessions", "table users"]
     );
     assert_eq!(callers(&sandbox, "table orders"), ["src/template.ts"]);
-    assert_eq!(unread_sites(&sandbox), Vec::<Value>::new());
+    assert_eq!(unread_sites(&sandbox, "ts"), Vec::<Value>::new());
 }
 
 #[test]
@@ -215,5 +215,32 @@ fn a_literal_that_is_no_sql_names_no_table() {
             "{key}"
         );
     }
-    assert_eq!(unread_sites(&sandbox), Vec::<Value>::new());
+    assert_eq!(unread_sites(&sandbox, "ts"), Vec::<Value>::new());
+}
+
+fn python_tree(sandbox: &Sandbox) {
+    write(
+        sandbox.work.path(),
+        "db.py",
+        "def read(cursor, task, table):\n    cursor.execute(f\"SELECT id FROM bookings WHERE id = {task}\")\n\n\ndef any(cursor, table):\n    cursor.execute(f\"SELECT id FROM {table}\")\n",
+    );
+}
+
+#[test]
+#[scenario("python", "A computed part of a SQL string is read as a placeholder")]
+fn a_computed_part_of_a_sql_string_names_the_table_around_it() {
+    let sandbox = Sandbox::new();
+    python_tree(&sandbox);
+    assert_eq!(callers(&sandbox, "table bookings"), ["db.py"]);
+    assert_eq!(unread_sites(&sandbox, "python"), Vec::<Value>::new());
+}
+
+#[test]
+#[scenario("python", "A statement whose table is computed names no table")]
+fn a_python_statement_whose_table_is_computed_names_no_table() {
+    let sandbox = Sandbox::new();
+    python_tree(&sandbox);
+    // `bookings` is the one table of `db.py`; `SELECT id FROM ?` adds none and is no unread site.
+    assert_eq!(tables(&sandbox), ["table bookings"]);
+    assert_eq!(unread_sites(&sandbox, "python"), Vec::<Value>::new());
 }

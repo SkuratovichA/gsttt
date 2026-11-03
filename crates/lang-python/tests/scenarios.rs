@@ -24,6 +24,10 @@ use serde_json::{Value, json};
 /// Larger than any fixture file.
 const MAX_FILE_BYTES: u64 = 1 << 20;
 
+/// The blind spot of a statement the placeholder leaves without a table, in the words the provides use.
+const COMPUTED_STATEMENT: &str =
+    "a statement whose table or whole clause is computed does not parse and names no table";
+
 /// A fixture tree after the pipeline ran on it, with the output as JSON for the snapshots.
 struct Tree {
     repo: RepoView,
@@ -1347,36 +1351,103 @@ fn a_comment_before_an_escape_made_line_break_is_an_unread_site() {
     assert_eq!(embedded[0].text, "SELECT a FROM t -- note");
 }
 
-#[gsttt_scenario::scenario("python", "A SQL string built at run time is an unread site")]
+#[gsttt_scenario::scenario("python", "A SQL string formatted with % is an unread site")]
 #[test]
-fn a_sql_string_built_at_run_time_is_an_unread_site() {
+fn a_sql_string_formatted_with_percent_is_an_unread_site() {
     let tree = index("sql_arguments");
-    // An f-string, `+` and `%` on a literal, and `.format` on a text joined with `+`; the plain literal on line 6 is read.
-    assert_eq!(
-        tree.unread("built.py"),
-        [
-            "L2 cursor.execute",
-            "L3 cursor.execute",
-            "L4 cursor.execute",
-            "L5 cursor.execute"
-        ]
-    );
+    // `%` on a literal is not read as a placeholder, so line 4 stays unread and embeds nothing.
+    assert_eq!(tree.unread("built.py"), ["L4 cursor.execute"]);
     let embedded = &tree.file("built.py").facts.embedded;
-    assert_eq!(embedded.len(), 1, "{embedded:?}");
-    assert_eq!(embedded[0].line, 6);
-    assert_eq!(embedded[0].text, "SELECT id FROM bookings");
+    assert!(
+        embedded.iter().all(|document| document.line != 4),
+        "{embedded:?}"
+    );
     insta::assert_json_snapshot!(
-        "a_sql_string_built_at_run_time_is_an_unread_site",
+        "a_sql_string_formatted_with_percent_is_an_unread_site",
         tree.file_json("built.py")
     );
 }
 
+#[test]
+fn computed_parts_of_a_sql_string_are_placeholders() {
+    let tree = index_files(&[(
+        "db.py",
+        r#"def read(cursor, task):
+    cursor.execute(f"SELECT id FROM bookings WHERE id = {task}")
+    cursor.execute("SELECT id FROM bookings WHERE id = " + task)
+    cursor.execute("SELECT id FROM bookings WHERE id = {}".format(task))
+"#,
+    )]);
+    let texts: Vec<_> = tree
+        .file("db.py")
+        .facts
+        .embedded
+        .iter()
+        .map(|document| (document.line, document.text.as_str()))
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            (2, "SELECT id FROM bookings WHERE id = ?"),
+            (3, "SELECT id FROM bookings WHERE id = ?"),
+            (4, "SELECT id FROM bookings WHERE id = ?")
+        ]
+    );
+    assert_eq!(tree.unread("db.py"), Vec::<String>::new());
+}
+
+#[test]
+fn a_computed_table_is_a_blind_spot_of_the_provides() {
+    let tree = index_files(&[(
+        "db.py",
+        "def read(cursor, table):\n    cursor.execute(f\"SELECT id FROM {table}\")\n",
+    )]);
+    let embedded = &tree.file("db.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded[0].text, "SELECT id FROM ?");
+    assert_eq!(tree.unread("db.py"), Vec::<String>::new());
+    // `SELECT id FROM ?` does not parse, so it names no table, and the provides say so.
+    let blind_spots = tree.blind_spots();
+    assert!(blind_spots.contains(&COMPUTED_STATEMENT), "{blind_spots:?}");
+}
+
+#[gsttt_scenario::scenario("python", "A computed part of text() is read as a placeholder")]
+#[test]
+fn a_computed_part_of_text_is_read_as_a_placeholder() {
+    let tree = index_files(&[
+        ("requirements.txt", "sqlalchemy\n"),
+        (
+            "db.py",
+            "from sqlalchemy import text\n\n\ndef read(connection, task):\n    connection.execute(text(f\"SELECT id FROM bookings WHERE id = {task}\"))\n",
+        ),
+    ]);
+    // `execute` holds a call, which it records nothing for, so `text` is the only embed.
+    let embedded = &tree.file("db.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(embedded[0].text, "SELECT id FROM bookings WHERE id = ?");
+    assert_eq!(embedded[0].via, "sqlalchemy");
+    assert_eq!(tree.unread("db.py"), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A triple-quoted f-string keeps the line of its statement")]
+#[test]
+fn a_triple_quoted_f_string_keeps_the_line_of_its_statement() {
+    let tree = index_files(&[(
+        "db.py",
+        "def read(cursor, task):\n    cursor.execute(\n        f\"\"\"\n        SELECT id\n        FROM bookings\n        WHERE id = {task}\n        \"\"\"\n    )\n",
+    )]);
+    let embedded = &tree.file("db.py").facts.embedded;
+    assert_eq!(embedded.len(), 1, "{embedded:?}");
+    assert_eq!(line_in(&embedded[0], "FROM bookings"), 5);
+    assert_eq!(line_in(&embedded[0], "WHERE id = ?"), 6);
+}
+
 #[gsttt_scenario::scenario(
     "python",
-    "A format template with a replacement field is an unread site"
+    "A format template with a replacement field is read as a placeholder"
 )]
 #[test]
-fn a_format_template_with_a_replacement_field_is_an_unread_site() {
+fn a_format_template_with_a_replacement_field_is_read_as_a_placeholder() {
     let tree = index_files(&[(
         "db.py",
         r#"def read(cursor, table, task):
@@ -1386,19 +1457,24 @@ fn a_format_template_with_a_replacement_field_is_an_unread_site() {
     cursor.execute("SELECT '{{}}'".format())
 "#,
     )]);
+    assert_eq!(tree.unread("db.py"), Vec::<String>::new());
+    let texts: Vec<_> = tree
+        .file("db.py")
+        .facts
+        .embedded
+        .iter()
+        .map(|document| (document.line, document.text.as_str()))
+        .collect();
+    // Doubled braces are the braces they stand for, so the last call has nothing computed.
     assert_eq!(
-        tree.unread("db.py"),
+        texts,
         [
-            "L2 cursor.execute",
-            "L3 cursor.execute",
-            "L4 cursor.execute"
+            (2, "SELECT id FROM ?"),
+            (3, "SELECT id FROM ? WHERE id = ?"),
+            (4, "SELECT id FROM ?"),
+            (5, "SELECT '{}'")
         ]
     );
-    // Doubled braces are the braces they stand for, so the last call has nothing computed.
-    let embedded = &tree.file("db.py").facts.embedded;
-    assert_eq!(embedded.len(), 1, "{embedded:?}");
-    assert_eq!(embedded[0].line, 5);
-    assert_eq!(embedded[0].text, "SELECT '{}'");
 }
 
 #[gsttt_scenario::scenario("python", "An argument that is not a string records nothing")]
@@ -2105,6 +2181,7 @@ fn blind_spots_are_reported() {
         "Django default table names",
         "execute and executemany calls on a receiver of more than three segments",
         "SQL held in a variable",
+        COMPUTED_STATEMENT,
         "fields of a settings class that derives from another settings class",
         "an alias written inside a field's annotation",
     ] {

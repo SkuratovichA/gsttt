@@ -45,6 +45,7 @@ expression: "tree.json[\"projects\"]"
           "Django default table names",
           "SQL built by a function call",
           "SQL held in a variable",
+          "a statement whose table or whole clause is computed does not parse and names no table",
           "execute and executemany calls on a receiver of more than three segments",
           "names brought in by a star import, which are not matched to the module they come from",
           "table names given by a declared_attr or inherited from a mixin",
@@ -61,6 +62,7 @@ expression: "tree.json[\"projects\"]"
         "blind_spots": [
           "SQL built by a function call",
           "SQL held in a variable",
+          "a statement whose table or whole clause is computed does not parse and names no table",
           "execute and executemany calls on a receiver of more than three segments"
         ]
       },
