@@ -27,6 +27,8 @@ const LIBRARY_MODULES: &[&str] = &[
     "collections",
     "collections.abc",
     "types",
+    "pathlib",
+    "re",
 ];
 
 /// The types an annotation names a builtin value with, `list[int]` and `Mapping[str, int]` among them.
@@ -55,6 +57,8 @@ const BUILTIN_TYPES: &[&str] = &[
     "Deque",
     "Counter",
     "OrderedDict",
+    "Path",
+    "PurePath",
 ];
 
 /// The callables whose result is a builtin value.
@@ -71,6 +75,29 @@ const BUILTIN_CALLS: &[&str] = &[
     "OrderedDict",
     "deque",
     "Counter",
+    "open",
+    "vars",
+    "dir",
+    "globals",
+    "locals",
+    "Path",
+    "PurePath",
+];
+
+/// The functions of `re` whose result is a pattern or a match: no class of the file.
+const RE_CALLS: &[&str] = &["compile", "match", "search", "fullmatch"];
+
+/// The functions of `re` whose result is a sequence of matches or of strings: what a `for` over them binds is a builtin.
+const RE_ITERATORS: &[&str] = &["finditer", "split", "findall"];
+
+/// The methods that only a path has, and that give a path: a builtin value that has one is a `Path`.
+const PATH_METHODS: &[&str] = &[
+    "joinpath",
+    "with_name",
+    "with_suffix",
+    "resolve",
+    "absolute",
+    "expanduser",
 ];
 
 /// What a local or a field is known to hold.
@@ -112,6 +139,8 @@ pub(super) struct Table {
     library: HashSet<String>,
     /// Classes by the name they are declared under: `Outer.Inner` for a class nested in a class.
     classes: HashMap<String, ClassInfo>,
+    /// Names the top level binds other than by an import: a `re` that is one of them is no longer the module.
+    rebound: HashSet<String>,
 }
 
 /// One class: the names it declares, the types of its fields and the bases that name something the file binds.
@@ -181,6 +210,7 @@ impl Table {
     pub(super) fn of(suite: &[Stmt]) -> Self {
         let mut table = Self {
             module: Binder::of(suite, true).names,
+            rebound: Binder::of(suite, false).names.into_iter().collect(),
             ..Self::default()
         };
         let mut scan = ImportScan {
@@ -406,19 +436,26 @@ impl Table {
 
     /// Whether `chain` is one of `names` as the standard library gives it, and not as a class or an import of the file does: a builtin the file does not rebind, or a name an import of `typing` or `collections` brings in.
     pub(super) fn is_library_name(&self, chain: &str, names: &[&str]) -> bool {
-        match chain.rsplit_once('.') {
-            Some((module, name)) => {
-                names.contains(&name)
-                    && module
-                        .split('.')
-                        .next()
-                        .is_some_and(|root| self.library.contains(root))
-            }
-            None => {
-                names.contains(&chain)
-                    && (self.library.contains(chain) || (is_ambient(chain) && !self.knows(chain)))
-            }
-        }
+        self.is_imported_name(chain, names)
+            || (!chain.contains('.')
+                && names.contains(&chain)
+                && is_ambient(chain)
+                && !self.knows(chain))
+    }
+
+    /// Whether `chain` is one of `names` of a module of [`LIBRARY_MODULES`] that an import brings in, as `search` or `re.search`.
+    fn is_imported_name(&self, chain: &str, names: &[&str]) -> bool {
+        let (root, name) = match chain.rsplit_once('.') {
+            Some((module, name)) => (module.split('.').next(), name),
+            None => (Some(chain), chain),
+        };
+        names.contains(&name) && root.is_some_and(|root| self.library.contains(root))
+    }
+
+    /// Whether `chain` is one of `names` of `re`, which the file has not bound again after importing it.
+    fn is_re_name(&self, chain: &str, names: &[&str]) -> bool {
+        let root = chain.split('.').next().unwrap_or(chain);
+        self.is_imported_name(chain, names) && !self.rebound.contains(root)
     }
 
     /// What an annotation names: a builtin such as `list[int]`, or a chain the file binds, through `Optional`, `Union`, `Annotated`, `ClassVar`, `Final`, `Type` and `| None`. Of an `Annotated` only the first argument is a type, and a `Literal` holds values. Another generic is no class of the file.
@@ -502,14 +539,41 @@ impl Table {
     pub(super) fn value_type(&self, value: &Expr, parameters: &HashMap<String, Ty>) -> Option<Ty> {
         match value {
             Expr::Call(call) => {
+                if let Expr::Attribute(method) = &*call.func
+                    && PATH_METHODS.contains(&method.attr.as_str())
+                    && self.value_type(&method.value, parameters) == Some(Ty::Builtin)
+                {
+                    return Some(Ty::Builtin);
+                }
                 let chain = dotted(&call.func)?;
-                if self.is_library_name(&chain, BUILTIN_CALLS) {
+                if self.is_library_name(&chain, BUILTIN_CALLS) || self.is_re_name(&chain, RE_CALLS)
+                {
                     return Some(Ty::Builtin);
                 }
                 let chain = self.known_chain(chain)?;
                 is_class_name(&chain).then(|| Ty::class(chain))
             }
             Expr::Name(name) => parameters.get(name.id.as_str()).cloned(),
+            // A local bound from a field that holds a builtin; a field of a class is left to the chain that reads it.
+            Expr::Attribute(attribute) => {
+                let Expr::Name(root) = &*attribute.value else {
+                    return None;
+                };
+                let Some(Ty::Class(class)) = parameters.get(root.id.as_str()) else {
+                    return None;
+                };
+                self.field_type(class, attribute.attr.as_str())
+                    .filter(|ty| *ty == Ty::Builtin)
+            }
+            // `path / "name"` joins two builtin values into one.
+            Expr::BinOp(binary)
+                if binary.op == Operator::Div
+                    && [&*binary.left, &*binary.right]
+                        .into_iter()
+                        .all(|side| self.value_type(side, parameters) == Some(Ty::Builtin)) =>
+            {
+                Some(Ty::Builtin)
+            }
             Expr::BoolOp(operation) => self.either_value(&operation.values, parameters),
             Expr::If(branch) => self.either_value([&*branch.body, &*branch.orelse], parameters),
             Expr::List(_)
@@ -527,6 +591,29 @@ impl Table {
             | Expr::BooleanLiteral(_) => Some(Ty::Builtin),
             _ => None,
         }
+    }
+
+    /// What the name of a `with` item holds: only a builtin call says, because the `__enter__` of a class may return anything. That is a call of `open` or another builtin, and `open` called on a builtin value such as a `Path`.
+    pub(super) fn with_type(&self, item: &Expr, types: &HashMap<String, Ty>) -> Option<Ty> {
+        let Expr::Call(call) = item else {
+            return None;
+        };
+        let opens_builtin = matches!(
+            &*call.func,
+            Expr::Attribute(attribute)
+                if attribute.attr.as_str() == "open"
+                    && self.value_type(&attribute.value, types) == Some(Ty::Builtin)
+        );
+        (opens_builtin || self.value_type(item, types) == Some(Ty::Builtin)).then_some(Ty::Builtin)
+    }
+
+    /// What the loop variable of a `for` over `iterable` holds: a match, when it loops over `re.finditer`. The element of any other value is unknown, because a list of `Foo` has `Foo` elements.
+    pub(super) fn iteration_type(&self, iterable: &Expr) -> Option<Ty> {
+        let Expr::Call(call) = iterable else {
+            return None;
+        };
+        let chain = dotted(&call.func)?;
+        self.is_re_name(&chain, RE_ITERATORS).then_some(Ty::Builtin)
     }
 }
 

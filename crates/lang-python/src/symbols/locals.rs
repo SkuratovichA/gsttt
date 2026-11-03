@@ -3,7 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{ExceptHandler, Expr, ExprContext, Pattern, Stmt, StmtFunctionDef};
+use ruff_python_ast::{
+    ExceptHandler, Expr, ExprContext, Pattern, Stmt, StmtFor, StmtFunctionDef, StmtWith,
+};
 
 use super::table::{Table, Ty, captured};
 
@@ -73,6 +75,37 @@ impl Scan<'_> {
     }
 }
 
+impl<'a> Scan<'_> {
+    /// A `with` binds its name to what [`Table::with_type`] says, as the recorder reads it.
+    fn with(&mut self, with: &'a StmtWith) {
+        for item in &with.items {
+            self.visit_expr(&item.context_expr);
+            if let Some(target) = &item.optional_vars {
+                let ty = if with.is_async {
+                    None
+                } else {
+                    self.table.with_type(&item.context_expr, &self.types)
+                };
+                self.target(target, ty);
+            }
+        }
+        self.visit_body(&with.body);
+    }
+
+    /// A `for` binds its variable to what [`Table::iteration_type`] says, as the recorder reads it.
+    fn looped(&mut self, looped: &'a StmtFor) {
+        self.visit_expr(&looped.iter);
+        let ty = if looped.is_async {
+            None
+        } else {
+            self.table.iteration_type(&looped.iter)
+        };
+        self.target(&looped.target, ty);
+        self.visit_body(&looped.body);
+        self.visit_body(&looped.orelse);
+    }
+}
+
 impl<'a> Visitor<'a> for Scan<'_> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
         match stmt {
@@ -93,6 +126,8 @@ impl<'a> Visitor<'a> for Scan<'_> {
                 let ty = self.table.annotation_type(&assign.annotation);
                 self.target(&assign.target, ty);
             }
+            Stmt::With(with) => self.with(with),
+            Stmt::For(looped) => self.looped(looped),
             Stmt::Import(_) | Stmt::ImportFrom(_) => {}
             other => visitor::walk_stmt(self, other),
         }
