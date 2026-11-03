@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/data.rs
+assertion_line: 383
 expression: json
 ---
 {
@@ -66,7 +67,8 @@ expression: json
         "heirs": [],
         "on_load": [
           "Entity"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -121,7 +123,8 @@ expression: json
         "heirs": [],
         "on_load": [
           "Entity"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -180,6 +183,9 @@ expression: json
         "on_load": [
           "pgTable",
           "serial"
+        ],
+        "reads": [
+          "primaryKey"
         ]
       },
       "tags": 0,

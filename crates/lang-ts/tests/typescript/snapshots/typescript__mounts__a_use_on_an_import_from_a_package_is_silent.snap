@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/mounts.rs
+assertion_line: 58
 expression: json
 ---
 {
@@ -68,6 +69,9 @@ expression: json
         "on_load": [
           "i18n.use",
           "initReactI18next"
+        ],
+        "reads": [
+          "use"
         ]
       },
       "tags": 0,

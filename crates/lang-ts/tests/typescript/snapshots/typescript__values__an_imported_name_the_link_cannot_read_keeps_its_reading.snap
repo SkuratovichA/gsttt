@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/values.rs
+assertion_line: 151
 expression: json
 ---
 {
@@ -57,7 +58,8 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -92,7 +94,11 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "API_URL",
+          "env"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -172,6 +178,10 @@ expression: json
           "PATH",
           "api",
           "axios.create"
+        ],
+        "reads": [
+          "create",
+          "get"
         ]
       },
       "tags": 0,

@@ -95,7 +95,8 @@ expression: json
             "of": "RequestInit"
           }
         ],
-        "on_load": []
+        "on_load": [],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

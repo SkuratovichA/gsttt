@@ -24,8 +24,11 @@ pub(in crate::query) enum Note {
     Undeclared { file: FileId, name: String },
     /// The connector of `file` records no declarations, so the walk follows the file whole.
     NoDeclarations { file: FileId },
-    /// A call through a value names no class, so the callers of these members are found through the declarations that refer to their classes. Each is a member with its class, in byte order of the member.
-    ThroughClass { members: Vec<(String, String)> },
+    /// A call through a value names no class, so a file that holds the class of these members and names none of them cannot be told from a caller, and is left out: `files` of them. Each member comes with its class, in byte order of the member.
+    HeldClass {
+        members: Vec<(String, String)>,
+        files: usize,
+    },
     /// The depth ended the walk while callers were left to follow.
     Stopped,
 }
@@ -155,10 +158,16 @@ fn close_over(symbols: FileSymbols<'_>, mut seeded: BTreeSet<usize>) -> (BTreeSe
     while !fresh.is_empty() {
         let (names, classes) = referred(symbols, &fresh);
         // Inside one file a subclass and a value of the class are reached through the use of the class itself, so the closure needs no heirs.
-        load = load || loads_any(symbols, &names, &classes, &[]);
+        let reach = Reach {
+            symbols,
+            names: &names,
+            classes: &classes,
+            heirs: &[],
+        };
+        load = load || reach.loads() == Refers::Yes;
         fresh.clear();
         pending.retain(|&index| {
-            let refers_to_fresh = uses_any(symbols, index, &names, &classes, &[]);
+            let refers_to_fresh = reach.uses(index) == Refers::Yes;
             if refers_to_fresh {
                 fresh.push(index);
             }
@@ -167,32 +176,6 @@ fn close_over(symbols: FileSymbols<'_>, mut seeded: BTreeSet<usize>) -> (BTreeSe
         seeded.extend(fresh.iter().copied());
     }
     (seeded, load)
-}
-
-/// Whether the declaration at `index` refers to one of the `names` or `classes`.
-fn uses_any(
-    symbols: FileSymbols<'_>,
-    index: usize,
-    names: &[&str],
-    classes: &[&str],
-    heirs: &[(&str, &str)],
-) -> bool {
-    symbols.declaration(index).is_some_and(|decl| {
-        decl.uses()
-            .any(|used| refers(names, classes, heirs, Some(decl.name()), used))
-    })
-}
-
-/// Whether the code that runs as the file loads refers to one of the `names` or `classes`.
-fn loads_any(
-    symbols: FileSymbols<'_>,
-    names: &[&str],
-    classes: &[&str],
-    heirs: &[(&str, &str)],
-) -> bool {
-    symbols
-        .on_load()
-        .any(|used| refers(names, classes, heirs, None, used))
 }
 
 /// The names of the declarations at `indices`, and the classes of those that are members, each sorted and once.
@@ -225,6 +208,7 @@ fn walk_from(
         files: BTreeMap::new(),
         across: BTreeSet::new(),
         through_class: BTreeSet::new(),
+        held: BTreeSet::new(),
     };
     let mut crossed = Crossed::new(Direction::ToCallers, &index.graph);
     let mut notes = BTreeSet::new();
@@ -244,10 +228,16 @@ fn walk_from(
         notes.insert(Note::Stopped);
     }
     let hits = walk.hits();
-    // One note for every member, so that the answer can cut the list of them as it cuts every list of names.
-    if !walk.through_class.is_empty() {
-        notes.insert(Note::ThroughClass {
+    // A file left out may be listed for another reason, and then it is no file the note is about. One note for every member, so that the answer can cut the list of them as it cuts every list of names.
+    let held = walk
+        .held
+        .iter()
+        .filter(|file| !hits.iter().any(|hit| hit.file == **file))
+        .count();
+    if held > 0 {
+        notes.insert(Note::HeldClass {
             members: walk.through_class.into_iter().collect(),
+            files: held,
         });
     }
     Walked {
@@ -383,6 +373,8 @@ struct Layer {
     across: Vec<FileId>,
     /// Each member with its class.
     through_class: BTreeSet<(String, String)>,
+    /// The files that hold a class or a value of it where the walk asked about a member of it, and name none.
+    held: BTreeSet<FileId>,
 }
 
 struct Walk<'a> {
@@ -396,6 +388,8 @@ struct Walk<'a> {
     across: BTreeSet<FileId>,
     /// The members of classes the walk looked for the callers of through their class, each with its class.
     through_class: BTreeSet<(String, String)>,
+    /// The files that hold a class or a value of it where the walk asked about a member of it, and name none.
+    held: BTreeSet<FileId>,
 }
 
 impl Walk<'_> {
@@ -526,6 +520,7 @@ impl Walk<'_> {
     /// Records what the layer found at `distance`, and returns the parts of files it reached, which are the next layer's frontier.
     fn apply(&mut self, layer: Layer, distance: u32) -> Vec<Front> {
         self.through_class.extend(layer.through_class);
+        self.held.extend(layer.held);
         self.across.extend(layer.across);
         // A stable sort keeps the order the layer found the ways in, which is contract order within one file.
         let mut candidates = layer.candidates;
@@ -669,6 +664,8 @@ struct Local<'a> {
     member: Option<&'a str>,
     /// The member the walk asked about when the local is a namespace, whose `member` is the class and is all the namespace is told of it: `place` for `lib` with the member `Base`, when the walk is at `Base.place`.
     inner: Option<&'a str>,
+    /// Whether the local is a namespace import, whose own name is a use of every name it holds.
+    namespace: bool,
 }
 
 impl<'a> Local<'a> {
@@ -686,13 +683,34 @@ impl<'a> Local<'a> {
     }
 
     /// Whether a declaration that uses `used` refers to what the local stands for. A use of the local alone is a use of every member of it, and `Local.member` is a use of that member only, which for a namespace is a name of the file and for a class a member of it.
-    fn refers(&self, used: &str) -> bool {
-        match self.member {
-            None => belongs_to(used, self.name),
-            Some(member) => {
-                used == self.name
-                    || member_in(used, self.name).is_some_and(|rest| belongs_to(rest, member))
+    fn refers(&self, symbols: FileSymbols<'_>, used: &str) -> Refers {
+        let Some(member) = self.member else {
+            return Refers::from(belongs_to(used, self.name));
+        };
+        if used == self.name {
+            // A namespace passed away stays a use of every name, and a class or a value of it is a use of the member where the file names the member.
+            return if self.namespace || symbols.reads_member(member) {
+                Refers::Yes
+            } else {
+                Refers::Held
+            };
+        }
+        let Some(rest) = member_in(used, self.name) else {
+            return Refers::No;
+        };
+        match self.inner {
+            // `lib.Base` alone is a use of `Base` as a whole, and `lib.Base.place` of the member.
+            Some(inner) if rest == member => {
+                if symbols.reads_member(inner) {
+                    Refers::Yes
+                } else {
+                    Refers::Held
+                }
             }
+            Some(inner) => {
+                Refers::from(member_in(rest, member).is_some_and(|name| belongs_to(name, inner)))
+            }
+            None => Refers::from(belongs_to(rest, member)),
         }
     }
 }
@@ -935,7 +953,7 @@ impl<'w, 'a> Step<'w, 'a> {
         };
     }
 
-    /// The declarations of `file` that refer to the `declared` ones reached, and its load when it does. A member `Class.member` is also referred to by the declarations outside `Class` that refer to the class, because a call through a value names no class. A class is referred to by the declarations outside it that use one of its members, `Class.other` as well as `Class.member`.
+    /// The declarations of `file` that refer to the `declared` ones reached, and its load when it does. A member `Class.member` is also referred to by the declarations outside `Class` that refer to the class in a file that reads `member` on some value, because a call through a value names no class. A class is referred to by the declarations outside it that use one of its members, `Class.other` as well as `Class.member`.
     fn callers_in(&mut self, file: FileId, symbols: FileSymbols<'a>, declared: &[usize]) {
         let (names, classes) = referred(symbols, declared);
         for member in &names {
@@ -953,14 +971,29 @@ impl<'w, 'a> Step<'w, 'a> {
                 }
             }
         }
+        let reach = Reach {
+            symbols,
+            names: &names,
+            classes: &classes,
+            heirs: &heirs,
+        };
         let mut found = false;
+        let mut held = false;
         for index in 0..symbols.len() {
-            if uses_any(symbols, index, &names, &classes, &heirs) {
-                found |= self.unit(file, Part::Decl(index));
+            match reach.uses(index) {
+                Refers::Yes => found |= self.unit(file, Part::Decl(index)),
+                Refers::Held => held = true,
+                Refers::No => {}
             }
         }
-        if loads_any(symbols, &names, &classes, &heirs) {
-            found |= self.unit(file, Part::Load);
+        match reach.loads() {
+            Refers::Yes => found |= self.unit(file, Part::Load),
+            Refers::Held => held = true,
+            Refers::No => {}
+        }
+        // The file that declares the member is not a holder to ask about.
+        if held && self.walk.asked(file).is_empty() {
+            self.layer.held.insert(file);
         }
         if !found {
             return;
@@ -1138,6 +1171,7 @@ impl<'w, 'a> Step<'w, 'a> {
                 name: heir,
                 member: Some(member),
                 inner: None,
+                namespace: false,
             });
             for exported in self.exported_as(importer, symbols, heir) {
                 work.push_back((importer, exported.with(Some(member))));
@@ -1180,7 +1214,8 @@ impl<'w, 'a> Step<'w, 'a> {
                     via.taken.name(graph, taken);
                     let member = name.member_taken(taken);
                     if re_export {
-                        via.barrel = true;
+                        // A re-export of a class names none of its members, and `export * as ns` names no name of the file, so the walk goes through and the file gets no row.
+                        via.barrel |= member.is_none();
                         if let (Some(source), Some(target)) =
                             (graph.name_id(taken), graph.name_id(bound))
                         {
@@ -1197,6 +1232,7 @@ impl<'w, 'a> Step<'w, 'a> {
                         name: bound,
                         member,
                         inner,
+                        namespace: taken == "*",
                     });
                     // A file that declares members of what it imports exports the name to start a walk at them, not to pass it on: it calls nothing of the import by that.
                     if symbols
@@ -1252,15 +1288,22 @@ impl<'w, 'a> Step<'w, 'a> {
         if locals.is_empty() {
             return false;
         }
-        let refers = |used: &str| locals.iter().any(|local| local.refers(used));
         let mut found = false;
+        let mut held = false;
         for (index, decl) in symbols.declarations().enumerate() {
-            if decl.uses().any(refers) {
-                found |= self.unit(importer, Part::Decl(index));
+            match refers_any(locals, symbols, decl.uses()) {
+                Refers::Yes => found |= self.unit(importer, Part::Decl(index)),
+                Refers::Held => held = true,
+                Refers::No => {}
             }
         }
-        if symbols.on_load().any(refers) {
-            found |= self.unit(importer, Part::Load);
+        match refers_any(locals, symbols, symbols.on_load()) {
+            Refers::Yes => found |= self.unit(importer, Part::Load),
+            Refers::Held => held = true,
+            Refers::No => {}
+        }
+        if held {
+            self.layer.held.insert(importer);
         }
         found
     }
@@ -1407,6 +1450,24 @@ fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<
     }
 }
 
+/// Whether any of the `uses` of a file refers to one of its `locals`.
+fn refers_any<'u>(
+    locals: &[Local<'_>],
+    symbols: FileSymbols<'_>,
+    uses: impl Iterator<Item = &'u str>,
+) -> Refers {
+    let mut best = Refers::No;
+    for used in uses {
+        for local in locals {
+            best = best.max(local.refers(symbols, used));
+        }
+        if best == Refers::Yes {
+            break;
+        }
+    }
+    best
+}
+
 /// Whether a mock with `flags` replaces its module with a factory, so the importer runs none of the code of that module.
 const fn replaces(flags: ImportFlags) -> bool {
     flags.contains(ImportFlags::REPLACES)
@@ -1451,21 +1512,88 @@ fn narrowest<'g>(symbols: FileSymbols<'g>, line: Line) -> impl Iterator<Item = u
         .map(|(index, _)| index)
 }
 
-/// Whether code that uses `used` refers to one of the `names` of the declarations reached, or to a member of them. `classes` are the classes of the reached names that are members. A use of such a class alone is a use of every member of it, and a use of `Class.member` is a use of that member and of `Class`. The code of `owner` belongs to a class it is a member of, which it does not refer to by being in it. The load of a file has no owner.
-fn refers(
-    names: &[&str],
-    classes: &[&str],
-    heirs: &[(&str, &str)],
-    owner: Option<&str>,
-    used: &str,
-) -> bool {
-    let outside = |class: &str| owner.is_none_or(|owner| !belongs_to(owner, class));
-    holds(names, &used)
-        || (holds(classes, &used) && outside(used))
-        || class_of(used).is_some_and(|class| holds(names, &class) && outside(class))
-        || heirs.iter().any(|&(heir, member)| {
-            member_in(used, heir) == Some(member) || (used == heir && outside(heir))
-        })
+/// Whether code refers to a name the walk reached. A class or a value of it that is used alone is a use of its members, but a call through a value names no class, so the file must also name the member it calls: `Held` is a use that would count but for that.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Refers {
+    No,
+    Held,
+    Yes,
+}
+
+impl From<bool> for Refers {
+    fn from(refers: bool) -> Self {
+        if refers { Self::Yes } else { Self::No }
+    }
+}
+
+/// The names the walk reached in one file, which the code of that file may refer to.
+struct Reach<'a, 'g> {
+    symbols: FileSymbols<'g>,
+    /// The names of the declarations reached.
+    names: &'a [&'a str],
+    /// The classes of the reached names that are members.
+    classes: &'a [&'a str],
+    /// The names that take a reached member from its class, each with the member.
+    heirs: &'a [(&'a str, &'a str)],
+}
+
+impl Reach<'_, '_> {
+    /// Whether the declaration at `index` refers to what was reached.
+    fn uses(&self, index: usize) -> Refers {
+        self.symbols
+            .declaration(index)
+            .map_or(Refers::No, |decl| self.best(decl.uses(), Some(decl.name())))
+    }
+
+    /// Whether the code that runs as the file loads refers to what was reached.
+    fn loads(&self) -> Refers {
+        self.best(self.symbols.on_load(), None)
+    }
+
+    fn best<'u>(&self, uses: impl Iterator<Item = &'u str>, owner: Option<&str>) -> Refers {
+        let mut best = Refers::No;
+        for used in uses {
+            best = best.max(self.refers(owner, used));
+            if best == Refers::Yes {
+                break;
+            }
+        }
+        best
+    }
+
+    /// Whether code that uses `used` refers to one of the `names`, or to a member of them. A use of `Class.member` is a use of that member and of `Class`, and a use of a class reached as a whole is a use of every member. A use of such a class alone, or of a value of it, is a use of the members reached only where the file names one of them. The code of `owner` belongs to a class it is a member of, which it does not refer to by being in it. The load of a file has no owner.
+    fn refers(&self, owner: Option<&str>, used: &str) -> Refers {
+        let outside = |class: &str| owner.is_none_or(|owner| !belongs_to(owner, class));
+        if holds(self.names, &used)
+            || class_of(used).is_some_and(|class| holds(self.names, &class) && outside(class))
+            || self
+                .heirs
+                .iter()
+                .any(|&(heir, member)| member_in(used, heir) == Some(member))
+        {
+            return Refers::Yes;
+        }
+        let names_member = |member: &str| self.symbols.reads_member(member);
+        let class_held = holds(self.classes, &used)
+            && outside(used)
+            && self
+                .names
+                .iter()
+                .any(|name| member_in(name, used).is_some_and(names_member));
+        let heir_held = self
+            .heirs
+            .iter()
+            .any(|&(heir, member)| used == heir && outside(heir) && names_member(member));
+        if class_held || heir_held {
+            return Refers::Yes;
+        }
+        let held = (holds(self.classes, &used) && outside(used))
+            || self
+                .heirs
+                .iter()
+                .any(|&(heir, _)| used == heir && outside(heir));
+        if held { Refers::Held } else { Refers::No }
+    }
 }
 
 /// The names of a file that take `member` from what `extends` accepts as the head they take the members of, through the heirs of the heirs, without a name that declares the member itself, which keeps its own callers and passes its own member on. A private member is not taken. Names come in the order of the file's heirs, once each.

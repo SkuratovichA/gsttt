@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/raw_sql.rs
+assertion_line: 73
 expression: json
 ---
 {
@@ -88,6 +89,9 @@ expression: json
         ],
         "on_load": [
           "PrismaClient"
+        ],
+        "reads": [
+          "$queryRawUnsafe"
         ]
       },
       "tags": 0,
@@ -170,6 +174,10 @@ expression: json
         "on_load": [
           "Prisma.sql",
           "PrismaClient"
+        ],
+        "reads": [
+          "$queryRaw",
+          "sql"
         ]
       },
       "tags": 0,
@@ -295,6 +303,12 @@ expression: json
         ],
         "on_load": [
           "PrismaClient"
+        ],
+        "reads": [
+          "$executeRawUnsafe",
+          "$queryRaw",
+          "$queryRawUnsafe",
+          "sql"
         ]
       },
       "tags": 0,

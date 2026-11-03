@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/graphql.rs
+assertion_line: 65
 expression: json
 ---
 {
@@ -75,7 +76,8 @@ expression: json
         "heirs": [],
         "on_load": [
           "gql"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

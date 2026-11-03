@@ -625,12 +625,7 @@ fn name_asks_about_a_member_of_a_class() {
         answer["affected"][1]["callers"],
         value!([{ "name": "Runner.stop", "line": 3, "distance": 1 }])
     );
-    assert_eq!(
-        answer["notes"],
-        value!([
-            "callers of Runner.start through a value are found through the declarations that refer to Runner"
-        ])
-    );
+    assert!(answer.get("notes").is_none_or(Value::is_null), "{answer}");
 
     let text = sandbox.run_in(
         &repo,
@@ -654,11 +649,44 @@ fn name_asks_about_a_member_of_a_class() {
         ),
         "{text:?}"
     );
-    assert!(
-        text.stdout.contains(
-            "\nnote: callers of Runner.start through a value are found through the declarations that refer to Runner\n"
-        ),
-        "{text:?}"
+    assert!(!text.stdout.contains("\nnote: "), "{text:?}");
+}
+
+/// A module that only lists the class in an array holds it without calling a member, so it is left out of the callers of a method and counted in a note, while the service that calls the method through a typed field is listed.
+#[test]
+fn a_file_that_only_holds_a_class_is_counted_and_not_listed_in_typescript() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/service.ts",
+        "export class Service {\n  place() {}\n}\n",
+    );
+    write(
+        &repo,
+        "src/module.ts",
+        "import { Service } from './service';\n\nexport const providers = [Service];\n",
+    );
+    write(
+        &repo,
+        "src/caller.ts",
+        "import { Service } from './service';\n\nexport class Caller {\n  constructor(private readonly service: Service) {}\n\n  run() {\n    this.service.place();\n  }\n}\n",
+    );
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/service.ts",
+            "--name",
+            "Service.place",
+        ],
+    ));
+    assert_eq!(paths(&answer["affected"]), ["src/caller.ts"], "{answer}");
+    assert_eq!(
+        answer["notes"],
+        value!(["1 file holds Service and names no place; ask about Service to list them"])
     );
 }
 
@@ -983,7 +1011,11 @@ fn a_namespace_import_is_a_caller_only_of_the_names_it_uses_in_typescript() {
         .iter()
         .find(|(path, _)| path == "src/f.ts")
         .map(|(_, callers)| callers.clone());
-    assert_eq!(callers, Some(owned(&["build", "make"])), "{place:?}");
+    assert_eq!(
+        callers,
+        Some(owned(&["build"])),
+        "`make` reads `lib.Service.make`, a member other than `place`: {place:?}"
+    );
 }
 
 const FORMAT: &str = "export function formatUser(name: string): string {\n  return normalize(name).trim();\n}\n\nfunction normalize(text: string): string {\n  return text.toLowerCase();\n}\n\nexport function formatId(id: number): string {\n  return String(id);\n}\n";
@@ -1506,11 +1538,8 @@ fn a_member_passes_on_to_what_takes_it_in_typescript() {
     };
     assert_eq!(
         callers_in(&sandbox, &repo, "src/filemap.ts", "FileMap.set"),
-        [
-            ("src/filemap.ts".to_owned(), owned(&["ModuleMap"])),
-            ("src/loader.ts".to_owned(), owned(&["load"]))
-        ],
-        "`ModuleMap` extends the class, which is a use of the class alone"
+        [("src/loader.ts".to_owned(), owned(&["load"]))],
+        "`ModuleMap` extends the class, a use of the class alone in a file that never names `set` on a value"
     );
     assert_eq!(
         callers_in(
@@ -1519,18 +1548,13 @@ fn a_member_passes_on_to_what_takes_it_in_typescript() {
             "src/version-base.ts",
             "VersionServiceBase.count"
         ),
-        [
-            ("src/totals.ts".to_owned(), owned(&["Totals.sum"])),
-            ("src/version.ts".to_owned(), owned(&["VersionService"]))
-        ]
+        [("src/totals.ts".to_owned(), owned(&["Totals.sum"]))],
+        "`VersionService` extends the class and never names `count`"
     );
     assert_eq!(
         callers_in(&sandbox, &repo, "src/logger.ts", "Logger.error"),
-        [
-            ("src/failure.ts".to_owned(), owned(&["fail"])),
-            ("src/log.ts".to_owned(), owned(&["logger"]))
-        ],
-        "`notice.ts` calls `info`, and the constant that holds the instance uses the class alone"
+        [("src/failure.ts".to_owned(), owned(&["fail"]))],
+        "`notice.ts` calls `info`, and the constant that holds the instance never names `error`"
     );
 }
 

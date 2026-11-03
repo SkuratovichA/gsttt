@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/data.rs
+assertion_line: 694
 expression: json
 ---
 {
@@ -80,6 +81,11 @@ expression: json
         ],
         "on_load": [
           "PrismaClient"
+        ],
+        "reads": [
+          "$transaction",
+          "findMany",
+          "user"
         ]
       },
       "tags": 0,
@@ -141,6 +147,11 @@ expression: json
         ],
         "on_load": [
           "PrismaClient"
+        ],
+        "reads": [
+          "$transaction",
+          "findMany",
+          "user"
         ]
       },
       "tags": 0,
@@ -188,7 +199,11 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "booking",
+          "create"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -216,6 +231,11 @@ expression: json
         "heirs": [],
         "on_load": [
           "items"
+        ],
+        "reads": [
+          "findMany",
+          "forEach",
+          "user"
         ]
       },
       "tags": 0,
@@ -284,6 +304,11 @@ expression: json
         ],
         "on_load": [
           "PrismaClient"
+        ],
+        "reads": [
+          "$transaction",
+          "findMany",
+          "user"
         ]
       },
       "tags": 0,
@@ -352,6 +377,11 @@ expression: json
         ],
         "on_load": [
           "PrismaClient"
+        ],
+        "reads": [
+          "$transaction",
+          "findMany",
+          "user"
         ]
       },
       "tags": 0,

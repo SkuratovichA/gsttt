@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/http.rs
+assertion_line: 721
 expression: json
 ---
 {
@@ -74,6 +75,10 @@ expression: json
         "heirs": [],
         "on_load": [
           "cache"
+        ],
+        "reads": [
+          "request",
+          "url"
         ]
       },
       "tags": 0,

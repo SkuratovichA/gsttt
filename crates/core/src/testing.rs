@@ -146,6 +146,12 @@ impl Code {
         self
     }
 
+    /// The file reads a member called `name` on a value of a class it does not know, as `x.name()` does.
+    pub fn reads(mut self, name: &str) -> Self {
+        self.symbols.reads.push(name.to_owned());
+        self
+    }
+
     /// The symbols in the order a connector records them: declarations by line and then by name, and every list sorted and without repeats.
     fn finish(self) -> Symbols {
         let mut symbols = self.symbols;
@@ -165,6 +171,8 @@ impl Code {
             .heirs
             .sort_by(|left, right| (&left.name, &left.of).cmp(&(&right.name, &right.of)));
         symbols.heirs.dedup();
+        symbols.reads.sort_unstable();
+        symbols.reads.dedup();
         symbols
     }
 }

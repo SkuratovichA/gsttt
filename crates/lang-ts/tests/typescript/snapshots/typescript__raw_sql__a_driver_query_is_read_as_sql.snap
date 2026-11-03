@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/raw_sql.rs
+assertion_line: 178
 expression: json
 ---
 {
@@ -63,7 +64,10 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "query"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -108,7 +112,10 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "exec"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -166,7 +173,10 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "query"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -228,7 +238,10 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "query"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -300,7 +313,10 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "query"
+        ]
       },
       "tags": 0,
       "unresolved": []

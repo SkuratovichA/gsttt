@@ -116,6 +116,12 @@ impl Tree {
             .join(" ")
     }
 
+    /// The member names a file reads on a value of unknown type.
+    fn reads(&self, path: &str) -> Vec<String> {
+        let symbols = self.file(path).facts.symbols.as_ref().expect("symbols");
+        symbols.reads.clone()
+    }
+
     fn on_load(&self, path: &str) -> String {
         let symbols = self.file(path).facts.symbols.as_ref().expect("symbols");
         symbols.on_load.join(" ")
@@ -454,6 +460,40 @@ fn a_file_reaches_the_sibling_that_declares_a_name_it_reads() {
         ("b.go", "package m\n\nfunc helper() {}\n"),
     ]);
     assert_eq!(t.imports("a.go"), [". [helper] [helper] -> b.go"]);
+}
+
+#[gsttt_scenario::scenario("go", "A file records the members it reads on a value of unknown type")]
+#[test]
+fn a_file_records_the_members_it_reads_on_a_value_of_unknown_type() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+import \"fmt\"
+
+type T struct{ Field int }
+
+func (t *T) Known() {}
+
+var pkgVar = other()
+
+func other() *T { return nil }
+
+func f() *T { return nil }
+
+func Go(t *T, items []*T) {
+	x := f()
+	x.A()
+	f().B()
+	items[0].C()
+	pkgVar.D()
+	fmt.Println()
+	t.Known()
+	_ = T{Field: 1}
+}
+",
+    )]);
+    assert_eq!(t.reads("a.go"), ["A", "B", "C", "D"]);
 }
 
 #[gsttt_scenario::scenario("go", "A file does not reach a sibling it reads nothing from")]

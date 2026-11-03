@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/receivers.rs
+assertion_line: 149
 expression: json
 ---
 {
@@ -69,6 +70,9 @@ expression: json
         "heirs": [],
         "on_load": [
           "axios.create"
+        ],
+        "reads": [
+          "create"
         ]
       },
       "tags": 0,
@@ -106,6 +110,9 @@ expression: json
         "heirs": [],
         "on_load": [
           "api.get"
+        ],
+        "reads": [
+          "get"
         ]
       },
       "tags": 0,

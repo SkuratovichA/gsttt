@@ -22,15 +22,16 @@ use gsttt_core::rules::{
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     AccessorProperty, Argument, ArrowFunctionExpression, AssignmentExpression, AssignmentTarget,
-    AssignmentTargetPropertyIdentifier, BindingIdentifier, BindingPattern, CallExpression, Class,
-    ClassBody, Declaration, Decorator, ExportAllDeclaration, ExportDeclaration,
-    ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportFromDeclaration,
-    ExportNamedDeclaration, Expression, ExpressionStatement, ForStatement, ForStatementInit,
-    FormalParameter, Function, IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier,
-    ImportExpression, ImportOrExportKind, JSXMemberExpression, MemberExpression, MethodDefinition,
-    ModuleExportName, NewExpression, ObjectProperty, ObjectPropertyKind, PrivateInExpression,
-    Program, PropertyDefinition, SequenceExpression, SimpleAssignmentTarget, Statement,
-    TSExportAssignment, TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier,
+    AssignmentTargetPropertyIdentifier, AssignmentTargetPropertyProperty, BindingIdentifier,
+    BindingPattern, BindingProperty, CallExpression, Class, ClassBody, Declaration, Decorator,
+    ExportAllDeclaration, ExportDeclaration, ExportDefaultDeclaration,
+    ExportDefaultDeclarationKind, ExportFromDeclaration, ExportNamedDeclaration, Expression,
+    ExpressionStatement, ForStatement, ForStatementInit, FormalParameter, Function,
+    IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ImportExpression,
+    ImportOrExportKind, JSXMemberExpression, MemberExpression, MethodDefinition, ModuleExportName,
+    NewExpression, ObjectProperty, ObjectPropertyKind, PrivateInExpression, Program,
+    PropertyDefinition, SequenceExpression, SimpleAssignmentTarget, Statement, TSExportAssignment,
+    TSImportEqualsDeclaration, TSImportType, TSImportTypeQualifier, TSIndexedAccessType, TSLiteral,
     TSModuleBlock, TSModuleReference, TSType, TSTypeAnnotation, TSTypeName,
     TaggedTemplateExpression, UnaryExpression, UpdateExpression, VariableDeclarator,
 };
@@ -1679,6 +1680,16 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             );
         } else if let Some(names) = chain_of(&it.callee) {
             self.symbols.call_write(&names);
+            // `jest.spyOn(service, 'place')` names a member of a value whose class is not in the file.
+            if matches!(names.last(), Some(Some(last)) if matches!(last.as_str(), "spyOn" | "stub" | "spy"))
+                && let Some(name) = it
+                    .arguments
+                    .get(1)
+                    .and_then(Argument::as_expression)
+                    .and_then(literal_text)
+            {
+                self.symbols.read(&name);
+            }
             if let Some(callee) = dotted(&names) {
                 // A module named at run time is neither an import nor a blind spot, so only a literal one goes to `load`.
                 if let Some(call) = module_call(&callee) {
@@ -1719,17 +1730,30 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 MemberExpression::StaticMemberExpression(member) => {
                     let property = member.property.name.as_str();
                     self.member_of_load(&member.object, property);
-                    if matches!(member.object.get_inner_expression(), Expression::Super(_)) {
+                    let object = member.object.get_inner_expression();
+                    if matches!(object, Expression::Super(_)) {
                         self.symbols.super_use(property);
                     }
                     // `new Service().run()` reads one member of the class it constructs.
-                    if let Expression::NewExpression(new) = member.object.get_inner_expression()
+                    let constructed = if let Expression::NewExpression(new) = object
                         && let Some(class) = dotted_name(&new.callee)
                     {
                         self.held_new = Some(new.span.start);
                         let outer = self.symbols.run();
                         self.symbols.through_class(&class, Some(property));
                         self.symbols.restore(outer);
+                        true
+                    } else {
+                        false
+                    };
+                    // The member of a class that is known, or of `super`, is no read on an unknown value, and `this.#field.member` says so itself.
+                    if !constructed
+                        && !matches!(
+                            object,
+                            Expression::Super(_) | Expression::PrivateFieldExpression(_)
+                        )
+                    {
+                        self.symbols.read(property);
                     }
                     // `this.#field.member` reads a member of the type of the field, so the field is not read as a value. The types written around the field are still walked, as for `this.field.member`.
                     if let Expression::PrivateFieldExpression(field) =
@@ -1742,7 +1766,13 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                         return;
                     }
                 }
-                MemberExpression::ComputedMemberExpression(_) => {}
+                MemberExpression::ComputedMemberExpression(member) => {
+                    if !matches!(member.object.get_inner_expression(), Expression::Super(_))
+                        && let Some(name) = literal_text(&member.expression)
+                    {
+                        self.symbols.read(&name);
+                    }
+                }
             }
             walk::walk_member_expression(self, it);
             return;
@@ -1752,11 +1782,22 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             .first()
             .and_then(|root| root.as_deref())
             .and_then(|root| self.constants.class_held(root, it.span().start));
+        // What is read below the first link, or below the member of a known class, is read on a value of an unknown class. `this.field.member` names a member of the type of the field.
+        let known = if names.first().and_then(Option::as_deref) == Some("this") {
+            3
+        } else if held.is_some() {
+            2
+        } else {
+            1
+        };
         match held {
             Some(class) => self
                 .symbols
                 .through_class(class, names.get(1).and_then(Option::as_deref)),
             None => self.symbols.chain(&names),
+        }
+        for name in names.iter().skip(known).flatten() {
+            self.symbols.read(name);
         }
         // The links below this one are parts of the same chain: only what is computed inside it is still to walk.
         match it {
@@ -1909,7 +1950,12 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     /// `<lib.Comp />` uses `lib.Comp`, as the value `lib.Comp` does.
     fn visit_jsx_member_expression(&mut self, it: &JSXMemberExpression<'a>) {
         match jsx_chain(it) {
-            Some(names) => self.symbols.chain(&names),
+            Some(names) => {
+                self.symbols.chain(&names);
+                for name in names.iter().skip(1).flatten() {
+                    self.symbols.read(name);
+                }
+            }
             None => walk::walk_jsx_member_expression(self, it),
         }
     }
@@ -1997,8 +2043,47 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         &mut self,
         it: &AssignmentTargetPropertyIdentifier<'a>,
     ) {
+        self.symbols.read(it.binding.name.as_str());
         self.symbols.write(it.binding.name.as_str());
         walk::walk_assignment_target_property_identifier(self, it);
+    }
+
+    fn visit_assignment_target_property_property(
+        &mut self,
+        it: &AssignmentTargetPropertyProperty<'a>,
+    ) {
+        if let Some(name) = property_str(&it.name) {
+            self.symbols.read(name);
+        }
+        walk::walk_assignment_target_property_property(self, it);
+    }
+
+    /// `{ place }` and `{ place: renamed }` in a pattern read the member `place` of the value they take apart.
+    fn visit_binding_property(&mut self, it: &BindingProperty<'a>) {
+        if let Some(name) = property_str(&it.key) {
+            self.symbols.read(name);
+        }
+        walk::walk_binding_property(self, it);
+    }
+
+    /// `Service['place']` as a type names the member `place` of `Service`.
+    fn visit_ts_indexed_access_type(&mut self, it: &TSIndexedAccessType<'a>) {
+        if let TSType::TSTypeReference(reference) = &it.object_type
+            && reference.type_arguments.is_none()
+            && let Some(names) = type_chain(&reference.type_name)
+            && let TSType::TSLiteralType(literal) = &it.index_type
+            && let TSLiteral::StringLiteral(member) = &literal.literal
+            && let Some(member) = member.value.as_str()
+        {
+            let outer = self.symbols.enter_type();
+            self.symbols.through_class(
+                &names.into_iter().flatten().collect::<Vec<_>>().join("."),
+                Some(member),
+            );
+            self.symbols.leave_type(outer);
+            return;
+        }
+        walk::walk_ts_indexed_access_type(self, it);
     }
 
     fn visit_unary_expression(&mut self, it: &UnaryExpression<'a>) {

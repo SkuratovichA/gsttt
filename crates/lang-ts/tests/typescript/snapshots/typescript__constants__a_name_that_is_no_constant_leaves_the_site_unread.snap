@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/constants.rs
+assertion_line: 244
 expression: json
 ---
 {
@@ -58,7 +59,8 @@ expression: json
         "on_load": [
           "LOGIN_URL",
           "PATH"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": [

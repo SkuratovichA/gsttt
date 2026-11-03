@@ -349,6 +349,8 @@ pub struct Symbols {
     pub exports: Vec<LocalExport>,
     /// Each name that takes the members of another: a class and what it extends, an interface and what it extends, a top-level value and the class it holds, sorted by name and then by what it takes from, each pair once.
     pub heirs: Vec<Heir>,
+    /// The member names the file reads on a receiver whose class the connector does not know, such as `place` for `x.place()` or `const { place } = x`, sorted, once each. A file that holds a class and never reads the name of one of its members cannot call that member.
+    pub reads: Vec<String>,
 }
 
 /// What joins a class and a member of it in the name of a declaration: `Runner.start`, and `Runner.#start` for a private member. A connector writes member names with it and a walk by name splits them on it.

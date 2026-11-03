@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/data.rs
+assertion_line: 418
 expression: json
 ---
 {
@@ -105,7 +106,8 @@ expression: json
         "heirs": [],
         "on_load": [
           "Injectable"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": [

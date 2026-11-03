@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/mounts.rs
+assertion_line: 37
 expression: json
 ---
 {
@@ -59,6 +60,9 @@ expression: json
         "heirs": [],
         "on_load": [
           "express.Router"
+        ],
+        "reads": [
+          "Router"
         ]
       },
       "tags": 0,
@@ -107,7 +111,8 @@ expression: json
         "heirs": [],
         "on_load": [
           "express"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -160,6 +165,9 @@ expression: json
         "on_load": [
           "api",
           "app.use"
+        ],
+        "reads": [
+          "use"
         ]
       },
       "tags": 0,
@@ -209,6 +217,11 @@ expression: json
         "on_load": [
           "express.Router",
           "sub"
+        ],
+        "reads": [
+          "Router",
+          "get",
+          "json"
         ]
       },
       "tags": 0,
@@ -262,6 +275,9 @@ expression: json
         "on_load": [
           "api.use",
           "sub"
+        ],
+        "reads": [
+          "use"
         ]
       },
       "tags": 0,

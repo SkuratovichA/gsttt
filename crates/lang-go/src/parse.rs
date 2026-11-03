@@ -55,6 +55,7 @@ pub(crate) fn parse(project: &GoProject, file: &SourceFile<'_>) -> Parsed<()> {
                 on_load: analysis.on_load,
                 exports: Vec::new(),
                 heirs: Vec::new(),
+                reads: analysis.reads,
             }),
             Some(exports),
         )

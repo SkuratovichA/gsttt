@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/scopes.rs
+assertion_line: 29
 expression: "run(\"scopes-locals\")?"
 ---
 {
@@ -131,7 +132,11 @@ expression: "run(\"scopes-locals\")?"
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "orders",
+          "users"
+        ]
       },
       "tags": 0,
       "unresolved": []

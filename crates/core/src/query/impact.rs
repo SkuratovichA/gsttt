@@ -7,12 +7,12 @@ use serde::{Serialize, Serializer};
 
 use crate::contract::Role;
 use crate::engine::changes::{Change, ChangeKind};
-use crate::fact::FileTags;
+use crate::fact::{FileTags, member_in};
 use crate::graph::Graph;
 use crate::ids::{FileId, IdSet, NameId};
 use crate::index::{Freshness, Index};
 use crate::path::RepoPath;
-use crate::text::{noun, summary};
+use crate::text::{noun, summary, thousands};
 
 use super::cross::Crossing;
 use super::lookup::{Miss, find, possible_misses};
@@ -227,25 +227,38 @@ pub struct Deleted {
 pub enum Note {
     /// A sentence of its own: a name a file does not declare, a file followed whole, a walk the depth stopped.
     Said(String),
-    /// A call through a value names no class, so the callers of these members are found through the declarations that refer to their classes. Each is a member with its class, in byte order of the member. The members stay a list until the note is written, so that the text of an answer cuts them as it cuts every list of names, and the JSON of an answer holds them all.
-    ThroughClass(Vec<(String, String)>),
+    /// A call through a value names no class, so a file that holds the class of these members and names none of them is left out, and `files` counts them. Each member comes with its class, in byte order of the member. The members stay a list until the note is written, so that the text of an answer cuts them as it cuts every list of names, and the JSON of an answer holds them all.
+    HeldClass {
+        members: Vec<(String, String)>,
+        files: usize,
+    },
 }
 
 impl Note {
-    /// The note as a sentence. One member names its class, and several say `their classes`: `callers of Runner.start through a value are found through the declarations that refer to Runner`. The members are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    /// The note as a sentence. One member names its class and the member, `1 file holds Runner and names no start`, and several say `the classes of` them, `3 files hold the classes of Runner.start, Runner.stop and name none of them`. The members are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
     fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         match self {
             Self::Said(text) => f.write_str(text),
-            Self::ThroughClass(members) => {
-                let names: Vec<String> = members.iter().map(|(member, _)| member.clone()).collect();
-                let classes = match members.as_slice() {
-                    [(_, class)] => class.as_str(),
-                    _ => "their classes",
+            Self::HeldClass { members, files } => {
+                let (holds, names) = if *files == 1 {
+                    ("file holds", "names")
+                } else {
+                    ("files hold", "name")
                 };
+                if let [(member, class)] = members.as_slice() {
+                    let short = member_in(member, class).unwrap_or(member);
+                    return write!(
+                        f,
+                        "{} {holds} {class} and {names} no {short}; ask about {class} to list them",
+                        thousands(*files)
+                    );
+                }
+                let list: Vec<String> = members.iter().map(|(member, _)| member.clone()).collect();
                 write!(
                     f,
-                    "callers of {} through a value are found through the declarations that refer to {classes}",
-                    name_sentence(&names, entries)
+                    "{} {holds} the classes of {} and {names} none of them; ask about those classes to list them",
+                    thousands(*files),
+                    name_sentence(&list, entries)
                 )
             }
         }
@@ -514,7 +527,7 @@ fn note(graph: &Graph, walked: walk::Note) -> Note {
             "{} is followed whole because its connector records no declarations",
             path(file)
         )),
-        walk::Note::ThroughClass { members } => Note::ThroughClass(members),
+        walk::Note::HeldClass { members, files } => Note::HeldClass { members, files },
         walk::Note::Stopped => Note::Said("the walk stopped at the depth with callers left to follow; ask about a caller, or with a larger depth, to go on".to_owned()),
     }
 }

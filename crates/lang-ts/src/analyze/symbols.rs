@@ -3,7 +3,7 @@
 //! A table of the top-level bindings is made before the visit, so that the visit only has to know where it is: the group of the declaration whose code it walks, and how far that code runs as the file loads. A reference to a binding of the table goes into that group and, when the code runs at load, into the list of the file. Both hold indices, and the names are made once, in [`Recorder::finish`].
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
 use gsttt_core::fact::{Declared, Heir, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
@@ -156,6 +156,8 @@ pub(super) struct Recorder<'a> {
     heirs: Vec<Heir>,
     /// The entries that appear in `heirs` as the name that takes the members.
     heir_entries: HashSet<usize>,
+    /// The member names the file reads on a value of a class it does not know, sorted by the set.
+    reads: BTreeSet<String>,
     /// What the file refers to as it loads, in the order met.
     on_load: Vec<usize>,
     place: Place,
@@ -707,6 +709,13 @@ impl<'a> Recorder<'a> {
         }
     }
 
+    /// Records that the file reads the member `name` on a value of a class it does not know. A name met before costs no allocation.
+    pub(super) fn read(&mut self, name: &str) {
+        if !self.reads.contains(name) {
+            self.reads.insert(name.to_owned());
+        }
+    }
+
     /// A chain of member accesses from a name or `this`, `C.s` or `this.m`. The name at its base is a use, and so is the member of a class; `this.field` also uses the names the type of the field stands for, and `this.field.member` the member of each.
     pub(super) fn chain(&mut self, names: &[Option<String>]) {
         let Some(Some(root)) = names.first() else {
@@ -726,7 +735,14 @@ impl<'a> Recorder<'a> {
                 }
                 self.member_use(class, false, member);
                 let read = names.get(2).and_then(Option::as_deref);
-                self.field_use(class, false, member, read);
+                if !self.field_use(class, false, member, read)
+                    && let Some(read) = read
+                {
+                    self.read(read);
+                }
+            } else if let Some(read) = names.get(2).and_then(Option::as_deref) {
+                // A class below the top level keeps no typed fields: the member is read on a value of unknown class.
+                self.read(read);
             }
             return;
         }
@@ -775,18 +791,29 @@ impl<'a> Recorder<'a> {
             .map(|plan| plan.entry);
         if let Some(class) = class {
             self.member_use(class, true, name);
-            self.field_use(class, true, name, member);
+            // A field without a type declared in the file leaves the class of the member unknown.
+            if !self.field_use(class, true, name, member)
+                && let Some(member) = member
+            {
+                self.read(member);
+            }
         }
     }
 
-    /// The names at the head of the type of the field `name` of `class` that the file declares or binds, each spelled as the type writes it. A qualified head resolves through its first segment. A field read for one of its `member`s uses that member of each, and a field read as a value uses the type alone. A class of the file that declares the member is used through that member; any other type through an entry made for `Type.member`.
-    fn field_use(&mut self, class: usize, private: bool, name: &str, member: Option<&str>) {
-        let Some(types) = self.fields.get(&(class, private, name)).map(Rc::clone) else {
-            return;
+    /// The names at the head of the type of the field `name` of `class` that the file declares or binds, each spelled as the type writes it. A qualified head resolves through its first segment. A field read for one of its `member`s uses that member of each, and a field read as a value uses the type alone. A class of the file that declares the member is used through that member; any other type through an entry made for `Type.member`. Returns whether the field has a type, so that a caller can read the member on a value of unknown class when it has none.
+    fn field_use(&mut self, class: usize, private: bool, name: &str, member: Option<&str>) -> bool {
+        let Some(types) = self
+            .fields
+            .get(&(class, private, name))
+            .map(Rc::clone)
+            .filter(|types| !types.is_empty())
+        else {
+            return false;
         };
         for head in types.iter() {
             self.through_class(head, member);
         }
+        true
     }
 
     /// A use of the type `head`, written as the source writes it, for its `member`, or for the type alone when there is none. A class of the file that declares the member is used through that member; any other type through an entry made for `Type.member`. The member [`TYPE_ONLY`] uses the type and none of its members.
@@ -932,6 +959,7 @@ impl<'a> Recorder<'a> {
             on_load: self.names_of(self.on_load.iter().copied(), &ranks, &order),
             exports: local_exports(exports),
             heirs,
+            reads: std::mem::take(&mut self.reads).into_iter().collect(),
         }
     }
 

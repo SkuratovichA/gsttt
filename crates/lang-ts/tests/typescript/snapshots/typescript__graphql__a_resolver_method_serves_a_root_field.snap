@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/graphql.rs
+assertion_line: 20
 expression: json
 ---
 {
@@ -102,7 +103,8 @@ expression: json
           "Mutation",
           "Query",
           "Resolver"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

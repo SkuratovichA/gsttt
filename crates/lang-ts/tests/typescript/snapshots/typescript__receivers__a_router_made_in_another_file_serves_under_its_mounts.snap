@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/receivers.rs
+assertion_line: 36
 expression: json
 ---
 {
@@ -74,6 +75,9 @@ expression: json
           "app",
           "express",
           "router"
+        ],
+        "reads": [
+          "use"
         ]
       },
       "tags": 0,
@@ -122,6 +126,9 @@ expression: json
         "heirs": [],
         "on_load": [
           "express.Router"
+        ],
+        "reads": [
+          "Router"
         ]
       },
       "tags": 0,
@@ -159,6 +166,10 @@ expression: json
         "heirs": [],
         "on_load": [
           "router.get"
+        ],
+        "reads": [
+          "get",
+          "json"
         ]
       },
       "tags": 0,

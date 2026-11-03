@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/arrays.rs
+assertion_line: 47
 expression: json
 ---
 {
@@ -100,7 +101,8 @@ expression: json
           "Controller",
           "Post",
           "dynamic"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": [
@@ -136,7 +138,8 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

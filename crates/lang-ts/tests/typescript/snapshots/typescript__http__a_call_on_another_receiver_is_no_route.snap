@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/http.rs
+assertion_line: 25
 expression: json
 ---
 {
@@ -80,6 +81,9 @@ expression: json
         "on_load": [
           "cache.get",
           "express"
+        ],
+        "reads": [
+          "get"
         ]
       },
       "tags": 0,

@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/scopes.rs
+assertion_line: 117
 expression: "run(\"scopes-hidden\")?"
 ---
 {
@@ -127,6 +128,9 @@ expression: "run(\"scopes-hidden\")?"
         "exports": [],
         "heirs": [],
         "on_load": [
+          "BASE"
+        ],
+        "reads": [
           "BASE"
         ]
       },
