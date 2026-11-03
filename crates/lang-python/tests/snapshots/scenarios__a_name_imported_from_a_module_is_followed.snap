@@ -12,8 +12,11 @@ expression: "tree.file_json(\"requests_name.py\")"
       "spec": "requests",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "get"
+      ],
+      "exported": [
         "get"
       ],
       "to": {
@@ -24,9 +27,12 @@ expression: "tree.file_json(\"requests_name.py\")"
       "spec": "requests",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
         "post"
+      ],
+      "exported": [
+        "send"
       ],
       "to": {
         "external": "requests"
@@ -49,6 +55,46 @@ expression: "tree.file_json(\"requests_name.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "BASE",
+    "cancel",
+    "get",
+    "load",
+    "send"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "BASE",
+        "line": 4,
+        "end": 4,
+        "uses": []
+      },
+      {
+        "name": "load",
+        "line": 7,
+        "end": 8,
+        "uses": [
+          "BASE",
+          "get"
+        ]
+      },
+      {
+        "name": "cancel",
+        "line": 11,
+        "end": 12,
+        "uses": [
+          "BASE",
+          "send"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "requests_name.py",
   "project": "python ."
 }

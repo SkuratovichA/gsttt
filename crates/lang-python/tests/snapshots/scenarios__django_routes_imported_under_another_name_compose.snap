@@ -13,9 +13,12 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
         "spec": "django.urls",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
           "include"
+        ],
+        "exported": [
+          "inc"
         ],
         "to": {
           "external": "django"
@@ -25,9 +28,12 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
         "spec": "django.urls",
         "kind": "static",
         "line": 2,
-        "flags": 0,
+        "flags": 128,
         "names": [
           "path"
+        ],
+        "exported": [
+          "p"
         ],
         "to": {
           "external": "django"
@@ -47,6 +53,32 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
     "contracts": [],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "inc",
+      "p",
+      "urlpatterns"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "urlpatterns",
+          "line": 4,
+          "end": 6,
+          "uses": [
+            "inc",
+            "p"
+          ]
+        }
+      ],
+      "on_load": [
+        "inc",
+        "p"
+      ],
+      "exports": [],
+      "heirs": [],
+      "overrides": [],
+      "reads": []
+    },
     "path": "project/urls.py",
     "project": "python ."
   },
@@ -60,9 +92,12 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
         "spec": "django.urls",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
           "path"
+        ],
+        "exported": [
+          "p"
         ],
         "to": {
           "external": "django"
@@ -72,8 +107,11 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
         "spec": ".",
         "kind": "static",
         "line": 3,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "views"
+        ],
+        "exported": [
           "views"
         ],
         "to": {
@@ -84,6 +122,32 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
     "contracts": [],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "p",
+      "urlpatterns",
+      "views"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "urlpatterns",
+          "line": 5,
+          "end": 7,
+          "uses": [
+            "p",
+            "views.detail"
+          ]
+        }
+      ],
+      "on_load": [
+        "p",
+        "views.detail"
+      ],
+      "exports": [],
+      "heirs": [],
+      "overrides": [],
+      "reads": []
+    },
     "path": "bookings/urls.py",
     "project": "python ."
   },

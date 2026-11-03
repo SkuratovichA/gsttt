@@ -13,7 +13,12 @@ expression: "tree.file_json(\"outside.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "pkg.sub.leaf"
+      ],
       "to": {
         "files": [
           "pkg/__init__.py",
@@ -26,8 +31,11 @@ expression: "tree.file_json(\"outside.py\")"
       "spec": "pkg.sub",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "leaf"
+      ],
+      "exported": [
         "leaf"
       ],
       "to": {
@@ -42,8 +50,11 @@ expression: "tree.file_json(\"outside.py\")"
       "spec": "pkg",
       "kind": "static",
       "line": 3,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "sub"
+      ],
+      "exported": [
         "sub"
       ],
       "to": {
@@ -57,6 +68,19 @@ expression: "tree.file_json(\"outside.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "leaf",
+    "pkg",
+    "sub"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "outside.py",
   "project": "python ."
 }

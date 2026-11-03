@@ -13,7 +13,12 @@ expression: "tree.file_json(\"client.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "httpx"
+      ],
       "to": {
         "external": "httpx"
       }
@@ -23,7 +28,12 @@ expression: "tree.file_json(\"client.py\")"
       "kind": "static",
       "line": 2,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "requests"
+      ],
       "to": {
         "external": "requests"
       }
@@ -47,6 +57,45 @@ expression: "tree.file_json(\"client.py\")"
       "detail": "httpx.get"
     }
   ],
+  "exports": [
+    "BASE",
+    "cancel",
+    "httpx",
+    "load",
+    "requests"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "BASE",
+        "line": 4,
+        "end": 4,
+        "uses": []
+      },
+      {
+        "name": "cancel",
+        "line": 7,
+        "end": 8,
+        "uses": [
+          "BASE",
+          "requests.post"
+        ]
+      },
+      {
+        "name": "load",
+        "line": 11,
+        "end": 12,
+        "uses": [
+          "httpx.get"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "client.py",
   "project": "python ."
 }

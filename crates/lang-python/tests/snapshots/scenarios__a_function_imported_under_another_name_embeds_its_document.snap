@@ -12,9 +12,12 @@ expression: "tree.file_json(\"sqlalchemy_name.py\")"
       "spec": "sqlalchemy",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
         "text"
+      ],
+      "exported": [
+        "t"
       ],
       "to": {
         "external": "sqlalchemy"
@@ -33,6 +36,29 @@ expression: "tree.file_json(\"sqlalchemy_name.py\")"
     }
   ],
   "unresolved": [],
+  "exports": [
+    "find",
+    "t"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "find",
+        "line": 4,
+        "end": 5,
+        "uses": [
+          "t"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": [
+      "execute"
+    ]
+  },
   "path": "sqlalchemy_name.py",
   "project": "python ."
 }

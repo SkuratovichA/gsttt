@@ -8,11 +8,12 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use gsttt_config::pack::{builtin_packs, read_pack};
-use gsttt_core::connector::DynConnector;
+use gsttt_core::connector::{DynConnector, SourceFile};
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
 use gsttt_core::fact::{
     ContractFact, Embedded, FileTags, ImportFlags, ImportKind, Line, ParseStatus, Resolution,
+    Symbols,
 };
 use gsttt_core::ids::FileId;
 use gsttt_core::path::RepoPath;
@@ -62,6 +63,21 @@ fn index_files_with(files: &[(&str, &str)], packs: Vec<Pack>) -> Tree {
     }
     let root = dir.path().to_str().unwrap().to_owned();
     run(root, packs, Some(dir))
+}
+
+/// The path of the one module [`module`] writes.
+const MODULE: &str = "p/m.py";
+
+/// The manifest of the trees below, and the package their module lies in.
+const PROJECT: [(&str, &str); 2] = [
+    ("pyproject.toml", "[project]\nname = \"p\"\n"),
+    ("p/__init__.py", ""),
+];
+
+/// A project with one module, `p/m.py`, holding `text`, for the programs of a few lines whose declarations a scenario reads.
+fn module(text: &str) -> Tree {
+    let [manifest, package] = PROJECT;
+    index_files(&[manifest, package, (MODULE, text)])
 }
 
 fn run(root: String, packs: Vec<Pack>, dir: Option<tempfile::TempDir>) -> Tree {
@@ -218,6 +234,102 @@ impl Tree {
             .provides
             .iter()
             .flat_map(|provide| provide.blind_spots.iter().map(String::as_str))
+            .collect()
+    }
+
+    /// The names a file declares and uses, which a file with a syntax error or a star import it reads through does not record.
+    fn symbols(&self, path: &str) -> &Symbols {
+        self.file(path)
+            .facts
+            .symbols
+            .as_ref()
+            .expect("the file records its declarations")
+    }
+
+    /// The declarations of a file as `name L<start>-<end>`.
+    fn declared(&self, path: &str) -> Vec<String> {
+        self.symbols(path)
+            .declared
+            .iter()
+            .map(|declared| format!("{} L{}-{}", declared.name, declared.line, declared.end))
+            .collect()
+    }
+
+    /// What the declaration `name` of a file uses, in the order the file records it.
+    fn uses(&self, path: &str, name: &str) -> Vec<&str> {
+        self.symbols(path)
+            .declared
+            .iter()
+            .find(|declared| declared.name == name)
+            .unwrap_or_else(|| panic!("{path} does not declare {name}: {:?}", self.declared(path)))
+            .uses
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// The member names a file reads on a value of a type it does not know.
+    fn reads(&self, path: &str) -> Vec<&str> {
+        self.symbols(path)
+            .reads
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// The names the file uses when it loads.
+    fn on_load(&self, path: &str) -> Vec<&str> {
+        self.symbols(path)
+            .on_load
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// The heirs of a file as `name of`.
+    fn heirs(&self, path: &str) -> Vec<String> {
+        self.symbols(path)
+            .heirs
+            .iter()
+            .map(|heir| format!("{} {}", heir.name, heir.of))
+            .collect()
+    }
+
+    /// What the file overrides, as `name of`.
+    fn overrides(&self, path: &str) -> Vec<String> {
+        self.symbols(path)
+            .overrides
+            .iter()
+            .map(|heir| format!("{} {}", heir.name, heir.of))
+            .collect()
+    }
+
+    /// The names an importer of the file can take by name.
+    fn exports(&self, path: &str) -> Vec<&str> {
+        self.file(path)
+            .facts
+            .exports
+            .as_ref()
+            .expect("the file records its exports")
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// Every static import of a file as `spec [names] [exported]`, in its order.
+    fn imports(&self, path: &str) -> Vec<String> {
+        self.file(path)
+            .imports
+            .iter()
+            .map(|resolved| {
+                let import = &resolved.import;
+                format!(
+                    "{} [{}] [{}]",
+                    import.spec,
+                    import.names.join(","),
+                    import.exported.join(",")
+                )
+            })
             .collect()
     }
 }
@@ -383,7 +495,7 @@ fn a_src_layout_is_a_source_root() {
     let tree = index("src_layout");
     let reached = "src/booking/__init__.py + src/booking/api.py";
     assert_eq!(
-        tree.target("tests/test_api.py", "booking.api", &[]),
+        tree.target("tests/test_api.py", "booking.api", &["*"]),
         reached
     );
     assert_eq!(
@@ -407,25 +519,25 @@ fn every_import_form_is_read() {
         .iter()
         .map(|import| {
             format!(
-                "{} {:?} L{} {:?}",
-                import.spec, import.kind, import.line, import.names
+                "{} {:?} L{} {:?} {:?}",
+                import.spec, import.kind, import.line, import.names, import.exported
             )
         })
         .collect();
     assert_eq!(
         imports,
         [
-            "importlib Static L1 []",
-            "pkg.parent Static L2 []",
-            "pkg.parent Static L3 []",
-            "pkg.parent Static L4 [\"VALUE\"]",
-            "pkg.parent Static L5 [\"VALUE\"]",
-            ". Static L6 [\"sibling\"]",
-            ".. Static L7 [\"parent\"]",
-            "...far Static L8 [\"thing\"]",
-            "pkg ReExportAll L9 [\"*\"]",
-            "plugins.csv Dynamic L11 []",
-            "plugins.json Dynamic L12 []",
+            "importlib Static L1 [\"*\"] [\"importlib\"]",
+            "pkg.parent Static L2 [\"*\"] [\"pkg.parent\"]",
+            "pkg.parent Static L3 [\"*\"] [\"parent_module\"]",
+            "pkg.parent Static L4 [\"VALUE\"] [\"VALUE\"]",
+            "pkg.parent Static L5 [\"VALUE\", \"VALUE\"] [\"value\", \"other\"]",
+            ". Static L6 [\"sibling\"] [\"sibling\"]",
+            ".. Static L7 [\"parent\"] [\"up\"]",
+            "...far Static L8 [\"thing\"] [\"thing\"]",
+            "pkg ReExportAll L9 [\"*\"] []",
+            "plugins.csv Dynamic L11 [] []",
+            "plugins.json Dynamic L12 [] []",
         ]
     );
     let unresolved: Vec<u32> = forms
@@ -435,8 +547,9 @@ fn every_import_form_is_read() {
         .map(|site| site.line)
         .collect();
     assert_eq!(unresolved, [13]);
-    // The names of a Python file are not read, `__all__` included, so `impact` follows an import of it as the whole file. A reader of them would make the walk follow the names instead, which has to be decided and then pinned by the tests of the walk.
+    // The file reads `name`, which nothing in it binds, with a star import in sight: the star may have bound it, so the file records no names and `impact` follows an import of it as the whole file.
     assert_eq!(forms.facts.exports, None);
+    assert!(forms.facts.symbols.is_none());
     insta::assert_json_snapshot!(
         "every_import_form_is_read",
         tree.file_json("pkg/sub/forms.py")
@@ -553,7 +666,8 @@ fn guarded_imports_are_flagged() {
     assert!(!flags("a").contains(ImportFlags::OPTIONAL));
     assert!(flags("b").contains(ImportFlags::OPTIONAL));
     assert!(!flags("b").contains(ImportFlags::TYPE_CHECKING));
-    assert!(flags("typing").is_empty());
+    // `from typing import TYPE_CHECKING` carries only the mark that a name it takes may be a module.
+    assert_eq!(flags("typing"), ImportFlags::MODULES);
     insta::assert_json_snapshot!("guarded_imports_are_flagged", tree.file_json("guarded.py"));
 }
 
@@ -673,18 +787,18 @@ fn relative_imports_may_climb_above_the_project() {
 #[test]
 fn standard_library_dependencies_and_unknown_modules() {
     let tree = index("resolution");
-    assert_eq!(tree.target("app/main.py", "json", &[]), "builtin");
-    assert_eq!(tree.target("app/main.py", "yaml", &[]), "package pyyaml");
+    assert_eq!(tree.target("app/main.py", "json", &["*"]), "builtin");
+    assert_eq!(tree.target("app/main.py", "yaml", &["*"]), "package pyyaml");
     assert_eq!(
-        tree.target("app/main.py", "fastapi.routing", &[]),
+        tree.target("app/main.py", "fastapi.routing", &["*"]),
         "package fastapi"
     );
     assert_eq!(
-        tree.target("app/main.py", "requests", &[]),
+        tree.target("app/main.py", "requests", &["*"]),
         "unresolved UnknownPackage"
     );
     assert_eq!(
-        tree.target("app/main.py", "app.missing", &[]),
+        tree.target("app/main.py", "app.missing", &["*"]),
         "unresolved NotFound"
     );
     insta::assert_json_snapshot!(
@@ -697,7 +811,7 @@ fn standard_library_dependencies_and_unknown_modules() {
 #[test]
 fn a_package_beats_a_module_of_the_same_name() {
     let tree = index("precedence");
-    assert_eq!(tree.target("main.py", "both", &[]), "both/__init__.py");
+    assert_eq!(tree.target("main.py", "both", &["*"]), "both/__init__.py");
     insta::assert_json_snapshot!(
         "a_package_beats_a_module_of_the_same_name",
         tree.file_json("main.py")
@@ -709,7 +823,7 @@ fn a_package_beats_a_module_of_the_same_name() {
 fn a_stub_is_reached_with_its_source() {
     let tree = index("precedence");
     assert_eq!(
-        tree.target("main.py", "stubbed", &[]),
+        tree.target("main.py", "stubbed", &["*"]),
         "stubbed.py + stubbed.pyi"
     );
 }
@@ -720,10 +834,10 @@ fn a_library_of_another_project_resolves_to_its_files() {
     let tree = index("monorepo");
     let from = "services/api/app/main.py";
     let library = "libs/common/common/__init__.py + libs/common/common/util.py";
-    assert_eq!(tree.target(from, "common.util", &[]), library);
+    assert_eq!(tree.target(from, "common.util", &["*"]), library);
     assert_eq!(tree.target(from, "common", &["util"]), library);
     // The project declares `common` too, and the files of the repository still come before the package.
-    assert_eq!(tree.target(from, "fastapi", &[]), "package fastapi");
+    assert_eq!(tree.target(from, "fastapi", &["*"]), "package fastapi");
     insta::assert_json_snapshot!(
         "a_library_of_another_project_resolves_to_its_files",
         tree.file_json(from)
@@ -737,12 +851,15 @@ fn a_library_of_another_project_resolves_to_its_files() {
 #[test]
 fn a_namespace_directory_does_not_shadow_the_standard_library_or_a_dependency() {
     let tree = index("shadowing");
-    assert_eq!(tree.target("main.py", "logging", &[]), "builtin");
-    assert_eq!(tree.target("main.py", "logging.handlers", &[]), "builtin");
-    assert_eq!(tree.target("main.py", "yaml", &[]), "package pyyaml");
-    assert_eq!(tree.target("main.py", "ns.part", &[]), "ns/part.py");
+    assert_eq!(tree.target("main.py", "logging", &["*"]), "builtin");
     assert_eq!(
-        tree.target("main.py", "ns.missing", &[]),
+        tree.target("main.py", "logging.handlers", &["*"]),
+        "builtin"
+    );
+    assert_eq!(tree.target("main.py", "yaml", &["*"]), "package pyyaml");
+    assert_eq!(tree.target("main.py", "ns.part", &["*"]), "ns/part.py");
+    assert_eq!(
+        tree.target("main.py", "ns.missing", &["*"]),
         "unresolved NotFound"
     );
     insta::assert_json_snapshot!(
@@ -755,7 +872,7 @@ fn a_namespace_directory_does_not_shadow_the_standard_library_or_a_dependency() 
 #[test]
 fn a_bare_namespace_import_names_no_file() {
     let tree = index("shadowing");
-    assert_eq!(tree.target("main.py", "ns", &[]), "unresolved NotFound");
+    assert_eq!(tree.target("main.py", "ns", &["*"]), "unresolved NotFound");
 }
 
 #[gsttt_scenario::scenario("python", "An import reaches the packages it passes through")]
@@ -763,7 +880,7 @@ fn a_bare_namespace_import_names_no_file() {
 fn an_import_reaches_the_packages_it_passes_through() {
     let tree = index("passing");
     let chain = "pkg/__init__.py + pkg/sub/__init__.py + pkg/sub/leaf.py";
-    assert_eq!(tree.target("outside.py", "pkg.sub.leaf", &[]), chain);
+    assert_eq!(tree.target("outside.py", "pkg.sub.leaf", &["*"]), chain);
     assert_eq!(tree.target("outside.py", "pkg.sub", &["leaf"]), chain);
     assert_eq!(
         tree.target("outside.py", "pkg", &["sub"]),
@@ -783,7 +900,7 @@ fn an_import_reaches_the_packages_it_passes_through() {
 fn an_import_inside_a_package_adds_nothing_for_its_own_package() {
     let tree = index("passing");
     let file = "pkg/sub/sibling.py";
-    assert_eq!(tree.target(file, "pkg.sub.leaf", &[]), "pkg/sub/leaf.py");
+    assert_eq!(tree.target(file, "pkg.sub.leaf", &["*"]), "pkg/sub/leaf.py");
     assert_eq!(tree.target(file, ".leaf", &["value"]), "pkg/sub/leaf.py");
     assert_eq!(tree.target(file, ".", &["leaf"]), "pkg/sub/leaf.py");
     insta::assert_json_snapshot!(
@@ -2083,17 +2200,20 @@ fn django_routes_imported_under_another_name_compose() {
     );
 }
 
-#[gsttt_scenario::scenario("python", "A name imported twice is listed once")]
+#[gsttt_scenario::scenario("python", "A name imported twice is listed for each name it binds")]
 #[test]
-fn a_name_imported_twice_is_listed_once() {
+fn a_name_imported_twice_is_listed_for_each_name_it_binds() {
     let tree = index("aliases");
-    // `from bookings import views as first, views as second` imports `views` twice and the import names it once.
+    // `from bookings import views as first, views as second` binds two names to the one `views`, and the walk needs both to find what uses either.
     assert_eq!(
-        tree.target("reexport.py", "bookings", &["views"]),
+        tree.target("reexport.py", "bookings", &["views", "views"]),
         "bookings/views.py"
     );
+    let import = &tree.file("reexport.py").facts.imports[0];
+    assert_eq!(import.names, ["views", "views"]);
+    assert_eq!(import.exported, ["first", "second"]);
     insta::assert_json_snapshot!(
-        "a_name_imported_twice_is_listed_once",
+        "a_name_imported_twice_is_listed_for_each_name_it_binds",
         tree.file_json("reexport.py")
     );
 }
@@ -2306,7 +2426,7 @@ fn a_project_of_the_repository_is_searched_only_when_it_is_declared() {
         ("tools/requests/__init__.py", ""),
         ("tools/helper/__init__.py", ""),
     ]);
-    let target = |spec: &str| tree.target("services/api/app.py", spec, &[]);
+    let target = |spec: &str| tree.target("services/api/app.py", spec, &["*"]);
     // `requests` is the declared distribution of PyPI, whatever a project nobody declared holds under that name.
     assert_eq!(target("requests"), "package requests");
     assert_eq!(
@@ -2332,7 +2452,7 @@ fn declared_projects_are_searched_in_the_order_of_their_paths() {
         ("libs/zeta/shared.py", ""),
     ]);
     assert_eq!(
-        tree.target("app/main.py", "shared", &[]),
+        tree.target("app/main.py", "shared", &["*"]),
         "libs/alpha/shared.py"
     );
 }
@@ -2358,17 +2478,23 @@ fn a_regular_package_hides_the_same_name_further_along() {
     ]);
     // `a/util` is the first `util` on the path and has no `two`, so the `util` of `b` supplies nothing.
     assert_eq!(
-        tree.target("a/main.py", "util.two", &[]),
+        tree.target("a/main.py", "util.two", &["*"]),
         "unresolved NotFound"
     );
-    assert_eq!(tree.target("a/main.py", "util", &[]), "a/util/__init__.py");
+    assert_eq!(
+        tree.target("a/main.py", "util", &["*"]),
+        "a/util/__init__.py"
+    );
     // Between the roots of one project the same holds: `src/pkg` comes before the directory `pkg` beside it.
     assert_eq!(
-        tree.target("c/main.py", "pkg.more", &[]),
+        tree.target("c/main.py", "pkg.more", &["*"]),
         "unresolved NotFound"
     );
     // The standard library is looked in before the later roots, as the order says, so it still has its own module.
-    assert_eq!(tree.target("c/main.py", "logging.handlers", &[]), "builtin");
+    assert_eq!(
+        tree.target("c/main.py", "logging.handlers", &["*"]),
+        "builtin"
+    );
 }
 
 const BOOKINGS_ROUTER: &str = "from fastapi import APIRouter\n\nrouter = APIRouter(prefix=\"/bookings\")\n\n\n@router.get(\"/{booking_id}\")\ndef get_booking(booking_id: int):\n    return {}\n";
@@ -3006,14 +3132,14 @@ fn a_stub_without_its_source_loses_to_a_declared_distribution() {
         ),
     ]);
     // Nothing runs from a stub, so the library the project declares is what these two imports load.
-    assert_eq!(tree.target("app.py", "foo", &[]), "package foo");
-    assert_eq!(tree.target("app.py", "bar.sub", &[]), "package bar");
+    assert_eq!(tree.target("app.py", "foo", &["*"]), "package foo");
+    assert_eq!(tree.target("app.py", "bar.sub", &["*"]), "package bar");
     // A stub nobody declares a library for is all there is to follow.
-    assert_eq!(tree.target("app.py", "baz", &[]), "baz.pyi");
+    assert_eq!(tree.target("app.py", "baz", &["*"]), "baz.pyi");
     // A stub beside its source, and a package of source files with a stub in it, are the project's own.
-    assert_eq!(tree.target("app.py", "real", &[]), "real.py + real.pyi");
+    assert_eq!(tree.target("app.py", "real", &["*"]), "real.py + real.pyi");
     assert_eq!(
-        tree.target("app.py", "mixed.only", &[]),
+        tree.target("app.py", "mixed.only", &["*"]),
         "mixed/__init__.py + mixed/only.pyi"
     );
 }
@@ -3281,4 +3407,737 @@ fn a_route_on_a_router_is_named_as_waiting_for_the_link() {
         [(6, "router.get".to_owned())]
     );
     assert_eq!(waiting("app/main.py"), []);
+}
+
+#[gsttt_scenario::scenario("python", "A from import may name a module")]
+#[test]
+fn a_from_import_may_name_a_module() {
+    let tree = module("from pkg import sub\nimport pkg.sub\nimport os\nfrom pkg import *\n");
+    let flags = |index: usize| tree.file(MODULE).imports[index].import.flags;
+    // `from pkg import sub` binds `sub`, which is the module `pkg/sub.py` when the package has one, and the walk needs to know it may be.
+    assert!(flags(0).contains(ImportFlags::MODULES));
+    assert!(!flags(1).contains(ImportFlags::MODULES));
+    assert!(!flags(2).contains(ImportFlags::MODULES));
+    assert!(!flags(3).contains(ImportFlags::MODULES));
+}
+
+#[gsttt_scenario::scenario("python", "A plain import lists the module it binds")]
+#[test]
+fn a_plain_import_lists_the_module_it_binds() {
+    let tree = module(
+        "import os\nimport a.b\nimport a.b as c\nfrom m import x as y, z\nfrom pkg import *\n",
+    );
+    assert_eq!(
+        tree.imports(MODULE),
+        [
+            "os [*] [os]",
+            "a.b [*] [a.b]",
+            "a.b [*] [c]",
+            "m [x,z] [y,z]",
+            "pkg [*] []"
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A function, a class and a variable are declared with their lines"
+)]
+#[test]
+fn a_function_a_class_and_a_variable_are_declared_with_their_lines() {
+    let tree = module("X = 1\nY: int = 2\n\ndef f():\n    return X\n\nclass K:\n    pass\n");
+    assert_eq!(
+        tree.declared(MODULE),
+        ["X L1-1", "Y L2-2", "f L4-5", "K L7-8"]
+    );
+    assert_eq!(tree.uses(MODULE, "f"), ["X"]);
+    insta::assert_json_snapshot!(
+        "a_function_a_class_and_a_variable_are_declared_with_their_lines",
+        tree.file_json(MODULE)
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A method and a class variable are declared under their class"
+)]
+#[test]
+fn a_method_and_a_class_variable_are_declared_under_their_class() {
+    let tree = module(
+        "class K:\n    attr = 1\n    other: int = 2\n\n    def m(self):\n        return self.other\n\n    @staticmethod\n    def s():\n        return 1\n",
+    );
+    // A decorator belongs to the function it decorates, so `K.s` starts on the line of `@staticmethod`.
+    assert_eq!(
+        tree.declared(MODULE),
+        [
+            "K L1-10",
+            "K.attr L2-2",
+            "K.other L3-3",
+            "K.m L5-6",
+            "K.s L8-10"
+        ]
+    );
+    assert_eq!(tree.uses(MODULE, "K.m"), ["K.other"]);
+}
+
+#[gsttt_scenario::scenario("python", "An attribute assigned on self is declared under its class")]
+#[test]
+fn an_attribute_assigned_on_self_is_declared_under_its_class() {
+    let tree = module(
+        "class K:\n    def __init__(self):\n        self.v = 1\n\n    def m(self):\n        self.v = 2\n",
+    );
+    assert_eq!(
+        tree.declared(MODULE),
+        ["K L1-6", "K.__init__ L2-3", "K.v L3-3", "K.m L5-6"]
+    );
+    // A use of the attribute is a use of what writes it, since a change to either moves its value.
+    assert_eq!(tree.uses(MODULE, "K.v"), ["K.__init__", "K.m"]);
+}
+
+#[gsttt_scenario::scenario("python", "A type alias is declared")]
+#[test]
+fn a_type_alias_is_declared() {
+    let tree = module("type Alias = list[int]\n");
+    assert_eq!(tree.declared(MODULE), ["Alias L1-1"]);
+}
+
+#[gsttt_scenario::scenario("python", "A main guard is declared as __main__")]
+#[test]
+fn a_main_guard_is_declared_as_main() {
+    let tree = module("def f():\n    pass\n\nif __name__ == \"__main__\":\n    f()\n");
+    // Nothing imports a script's entry point, so it is a declaration of its own that a change to the block moves, and not a use of the file.
+    assert_eq!(tree.declared(MODULE), ["f L1-2", "__main__ L4-5"]);
+    assert_eq!(tree.uses(MODULE, "__main__"), ["f"]);
+    assert_eq!(tree.on_load(MODULE), Vec::<&str>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A declaration uses the names it reads")]
+#[test]
+fn a_declaration_uses_the_names_it_reads() {
+    let tree = module(
+        "from m import x as y\nimport a.b\nimport a.b as c\n\ndef f(p):\n    return y(p) + c.q + a.b.w\n",
+    );
+    // Each name is the one the file writes, so `y` is not `x`, and a dotted use is kept whole.
+    assert_eq!(tree.uses(MODULE, "f"), ["a.b.w", "c.q", "y"]);
+}
+
+#[gsttt_scenario::scenario("python", "A local name hides the name of the file")]
+#[test]
+fn a_local_name_hides_the_name_of_the_file() {
+    let tree = module(
+        "X = 1\n\ndef f(X):\n    return X\n\ndef g():\n    X = 2\n    return X\n\ndef h():\n    return X\n",
+    );
+    assert_eq!(tree.uses(MODULE, "f"), Vec::<&str>::new());
+    assert_eq!(tree.uses(MODULE, "g"), Vec::<&str>::new());
+    assert_eq!(tree.uses(MODULE, "h"), ["X"]);
+}
+
+#[gsttt_scenario::scenario("python", "Calling a class uses its initialiser")]
+#[test]
+fn calling_a_class_uses_its_initialiser() {
+    let tree =
+        module("class K:\n    def __init__(self):\n        pass\n\ndef f():\n    return K()\n");
+    assert_eq!(tree.uses(MODULE, "f"), ["K", "K.__init__"]);
+}
+
+#[gsttt_scenario::scenario("python", "A call on self uses the method of its class")]
+#[test]
+fn a_call_on_self_uses_the_method_of_its_class() {
+    let tree = module(
+        "class K:\n    def go(self):\n        pass\n\n    def helper(self):\n        self.go()\n",
+    );
+    assert_eq!(tree.uses(MODULE, "K.helper"), ["K.go"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A call on a value made from a class uses the method of the class"
+)]
+#[test]
+fn a_call_on_a_value_made_from_a_class_uses_the_method_of_the_class() {
+    let tree =
+        module("class K:\n    def m(self):\n        pass\n\ndef f():\n    k = K()\n    k.m()\n");
+    // `K` has no initialiser of its own, so there is none to use.
+    assert_eq!(tree.uses(MODULE, "f"), ["K", "K.m"]);
+}
+
+#[gsttt_scenario::scenario("python", "A call through super uses the method of the base")]
+#[test]
+fn a_call_through_super_uses_the_method_of_the_base() {
+    let tree = module(
+        "class A:\n    def go(self):\n        pass\n\nclass B(A):\n    def go(self):\n        super().go()\n",
+    );
+    assert_eq!(tree.uses(MODULE, "B.go"), ["A.go"]);
+}
+
+#[gsttt_scenario::scenario("python", "An annotated parameter gives the type of the value")]
+#[test]
+fn an_annotated_parameter_gives_the_type_of_the_value() {
+    let tree = module(
+        "class A:\n    def go(self):\n        pass\n\ndef f(a: A, b: \"A\"):\n    a.go()\n    b.go()\n",
+    );
+    // A string annotation is the type it names, and the annotation itself is a use of the class.
+    assert_eq!(tree.uses(MODULE, "f"), ["A", "A.go"]);
+}
+
+#[gsttt_scenario::scenario("python", "A loose annotation is no class")]
+#[test]
+fn a_loose_annotation_is_no_class() {
+    let head = "from typing import Any, TypeVar, Union\nfrom base import A, B\n";
+    for (setup, parameter, annotation) in [
+        ("", "x: Any", "Any"),
+        ("T = TypeVar(\"T\", bound=A)\n", "x: T", "T"),
+        ("Alias = Union[A, B]\n", "x: Alias", "Alias"),
+    ] {
+        let tree = module(&format!(
+            "{head}{setup}\ndef f({parameter}):\n    x.run()\n"
+        ));
+        // The value may be of any class, so `run` is read by name and no member of a class is used.
+        assert_eq!(tree.reads(MODULE), ["run"], "{parameter}");
+        assert_eq!(tree.uses(MODULE, "f"), [annotation], "{parameter}");
+    }
+    // A class that is named by an annotation still types the value.
+    let tree = module("from base import A\n\ndef f(x: A):\n    x.run()\n");
+    assert_eq!(tree.uses(MODULE, "f"), ["A", "A.run"]);
+}
+
+#[gsttt_scenario::scenario("python", "A value of several classes is no class")]
+#[test]
+fn a_value_of_several_classes_is_no_class() {
+    let head = "from typing import Optional, Union\nfrom base import Dog, Cat\n\n";
+    for (name, code) in [
+        ("f", "def f(x: Dog | Cat):\n    x.run()\n"),
+        ("f", "def f(x: Union[Dog, Cat]):\n    x.run()\n"),
+        ("f", "def f(x: Optional[Dog | Cat]):\n    x.run()\n"),
+        ("f", "def f(x=None):\n    y = x or Dog()\n    y.run()\n"),
+        (
+            "f",
+            "def f(x):\n    y = Dog() if x else Cat()\n    y.run()\n",
+        ),
+        (
+            "S.three",
+            "class S:\n    def one(self):\n        self.c = Dog()\n\n    def two(self):\n        self.c = Cat()\n\n    def three(self):\n        self.c.run()\n",
+        ),
+        (
+            "S.go",
+            "class S:\n    def __init__(self, repo=None):\n        self.repo = repo or Dog()\n\n    def go(self):\n        self.repo.run()\n",
+        ),
+        (
+            "S.go",
+            "class S:\n    c: Dog | Cat\n\n    def go(self):\n        self.c.run()\n",
+        ),
+    ] {
+        let tree = module(&format!("{head}{code}"));
+        // Either class may be the receiver, so `run` is read by name, and no member of one class is used as if it were the only one.
+        assert_eq!(tree.reads(MODULE), ["run"], "{code}");
+        let used = tree.uses(MODULE, name);
+        assert!(
+            !used.iter().any(|used| used
+                .rsplit_once('.')
+                .is_some_and(|(_, member)| member == "run")),
+            "{code}: {used:?}"
+        );
+    }
+    // A class that is only made optional still types the value, and so does one every branch agrees on.
+    for code in [
+        "def f(x: Optional[Dog]):\n    x.run()\n",
+        "def f(x: Dog | None):\n    x.run()\n",
+        "def f(x=None):\n    y = Dog() if x else Dog()\n    y.run()\n",
+    ] {
+        let tree = module(&format!("{head}{code}"));
+        assert_eq!(tree.reads(MODULE), Vec::<&str>::new(), "{code}");
+        assert!(tree.uses(MODULE, "f").contains(&"Dog.run"), "{code}");
+    }
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A member read beside a base the file does not declare is kept"
+)]
+#[test]
+fn a_member_read_beside_a_base_the_file_does_not_declare_is_kept() {
+    let tree = module(
+        "from abc import ABC\n\nclass Base(ABC):\n    def go(self):\n        self.step()\n\nclass Local:\n    def go(self):\n        self.step()\n\n    def step(self):\n        pass\n",
+    );
+    // `step` may live in a class that extends `Base` elsewhere, so the file reads it by name, and a class that holds it itself does not.
+    assert_eq!(tree.reads(MODULE), ["step"]);
+    assert_eq!(tree.uses(MODULE, "Local.go"), ["Local.step"]);
+}
+
+#[gsttt_scenario::scenario("python", "A member read on a value of unknown type is read by name")]
+#[test]
+fn a_member_read_on_a_value_of_unknown_type_is_read_by_name() {
+    let tree = module("def f(d):\n    d.unknown()\n");
+    assert_eq!(tree.reads(MODULE), ["unknown"]);
+    // The receiver is a parameter nothing types, so the declaration lists no member of any class.
+    assert_eq!(tree.uses(MODULE, "f"), Vec::<&str>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A list is no receiver of a member")]
+#[test]
+fn a_list_is_no_receiver_of_a_member() {
+    let tree = module(
+        "from typing import Optional\n\
+         \n\
+         def f(rows: list[int], d: Optional[dict] = None, n: int | None = None):\n\
+         \x20   xs = []\n\
+         \x20   xs.append(1)\n\
+         \x20   names = list()\n\
+         \x20   names.sort()\n\
+         \x20   parts = [p for p in rows]\n\
+         \x20   parts.pop()\n\
+         \x20   text = f\"{n}\"\n\
+         \x20   text.strip()\n\
+         \x20   \"-\".join(parts)\n\
+         \x20   rows.sort()\n\
+         \x20   d.get(1)\n\
+         \x20   n.bit_length()\n",
+    );
+    assert_eq!(tree.reads(MODULE), Vec::<&str>::new());
+    // A value nothing types is still read by name, whatever the member is called.
+    let tree = module("def f(text):\n    text.append(1)\n    items = make()\n    items.sort()\n");
+    assert_eq!(tree.reads(MODULE), ["append", "sort"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A field annotated with a builtin is no receiver of a member"
+)]
+#[test]
+fn a_field_annotated_with_a_builtin_is_no_receiver_of_a_member() {
+    let tree = module(
+        "from typing import Optional\n\
+         \n\
+         class K:\n\
+         \x20   items: list[str]\n\
+         \x20   label: Optional[str] = None\n\
+         \n\
+         \x20   def __init__(self, names: dict, count: int | None, other):\n\
+         \x20       self.names = names\n\
+         \x20       self.count = count\n\
+         \x20       self.log = []\n\
+         \x20       self.other = other\n\
+         \n\
+         \x20   def m(self):\n\
+         \x20       self.items.append(1)\n\
+         \x20       self.label.strip()\n\
+         \x20       self.names.items()\n\
+         \x20       self.count.bit_length()\n\
+         \x20       self.log.append(1)\n\
+         \x20       self.other.run()\n",
+    );
+    // Only the field nothing types is read by name, and each field is still used.
+    assert_eq!(tree.reads(MODULE), ["run"]);
+    assert_eq!(
+        tree.uses(MODULE, "K.m"),
+        [
+            "K.count", "K.items", "K.label", "K.log", "K.names", "K.other"
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A builtin local that is bound again is read by name")]
+#[test]
+fn a_builtin_local_that_is_bound_again_is_read_by_name() {
+    let tree = module(
+        "def f(items):\n\
+         \x20   xs = []\n\
+         \x20   for xs in items:\n\
+         \x20       xs.first()\n\
+         \x20   ys = []\n\
+         \x20   ys = make()\n\
+         \x20   ys.second()\n\
+         \x20   if items:\n\
+         \x20       zs = make()\n\
+         \x20   else:\n\
+         \x20       zs = []\n\
+         \x20   zs.third()\n\
+         \x20   ws = []\n\
+         \x20   ws += more()\n\
+         \x20   ws.fourth()\n\
+         \x20   vs = []\n\
+         \x20   vs.kept()\n",
+    );
+    // `vs` is a list all along, and every other name was bound to something else on the way.
+    assert_eq!(tree.reads(MODULE), ["first", "fourth", "second", "third"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A loop, a with, an except, a walrus and a del end the type of a local"
+)]
+#[test]
+fn a_loop_a_with_an_except_a_walrus_and_a_del_end_the_type_of_a_local() {
+    let tree = module(
+        "class A:\n\
+         \x20   def run(self):\n\
+         \x20       pass\n\
+         \n\
+         def kept(p: A):\n\
+         \x20   p.run()\n\
+         \n\
+         def looped(p: A, items):\n\
+         \x20   for p in items:\n\
+         \x20       p.run()\n\
+         \n\
+         def opened(p: A):\n\
+         \x20   with make() as p:\n\
+         \x20       p.run()\n\
+         \n\
+         def caught(p: A):\n\
+         \x20   try:\n\
+         \x20       pass\n\
+         \x20   except ValueError as p:\n\
+         \x20       p.run()\n\
+         \n\
+         def named(p: A):\n\
+         \x20   if (p := make()):\n\
+         \x20       p.run()\n\
+         \n\
+         def deleted(p: A):\n\
+         \x20   del p\n\
+         \x20   p = make()\n\
+         \x20   p.run()\n\
+         \n\
+         def matched(p: A, value):\n\
+         \x20   match value:\n\
+         \x20       case [p]:\n\
+         \x20           p.run()\n",
+    );
+    assert_eq!(tree.uses(MODULE, "kept"), ["A", "A.run"]);
+    for name in ["looped", "opened", "caught", "named", "deleted", "matched"] {
+        assert_eq!(tree.uses(MODULE, name), ["A"], "{name}");
+    }
+    assert_eq!(tree.reads(MODULE), ["run"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A local given values of different types is unknown wherever it is read"
+)]
+#[test]
+fn a_local_given_values_of_different_types_is_unknown_wherever_it_is_read() {
+    let head = "from base import A, B\n\n";
+    for code in [
+        "def f(c):\n    if c:\n        x = A()\n    else:\n        x = B()\n    x.run()\n",
+        "def f(c, x: A):\n    if c:\n        x = B()\n    x.run()\n",
+        "def f(items):\n    x = A()\n    for item in items:\n        x.run()\n        x = B()\n",
+    ] {
+        let tree = module(&format!("{head}{code}"));
+        // The read may land on either class, so it is read by name and no member of one class is used.
+        assert_eq!(tree.reads(MODULE), ["run"], "{code}");
+        let used = tree.uses(MODULE, "f");
+        assert!(
+            !used.iter().any(|name| name
+                .rsplit_once('.')
+                .is_some_and(|(_, member)| member == "run")),
+            "{code}: {used:?}"
+        );
+    }
+    // A local given the same type each time is typed, and a local given a type once is typed.
+    for code in [
+        "def f(c):\n    x = A()\n    if c:\n        x = A()\n    x.run()\n",
+        "def f(c, x: A):\n    if c:\n        x = A()\n    x.run()\n",
+        "def f():\n    x = A()\n    x.run()\n",
+    ] {
+        let tree = module(&format!("{head}{code}"));
+        assert_eq!(tree.reads(MODULE), Vec::<&str>::new(), "{code}");
+        assert!(tree.uses(MODULE, "f").contains(&"A.run"), "{code}");
+    }
+}
+
+#[gsttt_scenario::scenario("python", "An assignment of a name an import binds uses the import")]
+#[test]
+fn an_assignment_of_a_name_an_import_binds_uses_the_import() {
+    let tree = module("from m import X, wrap\n\nX = wrap(X)\n\nY = 1\nY = wrap(Y)\n");
+    assert_eq!(tree.uses(MODULE, "X"), ["X", "wrap"]);
+    // `Y` is the name of the file, which reading itself does not make a use.
+    assert_eq!(tree.uses(MODULE, "Y"), ["wrap"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "The first binding of a name in a file with a star import uses the name the star may bring in"
+)]
+#[test]
+fn the_first_binding_of_a_name_in_a_file_with_a_star_import_uses_the_name_the_star_may_bring_in() {
+    let tree = module(
+        "from .base import *\n\nINSTALLED_APPS = INSTALLED_APPS + [\"x\"]\nINSTALLED_APPS = INSTALLED_APPS + [\"y\"]\nDEBUG = False\nPORT = 80 + 1\n",
+    );
+    assert_eq!(tree.uses(MODULE, "INSTALLED_APPS"), ["INSTALLED_APPS"]);
+    // A name bound a second time reads the file's own, and one that reads nothing uses nothing.
+    assert_eq!(tree.uses(MODULE, "DEBUG"), Vec::<&str>::new());
+    assert_eq!(tree.uses(MODULE, "PORT"), Vec::<&str>::new());
+    // Without a star import the name can be nothing but unbound, so reading it uses nothing.
+    let tree = module("X = X + 1\n");
+    assert_eq!(tree.uses(MODULE, "X"), Vec::<&str>::new());
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A comprehension in a class body reads a variable of the body for its first iterable"
+)]
+#[test]
+fn a_comprehension_in_a_class_body_reads_a_variable_of_the_body_for_its_first_iterable() {
+    let tree = module(
+        "class K:\n\
+         \x20   xs = [1]\n\
+         \x20   ys = [x for x in xs]\n\
+         \x20   zs = [(x, y) for x in [1] for y in xs]\n",
+    );
+    assert_eq!(tree.uses(MODULE, "K.ys"), ["K.xs"]);
+    // The second iterable runs inside the comprehension, which sees no variable of the class.
+    assert_eq!(tree.uses(MODULE, "K.zs"), Vec::<&str>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A walrus in a comprehension binds a name of the function")]
+#[test]
+fn a_walrus_in_a_comprehension_binds_a_name_of_the_function() {
+    let tree = module(
+        "class A:\n\
+         \x20   def run(self):\n\
+         \x20       pass\n\
+         \n\
+         X = 1\n\
+         \n\
+         def f(p: A, rows):\n\
+         \x20   ys = [(p := r) for r in rows]\n\
+         \x20   p.run()\n\
+         \n\
+         def g(rows):\n\
+         \x20   ys = [(X := r) for r in rows]\n\
+         \x20   return X\n",
+    );
+    // `p` holds a row after the comprehension, and `X` is a name of `g` and not the variable of the file.
+    assert_eq!(tree.uses(MODULE, "f"), ["A"]);
+    assert_eq!(tree.reads(MODULE), ["run"]);
+    assert_eq!(tree.uses(MODULE, "g"), Vec::<&str>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A class local to a function is an heir of nothing")]
+#[test]
+fn a_class_local_to_a_function_is_an_heir_of_nothing() {
+    let tree = module(
+        "class Base:\n\
+         \x20   pass\n\
+         \n\
+         class Top(Base):\n\
+         \x20   pass\n\
+         \n\
+         def make():\n\
+         \x20   class Top(Base):\n\
+         \x20       pass\n\
+         \x20   class Local(Base):\n\
+         \x20       pass\n\
+         \x20   return Local\n",
+    );
+    assert_eq!(tree.heirs(MODULE), ["Top Base"]);
+    assert_eq!(tree.overrides(MODULE), ["Top Base"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A string of a Literal and the metadata of an Annotated are no names"
+)]
+#[test]
+fn a_string_of_a_literal_and_the_metadata_of_an_annotated_are_no_names() {
+    let tree = module(
+        "from typing import Annotated, Literal\n\
+         \n\
+         class Order:\n\
+         \x20   pass\n\
+         \n\
+         def f(a: Literal[\"Order\"]):\n\
+         \x20   pass\n\
+         \n\
+         def g(b: Annotated[int, \"Order\"]):\n\
+         \x20   pass\n\
+         \n\
+         def h(c: Annotated[\"Order\", \"meta\"]):\n\
+         \x20   pass\n\
+         \n\
+         def i(d: \"Order\"):\n\
+         \x20   pass\n",
+    );
+    assert_eq!(tree.uses(MODULE, "f"), ["Literal"]);
+    assert_eq!(tree.uses(MODULE, "g"), ["Annotated"]);
+    assert_eq!(tree.uses(MODULE, "h"), ["Annotated", "Order"]);
+    assert_eq!(tree.uses(MODULE, "i"), ["Order"]);
+}
+
+#[gsttt_scenario::scenario("python", "A top-level call runs when the file loads")]
+#[test]
+fn a_top_level_call_runs_when_the_file_loads() {
+    let tree = module("from m import run\n\nrun()\n");
+    assert_eq!(tree.on_load(MODULE), ["run"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A decorator and a class body run when the file loads and a function body does not"
+)]
+#[test]
+fn a_decorator_and_a_class_body_run_when_the_file_loads_and_a_function_body_does_not() {
+    let tree = module(
+        "from m import run, stop, setup\n\n@setup.reg\ndef f():\n    stop()\n\nclass K:\n    x = run()\n\n    def m(self):\n        stop()\n",
+    );
+    assert_eq!(tree.on_load(MODULE), ["run", "setup.reg"]);
+}
+
+#[gsttt_scenario::scenario("python", "A module exports every name it binds and those of __all__")]
+#[test]
+fn a_module_exports_every_name_it_binds_and_those_of_all() {
+    let tree = module(
+        "from .a import A\nfrom .b import b as bb\nimport os.path\nfrom d import e\n\ntry:\n    import fast\nexcept ImportError:\n    fast = None\n\n__all__ = [\"A\", \"zz\"]\nX = 1\n\ndef f():\n    import local\n",
+    );
+    // `from m import e` takes an `e` that `m` only imports as it takes one `m` defines, so an import is handed out like any other binding, and an import inside a function binds in the function.
+    assert_eq!(
+        tree.exports(MODULE),
+        ["A", "X", "__all__", "bb", "e", "f", "fast", "os", "zz"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "__all__ is read in every literal form")]
+#[test]
+fn all_is_read_in_every_literal_form() {
+    let tree = module(
+        "__all__ = [\"a\"]\n__all__ += [\"b\"]\n__all__ = __all__ + [\"c\"]\n__all__.extend([\"d\"])\n__all__.append(\"e\")\n__all__: list[str] = [\"f\"]\n__all__ = (\"g\",)\n__all__ = {\"h\"}\n\nif True:\n    __all__ += (\"i\",)\n    __all__.extend((\"j\", \"k\"))\n",
+    );
+    assert_eq!(
+        tree.exports(MODULE),
+        [
+            "__all__", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A class base gives an heir and an override")]
+#[test]
+fn a_class_base_gives_an_heir_and_an_override() {
+    let tree = module("class A:\n    pass\n\nclass B(A, Mixin):\n    pass\n");
+    // `Mixin` is a name nothing binds, so it is not a class that can be walked to.
+    assert_eq!(tree.heirs(MODULE), ["B A"]);
+    assert_eq!(tree.overrides(MODULE), ["B A"]);
+}
+
+#[gsttt_scenario::scenario("python", "A value made from a class is an heir and overrides nothing")]
+#[test]
+fn a_value_made_from_a_class_is_an_heir_and_overrides_nothing() {
+    let tree = module("from fa import FastAPI\n\napp = FastAPI()\n");
+    assert_eq!(tree.heirs(MODULE), ["app FastAPI"]);
+    assert_eq!(tree.overrides(MODULE), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A star barrel records the names it declares")]
+#[test]
+fn a_star_barrel_records_the_names_it_declares() {
+    let tree = module("from pkg import *\nX = 1\n\ndef f():\n    return X\n");
+    assert_eq!(tree.declared(MODULE), ["X L2-2", "f L4-5"]);
+    assert_eq!(tree.exports(MODULE), ["X", "f"]);
+    assert_eq!(tree.imports(MODULE), ["pkg [*] []"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A file reading an unbound name next to a star import is followed whole"
+)]
+#[test]
+fn a_file_reading_an_unbound_name_next_to_a_star_import_is_followed_whole() {
+    let tree = module("from pkg import *\n\ndef f():\n    return X + Y\n");
+    // `X` and `Y` may be what the star import brought in, and no declaration can say which, so the file records no declarations.
+    let facts = &tree.file(MODULE).facts;
+    assert!(facts.symbols.is_none());
+    assert!(facts.exports.is_none());
+    assert_eq!(tree.imports(MODULE), ["pkg [*] []"]);
+}
+
+#[gsttt_scenario::scenario("python", "A syntax error leaves the declarations unrecorded")]
+#[test]
+fn a_syntax_error_leaves_the_declarations_unrecorded() {
+    let tree = module("def f(:\n    pass\nfrom a import b\n");
+    let facts = &tree.file(MODULE).facts;
+    assert!(facts.symbols.is_none());
+    assert!(facts.exports.is_none());
+    // The imports the parser could read stay.
+    assert_eq!(tree.imports(MODULE), ["a [b] [b]"]);
+}
+
+#[gsttt_scenario::scenario("python", "The provides name the uses of a name that no import links")]
+#[test]
+fn the_provides_name_the_uses_of_a_name_that_no_import_links() {
+    let tree = module("X = 1\n");
+    let spots = tree.blind_spots();
+    for words in [
+        "pytest fixtures",
+        "names that Django reads from a string",
+        "monkeypatching",
+    ] {
+        assert!(
+            spots.iter().any(|spot| spot.contains(words)),
+            "{words}: {spots:?}"
+        );
+    }
+}
+
+/// What the Python project of a one-file tree gives for `text` as the code of the file at `path`.
+fn code_of(path: &str, text: &str) -> Option<String> {
+    let [manifest, _] = PROJECT;
+    let tree = index_files(&[manifest, (path, text)]);
+    let projects = PYTHON
+        .open(&tree.repo, &Value::Null, &builtin_packs(PACKS).unwrap())
+        .unwrap();
+    let path = RepoPath::normalize(path).unwrap();
+    projects[0].code(&SourceFile {
+        id: FileId::from_raw(0),
+        path: &path,
+        text,
+    })
+}
+
+/// The lines of `code` without the space around them, the way two versions of a file are compared.
+fn trimmed(code: &str) -> Vec<&str> {
+    code.lines().map(str::trim).collect()
+}
+
+#[gsttt_scenario::scenario("python", "A comment or an import does not change the code")]
+#[test]
+fn a_comment_or_an_import_does_not_change_the_code() {
+    let before = code_of("a.py", "import os\n# note\nx = 1  # tail\n").unwrap();
+    let after = code_of("a.py", "import sys\n# other note\nx = 1\n").unwrap();
+    // The lines stay where they are, with the comments and imports gone from them.
+    assert_eq!(trimmed(&before), ["", "", "x = 1"]);
+    assert_eq!(trimmed(&before), trimmed(&after));
+}
+
+#[gsttt_scenario::scenario("python", "Indentation is part of the code")]
+#[test]
+fn indentation_is_part_of_the_code() {
+    let inside = code_of("a.py", "if a:\n    x = 1\n    y = 2\n").unwrap();
+    let outside = code_of("a.py", "if a:\n    x = 1\ny = 2\n").unwrap();
+    // `y = 2` moved out of the block, which no trimming of a line may hide.
+    assert_ne!(trimmed(&inside), trimmed(&outside));
+    assert_eq!(inside.matches('\n').count(), outside.matches('\n').count());
+}
+
+#[gsttt_scenario::scenario("python", "Whitespace in a string is part of the code")]
+#[test]
+fn whitespace_in_a_string_is_part_of_the_code() {
+    let text = "s = \"\"\"a\n  b\n\n\tc\"\"\"\n";
+    let code = code_of("a.py", text).unwrap();
+    assert_eq!(code.matches('\n').count(), text.matches('\n').count());
+    assert_eq!(
+        trimmed(&code),
+        ["s = \"\"\"a\x03", "\x01\x01b\x03", "\x03", "\x02c\"\"\""]
+    );
+    let one = code_of("a.py", "s = \"a  b\"\n").unwrap();
+    let two = code_of("a.py", "s = \"a b\"\n").unwrap();
+    assert_ne!(trimmed(&one), trimmed(&two));
+}
+
+#[gsttt_scenario::scenario("python", "A syntax error gives no code")]
+#[test]
+fn a_syntax_error_gives_no_code() {
+    assert_eq!(code_of("a.py", "def f(:\n    pass\n"), None);
+    // A manifest is no Python source either.
+    assert_eq!(code_of("setup.cfg", "[metadata]\nname = p\n"), None);
 }

@@ -13,7 +13,12 @@ expression: "tree.file_json(\"app/main.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "json"
+      ],
       "to": "builtin"
     },
     {
@@ -21,7 +26,12 @@ expression: "tree.file_json(\"app/main.py\")"
       "kind": "static",
       "line": 2,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "yaml"
+      ],
       "to": {
         "external": "pyyaml"
       }
@@ -31,7 +41,12 @@ expression: "tree.file_json(\"app/main.py\")"
       "kind": "static",
       "line": 3,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "fastapi.routing"
+      ],
       "to": {
         "external": "fastapi"
       }
@@ -41,7 +56,12 @@ expression: "tree.file_json(\"app/main.py\")"
       "kind": "static",
       "line": 4,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "requests"
+      ],
       "to": {
         "unresolved": {
           "reason": "unknown-package"
@@ -53,7 +73,12 @@ expression: "tree.file_json(\"app/main.py\")"
       "kind": "static",
       "line": 5,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "app.missing"
+      ],
       "to": {
         "unresolved": {
           "reason": "not-found"
@@ -64,6 +89,21 @@ expression: "tree.file_json(\"app/main.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "app",
+    "fastapi",
+    "json",
+    "requests",
+    "yaml"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "app/main.py",
   "project": "python ."
 }

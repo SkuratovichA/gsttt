@@ -12,9 +12,14 @@ expression: "tree.file_json(\"reexport.py\")"
       "spec": "bookings",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "views",
         "views"
+      ],
+      "exported": [
+        "first",
+        "second"
       ],
       "to": {
         "file": "bookings/views.py"
@@ -24,6 +29,18 @@ expression: "tree.file_json(\"reexport.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "first",
+    "second"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "reexport.py",
   "project": "python ."
 }

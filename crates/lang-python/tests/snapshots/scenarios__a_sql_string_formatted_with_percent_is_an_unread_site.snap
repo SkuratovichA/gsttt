@@ -60,6 +60,27 @@ expression: "tree.file_json(\"built.py\")"
       "detail": "cursor.execute"
     }
   ],
+  "exports": [
+    "built"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "built",
+        "line": 1,
+        "end": 7,
+        "uses": []
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": [
+      "execute",
+      "format"
+    ]
+  },
   "path": "built.py",
   "project": "python ."
 }

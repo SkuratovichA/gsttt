@@ -1,5 +1,6 @@
 //! Python for gsttt: one project per manifest directory, imports read with the ruff parser and resolved against source roots, `__init__.py` packages, namespace packages and relative imports, and the contracts of FastAPI, Flask, Django, requests, httpx, SQLAlchemy, Alembic and the environment found by rule packs.
 
+mod code;
 mod extra;
 mod files;
 mod imports;
@@ -11,6 +12,7 @@ mod project;
 mod provides;
 mod resolve;
 mod site;
+mod symbols;
 
 use gsttt_core::connector::{Connector, ConnectorError, Erased, Meta};
 use gsttt_core::repo::RepoView;
@@ -56,7 +58,7 @@ impl Connector for Python {
     fn meta(&self) -> Meta {
         Meta {
             name: "python",
-            version: 4,
+            version: 5,
             summary: "Python imports and packages, with FastAPI, Flask, Django, requests, httpx, SQLAlchemy and Alembic contracts",
             extensions: &["py", "pyi"],
         }

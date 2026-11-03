@@ -13,8 +13,11 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
         "spec": "flask",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "Blueprint"
+        ],
+        "exported": [
           "Blueprint"
         ],
         "to": {
@@ -25,6 +28,46 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
     "contracts": [],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "Blueprint",
+      "bp",
+      "cancel"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "bp",
+          "line": 3,
+          "end": 3,
+          "uses": [
+            "Blueprint",
+            "Blueprint.__init__"
+          ]
+        },
+        {
+          "name": "cancel",
+          "line": 6,
+          "end": 8,
+          "uses": [
+            "bp.route"
+          ]
+        }
+      ],
+      "on_load": [
+        "Blueprint",
+        "Blueprint.__init__",
+        "bp.route"
+      ],
+      "exports": [],
+      "heirs": [
+        {
+          "name": "bp",
+          "of": "Blueprint"
+        }
+      ],
+      "overrides": [],
+      "reads": []
+    },
     "path": "app.py",
     "project": "python ."
   },

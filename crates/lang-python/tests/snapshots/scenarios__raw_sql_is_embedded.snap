@@ -13,7 +13,12 @@ expression: "tree.file_json(\"db.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "sqlite3"
+      ],
       "to": "builtin"
     }
   ],
@@ -61,6 +66,68 @@ expression: "tree.file_json(\"db.py\")"
     }
   ],
   "unresolved": [],
+  "exports": [
+    "find",
+    "find_added",
+    "find_escaped",
+    "find_joined",
+    "find_many",
+    "sqlite3"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "find",
+        "line": 4,
+        "end": 8,
+        "uses": [
+          "sqlite3.connect"
+        ]
+      },
+      {
+        "name": "find_many",
+        "line": 11,
+        "end": 21,
+        "uses": [
+          "sqlite3.connect"
+        ]
+      },
+      {
+        "name": "find_joined",
+        "line": 24,
+        "end": 32,
+        "uses": [
+          "sqlite3.connect"
+        ]
+      },
+      {
+        "name": "find_added",
+        "line": 35,
+        "end": 43,
+        "uses": [
+          "sqlite3.connect"
+        ]
+      },
+      {
+        "name": "find_escaped",
+        "line": 46,
+        "end": 49,
+        "uses": [
+          "sqlite3.connect"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": [
+      "cursor",
+      "execute",
+      "fetchall",
+      "fetchone"
+    ]
+  },
   "path": "db.py",
   "project": "python ."
 }

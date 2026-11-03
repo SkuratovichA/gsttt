@@ -13,7 +13,12 @@ expression: tree.file_json(from)
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "common.util"
+      ],
       "to": {
         "files": [
           "libs/common/common/__init__.py",
@@ -26,7 +31,12 @@ expression: tree.file_json(from)
       "kind": "static",
       "line": 2,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "fastapi"
+      ],
       "to": {
         "external": "fastapi"
       }
@@ -35,8 +45,11 @@ expression: tree.file_json(from)
       "spec": "common",
       "kind": "static",
       "line": 3,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "util"
+      ],
+      "exported": [
         "util"
       ],
       "to": {
@@ -50,6 +63,19 @@ expression: tree.file_json(from)
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "common",
+    "fastapi",
+    "util"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "services/api/app/main.py",
   "project": "python services/api"
 }

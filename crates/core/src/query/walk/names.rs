@@ -13,6 +13,7 @@ use crate::fact::{
 use crate::graph::{ContractSite, Declaration, Edge, FileSymbols, Graph};
 use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
+use crate::path::RepoPath;
 use crate::query::cross::{Crossed, Crossing, Direction, Leavers, keep_fewest, sites_of};
 
 use super::overrides::{overridden, overriding};
@@ -1252,6 +1253,24 @@ impl<'w, 'a> Step<'w, 'a> {
         self.flow(file, exported);
     }
 
+    /// Whether `importer` re-exports `name` by name from a file, as `export { name } from './b'` does, which beats a name an `export *` of the same file brings in.
+    fn re_exports_by_name(&self, importer: FileId, name: &str) -> bool {
+        self.walk
+            .index
+            .records
+            .get(importer.index())
+            .is_some_and(|record| {
+                record.imports.iter().any(|resolved| {
+                    resolved.import.kind == ImportKind::ReExport
+                        && resolved
+                            .import
+                            .exported
+                            .iter()
+                            .any(|exported| exported == name)
+                })
+            })
+    }
+
     /// The names under which `file` exports `local`: itself when the file lists it among its exports, and each name it exports from it. A file whose exports are unknown could export it as any name.
     fn exported_as(&self, file: FileId, symbols: FileSymbols<'a>, local: &'a str) -> Vec<Name<'a>> {
         let graph = self.walk.graph;
@@ -1426,10 +1445,38 @@ impl<'w, 'a> Step<'w, 'a> {
                 self.bind_names(name, from, importer, symbols, import, via, work);
             }
             ImportKind::ReExportAll => {
-                // `export *` never forwards `default`.
-                if name.exported() != Some("default") {
-                    // Asked about a name, it names nothing, so it gets no row; a file followed whole keeps it.
+                let graph = self.walk.graph;
+                // A declaration that uses its own name reads the one the star brings in before it binds it again, as `INSTALLED_APPS = INSTALLED_APPS + [..]` after `from .base import *` does: it uses the name of the file, so it is a user of it even where the star hands the name on no further.
+                if let Name::Is(listed) = name
+                    && symbols
+                        .declarations()
+                        .any(|decl| decl.name() == listed && decl.uses().any(|used| used == listed))
+                {
+                    via.taken.name(graph, listed);
+                    via.locals.push(Local {
+                        name: listed,
+                        member: None,
+                        inner: None,
+                    });
+                }
+                // `export *` never forwards `default`, nor a name the importer binds itself: its own wins, so `from .base import *` followed by `DEBUG = False` hands on the new `DEBUG` and not the one of `base`, and `export { helper } from './b'` beside `export * from './a'` hands on the `helper` of `b`.
+                let shadowed = name.exported().is_some_and(|listed| {
+                    (symbols.declarations().any(|decl| decl.name() == listed)
+                        && exports_name(graph, importer, listed))
+                        || self.re_exports_by_name(importer, listed)
+                });
+                if name.exported() != Some("default") && !shadowed {
+                    // Asked about a name, it names nothing, so it gets no row, unless it lists that name among the names it exports itself, as a package's `__all__` does; a file followed whole keeps it.
                     via.barrel |= name == Name::Any;
+                    if let Name::Is(listed) = name
+                        && let Some(id) = graph.name_id(listed)
+                        && graph
+                            .exports(importer)
+                            .is_some_and(|own| own.binary_search(&id).is_ok())
+                    {
+                        via.barrel = true;
+                        via.passes.push((id, id));
+                    }
                     work.push_back((importer, name));
                 }
             }
@@ -1487,12 +1534,20 @@ impl<'w, 'a> Step<'w, 'a> {
         let graph = self.walk.graph;
         let re_export = import.kind == ImportKind::ReExport;
         for (taken, bound) in import.names.iter().zip(&import.exported) {
+            // A name that a package hands out may be one of its modules, and the file reached is then that module itself, which the local stands for as a namespace does. A module that exports the name itself hands out that value when the import names the module, so `from app.logger import logger` binds the object and not the module of that stem, while `from . import cli` still binds the module `cli`, whatever it declares.
+            let module = import.flags.contains(ImportFlags::MODULES)
+                && graph
+                    .path(from)
+                    .is_some_and(|path| is_module_named(path, taken))
+                && !(names_module(&import.spec, taken) && exports_name(graph, from, taken));
             // A require hands back the module, so a file that exports one value or names no default has that module taken for the one name the local binds, and its uses of the local are uses of the names.
-            let widened = taken == "default"
-                && name
-                    .exported()
-                    .is_some_and(|exported| exported != "default")
-                && (import.kind == ImportKind::Require || !exports_default(graph, from));
+            let widened = module
+                || (taken == "default"
+                    && name
+                        .exported()
+                        .is_some_and(|exported| exported != "default")
+                    && (import.kind == ImportKind::Require
+                        || !exports_name(graph, from, "default")));
             let taken = if widened { "*" } else { taken.as_str() };
             if !name.takes(taken) {
                 continue;
@@ -1525,8 +1580,8 @@ impl<'w, 'a> Step<'w, 'a> {
                 continue;
             }
             for exported in self.exported_as(importer, symbols, bound) {
-                // A file that hands a member's class on names no member of it, so it is no caller.
-                via.used |= member.is_none();
+                // A file that hands a member's class on names no member of it, so it is no caller. Taking a module reads none of the names in it, so the file is listed for what its code uses of the module, and only the names its importers take of it are passed on.
+                via.used |= member.is_none() && !module;
                 work.push_back((importer, exported.with(member)));
             }
         }
@@ -1662,12 +1717,12 @@ fn take_names(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<'_>)
     takes
 }
 
-/// Whether `file` lists `default` among its exports.
-fn exports_default(graph: &Graph, file: FileId) -> bool {
+/// Whether `file` lists `name` among its exports.
+fn exports_name(graph: &Graph, file: FileId, name: &str) -> bool {
     graph
-        .name_id("default")
+        .name_id(name)
         .zip(graph.exports(file))
-        .is_some_and(|(default, listed)| listed.binary_search(&default).is_ok())
+        .is_some_and(|(id, listed)| listed.binary_search(&id).is_ok())
 }
 
 /// Whether a dynamic import or a `require` takes the module itself, so every name of it: it names nothing, or names the namespace, which is `*` and for a `require` also the `default` that `const lib = require('./a')` binds.
@@ -1741,6 +1796,24 @@ fn refers_decl<'u>(
         }
     }
     best
+}
+
+/// Whether `path` is the module a package hands out as `taken`: a file of that name, or the `__init__` of a directory of that name. Python is the connector that sets [`ImportFlags::MODULES`].
+fn is_module_named(path: &RepoPath, taken: &str) -> bool {
+    let name = path.file_name();
+    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+    stem == taken
+        || (stem == "__init__"
+            && path
+                .parent()
+                .rsplit('/')
+                .next()
+                .is_some_and(|dir| dir == taken))
+}
+
+/// Whether the specifier of an import ends with the module `taken`, as `app.logger` and `.logger` do for `logger`, so that `taken` is looked up inside that module and not among the names of the package around it.
+fn names_module(spec: &str, taken: &str) -> bool {
+    spec.rsplit('.').next() == Some(taken)
 }
 
 /// Whether a mock with `flags` replaces its module with a factory, so the importer runs none of the code of that module.

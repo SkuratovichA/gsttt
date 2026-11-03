@@ -12,8 +12,11 @@ expression: "tree.file_json(\"app.py\")"
       "spec": "flask",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "Flask"
+      ],
+      "exported": [
         "Flask"
       ],
       "to": {
@@ -43,6 +46,73 @@ expression: "tree.file_json(\"app.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "Flask",
+    "METHODS",
+    "app",
+    "held",
+    "plain",
+    "post"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "app",
+        "line": 3,
+        "end": 3,
+        "uses": [
+          "Flask",
+          "Flask.__init__"
+        ]
+      },
+      {
+        "name": "METHODS",
+        "line": 4,
+        "end": 4,
+        "uses": []
+      },
+      {
+        "name": "held",
+        "line": 7,
+        "end": 9,
+        "uses": [
+          "METHODS",
+          "app.route"
+        ]
+      },
+      {
+        "name": "plain",
+        "line": 12,
+        "end": 14,
+        "uses": [
+          "app.route"
+        ]
+      },
+      {
+        "name": "post",
+        "line": 17,
+        "end": 19,
+        "uses": [
+          "app.route"
+        ]
+      }
+    ],
+    "on_load": [
+      "Flask",
+      "Flask.__init__",
+      "METHODS",
+      "app.route"
+    ],
+    "exports": [],
+    "heirs": [
+      {
+        "name": "app",
+        "of": "Flask"
+      }
+    ],
+    "overrides": [],
+    "reads": []
+  },
   "path": "app.py",
   "project": "python ."
 }

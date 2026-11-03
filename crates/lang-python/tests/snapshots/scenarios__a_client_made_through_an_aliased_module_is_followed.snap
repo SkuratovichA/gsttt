@@ -13,7 +13,12 @@ expression: "tree.file_json(\"httpx_module.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "hx"
+      ],
       "to": {
         "external": "httpx"
       }
@@ -35,6 +40,46 @@ expression: "tree.file_json(\"httpx_module.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "BASE",
+    "hx",
+    "load",
+    "with_base_url"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "BASE",
+        "line": 3,
+        "end": 3,
+        "uses": []
+      },
+      {
+        "name": "load",
+        "line": 6,
+        "end": 7,
+        "uses": [
+          "BASE",
+          "hx.get"
+        ]
+      },
+      {
+        "name": "with_base_url",
+        "line": 10,
+        "end": 12,
+        "uses": [
+          "hx.Client",
+          "hx.Client.__init__",
+          "hx.Client.get"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "httpx_module.py",
   "project": "python ."
 }

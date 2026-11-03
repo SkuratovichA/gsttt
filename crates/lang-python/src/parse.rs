@@ -17,14 +17,14 @@ use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
     Arguments, Decorator, Expr, ExprCall, ExprContext, ExprSubscript, Identifier, Keyword,
-    Operator, PySourceType, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef,
-    StmtFunctionDef, StmtIf, StmtImport, StmtImportFrom, StmtTry, WithItem,
+    Operator, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef, StmtFunctionDef,
+    StmtIf, StmtImport, StmtImportFrom, StmtTry, WithItem,
 };
 use ruff_python_parser::parse_unchecked_source;
 use ruff_text_size::{Ranged, TextSize};
 
 use crate::extra::{Mount, PyExtra, Route, RouterPrefix, Target};
-use crate::files::{is_package_init, is_python_source, tags_of};
+use crate::files::{is_package_init, is_python_source, source_type, tags_of};
 use crate::imports::{Imports, Name, absolute_name, specifier};
 use crate::manifest::{ManifestError, read_pyproject};
 use crate::project::PythonProject;
@@ -32,6 +32,10 @@ use crate::site::{
     AssignSite, COMPUTED, CallSite, EmbedSite, Source, dict_value, dotted, is_string_shaped,
     join_prefixes, literal_of,
 };
+use crate::symbols;
+
+/// What a star import names, and what an import of a module takes.
+pub(crate) const STAR: &str = "*";
 
 /// Reads `file`. A file that is not Python source, such as a manifest, comes back with its tags, and with the status `manifest_status` gives it.
 pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<PyExtra> {
@@ -43,11 +47,7 @@ pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<Py
             ..FileFacts::default()
         });
     }
-    let source_type = if file.path.extension() == Some("pyi") {
-        PySourceType::Stub
-    } else {
-        PySourceType::Python
-    };
+    let source_type = source_type(file.path);
     // The parser recovers from syntax errors and keeps the statements it could read; the imports among them stay.
     let parsed = parse_unchecked_source(file.text, source_type);
     let lines = LineIndex::new(file.text);
@@ -55,6 +55,18 @@ pub(crate) fn parse(project: &PythonProject, file: &SourceFile<'_>) -> Parsed<Py
     collector.visit_body(parsed.suite());
     let mut read = collector.finish(is_package_init(file.path));
     read.facts.tags = tags;
+    // A file with a syntax error is read whole, and so is one that names something a star import may have brought in: what it uses is not known.
+    let star = read
+        .facts
+        .imports
+        .iter()
+        .any(|import| import.kind == ImportKind::ReExportAll);
+    if parsed.errors().is_empty()
+        && let Some(declared) = symbols::read(parsed.suite(), &lines, star)
+    {
+        read.facts.symbols = Some(declared.symbols);
+        read.facts.exports = Some(declared.exports);
+    }
     // The parser puts the error of a bracket left open one byte past the last line, which `error_line` holds to the last byte.
     let mut errors = ErrorCount::default();
     for error in parsed.errors() {
@@ -181,7 +193,7 @@ impl<'a> Collector<'a> {
     }
 
     fn push_import(&mut self, mut import: Import) {
-        import.flags = self.flags;
+        import.flags = import.flags | self.flags;
         self.facts.imports.push(import);
     }
 
@@ -204,8 +216,12 @@ impl<'a> Collector<'a> {
         let line = self.line_of(stmt.start());
         for alias in &stmt.names {
             let spec = alias.name.as_str();
-            self.push_import(Import::new(spec, ImportKind::Static, line));
             let asname = alias.asname.as_ref().map(Identifier::as_str);
+            // The module itself is taken. `import a.b` binds `a`, whose uses `a.b.c` are written under `a.b`, and `import a.b as c` binds `c`.
+            let mut import = Import::new(spec, ImportKind::Static, line);
+            import.names.push(STAR.to_owned());
+            import.exported.push(asname.unwrap_or(spec).to_owned());
+            self.push_import(import);
             self.imports.module(spec, asname, line);
         }
     }
@@ -215,18 +231,31 @@ impl<'a> Collector<'a> {
         let module = stmt.module.as_ref().map_or("", Identifier::as_str);
         let spec = specifier(stmt.level, module);
         let mut import = Import::new(spec.as_str(), ImportKind::Static, line);
-        // `from m import a as b, a as c` takes `a` from the module once.
-        for alias in &stmt.names {
-            let name = alias.name.as_str();
-            if !import.names.iter().any(|seen| seen == name) {
-                import.names.push(name.to_owned());
-            }
-        }
-        if import.names.iter().any(|name| name.as_str() == "*") {
+        if stmt.names.iter().any(|alias| alias.name.as_str() == STAR) {
+            import.names.push(STAR.to_owned());
             import.kind = ImportKind::ReExportAll;
+        } else {
+            // Each name is listed as it is written, a repeat too, so that `exported` lines up with `names`: `from m import a as b, a as c` binds both.
+            for alias in &stmt.names {
+                let name = alias.name.as_str();
+                import.names.push(name.to_owned());
+                import.exported.push(
+                    alias
+                        .asname
+                        .as_ref()
+                        .map_or(name, Identifier::as_str)
+                        .to_owned(),
+                );
+            }
+            // A name may be a module of the package the import names.
+            import.flags = ImportFlags::MODULES;
         }
         self.push_import(import);
-        for alias in stmt.names.iter().filter(|alias| alias.name.as_str() != "*") {
+        for alias in stmt
+            .names
+            .iter()
+            .filter(|alias| alias.name.as_str() != STAR)
+        {
             let asname = alias.asname.as_ref().map(Identifier::as_str);
             self.imports
                 .name(module, stmt.level, alias.name.as_str(), asname, line);
@@ -1126,4 +1155,98 @@ fn config_prefix(config: &Expr) -> Option<String> {
 /// The text of an `env_prefix`, or the computed text when it is not a literal.
 fn prefix_text(prefix: &Expr) -> String {
     literal_of(prefix).map_or_else(|| COMPUTED.to_owned(), Cow::into_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    /// The imports of `text`, as the collector reads them.
+    fn imports_of(text: &str) -> Vec<Import> {
+        let parsed = parse_unchecked_source(text, ruff_python_ast::PySourceType::Python);
+        let lines = LineIndex::new(text);
+        let mut collector = Collector::new(&[], text, &lines);
+        collector.visit_body(parsed.suite());
+        collector.finish(false).facts.imports
+    }
+
+    // Every name starts with `x`, which no keyword does, so a statement always parses.
+    fn module() -> impl Strategy<Value = String> {
+        prop::collection::vec("x[a-z]{0,2}", 1..4).prop_map(|parts| parts.join("."))
+    }
+
+    fn item() -> impl Strategy<Value = String> {
+        ("x[a-z]{0,2}", prop::option::of("x[a-z]{0,2}")).prop_map(|(name, alias)| match alias {
+            Some(alias) => format!("{name} as {alias}"),
+            None => name,
+        })
+    }
+
+    /// One import statement, of the forms the connector reads.
+    fn statement() -> impl Strategy<Value = String> {
+        prop_oneof![
+            (module(), prop::collection::vec(item(), 1..4))
+                .prop_map(|(module, items)| format!("from {module} import {}", items.join(", "))),
+            (1_usize..3, module(), prop::collection::vec(item(), 1..3)).prop_map(
+                |(dots, module, items)| format!(
+                    "from {}{module} import {}",
+                    ".".repeat(dots),
+                    items.join(", ")
+                )
+            ),
+            prop::collection::vec((module(), prop::option::of("x[a-z]{0,2}")), 1..3).prop_map(
+                |items| {
+                    let items: Vec<String> = items
+                        .into_iter()
+                        .map(|(module, alias)| match alias {
+                            Some(alias) => format!("{module} as {alias}"),
+                            None => module,
+                        })
+                        .collect();
+                    format!("import {}", items.join(", "))
+                }
+            ),
+            module().prop_map(|module| format!("from {module} import *")),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn every_import_lists_one_exported_name_for_each_name_it_takes(
+            statements in prop::collection::vec(statement(), 1..6),
+        ) {
+            let text = statements.join("\n");
+            let imports = imports_of(&text);
+            prop_assert!(!imports.is_empty());
+            for import in imports {
+                prop_assert!(!import.names.is_empty(), "{import:?}");
+                if import.kind == ImportKind::ReExportAll {
+                    // A star import takes every name and lists none that it binds.
+                    prop_assert_eq!(&import.names, &[STAR.to_owned()]);
+                    prop_assert!(import.exported.is_empty(), "{import:?}");
+                } else {
+                    prop_assert_eq!(import.names.len(), import.exported.len(), "{:?}", import);
+                    prop_assert!(import.exported.iter().all(|name| !name.is_empty()), "{import:?}");
+                }
+            }
+        }
+
+        #[test]
+        fn a_from_import_may_name_a_module_and_a_plain_import_may_not(
+            statements in prop::collection::vec(statement(), 1..6),
+        ) {
+            let text = statements.join("\n");
+            for import in imports_of(&text) {
+                let takes_names = import.names.first().is_some_and(|name| name != STAR);
+                prop_assert_eq!(
+                    import.flags.contains(ImportFlags::MODULES),
+                    takes_names,
+                    "{:?}",
+                    import
+                );
+            }
+        }
+    }
 }

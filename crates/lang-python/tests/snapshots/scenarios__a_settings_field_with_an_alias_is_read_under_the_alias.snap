@@ -12,8 +12,12 @@ expression: "tree.file_json(\"settings.py\")"
       "spec": "pydantic",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "AliasChoices",
+        "Field"
+      ],
+      "exported": [
         "AliasChoices",
         "Field"
       ],
@@ -27,8 +31,12 @@ expression: "tree.file_json(\"settings.py\")"
       "spec": "pydantic_settings",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "BaseSettings",
+        "SettingsConfigDict"
+      ],
+      "exported": [
         "BaseSettings",
         "SettingsConfigDict"
       ],
@@ -88,6 +96,127 @@ expression: "tree.file_json(\"settings.py\")"
       "detail": "secret"
     }
   ],
+  "exports": [
+    "AliasChoices",
+    "BaseSettings",
+    "Field",
+    "Settings",
+    "SettingsConfigDict",
+    "TOKEN_NAME"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "TOKEN_NAME",
+        "line": 4,
+        "end": 4,
+        "uses": []
+      },
+      {
+        "name": "Settings",
+        "line": 7,
+        "end": 16,
+        "uses": [
+          "BaseSettings"
+        ]
+      },
+      {
+        "name": "Settings.model_config",
+        "line": 8,
+        "end": 8,
+        "uses": [
+          "SettingsConfigDict",
+          "SettingsConfigDict.__init__"
+        ]
+      },
+      {
+        "name": "Settings.database_url",
+        "line": 10,
+        "end": 10,
+        "uses": [
+          "Field",
+          "Field.__init__"
+        ]
+      },
+      {
+        "name": "Settings.api_token",
+        "line": 11,
+        "end": 11,
+        "uses": [
+          "Field",
+          "Field.__init__"
+        ]
+      },
+      {
+        "name": "Settings.region",
+        "line": 12,
+        "end": 12,
+        "uses": [
+          "Field",
+          "Field.__init__"
+        ]
+      },
+      {
+        "name": "Settings.mode",
+        "line": 13,
+        "end": 13,
+        "uses": [
+          "AliasChoices",
+          "AliasChoices.__init__",
+          "Field",
+          "Field.__init__"
+        ]
+      },
+      {
+        "name": "Settings.secret",
+        "line": 14,
+        "end": 14,
+        "uses": [
+          "Field",
+          "Field.__init__",
+          "TOKEN_NAME"
+        ]
+      },
+      {
+        "name": "Settings.debug",
+        "line": 15,
+        "end": 15,
+        "uses": [
+          "Field",
+          "Field.__init__"
+        ]
+      },
+      {
+        "name": "Settings.timeout",
+        "line": 16,
+        "end": 16,
+        "uses": []
+      }
+    ],
+    "on_load": [
+      "AliasChoices",
+      "AliasChoices.__init__",
+      "Field",
+      "Field.__init__",
+      "SettingsConfigDict",
+      "SettingsConfigDict.__init__",
+      "TOKEN_NAME"
+    ],
+    "exports": [],
+    "heirs": [
+      {
+        "name": "Settings",
+        "of": "BaseSettings"
+      }
+    ],
+    "overrides": [
+      {
+        "name": "Settings",
+        "of": "BaseSettings"
+      }
+    ],
+    "reads": []
+  },
   "path": "settings.py",
   "project": "python ."
 }

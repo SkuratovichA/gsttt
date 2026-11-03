@@ -1,0 +1,57 @@
+---
+source: crates/lang-python/tests/scenarios.rs
+expression: tree.file_json(MODULE)
+---
+{
+  "status": {
+    "status": "ok"
+  },
+  "tags": 0,
+  "imports": [],
+  "contracts": [],
+  "embedded": [],
+  "unresolved": [],
+  "exports": [
+    "K",
+    "X",
+    "Y",
+    "f"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "X",
+        "line": 1,
+        "end": 1,
+        "uses": []
+      },
+      {
+        "name": "Y",
+        "line": 2,
+        "end": 2,
+        "uses": []
+      },
+      {
+        "name": "f",
+        "line": 4,
+        "end": 5,
+        "uses": [
+          "X"
+        ]
+      },
+      {
+        "name": "K",
+        "line": 7,
+        "end": 8,
+        "uses": []
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
+  "path": "p/m.py",
+  "project": "python ."
+}

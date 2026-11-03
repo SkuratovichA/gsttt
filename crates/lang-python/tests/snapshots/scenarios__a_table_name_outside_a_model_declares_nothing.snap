@@ -12,8 +12,11 @@ expression: "tree.file_json(\"models.py\")"
       "spec": "django.db",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "models"
+      ],
+      "exported": [
         "models"
       ],
       "to": {
@@ -24,8 +27,11 @@ expression: "tree.file_json(\"models.py\")"
       "spec": "sqlalchemy.orm",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "DeclarativeBase"
+      ],
+      "exported": [
         "DeclarativeBase"
       ],
       "to": {
@@ -73,6 +79,240 @@ expression: "tree.file_json(\"models.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "Audit",
+    "Base",
+    "Booking",
+    "BookingItem",
+    "DeclarativeBase",
+    "Meta",
+    "Namespace",
+    "__tablename__",
+    "db_table",
+    "declare",
+    "models"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "__tablename__",
+        "line": 4,
+        "end": 4,
+        "uses": []
+      },
+      {
+        "name": "db_table",
+        "line": 5,
+        "end": 5,
+        "uses": []
+      },
+      {
+        "name": "Base",
+        "line": 8,
+        "end": 9,
+        "uses": [
+          "DeclarativeBase"
+        ]
+      },
+      {
+        "name": "Booking",
+        "line": 12,
+        "end": 17,
+        "uses": [
+          "Base"
+        ]
+      },
+      {
+        "name": "Booking.__tablename__",
+        "line": 13,
+        "end": 13,
+        "uses": []
+      },
+      {
+        "name": "Booking.rename",
+        "line": 15,
+        "end": 17,
+        "uses": []
+      },
+      {
+        "name": "Namespace",
+        "line": 20,
+        "end": 26,
+        "uses": []
+      },
+      {
+        "name": "Namespace.Inner",
+        "line": 21,
+        "end": 22,
+        "uses": [
+          "Base"
+        ]
+      },
+      {
+        "name": "Namespace.Inner.__tablename__",
+        "line": 22,
+        "end": 22,
+        "uses": []
+      },
+      {
+        "name": "Namespace.Item",
+        "line": 24,
+        "end": 26,
+        "uses": [
+          "models.Model"
+        ]
+      },
+      {
+        "name": "Namespace.Item.Meta",
+        "line": 25,
+        "end": 26,
+        "uses": []
+      },
+      {
+        "name": "Namespace.Item.Meta.db_table",
+        "line": 26,
+        "end": 26,
+        "uses": []
+      },
+      {
+        "name": "BookingItem",
+        "line": 29,
+        "end": 31,
+        "uses": [
+          "models.Model"
+        ]
+      },
+      {
+        "name": "BookingItem.Meta",
+        "line": 30,
+        "end": 31,
+        "uses": []
+      },
+      {
+        "name": "BookingItem.Meta.db_table",
+        "line": 31,
+        "end": 31,
+        "uses": []
+      },
+      {
+        "name": "Meta",
+        "line": 34,
+        "end": 35,
+        "uses": []
+      },
+      {
+        "name": "Meta.db_table",
+        "line": 35,
+        "end": 35,
+        "uses": []
+      },
+      {
+        "name": "Audit",
+        "line": 38,
+        "end": 43,
+        "uses": [
+          "models.Model"
+        ]
+      },
+      {
+        "name": "Audit.Options",
+        "line": 39,
+        "end": 40,
+        "uses": []
+      },
+      {
+        "name": "Audit.Options.db_table",
+        "line": 40,
+        "end": 40,
+        "uses": []
+      },
+      {
+        "name": "Audit.Meta",
+        "line": 42,
+        "end": 43,
+        "uses": [
+          "Base"
+        ]
+      },
+      {
+        "name": "Audit.Meta.db_table",
+        "line": 43,
+        "end": 43,
+        "uses": []
+      },
+      {
+        "name": "declare",
+        "line": 46,
+        "end": 51,
+        "uses": [
+          "models.Model"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [
+      {
+        "name": "Audit",
+        "of": "models.Model"
+      },
+      {
+        "name": "Audit.Meta",
+        "of": "Base"
+      },
+      {
+        "name": "Base",
+        "of": "DeclarativeBase"
+      },
+      {
+        "name": "Booking",
+        "of": "Base"
+      },
+      {
+        "name": "BookingItem",
+        "of": "models.Model"
+      },
+      {
+        "name": "Namespace.Inner",
+        "of": "Base"
+      },
+      {
+        "name": "Namespace.Item",
+        "of": "models.Model"
+      }
+    ],
+    "overrides": [
+      {
+        "name": "Audit",
+        "of": "models.Model"
+      },
+      {
+        "name": "Audit.Meta",
+        "of": "Base"
+      },
+      {
+        "name": "Base",
+        "of": "DeclarativeBase"
+      },
+      {
+        "name": "Booking",
+        "of": "Base"
+      },
+      {
+        "name": "BookingItem",
+        "of": "models.Model"
+      },
+      {
+        "name": "Namespace.Inner",
+        "of": "Base"
+      },
+      {
+        "name": "Namespace.Item",
+        "of": "models.Model"
+      }
+    ],
+    "reads": []
+  },
   "path": "models.py",
   "project": "python ."
 }

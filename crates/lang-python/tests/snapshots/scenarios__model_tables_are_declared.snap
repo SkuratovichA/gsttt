@@ -13,8 +13,11 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
         "spec": "sqlalchemy.orm",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "DeclarativeBase"
+        ],
+        "exported": [
           "DeclarativeBase"
         ],
         "to": {
@@ -32,6 +35,60 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
     ],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "Base",
+      "Booking",
+      "DeclarativeBase"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "Base",
+          "line": 4,
+          "end": 5,
+          "uses": [
+            "DeclarativeBase"
+          ]
+        },
+        {
+          "name": "Booking",
+          "line": 8,
+          "end": 9,
+          "uses": [
+            "Base"
+          ]
+        },
+        {
+          "name": "Booking.__tablename__",
+          "line": 9,
+          "end": 9,
+          "uses": []
+        }
+      ],
+      "on_load": [],
+      "exports": [],
+      "heirs": [
+        {
+          "name": "Base",
+          "of": "DeclarativeBase"
+        },
+        {
+          "name": "Booking",
+          "of": "Base"
+        }
+      ],
+      "overrides": [
+        {
+          "name": "Base",
+          "of": "DeclarativeBase"
+        },
+        {
+          "name": "Booking",
+          "of": "Base"
+        }
+      ],
+      "reads": []
+    },
     "path": "models.py",
     "project": "python ."
   },
@@ -45,8 +102,11 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
         "spec": "django.db",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "models"
+        ],
+        "exported": [
           "models"
         ],
         "to": {
@@ -64,6 +124,61 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
     ],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "BookingItem",
+      "models"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "BookingItem",
+          "line": 4,
+          "end": 8,
+          "uses": [
+            "models.Model"
+          ]
+        },
+        {
+          "name": "BookingItem.note",
+          "line": 5,
+          "end": 5,
+          "uses": [
+            "models.TextField",
+            "models.TextField.__init__"
+          ]
+        },
+        {
+          "name": "BookingItem.Meta",
+          "line": 7,
+          "end": 8,
+          "uses": []
+        },
+        {
+          "name": "BookingItem.Meta.db_table",
+          "line": 8,
+          "end": 8,
+          "uses": []
+        }
+      ],
+      "on_load": [
+        "models.TextField",
+        "models.TextField.__init__"
+      ],
+      "exports": [],
+      "heirs": [
+        {
+          "name": "BookingItem",
+          "of": "models.Model"
+        }
+      ],
+      "overrides": [
+        {
+          "name": "BookingItem",
+          "of": "models.Model"
+        }
+      ],
+      "reads": []
+    },
     "path": "items/models.py",
     "project": "python ."
   }

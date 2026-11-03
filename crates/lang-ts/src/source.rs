@@ -7,7 +7,7 @@ use gsttt_core::fact::{
     ErrorCount, FileFacts, FileTags, Import, ImportKind, Line, ParseFailure, ParseStatus,
 };
 use gsttt_core::rules::Pack;
-use gsttt_core::text::LineIndex;
+use gsttt_core::text::{LineIndex, blank_spans, mark_whitespace};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{Statement, TemplateElement};
 use oxc_ast_visit::{Visit, walk};
@@ -131,33 +131,16 @@ pub(crate) fn blanked_code(file: &SourceFile<'_>) -> Option<String> {
         .iter()
         .map(|comment| comment.span)
         .chain(imports);
-    let mut bytes = file.text.as_bytes().to_vec();
-    for span in spans {
-        let range = usize::try_from(span.start).ok()?..usize::try_from(span.end).ok()?;
-        for byte in bytes.get_mut(range)? {
-            if !matches!(*byte, b'\n' | b'\r') {
-                *byte = b' ';
-            }
-        }
-    }
+    let bytes = blank_spans(
+        file.text,
+        spans.filter_map(|span| {
+            Some(usize::try_from(span.start).ok()?..usize::try_from(span.end).ok()?)
+        }),
+    )?;
     let mut templates = Templates::default();
     templates.visit_program(&parsed.program);
     templates.0.sort_unstable();
-    let mut ranges = templates.0.into_iter().peekable();
-    let mut marked = Vec::with_capacity(bytes.len());
-    for (index, &byte) in bytes.iter().enumerate() {
-        while ranges.next_if(|&(_, end)| end <= index).is_some() {}
-        let inside = ranges
-            .peek()
-            .is_some_and(|&(start, end)| start <= index && index < end);
-        match byte {
-            b' ' if inside => marked.push(1),
-            b'\t' if inside => marked.push(2),
-            b'\n' if inside => marked.extend([3, b'\n']),
-            _ => marked.push(byte),
-        }
-    }
-    String::from_utf8(marked).ok()
+    mark_whitespace(&bytes, &templates.0, &[])
 }
 
 fn assemble(text: &str, analysis: Analysis, status: ParseStatus) -> Parsed<TsExtra> {
