@@ -3,15 +3,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::fact::{
-    ContractFact, Declared, Embedded, Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR,
-    UnresolvedSite,
+    ContractFact, Declared, Embedded, Heir, Import, ImportFlags, ImportKind, Line,
+    MEMBER_SEPARATOR, UnresolvedSite,
 };
 use tree_sitter::Node;
 
 use crate::file::{FileCx, Shape};
 use crate::files::NO_PACKAGE;
+use crate::scope::Head;
 use crate::syntax::{end_line_of, field_text, fields, line_of, named_children, text_of};
-use crate::walk::Walk;
+use crate::walk::{Walk, first_result};
 
 /// What a walk over a file found.
 #[derive(Debug, Default)]
@@ -26,6 +27,8 @@ pub(crate) struct Analysis {
     pub(crate) imports: Vec<Import>,
     pub(crate) contracts: Vec<ContractFact>,
     pub(crate) embedded: Vec<Embedded>,
+    /// The names that take the members of another, sorted.
+    pub(crate) heirs: Vec<Heir>,
     pub(crate) unresolved: Vec<UnresolvedSite>,
     /// Whether some part of the tree nested too deep to be read.
     pub(crate) cut: bool,
@@ -139,6 +142,11 @@ pub(crate) fn analyze<'a>(cx: &FileCx<'a>, root: Node<'a>) -> Analysis {
         imports,
         contracts: walk.contracts,
         embedded: walk.embedded,
+        heirs: walk
+            .heirs
+            .into_iter()
+            .map(|(name, of)| Heir { name, of })
+            .collect(),
         unresolved: walk.unresolved,
         cut: walk.cut,
     }
@@ -151,6 +159,10 @@ fn function<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, node: 
     walk.begin();
     walk.scopes.push_scope();
     walk.signature(node);
+    // A function takes the members of its first result, read while the type parameters are bound so that `func F[T any]() T` gives nothing.
+    if let Some(head) = first_result_head(walk, node) {
+        walk.heir(name, &head);
+    }
     if let Some(body) = node.child_by_field_name("body") {
         walk.visit(body);
     }
@@ -161,6 +173,20 @@ fn function<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, node: 
         return;
     }
     declarations.add(name.to_owned(), line_of(node), end_line_of(node), uses);
+}
+
+/// The head of the first result of a function: the type of a lone result, or of the first parameter of a list.
+fn first_result_head<'a>(walk: &Walk<'_, 'a>, node: Node<'a>) -> Option<Head> {
+    let result = node.child_by_field_name("result")?;
+    let ty = if result.kind() == "parameter_list" {
+        named_children(result)
+            .into_iter()
+            .next()?
+            .child_by_field_name("type")?
+    } else {
+        result
+    };
+    walk.head_of(ty)
 }
 
 fn method<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, node: Node<'a>) {
@@ -207,6 +233,16 @@ fn type_spec<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, spec:
     if let Some(list) = spec.child_by_field_name("type_parameters") {
         walk.type_parameters(list);
     }
+    // An alias has the methods of its type; a defined type `type A T` has none of them.
+    if spec.kind() == "type_alias"
+        && !matches!(
+            ty.kind(),
+            "slice_type" | "array_type" | "map_type" | "channel_type"
+        )
+        && let Some(head) = walk.head_of(ty)
+    {
+        walk.heir(name, &head);
+    }
     match ty.kind() {
         "struct_type" => {
             let own = walk.take_uses();
@@ -248,12 +284,12 @@ fn struct_fields<'a>(
                 .map(|name| text_of(name, source).to_owned())
                 .collect();
             let names = if names.is_empty() {
-                // An embedded field is named after its type.
-                walk.cx
-                    .head_of(field_type, &|_| false)
-                    .map(|head| head.name)
-                    .into_iter()
-                    .collect()
+                // An embedded field is named after its type, and the struct takes the members of the type.
+                let head = walk.head_of(field_type);
+                if let Some(head) = &head {
+                    walk.heir(class, head);
+                }
+                head.map(|head| head.name).into_iter().collect()
             } else {
                 names
             };
@@ -299,6 +335,16 @@ fn interface_members<'a>(
                     uses,
                 );
             }
+            "type_elem" => {
+                // `B` and `pkg.C` embed an interface; a union or a constraint such as `~int | string` has more than one term or a term of another kind.
+                if let [term] = named_children(member).as_slice()
+                    && matches!(term.kind(), "type_identifier" | "qualified_type")
+                    && let Some(head) = walk.head_of(*term)
+                {
+                    walk.heir(class, &head);
+                }
+                walk.visit(member);
+            }
             _ => walk.visit(member),
         }
     }
@@ -339,9 +385,20 @@ fn value_spec<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, spec
         };
         if text == "_" {
             walk.on_load.extend(uses);
-        } else {
-            declarations.add(text.to_owned(), line, end, uses);
+            continue;
         }
+        if spec.kind() == "var_spec" {
+            let held = match ty {
+                Some(ty) => walk.head_of(ty).map(|head| walk.cx.spell(&head)),
+                None => {
+                    first_result(&values, paired, index).and_then(|value| walk.held_name(*value))
+                }
+            };
+            if let Some(of) = held {
+                walk.heirs.insert((text.to_owned(), of));
+            }
+        }
+        declarations.add(text.to_owned(), line, end, uses);
     }
 }
 

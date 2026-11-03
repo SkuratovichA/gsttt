@@ -1781,3 +1781,105 @@ fn a_go_client_meets_a_route_served_in_another_language() {
     let impact = json(&sandbox.run(&["--json", "impact", "api/src/users.ts"]));
     assert_eq!(paths(&impact["affected"]), ["billing/main.go"], "{impact}");
 }
+
+/// The `impact --name` answer for `name` of `file` on a Go module of `files`.
+fn go_answer(files: &[(&str, &str)], file: &str, name: &str) -> Value {
+    let sandbox = Sandbox::new();
+    write(
+        sandbox.work.path(),
+        "go.mod",
+        "module example.com/m\n\ngo 1.22\n",
+    );
+    for (path, text) in files {
+        write(sandbox.work.path(), path, text);
+    }
+    json(&sandbox.run(&["--json", "impact", file, "--name", name]))
+}
+
+#[scenario(
+    "queries",
+    "A method called on what a function returns reaches the caller"
+)]
+#[test]
+fn a_method_called_on_what_a_function_returns_reaches_the_caller() {
+    let answer = go_answer(
+        &[
+            (
+                "lib/mux.go",
+                "package lib\n\ntype Mux struct{}\n\nfunc (m *Mux) Get() {}\n\nfunc (m *Mux) Put() {}\n",
+            ),
+            (
+                "lib/new.go",
+                "package lib\n\nfunc NewRouter() *Mux { return &Mux{} }\n",
+            ),
+            (
+                "app/uses.go",
+                "package app\n\nimport \"example.com/m/lib\"\n\nfunc Run() {\n\tr := lib.NewRouter()\n\tr.Get()\n}\n",
+            ),
+            (
+                "app/other.go",
+                "package app\n\nimport \"example.com/m/lib\"\n\nfunc Other() {\n\tr := lib.NewRouter()\n\tr.Put()\n}\n",
+            ),
+        ],
+        "lib/mux.go",
+        "Mux.Get",
+    );
+    assert_eq!(paths(&answer["affected"]), ["app/uses.go"], "{answer}");
+    assert_eq!(
+        answer["notes"],
+        value!(["2 files hold Mux and name no Get; ask about Mux to list them"]),
+        "`app/other.go` reads `Put` and `lib/new.go` reads nothing"
+    );
+}
+
+#[scenario("queries", "A method promoted through embedding reaches the caller")]
+#[test]
+fn a_method_promoted_through_embedding_reaches_the_caller() {
+    let answer = go_answer(
+        &[
+            (
+                "lib/group.go",
+                "package lib\n\ntype RouterGroup struct{}\n\nfunc (g *RouterGroup) PATCH() {}\n\nfunc (g *RouterGroup) GET() {}\n",
+            ),
+            (
+                "lib/engine.go",
+                "package lib\n\ntype Engine struct {\n\tRouterGroup\n}\n\nfunc New() *Engine { return &Engine{} }\n",
+            ),
+            (
+                "app/uses.go",
+                "package app\n\nimport \"example.com/m/lib\"\n\nfunc Run() {\n\te := lib.New()\n\te.PATCH()\n}\n",
+            ),
+            (
+                "app/other.go",
+                "package app\n\nimport \"example.com/m/lib\"\n\nfunc Other() {\n\te := lib.New()\n\te.GET()\n}\n",
+            ),
+        ],
+        "lib/group.go",
+        "RouterGroup.PATCH",
+    );
+    assert_eq!(paths(&answer["affected"]), ["app/uses.go"], "{answer}");
+}
+
+#[scenario("queries", "A method through a package variable reaches the caller")]
+#[test]
+fn a_method_through_a_package_variable_reaches_the_caller() {
+    let answer = go_answer(
+        &[
+            (
+                "lib/v2.go",
+                "package lib\n\ntype v2 struct{}\n\nfunc (v v2) Make() {}\n\nfunc (v v2) Drop() {}\n\nvar V2 = v2{}\n",
+            ),
+            (
+                "app/uses.go",
+                "package app\n\nimport \"example.com/m/lib\"\n\nfunc Run() {\n\tlib.V2.Make()\n}\n",
+            ),
+            (
+                "app/other.go",
+                "package app\n\nimport \"example.com/m/lib\"\n\nfunc Other() {\n\tlib.V2.Drop()\n}\n",
+            ),
+        ],
+        "lib/v2.go",
+        "v2.Make",
+    );
+    assert_eq!(paths(&answer["affected"]), ["app/uses.go"], "{answer}");
+}

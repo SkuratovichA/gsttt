@@ -6,11 +6,11 @@ expression: files
   "service.go": {
     "declared": [
       "Service L14-17: ",
-      "Service.header L15-15: invoice.Header.",
-      "Service.db L16-16: DB.",
-      "Service.Place L19-26: Service. Service.header chi.NewRouter fmt.Println invoice.Header. invoice.Header.Title invoice.NewHeader os.Getenv yaml.Marshal",
-      "Service.Cancel L28-32: DB.Query Service. Service.db http.Get",
-      "main L34-37: Service. Service.Place invoice.Header."
+      "Service.header L15-15: invoice.Header",
+      "Service.db L16-16: DB",
+      "Service.Place L19-26: Service Service.header chi.NewRouter fmt.Println invoice.Header invoice.Header.Title invoice.NewHeader os.Getenv yaml.Marshal",
+      "Service.Cancel L28-32: DB.Query Service Service.db http.Get",
+      "main L34-37: Service Service.Place invoice.Header"
     ],
     "on_load": "",
     "exports": [
@@ -52,9 +52,9 @@ expression: files
     "declared": [
       "Header L4-7: ",
       "Header.Number L5-5: ",
-      "Header.Lines L6-6: Line.",
-      "NewHeader L9-11: Header.",
-      "Header.Title L13-15: Header. Header.Number suffix"
+      "Header.Lines L6-6: Line",
+      "NewHeader L9-11: Header",
+      "Header.Title L13-15: Header Header.Number suffix"
     ],
     "on_load": "",
     "exports": [
@@ -71,7 +71,7 @@ expression: files
     "declared": [
       "Footer L3-3: ",
       "Footer.Note L3-3: ",
-      "Footer.Render L5-5: Footer. Footer.Note",
+      "Footer.Render L5-5: Footer Footer.Note",
       "suffix L7-7: loadSuffix"
     ],
     "on_load": "loadSuffix register",
