@@ -23,6 +23,8 @@ pub struct Change {
     pub kind: ChangeKind,
     /// The declarations that differ between the two versions of a modified file. `None` when the file is changed whole: it was added or deleted, no connector claims it, or its two versions cannot be compared by declaration. `Some` and empty when no declaration differs.
     pub names: Option<Vec<String>>,
+    /// The names the old version of a modified file declares or exports and the new one does not, sorted, once each: a declaration removed or renamed. Empty when `names` is `None`.
+    pub removed: Vec<String>,
 }
 
 /// The files of a tree with the blob id of each, in path order.
@@ -48,11 +50,13 @@ pub fn diff(from: &Listing, to: &Listing) -> Vec<Change> {
                 path: path.clone(),
                 kind: ChangeKind::Added,
                 names: None,
+                removed: Vec::new(),
             }),
             Some(before) if before != id => changes.push(Change {
                 path: path.clone(),
                 kind: ChangeKind::Modified,
                 names: None,
+                removed: Vec::new(),
             }),
             Some(_) => {}
         }
@@ -64,6 +68,7 @@ pub fn diff(from: &Listing, to: &Listing) -> Vec<Change> {
                 path: path.clone(),
                 kind: ChangeKind::Deleted,
                 names: None,
+                removed: Vec::new(),
             }),
     );
     changes.sort_by(|a, b| a.path.cmp(&b.path));

@@ -194,9 +194,10 @@ impl<'a> Engine<'a> {
             .collect();
         let names = pipeline::changed_names(&repo, &pairs, self.setup.max_file_bytes);
         let at: Vec<usize> = compared.iter().map(|&(at, ..)| at).collect();
-        for (at, names) in at.into_iter().zip(names) {
-            if let Some(change) = changes.get_mut(at) {
-                change.names = names;
+        for (at, declarations) in at.into_iter().zip(names) {
+            if let (Some(change), Some(declarations)) = (changes.get_mut(at), declarations) {
+                change.names = Some(declarations.changed);
+                change.removed = declarations.removed;
             }
         }
     }

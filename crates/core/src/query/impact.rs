@@ -20,7 +20,7 @@ use super::render::{
     Answer, Entries, Footer, Searched, display_as_text, list, name_list, name_sentence,
 };
 use super::replaced::Cut;
-use super::walk::{self, Cause, Hit, Walked, reach, reach_changed, reach_names};
+use super::walk::{self, Cause, Changed, Hit, Walked, reach, reach_changed, reach_names};
 
 /// The hops through code a walk takes when the request gives no depth.
 const DEFAULT_DEPTH: u32 = 1;
@@ -49,6 +49,20 @@ pub struct ChangedPart {
     pub file: String,
     /// The declarations that changed, none when the file changed and no declaration did.
     pub names: Vec<String>,
+    /// The names the file declared or exported before the change and no longer does, such as a function removed or renamed. The walk follows them from the importers that still name them. Left out of the answer when there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+}
+
+impl ChangedPart {
+    /// What the part says changed, for a header: the declarations, then the removed names as `removed a, b`. Empty when nothing is named.
+    fn subjects(&self) -> Vec<String> {
+        let mut subjects = self.names.clone();
+        if !self.removed.is_empty() {
+            subjects.push(format!("removed {}", self.removed.join(", ")));
+        }
+        subjects
+    }
 }
 
 impl ImpactRequest {
@@ -63,6 +77,7 @@ impl ImpactRequest {
                         self.parts.push(ChangedPart {
                             file: path.clone(),
                             names: names.clone(),
+                            removed: change.removed.clone(),
                         });
                     }
                     self.files.push(path);
@@ -338,9 +353,13 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     }
     let parts = parts_of(index, request, &seen);
     let depth = request.depth.unwrap_or(DEFAULT_DEPTH);
-    let by_part: Vec<(FileId, &[String])> = parts
+    let by_part: Vec<Changed<'_>> = parts
         .iter()
-        .map(|(file, part)| (*file, part.names.as_slice()))
+        .map(|(file, part)| Changed {
+            file: *file,
+            names: &part.names,
+            removed: &part.removed,
+        })
         .collect();
     let walked = reach_asked(index, &crossing, &changed, &names, &by_part, Some(depth));
     // The walk with no depth exists only to count what the depth leaves behind and to give each listed test the distance, the reason and the load it has at the end.
@@ -441,7 +460,7 @@ fn reach_asked(
     crossing: &Crossing<'_>,
     changed: &[FileId],
     names: &[String],
-    parts: &[(FileId, &[String])],
+    parts: &[Changed<'_>],
     depth: Option<u32>,
 ) -> Walked {
     if !names.is_empty() {
@@ -453,7 +472,7 @@ fn reach_asked(
     }
 }
 
-/// The parts of the request that belong to a file the index holds and the request asks about, each with the file, in path order, with its names in byte order and once each.
+/// The parts of the request that belong to a file the index holds and the request asks about, each with the file, in path order, with its names and removed names in byte order and once each.
 fn parts_of(
     index: &Index,
     request: &ImpactRequest,
@@ -467,14 +486,19 @@ fn parts_of(
         if !asked.contains(file) || parts.iter().any(|(held, _)| *held == file) {
             continue;
         }
-        let mut names = part.names.clone();
-        names.sort_unstable();
-        names.dedup();
+        let sorted = |names: &[String]| {
+            let mut names = names.to_vec();
+            names.sort_unstable();
+            names.dedup();
+            names
+        };
+        let (names, removed) = (sorted(&part.names), sorted(&part.removed));
         parts.push((
             file,
             ChangedPart {
                 file: path.to_string(),
                 names,
+                removed,
             },
         ));
     }
@@ -613,7 +637,7 @@ impl Impact {
         let named: Vec<&ChangedPart> = self
             .parts
             .iter()
-            .filter(|part| !part.names.is_empty())
+            .filter(|part| !part.subjects().is_empty())
             .collect();
         if named.is_empty() {
             return None;
@@ -625,7 +649,7 @@ impl Impact {
             .collect();
         let mut subjects: Vec<String> = named
             .iter()
-            .map(|part| format!("{} in {}", summary(&part.names), part.file))
+            .map(|part| format!("{} in {}", summary(&part.subjects()), part.file))
             .collect();
         if !whole.is_empty() {
             subjects.push(summary(&whole));
@@ -664,7 +688,7 @@ impl Answer for Impact {
         if self.tests_left_out > 0 {
             writeln!(f, "{} left out", noun(self.tests_left_out, "test file"))?;
         }
-        for part in self.parts.iter().filter(|part| part.names.is_empty()) {
+        for part in self.parts.iter().filter(|part| part.subjects().is_empty()) {
             writeln!(
                 f,
                 "{} changes no declaration, so it is not traced",

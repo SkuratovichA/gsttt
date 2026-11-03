@@ -87,7 +87,7 @@ pub(in crate::query) fn reach_names(
     names: &[String],
     depth: Option<u32>,
 ) -> Walked {
-    walk_from(index, crossing, depth, |walk, notes| {
+    walk_from(index, crossing, depth, Vec::new(), |walk, notes| {
         let mut asked = changed.to_vec();
         asked.sort_unstable();
         asked.dedup();
@@ -96,28 +96,39 @@ pub(in crate::query) fn reach_names(
 }
 
 /// What a changed file is walked from.
-enum Seed {
+enum Seed<'p> {
     /// The file as a whole: nothing says which of its declarations changed.
     Whole,
-    /// The declarations that changed with the declarations that depend on them in the file, and whether the code that runs as the file loads does.
-    Parts { decls: BTreeSet<usize>, load: bool },
+    /// The declarations that changed with the declarations that depend on them in the file, whether the code that runs as the file loads does, and the names the file no longer declares or exports, which its importers still say.
+    Parts {
+        decls: BTreeSet<usize>,
+        load: bool,
+        removed: &'p [String],
+    },
 }
 
-/// Like [`reach_names`] for the files of `changed`, each walked from the declarations `parts` names for it. A file with no entry in `parts`, a file without declarations and a file with a name it does not declare are followed whole, and a file whose entry names nothing is not followed, because nothing in it changed. The declarations of the file that use a declaration walked from are walked from too, since they run its new code. When no file is walked by declaration, the walk is the one over files.
+/// What changed in one file: the declarations that differ in it, and the names it no longer declares or exports.
+pub(in crate::query) struct Changed<'p> {
+    pub(in crate::query) file: FileId,
+    pub(in crate::query) names: &'p [String],
+    pub(in crate::query) removed: &'p [String],
+}
+
+/// Like [`reach_names`] for the files of `changed`, each walked from the declarations `parts` names for it, and from the importers of the names it removed. A file with no entry in `parts`, a file without declarations and a file with a name it does not declare are followed whole, and a file whose entry names nothing is not followed, because nothing in it changed. The declarations of the file that use a declaration walked from are walked from too, since they run its new code. When no file is walked by declaration, the walk is the one over files.
 pub(in crate::query) fn reach_changed(
     index: &Index,
     crossing: &Crossing<'_>,
     changed: &[FileId],
-    parts: &[(FileId, &[String])],
+    parts: &[Changed<'_>],
     depth: Option<u32>,
 ) -> Walked {
     let mut asked = changed.to_vec();
     asked.sort_unstable();
     asked.dedup();
-    let mut seeds: BTreeMap<FileId, Seed> = BTreeMap::new();
+    let mut seeds: BTreeMap<FileId, Seed<'_>> = BTreeMap::new();
     for file in asked {
-        let part = parts.iter().find(|&&(owner, _)| owner == file);
-        if let Some(seed) = seed_of(&index.graph, file, part.map(|&(_, names)| names)) {
+        let part = parts.iter().find(|part| part.file == file);
+        if let Some(seed) = seed_of(&index.graph, file, part) {
             seeds.insert(file, seed);
         }
     }
@@ -125,17 +136,28 @@ pub(in crate::query) fn reach_changed(
         let whole: Vec<FileId> = seeds.keys().copied().collect();
         return super::reach(&index.graph, crossing, &whole, depth);
     }
-    walk_from(index, crossing, depth, |walk, notes| {
+    let removed = seeds
+        .iter()
+        .flat_map(|(&file, seed)| {
+            match seed {
+                Seed::Parts { removed, .. } => *removed,
+                Seed::Whole => &[],
+            }
+            .iter()
+            .map(move |name| (file, name.as_str()))
+        })
+        .collect();
+    walk_from(index, crossing, depth, removed, |walk, notes| {
         walk.start_seeds(&seeds, notes)
     })
 }
 
-/// Where the walk starts in `file`, `None` when nothing in it changed. `names` are the declarations that changed, `None` when the request does not say.
-fn seed_of(graph: &Graph, file: FileId, names: Option<&[String]>) -> Option<Seed> {
-    let Some(names) = names else {
+/// Where the walk starts in `file`, `None` when nothing in it changed. `part` says which declarations changed and which names are gone, `None` when the request does not say.
+fn seed_of<'p>(graph: &Graph, file: FileId, part: Option<&Changed<'p>>) -> Option<Seed<'p>> {
+    let Some(&Changed { names, removed, .. }) = part else {
         return Some(Seed::Whole);
     };
-    if names.is_empty() {
+    if names.is_empty() && removed.is_empty() {
         return None;
     }
     let Some(symbols) = graph.symbols(file) else {
@@ -156,7 +178,11 @@ fn seed_of(graph: &Graph, file: FileId, names: Option<&[String]>) -> Option<Seed
         }
     }
     let (decls, load) = close_over(symbols, decls);
-    Some(Seed::Parts { decls, load })
+    Some(Seed::Parts {
+        decls,
+        load,
+        removed,
+    })
 }
 
 /// The declarations of a file that run the new code of the `seeded` ones, with the seeded ones: those that use them, and those that use those, whether the file loads by calling them or not. Says whether the code that runs as the file loads is among them.
@@ -204,11 +230,12 @@ fn referred<'g>(symbols: FileSymbols<'g>, indices: &[usize]) -> (Vec<&'g str>, V
     (names, classes)
 }
 
-/// The walk from the parts `start` reaches first, run layer by layer until it reaches nothing new.
-fn walk_from(
-    index: &Index,
+/// The walk from the parts `start` reaches first, run layer by layer until it reaches nothing new. The first layer also holds the importers of the `removed` names of files, sorted by file, which are no part of any file the walk can start from.
+fn walk_from<'r>(
+    index: &'r Index,
     crossing: &Crossing<'_>,
     depth: Option<u32>,
+    removed: Vec<(FileId, &'r str)>,
     start: impl FnOnce(&mut Walk<'_>, &mut BTreeSet<Note>) -> Vec<Front>,
 ) -> Walked {
     let mut walk = Walk {
@@ -226,8 +253,10 @@ fn walk_from(
     let mut notes = BTreeSet::new();
     let mut frontier = start(&mut walk, &mut notes);
     let mut distance = 0;
-    while !frontier.is_empty() {
-        let layer = Step::new(&walk, &mut crossed).expand(&frontier);
+    let mut removed = removed;
+    while !frontier.is_empty() || !removed.is_empty() {
+        let layer = Step::new(&walk, &mut crossed).expand(&frontier, &removed);
+        removed.clear();
         distance += 1;
         frontier = walk.apply(layer, distance);
     }
@@ -477,7 +506,7 @@ impl Walk<'_> {
     /// Marks what each seed names as reached at distance 0 and returns it as the first frontier. A file followed whole is reached whole.
     fn start_seeds(
         &mut self,
-        seeds: &BTreeMap<FileId, Seed>,
+        seeds: &BTreeMap<FileId, Seed<'_>>,
         notes: &mut BTreeSet<Note>,
     ) -> Vec<Front> {
         let mut started = BTreeSet::new();
@@ -491,7 +520,7 @@ impl Walk<'_> {
                         part: Part::Whole,
                     });
                 }
-                Seed::Parts { decls, load } => {
+                Seed::Parts { decls, load, .. } => {
                     for &index in decls {
                         touch.decls.insert(index, START);
                         started.insert(Unit {
@@ -878,8 +907,8 @@ impl<'w, 'a> Step<'w, 'a> {
         }
     }
 
-    /// What the `frontier`, which is sorted by file, reaches one hop further.
-    fn expand(mut self, frontier: &[Front]) -> Layer {
+    /// What the `frontier`, which is sorted by file, reaches one hop further, and what the importers of the `removed` names reach.
+    fn expand(mut self, frontier: &[Front], removed: &[(FileId, &'a str)]) -> Layer {
         // Every file's contracts are worked out, and noted, before the first is crossed: the parts across a contract are as far in hops through code as the fewest of those that leave it, whichever comes first.
         let files: Vec<(&[Front], Vec<Leave>)> = by_file(frontier)
             .map(|fronts| (fronts, self.leaving(fronts)))
@@ -888,7 +917,34 @@ impl<'w, 'a> Step<'w, 'a> {
         for (fronts, leaving) in &files {
             self.file(fronts, leaving);
         }
+        self.gone(removed);
         self.layer
+    }
+
+    /// The importers of the names that files no longer declare or export, one hop through code from the file. A removed member is the member of the class the file exports now, or the class itself when that is gone too.
+    fn gone(&mut self, removed: &[(FileId, &'a str)]) {
+        if !super::within(self.walk.depth, 0) {
+            return;
+        }
+        self.hops = 1;
+        for group in removed.chunk_by(|left, right| left.0 == right.0) {
+            let Some(&(file, _)) = group.first() else {
+                continue;
+            };
+            let symbols = self.walk.graph.symbols(file);
+            let mut exported = BTreeSet::new();
+            for &(_, name) in group {
+                match (symbols, split_member(name)) {
+                    (Some(symbols), Some(_)) => {
+                        self.exported_decl(file, symbols, name, &mut exported);
+                    }
+                    _ => {
+                        exported.insert(Name::Is(name));
+                    }
+                }
+            }
+            self.flow_exported(file, exported);
+        }
     }
 
     /// Notes how many hops through code the parts of a frontier that leave each contract took, when the frontier holds parts that took different numbers.
@@ -1093,20 +1149,36 @@ impl<'w, 'a> Step<'w, 'a> {
             .iter()
             .filter_map(|&index| symbols.declaration(index))
         {
-            let (local, member) = match split_member(decl.name()) {
-                Some((class, member)) => (class, Some(member)),
-                None => (decl.name(), None),
-            };
-            let names = self.exported_as(file, symbols, local);
-            exported.extend(names.into_iter().map(|name| name.with(member)));
-            // A name that takes the members of the class takes this one too.
-            if let Some(member) = member {
-                for heir in heirs_of(symbols, |of| of == local, member) {
-                    let names = self.exported_as(file, symbols, heir);
-                    exported.extend(names.into_iter().map(|name| name.with(Some(member))));
-                }
+            self.exported_decl(file, symbols, decl.name(), &mut exported);
+        }
+        self.flow_exported(file, exported);
+    }
+
+    /// Adds to `exported` the names `file` exports the declaration `name` as, with its member when it is one, and the members of the names that take the members of its class.
+    fn exported_decl(
+        &self,
+        file: FileId,
+        symbols: FileSymbols<'a>,
+        name: &'a str,
+        exported: &mut BTreeSet<Name<'a>>,
+    ) {
+        let (local, member) = match split_member(name) {
+            Some((class, member)) => (class, Some(member)),
+            None => (name, None),
+        };
+        let names = self.exported_as(file, symbols, local);
+        exported.extend(names.into_iter().map(|name| name.with(member)));
+        // A name that takes the members of the class takes this one too.
+        if let Some(member) = member {
+            for heir in heirs_of(symbols, |of| of == local, member) {
+                let names = self.exported_as(file, symbols, heir);
+                exported.extend(names.into_iter().map(|name| name.with(Some(member))));
             }
         }
+    }
+
+    /// Follows what `file` exports to its importers.
+    fn flow_exported(&mut self, file: FileId, mut exported: BTreeSet<Name<'a>>) {
         if exported.contains(&Name::Any) {
             exported = BTreeSet::from([Name::Any]);
         } else {

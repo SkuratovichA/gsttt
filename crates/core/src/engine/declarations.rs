@@ -1,6 +1,6 @@
 //! Which declarations of a file differ between two versions of it, so that `--changed` can walk from them in place of the whole file.
 //!
-//! A version is compared by lines, not by syntax: the text of each declaration is the lines it owns, with comments and import statements blanked, and a declaration differs when the lines it owns differ. Anything that the lines cannot tell by declaration, such as a removed or renamed declaration or a changed top-level statement, makes the whole file changed.
+//! A version is compared by lines, not by syntax: the text of each declaration is the lines it owns, with comments and import statements blanked, and a declaration differs when the lines it owns differ. A removed or renamed declaration is listed by its old name; anything else the lines cannot tell by declaration, such as a moved declaration or a changed top-level statement, makes the whole file changed.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -19,24 +19,22 @@ pub(super) struct Version<'a> {
     pub code: &'a str,
 }
 
-/// The declarations that differ, sorted, each once. `None` when the difference cannot be told by declaration, and the file is then changed whole.
-pub(super) fn changed_declarations(old: Version<'_>, new: Version<'_>) -> Option<Vec<String>> {
+/// How two versions of a file differ by declaration.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct Declarations {
+    /// The declarations that differ and exist in the new version, sorted, each once.
+    pub changed: Vec<String>,
+    /// The names the old version declares or exports and the new one does not, sorted, each once. The new text no longer says who imported them, but an importer that was not changed still names them.
+    pub removed: Vec<String>,
+}
+
+/// The declarations that differ, `None` when the difference cannot be told by declaration, and the file is then changed whole.
+pub(super) fn changed_declarations(old: Version<'_>, new: Version<'_>) -> Option<Declarations> {
     let (old_symbols, new_symbols) = (symbols_of(old.facts)?, symbols_of(new.facts)?);
     let old_digests = Digests::of(old_symbols, old.code);
     let new_digests = Digests::of(new_symbols, new.code);
-    if old_digests
-        .by_name
-        .keys()
-        .any(|name| !new_digests.by_name.contains_key(name))
-    {
-        return None;
-    }
-    // A declaration that is new anywhere leaves the order of the others as it was; a move, or a statement that changes, does not.
-    let kept = new_digests.order.iter().filter(|item| match item {
-        Item::Decl(name) => old_digests.by_name.contains_key(name),
-        Item::Rest(_) => true,
-    });
-    if !old_digests.order.iter().eq(kept) {
+    // Only the declarations both versions hold take part in the order: a removed or a new one leaves the order of the others as it was, while a move, or a statement that changes, does not.
+    if !shared(&old_digests, &new_digests).eq(shared(&new_digests, &old_digests)) {
         return None;
     }
     let mut changed: BTreeSet<&str> = new_digests
@@ -62,7 +60,45 @@ pub(super) fn changed_declarations(old: Version<'_>, new: Version<'_>) -> Option
                 .map(|decl| decl.name.as_str()),
         );
     }
-    Some(changed.into_iter().map(str::to_owned).collect())
+    Some(Declarations {
+        changed: changed.into_iter().map(str::to_owned).collect(),
+        removed: removed(old.facts, new.facts, &old_digests, &new_digests),
+    })
+}
+
+/// The names the old version declares, members included, or exports, that the new one does not, sorted, once each. A declaration that stops being exported is among them, since its importers lose it.
+fn removed(
+    old: &FileFacts,
+    new: &FileFacts,
+    old_digests: &Digests<'_>,
+    new_digests: &Digests<'_>,
+) -> Vec<String> {
+    let mut gone: BTreeSet<&str> = old_digests
+        .by_name
+        .keys()
+        .filter(|name| !new_digests.by_name.contains_key(*name))
+        .copied()
+        .collect();
+    if let (Some(before), Some(after)) = (&old.exports, &new.exports) {
+        gone.extend(
+            before
+                .iter()
+                .filter(|name| !after.contains(name))
+                .map(String::as_str),
+        );
+    }
+    gone.into_iter().map(str::to_owned).collect()
+}
+
+/// The steps of the top level of `digests` that the `other` version holds too: every statement, and the declarations of that version.
+fn shared<'d, 'a>(
+    digests: &'d Digests<'a>,
+    other: &'d Digests<'_>,
+) -> impl Iterator<Item = &'d Item<'a>> {
+    digests.order.iter().filter(|item| match item {
+        Item::Decl(name) => other.by_name.contains_key(name),
+        Item::Rest(_) => true,
+    })
 }
 
 /// The declarations of a file that was read in full, `None` for a file read past errors, a failed one, or one whose connector records no declarations.
@@ -279,6 +315,10 @@ mod tests {
     }
 
     fn compare(old: (&FileFacts, &str), new: (&FileFacts, &str)) -> Option<Vec<String>> {
+        differ(old, new).map(|declarations| declarations.changed)
+    }
+
+    fn differ(old: (&FileFacts, &str), new: (&FileFacts, &str)) -> Option<Declarations> {
         changed_declarations(
             Version {
                 facts: old.0,
@@ -472,15 +512,73 @@ mod tests {
         );
     }
 
+    fn gone(changed: &[&str], removed: &[&str]) -> Declarations {
+        Declarations {
+            changed: changed.iter().map(|name| (*name).to_owned()).collect(),
+            removed: removed.iter().map(|name| (*name).to_owned()).collect(),
+        }
+    }
+
     #[test]
-    fn a_removed_or_renamed_declaration_changes_the_file_whole() {
+    fn a_removed_or_renamed_declaration_is_listed_as_removed() {
         let old = facts(vec![declared("a", 1, 1, &[]), declared("b", 2, 2, &[])]);
         let removed = facts(vec![declared("a", 1, 1, &[])]);
         let renamed = facts(vec![declared("a", 1, 1, &[]), declared("c", 2, 2, &[])]);
         let text = "const a = 1;\nconst b = 2;\n";
-        assert_eq!(compare((&old, text), (&removed, "const a = 1;\n")), None);
         assert_eq!(
-            compare((&old, text), (&renamed, "const a = 1;\nconst c = 2;\n")),
+            differ((&old, text), (&removed, "const a = 1;\n")),
+            Some(gone(&[], &["b"]))
+        );
+        assert_eq!(
+            differ((&old, text), (&renamed, "const a = 1;\nconst c = 2;\n")),
+            Some(gone(&["c"], &["b"]))
+        );
+    }
+
+    #[test]
+    fn a_removed_member_is_listed_with_its_class() {
+        let old = facts(vec![
+            declared("C", 1, 5, &[]),
+            declared("C.m", 2, 2, &[]),
+            declared("C.n", 3, 3, &[]),
+        ]);
+        let new = facts(vec![declared("C", 1, 4, &[]), declared("C.n", 2, 2, &[])]);
+        let result = differ(
+            (&old, "class C {\n m() {}\n n() {}\n}\n"),
+            (&new, "class C {\n n() {}\n}\n"),
+        );
+        assert_eq!(
+            result.map(|found| found.removed),
+            Some(vec!["C.m".to_owned()])
+        );
+    }
+
+    #[test]
+    fn a_declaration_that_stops_being_exported_is_removed() {
+        let mut old = facts(vec![declared("a", 1, 1, &[])]);
+        old.exports = Some(vec!["a".to_owned(), "default".to_owned()]);
+        let mut new = facts(vec![declared("a", 1, 1, &[])]);
+        new.exports = Some(vec!["a".to_owned()]);
+        let text = "const a = 1;\n";
+        assert_eq!(
+            differ((&old, text), (&new, text)),
+            Some(gone(&[], &["default"]))
+        );
+    }
+
+    #[test]
+    fn a_moved_declaration_next_to_a_removed_one_changes_the_file_whole() {
+        let old = facts(vec![
+            declared("a", 1, 1, &[]),
+            declared("b", 2, 2, &[]),
+            declared("c", 3, 3, &[]),
+        ]);
+        let new = facts(vec![declared("c", 1, 1, &[]), declared("a", 2, 2, &[])]);
+        assert_eq!(
+            differ(
+                (&old, "const a = 1;\nconst b = 2;\nconst c = 3;\n"),
+                (&new, "const c = 3;\nconst a = 1;\n")
+            ),
             None
         );
     }
