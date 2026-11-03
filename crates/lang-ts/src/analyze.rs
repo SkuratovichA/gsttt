@@ -10,14 +10,13 @@ mod symbols;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::num::NonZeroU32;
 
 use gsttt_core::fact::{
     ContractFact, Embedded, FileTags, Import, ImportFlags, ImportKind, Line, Symbols,
     UnresolvedReason, UnresolvedSite,
 };
 use gsttt_core::rules::{
-    Access, CallRule, DecoratorRule, Outcome, Pack, Prefix, Reading, Site, ValueExpr, serves_http,
+    Access, CallRule, DecoratorRule, Outcome, Pack, Prefix, Reading, ValueExpr, serves_http,
 };
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
@@ -54,7 +53,7 @@ use crate::pathing::{is_relative, split_package};
 use crate::shape::{
     COMPUTED, ClassPrefix, Shape, assigned_value, chain_of, commonjs_exports, dotted, dotted_name,
     export_key, field_name, is_exports_object, is_open_object, jsx_chain, literal_text,
-    member_chain, named_callable, part_of, property_name, property_str, static_chain,
+    member_chain, named_callable, on_a_value, part_of, property_name, property_str, static_chain,
     template_text, text_with, type_chain,
 };
 
@@ -618,6 +617,32 @@ impl<'a> Analyzer<'_, 'a> {
         rivals
     }
 
+    /// The documents that the embed rules of `pack` read in a call to `callee`. `lazy` holds the shape of the call once some rule has needed it.
+    fn embeds(
+        &mut self,
+        it: &CallExpression<'_>,
+        callee: &str,
+        line: Line,
+        pack: &Pack,
+        lazy: &mut Option<Shape>,
+    ) {
+        for rule in &pack.embeds {
+            if !rule.callee.matches(callee) {
+                continue;
+            }
+            let site: &Shape = lazy.get_or_insert_with(|| {
+                Shape::of_call(callee, it.arguments.iter(), &self.constants)
+            });
+            if !rule.carried_by(site) {
+                continue;
+            }
+            match rule.apply(&pack.name, site, line, callee) {
+                Ok(embedded) => self.out.embedded.push(embedded),
+                Err(blind) => self.out.unresolved.push(blind),
+            }
+        }
+    }
+
     fn call(&mut self, it: &CallExpression<'_>, callee: &str) {
         let line = self.line(it.span.start);
         let packs = self.packs;
@@ -734,21 +759,7 @@ impl<'a> Analyzer<'_, 'a> {
                     }
                 }
             }
-            for rule in &pack.embeds {
-                if !rule.callee.matches(callee) {
-                    continue;
-                }
-                let site: &Shape = lazy.get_or_insert_with(|| {
-                    Shape::of_call(callee, it.arguments.iter(), &self.constants)
-                });
-                if rule.text.is_none() && site.arg(NonZeroU32::MIN).is_none() {
-                    continue;
-                }
-                match rule.apply(&pack.name, site, line, callee) {
-                    Ok(embedded) => self.out.embedded.push(embedded),
-                    Err(blind) => self.out.unresolved.push(blind),
-                }
-            }
+            self.embeds(it, callee, line, pack, &mut lazy);
         }
         if let Some(host) = callee.strip_suffix(".use") {
             if self.makers.get(host).is_some_and(|maker| maker.serves) {
@@ -1113,6 +1124,9 @@ impl<'a> Analyzer<'_, 'a> {
                 let site: &Shape = lazy.get_or_insert_with(|| {
                     Shape::of_tag(tag, template_text(&it.quasi, rule.computed_part()))
                 });
+                if !rule.carried_by(site) {
+                    continue;
+                }
                 match rule.apply(&pack.name, site, line, tag) {
                     Ok(embedded) => self.out.embedded.push(embedded),
                     Err(blind) => self.out.unresolved.push(blind),
@@ -1894,6 +1908,14 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         } else if let Some(callee) = constants::required_callee(&it.callee, self.packs) {
             // `require('axios').get('/x')`: the inner require is walked below and records the import.
             self.call(it, &callee);
+        } else if let Some(callee) = on_a_value(&it.callee) {
+            // Only the documents: a rule that names a receiver cannot be about a value no name stands for.
+            let line = self.line(it.span.start);
+            let packs = self.packs;
+            let mut lazy = None;
+            for pack in packs {
+                self.embeds(it, &callee, line, pack, &mut lazy);
+            }
         }
         if matches!(it.callee, Expression::Super(_)) {
             self.symbols.super_use("constructor");

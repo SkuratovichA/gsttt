@@ -979,6 +979,20 @@ impl ImportRule {
 }
 
 impl EmbedRule {
+    /// Whether the site carries a document of this rule, read or not: a call whose first argument holds no text at all, or whose object has no such property, is no site of the rule. A property of an argument that is no object literal is not looked for, because the argument is then the document or nothing the rule can name.
+    pub fn carried_by(&self, site: &(impl Site + ?Sized)) -> bool {
+        let Some(text) = &self.text else {
+            return site.arg(NonZeroU32::MIN).is_some();
+        };
+        text.eval(site).is_some()
+            || text.sources().iter().any(|source| match source {
+                ValueSource::ArgProp(position, _) => {
+                    site.holds(source) && !site.holds(&ValueSource::Arg(*position))
+                }
+                _ => site.holds(source),
+            })
+    }
+
     /// The document a call carries. A tagged template is the document itself and is read by the connector, not here. A document built at run time is a blind spot.
     pub fn apply(
         &self,

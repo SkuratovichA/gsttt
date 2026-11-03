@@ -1,0 +1,1 @@
+{ "name": "api", "dependencies": { "oracledb": "^1.0.0" } }

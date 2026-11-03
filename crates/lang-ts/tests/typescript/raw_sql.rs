@@ -4,7 +4,7 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, embedded, provides, run, unread};
+use crate::support::{NOTHING, contracts, embedded, provides, run, unread};
 
 #[test]
 #[scenario(
@@ -249,5 +249,145 @@ fn the_sql_drivers_pack_is_credited_with_the_tables_it_finds() -> Result<(), Box
         "{:?}",
         provides(&json, ".")
     );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A query held in an object is read")]
+fn a_query_held_in_an_object_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert_eq!(
+        embedded(&json, "src/object.ts"),
+        ["sql @4 SELECT id FROM invoices"]
+    );
+    let json = run("sql-drivers-libsql")?;
+    assert_eq!(
+        embedded(&json, "src/notes.ts"),
+        [
+            "sql @3 SELECT id FROM notes",
+            "sql @5 SELECT id FROM tags WHERE id = ?"
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A query in an object that is not text is an unread site"
+)]
+fn a_query_in_an_object_that_is_not_text_is_an_unread_site() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert_eq!(
+        unread(&json, "src/object.ts"),
+        ["@6 non-literal pool.query"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A template tagged sql is read")]
+fn a_template_tagged_sql_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers-postgres")?;
+    assert_eq!(
+        embedded(&json, "src/users.ts"),
+        ["sql @3 SELECT id FROM users WHERE id = ?"]
+    );
+    let json = run("sql-drivers-vercel")?;
+    assert_eq!(
+        embedded(&json, "src/posts.ts"),
+        ["sql @4 SELECT id FROM users", "sql @6 SELECT id FROM posts"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A fragment tagged sql that is no statement records nothing"
+)]
+fn a_fragment_tagged_sql_that_is_no_statement_records_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert_eq!(unread(&json, "src/drizzle.ts"), NOTHING);
+    assert_eq!(contracts(&json, "src/drizzle.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A call on a value no name stands for is read")]
+fn a_call_on_a_value_no_name_stands_for_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert_eq!(
+        embedded(&json, "src/value.ts"),
+        ["sql @3 SELECT id FROM audits"]
+    );
+    let json = run("sql-drivers-mssql")?;
+    assert_eq!(
+        embedded(&json, "src/orders.ts"),
+        [
+            "sql @5 SELECT id FROM orders WHERE id = @id",
+            "sql @7 SELECT id FROM refunds",
+            "sql @9 SELECT id FROM carts WHERE id = ?"
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A regular expression exec reads nothing")]
+fn a_regular_expression_exec_reads_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers")?;
+    assert!(
+        !embedded(&json, "src/value.ts")
+            .iter()
+            .any(|document| document.contains("nothing")),
+        "{:?}",
+        embedded(&json, "src/value.ts")
+    );
+    assert_eq!(unread(&json, "src/value.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A call on a value and a sql tag read nothing without a driver"
+)]
+fn a_call_on_a_value_and_a_sql_tag_read_nothing_without_a_driver() -> Result<(), Box<dyn Error>> {
+    let json = run("sql-drivers-absent")?;
+    assert_eq!(embedded(&json, "src/value.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A query of another SQL driver is read")]
+fn a_query_of_another_sql_driver_is_read() -> Result<(), Box<dyn Error>> {
+    for (fixture, file, line, text) in [
+        (
+            "sql-drivers-planetscale",
+            "src/users.ts",
+            3,
+            "SELECT id FROM users WHERE id = ?",
+        ),
+        (
+            "sql-drivers-oracledb",
+            "src/employees.ts",
+            3,
+            "SELECT id FROM employees WHERE id = :id",
+        ),
+        (
+            "sql-drivers-sequelize",
+            "src/projects.ts",
+            4,
+            "SELECT id FROM projects",
+        ),
+    ] {
+        let json = run(fixture)?;
+        assert_eq!(embedded(&json, file), [format!("sql @{line} {text}")]);
+        insta::assert_json_snapshot!(fixture, json);
+    }
     Ok(())
 }

@@ -1,0 +1,1 @@
+{ "name": "api", "dependencies": { "sequelize": "^1.0.0" } }

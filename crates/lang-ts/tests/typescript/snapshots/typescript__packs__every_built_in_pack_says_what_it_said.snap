@@ -516,7 +516,14 @@ expression: packs
       "mysql2",
       "better-sqlite3",
       "sqlite3",
-      "@neondatabase/serverless"
+      "@neondatabase/serverless",
+      "mssql",
+      "@libsql/client",
+      "@planetscale/database",
+      "oracledb",
+      "sequelize",
+      "postgres",
+      "@vercel/postgres"
     ],
     "calls": [],
     "decorators": [],
@@ -536,6 +543,54 @@ expression: packs
           "*.exec",
           "*.*.exec",
           "*.*.*.exec"
+        ],
+        "lang": "sql",
+        "text": null,
+        "computed": "placeholder"
+      },
+      {
+        "callee": [
+          "*.query",
+          "*.*.query",
+          "*.*.*.query",
+          "*.execute",
+          "*.*.execute",
+          "*.*.*.execute",
+          "*.prepare",
+          "*.*.prepare",
+          "*.*.*.prepare",
+          "*.exec",
+          "*.*.exec",
+          "*.*.*.exec"
+        ],
+        "lang": "sql",
+        "text": "$arg1.sql",
+        "computed": "placeholder"
+      },
+      {
+        "callee": [
+          "*.query",
+          "*.*.query",
+          "*.*.*.query",
+          "*.execute",
+          "*.*.execute",
+          "*.*.*.execute",
+          "*.prepare",
+          "*.*.prepare",
+          "*.*.*.prepare",
+          "*.exec",
+          "*.*.exec",
+          "*.*.*.exec"
+        ],
+        "lang": "sql",
+        "text": "$arg1.text",
+        "computed": "placeholder"
+      },
+      {
+        "callee": [
+          "sql",
+          "*.sql",
+          "sql.unsafe"
         ],
         "lang": "sql",
         "text": null,
