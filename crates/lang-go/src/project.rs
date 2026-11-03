@@ -140,6 +140,10 @@ impl Project for GoProject {
         crate::parse::parse(self, file)
     }
 
+    fn code(&self, file: &SourceFile<'_>) -> Option<String> {
+        crate::code::blanked(file)
+    }
+
     fn prepare(&mut self, files: &[gsttt_core::connector::PrepareFile<'_>]) {
         crate::resolve::prepare(self, files);
     }

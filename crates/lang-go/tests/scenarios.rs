@@ -5,9 +5,11 @@
 #![cfg(test)]
 
 use gsttt_config::pack::builtin_packs;
+use gsttt_core::connector::{DynConnector, SourceFile};
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
 use gsttt_core::fact::{FileTags, Line, ParseStatus, Resolution};
 use gsttt_core::ids::FileId;
+use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_lang_go::{GO, PACKS};
 use serde_json::Value;
@@ -2042,6 +2044,134 @@ fn the_router_fixtures_facts() {
     })
     .collect();
     insta::assert_json_snapshot!("the_router_fixtures_facts", facts);
+}
+
+/// What the Go project of a one-module tree gives for `text` as the code of the file at `path`.
+fn code_of(path: &str, text: &str) -> Option<String> {
+    let t = module(&[(path, text)]);
+    let projects = GO
+        .open(&t.repo, &Value::Null, &builtin_packs(PACKS).unwrap())
+        .unwrap();
+    let path = RepoPath::normalize(path).unwrap();
+    projects[0].code(&SourceFile {
+        id: FileId::from_raw(0),
+        path: &path,
+        text,
+    })
+}
+
+/// The lines of `code` without the space around them, the way two versions of a file are compared.
+fn trimmed(code: &str) -> Vec<&str> {
+    code.lines().map(str::trim).collect()
+}
+
+/// The code of a Go file whose body is `body`, below a package clause.
+fn body_code(body: &str) -> Vec<String> {
+    let code = code_of("a.go", &format!("package a\n\n{body}\n")).unwrap();
+    trimmed(&code).into_iter().map(str::to_owned).collect()
+}
+
+#[gsttt_scenario::scenario("go", "A comment or an import does not change the code")]
+#[test]
+fn a_comment_or_an_import_does_not_change_the_code() {
+    let before = code_of(
+        "a.go",
+        "package a\n\nimport \"os\"\n\n// note\nvar x = 1 // tail\n",
+    )
+    .unwrap();
+    let after = code_of(
+        "a.go",
+        "package a\n\nimport \"fmt\"\n\n/* other */\nvar x = 1\n",
+    )
+    .unwrap();
+    assert_eq!(trimmed(&before), trimmed(&after));
+    assert_eq!(before.lines().count(), after.lines().count());
+}
+
+#[gsttt_scenario::scenario("go", "A realigned block does not change the code")]
+#[test]
+fn a_realigned_block_does_not_change_the_code() {
+    assert_eq!(
+        body_code("type T struct {\n\ta    int\n\tbb   string\n}"),
+        body_code("type T struct {\n\ta int\n\tbb string\n}")
+    );
+    assert_eq!(
+        body_code("var m = map[string]int{\n\t\"a\":   1,\n\t\"bbb\": 2,\n}"),
+        body_code("var m = map[string]int{\n\t\"a\": 1,\n\t\"bbb\": 2,\n}")
+    );
+    assert_eq!(
+        body_code("const (\n\tA   = 1\n\tBBB = 2\n)"),
+        body_code("const (\n\tA = 1\n\tBBB = 2\n)")
+    );
+    assert_ne!(
+        body_code("type T struct {\n\ta int\n}"),
+        body_code("type T struct {\n\ta int\n\tb int\n}")
+    );
+}
+
+#[gsttt_scenario::scenario("go", "Whitespace in a string is part of the code")]
+#[test]
+fn whitespace_in_a_string_is_part_of_the_code() {
+    assert_ne!(body_code("var s = \"a  b\""), body_code("var s = \"a b\""));
+    let raw = body_code("var s = `a\n  b\n\n\tc`");
+    assert_eq!(
+        raw,
+        [
+            "package a",
+            "",
+            "var s = `a\x03",
+            "\x01\x01b\x03",
+            "\x03",
+            "\x02c`"
+        ]
+    );
+    assert_ne!(body_code("var r = ' '"), body_code("var r = '\t'"));
+}
+
+#[gsttt_scenario::scenario("go", "Tokens that a space keeps apart stay apart")]
+#[test]
+fn tokens_that_a_space_keeps_apart_stay_apart() {
+    assert_ne!(body_code("var x = a &^ b"), body_code("var x = a & ^b"));
+    assert_ne!(body_code("var x = a <- b"), body_code("var x = a < -b"));
+}
+
+#[gsttt_scenario::scenario("go", "A directive is part of the code")]
+#[test]
+fn a_directive_is_part_of_the_code() {
+    for (one, two) in [
+        ("//go:build linux", "//go:build darwin"),
+        ("//go:embed a.txt", "//go:embed b.txt"),
+        ("// +build linux", "// +build darwin"),
+    ] {
+        assert_ne!(
+            body_code(&format!("{one}\nvar x = 1")),
+            body_code(&format!("{two}\nvar x = 1")),
+            "{one}"
+        );
+    }
+}
+
+#[gsttt_scenario::scenario("go", "The preamble of cgo is part of the code")]
+#[test]
+fn the_preamble_of_cgo_is_part_of_the_code() {
+    let cgo = |c: &str| {
+        code_of(
+            "a.go",
+            &format!("package a\n\n// {c}\nimport \"C\"\n\nvar x = 1\n"),
+        )
+        .unwrap()
+    };
+    assert_ne!(
+        trimmed(&cgo("#include <a.h>")),
+        trimmed(&cgo("#include <b.h>"))
+    );
+}
+
+#[gsttt_scenario::scenario("go", "A file with a syntax error has no code")]
+#[test]
+fn a_file_with_a_syntax_error_has_no_code() {
+    assert_eq!(code_of("a.go", "package a\n\nfunc f( {\n"), None);
+    assert_eq!(code_of("go.mod", "module example.com/m\n\ngo 1.22\n"), None);
 }
 
 /// The facts of the `service` fixture, for review: what each file declares, imports and finds.
