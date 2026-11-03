@@ -713,9 +713,9 @@ fn a_member_goes_on_under_the_name_a_barrel_exports_its_class_by() {
     );
 }
 
-#[scenario("queries", "A namespace import takes every member of its class")]
+#[scenario("queries", "A namespace import goes on to the member of its class")]
 #[test]
-fn a_namespace_import_takes_every_member_of_its_class() {
+fn a_namespace_import_goes_on_to_the_member_of_its_class() {
     let index = page(
         invoices().imports_as("page.ts", "resolver.ts", &[("*", "res")]),
         [
@@ -730,12 +730,7 @@ fn a_namespace_import_takes_every_member_of_its_class() {
 
     assert_eq!(
         rows(&answer.affected).last(),
-        Some(&row(
-            "page.ts",
-            2,
-            "imports resolver.ts",
-            &["Page.all", "Page.open"]
-        ))
+        Some(&row("page.ts", 2, "imports resolver.ts", &["Page.open"]))
     );
 }
 
@@ -852,30 +847,64 @@ fn a_holder_in_the_file_of_the_class_needs_the_members_name_too() {
     assert_eq!(paths(&answer.affected), NONE);
 }
 
-#[scenario("queries", "A namespace passed away stays a use of every name")]
-#[test]
-fn a_namespace_passed_away_stays_a_use_of_every_name() {
-    let listed = |read: Option<&str>| {
-        let mut code = Code::new().declaration("go", (1, 3), &["lib"]);
-        if let Some(name) = read {
-            code = code.reads(name);
-        }
-        let index = Tree::new()
-            .symbols("lib.ts", Code::new().declaration("helper", (1, 3), &[]))
-            .exports("lib.ts", &["helper"])
-            .imports_as("page.ts", "lib.ts", &[("*", "lib")])
-            .symbols("page.ts", code)
-            .exports("page.ts", &[])
-            .build();
-        shown(&ask(&index, "lib.ts", &["helper"], None))
-            .into_iter()
-            .map(|(path, _, callers)| (path.to_owned(), callers.len()))
-            .collect::<Vec<_>>()
-    };
+/// `page.ts` imports `lib.ts` as a namespace and has a `go` that hands `lib` on, reading `read` on some value when it is given.
+fn namespace_holder(read: Option<&str>) -> Index {
+    let mut code = Code::new().declaration("go", (1, 3), &["lib"]);
+    if let Some(name) = read {
+        code = code.reads(name);
+    }
+    Tree::new()
+        .symbols("lib.ts", Code::new().declaration("helper", (1, 3), &[]))
+        .exports("lib.ts", &["helper"])
+        .imports_as("page.ts", "lib.ts", &[("*", "lib")])
+        .symbols("page.ts", code)
+        .exports("page.ts", &[])
+        .build()
+}
 
-    let expected = [("page.ts".to_owned(), 1)];
-    assert_eq!(listed(None), expected);
-    assert_eq!(listed(Some("helper")), expected);
+#[scenario("queries", "A namespace passed away names nothing by itself")]
+#[test]
+fn a_namespace_passed_away_names_nothing_by_itself() {
+    let answer = ask(&namespace_holder(None), "lib.ts", &["helper"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+}
+
+#[scenario(
+    "queries",
+    "A file that reads the member and holds the namespace as a value is a caller"
+)]
+#[test]
+fn a_file_that_reads_the_member_and_holds_the_namespace_as_a_value_is_a_caller() {
+    let answer = ask(
+        &namespace_holder(Some("helper")),
+        "lib.ts",
+        &["helper"],
+        None,
+    );
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("page.ts", 1, "imports lib.ts", &["go"])]
+    );
+    assert!(notes(&answer).is_empty(), "{:?}", notes(&answer));
+}
+
+#[scenario(
+    "queries",
+    "A file that holds a namespace as a value is named in a note and not listed"
+)]
+#[test]
+fn a_file_that_holds_a_namespace_as_a_value_is_named_in_a_note_and_not_listed() {
+    let answer = ask(&namespace_holder(None), "lib.ts", &["helper"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert_eq!(
+        notes(&answer),
+        [
+            "1 file loads this module and reads none of the names asked about; ask about the file to list it"
+        ]
+    );
 }
 
 #[test]
@@ -1618,7 +1647,7 @@ fn from_one_file_contracts_come_in_key_order_whatever_the_hops_through_code_of_t
 }
 
 #[test]
-fn a_namespace_import_is_a_use_of_every_name_by_what_uses_the_namespace() {
+fn a_namespace_import_is_no_use_of_a_name_by_what_uses_the_namespace_alone() {
     let index = Tree::new()
         .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
         .exports("a.ts", &["foo"])
@@ -1634,10 +1663,7 @@ fn a_namespace_import_is_a_use_of_every_name_by_what_uses_the_namespace() {
 
     let answer = ask(&index, "a.ts", &["foo"], None);
 
-    assert_eq!(
-        rows(&answer.affected),
-        [row("b.ts", 1, "imports a.ts", &["run"])]
-    );
+    assert_eq!(paths(&answer.affected), NONE);
 }
 
 #[test]
@@ -1740,10 +1766,10 @@ fn a_star_barrel_passes_a_name_on_but_never_the_default() {
     let foo = ask(&index, "a.ts", &["foo"], None);
     let thing = ask(&index, "a.ts", &["thing"], None);
 
-    // `index.ts` exports no default, so the default import of `page.ts` holds the module and uses every name of it where `show` is written.
+    // `index.ts` exports no default, so the default import of `page.ts` holds the module, and `show` hands it on without naming `foo`.
     assert_eq!(
         rows(&foo.affected),
-        [row("page.ts", 1, "imports index.ts", &["render", "show"])]
+        [row("page.ts", 1, "imports index.ts", &["render"])]
     );
     assert!(thing.affected.is_empty(), "{:?}", thing.affected);
 }
@@ -2717,11 +2743,14 @@ fn recorded(mut case: Case) -> Case {
 /// - A star reaches its importer even when the file has nothing to pass on, and `export *` never forwards `default`, so a file with a star importer exports a name besides `default`.
 /// - A side-effect import uses nothing by name, so a file reached by name does not reach the file that imports it for its effects, where the walk per file does (design.md, "A side-effect import uses nothing by name"). `Take` has no such import, and it must not get one while this property takes its trees from it.
 /// - A mock takes no name, so a file reached by name does not reach the files that mock the changed file, where the walk per file does. No mock of the changed file is left in the case.
+/// - A namespace used as a value names nothing by itself, so a file with declarations that imports one is a use of a name only where it reads the name, and the walk by name holds it back. Such a file imports no namespace in the case.
 fn complete(mut case: Case) -> Case {
     let own = case.own.clone();
     case.edges.retain(|(importer, _, take)| {
         !matches!(take, Take::ReExport(_) | Take::Star) || own[*importer].is_none()
     });
+    case.edges
+        .retain(|(importer, _, take)| !matches!(take, Take::Namespace) || own[*importer].is_none());
     let exports = exported(&case);
     for (_, target, take) in &case.edges {
         let taken: Vec<&'static str> = match take {
@@ -3024,9 +3053,9 @@ fn a_namespace_import_is_a_caller_only_of_the_names_it_uses() {
     );
 }
 
-#[scenario("queries", "A namespace used as a value uses every name")]
+#[scenario("queries", "A namespace used as a value is held")]
 #[test]
-fn a_namespace_used_as_a_value_uses_every_name() {
+fn a_namespace_used_as_a_value_is_held() {
     let tree = namespace_user(svc(), "c.ts", &[("pass", "lib")]);
     let index = namespace_user(tree, "d.ts", &[("pick", "lib")])
         .imports_as("e.ts", "svc.ts", &[("*", "lib")])
@@ -3036,11 +3065,11 @@ fn a_namespace_used_as_a_value_uses_every_name() {
 
     let answer = ask(&index, "svc.ts", &["helper"], None);
 
+    assert_eq!(paths(&answer.affected), NONE);
     assert_eq!(
-        rows(&answer.affected),
+        notes(&answer),
         [
-            row("c.ts", 1, "imports svc.ts", &["pass"]),
-            row("d.ts", 1, "imports svc.ts", &["pick"]),
+            "2 files load this module and read none of the names asked about; ask about the file to list them"
         ]
     );
 }
@@ -3665,10 +3694,10 @@ fn a_require_held_by_a_local_takes_a_name_where_the_file_uses_it() {
 
 #[scenario(
     "queries",
-    "A local a require binds is a use of every name when passed away"
+    "A local a require binds names nothing by itself when passed away"
 )]
 #[test]
-fn a_local_a_require_binds_is_a_use_of_every_name_when_passed_away() {
+fn a_local_a_require_binds_names_nothing_by_itself_when_passed_away() {
     let index = commonjs_library()
         .requires_as("user.js", "lib.js", &[("default", "lib")])
         .symbols(
@@ -3682,9 +3711,12 @@ fn a_local_a_require_binds_is_a_use_of_every_name_when_passed_away() {
 
     let answer = ask(&index, "lib.js", &["helper"], None);
 
+    assert_eq!(paths(&answer.affected), NONE);
     assert_eq!(
-        rows(&answer.affected),
-        [row("user.js", 1, "imports lib.js", &["pass"])]
+        notes(&answer),
+        [
+            "1 file loads this module and reads none of the names asked about; ask about the file to list it"
+        ]
     );
 }
 
