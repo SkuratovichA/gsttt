@@ -1108,11 +1108,15 @@ pub(super) fn target_base<'a>(target: &SimpleAssignmentTarget<'a>) -> Option<&'a
 
 /// Whether the declarator is a `require` of a literal path whose names are plain locals: `const lib = require('x')` or `const { a, b: c } = require('x')`. A pattern with a rest element, a computed key, a default or a nested pattern may take names this cannot list.
 fn binds_a_require(declarator: &VariableDeclarator<'_>) -> bool {
-    let Some(load) = declarator
-        .init
-        .as_ref()
-        .and_then(|init| load_of(peel(init)))
-    else {
+    let Some(init) = declarator.init.as_ref().map(|init| peel(init)) else {
+        return false;
+    };
+    // `const c = require('x').a` binds `c` to the member, as `const { a: c } = require('x')` does.
+    let (load, member) = match init {
+        Expression::StaticMemberExpression(member) => (load_of(&member.object), true),
+        whole => (load_of(whole), false),
+    };
+    let Some(load) = load else {
         return false;
     };
     if load.kind != ImportKind::Require || load.argument.and_then(literal_text).is_none() {
@@ -1120,7 +1124,7 @@ fn binds_a_require(declarator: &VariableDeclarator<'_>) -> bool {
     }
     match &declarator.id {
         BindingPattern::BindingIdentifier(_) => true,
-        BindingPattern::ObjectPattern(object) => {
+        BindingPattern::ObjectPattern(object) if !member => {
             object.rest.is_none()
                 && !object.properties.is_empty()
                 && object.properties.iter().all(|property| {

@@ -20,6 +20,7 @@ use crate::extra::{Export, ExportTarget};
 use crate::parts::{Mode, Part};
 use crate::pathing::split_package;
 use crate::shape::{dotted_name, field_name, literal_text, part_of, property_str};
+use gsttt_core::fact::ImportKind;
 use gsttt_core::rules::Pack;
 
 /// The constants of a file by the name they are read under, those of its top level and those of its functions and blocks, and the names the file imports.
@@ -186,6 +187,21 @@ impl Constants {
                         && let Some(spec) = load.argument.and_then(literal_text)
                     {
                         self.loaded(&declarator.id, &spec, packs);
+                    } else if let Some(init) = &declarator.init
+                        && let Expression::StaticMemberExpression(member) = peel(init)
+                        && let Some(load) = load_of(&member.object)
+                        && matches!(load.kind, ImportKind::Require)
+                        && let Some(spec) = load.argument.and_then(literal_text)
+                        && let BindingPattern::BindingIdentifier(local) = &declarator.id
+                    {
+                        // `const get = require('axios').get` is the member of the package, written as a pack writes it: `axios.get`.
+                        self.import(local.name.as_str(), &spec);
+                        if let Some(callee) = required_callee(peel(init), packs)
+                            && callee != local.name.as_str()
+                        {
+                            self.canonical
+                                .insert(local.name.as_str().to_owned(), callee);
+                        }
                     }
                 }
             }
@@ -224,21 +240,9 @@ impl Constants {
 
     /// Notes the name a pack writes for `local`, which the file takes from the package `spec` as `taken`: the package itself when `taken` is none or `default`. A module of the project, a built-in module, a path inside a package and a package no pack is for are written as the file spells them.
     fn canonical_of(&mut self, local: &str, spec: &str, taken: Option<&str>, packs: &[Pack]) {
-        let Some((package, "")) = split_package(spec) else {
-            return;
-        };
-        if is_builtin(spec) || !is_library(packs, spec) {
-            return;
-        }
-        let name = taken.filter(|name| *name != "default").unwrap_or(package);
-        // A rule writes a callee as a chain of identifiers, so a package like `graphql-tag` is never written by one, and `gql` imported from it stays `gql`.
-        if !name
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        if let Some(name) = pack_name(spec, taken, packs)
+            && name != local
         {
-            return;
-        }
-        if name != local {
             self.canonical.insert(local.to_owned(), name.to_owned());
         }
     }
@@ -521,6 +525,44 @@ pub(super) fn exported_locals(exports: &[Export]) -> BTreeSet<&str> {
 /// The first segment of a dotted name.
 fn root_of(name: &str) -> &str {
     name.split('.').next().unwrap_or(name)
+}
+
+/// The name a pack writes for what the file takes from the package `spec` as `taken`: the package itself when `taken` is none or `default`. `None` for a module of the project, a built-in module, a path inside a package, a package no pack is for and a name no rule can write.
+fn pack_name<'s>(spec: &'s str, taken: Option<&'s str>, packs: &[Pack]) -> Option<&'s str> {
+    let Some((package, "")) = split_package(spec) else {
+        return None;
+    };
+    if is_builtin(spec) || !is_library(packs, spec) {
+        return None;
+    }
+    let name = taken.filter(|name| *name != "default").unwrap_or(package);
+    // A rule writes a callee as a chain of identifiers, so a package like `graphql-tag` is never written by one, and `gql` imported from it stays `gql`.
+    name.chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        .then_some(name)
+}
+
+/// The name a pack writes for a callee that starts at a package required in place: `axios.get` for `require('axios').get`, `express` for `require('express')`. `None` when the root is no such require, when a member is computed, or under the rule of `pack_name`.
+pub(super) fn required_callee(callee: &Expression<'_>, packs: &[Pack]) -> Option<String> {
+    // Most callees that get here start at another call: the root is looked at before anything is kept.
+    let mut root = callee.get_inner_expression();
+    while let Expression::StaticMemberExpression(member) = root {
+        root = member.object.get_inner_expression();
+    }
+    let load = load_of(root).filter(|load| matches!(load.kind, ImportKind::Require))?;
+    let spec = load.argument.and_then(literal_text)?;
+    let mut name = pack_name(&spec, None, packs)?.to_owned();
+    let mut members = Vec::new();
+    let mut at = callee.get_inner_expression();
+    while let Expression::StaticMemberExpression(member) = at {
+        members.push(member.property.name.as_str());
+        at = member.object.get_inner_expression();
+    }
+    for member in members.iter().rev() {
+        name.push('.');
+        name.push_str(member);
+    }
+    Some(name)
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ mod packs;
 mod projects;
 mod raw_sql;
 mod receivers;
+mod required;
 mod resolution;
 mod scopes;
 mod support;

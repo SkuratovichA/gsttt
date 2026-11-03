@@ -1922,3 +1922,36 @@ fn a_method_through_a_package_variable_reaches_the_caller() {
     );
     assert_eq!(paths(&answer["affected"]), ["app/uses.go"], "{answer}");
 }
+
+#[scenario("queries", "A router required in place reaches a fetch of its route")]
+#[test]
+fn a_router_required_in_place_reaches_a_fetch_of_its_route() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.work.path();
+    write(
+        dir,
+        "package.json",
+        r#"{ "name": "api", "dependencies": { "express": "^4.0.0" } }"#,
+    );
+    write(
+        dir,
+        "src/a.js",
+        "const router = require('express').Router();\nrouter.get('/a', (req, res) => res.end());\nmodule.exports = router;\n",
+    );
+    write(
+        dir,
+        "src/b.js",
+        "const app = require('express')();\napp.use('/api', require('./a'));\n",
+    );
+    write(
+        dir,
+        "web/page.ts",
+        "export function load() {\n  return fetch('/api/a');\n}\n",
+    );
+
+    let impact = json(&sandbox.run(&["--json", "impact", "src/a.js"]));
+    assert!(
+        paths(&impact["affected"]).contains(&"web/page.ts"),
+        "{impact}"
+    );
+}
