@@ -876,3 +876,10 @@ Impact SHALL reach the caller of a route that a file serves through a router mad
 #### Scenario: A router required in place reaches a fetch of its route
 - **WHEN** `a.js` has `require('express').Router()` with `router.get('/a', h)`, `b.js` mounts `require('./a')` at `/api`, and a TypeScript file calls `fetch('/api/a')`
 - **THEN** impact of `a.js` lists the TypeScript file
+
+### Requirement: Names a CommonJS file writes in place
+Asked about a name that a CommonJS file writes in place on `exports` or `module.exports`, impact SHALL list the files that read that name from it, and no file that reads only another name of the file.
+
+#### Scenario: A name written in place lists the files that read it
+- **WHEN** `lib.js` has `exports.run = function () {}` and `exports.stop = function () {}`, `runs.js` has `const lib = require('./lib')` and `lib.run()` at its top level, `stops.js` reads only `lib.stop()`, and impact is asked about `run` in `lib.js`
+- **THEN** impact lists `runs.js` and not `stops.js`
