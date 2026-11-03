@@ -22,7 +22,7 @@ use super::constants::{class_heads, import_locals};
 use super::roots::{
     arrow_returns, constructed, constructed_returns, declared_class, heads, returned_class,
 };
-use super::{load_of, peel};
+use super::{Form, load_forms, load_of, peel};
 use crate::extra::{Export, ExportTarget};
 use crate::shape::{
     dotted, dotted_name, exports_member, is_export_key, is_open_object, is_parameter_property,
@@ -1217,6 +1217,12 @@ impl<'a> Recorder<'a> {
         true
     }
 
+    /// Whether the top-level `root` is a name of the file, which a use of a class through it can be recorded against.
+    pub(super) fn is_top_level(&self, head: &str) -> bool {
+        self.names
+            .contains_key(head.split_once('.').map_or(head, |(root, _)| root))
+    }
+
     /// A use of the type `head`, written as the source writes it, for its `member`, or for the type alone when there is none. A class of the file that declares the member is used through that member; any other type through an entry made for `Type.member`. The member [`TYPE_ONLY`] uses the type and none of its members.
     pub(super) fn through_class(&mut self, head: &str, member: Option<&str>) {
         let (root, qualified) = match head.split_once('.') {
@@ -1482,23 +1488,24 @@ pub(super) fn target_base<'a>(target: &SimpleAssignmentTarget<'a>) -> Option<&'a
 
 /// Whether the declarator is a `require` of a literal path whose names are plain locals: `const lib = require('x')` or `const { a, b: c } = require('x')`. A pattern with a rest element, a computed key, a default or a nested pattern may take names this cannot list.
 fn binds_a_require(declarator: &VariableDeclarator<'_>) -> bool {
-    let Some(init) = declarator.init.as_ref().map(|init| peel(init)) else {
+    let Some(init) = declarator.init.as_ref() else {
         return false;
     };
-    // `const c = require('x').a` binds `c` to the member, as `const { a: c } = require('x')` does.
-    let (load, member) = match init {
-        Expression::StaticMemberExpression(member) => (load_of(&member.object), true),
-        whole => (load_of(whole), false),
-    };
-    let Some(load) = load else {
-        return false;
-    };
-    if load.kind != ImportKind::Require || load.argument.and_then(literal_text).is_none() {
+    // `const c = require('x').a` binds `c` to the member, as `const { a: c } = require('x')` does, and `const u = require('x')[key]` binds it to some member. Each branch of a condition must be a load of a literal path or load nothing.
+    let forms = load_forms(init);
+    let all_literal = !forms.is_empty()
+        && forms.iter().all(|form| {
+            let (Form::Whole(load) | Form::Member(load, _) | Form::Computed(load)) = form;
+            load.kind == ImportKind::Require && load.argument.and_then(literal_text).is_some()
+        });
+    if !all_literal {
         return false;
     }
     match &declarator.id {
         BindingPattern::BindingIdentifier(_) => true,
-        BindingPattern::ObjectPattern(object) if !member => {
+        BindingPattern::ObjectPattern(object)
+            if forms.iter().all(|form| matches!(form, Form::Whole(_))) =>
+        {
             object.rest.is_none()
                 && !object.properties.is_empty()
                 && object.properties.iter().all(|property| {

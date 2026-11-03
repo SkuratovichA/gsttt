@@ -86,9 +86,7 @@ expression: json
           "express"
         ],
         "overrides": [],
-        "reads": [
-          "get"
-        ]
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

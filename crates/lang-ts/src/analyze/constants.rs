@@ -343,6 +343,11 @@ impl Constants {
         locals.scopes.get(locals.answer(at)?)
     }
 
+    /// Whether a scope below the top level binds `name` around the position `at`. A name that no read of a rule or an import can reach is not kept, so this is false for one the file binds below the top level only as a local nothing else depends on.
+    pub(super) fn shadowed(&self, name: &str, at: u32) -> bool {
+        self.local(name, at).is_some()
+    }
+
     /// The class that `name` holds at the position `at`, when the innermost scope around binds it once, to a value of that class.
     pub(super) fn class_held(&self, name: &str, at: u32) -> Option<&str> {
         let local = self.local(name, at)?;

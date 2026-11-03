@@ -1112,6 +1112,68 @@ fn a_file_that_holds_a_class_and_reads_the_member_on_any_value_is_a_caller() {
     assert!(answer.notes.is_empty(), "{:?}", notes(&answer));
 }
 
+/// `service.ts` declares `Service` with `place` and `other`, and `page.test.ts` takes the class with a `require` below the top level, as `const { Service } = require('./service')` in a callback, and has `check`, which uses `used`.
+fn nested_require(used: &[&str], read: Option<&str>) -> Index {
+    let mut code = Code::new().declaration("check", (1, 5), used);
+    if let Some(name) = read {
+        code = code.reads(name);
+    }
+    Tree::new()
+        .symbols(
+            "service.ts",
+            Code::new()
+                .declaration("Service", (1, 9), &[])
+                .declaration("Service.place", (2, 4), &[])
+                .declaration("Service.other", (5, 7), &[]),
+        )
+        .exports("service.ts", &["Service"])
+        .import(
+            "page.test.ts",
+            loading(ImportKind::Require, &["Service"], 2),
+            file("service.ts"),
+        )
+        .symbols("page.test.ts", code)
+        .exports("page.test.ts", &[])
+        .build()
+}
+
+#[scenario(
+    "queries",
+    "A class taken by a require below the top level is used where the member is named"
+)]
+#[test]
+fn a_class_taken_by_a_require_below_the_top_level_is_used_where_the_member_is_named() {
+    let named = ask(
+        &nested_require(&["Service.place"], None),
+        "service.ts",
+        &["Service.place"],
+        None,
+    );
+    let read = ask(
+        &nested_require(&["Service"], Some("place")),
+        "service.ts",
+        &["Service.place"],
+        None,
+    );
+    let other = ask(
+        &nested_require(&["Service.other"], None),
+        "service.ts",
+        &["Service.place"],
+        None,
+    );
+    let held = ask(
+        &nested_require(&["Service"], None),
+        "service.ts",
+        &["Service.place"],
+        None,
+    );
+
+    assert_eq!(paths(&named.affected), ["page.test.ts"]);
+    assert_eq!(paths(&read.affected), ["page.test.ts"]);
+    assert_eq!(paths(&other.affected), NONE);
+    assert_eq!(paths(&held.affected), NONE);
+}
+
 #[scenario("queries", "Asked about the class, a holder is listed")]
 #[test]
 fn asked_about_the_class_a_holder_is_listed() {

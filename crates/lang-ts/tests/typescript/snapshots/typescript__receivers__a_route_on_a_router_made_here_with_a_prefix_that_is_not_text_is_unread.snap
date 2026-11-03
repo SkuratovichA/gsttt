@@ -111,7 +111,6 @@ expression: json
         "overrides": [],
         "reads": [
           "PREFIX",
-          "env",
           "get"
         ]
       },

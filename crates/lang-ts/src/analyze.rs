@@ -6,6 +6,7 @@ mod jsdoc;
 mod makers;
 mod maps;
 mod mocks;
+mod receivers;
 mod roots;
 mod symbols;
 
@@ -43,6 +44,7 @@ use oxc_syntax::scope::ScopeFlags;
 pub(crate) use self::constants::Constants;
 use self::jsdoc::{DocImport, Docs};
 use self::makers::{Maker, NEST_FACTORY_CREATE};
+use self::receivers::Receivers;
 use self::roots::{Roots, plain_class};
 use self::symbols::{Recorder, TYPE_ONLY};
 use crate::builtins::is_builtin;
@@ -99,6 +101,7 @@ pub(crate) fn analyze(
         makers: makers::collect(program, text, packs, gates.nestjs, &constants),
         constants,
         roots: roots::collect(program, packs),
+        receivers: Receivers::collect(program),
         doubles: doubles::collect(program, text, packs, tags),
         symbols: Recorder::collect(program, index, docs.iter().flat_map(Docs::locals)),
         done: BTreeSet::new(),
@@ -145,6 +148,8 @@ enum Taking<'p, 'a> {
         name: &'p str,
         binds: bool,
     },
+    /// A file-level local that is assigned the loaded value, or one member of it, below the top level: `lib = require('x')`, `P = require('x').P`. The name is none for a member that is computed. The import binds no local, so the walk reads it as a module held by a local below the top level.
+    Assigned { name: Option<&'p str> },
 }
 
 /// A class being walked: its name, the decorators it carries, and the class it extends.
@@ -220,6 +225,8 @@ struct Analyzer<'p, 'a> {
     constants: Constants,
     /// The aliases of `this` and the names declared with a root type, found before the walk because a class may use `self` above the method that binds it.
     roots: Roots<'p>,
+    /// The names a member read on is a read on a builtin, found before the walk because a name may be bound below the read.
+    receivers: Receivers,
     /// The tokens this test file provides a stand-in for, found before the walk because a read may come above the provider.
     doubles: BTreeSet<&'p str>,
     /// The table of the top-level bindings, found before the walk, and what the walk finds against it: the declarations, what each uses and what the file runs as it loads.
@@ -465,6 +472,7 @@ impl<'a> Analyzer<'_, 'a> {
                     import.names.push(namespace.to_owned());
                 }
             }
+            Taking::Assigned { name } => import.names.push(name.unwrap_or(namespace).to_owned()),
             // A load used as it stands names nothing, and neither does a declared pattern such as `[a]`.
             Taking::Nothing | Taking::Declared { .. } => {}
         }
@@ -501,35 +509,70 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
-    /// `const x = require('y')` and `const { a } = await import('y')`.
+    /// `const x = require('y')`, `const { a } = await import('y')`, `const c = require('y').a`, `const u = require('y')[key]` and each branch of `const x = cond ? require('y') : require('z')`. A member that is computed binds `u` as the namespace does, because it may be any name of the module, unless the file uses `u` other than to read a member from it.
     fn load_declared(&mut self, init: &Expression<'_>, pattern: &BindingPattern<'_>, start: u32) {
-        // `const c = require('y').a` takes `a` from `y` and binds `c` to it.
-        if let Expression::StaticMemberExpression(member) = init
-            && let BindingPattern::BindingIdentifier(local) = pattern
-            && let Some(load) = load_of(&member.object).filter(|load| !load.promise)
-        {
-            let binds = self.symbols.binds_module(start);
-            self.load(
-                load.span,
-                load.argument,
-                load.kind,
-                load.flags,
-                Taking::Named {
-                    local: local.name.as_str(),
-                    name: member.property.name.as_str(),
-                    binds,
-                },
-            );
+        let forms = load_forms(init);
+        if forms.is_empty() {
             return;
         }
-        if let Some(load) = load_of(init) {
-            let binds = self.symbols.binds_module(start);
+        let binds = self.symbols.binds_module(start);
+        let local = match pattern {
+            BindingPattern::BindingIdentifier(local) => Some(local.name.as_str()),
+            _ => None,
+        };
+        for form in forms {
+            match (form, local) {
+                (Form::Member(load, name), Some(local)) => self.load(
+                    load.span,
+                    load.argument,
+                    load.kind,
+                    load.flags,
+                    Taking::Named { local, name, binds },
+                ),
+                (Form::Computed(load), Some(local)) if !self.receivers.is_used_bare(local) => self
+                    .load(
+                        load.span,
+                        load.argument,
+                        load.kind,
+                        load.flags,
+                        Taking::Declared { pattern, binds },
+                    ),
+                (Form::Whole(load), _) => self.load(
+                    load.span,
+                    load.argument,
+                    load.kind,
+                    load.flags,
+                    Taking::Declared { pattern, binds },
+                ),
+                // A member of a load into a pattern names nothing the walk can follow, and a computed one whose local the file uses other than to read a member from it may be called or handed on: the load is a hold on the module when it is visited.
+                (Form::Member(..) | Form::Computed(_), _) => {}
+            }
+        }
+    }
+
+    /// `lib = require('y')` below the top level, when `lib` is a local of the file's top level that no scope around rebinds: the file holds the module in a local, as `let lib = require('y')` does, and takes only the names it reads on it.
+    fn load_assigned(&mut self, it: &AssignmentExpression<'_>) {
+        if it.operator != AssignmentOperator::Assign {
+            return;
+        }
+        let AssignmentTarget::AssignmentTargetIdentifier(target) = &it.left else {
+            return;
+        };
+        let name = target.name.as_str();
+        if !self.symbols.is_top_level(name) || self.constants.shadowed(name, target.span.start) {
+            return;
+        }
+        for form in load_forms(&it.right) {
+            let (load, name) = match form {
+                Form::Whole(load) | Form::Computed(load) => (load, None),
+                Form::Member(load, name) => (load, Some(name)),
+            };
             self.load(
                 load.span,
                 load.argument,
                 load.kind,
                 load.flags,
-                Taking::Declared { pattern, binds },
+                Taking::Assigned { name },
             );
         }
     }
@@ -2071,6 +2114,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 self.exports_unknown = true;
             }
         }
+        self.load_assigned(it);
         if it.operator != AssignmentOperator::Assign {
             self.access = Some(self.modification(it.span));
         }
@@ -2195,6 +2239,10 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                             self.held_new = Some(new.span.start);
                         }
                         let outer = self.symbols.run();
+                        // A class that a local below the top level holds has no entry to record the use in, so the member is read, which is how a file that names a class only at load tells the member it calls.
+                        if !self.symbols.is_top_level(&class) && !self.receivers.is_known(&class) {
+                            self.symbols.read(property);
+                        }
                         self.symbols.through_class(&class, Some(property));
                         self.symbols.restore(outer);
                         true
@@ -2238,17 +2286,25 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             .and_then(|root| root.as_deref())
             .and_then(|root| self.constants.class_held(root, it.span().start));
         // What is read below the first link, or below the member of a known class, is read on a value of an unknown class. `this.field.member` names a member of the type of the field.
-        let known = if names.first().and_then(Option::as_deref) == Some("this") {
+        let root = names.first().and_then(Option::as_deref);
+        let known = if root == Some("this") {
             3
-        } else if held.is_some() {
+        } else if held.is_some() || root.is_some_and(|root| self.receivers.is_known(root)) {
             2
         } else {
             1
         };
         match held {
-            Some(class) => self
-                .symbols
-                .through_class(class, names.get(1).and_then(Option::as_deref)),
+            Some(class) => {
+                let member = names.get(1).and_then(Option::as_deref);
+                if let Some(member) = member
+                    && !self.symbols.is_top_level(class)
+                    && !self.receivers.is_known(class)
+                {
+                    self.symbols.read(member);
+                }
+                self.symbols.through_class(class, member);
+            }
             None => self.symbols.chain(&names),
         }
         for name in names.iter().skip(known).flatten() {
@@ -2702,6 +2758,43 @@ fn load_of<'e, 'a>(expr: &'e Expression<'a>) -> Option<Load<'e, 'a>> {
             })
         }
         _ => None,
+    }
+}
+
+/// How a value takes from a module it loads.
+enum Form<'e, 'a> {
+    /// The module as it stands: `require('x')`.
+    Whole(Load<'e, 'a>),
+    /// One member of it: `require('x').a`.
+    Member(Load<'e, 'a>, &'e str),
+    /// A member that is computed, `require('x')[key]`, which may be any name of the module.
+    Computed(Load<'e, 'a>),
+}
+
+/// The loads that `init` takes from, with the form each takes in. A branch of a condition is read as the value, and one that loads nothing, as `{}` does in `typeof x === 'undefined' ? require('./p') : {}`, takes nothing. A load that hands back a promise is no member's object.
+fn load_forms<'e, 'a>(init: &'e Expression<'a>) -> Vec<Form<'e, 'a>> {
+    let mut forms = Vec::new();
+    collect_forms(init, &mut forms);
+    forms
+}
+
+fn collect_forms<'e, 'a>(init: &'e Expression<'a>, forms: &mut Vec<Form<'e, 'a>>) {
+    match peel(init) {
+        Expression::ConditionalExpression(branches) => {
+            collect_forms(&branches.consequent, forms);
+            collect_forms(&branches.alternate, forms);
+        }
+        Expression::StaticMemberExpression(member) => {
+            if let Some(load) = load_of(&member.object).filter(|load| !load.promise) {
+                forms.push(Form::Member(load, member.property.name.as_str()));
+            }
+        }
+        Expression::ComputedMemberExpression(member) => {
+            if let Some(load) = load_of(&member.object).filter(|load| !load.promise) {
+                forms.push(Form::Computed(load));
+            }
+        }
+        whole => forms.extend(load_of(whole).map(Form::Whole)),
     }
 }
 

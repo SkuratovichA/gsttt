@@ -480,3 +480,53 @@ fn a_require_that_cannot_bind_stays_as_it_was() -> Result<(), Box<dyn Error>> {
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A require in a conditional binds its names")]
+fn a_require_in_a_conditional_binds_its_names() -> Result<(), Box<dyn Error>> {
+    let json = run("require-forms")?;
+    let lines = bound_names(&json, "src/user.js");
+    for wanted in [
+        "./a @1 [A,B] as [A,B]",
+        "./b @2 [default] as [lib]",
+        "./c @2 [default] as [lib]",
+    ] {
+        assert!(
+            lines.iter().any(|line| line == wanted),
+            "{wanted}: {lines:?}"
+        );
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A require assigned to a local of the file takes its name"
+)]
+fn a_require_assigned_to_a_local_of_the_file_takes_its_name() -> Result<(), Box<dyn Error>> {
+    let json = run("require-forms")?;
+    let lines = bound_names(&json, "src/user.js");
+    for wanted in ["./d @6 [Linter] as []", "./g @7 [default] as []"] {
+        assert!(
+            lines.iter().any(|line| line == wanted),
+            "{wanted}: {lines:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A require read by a computed member binds the module")]
+fn a_require_read_by_a_computed_member_binds_the_module() -> Result<(), Box<dyn Error>> {
+    let json = run("require-forms")?;
+    let lines = bound_names(&json, "src/user.js");
+    for wanted in ["./e @9 [default] as [pick]", "./f @10 [default] as [other]"] {
+        assert!(
+            lines.iter().any(|line| line == wanted),
+            "{wanted}: {lines:?}"
+        );
+    }
+    Ok(())
+}

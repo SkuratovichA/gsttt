@@ -42,8 +42,7 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a",
-          "defineProperty"
+          "a"
         ]
       },
       "tags": 0,

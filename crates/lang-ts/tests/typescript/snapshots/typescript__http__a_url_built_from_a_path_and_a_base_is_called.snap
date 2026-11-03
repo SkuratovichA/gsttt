@@ -99,7 +99,6 @@ expression: json
         "overrides": [],
         "reads": [
           "API_URL",
-          "env",
           "post"
         ]
       },
