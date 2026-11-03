@@ -516,11 +516,11 @@ A file in which a side-effect import or a top-level statement outside a declarat
 - **THEN** every importer of the file is affected and the answer has no `parts`
 
 ### Requirement: Languages without declarations walk the file whole
-A changed file of a language that records no declarations, and a file that is new, SHALL be walked whole, and the header SHALL name it as before.
+A changed file of a language that records no declarations, which is Rust yet, and a file that is new, SHALL be walked whole, and the header SHALL name it as before.
 
 #### Scenario: --changed walks a changed file whole when its language records no declarations
-- **WHEN** `tools/job.py` is edited and `src/fresh.ts` is new
-- **THEN** the header is `impact of src/fresh.ts and tools/job.py, within 1 hop through code` and the answer has no `parts`
+- **WHEN** `tools/src/lib.rs` is edited and `src/fresh.ts` is new
+- **THEN** the header is `impact of src/fresh.ts and tools/src/lib.rs, within 1 hop through code` and the answer has no `parts`
 
 ### Requirement: Declarations are compared with the merge base
 With `--base <rev>` the old text of a file SHALL be its blob at the best common ancestor of `HEAD` and `<rev>`, and without it the blob of `HEAD`.
@@ -604,3 +604,10 @@ A file in which a declaration moves or a top-level statement changes SHALL be wa
 #### Scenario: --changed walks a file whole when a declaration moves and another is removed
 - **WHEN** `formatId` is removed from `src/format.ts` and `formatUser` moves below the helper
 - **THEN** every importer of the file is affected
+
+### Requirement: A changed Python function reaches its callers
+A changed function, class or method of a Python file SHALL be named, a method with its class as `Class.method`, and the walk SHALL reach the declarations that use that name and not those that use another name of the file.
+
+#### Scenario: --changed follows a changed Python function to its callers and not to the callers of another
+- **WHEN** `tools/job.py` declares `run` and `stop`, `tools/main.py` calls `run` and `tools/halt.py` calls `stop`, and `run` is edited
+- **THEN** `parts` names `run` in `tools/job.py` and only `tools/main.py` is affected
