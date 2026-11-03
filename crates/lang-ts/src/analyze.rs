@@ -1419,6 +1419,18 @@ impl<'a> Analyzer<'_, 'a> {
             return;
         };
         self.exports_unknown |= self.leaves_names_open(target, value);
+        if target == "module.exports" {
+            match assigned_value(value) {
+                Expression::ObjectExpression(object) => {
+                    for property in &object.properties {
+                        if let ObjectPropertyKind::SpreadProperty(spread) = property {
+                            self.pass_all(&spread.argument);
+                        }
+                    }
+                }
+                other => self.pass_all(other),
+            }
+        }
         // `module.exports = function run() {}` exports the function the file declares under the name it carries, as `module.exports = run` does.
         if target == "module.exports"
             && let Some(name) = named_callable(assigned_value(value))
@@ -1483,12 +1495,18 @@ impl<'a> Analyzer<'_, 'a> {
 
     /// `exports` or `module.exports` handed to a call, as `Object.assign(module.exports, x)` and `factory(exports)` do, may get any name. `Object.defineProperty(exports, '__esModule', …)`, which every compiled file has, gets none that matters.
     fn exports_handed_to(&mut self, call: &CallExpression<'_>) {
-        if self.exports_unknown
-            || !call
-                .arguments
-                .iter()
-                .any(|argument| argument.as_expression().is_some_and(is_exports_object))
+        if !call
+            .arguments
+            .iter()
+            .any(|argument| argument.as_expression().is_some_and(is_exports_object))
         {
+            return;
+        }
+        // `Object.assign(exports, require('x'))` and `__exportStar(require('x'), exports)` hand every name of the module on.
+        for argument in call.arguments.iter().filter_map(Argument::as_expression) {
+            self.pass_all(argument);
+        }
+        if self.exports_unknown {
             return;
         }
         let marker = call.arguments.get(1).and_then(Argument::as_expression);
@@ -1501,9 +1519,100 @@ impl<'a> Analyzer<'_, 'a> {
         self.exports_unknown = !marks_module;
     }
 
+    /// Exports `exported` as the name `name` of the module `spec`, and lists the name on `import`, as `export { name as exported } from 'spec'` does.
+    fn re_export_name(&mut self, import: &mut Import, spec: &str, name: String, exported: &str) {
+        let target = ExportTarget::From {
+            spec: spec.to_owned(),
+            name: name.clone(),
+        };
+        self.export(exported, target);
+        import.names.push(name);
+        import.exported.push(exported.to_owned());
+    }
+
+    /// Makes the import and the export that `export * from 'spec'` makes.
+    fn re_export_all(&mut self, spec: &str, line: Line, type_only: bool) {
+        let mut import = Import::new(spec, ImportKind::ReExportAll, line);
+        self.export(
+            "*",
+            ExportTarget::From {
+                spec: spec.to_owned(),
+                name: "*".to_owned(),
+            },
+        );
+        if type_only {
+            import.flags = import.flags | ImportFlags::TYPE_ONLY;
+        }
+        self.out.imports.push(import);
+    }
+
+    /// The module and the name that `value` hands on to a `CommonJS` export: `require('x')` gives the module's value, `require('x').y` and `local.y` under `const local = require('x')` give `y`.
+    fn passed_on(&self, value: &Expression<'_>) -> Option<PassedOn> {
+        let require = |expr: &Expression<'_>| {
+            let load = load_of(expr).filter(|load| matches!(load.kind, ImportKind::Require))?;
+            Some((load.argument.and_then(literal_text)?, load.span.start))
+        };
+        if let Expression::StaticMemberExpression(member) = value {
+            let taken = member.property.name.as_str().to_owned();
+            if let Expression::Identifier(local) = member.object.get_inner_expression() {
+                // The `require` of the binding is a load of its own, which this export does not replace.
+                let spec = self
+                    .constants
+                    .required_spec(local.name.as_str(), local.span.start)?;
+                return Some(PassedOn {
+                    spec: spec.to_owned(),
+                    taken,
+                    require: None,
+                });
+            }
+            let (spec, at) = require(&member.object)?;
+            return Some(PassedOn {
+                spec,
+                taken,
+                require: Some(at),
+            });
+        }
+        let (spec, at) = require(value)?;
+        Some(PassedOn {
+            spec,
+            taken: "default".to_owned(),
+            require: Some(at),
+        })
+    }
+
+    /// Makes `name` an export of the name the module of `passed` gives, as `export { taken as name } from 'x'` does. The `require` that did it is no load of the module.
+    fn re_export(&mut self, name: &str, passed: PassedOn, at: u32) {
+        if let Some(require) = passed.require {
+            self.done.insert(require);
+        }
+        let mut import = Import::new(&passed.spec, ImportKind::ReExport, self.line(at));
+        self.re_export_name(&mut import, &passed.spec, passed.taken, name);
+        self.out.imports.push(import);
+    }
+
+    /// `require('x')` handed on whole, as `module.exports = require('x')`, `{ ...require('x') }` and `Object.assign(exports, require('x'))` do, makes what `export * from 'x'` makes and is no load.
+    fn pass_all(&mut self, value: &Expression<'_>) {
+        let Some(load) =
+            load_of(peel(value)).filter(|load| matches!(load.kind, ImportKind::Require))
+        else {
+            return;
+        };
+        let Some(spec) = load.argument.and_then(literal_text) else {
+            return;
+        };
+        if self.done.insert(load.span.start) {
+            let line = self.line(load.span.start);
+            self.re_export_all(&spec, line, false);
+        }
+    }
+
     /// A name is exported as itself, and a call as the variable `makers` records under the key of the export, as `export default <call>` does.
     fn export_value(&mut self, name: &str, value: &Expression<'_>) {
         let value = peel(value);
+        if let Some(passed) = self.passed_on(value) {
+            self.re_export(name, passed, value.span().start);
+            return;
+        }
         match value {
             Expression::Identifier(local) => {
                 self.export(name, ExportTarget::Local(local.name.as_str().to_owned()));
@@ -1754,13 +1863,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         for specifier in &it.specifiers {
             let name = export_name(&specifier.local);
             let exported = export_name(&specifier.exported);
-            let target = ExportTarget::From {
-                spec: spec.to_owned(),
-                name: name.clone(),
-            };
-            self.export(&exported, target);
-            import.names.push(name);
-            import.exported.push(exported);
+            self.re_export_name(&mut import, spec, name, &exported);
         }
         if matches!(it.export_kind, ImportOrExportKind::Type) {
             import.flags = import.flags | ImportFlags::TYPE_ONLY;
@@ -1774,23 +1877,15 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         };
         let line = self.line(it.span.start);
         let namespace = it.exported.as_ref().map(export_name);
+        let type_only = matches!(it.export_kind, ImportOrExportKind::Type);
         // `export * as ns from 'x'` re-exports the namespace under one name, which is not `export *`.
-        let mut import = if let Some(namespace) = &namespace {
-            let mut import = Import::new(spec, ImportKind::ReExport, line);
-            import.names.push("*".to_owned());
-            import.exported.push(namespace.clone());
-            import
-        } else {
-            Import::new(spec, ImportKind::ReExportAll, line)
+        let Some(namespace) = namespace else {
+            self.re_export_all(spec, line, type_only);
+            return;
         };
-        self.export(
-            namespace.as_deref().unwrap_or("*"),
-            ExportTarget::From {
-                spec: spec.to_owned(),
-                name: "*".to_owned(),
-            },
-        );
-        if matches!(it.export_kind, ImportOrExportKind::Type) {
+        let mut import = Import::new(spec, ImportKind::ReExport, line);
+        self.re_export_name(&mut import, spec, "*".to_owned(), &namespace);
+        if type_only {
             import.flags = import.flags | ImportFlags::TYPE_ONLY;
         }
         self.out.imports.push(import);
@@ -2557,6 +2652,13 @@ fn module_call(callee: &str) -> Option<ModuleCall> {
         | "jest.deepUnmock" => Some(ModuleCall::Mock),
         _ => None,
     }
+}
+
+/// What a `CommonJS` export hands on from another module: the module's `taken` name, and the start of the `require` that reads it when the export replaces that load.
+struct PassedOn {
+    spec: String,
+    taken: String,
+    require: Option<u32>,
 }
 
 /// An expression that loads a module as it is: `require('x')` and `jest.requireActual('x')` hand the module back, `import('x')` and `vi.importActual('x')` a promise of it.

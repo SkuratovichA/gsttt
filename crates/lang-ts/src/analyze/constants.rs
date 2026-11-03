@@ -34,6 +34,8 @@ pub(crate) struct Constants {
     roots: BTreeSet<String>,
     /// The local names an import binds, each with the specifier of the module it takes the name from.
     imported: BTreeMap<String, String>,
+    /// The top-level names bound to a whole module by `const x = require('y')`, each with the specifier.
+    required: BTreeMap<String, String>,
     /// The local names that stand for a name a pack writes otherwise, each with that name: `http` of `import http from 'axios'` for `axios`, `R` of `import { Router as R } from 'express'` for `Router`. A name that is written as the pack writes it has no entry.
     canonical: BTreeMap<String, String>,
     /// What each scope below the top level binds, by name: a parameter, a variable, a function, a class, a catch clause. A name read inside such a scope is what the innermost scope around it binds it to, and the constants of the file and the imports are no answer there. Only the names that can change an answer are kept.
@@ -197,6 +199,13 @@ impl Constants {
                         && let Some(spec) = load.argument.and_then(literal_text)
                     {
                         self.loaded(&declarator.id, &spec, packs);
+                        if matches!(load.kind, ImportKind::Require)
+                            && let BindingPattern::BindingIdentifier(local) = &declarator.id
+                        {
+                            self.required
+                                .entry(local.name.as_str().to_owned())
+                                .or_insert(spec);
+                        }
                     } else if let Some(init) = &declarator.init
                         && let Expression::StaticMemberExpression(member) = peel(init)
                         && let Some(load) = load_of(&member.object)
@@ -276,6 +285,12 @@ impl Constants {
     /// The specifier of the module that `local` is imported from, when the file imports the name and no scope around the position `at` binds it again.
     pub(super) fn spec_of(&self, local: &str, at: u32) -> Option<&str> {
         let spec = self.imported.get(local)?;
+        self.local(local, at).is_none().then_some(spec.as_str())
+    }
+
+    /// The specifier of the module that `local` holds whole by `const local = require('x')` at the top level, when no scope around the position `at` binds the name again.
+    pub(super) fn required_spec(&self, local: &str, at: u32) -> Option<&str> {
+        let spec = self.required.get(local)?;
         self.local(local, at).is_none().then_some(spec.as_str())
     }
 

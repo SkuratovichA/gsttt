@@ -244,9 +244,26 @@ expression: json
       "imports": [
         {
           "flags": 0,
-          "kind": "require",
+          "kind": "re-export-all",
           "line": 1,
           "names": [],
+          "spec": "./a",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        },
+        {
+          "exported": [
+            "default"
+          ],
+          "flags": 0,
+          "kind": "re-export",
+          "line": 1,
+          "names": [
+            "default"
+          ],
           "spec": "./a",
           "to": {
             "unresolved": {
