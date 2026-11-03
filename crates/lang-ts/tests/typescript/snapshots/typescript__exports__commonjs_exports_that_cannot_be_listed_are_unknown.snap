@@ -43,6 +43,28 @@ expression: json
       "contracts": [],
       "embedded": [],
       "imports": [],
+      "path": "src/callback.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "forEach"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
       "path": "src/computed.js",
       "project": "ts .",
       "status": {
@@ -197,7 +219,14 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "add",
+            "uses": []
+          }
+        ],
         "exports": [],
         "heirs": [],
         "on_load": [],

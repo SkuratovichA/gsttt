@@ -95,6 +95,7 @@ pub(crate) fn analyze(
         symbols: Recorder::collect(program, index),
         done: BTreeSet::new(),
         top_call: None,
+        top_assignment: None,
         names_a_load: false,
         names: BTreeMap::new(),
         classes: Vec::new(),
@@ -213,6 +214,8 @@ struct Analyzer<'p, 'a> {
     done: BTreeSet<u32>,
     /// The start of the call that is a statement of its own, when the walk is in a statement of the file's top level that is one: a mock hoists to the top of the file only there.
     top_call: Option<u32>,
+    /// The start of the assignment that is a statement of its own, when the walk is in a statement of the file's top level that is one: it runs once, so a computed `exports[key] = x` there makes one name.
+    top_assignment: Option<u32>,
     /// Whether the file takes a module by a name it does not spell out, as `import(name)`, `require(name)` and `vi.importActual(name)` do: such a load may be of a module a mock replaces, so none counts as replaced.
     names_a_load: bool,
     /// The name a call or a `new` is stored under, `appRouter` for `const appRouter = router({…})`, by its start.
@@ -1370,6 +1373,27 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
+    /// `exports[key] = value` as a statement of the top level makes one name. A literal key names it; any other key cannot be read by a written name, so what the value hands out is exported under its own names, which keeps a walk from them reaching the importers that take the module.
+    fn computed_export(&mut self, key: &Expression<'_>, value: &Expression<'_>) {
+        let value = assigned_value(value);
+        if let Some(name) = literal_text(key) {
+            self.export_value(&name, value);
+            return;
+        }
+        match value {
+            Expression::ObjectExpression(_) => {
+                for (name, value) in commonjs_exports("module.exports", value).unwrap_or_default() {
+                    self.export_value(&name, value);
+                }
+            }
+            Expression::Identifier(local) => {
+                let name = local.name.as_str();
+                self.export(name, ExportTarget::Local(name.to_owned()));
+            }
+            _ => {}
+        }
+    }
+
     /// `exports` or `module.exports` handed to a call, as `Object.assign(module.exports, x)` and `factory(exports)` do, may get any name. `Object.defineProperty(exports, '__esModule', …)`, which every compiled file has, gets none that matters.
     fn exports_handed_to(&mut self, call: &CallExpression<'_>) {
         if self.exports_unknown
@@ -1852,11 +1876,16 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             self.commonjs_export(&target, &it.right);
             self.assignment(&target, &it.right, it.span.start, false);
         }
-        // `exports[name] = x` gives a name that is not written in the file.
+        // `exports[name] = x` gives a name that is not written in the file, unless it is a statement of the top level.
         if let AssignmentTarget::ComputedMemberExpression(member) = &it.left
             && is_exports_object(&member.object)
         {
-            self.exports_unknown = true;
+            if self.top_assignment == Some(it.span.start) {
+                self.computed_export(&member.expression, &it.right);
+            } else {
+                // In a loop, a function or a condition it can make any number of names.
+                self.exports_unknown = true;
+            }
         }
         if it.operator != AssignmentOperator::Assign {
             self.access = Some(self.modification(it.span));
@@ -2163,6 +2192,15 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 Statement::ExpressionStatement(statement) => {
                     match statement.expression.get_inner_expression() {
                         Expression::CallExpression(call) => Some(call.span.start),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            self.top_assignment = match statement {
+                Statement::ExpressionStatement(statement) => {
+                    match statement.expression.get_inner_expression() {
+                        Expression::AssignmentExpression(assignment) => Some(assignment.span.start),
                         _ => None,
                     }
                 }

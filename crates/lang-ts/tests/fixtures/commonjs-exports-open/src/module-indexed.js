@@ -1,1 +1,3 @@
-module.exports[k] = 1;
+function add(k) {
+  module.exports[k] = 1;
+}
