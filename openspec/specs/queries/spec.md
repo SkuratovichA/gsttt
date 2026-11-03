@@ -883,3 +883,10 @@ Asked about a name that a CommonJS file writes in place on `exports` or `module.
 #### Scenario: A name written in place lists the files that read it
 - **WHEN** `lib.js` has `exports.run = function () {}` and `exports.stop = function () {}`, `runs.js` has `const lib = require('./lib')` and `lib.run()` at its top level, `stops.js` reads only `lib.stop()`, and impact is asked about `run` in `lib.js`
 - **THEN** impact lists `runs.js` and not `stops.js`
+
+### Requirement: Impact through a destructured name
+Impact of a name SHALL list a file that takes the name out of a module by destructuring, and SHALL leave out a file that destructures only other names of the module.
+
+#### Scenario: A destructured name lists the files that take it
+- **WHEN** `lib.js` exports `a` and `other`, and `taker.js` has `const lib = require('./lib')` and `const { a } = lib`
+- **THEN** impact of `lib.js` for `a` lists `taker.js`, and for `other` does not
