@@ -202,6 +202,15 @@ impl Indexed {
             .collect()
     }
 
+    /// The members the file records as holding a value of a class, as `name of`.
+    pub(crate) fn holds(&self, path: &str) -> Vec<String> {
+        self.symbols(path)
+            .holds
+            .iter()
+            .map(|heir| format!("{} {}", heir.name, heir.of))
+            .collect()
+    }
+
     /// What the file overrides, as `name of`.
     pub(crate) fn overrides(&self, path: &str) -> Vec<String> {
         self.symbols(path)

@@ -71,6 +71,8 @@ pub(crate) struct Table {
     members: HashSet<String>,
     /// The type of each named field, where it is a type of a class.
     fields: HashMap<(String, String), String>,
+    /// `Class.member` for each field and each method taking `self` whose written type is a class, with that class; `Option<Foo>` and `Result<Foo, E>` hold `Foo`. It is apart from `fields`, which a method is not in and which keeps `Option` as the class of a field.
+    holds: HashSet<(String, String)>,
     /// Type aliases, which stand for a type this file does not read through.
     aliases: HashSet<String>,
     /// Names bound from the standard library, whose methods are not any file's.
@@ -82,6 +84,7 @@ impl Table {
         let mut table = Self {
             members: HashSet::new(),
             fields: HashMap::new(),
+            holds: HashSet::new(),
             aliases: HashSet::new(),
             external: imports
                 .iter()
@@ -138,13 +141,15 @@ impl Table {
             }
             ast::Item::Trait(item) => {
                 if let Some(name) = item.name().map(|name| text(&name)) {
+                    let generics = Generics::of(item);
                     for member in item
                         .assoc_item_list()
                         .iter()
                         .flat_map(ast::AssocItemList::assoc_items)
                     {
-                        if let Some(member) = super::assoc_name(&member) {
-                            self.member(&name, &member);
+                        if let Some(label) = super::assoc_name(&member) {
+                            self.member(&name, &label);
+                            self.hold_returned(&name, &label, &member, &generics);
                         }
                     }
                 }
@@ -159,8 +164,9 @@ impl Table {
                         .iter()
                         .flat_map(ast::AssocItemList::assoc_items)
                     {
-                        if let Some(member) = super::assoc_name(&member) {
-                            self.member(&head, &member);
+                        if let Some(label) = super::assoc_name(&member) {
+                            self.member(&head, &label);
+                            self.hold_returned(&head, &label, &member, &generics);
                         }
                     }
                 }
@@ -175,10 +181,74 @@ impl Table {
                 continue;
             };
             self.member(name, &field_name);
-            if let Some(class) = field.ty().and_then(|ty| self.class_of(&ty, generics)) {
+            let Some(ty) = field.ty() else {
+                continue;
+            };
+            self.hold(name, &field_name, &ty, generics);
+            if let Some(class) = self.class_of(&ty, generics) {
                 self.fields.insert((name.to_owned(), field_name), class);
             }
         }
+    }
+
+    /// Records that `owner.member` holds the class of `ty`, unless that is `Self`, the owner itself or a class of the standard library, which no file reads a chain through.
+    fn hold(&mut self, owner: &str, member: &str, ty: &ast::Type, generics: &Generics) {
+        let Some(class) = self.held_class(ty, generics) else {
+            return;
+        };
+        if class != "Self" && class != owner && !self.is_std(&class) {
+            self.holds
+                .insert((super::member_name(owner, member), class));
+        }
+    }
+
+    /// Records what a method that takes `self` returns, as a holder. An associated function without `self` is called on the class and reads through no value.
+    fn hold_returned(
+        &mut self,
+        owner: &str,
+        member: &str,
+        item: &ast::AssocItem,
+        generics: &Generics,
+    ) {
+        let ast::AssocItem::Fn(method) = item else {
+            return;
+        };
+        let takes_self = method
+            .param_list()
+            .is_some_and(|list| list.self_param().is_some());
+        if let Some(ty) = method.ret_type().and_then(|ret| ret.ty())
+            && takes_self
+        {
+            self.hold(owner, member, &ty, &generics.with(method));
+        }
+    }
+
+    /// The class a member that is written as `ty` hands out: as `class_of` says it, looking inside `Option` and `Result` for the value, because `x.get().expect("..").read()` reads through the `Foo` of an `Option<Foo>`.
+    fn held_class(&self, ty: &ast::Type, generics: &Generics) -> Option<String> {
+        match ty {
+            ast::Type::RefType(ty) => self.held_class(&ty.ty()?, generics),
+            ast::Type::ParenType(ty) => self.held_class(&ty.ty()?, generics),
+            ast::Type::PathType(path) => {
+                let segment = path.path()?.segment()?;
+                if matches!(text(&segment.name_ref()?).as_str(), "Option" | "Result") {
+                    return self.held_class(&first_type_arg(&segment)?, generics);
+                }
+                // `Self::Item` is a type only the implementation knows.
+                let first = path.path()?.first_segment()?.name_ref()?;
+                if path.path()?.qualifier().is_some() && text(&first) == "Self" {
+                    return None;
+                }
+                self.class_of(ty, generics)
+            }
+            _ => self.class_of(ty, generics),
+        }
+    }
+
+    /// Each member of a class of the file that holds a value of a class, as the name `Class.member` and the class it holds. The order is not defined.
+    pub(super) fn holders(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.holds
+            .iter()
+            .map(|(name, class)| (name.as_str(), class.as_str()))
     }
 
     /// Whether the file declares `class.member`.
@@ -223,6 +293,17 @@ impl Table {
 /// The pointers and lazy cells whose methods are those of what they hold: `Arc<Foo>` and `Lazy<Foo>` are of the class `Foo`.
 const HOLDERS: &[&str] = &["Box", "Rc", "Arc", "Lazy", "LazyLock"];
 
+/// The first type among the generic arguments of a path segment.
+fn first_type_arg(segment: &ast::PathSegment) -> Option<ast::Type> {
+    segment
+        .generic_arg_list()?
+        .generic_args()
+        .find_map(|arg| match arg {
+            ast::GenericArg::TypeArg(arg) => arg.ty(),
+            _ => None,
+        })
+}
+
 /// The type inside the holders that wrap `ty`, `ty` itself when it is held by none.
 fn unwrapped(ty: &ast::Type) -> ast::Type {
     let held = match ty {
@@ -234,13 +315,7 @@ fn unwrapped(ty: &ast::Type) -> ast::Type {
                     .name_ref()
                     .is_some_and(|name| HOLDERS.contains(&text(&name).as_str()))
             })
-            .and_then(|segment| segment.generic_arg_list())
-            .and_then(|args| {
-                args.generic_args().find_map(|arg| match arg {
-                    ast::GenericArg::TypeArg(arg) => arg.ty(),
-                    _ => None,
-                })
-            }),
+            .and_then(|segment| first_type_arg(&segment)),
         _ => None,
     };
     held.map_or_else(|| ty.clone(), |inner| unwrapped(&inner))
@@ -257,7 +332,12 @@ pub(super) struct Generics {
 impl Generics {
     /// The parameters an item declares, with their bounds and those of its `where`.
     pub(super) fn of(item: &impl HasGenericParams) -> Self {
-        let mut generics = Self::default();
+        Self::default().with(item)
+    }
+
+    /// These parameters and those an item declares, as a method has the parameters of its block and its own.
+    pub(super) fn with(&self, item: &impl HasGenericParams) -> Self {
+        let mut generics = self.clone();
         for param in item
             .generic_param_list()
             .into_iter()

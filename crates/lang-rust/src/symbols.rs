@@ -375,6 +375,14 @@ impl<'a> Recorder<'a> {
     }
 
     fn finish(self, imports: &[Import]) -> Read {
+        let mut holds: Vec<Heir> = self
+            .table
+            .holders()
+            .map(|(name, of)| Heir {
+                name: name.to_owned(),
+                of: of.to_owned(),
+            })
+            .collect();
         let Self {
             mut entries,
             mut on_load,
@@ -426,6 +434,8 @@ impl<'a> Recorder<'a> {
         heirs.dedup();
         overrides.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
         overrides.dedup();
+        holds.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
+        holds.dedup();
         Read {
             symbols: Symbols {
                 declared,
@@ -433,7 +443,7 @@ impl<'a> Recorder<'a> {
                 exports: Vec::new(),
                 heirs,
                 overrides,
-                holds: Vec::new(),
+                holds,
                 reads: reads.into_iter().collect(),
             },
             exports: exports.into_iter().collect(),
