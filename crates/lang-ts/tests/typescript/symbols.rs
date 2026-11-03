@@ -981,6 +981,59 @@ fn a_member_of_a_field_of_a_class_below_the_top_level_is_read_on_an_unknown_valu
 }
 
 #[test]
+#[scenario("typescript", "A member read on a global builtin records no name")]
+fn a_member_read_on_a_global_builtin_records_no_name() -> Result<(), Box<dyn Error>> {
+    let json = run("reads-builtin")?;
+    assert_eq!(reads(&json, "src/global.js"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read on a proxy or on globalThis records the name"
+)]
+fn a_member_read_on_a_proxy_or_on_global_this_records_the_name() -> Result<(), Box<dyn Error>> {
+    let json = run("reads-builtin")?;
+    assert_eq!(reads(&json, "src/proxy.js"), ["held", "hung", "proxied"]);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read on a global name the file binds records the name"
+)]
+fn a_member_read_on_a_global_name_the_file_binds_records_the_name() -> Result<(), Box<dyn Error>> {
+    let json = run("reads-builtin")?;
+    assert_eq!(reads(&json, "src/shadow.js"), ["entries", "from"]);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read on a Node module or on a value made by one records no name"
+)]
+fn a_member_read_on_a_node_module_or_on_a_value_made_by_one_records_no_name()
+-> Result<(), Box<dyn Error>> {
+    let json = run("reads-builtin")?;
+    // `normalize`, `close`, `listen` and `set` are the reads on `path`, `server`, `second` and `late`. `createServer` is the destructuring itself, which reads the name on the module as it always did.
+    assert_eq!(
+        reads(&json, "src/node.js"),
+        [
+            "createServer",
+            "madeRead",
+            "mixedRead",
+            "notNode",
+            "parameterRead"
+        ]
+    );
+    Ok(())
+}
+
+#[test]
 #[scenario("typescript", "An indexed type names the member")]
 fn an_indexed_type_names_the_member() -> Result<(), Box<dyn Error>> {
     let json = run("symbols-reads")?;

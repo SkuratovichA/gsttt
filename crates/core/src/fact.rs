@@ -353,7 +353,7 @@ pub struct Symbols {
     pub heirs: Vec<Heir>,
     /// The heads a value of which may run the members of a name: `GitProvider` for `class Aws implements GitProvider`, `Base` for `class Sub extends Base`. It is kept apart from `heirs`, which means "takes the members of": a Go embedding takes members without any dispatch, since a call on the embedded type never reaches the outer type. Sorted by name and then by head, each pair once.
     pub overrides: Vec<Heir>,
-    /// The member names the file reads on a receiver whose class the connector does not know, such as `place` for `x.place()` or `const { place } = x`, sorted, once each. A file that holds a class and never reads the name of one of its members cannot call that member.
+    /// The member names the file reads on a receiver whose class the connector does not know, such as `place` for `x.place()` or `const { place } = x`, and on a class that a name below the top level holds, sorted, once each. A read on a builtin, such as `Object.entries(x)` or `path.normalize(p)`, is no read of a member of the repository and is not listed. A file that holds a class and never reads the name of one of its members cannot call that member.
     pub reads: Vec<String>,
 }
 

@@ -1,0 +1,383 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [],
+      "path": "src/global.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "pairs",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "copy",
+            "uses": [
+              "text"
+            ]
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "text",
+            "uses": [
+              "copy"
+            ]
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "store",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [
+          {
+            "name": "store",
+            "of": "WeakMap"
+          }
+        ],
+        "on_load": [
+          "copy",
+          "pairs",
+          "store.get",
+          "text"
+        ],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "path"
+          ],
+          "flags": 0,
+          "kind": "require",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "node:path",
+          "to": "builtin"
+        },
+        {
+          "exported": [
+            "http"
+          ],
+          "flags": 0,
+          "kind": "require",
+          "line": 2,
+          "names": [
+            "default"
+          ],
+          "spec": "node:http",
+          "to": "builtin"
+        },
+        {
+          "exported": [
+            "createServer"
+          ],
+          "flags": 0,
+          "kind": "require",
+          "line": 3,
+          "names": [
+            "createServer"
+          ],
+          "spec": "node:http",
+          "to": "builtin"
+        },
+        {
+          "exported": [
+            "path2"
+          ],
+          "flags": 0,
+          "kind": "require",
+          "line": 11,
+          "names": [
+            "default"
+          ],
+          "spec": "./path",
+          "to": {
+            "file": "src/path.js"
+          }
+        }
+      ],
+      "path": "src/node.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "server",
+            "uses": [
+              "http.createServer"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "second",
+            "uses": [
+              "createServer"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "late",
+            "uses": [
+              "run"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "mixed",
+            "uses": []
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "made",
+            "uses": []
+          },
+          {
+            "end": 22,
+            "line": 13,
+            "name": "run",
+            "uses": [
+              "late",
+              "made",
+              "mixed",
+              "path.normalize",
+              "path2.notNode",
+              "second.listen",
+              "server"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [
+          {
+            "name": "second",
+            "of": "createServer"
+          }
+        ],
+        "on_load": [
+          "createServer",
+          "http.createServer",
+          "late",
+          "mixed"
+        ],
+        "overrides": [],
+        "reads": [
+          "createServer",
+          "madeRead",
+          "mixedRead",
+          "notNode",
+          "parameterRead"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [],
+      "path": "src/path.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "exports"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [],
+      "path": "src/proxy.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "wrapped",
+            "uses": [
+              "load"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 3,
+            "name": "call",
+            "uses": [
+              "wrapped.proxied"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "load",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [
+          {
+            "name": "wrapped",
+            "of": "Proxy"
+          }
+        ],
+        "on_load": [
+          "load"
+        ],
+        "overrides": [],
+        "reads": [
+          "held",
+          "hung",
+          "proxied"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [],
+      "path": "src/shadow.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "show",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Buffer",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [
+          "Buffer"
+        ],
+        "overrides": [],
+        "reads": [
+          "entries",
+          "from"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

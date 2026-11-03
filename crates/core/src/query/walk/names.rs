@@ -1510,6 +1510,20 @@ impl<'w, 'a> Step<'w, 'a> {
                     via.taken = Taken::Everything;
                     via.used |= self.place(importer, symbols, import.line);
                 } else {
+                    // A class taken by a local below the top level is used where the file names the member on it, or reads the member on some value, as a bare use of an imported class is.
+                    if import.kind == ImportKind::Require
+                        && let Name::Member(class, member) = name
+                        && import.names.iter().any(|taken| taken == class)
+                        && !symbols.reads_member(member)
+                    {
+                        let local = Local {
+                            name: class,
+                            member: Some(member),
+                            inner: None,
+                        };
+                        via.used |= self.users(importer, symbols, &[local]);
+                        return;
+                    }
                     self.use_taken(name, importer, symbols, import, via);
                 }
             }

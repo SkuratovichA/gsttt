@@ -1,0 +1,5 @@
+const pairs = Object.entries(source)
+const copy = Buffer.from(text)
+const text = JSON.stringify(Reflect.ownKeys(copy))
+const store = new WeakMap()
+store.get(pairs)

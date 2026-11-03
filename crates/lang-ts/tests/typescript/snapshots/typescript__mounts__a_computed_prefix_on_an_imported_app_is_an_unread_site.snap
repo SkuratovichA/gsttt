@@ -184,7 +184,6 @@ expression: json
         "overrides": [],
         "reads": [
           "BASE",
-          "env",
           "use"
         ]
       },
@@ -307,7 +306,6 @@ expression: json
         "overrides": [],
         "reads": [
           "BASE",
-          "env",
           "use"
         ]
       },

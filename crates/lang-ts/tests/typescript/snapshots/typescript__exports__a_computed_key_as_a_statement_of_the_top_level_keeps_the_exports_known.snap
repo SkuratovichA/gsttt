@@ -195,9 +195,7 @@ expression: json
           "key"
         ],
         "overrides": [],
-        "reads": [
-          "for"
-        ]
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
