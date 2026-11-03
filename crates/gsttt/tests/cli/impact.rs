@@ -755,6 +755,29 @@ fn a_name_a_commonjs_file_writes_in_place_lists_the_files_that_read_it() {
     assert_eq!(paths(&answer["affected"]), ["src/runs.js"], "{answer}");
 }
 
+/// The real connector reading a destructuring: a file that takes `a` out of a module is a caller of `a`, and not of the other names of the module.
+#[scenario("queries", "A destructured name lists the files that take it")]
+#[test]
+fn a_destructured_name_lists_the_files_that_take_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "lib.js",
+        "function a() {}\n\nfunction other() {}\n\nmodule.exports = { a, other };\n",
+    );
+    write(
+        &repo,
+        "taker.js",
+        "const lib = require('./lib');\n\nfunction run() {\n  const { a } = lib;\n  return a();\n}\n\nmodule.exports = { run };\n",
+    );
+
+    let other = json(&sandbox.run_in(&repo, &["--json", "impact", "lib.js", "--name", "other"]));
+    assert_eq!(paths(&other["affected"]), ["lib.js"], "{other}");
+    let taken = json(&sandbox.run_in(&repo, &["--json", "impact", "lib.js", "--name", "a"]));
+    assert_eq!(paths(&taken["affected"]), ["lib.js", "taker.js"], "{taken}");
+}
+
 #[test]
 fn a_path_the_index_does_not_hold_does_not_fail_the_others() {
     let sandbox = Sandbox::new();
