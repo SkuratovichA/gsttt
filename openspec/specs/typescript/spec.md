@@ -1960,6 +1960,10 @@ A static call on a class, `Service.make()`, SHALL give a value of that class, an
 - **WHEN** a function has `new FixTracker(a).retain(b).remove(c)`, `const t = new FixTracker(a); t.retain(b).remove(c)` or `Service.make().with(1).place()`
 - **THEN** it uses `FixTracker.retain` and `FixTracker.remove`, or `Service.with` and `Service.place`
 
+#### Scenario: A static call on a class bound by require gives that class
+- **WHEN** a file has `const Service = require('./service')` and a function with `const s = Service.make(); s.place()`
+- **THEN** the function uses `Service.place`
+
 #### Scenario: A call on a lower-case name or a namespace import names no class
 - **WHEN** a function has `logger.child().info()` or `lib.make().place()` with `lib` imported as a namespace
 - **THEN** the file reads `info` and `place` on a value of an unknown class and uses no member of `Service`
