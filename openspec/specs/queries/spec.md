@@ -933,3 +933,18 @@ A change to a router in one package SHALL reach the files that call the paths th
 #### Scenario: A router of another package reaches the client of the mounted path
 - **WHEN** an app of one package mounts a router of a second package at `/ext`, a client of a third package calls `/ext/x`, and the router file is the changed path
 - **THEN** the affected files are the app and the client, and the client's reason is a call of `http GET /ext/x` through a contract
+
+### Requirement: Callers through what a factory gives
+Asked about a member, `impact` SHALL list the file that gets a value of the class from a static call on it or from a function that gives it, and reads that member on the value, and a file that reads the member on a value that a third file passes on. A file that calls the factory and reads no such member SHALL NOT be listed.
+
+#### Scenario: A caller through a static factory and through a function factory is listed
+- **WHEN** `service.ts` declares `Service` with `place`, a static `make` and `makeService(): Service`, `by-static.ts` has `const s = Service.make(); s.place()` and `by-function.ts` has `const s = makeService(); s.place()`, and impact is asked about `Service.place`
+- **THEN** impact lists `by-static.ts` and `by-function.ts`
+
+#### Scenario: A file that calls a factory and reads no such member is not listed
+- **WHEN** a file has `Service.make().other()` and `makeService().other()`, and another only `makeService()`
+- **THEN** impact asked about `Service.place` lists neither
+
+#### Scenario: A value made by a factory and passed across a third file is a caller
+- **WHEN** `service.ts` has `export const made = makeService()`, `third.ts` has `export { made } from './service'` and `shared.ts` has `made.place()`
+- **THEN** impact asked about `Service.place` lists `shared.ts`
