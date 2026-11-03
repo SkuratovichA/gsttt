@@ -13,7 +13,12 @@ expression: "tree.file_json(\"requests_module.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "r"
+      ],
       "to": {
         "external": "requests"
       }
@@ -29,6 +34,35 @@ expression: "tree.file_json(\"requests_module.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "BASE",
+    "cancel",
+    "r"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "BASE",
+        "line": 3,
+        "end": 3,
+        "uses": []
+      },
+      {
+        "name": "cancel",
+        "line": 6,
+        "end": 7,
+        "uses": [
+          "BASE",
+          "r.post"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "requests_module.py",
   "project": "python ."
 }

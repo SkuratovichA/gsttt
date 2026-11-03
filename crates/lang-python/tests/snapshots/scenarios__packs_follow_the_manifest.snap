@@ -12,8 +12,11 @@ expression: "tree.file_json(\"app.py\")"
       "spec": "fastapi",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "APIRouter"
+      ],
+      "exported": [
         "APIRouter"
       ],
       "to": {
@@ -26,8 +29,11 @@ expression: "tree.file_json(\"app.py\")"
       "spec": "flask",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "Flask"
+      ],
+      "exported": [
         "Flask"
       ],
       "to": {
@@ -45,6 +51,73 @@ expression: "tree.file_json(\"app.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "APIRouter",
+    "Flask",
+    "app",
+    "fast_view",
+    "flask_view",
+    "router"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "app",
+        "line": 4,
+        "end": 4,
+        "uses": [
+          "Flask",
+          "Flask.__init__"
+        ]
+      },
+      {
+        "name": "router",
+        "line": 5,
+        "end": 5,
+        "uses": [
+          "APIRouter",
+          "APIRouter.__init__"
+        ]
+      },
+      {
+        "name": "flask_view",
+        "line": 8,
+        "end": 10,
+        "uses": [
+          "app.route"
+        ]
+      },
+      {
+        "name": "fast_view",
+        "line": 13,
+        "end": 15,
+        "uses": [
+          "router.get"
+        ]
+      }
+    ],
+    "on_load": [
+      "APIRouter",
+      "APIRouter.__init__",
+      "Flask",
+      "Flask.__init__",
+      "app.route",
+      "router.get"
+    ],
+    "exports": [],
+    "heirs": [
+      {
+        "name": "app",
+        "of": "Flask"
+      },
+      {
+        "name": "router",
+        "of": "APIRouter"
+      }
+    ],
+    "overrides": [],
+    "reads": []
+  },
   "path": "app.py",
   "project": "python ."
 }

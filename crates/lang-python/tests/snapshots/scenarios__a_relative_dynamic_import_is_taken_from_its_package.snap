@@ -13,16 +13,24 @@ expression: "tree.file_json(\"app/named.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "importlib"
+      ],
       "to": "builtin"
     },
     {
       "spec": "importlib",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
         "import_module"
+      ],
+      "exported": [
+        "load"
       ],
       "to": "builtin"
     },
@@ -83,6 +91,21 @@ expression: "tree.file_json(\"app/named.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "importlib",
+    "load"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [
+      "importlib.import_module",
+      "load"
+    ],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "app/named.py",
   "project": "python ."
 }

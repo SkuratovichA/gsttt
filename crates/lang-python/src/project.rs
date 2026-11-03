@@ -309,6 +309,10 @@ impl Project for PythonProject {
         crate::parse::parse(self, file)
     }
 
+    fn code(&self, file: &SourceFile<'_>) -> Option<String> {
+        crate::code::blanked(file)
+    }
+
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution {
         crate::resolve::resolve(self, from, import)
     }

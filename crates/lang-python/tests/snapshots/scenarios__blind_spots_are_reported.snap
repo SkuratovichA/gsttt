@@ -98,6 +98,16 @@ expression: "tree.json[\"projects\"]"
           "settings read by environs, django-environ or python-decouple",
           "variable names held in variables"
         ]
+      },
+      {
+        "kind": "symbol",
+        "role": "calls",
+        "via": [],
+        "blind_spots": [
+          "functions replaced at run time, by monkeypatching or setattr",
+          "names that Django reads from a string, such as a settings path, a model label or a URL name",
+          "pytest fixtures, which a test reaches by a parameter name that no import links"
+        ]
       }
     ]
   }

@@ -35,9 +35,29 @@ const DBAPI_GAPS: [&str; 4] = [
     "a statement whose table or whole clause is computed does not parse and names no table",
 ];
 
-/// Gaps of every Python project, whatever its packs: contracts no pack of this connector reads.
+/// The kind under which the gaps of the name-level answers are told: a name that is used with no import or call a reading can follow is not a contract of any pack, but an answer about a name still has to say it cannot see it.
+fn symbol_kind() -> ContractKind {
+    ContractKind::Other("symbol".to_owned())
+}
+
+/// Gaps of every Python project, whatever its packs: contracts no pack of this connector reads, and the uses of a name that no import or call links.
 fn always() -> Vec<(ContractKind, Role, &'static str)> {
     vec![
+        (
+            symbol_kind(),
+            Role::Calls,
+            "pytest fixtures, which a test reaches by a parameter name that no import links",
+        ),
+        (
+            symbol_kind(),
+            Role::Calls,
+            "names that Django reads from a string, such as a settings path, a model label or a URL name",
+        ),
+        (
+            symbol_kind(),
+            Role::Calls,
+            "functions replaced at run time, by monkeypatching or setattr",
+        ),
         (
             ContractKind::Graphql,
             Role::Serves,
@@ -199,5 +219,19 @@ mod tests {
         // The words are a copy of the numbers in `link`, which they would silently outlive.
         assert!(MOUNTS_UNFOLLOWED.contains(&format!("deeper than {MAX_DEPTH} routers")));
         assert!(MOUNTS_UNFOLLOWED.contains(&format!("in more than {MAX_WAYS} ways")));
+    }
+
+    #[test]
+    fn a_project_without_packs_still_names_the_uses_of_a_name_it_cannot_follow() {
+        let provides = provides(&[]);
+        let symbols = provides
+            .iter()
+            .find(|provide| provide.kind == symbol_kind())
+            .map(|provide| provide.blind_spots.as_slice())
+            .unwrap_or_default();
+        assert_eq!(symbols.len(), 3, "{symbols:?}");
+        assert!(symbols.iter().any(|spot| spot.contains("pytest fixtures")));
+        assert!(symbols.iter().any(|spot| spot.contains("Django")));
+        assert!(symbols.iter().any(|spot| spot.contains("monkeypatching")));
     }
 }

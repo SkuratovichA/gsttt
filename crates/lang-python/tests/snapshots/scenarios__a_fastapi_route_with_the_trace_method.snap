@@ -13,8 +13,12 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
         "spec": "fastapi",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "APIRouter",
+          "FastAPI"
+        ],
+        "exported": [
           "APIRouter",
           "FastAPI"
         ],
@@ -33,6 +37,73 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
     ],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "APIRouter",
+      "FastAPI",
+      "app",
+      "echo",
+      "probe",
+      "router"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "router",
+          "line": 3,
+          "end": 3,
+          "uses": [
+            "APIRouter",
+            "APIRouter.__init__"
+          ]
+        },
+        {
+          "name": "app",
+          "line": 4,
+          "end": 4,
+          "uses": [
+            "FastAPI",
+            "FastAPI.__init__"
+          ]
+        },
+        {
+          "name": "probe",
+          "line": 7,
+          "end": 9,
+          "uses": [
+            "router.trace"
+          ]
+        },
+        {
+          "name": "echo",
+          "line": 12,
+          "end": 14,
+          "uses": [
+            "app.trace"
+          ]
+        }
+      ],
+      "on_load": [
+        "APIRouter",
+        "APIRouter.__init__",
+        "FastAPI",
+        "FastAPI.__init__",
+        "app.trace",
+        "router.trace"
+      ],
+      "exports": [],
+      "heirs": [
+        {
+          "name": "app",
+          "of": "FastAPI"
+        },
+        {
+          "name": "router",
+          "of": "APIRouter"
+        }
+      ],
+      "overrides": [],
+      "reads": []
+    },
     "path": "app.py",
     "project": "python ."
   },

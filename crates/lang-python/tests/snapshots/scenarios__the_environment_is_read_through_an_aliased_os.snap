@@ -13,7 +13,12 @@ expression: "tree.file_json(\"environment.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "_os"
+      ],
       "to": "builtin"
     }
   ],
@@ -39,6 +44,48 @@ expression: "tree.file_json(\"environment.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "A",
+    "B",
+    "C",
+    "_os"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "A",
+        "line": 3,
+        "end": 3,
+        "uses": [
+          "_os.getenv"
+        ]
+      },
+      {
+        "name": "B",
+        "line": 4,
+        "end": 4,
+        "uses": [
+          "_os.environ"
+        ]
+      },
+      {
+        "name": "C",
+        "line": 5,
+        "end": 5,
+        "uses": [
+          "_os.environ.get"
+        ]
+      }
+    ],
+    "on_load": [
+      "_os.environ.get",
+      "_os.getenv"
+    ],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "environment.py",
   "project": "python ."
 }

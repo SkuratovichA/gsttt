@@ -12,8 +12,12 @@ expression: "tree.file_json(\"settings.py\")"
       "spec": "pydantic_settings",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "BaseSettings",
+        "SettingsConfigDict"
+      ],
+      "exported": [
         "BaseSettings",
         "SettingsConfigDict"
       ],
@@ -34,6 +38,56 @@ expression: "tree.file_json(\"settings.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "BaseSettings",
+    "Settings",
+    "SettingsConfigDict"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "Settings",
+        "line": 4,
+        "end": 7,
+        "uses": [
+          "BaseSettings"
+        ]
+      },
+      {
+        "name": "Settings.model_config",
+        "line": 5,
+        "end": 5,
+        "uses": [
+          "SettingsConfigDict",
+          "SettingsConfigDict.__init__"
+        ]
+      },
+      {
+        "name": "Settings.port",
+        "line": 7,
+        "end": 7,
+        "uses": []
+      }
+    ],
+    "on_load": [
+      "SettingsConfigDict",
+      "SettingsConfigDict.__init__"
+    ],
+    "exports": [],
+    "heirs": [
+      {
+        "name": "Settings",
+        "of": "BaseSettings"
+      }
+    ],
+    "overrides": [
+      {
+        "name": "Settings",
+        "of": "BaseSettings"
+      }
+    ],
+    "reads": []
+  },
   "path": "settings.py",
   "project": "python ."
 }

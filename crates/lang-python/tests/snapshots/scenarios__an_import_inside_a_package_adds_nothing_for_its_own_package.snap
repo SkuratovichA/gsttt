@@ -13,7 +13,12 @@ expression: tree.file_json(file)
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "pkg.sub.leaf"
+      ],
       "to": {
         "file": "pkg/sub/leaf.py"
       }
@@ -22,8 +27,11 @@ expression: tree.file_json(file)
       "spec": ".leaf",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "value"
+      ],
+      "exported": [
         "value"
       ],
       "to": {
@@ -34,8 +42,11 @@ expression: tree.file_json(file)
       "spec": ".",
       "kind": "static",
       "line": 3,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "leaf"
+      ],
+      "exported": [
         "leaf"
       ],
       "to": {
@@ -46,6 +57,19 @@ expression: tree.file_json(file)
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "leaf",
+    "pkg",
+    "value"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "pkg/sub/sibling.py",
   "project": "python ."
 }

@@ -13,7 +13,12 @@ expression: "tree.file_json(\"main.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "both"
+      ],
       "to": {
         "file": "both/__init__.py"
       }
@@ -23,7 +28,12 @@ expression: "tree.file_json(\"main.py\")"
       "kind": "static",
       "line": 2,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "stubbed"
+      ],
       "to": {
         "files": [
           "stubbed.py",
@@ -35,6 +45,18 @@ expression: "tree.file_json(\"main.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "both",
+    "stubbed"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "main.py",
   "project": "python ."
 }

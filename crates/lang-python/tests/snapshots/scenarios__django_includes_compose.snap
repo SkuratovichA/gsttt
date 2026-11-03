@@ -13,8 +13,12 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
         "spec": "django.urls",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "include",
+          "path"
+        ],
+        "exported": [
           "include",
           "path"
         ],
@@ -36,6 +40,32 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
     "contracts": [],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "include",
+      "path",
+      "urlpatterns"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "urlpatterns",
+          "line": 3,
+          "end": 5,
+          "uses": [
+            "include",
+            "path"
+          ]
+        }
+      ],
+      "on_load": [
+        "include",
+        "path"
+      ],
+      "exports": [],
+      "heirs": [],
+      "overrides": [],
+      "reads": []
+    },
     "path": "project/urls.py",
     "project": "python ."
   },
@@ -49,8 +79,11 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
         "spec": "django.urls",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "path"
+        ],
+        "exported": [
           "path"
         ],
         "to": {
@@ -61,8 +94,11 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
         "spec": ".",
         "kind": "static",
         "line": 3,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "views"
+        ],
+        "exported": [
           "views"
         ],
         "to": {
@@ -73,6 +109,32 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
     "contracts": [],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "path",
+      "urlpatterns",
+      "views"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "urlpatterns",
+          "line": 5,
+          "end": 7,
+          "uses": [
+            "path",
+            "views.detail"
+          ]
+        }
+      ],
+      "on_load": [
+        "path",
+        "views.detail"
+      ],
+      "exports": [],
+      "heirs": [],
+      "overrides": [],
+      "reads": []
+    },
     "path": "bookings/urls.py",
     "project": "python ."
   },

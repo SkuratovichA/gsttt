@@ -1,5 +1,7 @@
 //! Text helpers shared by the connectors and by the words of answers: line numbers from byte offsets, counts, names and times.
 
+use std::ops::Range;
+
 use crate::fact::Line;
 
 /// Maps byte offsets to 1-based line numbers, for parsers that report byte spans.
@@ -143,6 +145,53 @@ pub fn tenths(micros: u64, unit: u64) -> String {
         .checked_div(unit)
         .unwrap_or(0);
     format!("{}.{}", tenths / 10, tenths % 10)
+}
+
+/// Stands in for a space where it is part of the program: the indentation of a statement, the inside of a string or of a template.
+pub const SPACE_MARK: u8 = 1;
+/// Stands in for a tab where it is part of the program, as [`SPACE_MARK`] does for a space.
+pub const TAB_MARK: u8 = 2;
+/// Put before a line break inside a value, so that a blank line there still differs once a line is trimmed.
+pub const BREAK_MARK: u8 = 3;
+
+/// The bytes of `text` with every byte of `spans` but a line break replaced by a space, so that every offset and every line stays where it was. `None` when a span does not lie inside the text.
+pub fn blank_spans(text: &str, spans: impl IntoIterator<Item = Range<usize>>) -> Option<Vec<u8>> {
+    let mut bytes = text.as_bytes().to_vec();
+    for span in spans {
+        for byte in bytes.get_mut(span)? {
+            if !matches!(*byte, b'\n' | b'\r') {
+                *byte = b' ';
+            }
+        }
+    }
+    Some(bytes)
+}
+
+/// `bytes` with the whitespace that is part of the program marked, so that two versions of a text compared line by line, with each line trimmed, still differ where it differs. Inside a range of `values` a space becomes [`SPACE_MARK`], a tab [`TAB_MARK`] and a line break is preceded by [`BREAK_MARK`]; inside a range of `indents` a space and a tab are marked and a line break is not. Both lists are sorted by start and their ranges do not overlap. `None` when the marked text is not UTF-8, which it is whenever `bytes` is.
+pub fn mark_whitespace(
+    bytes: &[u8],
+    values: &[(usize, usize)],
+    indents: &[(usize, usize)],
+) -> Option<String> {
+    let mut values = values.iter().peekable();
+    let mut indents = indents.iter().peekable();
+    let mut marked = Vec::with_capacity(bytes.len());
+    for (index, &byte) in bytes.iter().enumerate() {
+        while values.next_if(|&&(_, end)| end <= index).is_some() {}
+        while indents.next_if(|&&(_, end)| end <= index).is_some() {}
+        let inside = |range: Option<&&(usize, usize)>| {
+            range.is_some_and(|&&(start, end)| start <= index && index < end)
+        };
+        let in_value = inside(values.peek());
+        let in_indent = inside(indents.peek());
+        match byte {
+            b' ' if in_value || in_indent => marked.push(SPACE_MARK),
+            b'\t' if in_value || in_indent => marked.push(TAB_MARK),
+            b'\n' if in_value => marked.extend([BREAK_MARK, b'\n']),
+            _ => marked.push(byte),
+        }
+    }
+    String::from_utf8(marked).ok()
 }
 
 #[cfg(test)]
@@ -312,5 +361,22 @@ mod tests {
         // An error about the whole value has no path to lead with, so it keeps serde's words alone.
         let root = message(serde_json::json!(5));
         assert!(root.starts_with("invalid type: integer `5`"), "{root}");
+    }
+
+    #[test]
+    fn blanking_keeps_line_breaks_and_every_offset() {
+        let text = "a # note\r\nb";
+        let blanked = blank_spans(text, std::iter::once(2..8)).unwrap();
+        assert_eq!(blanked, b"a       \r\nb");
+        let all = blank_spans(text, std::iter::once(0..text.len())).unwrap();
+        assert_eq!(all, b"        \r\n ");
+        assert!(blank_spans(text, std::iter::once(3..99)).is_none());
+    }
+
+    #[test]
+    fn whitespace_in_a_value_is_marked_and_in_an_indent_it_is_marked_without_its_break() {
+        let text = "x \n  y \"a b\n c\"";
+        let marked = mark_whitespace(text.as_bytes(), &[(8, 14)], &[(3, 5)]).unwrap();
+        assert_eq!(marked, "x \n\x01\x01y \"a\x01b\x03\n\x01c\"");
     }
 }

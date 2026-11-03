@@ -13,7 +13,12 @@ expression: tree.file_json(path)
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "sa"
+      ],
       "to": {
         "external": "sqlalchemy"
       }
@@ -22,8 +27,11 @@ expression: tree.file_json(path)
       "spec": "alembic",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "op"
+      ],
+      "exported": [
         "op"
       ],
       "to": {
@@ -47,6 +55,33 @@ expression: tree.file_json(path)
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "op",
+    "sa",
+    "upgrade"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "upgrade",
+        "line": 5,
+        "end": 7,
+        "uses": [
+          "op.add_column",
+          "op.create_table",
+          "sa.Column",
+          "sa.Column.__init__",
+          "sa.Integer",
+          "sa.Text"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "migrations/versions/0001_bookings.py",
   "project": "python ."
 }

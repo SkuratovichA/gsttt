@@ -12,8 +12,11 @@ expression: "tree.file_json(\"app/x.py\")"
       "spec": "app",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "models"
+      ],
+      "exported": [
         "models"
       ],
       "to": {
@@ -24,8 +27,11 @@ expression: "tree.file_json(\"app/x.py\")"
       "spec": "app.models",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "Booking"
+      ],
+      "exported": [
         "Booking"
       ],
       "to": {
@@ -36,8 +42,11 @@ expression: "tree.file_json(\"app/x.py\")"
       "spec": "app",
       "kind": "static",
       "line": 3,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "settings"
+      ],
+      "exported": [
         "settings"
       ],
       "to": {
@@ -48,6 +57,19 @@ expression: "tree.file_json(\"app/x.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "Booking",
+    "models",
+    "settings"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "app/x.py",
   "project": "python ."
 }

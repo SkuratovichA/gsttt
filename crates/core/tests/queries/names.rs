@@ -9,7 +9,7 @@ use gsttt_core::engine::snapshot::{Header, Snapshot, Stored, now, write};
 use gsttt_core::fact::{FileTags, Import, ImportFlags, ImportKind};
 use gsttt_core::index::{Freshness, Index};
 use gsttt_core::query::{Affected, Answer, Caller, Entries, Impact, ImpactRequest, Load, impact};
-use gsttt_core::testing::{Code, Tree, file};
+use gsttt_core::testing::{Code, To, Tree, file};
 use gsttt_scenario::scenario;
 use proptest::prelude::*;
 use serde_json::{json, to_value};
@@ -204,6 +204,188 @@ fn a_star_barrel_gets_no_row_when_a_name_is_asked_about() {
     assert_eq!(
         rows(&answer.affected),
         [row("page.ts", 1, "imports helper from index.ts", &["open"])]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A star barrel that lists the name among its own exports keeps its row"
+)]
+#[test]
+fn a_star_barrel_that_lists_the_name_among_its_own_exports_keeps_its_row() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("helper", (1, 2), &[])
+                .declaration("other", (4, 5), &[]),
+        )
+        .exports("a.ts", &["helper", "other"])
+        .re_exports_all("index.ts", "a.ts")
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &["helper"])
+        .imports_names("page.ts", "index.ts", &["helper"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("open", (1, 4), &["helper"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let helper = ask(&index, "a.ts", &["helper"], None);
+    let other = ask(&index, "a.ts", &["other"], None);
+
+    assert_eq!(
+        rows(&helper.affected),
+        [
+            row("index.ts", 1, "re-exports helper from a.ts", &[]),
+            row("page.ts", 1, "imports helper from index.ts", &["open"]),
+        ]
+    );
+    // `other` is not among the names the barrel lists, so it is passed through with no row.
+    assert!(
+        paths(&other.affected).is_empty(),
+        "{:?}",
+        paths(&other.affected)
+    );
+}
+
+#[scenario(
+    "queries",
+    "A star barrel yields to a name it declares and exports itself"
+)]
+#[test]
+fn a_star_barrel_yields_to_a_name_it_declares_and_exports_itself() {
+    let index = Tree::new()
+        .symbols(
+            "base.py",
+            Code::new()
+                .declaration("DEBUG", (1, 1), &[])
+                .declaration("PORT", (2, 2), &[]),
+        )
+        .exports("base.py", &["DEBUG", "PORT"])
+        .re_exports_all("settings.py", "base.py")
+        .symbols("settings.py", Code::new().declaration("DEBUG", (3, 3), &[]))
+        .exports("settings.py", &["DEBUG", "PORT"])
+        .imports_names("app.py", "settings.py", &["DEBUG", "PORT"])
+        .symbols(
+            "app.py",
+            Code::new().declaration("run", (1, 4), &["DEBUG", "PORT"]),
+        )
+        .exports("app.py", &[])
+        .build();
+
+    let debug = ask(&index, "base.py", &["DEBUG"], None);
+    let port = ask(&index, "base.py", &["PORT"], None);
+
+    // `settings.py` declares its own `DEBUG`, so the one of `base.py` goes no further, and `PORT` still does.
+    assert_eq!(paths(&debug.affected), NONE);
+    assert_eq!(
+        rows(&port.affected),
+        [
+            row("app.py", 1, "imports PORT from settings.py", &["run"]),
+            row("settings.py", 1, "re-exports PORT from base.py", &[]),
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A star barrel lists the declaration that reads the name it binds again"
+)]
+#[test]
+fn a_star_barrel_lists_the_declaration_that_reads_the_name_it_binds_again() {
+    let index = Tree::new()
+        .symbols(
+            "base.py",
+            Code::new().declaration("DEBUG", (1, 1), &[]).declaration(
+                "INSTALLED_APPS",
+                (2, 2),
+                &[],
+            ),
+        )
+        .exports("base.py", &["DEBUG", "INSTALLED_APPS"])
+        .re_exports_all("settings.py", "base.py")
+        .symbols(
+            "settings.py",
+            Code::new().declaration("DEBUG", (3, 3), &[]).declaration(
+                "INSTALLED_APPS",
+                (4, 4),
+                &["INSTALLED_APPS"],
+            ),
+        )
+        .exports("settings.py", &["DEBUG", "INSTALLED_APPS"])
+        .imports_names("app.py", "settings.py", &["DEBUG", "INSTALLED_APPS"])
+        .symbols(
+            "app.py",
+            Code::new().declaration("run", (1, 4), &["DEBUG", "INSTALLED_APPS"]),
+        )
+        .exports("app.py", &[])
+        .build();
+
+    let debug = ask(&index, "base.py", &["DEBUG"], None);
+    let apps = ask(&index, "base.py", &["INSTALLED_APPS"], None);
+
+    // `DEBUG = False` reads nothing of `base.py`, and `INSTALLED_APPS = INSTALLED_APPS + [..]` reads the one the star brings in. Neither goes on to `app.py`, because the file binds its own.
+    assert_eq!(paths(&debug.affected), NONE);
+    assert_eq!(
+        rows(&apps.affected),
+        [row(
+            "settings.py",
+            1,
+            "imports INSTALLED_APPS from base.py",
+            &["INSTALLED_APPS"]
+        )]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A star barrel yields to a name another export of it takes by name"
+)]
+#[test]
+fn a_star_barrel_yields_to_a_name_another_export_of_it_takes_by_name() {
+    let index = Tree::new()
+        .symbols(
+            "a.ts",
+            Code::new()
+                .declaration("helper", (1, 2), &[])
+                .declaration("other", (4, 5), &[]),
+        )
+        .exports("a.ts", &["helper", "other"])
+        .symbols("b.ts", Code::new().declaration("helper", (1, 2), &[]))
+        .exports("b.ts", &["helper"])
+        .re_exports_all("index.ts", "a.ts")
+        .re_exports("index.ts", "b.ts", &[("helper", "helper")])
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &["helper", "other"])
+        .imports_names("page.ts", "index.ts", &["helper", "other"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("open", (1, 4), &["helper", "other"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let shadowed = ask(&index, "a.ts", &["helper"], None);
+    let named = ask(&index, "b.ts", &["helper"], None);
+    let passed = ask(&index, "a.ts", &["other"], None);
+
+    // `export { helper } from './b'` beside `export * from './a'` makes the `helper` of the barrel the one of `b.ts`, so the one of `a.ts` reaches neither the barrel nor its importer.
+    assert_eq!(paths(&shadowed.affected), NONE);
+    assert_eq!(
+        rows(&named.affected),
+        [
+            row("index.ts", 1, "re-exports helper from b.ts", &[]),
+            row("page.ts", 1, "imports helper from index.ts", &["open"]),
+        ]
+    );
+    assert_eq!(
+        rows(&passed.affected),
+        [
+            row("index.ts", 1, "re-exports other from a.ts", &[]),
+            row("page.ts", 1, "imports other from index.ts", &["open"]),
+        ]
     );
 }
 
@@ -732,6 +914,148 @@ fn a_namespace_import_goes_on_to_the_member_of_its_class() {
         rows(&answer.affected).last(),
         Some(&row("page.ts", 2, "imports resolver.ts", &["Page.open"]))
     );
+}
+
+/// `pkg/sub.py` declares `foo` and `bar` and `pkg/__init__.py` declares `sub` itself; `b.py` takes `sub` from `pkg` and uses `sub.foo` in `run`, and `c.py` takes it and uses `sub.bar` in `stop`. The import resolves to both files of the package, as a Python `from pkg import sub` does.
+fn package_of_modules(flags: ImportFlags) -> Index {
+    let from_package = || Import {
+        names: vec!["sub".to_owned()],
+        exported: vec!["sub".to_owned()],
+        flags,
+        ..Import::new("pkg", ImportKind::Static, 1)
+    };
+    let package = || To::Files(vec!["pkg/__init__.py".to_owned(), "pkg/sub.py".to_owned()]);
+    Tree::new()
+        .symbols(
+            "pkg/sub.py",
+            Code::new()
+                .declaration("foo", (1, 2), &[])
+                .declaration("bar", (4, 5), &[]),
+        )
+        .exports("pkg/sub.py", &["foo", "bar"])
+        .symbols(
+            "pkg/__init__.py",
+            Code::new().declaration("sub", (1, 1), &[]),
+        )
+        .exports("pkg/__init__.py", &["sub"])
+        .import("b.py", from_package(), package())
+        .symbols("b.py", Code::new().declaration("run", (3, 5), &["sub.foo"]))
+        .exports("b.py", &["run", "sub"])
+        .import("c.py", from_package(), package())
+        .symbols(
+            "c.py",
+            Code::new().declaration("stop", (3, 5), &["sub.bar"]),
+        )
+        .exports("c.py", &["stop", "sub"])
+        .build()
+}
+
+#[scenario(
+    "queries",
+    "A name a package hands out is the module when the file reached is that module"
+)]
+#[test]
+fn a_name_a_package_hands_out_is_the_module_when_the_file_reached_is_that_module() {
+    let index = package_of_modules(ImportFlags::MODULES);
+
+    let foo = ask(&index, "pkg/sub.py", &["foo"], Some(1));
+    let bar = ask(&index, "pkg/sub.py", &["bar"], Some(1));
+    // The `__init__` of the package declares a name `sub` of its own, which is no module, so the import takes that name.
+    let init = ask(&index, "pkg/__init__.py", &["sub"], Some(1));
+
+    assert_eq!(paths(&foo.affected), ["b.py"]);
+    assert_eq!(paths(&bar.affected), ["c.py"]);
+    assert_eq!(paths(&init.affected), ["b.py", "c.py"]);
+}
+
+#[scenario(
+    "queries",
+    "A name a package hands out is no module unless the import says it may be"
+)]
+#[test]
+fn a_name_a_package_hands_out_is_no_module_unless_the_import_says_it_may_be() {
+    let index = package_of_modules(ImportFlags::NONE);
+
+    let foo = ask(&index, "pkg/sub.py", &["foo"], Some(1));
+
+    assert_eq!(paths(&foo.affected), NONE);
+}
+
+/// `a.py` takes `taken` from the file `path`, which declares it, with an import that may name a module, and uses `taken.info` in `run`.
+fn importer_of_a_declared_name(path: &str, taken: &str, spec: &str) -> Index {
+    let used = format!("{taken}.info");
+    Tree::new()
+        .symbols(path, Code::new().declaration(taken, (1, 1), &[]))
+        .exports(path, &[taken])
+        .import(
+            "a.py",
+            Import {
+                names: vec![taken.to_owned()],
+                exported: vec![taken.to_owned()],
+                flags: ImportFlags::MODULES,
+                ..Import::new(spec, ImportKind::Static, 1)
+            },
+            To::Files(vec![path.to_owned()]),
+        )
+        .symbols(
+            "a.py",
+            Code::new().declaration("run", (3, 5), &[used.as_str()]),
+        )
+        .exports("a.py", &["run"])
+        .build()
+}
+
+#[scenario(
+    "queries",
+    "A name a file exports itself is that name and not the module of the same stem"
+)]
+#[test]
+fn a_name_a_file_exports_itself_is_that_name_and_not_the_module_of_the_same_stem() {
+    let file = importer_of_a_declared_name("app/logger.py", "logger", "app.logger");
+    let init = importer_of_a_declared_name("logger/__init__.py", "logger", "logger");
+
+    let by_file = ask(&file, "app/logger.py", &["logger"], Some(1));
+    let by_init = ask(&init, "logger/__init__.py", &["logger"], Some(1));
+
+    assert_eq!(paths(&by_file.affected), ["a.py"]);
+    assert_eq!(paths(&by_init.affected), ["a.py"]);
+}
+
+#[scenario(
+    "queries",
+    "A module stays the module when the package takes it by name and the module exports that name too"
+)]
+#[test]
+fn a_module_stays_the_module_when_the_package_takes_it_by_name_and_the_module_exports_that_name_too()
+ {
+    let index = Tree::new()
+        .symbols(
+            "pkg/cli.py",
+            Code::new()
+                .declaration("cli", (3, 5), &[])
+                .declaration("load_dotenv", (1, 2), &[]),
+        )
+        .exports("pkg/cli.py", &["cli", "load_dotenv"])
+        .import(
+            "pkg/app.py",
+            Import {
+                names: vec!["cli".to_owned()],
+                exported: vec!["cli".to_owned()],
+                flags: ImportFlags::MODULES,
+                ..Import::new(".", ImportKind::Static, 1)
+            },
+            To::Files(vec!["pkg/cli.py".to_owned()]),
+        )
+        .symbols(
+            "pkg/app.py",
+            Code::new().declaration("run", (3, 5), &["cli.load_dotenv"]),
+        )
+        .exports("pkg/app.py", &["run"])
+        .build();
+
+    let module = ask(&index, "pkg/cli.py", &["load_dotenv"], Some(1));
+
+    assert_eq!(paths(&module.affected), ["pkg/app.py"]);
 }
 
 /// `service.ts` declares `Service` with `place`, and `page.ts` imports it and has a `hold` that uses the class alone, reading `read` on some value when it is given.
@@ -1323,23 +1647,23 @@ fn a_walk_that_runs_out_says_nothing_about_stopping() {
     assert!(answer.notes.is_empty(), "{:?}", notes(&answer));
 }
 
-#[scenario("queries", "A Python file asked about by name is followed whole")]
+#[scenario("queries", "A Rust file asked about by name is followed whole")]
 #[test]
-fn a_python_file_asked_about_by_name_is_followed_whole() {
+fn a_rust_file_asked_about_by_name_is_followed_whole() {
     let index = Tree::new()
-        .read_by("python", "lib.py")
-        .read_by("python", "user.py")
-        .read_by("python", "app.py")
-        .imports_names("user.py", "lib.py", &["parse"])
-        .imports("app.py", "user.py")
+        .read_by("rust", "lib.rs")
+        .read_by("rust", "user.rs")
+        .read_by("rust", "app.rs")
+        .imports_names("user.rs", "lib.rs", &["parse"])
+        .imports("app.rs", "user.rs")
         .build();
 
-    let answer = ask(&index, "lib.py", &["parse"], None);
+    let answer = ask(&index, "lib.rs", &["parse"], None);
 
-    assert_eq!(paths(&answer.affected), ["user.py"]);
+    assert_eq!(paths(&answer.affected), ["user.rs"]);
     assert!(
         notes(&answer).contains(
-            &"lib.py is followed whole because its connector records no declarations".to_owned()
+            &"lib.rs is followed whole because its connector records no declarations".to_owned()
         ),
         "{:?}",
         notes(&answer)

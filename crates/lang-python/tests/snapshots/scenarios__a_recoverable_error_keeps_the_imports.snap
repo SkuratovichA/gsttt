@@ -15,7 +15,12 @@ expression: "tree.file_json(\"broken.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "os"
+      ],
       "to": "builtin"
     },
     {
@@ -23,7 +28,12 @@ expression: "tree.file_json(\"broken.py\")"
       "kind": "static",
       "line": 2,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "app.db"
+      ],
       "to": {
         "unresolved": {
           "reason": "unknown-package"

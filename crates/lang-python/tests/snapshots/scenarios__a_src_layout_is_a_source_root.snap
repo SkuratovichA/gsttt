@@ -13,7 +13,12 @@ expression: "tree.file_json(\"tests/test_api.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "booking.api"
+      ],
       "to": {
         "files": [
           "src/booking/__init__.py",
@@ -25,8 +30,11 @@ expression: "tree.file_json(\"tests/test_api.py\")"
       "spec": "booking.api",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "handler"
+      ],
+      "exported": [
         "handler"
       ],
       "to": {
@@ -40,6 +48,18 @@ expression: "tree.file_json(\"tests/test_api.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "booking",
+    "handler"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "tests/test_api.py",
   "project": "python ."
 }

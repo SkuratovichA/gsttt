@@ -13,8 +13,11 @@ expression: "json!({\n    \"main\": tree.file_json(\"app/main.py\"), \"linked\":
         "spec": "fastapi",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "FastAPI"
+        ],
+        "exported": [
           "FastAPI"
         ],
         "to": {
@@ -25,8 +28,12 @@ expression: "json!({\n    \"main\": tree.file_json(\"app/main.py\"), \"linked\":
         "spec": "app",
         "kind": "static",
         "line": 3,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "health",
+          "items"
+        ],
+        "exported": [
           "health",
           "items"
         ],
@@ -48,6 +55,51 @@ expression: "json!({\n    \"main\": tree.file_json(\"app/main.py\"), \"linked\":
     ],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "FastAPI",
+      "app",
+      "health",
+      "items",
+      "ping"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "app",
+          "line": 5,
+          "end": 5,
+          "uses": [
+            "FastAPI",
+            "FastAPI.__init__"
+          ]
+        },
+        {
+          "name": "ping",
+          "line": 11,
+          "end": 13,
+          "uses": [
+            "app.get"
+          ]
+        }
+      ],
+      "on_load": [
+        "FastAPI",
+        "FastAPI.__init__",
+        "app.get",
+        "app.include_router",
+        "health.router",
+        "items.router"
+      ],
+      "exports": [],
+      "heirs": [
+        {
+          "name": "app",
+          "of": "FastAPI"
+        }
+      ],
+      "overrides": [],
+      "reads": []
+    },
     "path": "app/main.py",
     "project": "python ."
   },

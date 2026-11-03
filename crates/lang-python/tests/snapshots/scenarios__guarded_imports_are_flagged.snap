@@ -12,8 +12,11 @@ expression: "tree.file_json(\"guarded.py\")"
       "spec": "typing",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "TYPE_CHECKING"
+      ],
+      "exported": [
         "TYPE_CHECKING"
       ],
       "to": "builtin"
@@ -23,7 +26,12 @@ expression: "tree.file_json(\"guarded.py\")"
       "kind": "static",
       "line": 4,
       "flags": 4,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "a"
+      ],
       "to": {
         "unresolved": {
           "reason": "unknown-package"
@@ -35,7 +43,12 @@ expression: "tree.file_json(\"guarded.py\")"
       "kind": "static",
       "line": 7,
       "flags": 2,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "b"
+      ],
       "to": {
         "unresolved": {
           "reason": "unknown-package"
@@ -46,6 +59,28 @@ expression: "tree.file_json(\"guarded.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "TYPE_CHECKING",
+    "a",
+    "b"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "b",
+        "line": 9,
+        "end": 9,
+        "uses": []
+      }
+    ],
+    "on_load": [
+      "TYPE_CHECKING"
+    ],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "guarded.py",
   "project": "python ."
 }

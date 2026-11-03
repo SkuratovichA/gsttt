@@ -14,7 +14,12 @@ expression: "json!({\n    \"file\": tree.file_json(\"fastapi_router.py\"), \"lin
         "kind": "static",
         "line": 1,
         "flags": 0,
-        "names": [],
+        "names": [
+          "*"
+        ],
+        "exported": [
+          "fa"
+        ],
         "to": {
           "external": "fastapi"
         }
@@ -23,9 +28,12 @@ expression: "json!({\n    \"file\": tree.file_json(\"fastapi_router.py\"), \"lin
         "spec": "fastapi",
         "kind": "static",
         "line": 2,
-        "flags": 0,
+        "flags": 128,
         "names": [
           "APIRouter"
+        ],
+        "exported": [
+          "R"
         ],
         "to": {
           "external": "fastapi"
@@ -42,6 +50,73 @@ expression: "json!({\n    \"file\": tree.file_json(\"fastapi_router.py\"), \"lin
     ],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "R",
+      "app",
+      "fa",
+      "get_booking",
+      "ping",
+      "router"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "app",
+          "line": 4,
+          "end": 4,
+          "uses": [
+            "fa.FastAPI",
+            "fa.FastAPI.__init__"
+          ]
+        },
+        {
+          "name": "router",
+          "line": 5,
+          "end": 5,
+          "uses": [
+            "R",
+            "R.__init__"
+          ]
+        },
+        {
+          "name": "ping",
+          "line": 8,
+          "end": 10,
+          "uses": [
+            "app.get"
+          ]
+        },
+        {
+          "name": "get_booking",
+          "line": 13,
+          "end": 15,
+          "uses": [
+            "router.get"
+          ]
+        }
+      ],
+      "on_load": [
+        "R",
+        "R.__init__",
+        "app.get",
+        "fa.FastAPI",
+        "fa.FastAPI.__init__",
+        "router.get"
+      ],
+      "exports": [],
+      "heirs": [
+        {
+          "name": "app",
+          "of": "fa.FastAPI"
+        },
+        {
+          "name": "router",
+          "of": "R"
+        }
+      ],
+      "overrides": [],
+      "reads": []
+    },
     "path": "fastapi_router.py",
     "project": "python ."
   },

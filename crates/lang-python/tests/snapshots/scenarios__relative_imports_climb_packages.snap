@@ -12,8 +12,11 @@ expression: "tree.file_json(\"app/api/routes.py\")"
       "spec": "..db",
       "kind": "static",
       "line": 1,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "session"
+      ],
+      "exported": [
         "session"
       ],
       "to": {
@@ -24,8 +27,11 @@ expression: "tree.file_json(\"app/api/routes.py\")"
       "spec": ".",
       "kind": "static",
       "line": 2,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "deps"
+      ],
+      "exported": [
         "deps"
       ],
       "to": {
@@ -36,6 +42,18 @@ expression: "tree.file_json(\"app/api/routes.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "deps",
+    "session"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "app/api/routes.py",
   "project": "python ."
 }

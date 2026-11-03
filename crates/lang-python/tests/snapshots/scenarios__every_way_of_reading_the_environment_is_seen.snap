@@ -13,15 +13,23 @@ expression: "tree.file_json(\"config.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "os"
+      ],
       "to": "builtin"
     },
     {
       "spec": "pydantic_settings",
       "kind": "static",
       "line": 3,
-      "flags": 0,
+      "flags": 128,
       "names": [
+        "BaseSettings"
+      ],
+      "exported": [
         "BaseSettings"
       ],
       "to": {
@@ -59,6 +67,74 @@ expression: "tree.file_json(\"config.py\")"
   ],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "A",
+    "B",
+    "BaseSettings",
+    "C",
+    "Settings",
+    "os"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "A",
+        "line": 5,
+        "end": 5,
+        "uses": [
+          "os.environ"
+        ]
+      },
+      {
+        "name": "B",
+        "line": 6,
+        "end": 6,
+        "uses": [
+          "os.environ.get"
+        ]
+      },
+      {
+        "name": "C",
+        "line": 7,
+        "end": 7,
+        "uses": [
+          "os.getenv"
+        ]
+      },
+      {
+        "name": "Settings",
+        "line": 10,
+        "end": 11,
+        "uses": [
+          "BaseSettings"
+        ]
+      },
+      {
+        "name": "Settings.database_url",
+        "line": 11,
+        "end": 11,
+        "uses": []
+      }
+    ],
+    "on_load": [
+      "os.environ.get",
+      "os.getenv"
+    ],
+    "exports": [],
+    "heirs": [
+      {
+        "name": "Settings",
+        "of": "BaseSettings"
+      }
+    ],
+    "overrides": [
+      {
+        "name": "Settings",
+        "of": "BaseSettings"
+      }
+    ],
+    "reads": []
+  },
   "path": "config.py",
   "project": "python ."
 }

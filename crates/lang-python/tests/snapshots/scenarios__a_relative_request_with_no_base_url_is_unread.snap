@@ -13,7 +13,12 @@ expression: "tree.file_json(\"client.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "httpx"
+      ],
       "to": {
         "external": "httpx"
       }
@@ -23,7 +28,12 @@ expression: "tree.file_json(\"client.py\")"
       "kind": "static",
       "line": 2,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "requests"
+      ],
       "to": {
         "external": "requests"
       }
@@ -70,6 +80,80 @@ expression: "tree.file_json(\"client.py\")"
       "detail": "?.get"
     }
   ],
+  "exports": [
+    "BASE",
+    "absolute",
+    "client",
+    "httpx",
+    "module_level",
+    "requests",
+    "session",
+    "unread_base"
+  ],
+  "symbols": {
+    "declared": [
+      {
+        "name": "BASE",
+        "line": 4,
+        "end": 4,
+        "uses": []
+      },
+      {
+        "name": "module_level",
+        "line": 7,
+        "end": 8,
+        "uses": [
+          "requests.get"
+        ]
+      },
+      {
+        "name": "session",
+        "line": 11,
+        "end": 12,
+        "uses": [
+          "requests.Session",
+          "requests.Session.__init__",
+          "requests.Session.get"
+        ]
+      },
+      {
+        "name": "client",
+        "line": 15,
+        "end": 16,
+        "uses": [
+          "httpx.Client",
+          "httpx.Client.__init__",
+          "httpx.Client.get"
+        ]
+      },
+      {
+        "name": "unread_base",
+        "line": 19,
+        "end": 20,
+        "uses": [
+          "BASE",
+          "httpx.Client",
+          "httpx.Client.__init__",
+          "httpx.Client.get"
+        ]
+      },
+      {
+        "name": "absolute",
+        "line": 23,
+        "end": 24,
+        "uses": [
+          "requests.get"
+        ]
+      }
+    ],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": [
+      "API"
+    ]
+  },
   "path": "client.py",
   "project": "python ."
 }

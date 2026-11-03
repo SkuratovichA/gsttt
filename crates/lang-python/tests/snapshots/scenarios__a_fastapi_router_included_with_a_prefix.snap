@@ -13,8 +13,11 @@ expression: "json!({\n    \"bookings\": tree.file_json(\"app/api/bookings.py\"),
         "spec": "fastapi",
         "kind": "static",
         "line": 1,
-        "flags": 0,
+        "flags": 128,
         "names": [
+          "APIRouter"
+        ],
+        "exported": [
           "APIRouter"
         ],
         "to": {
@@ -25,6 +28,46 @@ expression: "json!({\n    \"bookings\": tree.file_json(\"app/api/bookings.py\"),
     "contracts": [],
     "embedded": [],
     "unresolved": [],
+    "exports": [
+      "APIRouter",
+      "get_booking",
+      "router"
+    ],
+    "symbols": {
+      "declared": [
+        {
+          "name": "router",
+          "line": 3,
+          "end": 3,
+          "uses": [
+            "APIRouter",
+            "APIRouter.__init__"
+          ]
+        },
+        {
+          "name": "get_booking",
+          "line": 6,
+          "end": 8,
+          "uses": [
+            "router.get"
+          ]
+        }
+      ],
+      "on_load": [
+        "APIRouter",
+        "APIRouter.__init__",
+        "router.get"
+      ],
+      "exports": [],
+      "heirs": [
+        {
+          "name": "router",
+          "of": "APIRouter"
+        }
+      ],
+      "overrides": [],
+      "reads": []
+    },
     "path": "app/api/bookings.py",
     "project": "python ."
   },

@@ -94,6 +94,8 @@ mod flag_sets {
             ACTUAL = 5;
             /// The names are read from the package as a whole, which a directory of files shares: Go. An edge to a file keeps only the names that file exports.
             PACKAGE = 6;
+            /// A name the import takes may be a module of the package it names, which the walk reads as the module itself when the file it reaches is that module: Python `from pkg import sub`.
+            MODULES = 7;
         }
     }
 
@@ -321,7 +323,7 @@ pub struct FileFacts {
     /// The package the file says it belongs to, in a language where that differs from its directory: the name in a Go package clause. `None` when the language has no such clause or the file was read past errors.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
-    /// The declarations of the file and what each of them refers to, which `impact` follows when it is asked about names. `None` when the connector records none, which only the TypeScript and Go connectors record for now, or when the file was read past errors; `impact` follows such a file whole.
+    /// The declarations of the file and what each of them refers to, which `impact` follows when it is asked about names. `None` when the connector records none, which the Rust connector does not yet, or when the file was read past errors, or holds a star import and uses a name that nothing in it binds, which the star may have brought in; `impact` follows such a file whole.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbols: Option<Symbols>,
 }
@@ -393,7 +395,7 @@ pub struct Declared {
     pub line: Line,
     /// The line it ends on, from 1.
     pub end: Line,
-    /// The names it refers to, sorted, once each, never its own: other declarations of the file, `Class.member` for `this.member` inside the class, the names at the head of the type of `this.field` and, for `this.field.member`, `Type.member` of each, spelled as the type writes it, and the local names the file's imports bind. A top-level variable also lists the declarations that write it.
+    /// The names it refers to, sorted, once each, never its own unless the declaration binds a name an import binds too, as Python's `X = wrap(X)` after `from m import X` does, or the first binding of a name in a file with a star import, as `X = X + [1]` after `from m import *` does: other declarations of the file, `Class.member` for `this.member` inside the class, the names at the head of the type of `this.field` and, for `this.field.member`, `Type.member` of each, spelled as the type writes it, and the local names the file's imports bind. A top-level variable also lists the declarations that write it.
     pub uses: Vec<String>,
 }
 

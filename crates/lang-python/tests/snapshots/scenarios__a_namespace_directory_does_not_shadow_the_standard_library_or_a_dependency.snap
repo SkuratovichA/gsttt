@@ -13,7 +13,12 @@ expression: "tree.file_json(\"main.py\")"
       "kind": "static",
       "line": 1,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "logging"
+      ],
       "to": "builtin"
     },
     {
@@ -21,7 +26,12 @@ expression: "tree.file_json(\"main.py\")"
       "kind": "static",
       "line": 2,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "logging.handlers"
+      ],
       "to": "builtin"
     },
     {
@@ -29,7 +39,12 @@ expression: "tree.file_json(\"main.py\")"
       "kind": "static",
       "line": 3,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "yaml"
+      ],
       "to": {
         "external": "pyyaml"
       }
@@ -39,7 +54,12 @@ expression: "tree.file_json(\"main.py\")"
       "kind": "static",
       "line": 4,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "ns"
+      ],
       "to": {
         "unresolved": {
           "reason": "not-found"
@@ -51,7 +71,12 @@ expression: "tree.file_json(\"main.py\")"
       "kind": "static",
       "line": 5,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "ns.part"
+      ],
       "to": {
         "file": "ns/part.py"
       }
@@ -61,7 +86,12 @@ expression: "tree.file_json(\"main.py\")"
       "kind": "static",
       "line": 6,
       "flags": 0,
-      "names": [],
+      "names": [
+        "*"
+      ],
+      "exported": [
+        "ns.missing"
+      ],
       "to": {
         "unresolved": {
           "reason": "not-found"
@@ -72,6 +102,19 @@ expression: "tree.file_json(\"main.py\")"
   "contracts": [],
   "embedded": [],
   "unresolved": [],
+  "exports": [
+    "logging",
+    "ns",
+    "yaml"
+  ],
+  "symbols": {
+    "declared": [],
+    "on_load": [],
+    "exports": [],
+    "heirs": [],
+    "overrides": [],
+    "reads": []
+  },
   "path": "main.py",
   "project": "python ."
 }

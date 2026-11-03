@@ -963,6 +963,15 @@ fn callers_of(sandbox: &Sandbox, repo: &Path, name: &str) -> Vec<(String, Vec<St
     callers_in(sandbox, repo, "src/svc.ts", name)
 }
 
+/// The paths of the `affected` entries of the impact of `name` declared in `file`, a row that names no caller among them.
+fn listed_in(sandbox: &Sandbox, repo: &Path, file: &str, name: &str) -> Vec<String> {
+    let answer = json(&sandbox.run_in(repo, &["--json", "impact", file, "--name", name]));
+    paths(&answer["affected"])
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
 /// The `affected` entries of the impact of `name` declared in `file`, as each path with the names of its callers.
 fn callers_in(
     sandbox: &Sandbox,
@@ -1147,6 +1156,38 @@ fn a_namespace_import_is_a_caller_only_of_the_names_it_uses_in_typescript() {
         callers,
         Some(owned(&["build"])),
         "`make` reads `lib.Service.make`, a member other than `place`: {place:?}"
+    );
+}
+
+/// The real connector reading a barrel that re-exports everything of one file and a name of another: the explicit export wins in ES, so the `helper` of `a.ts` reaches neither the barrel nor the page that imports it from there, and the `other` of `a.ts` still does.
+#[test]
+fn an_export_by_name_beats_a_star_export_of_the_same_name_in_typescript() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/a.ts",
+        "export function helper() {}\nexport function other() {}\n",
+    );
+    write(&repo, "src/b.ts", "export function helper() {}\n");
+    write(
+        &repo,
+        "src/index.ts",
+        "export * from './a';\nexport { helper } from './b';\n",
+    );
+    write(
+        &repo,
+        "src/page.ts",
+        "import { helper, other } from './index';\n\nexport function open() {\n  helper();\n  other();\n}\n",
+    );
+    let listed = |file: &str, name: &str| listed_in(&sandbox, &repo, file, name);
+
+    assert_eq!(listed("src/a.ts", "helper"), Vec::<String>::new());
+    // The barrel lists `helper` among its exports and not `other`, so `other` passes through it with no row of its own.
+    assert_eq!(listed("src/a.ts", "other"), ["src/page.ts"]);
+    assert_eq!(
+        listed("src/b.ts", "helper"),
+        ["src/index.ts", "src/page.ts"]
     );
 }
 
@@ -1685,10 +1726,22 @@ fn changed_walks_a_file_whole_when_a_side_effect_import_or_a_top_level_statement
 fn changed_walks_a_changed_file_whole_when_its_language_records_no_declarations() {
     let sandbox = Sandbox::new();
     let repo = formatting(&sandbox);
-    write(&repo, "tools/job.py", "def run():\n    return 1\n");
-    write(&repo, "tools/main.py", "from job import run\n\nrun()\n");
+    write(
+        &repo,
+        "tools/Cargo.toml",
+        "[package]\nname = \"tools\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    );
+    write(
+        &repo,
+        "tools/src/lib.rs",
+        "pub fn run() -> i32 {\n    1\n}\n",
+    );
     commit_all(&repo);
-    write(&repo, "tools/job.py", "def run():\n    return 2\n");
+    write(
+        &repo,
+        "tools/src/lib.rs",
+        "pub fn run() -> i32 {\n    2\n}\n",
+    );
     write(&repo, "src/fresh.ts", "export const fresh = 1;\n");
 
     let answer = changed(&sandbox, &repo, &[]);
@@ -1696,10 +1749,79 @@ fn changed_walks_a_changed_file_whole_when_its_language_records_no_declarations(
     assert!(answer.get("parts").is_none(), "{answer}");
     let text = sandbox.run_in(&repo, &["impact", "--changed"]);
     assert!(
-        text.stdout
-            .starts_with("impact of src/fresh.ts and tools/job.py, within 1 hop through code\n"),
+        text.stdout.starts_with(
+            "impact of src/fresh.ts and tools/src/lib.rs, within 1 hop through code\n"
+        ),
         "{text:?}"
     );
+}
+
+#[scenario(
+    "cli",
+    "--changed follows a changed Python function to its callers and not to the callers of another"
+)]
+#[test]
+fn changed_follows_a_changed_python_function_to_its_callers_and_not_to_the_callers_of_another() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    let job = "def run():\n    return 1\n\n\ndef stop():\n    return 0\n";
+    write(&repo, "tools/job.py", job);
+    write(
+        &repo,
+        "tools/main.py",
+        "from tools.job import run\n\n\ndef main():\n    return run()\n",
+    );
+    write(
+        &repo,
+        "tools/halt.py",
+        "from tools.job import stop\n\n\ndef halt():\n    return stop()\n",
+    );
+    commit_all(&repo);
+    write(&repo, "tools/job.py", &job.replace("return 1", "return 2"));
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), ["tools/main.py"]);
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "tools/job.py", "names": ["run"] }])
+    );
+}
+
+/// The real Python connector reading the three ways a name reaches a file without the file declaring it: a module that imports it and lists it nowhere hands it on, a settings file that reads it before it binds it again takes it from its star import, and one that binds it without reading it does not.
+#[test]
+fn a_python_name_reaches_a_file_that_imports_it_or_reads_it_before_binding_it_again() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "pkg/mod.py",
+        "def fn():\n    pass\n\n\ndef other():\n    pass\n",
+    );
+    write(
+        &repo,
+        "allext.py",
+        "from pkg.mod import fn, other\n\n__all__ = [\"fn\"]\n",
+    );
+    write(
+        &repo,
+        "allext_user.py",
+        "from allext import other\n\n\ndef run():\n    return other()\n",
+    );
+    write(&repo, "conf/base.py", "INSTALLED_APPS = []\nDEBUG = True\n");
+    write(
+        &repo,
+        "conf/dev.py",
+        "from .base import *\n\nINSTALLED_APPS = INSTALLED_APPS + [\"x\"]\nDEBUG = False\n",
+    );
+    let listed = |file: &str, name: &str| listed_in(&sandbox, &repo, file, name);
+
+    assert_eq!(
+        listed("pkg/mod.py", "other"),
+        ["allext.py", "allext_user.py"]
+    );
+    assert_eq!(listed("conf/base.py", "INSTALLED_APPS"), ["conf/dev.py"]);
+    assert_eq!(listed("conf/base.py", "DEBUG"), Vec::<String>::new());
 }
 
 #[scenario("cli", "--changed with --base compares with the merge base")]
@@ -2599,9 +2721,9 @@ fn a_router_of_another_package_reaches_the_client_of_the_mounted_path() {
     );
 }
 
-/// Python records no declarations, so a function removed from a module walks the module whole and lists the importer of the function that stays too.
+/// Python records its declarations, so a function removed from a module walks by its old name and lists the importer of that function alone.
 #[test]
-fn a_function_removed_from_a_python_module_walks_the_module_whole() {
+fn a_function_removed_from_a_python_module_walks_by_its_old_name() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();
     write(
@@ -2617,12 +2739,12 @@ fn a_function_removed_from_a_python_module_walks_the_module_whole() {
 
     let answer = changed(&sandbox, &repo, &[]);
 
-    assert!(answer.get("parts").is_none(), "{answer}");
     assert_eq!(
-        reached(&answer),
-        ["tools/halt.py", "tools/main.py"],
+        answer["parts"],
+        value!([{ "file": "tools/job.py", "names": [], "removed": ["run"] }]),
         "{answer}"
     );
+    assert_eq!(reached(&answer), ["tools/main.py"], "{answer}");
 }
 
 /// Rust records no declarations either, so a function removed from a module walks the module whole.

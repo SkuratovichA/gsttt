@@ -2,6 +2,7 @@
 
 use gsttt_core::fact::FileTags;
 use gsttt_core::path::RepoPath;
+use ruff_python_ast::PySourceType;
 
 /// The files whose directory becomes a project.
 pub(crate) const PROJECT_MANIFESTS: [&str; 3] = ["pyproject.toml", "setup.py", "setup.cfg"];
@@ -9,6 +10,15 @@ pub(crate) const PROJECT_MANIFESTS: [&str; 3] = ["pyproject.toml", "setup.py", "
 /// Whether `path` is Python source or a stub.
 pub(crate) fn is_python_source(path: &RepoPath) -> bool {
     matches!(path.extension(), Some("py" | "pyi"))
+}
+
+/// How the parser reads the Python source at `path`: a stub as a stub, anything else as Python.
+pub(crate) fn source_type(path: &RepoPath) -> PySourceType {
+    if path.extension() == Some("pyi") {
+        PySourceType::Stub
+    } else {
+        PySourceType::Python
+    }
 }
 
 /// Whether `path` is the `__init__` of a package, where a router made in one of its modules is given the name the rest of the project imports it by.
