@@ -822,6 +822,264 @@ fn a_method_read_through_a_value_of_no_known_type_is_not_recorded() {
     assert_eq!(t.uses("u.go", "F"), "mystery");
 }
 
+/// Indexes one file of module `example.com/m` and returns the member names it reads.
+fn reads_of(source: &str) -> Vec<String> {
+    module(&[("a.go", source)]).reads("a.go")
+}
+
+#[gsttt_scenario::scenario("go", "A chain on a value of a standard library type reads no member")]
+#[test]
+fn a_chain_on_a_value_of_a_standard_library_type_reads_no_member() {
+    let source = "package m
+
+import \"net/http\"
+
+type Context struct {
+	Request *http.Request
+}
+
+func Direct(w http.ResponseWriter) { w.Header().Get(\"x\") }
+
+func Field(r *http.Request) { r.Header.Get(\"x\") }
+
+func Through(c *Context) { c.Request.Header.Set(\"a\", \"b\") }
+";
+    assert_eq!(reads_of(source), Vec::<String>::new());
+}
+
+#[test]
+fn a_call_chain_on_a_response_writer_reads_no_member() {
+    let source = "package m
+
+import \"net/http\"
+
+func F(w http.ResponseWriter) { w.Header().Get(\"x\") }
+";
+    assert_eq!(reads_of(source), Vec::<String>::new());
+}
+
+#[test]
+fn a_field_chain_on_a_request_reads_no_member() {
+    let source = "package m
+
+import \"net/http\"
+
+func F(r *http.Request) { r.Header.Get(\"x\") }
+";
+    assert_eq!(reads_of(source), Vec::<String>::new());
+}
+
+#[test]
+fn a_chain_through_a_local_struct_field_of_a_standard_library_type_reads_no_member() {
+    let source = "package m
+
+import \"net/http\"
+
+type Context struct {
+	Request *http.Request
+}
+
+func F(c *Context) { c.Request.Header.Set(\"a\", \"b\") }
+";
+    assert_eq!(reads_of(source), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario(
+    "go",
+    "A name bound to a call of the standard library stands outside the module"
+)]
+#[test]
+fn a_name_bound_to_a_call_of_the_standard_library_stands_outside_the_module() {
+    let source = "package m
+
+import (
+	\"net/http\"
+	\"net/http/httptest\"
+	\"os\"
+)
+
+func Request() {
+	req, _ := http.NewRequest(\"GET\", \"/\", nil)
+	req.Header.Set(\"a\", \"b\")
+}
+
+func Recorder() {
+	w := httptest.NewRecorder()
+	w.Header().Get(\"x\")
+}
+
+func File() {
+	file, err := os.CreateTemp(\"\", \"\")
+	file.Name()
+	_ = err
+}
+";
+    assert_eq!(reads_of(source), Vec::<String>::new());
+}
+
+#[test]
+fn a_name_assigned_to_something_else_later_is_read_again() {
+    let source = "package m
+
+import \"net/http\"
+
+func F() {
+	svc := other()
+	req, _ := http.NewRequest(\"GET\", \"/\", nil)
+	req = svc.Make()
+	req.Header.Set(\"a\", \"b\")
+}
+";
+    assert_eq!(reads_of(source), ["Header", "Make", "Set"]);
+}
+
+#[test]
+fn a_local_named_like_the_package_is_read() {
+    let source = "package m
+
+import \"net/http\"
+
+func F() {
+	http := local()
+	http.Get()
+}
+";
+    assert_eq!(reads_of(source), ["Get"]);
+}
+
+#[gsttt_scenario::scenario("go", "A chain on a value that may be of a type here is read")]
+#[test]
+fn a_chain_on_a_value_that_may_be_of_a_type_here_is_read() {
+    let source = "package m
+
+import \"sync/atomic\"
+
+func F[T any](p atomic.Pointer[T]) { p.Load().Place() }
+";
+    assert_eq!(reads_of(source), ["Place"]);
+}
+
+#[test]
+fn a_variable_of_a_package_outside_the_module_stands_outside() {
+    let source = "package m
+
+import (
+	\"net/http\"
+	\"os\"
+
+	\"github.com/acme/pkg\"
+)
+
+func Client() {
+	http.DefaultClient.Get(\"/\")
+}
+
+func Out() {
+	os.Stdout.Write(nil)
+}
+
+func Third() {
+	pkg.Default.Place()
+}
+
+func Shadowed(os Box) {
+	os.Stdout.Close()
+}
+";
+    assert_eq!(reads_of(source), ["Close"]);
+}
+
+#[test]
+fn a_call_of_a_generic_standard_library_package_gives_no_outside_value() {
+    let source = "package m
+
+import \"slices\"
+
+func Direct(xs []T) { slices.Max(xs).Place() }
+
+func Named(xs []T) {
+	x := slices.Max(xs)
+	x.Place()
+}
+";
+    assert_eq!(reads_of(source), ["Place"]);
+}
+
+#[gsttt_scenario::scenario("go", "A value that no call of the standard library gives is read")]
+#[test]
+fn a_call_of_a_third_party_package_gives_no_outside_value() {
+    let source = "package m
+
+import \"github.com/samber/lo\"
+
+func F(y Y) {
+	x := lo.Must(y)
+	x.Place()
+}
+";
+    assert_eq!(reads_of(source), ["Place"]);
+}
+
+#[gsttt_scenario::scenario("go", "A type-asserted value stands on the asserted type")]
+#[test]
+fn a_type_asserted_value_is_a_use_of_the_asserted_type() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+import \"context\"
+
+type T struct{}
+
+func (t *T) Place() {}
+
+func F(ctx context.Context, k string) {
+	v := ctx.Value(k).(*T)
+	v.Place()
+}
+",
+    )]);
+    assert_eq!(t.reads("a.go"), Vec::<String>::new());
+    assert_eq!(
+        t.uses("a.go", "F"),
+        "T T.Place context.Context context.Context.Value"
+    );
+}
+
+#[test]
+fn a_package_of_another_module_of_the_repository_is_not_outside() {
+    let t = tree(&[
+        ("go.mod", "module example.com/m\n\ngo 1.22\n"),
+        ("other/go.mod", "module example.com/other\n\ngo 1.22\n"),
+        ("other/lib/lib.go", "package lib\n\ntype T struct{}\n"),
+        (
+            "a.go",
+            "package m
+
+import \"example.com/other/lib\"
+
+func F(x lib.T) { x.Read().Place() }
+",
+        ),
+    ]);
+    assert_eq!(t.reads("a.go"), ["Place"]);
+}
+
+#[gsttt_scenario::scenario("go", "The arguments of a chain on an outside value are read")]
+#[test]
+fn the_arguments_of_a_chain_on_an_outside_value_are_read() {
+    let source = "package m
+
+import \"net/http\"
+
+func F(w http.ResponseWriter) {
+	svc := other()
+	w.Header().Set(\"a\", svc.Name())
+}
+";
+    assert_eq!(reads_of(source), ["Name"]);
+}
+
 #[gsttt_scenario::scenario("go", "A shadowing local is no use of the package")]
 #[test]
 fn a_shadowing_local_is_no_use_of_the_package() {
@@ -1849,7 +2107,7 @@ fn a_value_a_call_returns_is_read() {
         "a.go",
         "package m
 
-import \"pkg\"
+import \"github.com/acme/pkg\"
 
 func Run() {
 	x := pkg.F()

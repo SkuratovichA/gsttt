@@ -35,6 +35,26 @@ pub(crate) struct ImportInfo {
     pub(crate) local: bool,
 }
 
+/// The packages of the standard library whose functions hand back a type the caller names, so what they return says nothing about the type of a value.
+const GENERIC_STANDARD: [&str; 8] = [
+    "slices",
+    "maps",
+    "cmp",
+    "iter",
+    "sync",
+    "sync/atomic",
+    "unique",
+    "weak",
+];
+
+impl ImportInfo {
+    /// Whether the package is one of the standard library whose functions give a value of a type of the library: not of this repository, no dot in the first segment of the path, and not a package of generic helpers.
+    pub(crate) fn gives_outside_values(&self) -> bool {
+        let first = self.spec.split('/').next().unwrap_or_default();
+        !self.local && !first.contains('.') && !GENERIC_STANDARD.contains(&self.spec.as_str())
+    }
+}
+
 /// The fields of one struct type of the file, by name, with the type each one is written as.
 pub(crate) type Fields = BTreeMap<String, Option<Head>>;
 
@@ -109,13 +129,14 @@ impl<'a> FileCx<'a> {
 
     /// The head of the type written as `ty`, when `bound` says no local binding hides the name. A predeclared type holds nothing worth following.
     pub(crate) fn head_of(&self, ty: Node<'_>, bound: &dyn Fn(&str) -> bool) -> Option<Head> {
-        let node = head_node(ty)?;
+        let (node, generic) = head_node_of(ty)?;
         match node.kind() {
             "type_identifier" => {
                 let name = text_of(node, self.source);
                 (!bound(name) && !is_predeclared(name)).then(|| Head {
                     import: None,
                     name: name.to_owned(),
+                    generic,
                 })
             }
             "qualified_type" => {
@@ -127,10 +148,20 @@ impl<'a> FileCx<'a> {
                 Some(Head {
                     import: Some(self.import_named(package)?),
                     name: name.to_owned(),
+                    generic,
                 })
             }
             _ => None,
         }
+    }
+
+    /// Whether `head` is a type of a package outside this module, so a member of it is no member of a type here. A type written with type arguments is not: a type parameter may stand behind it.
+    pub(crate) fn is_outside(&self, head: &Head) -> bool {
+        !head.generic
+            && head
+                .import
+                .and_then(|index| self.imports.get(index))
+                .is_some_and(|import| !import.local)
     }
 
     /// How the file spells the type `head`: the qualifier of its import in front of its name.
@@ -350,13 +381,17 @@ fn unquote(literal: &str) -> Option<&str> {
     (!inner.is_empty()).then_some(inner)
 }
 
-/// The type node whose name stands for a value of the written type: the type itself, past a pointer, a slice, an array, a channel, a map's value and the arguments of a generic.
-pub(crate) fn head_node(mut ty: Node<'_>) -> Option<Node<'_>> {
+/// The type node whose name stands for a value of the written type: the type itself, past a pointer, a slice, an array, a channel, a map's value and the arguments of a generic. With it, whether the way went through type arguments.
+fn head_node_of(mut ty: Node<'_>) -> Option<(Node<'_>, bool)> {
+    let mut generic = false;
     // A written type nests as deep as the file does; the loop takes one level per turn.
     loop {
         ty = match ty.kind() {
-            "type_identifier" | "qualified_type" => return Some(ty),
-            "generic_type" => ty.child_by_field_name("type")?,
+            "type_identifier" | "qualified_type" => return Some((ty, generic)),
+            "generic_type" => {
+                generic = true;
+                ty.child_by_field_name("type")?
+            }
             "map_type" | "channel_type" => ty.child_by_field_name("value")?,
             "slice_type" | "array_type" | "implicit_length_array_type" => {
                 ty.child_by_field_name("element")?
