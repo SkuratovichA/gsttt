@@ -83,6 +83,7 @@ fn commonjs_exports_that_cannot_be_listed_are_unknown() -> Result<(), Box<dyn Er
         "src/required.js",
         "src/indexed.js",
         "src/module-indexed.js",
+        "src/callback.js",
         "src/assigned.js",
         "src/factory.js",
         "src/defined.js",
@@ -106,6 +107,56 @@ fn commonjs_exports_are_unknown() -> Result<(), Box<dyn Error>> {
     let json = run("commonjs-exports-open")?;
     assert_eq!(exports(&json, "src/spread.js"), None);
     assert_eq!(exports(&json, "src/indexed.js"), None);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A computed key as a statement of the top level keeps the exports known"
+)]
+fn a_computed_key_as_a_statement_of_the_top_level_keeps_the_exports_known()
+-> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-exports-computed")?;
+    for path in ["src/top.js", "src/call.js"] {
+        assert_eq!(status(&json, path), "ok", "{path}");
+        assert_eq!(exports(&json, path), Some(vec![]), "{path}");
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A literal computed key exports its name")]
+fn a_literal_computed_key_exports_its_name() -> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-exports-computed")?;
+    assert_eq!(exports(&json, "src/literal.js"), Some(vec!["a", "b"]));
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A computed key exports the names its value hands out")]
+fn a_computed_key_exports_the_names_its_value_hands_out() -> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-exports-computed")?;
+    assert_eq!(
+        exports(&json, "src/object.js"),
+        Some(vec!["default", "helper", "other", "plain"])
+    );
+    assert_eq!(exports(&json, "src/identifier.js"), Some(vec!["internals"]));
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A computed key inside a loop or a function leaves the exports unknown"
+)]
+fn a_computed_key_inside_a_loop_or_a_function_leaves_the_exports_unknown()
+-> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-exports-open")?;
+    for path in ["src/indexed.js", "src/module-indexed.js", "src/callback.js"] {
+        assert_eq!(exports(&json, path), None, "{path}");
+    }
     Ok(())
 }
 

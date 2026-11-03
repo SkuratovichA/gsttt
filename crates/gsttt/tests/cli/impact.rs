@@ -778,6 +778,47 @@ fn a_destructured_name_lists_the_files_that_take_it() {
     assert_eq!(paths(&taken["affected"]), ["lib.js", "taker.js"], "{taken}");
 }
 
+/// The real connector reading `CommonJS`: a computed key written as a statement of the top level leaves the exports known, so a class a file only uses is not passed on to the files that require it, and what the computed key hands out is still reached.
+#[scenario("queries", "A computed export key does not pass an imported name on")]
+#[test]
+fn a_computed_export_key_does_not_pass_an_imported_name_on() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/client.js",
+        "class Client {}\n\nmodule.exports = Client;\n",
+    );
+    write(
+        &repo,
+        "src/a.js",
+        "const Client = require('./client');\n\nfunction helper() {}\n\nfunction run() {\n  return new Client();\n}\n\nmodule.exports = run;\nmodule.exports[Symbol.for('x')] = { helper };\n",
+    );
+    write(
+        &repo,
+        "src/b.js",
+        "const run = require('./a');\n\nmodule.exports = run;\n",
+    );
+    write(
+        &repo,
+        "src/c.js",
+        "const helper = require('./a')[Symbol.for('x')];\n\nmodule.exports = helper;\n",
+    );
+
+    let class = json(&sandbox.run_in(
+        &repo,
+        &["--json", "impact", "src/client.js", "--name", "Client"],
+    ));
+    assert_eq!(
+        paths(&class["affected"]),
+        ["src/a.js", "src/client.js"],
+        "{class}"
+    );
+    let helper =
+        json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.js", "--name", "helper"]));
+    assert!(paths(&helper["affected"]).contains(&"src/c.js"), "{helper}");
+}
+
 #[test]
 fn a_path_the_index_does_not_hold_does_not_fail_the_others() {
     let sandbox = Sandbox::new();
