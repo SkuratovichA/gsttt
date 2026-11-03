@@ -9,6 +9,7 @@ mod exports;
 mod graphql;
 mod http;
 mod imports;
+mod jsdoc;
 mod kafka;
 mod mounts;
 mod packs;

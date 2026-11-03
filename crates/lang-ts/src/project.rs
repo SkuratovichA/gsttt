@@ -18,7 +18,7 @@ use crate::source::{blanked_code, is_code, parse_code};
 use crate::{link, provides, resolve};
 
 /// Changes whenever the facts this reader produces for the same text and packs could change.
-const READER_VERSION: u32 = 32;
+const READER_VERSION: u32 = 33;
 
 /// A TypeScript project and the rule packs active in it.
 #[derive(Debug)]

@@ -1870,6 +1870,46 @@ fn an_import_type_uses_the_names_it_takes_in_the_declaration_that_holds_its_line
     );
 }
 
+#[scenario("queries", "A type that names a class reads no member of it")]
+#[test]
+fn a_type_that_names_a_class_reads_no_member_of_it() {
+    let index = Tree::new()
+        .symbols(
+            "runner.ts",
+            Code::new().declaration("Runner", (1, 12), &[]).declaration(
+                "Runner.start",
+                (2, 5),
+                &[],
+            ),
+        )
+        .exports("runner.ts", &["Runner"])
+        .imports_type("reads.js", "runner.ts", &["Runner"], 6)
+        .symbols(
+            "reads.js",
+            Code::new().declaration("go", (5, 8), &[]).reads("start"),
+        )
+        .exports("reads.js", &[])
+        .imports_type("names.js", "runner.ts", &["Runner"], 6)
+        .symbols("names.js", Code::new().declaration("hold", (5, 8), &[]))
+        .exports("names.js", &[])
+        .build();
+
+    let member = ask(&index, "runner.ts", &["Runner.start"], None);
+    let class = ask(&index, "runner.ts", &["Runner"], None);
+
+    assert_eq!(
+        rows(&member.affected),
+        [row("reads.js", 1, "imports Runner from runner.ts", &["go"])]
+    );
+    assert_eq!(
+        rows(&class.affected),
+        [
+            row("names.js", 1, "imports Runner from runner.ts", &["hold"]),
+            row("reads.js", 1, "imports Runner from runner.ts", &["go"]),
+        ]
+    );
+}
+
 #[scenario("queries", "A load takes the names read from it")]
 #[test]
 fn a_load_takes_the_names_read_from_it() {

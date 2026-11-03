@@ -1084,7 +1084,7 @@ impl<'w, 'a> Step<'w, 'a> {
             .unwrap_or_else(|| self.unit(file, Part::Load))
     }
 
-    /// The names of `import` that `name` gets, used where the import is written. A type does not run as the file loads, so an import type outside every declaration reaches nothing, where any other import reaches the load of the file.
+    /// The names of `import` that `name` gets, used where the import is written. A type does not run as the file loads, so an import type outside every declaration reaches nothing, where any other import reaches the load of the file. A type that names a class reads no member of it: asked about a member, the file is a holder of the class, and its declarations are callers only where the file reads that member.
     fn use_taken(
         &mut self,
         name: Name<'a>,
@@ -1093,6 +1093,14 @@ impl<'w, 'a> Step<'w, 'a> {
         import: &Import,
         via: &mut Via<'a>,
     ) {
+        if import.flags.contains(ImportFlags::TYPE_ONLY)
+            && let Name::Member(class, member) = name
+            && import.names.iter().any(|taken| taken == class)
+            && !symbols.reads_member(member)
+        {
+            self.layer.held.insert(importer);
+            return;
+        }
         if !take_names(self.walk.graph, name, import, via) {
             return;
         }

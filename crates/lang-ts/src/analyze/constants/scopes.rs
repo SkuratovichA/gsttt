@@ -6,24 +6,29 @@ use std::mem;
 use oxc_ast::ast::{
     ArrowFunctionExpression, BindingIdentifier, BindingPattern, BlockStatement, CatchClause, Class,
     Expression, ForInStatement, ForOfStatement, ForStatement, FormalParameter, FormalParameters,
-    Function, FunctionBody, Program, StaticBlock, SwitchStatement, TSInterfaceDeclaration,
-    TSModuleBlock, TSType, TSTypeAliasDeclaration, TSTypeParameterDeclaration, VariableDeclaration,
-    VariableDeclarationKind, VariableDeclarator,
+    Function, FunctionBody, MethodDefinition, ObjectProperty, Program, Statement, StaticBlock,
+    SwitchStatement, TSInterfaceDeclaration, TSModuleBlock, TSType, TSTypeAliasDeclaration,
+    TSTypeParameterDeclaration, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
+use super::super::jsdoc::{Block, Docs};
 use super::super::roots::{declared_class, plain_class};
 use super::{Constants, Home, Local, Locals, may_hold_text, rewrite};
 
 /// Records in `constants` what each scope of `program` below its top level binds: first every name as hidden, then the constants among them, read the way those of the top level are. Two walks, because an initializer reads a name through the scopes around it, and one of them may bind that name further down. Drops the names that cannot change an answer, so that a file without a local of interest pays one check per lookup.
-pub(super) fn collect(constants: &mut Constants, program: &Program<'_>) {
+pub(super) fn collect(constants: &mut Constants, program: &Program<'_>, docs: Option<&Docs>) {
     Scopes {
         constants,
+        docs,
         stack: Vec::new(),
         hoist: false,
         class: None,
+        pending: None,
+        documented: None,
+        pattern_docs: None,
     }
     .visit_program(program);
     constants.keep_locals(|locals| locals.constant || locals.held);
@@ -116,22 +121,40 @@ struct Frame {
 
 struct Scopes<'c> {
     constants: &'c mut Constants,
+    /// What the `JSDoc` comments of a JavaScript file say about types.
+    docs: Option<&'c Docs>,
     /// The scopes around the walk, the outermost first. Empty at the top level of the file, which is no scope below it.
     stack: Vec<Frame>,
     /// Whether the names being walked belong to a `var`, which a block does not close.
     hoist: bool,
     /// The class that the next name bound holds, set by the declarator or the parameter being walked.
     class: Option<Box<str>>,
+    /// The `@param` comment above the statement, method or property being walked, until the next parameter list takes it.
+    pending: Option<&'c Block>,
+    /// The `@param` comment of the parameter list being walked.
+    documented: Option<&'c Block>,
+    /// The `@param` comment, while the walk is in a destructuring pattern of a parameter: the names in it are typed by it.
+    pattern_docs: Option<&'c Block>,
 }
 
 impl Scopes<'_> {
-    /// Walks inside a new scope. Nothing walked there takes the names of a `var` that is being declared.
+    /// Walks inside a new scope. Nothing walked there takes the names of a `var` that is being declared, nor those of a destructured parameter.
     fn within(&mut self, span: Span, function: bool, body: impl FnOnce(&mut Self)) {
         let hoist = mem::take(&mut self.hoist);
+        let pattern_docs = self.pattern_docs.take();
         self.stack.push(Frame { span, function });
         body(self);
         self.stack.pop();
         self.hoist = hoist;
+        self.pattern_docs = pattern_docs;
+    }
+
+    /// The comment above the token that starts at `at`, when it documents parameters, for the next parameter list.
+    fn expect_params(&mut self, at: u32) {
+        self.pending = self
+            .docs
+            .and_then(|docs| docs.block_at(at))
+            .filter(|block| block.has_params());
     }
 
     /// Notes that the scope around binds `name`: as hidden, and as `constant` when an initializer may give it text, which [`Initializers`] reads. A second binding of the name in the scope leaves it standing for nothing there. The top level of the file is no scope below it, so nothing is noted there.
@@ -171,6 +194,18 @@ impl Scopes<'_> {
         });
     }
 
+    /// The class that the `@type` above a declaration of one name gives to it.
+    fn documented_value(&self, it: &VariableDeclaration<'_>) -> Option<Box<str>> {
+        let [declarator] = it.declarations.as_slice() else {
+            return None;
+        };
+        if !matches!(declarator.id, BindingPattern::BindingIdentifier(_)) {
+            return None;
+        }
+        let class = self.docs?.block_at(it.span.start)?.declared_class()?;
+        Some(Box::from(class))
+    }
+
     /// Walks the parameters of a function and its body, the body in a scope inside that of the parameters: a default value does not see what the body declares.
     fn parameters_and_body<'a>(
         &mut self,
@@ -185,21 +220,69 @@ impl Scopes<'_> {
 impl<'a> Visit<'a> for Scopes<'_> {
     /// Every name that no visitor below classifies is bound to something other than text: a parameter, a destructured name, a function, a class, a catch clause.
     fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
-        let class = self.class.take();
-        self.bind(it.name.as_str(), self.hoist, false, class);
+        let name = it.name.as_str();
+        let class = self.class.take().or_else(|| {
+            let class = self.pattern_docs?.param_class(name, true)?;
+            Some(Box::from(class))
+        });
+        self.bind(name, self.hoist, false, class);
     }
 
-    /// A parameter with a plain class type holds that class, with or without a default value.
+    /// The comment above a statement documents the parameters of the first function in it.
+    fn visit_statement(&mut self, it: &Statement<'a>) {
+        self.expect_params(it.span().start);
+        walk::walk_statement(self, it);
+        self.pending = None;
+    }
+
+    fn visit_method_definition(&mut self, it: &MethodDefinition<'a>) {
+        self.expect_params(it.span.start);
+        walk::walk_method_definition(self, it);
+        self.pending = None;
+    }
+
+    fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
+        self.expect_params(it.span.start);
+        walk::walk_object_property(self, it);
+        self.pending = None;
+    }
+
+    /// The parameters of a list are documented by the comment that was waiting for it, and those of a function in a default value by none.
+    fn visit_formal_parameters(&mut self, it: &FormalParameters<'a>) {
+        let outer = mem::replace(&mut self.documented, self.pending.take());
+        walk::walk_formal_parameters(self, it);
+        self.documented = outer;
+    }
+
+    /// A parameter with a plain class type holds that class, with or without a default value, and so does one that a `@param` documents with a class. A destructured one types the names in it by the path they are documented under.
     fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
-        if matches!(it.pattern, BindingPattern::BindingIdentifier(_)) {
-            self.class = it
-                .type_annotation
-                .as_deref()
-                .and_then(plain_class)
-                .map(|class| Box::from(&*class));
+        self.visit_decorators(&it.decorators);
+        match &it.pattern {
+            BindingPattern::BindingIdentifier(id) => {
+                self.class = it
+                    .type_annotation
+                    .as_deref()
+                    .and_then(plain_class)
+                    .map(|class| Box::from(&*class))
+                    .or_else(|| {
+                        let class = self.documented?.param_class(id.name.as_str(), false)?;
+                        Some(Box::from(class))
+                    });
+                self.visit_binding_pattern(&it.pattern);
+            }
+            pattern => {
+                self.pattern_docs = self.documented;
+                self.visit_binding_pattern(pattern);
+                self.pattern_docs = None;
+            }
         }
-        walk::walk_formal_parameter(self, it);
         self.class = None;
+        if let Some(type_annotation) = &it.type_annotation {
+            self.visit_ts_type_annotation(type_annotation);
+        }
+        if let Some(initializer) = &it.initializer {
+            self.visit_expression(initializer);
+        }
     }
 
     fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
@@ -208,7 +291,8 @@ impl<'a> Visit<'a> for Scopes<'_> {
                 && matches!(declarator.id, BindingPattern::BindingIdentifier(_)))
             .then(|| declared_class(declarator, |name, _| self.constants.heads.contains(name)))
             .flatten()
-            .map(|class| Box::from(&*class));
+            .map(|class| Box::from(&*class))
+            .or_else(|| self.documented_value(it));
             if let Some((id, _)) = text_constant(it.kind, declarator) {
                 self.bind(id.name.as_str(), false, true, class);
             } else {
