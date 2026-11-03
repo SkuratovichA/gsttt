@@ -9,4 +9,11 @@ kind = "http"
 role = "serves"
 key = "$arg1"
 method = "$arg2.method"
-receiver = { from = ["axum.Router.new", "Router.new", "axum.Router.default", "Router.default"] }
+receiver = { from = [
+  "axum.Router.new",
+  "axum.routing.Router.new",
+  "Router.new",
+  "axum.Router.default",
+  "axum.routing.Router.default",
+  "Router.default",
+] }

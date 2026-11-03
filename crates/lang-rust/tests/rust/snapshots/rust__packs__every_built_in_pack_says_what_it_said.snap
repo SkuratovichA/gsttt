@@ -19,8 +19,10 @@ expression: packs
         "receiver": {
           "from": [
             "axum.Router.new",
+            "axum.routing.Router.new",
             "Router.new",
             "axum.Router.default",
+            "axum.routing.Router.default",
             "Router.default"
           ],
           "key": null

@@ -28,6 +28,33 @@ fn actix_attributes_resources_and_routes_serve_their_paths() {
     assert_json_snapshot!(out.sites("src/main.rs"));
 }
 
+#[scenario("rust", "A router imported through its module serves its routes")]
+#[test]
+fn a_router_imported_through_its_module_serves_its_routes() {
+    let out = index("axum_router_paths");
+    for (file, line, path) in [
+        ("src/top.rs", 4, "/top"),
+        ("src/nested.rs", 4, "/nested"),
+        ("src/held.rs", 9, "/held"),
+        ("src/module.rs", 4, "/module"),
+    ] {
+        assert_eq!(
+            out.contracts(file),
+            [format!("{line} serves http GET {path}")],
+            "{file}"
+        );
+    }
+}
+
+#[scenario("rust", "A router of another crate serves nothing")]
+#[test]
+fn a_router_of_another_crate_serves_nothing() {
+    let out = index("axum_router_paths");
+    for file in ["src/other.rs", "src/other_module.rs"] {
+        assert!(out.contracts(file).is_empty(), "{file}");
+    }
+}
+
 #[scenario("rust", "An actix route attribute serves the TRACE method")]
 #[test]
 fn an_actix_route_attribute_serves_the_trace_method() {
