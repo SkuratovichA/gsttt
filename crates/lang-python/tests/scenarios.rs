@@ -3764,6 +3764,208 @@ fn a_builtin_local_that_is_bound_again_is_read_by_name() {
 
 #[gsttt_scenario::scenario(
     "python",
+    "A name a with binds to a builtin call is no receiver of a member"
+)]
+#[test]
+fn a_name_a_with_binds_to_a_builtin_call_is_no_receiver_of_a_member() {
+    let reads = |code: &str| {
+        let tree = module(code);
+        tree.reads(MODULE)
+            .iter()
+            .map(|read| (*read).to_owned())
+            .collect::<Vec<_>>()
+    };
+    let none = Vec::<String>::new();
+    assert_eq!(
+        reads("def f(p):\n    with open(p) as fh:\n        fh.read()\n"),
+        none
+    );
+    // The `__enter__` of a class may return anything.
+    assert_eq!(
+        reads("class Foo:\n    pass\n\ndef f():\n    with Foo() as fh:\n        fh.read()\n"),
+        ["read"]
+    );
+    // A path that is a builtin value opens a builtin file.
+    assert_eq!(
+        reads(
+            "from pathlib import Path\n\ndef f(tmp: Path):\n    with tmp.open('w') as fh:\n        fh.write('x')\n"
+        ),
+        none
+    );
+    // A path made from a path is a path.
+    assert_eq!(
+        reads(
+            "from pathlib import Path\n\ndef f(tmp: Path):\n    a = tmp.joinpath('a')\n    b = tmp / 'b'\n    with a.open('w') as x, b.open() as y:\n        x.write('x')\n        y.read()\n"
+        ),
+        none
+    );
+    assert_eq!(
+        reads("def f(tmp):\n    with tmp.open('w') as fh:\n        fh.write('x')\n"),
+        ["open", "write"]
+    );
+    // Bound to something else afterwards, the name is no builtin.
+    assert_eq!(
+        reads("def f(p):\n    with open(p) as fh:\n        pass\n    fh = make()\n    fh.read()\n"),
+        ["read"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A builtin the file binds itself is no builtin call")]
+#[test]
+fn a_builtin_the_file_binds_itself_is_no_builtin_call() {
+    let reads = |code: &str| {
+        let tree = module(code);
+        tree.reads(MODULE)
+            .iter()
+            .map(|read| (*read).to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        reads(
+            "def open(p):\n    return Foo()\n\ndef f(p):\n    with open(p) as fh:\n        fh.read()\n"
+        ),
+        ["read"]
+    );
+    assert_eq!(
+        reads("from .io import open\n\ndef f(p):\n    with open(p) as fh:\n        fh.read()\n"),
+        ["read"]
+    );
+    assert_eq!(
+        reads("vars = make\n\ndef f(x):\n    vars(x).keys()\n"),
+        ["keys"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A member read on a call of a builtin is no read")]
+#[test]
+fn a_member_read_on_a_call_of_a_builtin_is_no_read() {
+    let tree = module(
+        "def f(x, y):\n\
+         \x20   vars(x).keys()\n\
+         \x20   dir(x).sort()\n\
+         \x20   globals().items()\n\
+         \x20   locals().pop(y)\n\
+         \x20   str(x).strip()\n\
+         \x20   sorted(x).index(y)\n\
+         \x20   for member in vars(x).keys():\n\
+         \x20       member.strip()\n",
+    );
+    assert_eq!(tree.reads(MODULE), ["strip"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A local bound from a builtin local or field is no receiver of a member"
+)]
+#[test]
+fn a_local_bound_from_a_builtin_local_or_field_is_no_receiver_of_a_member() {
+    let reads = |code: &str| {
+        let tree = module(code);
+        tree.reads(MODULE)
+            .iter()
+            .map(|read| (*read).to_owned())
+            .collect::<Vec<_>>()
+    };
+    let none = Vec::<String>::new();
+    assert_eq!(reads("def f(a, b):\n    x = [a]\n    x.append(b)\n"), none);
+    assert_eq!(
+        reads("def f(a, b):\n    x = [a]\n    x = make()\n    x.append(b)\n"),
+        ["append"]
+    );
+    assert_eq!(
+        reads("def f(a, b):\n    xs = [a]\n    append = xs.append\n    append(b)\n"),
+        none
+    );
+    assert_eq!(
+        reads("def f(a, b):\n    xs = [a]\n    ys = xs\n    ys.append(b)\n"),
+        none
+    );
+    let class = |field: &str, init: &str| {
+        format!(
+            "from typing import List\n\nclass K:\n    {field}\n\n    def __init__(self, other):\n        {init}\n\n    def m(self, y):\n        b = self._items\n        b.append(y)\n"
+        )
+    };
+    assert_eq!(reads(&class("_items: List[str] = []", "pass")), none);
+    assert_eq!(reads(&class("_items = []", "self._items = []")), none);
+    assert_eq!(
+        reads(&class("_items = []", "self._items = other")),
+        ["append"]
+    );
+}
+
+#[gsttt_scenario::scenario("python", "A match of re is no receiver of a member")]
+#[test]
+fn a_match_of_re_is_no_receiver_of_a_member() {
+    let reads = |code: &str| {
+        let tree = module(code);
+        tree.reads(MODULE)
+            .iter()
+            .map(|read| (*read).to_owned())
+            .collect::<Vec<_>>()
+    };
+    let none = Vec::<String>::new();
+    for call in [
+        "compile(p)",
+        "match(p, s)",
+        "search(p, s)",
+        "fullmatch(p, s)",
+    ] {
+        assert_eq!(
+            reads(&format!(
+                "import re\n\ndef f(p, s):\n    m = re.{call}\n    m.span()\n"
+            )),
+            none,
+            "{call}"
+        );
+    }
+    assert_eq!(
+        reads("import re\n\ndef f(p, s):\n    for m in re.finditer(p, s):\n        m.span()\n"),
+        none
+    );
+    assert_eq!(
+        reads(
+            "import re\n\ndef f(p, s):\n    for part in re.split(p, s):\n        part.strip()\n    for hit in re.findall(p, s):\n        hit.strip()\n"
+        ),
+        none
+    );
+    // A loop over any other value gives elements the file cannot tell.
+    assert_eq!(
+        reads("import re\n\ndef f(items):\n    for m in items:\n        m.span()\n"),
+        ["span"]
+    );
+    // An `re` the file binds again is not the module.
+    assert_eq!(
+        reads("import re\n\nre = make()\n\ndef f(p, s):\n    m = re.search(p, s)\n    m.span()\n"),
+        ["span"]
+    );
+    // Without the import, `re` is a name nothing shows.
+    assert_eq!(
+        reads("def f(re, p, s):\n    m = re.search(p, s)\n    m.span()\n"),
+        ["search", "span"]
+    );
+}
+
+#[test]
+fn a_parameter_named_like_a_module_or_a_builtin_is_read() {
+    let reads = |code: &str| {
+        let tree = module(code);
+        tree.reads(MODULE)
+            .iter()
+            .map(|read| (*read).to_owned())
+            .collect::<Vec<_>>()
+    };
+    for source in [
+        "import re\n\ndef f(re, p, s):\n    m = re.search(p, s)\n    m.span()\n",
+        "import re\n\ndef f(re, p, s):\n    for m in re.finditer(p, s):\n        m.span()\n",
+        "def f(open, p):\n    with open(p) as fh:\n        fh.span()\n",
+        "def f(vars, x):\n    v = vars(x)\n    v.span()\n",
+    ] {
+        assert!(reads(source).iter().any(|read| read == "span"), "{source}");
+    }
+}
+
+#[gsttt_scenario::scenario(
+    "python",
     "A loop, a with, an except, a walrus and a del end the type of a local"
 )]
 #[test]

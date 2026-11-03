@@ -15,8 +15,8 @@ use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
     CmpOp, Comprehension, ExceptHandler, Expr, ExprCall, ExprContext, ExprLambda, ExprSubscript,
-    Parameters, Pattern, Stmt, StmtAnnAssign, StmtAugAssign, StmtClassDef, StmtFunctionDef, StmtIf,
-    StmtTypeAlias,
+    Parameters, Pattern, Stmt, StmtAnnAssign, StmtAugAssign, StmtClassDef, StmtFor,
+    StmtFunctionDef, StmtIf, StmtTypeAlias, StmtWith,
 };
 use ruff_python_stdlib::builtins::{is_python_builtin, python_magic_globals};
 use ruff_text_size::{Ranged, TextRange};
@@ -673,15 +673,6 @@ impl<'a> Recorder<'a> {
         );
         let mut scope = Scope::new(Kind::Function, locals);
         scope.types = self.table.parameter_types(function);
-        scope.mixed = locals::mixed(self.table, function, &scope.types);
-        scope.types.retain(|name, _| !scope.mixed.contains(name));
-        scope.unsure = function
-            .parameters
-            .iter()
-            .map(|parameter| parameter.name().as_str())
-            .filter(|name| !scope.types.contains_key(*name))
-            .map(str::to_owned)
-            .collect();
         scope.receiver = class.filter(|_| !is_static(function)).and_then(|class| {
             let first = function
                 .parameters
@@ -691,6 +682,21 @@ impl<'a> Recorder<'a> {
                 .next()?;
             Some((first.parameter.name.as_str().to_owned(), class))
         });
+        // The receiver is typed so that `buffer = self.field` can take the type of the field. The lookup reads the receiver first, so this changes no chain.
+        if let Some((name, class)) = &scope.receiver {
+            scope
+                .types
+                .insert(name.clone(), Ty::Class(Rc::clone(class)));
+        }
+        scope.mixed = locals::mixed(self.table, function, &scope.types);
+        scope.types.retain(|name, _| !scope.mixed.contains(name));
+        scope.unsure = function
+            .parameters
+            .iter()
+            .map(|parameter| parameter.name().as_str())
+            .filter(|name| !scope.types.contains_key(*name))
+            .map(str::to_owned)
+            .collect();
         self.scopes.push(scope);
         self.load = Load::Later;
         self.visit_body(&function.body);
@@ -906,8 +912,64 @@ impl<'a> Recorder<'a> {
         }
     }
 
+    /// Binds `target` to a value of type `ty`: a name takes the type, and any other target is read as it is.
+    fn bind_target(&mut self, target: &'a Expr, ty: Option<Ty>) {
+        match target {
+            Expr::Name(name) => self.type_local(name.id.as_str(), ty),
+            other => self.visit_expr(other),
+        }
+    }
+
+    /// Whether `value` calls a name the function binds itself, a parameter `re` or a local `open`, which is then not the module or the builtin of that name. A local of a known type says what its methods give, and is not this.
+    fn calls_a_local(&self, value: &Expr) -> bool {
+        let Expr::Call(call) = value else {
+            return false;
+        };
+        let mut root = &*call.func;
+        while let Expr::Attribute(attribute) = root {
+            root = &attribute.value;
+        }
+        let Expr::Name(root) = root else {
+            return false;
+        };
+        let name = root.id.as_str();
+        self.local_scope()
+            .is_some_and(|scope| scope.locals.contains(name) && !scope.types.contains_key(name))
+    }
+
+    /// A `with`: the name of an item takes the type that [`Table::with_type`] says, and none otherwise.
+    fn with(&mut self, with: &'a StmtWith) {
+        for item in &with.items {
+            self.visit_expr(&item.context_expr);
+            if let Some(target) = &item.optional_vars {
+                let ty = self
+                    .local_scope()
+                    .filter(|_| !with.is_async && !self.calls_a_local(&item.context_expr))
+                    .and_then(|scope| self.table.with_type(&item.context_expr, &scope.types));
+                self.bind_target(target, ty);
+            }
+        }
+        self.visit_body(&with.body);
+    }
+
+    /// A `for`: the variable takes the type that [`Table::iteration_type`] says, and none otherwise.
+    fn looped(&mut self, looped: &'a StmtFor) {
+        self.visit_expr(&looped.iter);
+        let ty = if looped.is_async || self.calls_a_local(&looped.iter) {
+            None
+        } else {
+            self.table.iteration_type(&looped.iter)
+        };
+        self.bind_target(&looped.target, ty);
+        self.visit_body(&looped.body);
+        self.visit_body(&looped.orelse);
+    }
+
     /// What the value of an assignment in a function is: an instance of a class, or a builtin.
     fn value_type(&self, value: &Expr) -> Option<Ty> {
+        if self.calls_a_local(value) {
+            return None;
+        }
         let types = &self.local_scope()?.types;
         self.table.value_type(value, types)
     }
@@ -1034,6 +1096,8 @@ impl<'a> Visitor<'a> for Recorder<'a> {
             Stmt::AnnAssign(assign) => self.annotated(assign),
             Stmt::AugAssign(assign) => self.augmented(assign),
             Stmt::TypeAlias(alias) => self.alias(alias),
+            Stmt::With(with) => self.with(with),
+            Stmt::For(looped) => self.looped(looped),
             Stmt::If(branch) if self.scopes.is_empty() && is_main_guard(&branch.test) => {
                 self.main_guard(stmt, branch);
             }
