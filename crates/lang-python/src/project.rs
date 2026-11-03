@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use gsttt_core::connector::{
     ConnectorError, LinkInput, Linked, Parsed, Project, Provide, SourceFile, salt_of,
 };
-use gsttt_core::fact::{Import, Resolution};
+use gsttt_core::fact::{Import, Line, Resolution};
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
@@ -315,6 +315,15 @@ impl Project for PythonProject {
 
     fn link(&self, input: &LinkInput<'_, PyExtra>) -> Linked {
         crate::link::link(self, input)
+    }
+
+    /// Every route declared on a router: `parse` returns it as no fact of the file, so `link` is the only way it becomes one.
+    fn unlinked(&self, extra: &PyExtra) -> Vec<(Line, String)> {
+        extra
+            .routes
+            .iter()
+            .map(|route| (route.fact.line, route.callee.clone()))
+            .collect()
     }
 }
 

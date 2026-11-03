@@ -11,7 +11,7 @@ use xxhash_rust::xxh3::Xxh3;
 
 use crate::contract::{ContractKey, ContractKind, Role};
 use crate::fact::{
-    ContractFact, Embedded, FileFacts, Import, Resolution, ResolvedImport, UnresolvedSite,
+    ContractFact, Embedded, FileFacts, Import, Line, Resolution, ResolvedImport, UnresolvedSite,
 };
 use crate::ids::FileId;
 use crate::path::RepoPath;
@@ -91,6 +91,12 @@ pub trait Project: Send + Sync + 'static {
     fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Linked {
         let _ = input;
         Linked::default()
+    }
+
+    /// The places in one file that only the link turns into facts, each with its line and the code in question. When the link fails they count as unread sites of the file. A site that also has an own fact is not one of them: that fact stands without the link.
+    fn unlinked(&self, extra: &Self::Extra) -> Vec<(Line, String)> {
+        let _ = extra;
+        Vec::new()
     }
 
     /// Languages of embedded documents this project reads: `["graphql"]`.
@@ -343,6 +349,8 @@ pub trait DynProject: Send + Sync {
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution;
     /// Links with the extra data as JSON, the way [`DynProject::parse`] gave it.
     fn link(&self, input: &LinkInput<'_, [u8]>) -> Result<Linked, ConnectorError>;
+    /// What [`Project::unlinked`] names for the extra data as JSON; nothing when it does not decode, since that is why a link fails and its coverage line says so.
+    fn unlinked(&self, extra: &[u8]) -> Vec<(Line, String)>;
     fn embeds(&self) -> &[&str];
     fn parse_embedded(&self, document: &Embedded) -> Vec<ContractFact>;
 }
@@ -501,6 +509,12 @@ impl<P: Project> DynProject for ErasedProject<P> {
             })
             .collect();
         Ok(self.project.link(&LinkInput::new(files)))
+    }
+
+    fn unlinked(&self, extra: &[u8]) -> Vec<(Line, String)> {
+        self.decode(extra)
+            .map(|extra| self.project.unlinked(&extra))
+            .unwrap_or_default()
     }
 
     fn embeds(&self) -> &[&str] {

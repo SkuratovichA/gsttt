@@ -107,6 +107,30 @@ fn path_items_in_fragments_are_declared() {
     insta::assert_json_snapshot!(run.snapshot());
 }
 
+#[gsttt_scenario::scenario(
+    "contract-formats",
+    "An operation of a fragment is named as waiting for the link"
+)]
+#[test]
+fn an_operation_of_a_fragment_is_named_as_waiting_for_the_link() {
+    let run = Run::new("openapi_fragments", &[module(&OPENAPI)]);
+    let projects = OPENAPI.open(&run.repo, &Value::Null, &[]).unwrap();
+    let waiting = |path: &str| {
+        let owner = RepoPath::normalize(path).unwrap();
+        let project = projects
+            .iter()
+            .find(|project| project.matches(&owner))
+            .unwrap();
+        project.unlinked(&run.file(path).extra)
+    };
+    // The operations of the fragment are no facts of it, and the document that refers to it declares none itself.
+    assert_eq!(
+        waiting("api/paths/bookings.yaml"),
+        [(1, "GET".to_owned()), (5, "POST".to_owned())]
+    );
+    assert_eq!(waiting("api/openapi.yaml"), []);
+}
+
 #[test]
 fn the_files_option_claims_documents_with_other_names() {
     let without = Run::new("openapi_option", &[module(&OPENAPI)]);

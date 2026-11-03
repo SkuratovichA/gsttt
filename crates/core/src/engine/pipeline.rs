@@ -462,11 +462,11 @@ pub fn execute(
             match contain(|| project.link(&input)) {
                 Ok(Ok(linked)) => (linked, None),
                 Ok(Err(error)) => (
-                    Linked::default(),
+                    left_to_link(project.as_ref(), &input),
                     Some(problem(project.as_ref(), Call::Link, error.to_string())),
                 ),
                 Err(message) => (
-                    Linked::default(),
+                    left_to_link(project.as_ref(), &input),
                     Some(problem(project.as_ref(), Call::Link, message)),
                 ),
             }
@@ -777,6 +777,38 @@ fn read_embedded(
         })
         .collect();
     (runs, problems)
+}
+
+/// The reason of a site that waited for a link that failed.
+const LINK_FAILED: &str = "link failed";
+
+/// What a failed link leaves unread: the places the project's files left to it, as unread sites of their files. A project that panicked once may panic again, so the ask is contained too.
+fn left_to_link(project: &dyn DynProject, input: &LinkInput<'_, [u8]>) -> Linked {
+    let unread = contain(|| {
+        input
+            .files()
+            .iter()
+            .flat_map(|file| {
+                project
+                    .unlinked(file.extra)
+                    .into_iter()
+                    .map(|(line, detail)| {
+                        (
+                            file.id,
+                            UnresolvedSite {
+                                line,
+                                reason: UnresolvedReason::Unsupported(LINK_FAILED.to_owned()),
+                                detail,
+                            },
+                        )
+                    })
+            })
+            .collect()
+    });
+    Linked {
+        facts: Vec::new(),
+        unread: unread.unwrap_or_default(),
+    }
 }
 
 fn problem(project: &dyn DynProject, call: Call, message: String) -> Problem {

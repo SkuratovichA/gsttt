@@ -19,7 +19,7 @@ use crate::connector::{
 };
 use crate::contract::{ContractKey, Role};
 use crate::fact::{
-    ContractFact, Embedded, FileFacts, Import, ImportKind, Resolution, UnresolvedReason,
+    ContractFact, Embedded, FileFacts, Import, ImportKind, Line, Resolution, UnresolvedReason,
     UnresolvedSite,
 };
 use crate::path::RepoPath;
@@ -250,7 +250,7 @@ pub(crate) struct Options {
     pub(crate) tag: String,
 }
 
-/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. `unread <line> <detail>` is a site that `link` cannot read, and `blind <line> <detail>` one that `parse` cannot. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
+/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. `unread <line> <detail>` is a site that `link` cannot read, `waits <line> <detail>` one that only `link` turns into a fact (the project's `unlinked`), `poison` makes the file's extra data fail to decode so that the link fails, and `blind <line> <detail>` one that `parse` cannot. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -361,6 +361,11 @@ impl Project for NotesProject {
                 extra.linked.push(linked_line(text));
             } else if let Some(text) = line.strip_prefix("unread ") {
                 extra.unread.push(unread_line(text));
+            } else if let Some(text) = line.strip_prefix("waits ") {
+                let site = unread_line(text);
+                extra.waits.push((site.line, site.detail));
+            } else if line == "poison" {
+                extra.poison = true;
             } else if let Some(text) = line.strip_prefix("blind ") {
                 facts.unresolved.push(unread_line(text));
             }
@@ -392,6 +397,10 @@ impl Project for NotesProject {
             Some(file) => Resolution::File { file },
             None => Resolution::Unresolved(UnresolvedReason::NotFound),
         }
+    }
+
+    fn unlinked(&self, extra: &Self::Extra) -> Vec<(Line, String)> {
+        extra.waits.clone()
     }
 
     fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Linked {
@@ -441,6 +450,19 @@ pub(crate) struct NotesExtra {
     linked: Vec<(ContractFact, Option<ContractKey>)>,
     /// The sites `link` cannot read: the `unread` lines of its text.
     unread: Vec<UnresolvedSite>,
+    /// The places `unlinked` names: the `waits` lines of its text.
+    waits: Vec<(Line, String)>,
+    /// A `poison` line makes the extra data unreadable, so that the link of the project fails without a panic.
+    #[serde(deserialize_with = "refuse_poison")]
+    poison: bool,
+}
+
+/// Reads the flag of a poisoned file as an error, the way a cached extra that no longer decodes is.
+fn refuse_poison<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    if bool::deserialize(deserializer)? {
+        return Err(serde::de::Error::custom("poisoned extra data"));
+    }
+    Ok(false)
 }
 
 /// The site that `<line> <detail>` spells, one that `parse` or `link` cannot read: `3 fetch(url)`.
