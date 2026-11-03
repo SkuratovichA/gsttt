@@ -170,6 +170,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "cjs"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 10,
@@ -224,12 +227,6 @@ expression: json
             "end": 9,
             "line": 9,
             "name": "lazy",
-            "uses": []
-          },
-          {
-            "end": 10,
-            "line": 10,
-            "name": "cjs",
             "uses": []
           },
           {

@@ -7,8 +7,8 @@ use gsttt_core::contract::{has_parent_segment, path_after_origin, without_query_
 use gsttt_core::rules::{Prefix, Site, ValueExpr, ValueSource};
 use oxc_ast::ast::{
     Argument, BinaryExpression, ChainElement, Expression, FormalParameter, JSXMemberExpression,
-    JSXMemberExpressionObject, MemberExpression, NewExpression, ObjectPropertyKind,
-    PropertyDefinition, PropertyKey, TSTypeName, TemplateLiteral,
+    JSXMemberExpressionObject, MemberExpression, NewExpression, ObjectExpression,
+    ObjectPropertyKind, PropertyDefinition, PropertyKey, TSTypeName, TemplateLiteral,
 };
 use oxc_syntax::operator::{AssignmentOperator, BinaryOperator};
 use serde::{Deserialize, Serialize};
@@ -786,6 +786,28 @@ pub(crate) fn commonjs_exports<'e, 'a>(
         .strip_prefix("exports.")
         .or_else(|| target.strip_prefix("module.exports."))?;
     Some(vec![(name.to_owned(), assigned_value(value))])
+}
+
+/// Whether `expr` is the exports object of a `CommonJS` file, `exports` or `module.exports`.
+pub(crate) fn is_exports_object(expr: &Expression<'_>) -> bool {
+    match expr.get_inner_expression() {
+        Expression::Identifier(name) => name.name.as_str() == "exports",
+        Expression::StaticMemberExpression(member) => {
+            member.property.name.as_str() == "exports"
+                && matches!(&member.object, Expression::Identifier(object) if object.name.as_str() == "module")
+        }
+        _ => false,
+    }
+}
+
+/// Whether an object literal can hold names that `commonjs_exports` does not list: a spread or a computed key. An empty literal names nothing, and what is added to it later names itself.
+pub(crate) fn is_open_object(object: &ObjectExpression<'_>) -> bool {
+    object.properties.iter().any(|property| match property {
+        ObjectPropertyKind::ObjectProperty(property) => {
+            property.computed || property_str(&property.key).is_none()
+        }
+        ObjectPropertyKind::SpreadProperty(_) => true,
+    })
 }
 
 /// The names joined with dots, when none is computed.

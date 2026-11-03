@@ -1,6 +1,5 @@
 ---
 source: crates/lang-ts/tests/typescript/exports.rs
-assertion_line: 51
 expression: json
 ---
 {
@@ -15,6 +14,70 @@ expression: json
         "status": "ok"
       },
       "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "src/assigned.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "reads": [
+          "assign",
+          "exports"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "src/computed.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "reads": [
+          "exports"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "src/defined.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "reads": [
+          "defineProperty"
+        ]
+      },
+      "tags": 0,
       "unresolved": []
     },
     {
@@ -83,7 +146,7 @@ expression: json
       "contracts": [],
       "embedded": [],
       "imports": [],
-      "path": "src/exports-member.js",
+      "path": "src/factory.js",
       "project": "ts .",
       "status": {
         "status": "ok"
@@ -93,9 +156,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
-        "reads": [
-          "b"
-        ]
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -104,7 +165,26 @@ expression: json
       "contracts": [],
       "embedded": [],
       "imports": [],
-      "path": "src/module-exports-member.js",
+      "path": "src/indexed.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "src/module-indexed.js",
       "project": "ts .",
       "status": {
         "status": "ok"
@@ -115,7 +195,40 @@ expression: json
         "heirs": [],
         "on_load": [],
         "reads": [
-          "c",
+          "exports"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [
+        {
+          "flags": 0,
+          "kind": "require",
+          "line": 1,
+          "names": [],
+          "spec": "./a",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        }
+      ],
+      "path": "src/required.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "reads": [
           "exports"
         ]
       },
@@ -126,7 +239,28 @@ expression: json
       "contracts": [],
       "embedded": [],
       "imports": [],
-      "path": "src/module-exports.js",
+      "path": "src/spread.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "reads": [
+          "exports"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "src/variable.js",
       "project": "ts .",
       "status": {
         "status": "ok"
@@ -136,14 +270,19 @@ expression: json
           {
             "end": 1,
             "line": 1,
-            "name": "a",
+            "name": "lib",
             "uses": []
           }
         ],
-        "exports": [],
+        "exports": [
+          {
+            "local": "lib",
+            "name": "default"
+          }
+        ],
         "heirs": [],
         "on_load": [
-          "a"
+          "lib"
         ],
         "reads": [
           "exports"

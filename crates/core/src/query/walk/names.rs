@@ -29,6 +29,8 @@ pub(in crate::query) enum Note {
         members: Vec<(String, String)>,
         files: usize,
     },
+    /// A file loads the module and reads none of the names asked about, so it cannot be told from a caller of the module, and is left out: `files` of them. It holds the module in a local, or loads it below the top level.
+    HeldModule { files: usize },
     /// The depth ended the walk while callers were left to follow.
     Stopped,
 }
@@ -209,6 +211,7 @@ fn walk_from(
         across: BTreeSet::new(),
         through_class: BTreeSet::new(),
         held: BTreeSet::new(),
+        held_modules: BTreeSet::new(),
     };
     let mut crossed = Crossed::new(Direction::ToCallers, &index.graph);
     let mut notes = BTreeSet::new();
@@ -229,16 +232,24 @@ fn walk_from(
     }
     let hits = walk.hits();
     // A file left out may be listed for another reason, and then it is no file the note is about. One note for every member, so that the answer can cut the list of them as it cuts every list of names.
-    let held = walk
-        .held
-        .iter()
-        .filter(|file| !hits.iter().any(|hit| hit.file == **file))
-        .count();
+    let outside = |file: &FileId| !hits.iter().any(|hit| hit.file == *file);
+    // A call through a value names a class, or a module is held where no class is: a top-level name has no class, and the files that hold its module are the ones that load it and read none of its names.
+    let (classed, mut modules) = if walk.through_class.is_empty() {
+        (BTreeSet::new(), walk.held.clone())
+    } else {
+        (walk.held.clone(), BTreeSet::new())
+    };
+    modules.extend(walk.held_modules.iter().copied());
+    let held = classed.iter().filter(|file| outside(file)).count();
     if held > 0 {
         notes.insert(Note::HeldClass {
             members: walk.through_class.into_iter().collect(),
             files: held,
         });
+    }
+    let modules = modules.iter().filter(|file| outside(file)).count();
+    if modules > 0 {
+        notes.insert(Note::HeldModule { files: modules });
     }
     Walked {
         hits,
@@ -322,6 +333,15 @@ impl<'a> Name<'a> {
         }
     }
 
+    /// The name a file reads on a module it holds in a local to use this name of it: the name, or the member for a member of a class, and none for every name and for the default, which the local itself stands for.
+    fn read_on_a_module(self) -> Option<&'a str> {
+        match self {
+            Self::Is("default") | Self::Any => None,
+            Self::Is(name) => Some(name),
+            Self::Member(_, member) => Some(member),
+        }
+    }
+
     /// This name for `member` of the class it names. `Any` stays whatever the member.
     fn with(self, member: Option<&'a str>) -> Self {
         match (self, member) {
@@ -375,6 +395,8 @@ struct Layer {
     through_class: BTreeSet<(String, String)>,
     /// The files that hold a class or a value of it where the walk asked about a member of it, and name none.
     held: BTreeSet<FileId>,
+    /// The files that load the module and read none of the names asked about.
+    held_modules: BTreeSet<FileId>,
 }
 
 struct Walk<'a> {
@@ -390,6 +412,8 @@ struct Walk<'a> {
     through_class: BTreeSet<(String, String)>,
     /// The files that hold a class or a value of it where the walk asked about a member of it, and name none.
     held: BTreeSet<FileId>,
+    /// The files that load the module and read none of the names asked about.
+    held_modules: BTreeSet<FileId>,
 }
 
 impl Walk<'_> {
@@ -521,6 +545,7 @@ impl Walk<'_> {
     fn apply(&mut self, layer: Layer, distance: u32) -> Vec<Front> {
         self.through_class.extend(layer.through_class);
         self.held.extend(layer.held);
+        self.held_modules.extend(layer.held_modules);
         self.across.extend(layer.across);
         // A stable sort keeps the order the layer found the ways in, which is contract order within one file.
         let mut candidates = layer.candidates;
@@ -1113,7 +1138,15 @@ impl<'w, 'a> Step<'w, 'a> {
         {
             match symbols {
                 Some(symbols) => {
-                    self.by_name(name, importer, symbols, &resolved.import, &mut via, work);
+                    self.by_name(
+                        name,
+                        from,
+                        importer,
+                        symbols,
+                        &resolved.import,
+                        &mut via,
+                        work,
+                    );
                 }
                 None => whole_if_taken(walk.graph, name, &resolved.import, &mut via),
             }
@@ -1183,13 +1216,13 @@ impl<'w, 'a> Step<'w, 'a> {
     fn by_name(
         &mut self,
         name: Name<'a>,
+        from: FileId,
         importer: FileId,
         symbols: FileSymbols<'a>,
         import: &'a Import,
         via: &mut Via<'a>,
         work: &mut VecDeque<(FileId, Name<'a>)>,
     ) {
-        let graph = self.walk.graph;
         match import.kind {
             ImportKind::Static | ImportKind::ReExport => {
                 // An import type binds no local: `import('./a').foo` uses `foo` where it is written, in the declarations whose lines hold it, and outside every declaration it reaches nothing, because a type does not run as the file loads.
@@ -1206,46 +1239,7 @@ impl<'w, 'a> Step<'w, 'a> {
                     via.taken = Taken::Everything;
                     return;
                 }
-                let re_export = import.kind == ImportKind::ReExport;
-                for (taken, bound) in import.names.iter().zip(&import.exported) {
-                    if !name.takes(taken) {
-                        continue;
-                    }
-                    via.taken.name(graph, taken);
-                    let member = name.member_taken(taken);
-                    if re_export {
-                        // A re-export of a class names none of its members, and `export * as ns` names no name of the file, so the walk goes through and the file gets no row.
-                        via.barrel |= member.is_none();
-                        if let (Some(source), Some(target)) =
-                            (graph.name_id(taken), graph.name_id(bound))
-                        {
-                            via.passes.push((source, target));
-                        }
-                        work.push_back((importer, Name::Is(bound).with(member)));
-                        continue;
-                    }
-                    let inner = match name {
-                        Name::Member(_, asked) if taken == "*" => Some(asked),
-                        _ => None,
-                    };
-                    via.locals.push(Local {
-                        name: bound,
-                        member,
-                        inner,
-                        namespace: taken == "*",
-                    });
-                    // A file that declares members of what it imports exports the name to start a walk at them, not to pass it on: it calls nothing of the import by that.
-                    if symbols
-                        .declarations()
-                        .any(|decl| member_of(decl.name(), bound))
-                    {
-                        continue;
-                    }
-                    for exported in self.exported_as(importer, symbols, bound) {
-                        via.used = true;
-                        work.push_back((importer, exported.with(member)));
-                    }
-                }
+                self.bind_names(name, from, importer, symbols, import, via, work);
             }
             ImportKind::ReExportAll => {
                 // `export *` never forwards `default`.
@@ -1269,7 +1263,19 @@ impl<'w, 'a> Step<'w, 'a> {
             }
             // A use of every name, by the declaration whose lines hold the import, or by the load, when it takes the module itself. One that names what it takes uses those names where it is written.
             ImportKind::Dynamic | ImportKind::Require => {
-                if takes_module(import) {
+                if !import.names.is_empty() && import.exported.len() == import.names.len() {
+                    self.bind_names(name, from, importer, symbols, import, via, work);
+                } else if takes_module(import) {
+                    // A local below the top level holds the module, and the file uses a name of it where it reads that name on a value.
+                    if import.kind == ImportKind::Require
+                        && !import.names.is_empty()
+                        && name
+                            .read_on_a_module()
+                            .is_some_and(|read| !symbols.reads_member(read))
+                    {
+                        self.layer.held_modules.insert(importer);
+                        return;
+                    }
                     via.taken = Taken::Everything;
                     via.used |= self.place(importer, symbols, import.line);
                 } else {
@@ -1279,6 +1285,67 @@ impl<'w, 'a> Step<'w, 'a> {
             ImportKind::Reference | ImportKind::Module | ImportKind::Include => {
                 via.taken = Taken::Everything;
                 via.whole = true;
+            }
+        }
+    }
+
+    /// What an import that binds each name it takes makes of `name`, which `from` exports: the locals its declarations refer to, and the names it exports again.
+    fn bind_names(
+        &mut self,
+        name: Name<'a>,
+        from: FileId,
+        importer: FileId,
+        symbols: FileSymbols<'a>,
+        import: &'a Import,
+        via: &mut Via<'a>,
+        work: &mut VecDeque<(FileId, Name<'a>)>,
+    ) {
+        let graph = self.walk.graph;
+        let re_export = import.kind == ImportKind::ReExport;
+        for (taken, bound) in import.names.iter().zip(&import.exported) {
+            // A require hands back the module, so a file that exports one value or names no default has that module taken for the one name the local binds, and its uses of the local are uses of the names.
+            let widened = taken == "default"
+                && name
+                    .exported()
+                    .is_some_and(|exported| exported != "default")
+                && (import.kind == ImportKind::Require || !exports_default(graph, from));
+            let taken = if widened { "*" } else { taken.as_str() };
+            if !name.takes(taken) {
+                continue;
+            }
+            via.taken.name(graph, taken);
+            let member = name.member_taken(taken);
+            if re_export {
+                // A re-export of a class names none of its members, and `export * as ns` names no name of the file, so the walk goes through and the file gets no row.
+                via.barrel |= member.is_none();
+                if let (Some(source), Some(target)) = (graph.name_id(taken), graph.name_id(bound)) {
+                    via.passes.push((source, target));
+                }
+                work.push_back((importer, Name::Is(bound).with(member)));
+                continue;
+            }
+            let inner = match name {
+                Name::Member(_, asked) if taken == "*" => Some(asked),
+                _ => None,
+            };
+            // A require of a file that exports a default binds that value, so a bare use of the local is a use of the default and of a name only where the file reads the name.
+            let value = widened && exports_default(graph, from);
+            via.locals.push(Local {
+                name: bound,
+                member,
+                inner,
+                namespace: taken == "*" && !value,
+            });
+            // A file that declares members of what it imports exports the name to start a walk at them, not to pass it on: it calls nothing of the import by that.
+            if symbols
+                .declarations()
+                .any(|decl| member_of(decl.name(), bound))
+            {
+                continue;
+            }
+            for exported in self.exported_as(importer, symbols, bound) {
+                via.used = true;
+                work.push_back((importer, exported.with(member)));
             }
         }
     }
@@ -1411,6 +1478,14 @@ fn take_names(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<'_>)
         takes = true;
     }
     takes
+}
+
+/// Whether `file` lists `default` among its exports.
+fn exports_default(graph: &Graph, file: FileId) -> bool {
+    graph
+        .name_id("default")
+        .zip(graph.exports(file))
+        .is_some_and(|(default, listed)| listed.binary_search(&default).is_ok())
 }
 
 /// Whether a dynamic import or a `require` takes the module itself, so every name of it: it names nothing, or names the namespace, which is `*` and for a `require` also the `default` that `const lib = require('./a')` binds.

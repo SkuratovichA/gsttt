@@ -484,12 +484,15 @@ fn import_equals_require_declares_its_name_as_const_require_does() -> Result<(),
     );
 
     let same = "src/const.ts";
-    assert_eq!(declared(&json, path), declared(&json, same));
-    assert_eq!(edges(&json, path), edges(&json, same));
+    assert_eq!(
+        declared(&json, same),
+        ["run @3-5"],
+        "`const x = require('./lib')` binds a module as an import does, and declares nothing"
+    );
     assert_eq!(
         on_load(&json, path),
         on_load(&json, same),
-        "`const x = require('./lib')` gives the same facts"
+        "neither require refers to a name of the file"
     );
     insta::assert_json_snapshot!(json);
     Ok(())

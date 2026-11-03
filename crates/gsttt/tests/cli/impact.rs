@@ -690,6 +690,45 @@ fn a_file_that_only_holds_a_class_is_counted_and_not_listed_in_typescript() {
     );
 }
 
+/// The real connector reading `CommonJS`: a file that lists its exports, a require at the top level that binds a local and is used for one name, and a require inside a function that reads none of the names asked about, which is counted in a note and not listed.
+#[test]
+fn a_file_that_loads_a_commonjs_module_in_a_function_and_reads_no_name_is_counted() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/lib.js",
+        "function helper() {}\n\nfunction other() {}\n\nmodule.exports = { helper, other };\n",
+    );
+    write(
+        &repo,
+        "src/top.js",
+        "const lib = require('./lib');\n\nfunction run() {\n  return lib.helper();\n}\n\nfunction stop() {\n  return lib.other();\n}\n\nmodule.exports = { run, stop };\n",
+    );
+    write(
+        &repo,
+        "src/nested.js",
+        "function load() {\n  const lib = require('./lib');\n  return lib.other();\n}\n\nmodule.exports = { load };\n",
+    );
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &["--json", "impact", "src/lib.js", "--name", "helper"],
+    ));
+    assert_eq!(
+        paths(&answer["affected"]),
+        ["src/lib.js", "src/top.js"],
+        "{answer}"
+    );
+    // The walk also stops at the depth, which is another note.
+    assert_eq!(
+        answer["notes"][0].as_str(),
+        Some(
+            "1 file loads this module and reads none of the names asked about; ask about the file to list it"
+        )
+    );
+}
+
 #[test]
 fn a_path_the_index_does_not_hold_does_not_fail_the_others() {
     let sandbox = Sandbox::new();

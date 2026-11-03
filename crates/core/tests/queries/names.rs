@@ -1740,9 +1740,10 @@ fn a_star_barrel_passes_a_name_on_but_never_the_default() {
     let foo = ask(&index, "a.ts", &["foo"], None);
     let thing = ask(&index, "a.ts", &["thing"], None);
 
+    // `index.ts` exports no default, so the default import of `page.ts` holds the module and uses every name of it where `show` is written.
     assert_eq!(
         rows(&foo.affected),
-        [row("page.ts", 1, "imports foo from index.ts", &["render"])]
+        [row("page.ts", 1, "imports index.ts", &["render", "show"])]
     );
     assert!(thing.affected.is_empty(), "{:?}", thing.affected);
 }
@@ -1893,13 +1894,16 @@ fn a_require_of_the_default_takes_every_name_and_one_that_names_a_member_takes_t
                 .declaration("bar", (4, 5), &[]),
         )
         .exports("a.ts", &["foo", "bar"])
-        // `const lib = require('./a')` records the name `default`.
+        // `const lib = require('./a')` inside a function records the name `default` and binds no local.
         .import(
             "whole.ts",
             loading(ImportKind::Require, &["default"], 2),
             file("a.ts"),
         )
-        .symbols("whole.ts", Code::new().declaration("load", (1, 3), &[]))
+        .symbols(
+            "whole.ts",
+            Code::new().declaration("load", (1, 3), &[]).reads("foo"),
+        )
         .exports("whole.ts", &[])
         // `require('./a').foo` records the name `foo`.
         .import(
@@ -1921,10 +1925,8 @@ fn a_require_of_the_default_takes_every_name_and_one_that_names_a_member_takes_t
             row("whole.ts", 1, "imports a.ts", &["load"]),
         ]
     );
-    assert_eq!(
-        rows(&bar.affected),
-        [row("whole.ts", 1, "imports a.ts", &["load"])]
-    );
+    // `whole.ts` reads `foo` and not `bar`, so only `foo` reaches it.
+    assert!(bar.affected.is_empty(), "{:?}", bar.affected);
 }
 
 #[scenario("queries", "An import type outside every declaration reaches nothing")]
@@ -3371,4 +3373,264 @@ fn a_member_goes_on_through_a_namespace() {
     let answer = ask(&index, "lib.ts", &["Base.place"], None);
 
     assert_eq!(shown(&answer), [("a.ts", 1, vec!["run"])]);
+}
+
+/// `lib.js`, which exports `helper` and `other` as `module.exports = { helper, other }` does, and which lists no default.
+fn commonjs_library() -> Tree {
+    Tree::new()
+        .symbols(
+            "lib.js",
+            Code::new()
+                .declaration("helper", (1, 2), &[])
+                .declaration("other", (4, 5), &[]),
+        )
+        .exports("lib.js", &["helper", "other"])
+}
+
+#[scenario(
+    "queries",
+    "A require held by a local takes a name where the file uses it"
+)]
+#[test]
+fn a_require_held_by_a_local_takes_a_name_where_the_file_uses_it() {
+    let index = commonjs_library()
+        .requires_as("user.js", "lib.js", &[("default", "lib")])
+        .symbols(
+            "user.js",
+            Code::new()
+                .declaration("run", (1, 3), &["lib.helper"])
+                .declaration("stop", (5, 7), &["lib.other"]),
+        )
+        .exports("user.js", &[])
+        .build();
+
+    let helper = ask(&index, "lib.js", &["helper"], None);
+    let other = ask(&index, "lib.js", &["other"], None);
+
+    assert_eq!(
+        rows(&helper.affected),
+        [row("user.js", 1, "imports lib.js", &["run"])]
+    );
+    assert_eq!(
+        rows(&other.affected),
+        [row("user.js", 1, "imports lib.js", &["stop"])]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A local a require binds is a use of every name when passed away"
+)]
+#[test]
+fn a_local_a_require_binds_is_a_use_of_every_name_when_passed_away() {
+    let index = commonjs_library()
+        .requires_as("user.js", "lib.js", &[("default", "lib")])
+        .symbols(
+            "user.js",
+            Code::new()
+                .declaration("pass", (1, 3), &["lib"])
+                .declaration("idle", (5, 7), &[]),
+        )
+        .exports("user.js", &[])
+        .build();
+
+    let answer = ask(&index, "lib.js", &["helper"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("user.js", 1, "imports lib.js", &["pass"])]
+    );
+}
+
+#[scenario("queries", "A destructured require takes its names")]
+#[test]
+fn a_destructured_require_takes_its_names() {
+    let index = commonjs_library()
+        .requires_as("user.js", "lib.js", &[("helper", "helper"), ("other", "d")])
+        .symbols(
+            "user.js",
+            Code::new()
+                .declaration("run", (1, 3), &["helper"])
+                .declaration("stop", (5, 7), &["d"]),
+        )
+        .exports("user.js", &[])
+        .build();
+
+    let helper = ask(&index, "lib.js", &["helper"], None);
+    let other = ask(&index, "lib.js", &["other"], None);
+
+    assert_eq!(
+        rows(&helper.affected),
+        [row("user.js", 1, "imports helper from lib.js", &["run"])]
+    );
+    assert_eq!(
+        rows(&other.affected),
+        [row("user.js", 1, "imports other from lib.js", &["stop"])]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A require of a file that exports one value reads as that value"
+)]
+#[test]
+fn a_require_of_a_file_that_exports_one_value_reads_as_that_value() {
+    let index = Tree::new()
+        .symbols(
+            "foo.js",
+            Code::new()
+                .declaration("Foo", (1, 9), &[])
+                .declaration("Foo.start", (2, 3), &[])
+                .declaration("Foo.stop", (5, 6), &[])
+                .exports_from("default", "Foo"),
+        )
+        .exports("foo.js", &["default"])
+        .requires_as("user.js", "foo.js", &[("default", "Foo")])
+        .symbols(
+            "user.js",
+            Code::new()
+                .declaration("run", (1, 3), &["Foo.start"])
+                .declaration("halt", (5, 7), &["Foo.stop"]),
+        )
+        .exports("user.js", &[])
+        .build();
+
+    let answer = ask(&index, "foo.js", &["Foo.start"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("user.js", 1, "imports default from foo.js", &["run"])]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A default import of a file that exports no default holds the module"
+)]
+#[test]
+fn a_default_import_of_a_file_that_exports_no_default_holds_the_module() {
+    let index = commonjs_library()
+        .imports_as("user.js", "lib.js", &[("default", "lib")])
+        .symbols(
+            "user.js",
+            Code::new()
+                .declaration("run", (1, 3), &["lib.helper"])
+                .declaration("stop", (5, 7), &["lib.other"]),
+        )
+        .exports("user.js", &[])
+        .build();
+
+    let answer = ask(&index, "lib.js", &["helper"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("user.js", 1, "imports lib.js", &["run"])]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A local below the top level takes a name where the file reads it"
+)]
+#[test]
+fn a_local_below_the_top_level_takes_a_name_where_the_file_reads_it() {
+    let load = |line| loading(ImportKind::Require, &["default"], line);
+    let index = commonjs_library()
+        .import("reads.js", load(2), file("lib.js"))
+        .symbols(
+            "reads.js",
+            Code::new().declaration("run", (1, 4), &[]).reads("helper"),
+        )
+        .exports("reads.js", &[])
+        .import("holds.js", load(2), file("lib.js"))
+        .symbols(
+            "holds.js",
+            Code::new().declaration("run", (1, 4), &[]).reads("other"),
+        )
+        .exports("holds.js", &[])
+        .build();
+
+    let answer = ask(&index, "lib.js", &["helper"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("reads.js", 1, "imports lib.js", &["run"])]
+    );
+    assert_eq!(
+        notes(&answer),
+        [
+            "1 file loads this module and reads none of the names asked about; ask about the file to list it"
+        ]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A bare use of a required module that has a default is no use of its other names"
+)]
+#[test]
+fn a_bare_use_of_a_required_module_that_has_a_default_is_no_use_of_its_other_names() {
+    let index = Tree::new()
+        .symbols(
+            "reply.js",
+            Code::new()
+                .declaration("Reply", (1, 3), &[])
+                .declaration("buildReply", (5, 6), &[]),
+        )
+        .exports("reply.js", &["default", "buildReply"])
+        .requires_as("bare.js", "reply.js", &[("default", "Reply")])
+        .symbols(
+            "bare.js",
+            Code::new().declaration("check", (2, 4), &["Reply"]),
+        )
+        .exports("bare.js", &[])
+        .requires_as("member.js", "reply.js", &[("default", "Reply")])
+        .symbols(
+            "member.js",
+            Code::new().declaration("make", (2, 4), &["Reply.buildReply"]),
+        )
+        .exports("member.js", &[])
+        .requires_as("named.js", "reply.js", &[("default", "Reply")])
+        .symbols(
+            "named.js",
+            Code::new()
+                .declaration("pass", (2, 4), &["Reply"])
+                .reads("buildReply"),
+        )
+        .exports("named.js", &[])
+        .build();
+
+    let answer = ask(&index, "reply.js", &["buildReply"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [
+            row("member.js", 1, "imports reply.js", &["make"]),
+            row("named.js", 1, "imports reply.js", &["pass"]),
+        ]
+    );
+    assert_eq!(
+        notes(&answer),
+        [
+            "1 file loads this module and reads none of the names asked about; ask about the file to list it"
+        ]
+    );
+}
+
+#[scenario("queries", "A require used as it stands takes every name")]
+#[test]
+fn a_require_used_as_it_stands_takes_every_name() {
+    let index = commonjs_library()
+        .requires("user.js", "lib.js", &[])
+        .symbols("user.js", Code::new().declaration("load", (1, 3), &[]))
+        .exports("user.js", &[])
+        .build();
+
+    let answer = ask(&index, "lib.js", &["helper"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row("user.js", 1, "imports lib.js", &["load"])]
+    );
+    assert!(answer.notes.is_empty(), "{:?}", notes(&answer));
 }

@@ -1,6 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/values.rs
-assertion_line: 185
+assertion_line: 188
 expression: json
 ---
 {
@@ -74,6 +74,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "ROOT"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 8,
@@ -108,12 +111,6 @@ expression: json
             "uses": [
               "ROOT"
             ]
-          },
-          {
-            "end": 8,
-            "line": 8,
-            "name": "ROOT",
-            "uses": []
           }
         ],
         "exports": [],

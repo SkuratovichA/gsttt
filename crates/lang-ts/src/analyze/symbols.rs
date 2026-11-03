@@ -6,20 +6,25 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
-use gsttt_core::fact::{Declared, Heir, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
+use gsttt_core::fact::{Declared, Heir, ImportKind, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     BindingPattern, ChainElement, Class, ClassElement, Declaration, ExportDefaultDeclaration,
-    ExportDefaultDeclarationKind, Expression, ImportDeclaration, MethodDefinitionKind, Program,
-    PropertyKey, SimpleAssignmentTarget, Statement, TSInterfaceDeclaration, TSModuleReference,
-    VariableDeclaration, VariableDeclarationKind,
+    ExportDefaultDeclarationKind, Expression, ImportDeclaration, MethodDefinitionKind,
+    ObjectPropertyKind, Program, PropertyKey, SimpleAssignmentTarget, Statement,
+    TSInterfaceDeclaration, TSModuleReference, VariableDeclaration, VariableDeclarationKind,
+    VariableDeclarator,
 };
 use oxc_span::{GetSpan, Span};
 
 use super::constants::import_locals;
 use super::roots::{constructed, declared_class, heads};
+use super::{load_of, peel};
 use crate::extra::{Export, ExportTarget};
-use crate::shape::{dotted_name, is_export_key, is_parameter_property, property_str};
+use crate::shape::{
+    dotted_name, is_export_key, is_open_object, is_parameter_property, literal_text, property_name,
+    property_str,
+};
 
 /// The member that stands for a class used by its type alone: recorded as `Class.`, so that a question about the class reaches it and a question about one of its members does not.
 pub(super) const TYPE_ONLY: &str = "";
@@ -156,6 +161,12 @@ pub(super) struct Recorder<'a> {
     heirs: Vec<Heir>,
     /// The entries that appear in `heirs` as the name that takes the members.
     heir_entries: HashSet<usize>,
+    /// The start of each declarator that binds the names of a `require` as locals.
+    modules: HashSet<u32>,
+    /// The top-level functions and classes, and the variables that hold a function, an arrow or a class, by name.
+    callables: HashSet<&'a str>,
+    /// The top-level `const` variables that hold an object literal which names all its keys, with the keys: what `module.exports = variable` exports besides the variable.
+    objects: HashMap<&'a str, Vec<String>>,
     /// The member names the file reads on a value of a class it does not know, sorted by the set.
     reads: BTreeSet<String>,
     /// What the file refers to as it loads, in the order met.
@@ -221,11 +232,11 @@ impl<'a> Recorder<'a> {
                 self.variables(variables, span, index);
                 Plan::Inside
             }
-            Declaration::FunctionDeclaration(function) => self.single(
-                function.id.as_ref().map(|id| id.name.as_str()),
-                lines,
-                Load::Later,
-            ),
+            Declaration::FunctionDeclaration(function) => {
+                let name = function.id.as_ref().map(|id| id.name.as_str());
+                self.callables.extend(name);
+                self.single(name, lines, Load::Later)
+            }
             Declaration::ClassDeclaration(class) => match &class.id {
                 Some(id) => {
                     self.class(class, id.name.as_str(), span, index);
@@ -336,13 +347,53 @@ impl<'a> Recorder<'a> {
         let alone = variables.declarations.len() == 1;
         for declarator in &variables.declarations {
             let lines = line_pair(index, if alone { span } else { declarator.span });
+            if binds_a_require(declarator) {
+                // The names declare nothing of the file, as the names of an import do.
+                for id in declarator.id.get_binding_identifiers() {
+                    self.entry(id.name.as_str(), Kind::Import, None);
+                }
+                self.modules.insert(declarator.span.start);
+                continue;
+            }
             let declared: Vec<usize> = declarator
                 .id
                 .get_binding_identifiers()
                 .into_iter()
                 .map(|id| self.entry(id.name.as_str(), Kind::Variable, Some(lines)))
                 .collect();
+            if let BindingPattern::BindingIdentifier(id) = &declarator.id
+                && declarator.init.as_ref().is_some_and(|init| {
+                    matches!(
+                        init.get_inner_expression(),
+                        Expression::FunctionExpression(_)
+                            | Expression::ArrowFunctionExpression(_)
+                            | Expression::ClassExpression(_)
+                    )
+                })
+            {
+                self.callables.insert(id.name.as_str());
+            }
             // Only a `const` holds the same value for good.
+            if variables.kind == VariableDeclarationKind::Const
+                && let BindingPattern::BindingIdentifier(id) = &declarator.id
+                && let Some(Expression::ObjectExpression(object)) = declarator
+                    .init
+                    .as_ref()
+                    .map(Expression::get_inner_expression)
+                && !object.properties.is_empty()
+                && !is_open_object(object)
+            {
+                let keys = object
+                    .properties
+                    .iter()
+                    .filter_map(|property| match property {
+                        ObjectPropertyKind::ObjectProperty(property) => {
+                            property_name(&property.key)
+                        }
+                        ObjectPropertyKind::SpreadProperty(_) => None,
+                    });
+                self.objects.insert(id.name.as_str(), keys.collect());
+            }
             if variables.kind == VariableDeclarationKind::Const
                 && let BindingPattern::BindingIdentifier(id) = &declarator.id
                 && let Some(held) = declared_class(declarator)
@@ -353,6 +404,21 @@ impl<'a> Recorder<'a> {
             self.regions
                 .push((declarator.span.start, Region::Declarator(group)));
         }
+    }
+
+    /// Whether the declarator that starts at `start` binds the names of a `require` as locals.
+    pub(super) fn binds_module(&self, start: u32) -> bool {
+        self.modules.contains(&start)
+    }
+
+    /// Whether `name` is a top-level function or class, or a variable that holds one.
+    pub(super) fn is_callable(&self, name: &str) -> bool {
+        self.callables.contains(name)
+    }
+
+    /// The keys of the object literal that the top-level `const` `name` holds, when it names them all.
+    pub(super) fn object_keys(&self, name: &str) -> Option<&[String]> {
+        self.objects.get(name).map(Vec::as_slice)
     }
 
     /// A top-level class and the members that have a name.
@@ -366,6 +432,7 @@ impl<'a> Recorder<'a> {
             Kind::Other,
             Some(line_pair(index, Span::new(start, span.end))),
         );
+        self.callables.insert(name);
         let group = self.group(&[entry]);
         let head = class
             .heritage
@@ -1036,6 +1103,33 @@ pub(super) fn target_base<'a>(target: &SimpleAssignmentTarget<'a>) -> Option<&'a
         SimpleAssignmentTarget::ComputedMemberExpression(member) => base_name(&member.object),
         SimpleAssignmentTarget::PrivateFieldExpression(member) => base_name(&member.object),
         other => other.get_expression().and_then(base_name),
+    }
+}
+
+/// Whether the declarator is a `require` of a literal path whose names are plain locals: `const lib = require('x')` or `const { a, b: c } = require('x')`. A pattern with a rest element, a computed key, a default or a nested pattern may take names this cannot list.
+fn binds_a_require(declarator: &VariableDeclarator<'_>) -> bool {
+    let Some(load) = declarator
+        .init
+        .as_ref()
+        .and_then(|init| load_of(peel(init)))
+    else {
+        return false;
+    };
+    if load.kind != ImportKind::Require || load.argument.and_then(literal_text).is_none() {
+        return false;
+    }
+    match &declarator.id {
+        BindingPattern::BindingIdentifier(_) => true,
+        BindingPattern::ObjectPattern(object) => {
+            object.rest.is_none()
+                && !object.properties.is_empty()
+                && object.properties.iter().all(|property| {
+                    !property.computed
+                        && property_name(&property.key).is_some()
+                        && matches!(property.value, BindingPattern::BindingIdentifier(_))
+                })
+        }
+        _ => false,
     }
 }
 

@@ -232,6 +232,8 @@ pub enum Note {
         members: Vec<(String, String)>,
         files: usize,
     },
+    /// A file loads the module and reads none of the names asked about, so it is left out, and `files` counts them.
+    HeldModule { files: usize },
 }
 
 impl Note {
@@ -259,6 +261,18 @@ impl Note {
                     "{} {holds} the classes of {} and {names} none of them; ask about those classes to list them",
                     thousands(*files),
                     name_sentence(&list, entries)
+                )
+            }
+            Self::HeldModule { files } => {
+                let (loads, reads, them) = if *files == 1 {
+                    ("file loads", "reads", "it")
+                } else {
+                    ("files load", "read", "them")
+                };
+                write!(
+                    f,
+                    "{} {loads} this module and {reads} none of the names asked about; ask about the file to list {them}",
+                    thousands(*files)
                 )
             }
         }
@@ -528,6 +542,7 @@ fn note(graph: &Graph, walked: walk::Note) -> Note {
             path(file)
         )),
         walk::Note::HeldClass { members, files } => Note::HeldClass { members, files },
+        walk::Note::HeldModule { files } => Note::HeldModule { files },
         walk::Note::Stopped => Note::Said("the walk stopped at the depth with callers left to follow; ask about a caller, or with a larger depth, to go on".to_owned()),
     }
 }
@@ -698,6 +713,18 @@ mod tests {
     use crate::testing::{Tree, owned};
 
     use super::*;
+
+    #[test]
+    fn the_note_of_a_held_module_counts_one_and_many() {
+        assert_eq!(
+            Note::HeldModule { files: 1 }.to_string(),
+            "1 file loads this module and reads none of the names asked about; ask about the file to list it"
+        );
+        assert_eq!(
+            Note::HeldModule { files: 2 }.to_string(),
+            "2 files load this module and read none of the names asked about; ask about the file to list them"
+        );
+    }
 
     /// A name the graph holds no spelling for. The builder numbers a name together with its spelling, so no graph the testing module builds has an edge that carries such an id, and the cause below is made by hand with the id the builder would fall back on.
     const UNSPELLED: NameId = NameId::from_raw(u32::MAX);
