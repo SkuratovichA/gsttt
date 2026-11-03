@@ -1,6 +1,7 @@
 //! Go for gsttt: one project per `go.mod`, imports read with tree-sitter and resolved against the module paths of the repository, the declarations of each file with the names they use, and the contracts of the environment, `net/http` and `database/sql` found by rule packs, and the routes of gin, chi, echo, gorilla and fiber.
 
 mod analyze;
+mod code;
 mod file;
 mod files;
 mod interfaces;

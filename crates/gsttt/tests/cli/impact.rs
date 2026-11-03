@@ -1788,6 +1788,102 @@ fn changed_follows_a_changed_python_function_to_its_callers_and_not_to_the_calle
     );
 }
 
+/// A Go module with `job` declaring `Run`, `Stop` and the struct `Box`, `cmd` calling `Run` and `halt` calling `Stop`.
+fn go_job(sandbox: &Sandbox) -> (PathBuf, &'static str) {
+    let repo = sandbox.repository();
+    let job = "package job\n\n// Box holds a count.\ntype Box struct {\n\tn int\n}\n\nfunc Run() int {\n\treturn 1\n}\n\nfunc Stop() int {\n\treturn 0\n}\n\nfunc init() {\n\tprintln(\"a\")\n}\n";
+    write(&repo, "go.mod", "module example.com/m\n\ngo 1.22\n");
+    write(&repo, "job/job.go", job);
+    write(
+        &repo,
+        "cmd/main.go",
+        "package main\n\nimport \"example.com/m/job\"\n\nfunc main() {\n\tjob.Run()\n}\n",
+    );
+    write(
+        &repo,
+        "halt/halt.go",
+        "package halt\n\nimport \"example.com/m/job\"\n\nfunc Halt() int {\n\treturn job.Stop()\n}\n",
+    );
+    commit_all(&repo);
+    (repo, job)
+}
+
+#[scenario(
+    "cli",
+    "--changed follows a changed Go function to its callers and not to the callers of another"
+)]
+#[test]
+fn changed_follows_a_changed_go_function_to_its_callers_and_not_to_the_callers_of_another() {
+    let sandbox = Sandbox::new();
+    let (repo, job) = go_job(&sandbox);
+    write(&repo, "job/job.go", &job.replace("return 1", "return 2"));
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), ["cmd/main.go"]);
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "job/job.go", "names": ["Run"] }])
+    );
+}
+
+#[scenario(
+    "cli",
+    "--changed names no declaration for a comment added to a Go file"
+)]
+#[test]
+fn changed_names_no_declaration_for_a_comment_added_to_a_go_file() {
+    let sandbox = Sandbox::new();
+    let (repo, job) = go_job(&sandbox);
+    write(
+        &repo,
+        "job/job.go",
+        &job.replace("func Run", "// Run counts.\nfunc Run"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), Vec::<&str>::new());
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "job/job.go", "names": [] }])
+    );
+}
+
+#[scenario("cli", "--changed names the field a Go struct gains and no sibling")]
+#[test]
+fn changed_names_the_field_a_go_struct_gains_and_no_sibling() {
+    let sandbox = Sandbox::new();
+    let (repo, job) = go_job(&sandbox);
+    write(
+        &repo,
+        "job/job.go",
+        &job.replace("\tn int\n", "\tn          int\n\tlongerName string\n"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    let names = answer["parts"][0]["names"].as_array().unwrap();
+    assert!(names.contains(&value!("Box.longerName")), "{names:?}");
+    assert!(!names.contains(&value!("Box.n")), "{names:?}");
+}
+
+#[scenario("cli", "--changed walks a Go file whole when init changes")]
+#[test]
+fn changed_walks_a_go_file_whole_when_init_changes() {
+    let sandbox = Sandbox::new();
+    let (repo, job) = go_job(&sandbox);
+    write(
+        &repo,
+        "job/job.go",
+        &job.replace("println(\"a\")", "println(\"b\")"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), ["cmd/main.go", "halt/halt.go"]);
+}
+
 /// The real Python connector reading the three ways a name reaches a file without the file declaring it: a module that imports it and lists it nowhere hands it on, a settings file that reads it before it binds it again takes it from its star import, and one that binds it without reading it does not.
 #[test]
 fn a_python_name_reaches_a_file_that_imports_it_or_reads_it_before_binding_it_again() {
@@ -2829,9 +2925,9 @@ fn a_function_removed_from_a_rust_module_walks_the_module_whole() {
     );
 }
 
-/// The Go connector gives no blanked code to compare two versions by declaration, so a function removed from one file of a package walks the file whole and the caller of a function that stays in it is listed too.
+/// A function removed from one file of a package is walked by its old name, so its caller is listed and the caller of a function that stays is not.
 #[test]
-fn a_function_removed_from_a_go_package_walks_the_file_whole() {
+fn a_function_removed_from_a_go_package_walks_by_its_old_name() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();
     go_module(&repo);
@@ -2849,7 +2945,11 @@ fn a_function_removed_from_a_go_package_walks_the_file_whole() {
 
     let answer = changed(&sandbox, &repo, &[]);
 
-    assert!(answer.get("parts").is_none(), "{answer}");
+    assert_eq!(
+        answer["parts"][0]["removed"],
+        value!(["Header"]),
+        "{answer}"
+    );
     assert_eq!(reached(&answer), ["report.go"], "{answer}");
 }
 
