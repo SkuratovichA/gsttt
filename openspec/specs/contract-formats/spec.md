@@ -300,3 +300,11 @@ A decorator rule whose `prefix` the site holds and no connector can read as text
 - **WHEN** a decorator rule has the key `$arg1` and the prefix `$arg2.prefix`, and the decorator is read behind the outer prefix `/api` with `/x` as its first argument
 - **THEN** a `prefix` that cannot be read as text makes it a blind spot and declares no fact
 - **AND** no `prefix` declares `http GET /api/x`, and a `prefix` of `v1` declares `http GET /api/v1/x`
+
+### Requirement: Operations of a fragment wait for the link
+The `openapi` connector SHALL name each operation written at the top level of a fragment as a place that only the link turns into a fact, with its line and its method, since a fragment declares nothing until a document refers to it.
+
+#### Scenario: An operation of a fragment is named as waiting for the link
+- **WHEN** a fragment has `get` at line 1 and `post` at line 5 and a document refers to it
+- **THEN** the fragment names line 1 with `GET` and line 5 with `POST`
+- **AND** the document names nothing

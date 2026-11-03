@@ -664,3 +664,11 @@ A call that writes keys into a mapping the env pack roots SHALL serve each liter
 #### Scenario: A read inside the values of a mapping write is still a read
 - **WHEN** a file has `patch.dict(os.environ, {"A": os.environ["B"]})`
 - **THEN** it serves `env A` and calls `env B`
+
+### Requirement: Routes on a router wait for the link
+The connector SHALL name each route declared on a router as a place that only the link turns into a fact, with its line and the decorator as written.
+
+#### Scenario: A route on a router is named as waiting for the link
+- **WHEN** a file declares `@router.get("/{booking_id}")` on an `APIRouter` at line 6 and another file only mounts the router
+- **THEN** the first file names line 6 with `router.get`
+- **AND** the second names nothing
