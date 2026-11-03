@@ -3181,7 +3181,8 @@ fn a_subclass_that_declares_the_member_keeps_its_own_callers() {
                 Code::new()
                     .declaration("Sub", (1, 6), &[])
                     .declaration("Sub.place", (2, 4), uses)
-                    .heir("Sub", "Base"),
+                    .heir("Sub", "Base")
+                    .overrides("Sub", "Base"),
             )
             .exports("sub.ts", &["Sub"])
             .imports_names("a.ts", "sub.ts", &["Sub"])
@@ -3196,8 +3197,134 @@ fn a_subclass_that_declares_the_member_keeps_its_own_callers() {
     let apart = ask(&own(&[]), "base.ts", &["Base.place"], None);
     let calling = ask(&own(&["Base.place"]), "base.ts", &["Base.place"], None);
 
-    assert_eq!(paths(&apart.affected), NONE);
+    assert_eq!(shown(&apart), [("sub.ts", 1, vec!["Sub.place"])]);
     assert_eq!(shown(&calling), [("sub.ts", 1, vec!["Sub.place"])]);
+}
+
+/// `base.ts` declares `Base` with `place`, `sub.ts` declares `Sub`, which extends it, with `place` and a constructor, and `a.ts` uses `Sub.place`.
+fn overrides() -> Tree {
+    Tree::new()
+        .symbols(
+            "base.ts",
+            Code::new()
+                .declaration("Base", (1, 9), &[])
+                .declaration("Base.place", (2, 3), &[])
+                .declaration("Base.constructor", (4, 5), &[]),
+        )
+        .exports("base.ts", &["Base"])
+        .imports_names("sub.ts", "base.ts", &["Base"])
+        .symbols(
+            "sub.ts",
+            Code::new()
+                .declaration("Sub", (1, 6), &[])
+                .declaration("Sub.place", (2, 4), &[])
+                .declaration("Sub.constructor", (4, 5), &[])
+                .overrides("Sub", "Base"),
+        )
+        .exports("sub.ts", &["Sub"])
+        .imports_names("a.ts", "sub.ts", &["Sub"])
+        .symbols(
+            "a.ts",
+            Code::new().declaration("run", (1, 3), &["Sub.place"]),
+        )
+        .exports("a.ts", &[])
+}
+
+#[scenario("queries", "A class that overrides the member is listed")]
+#[test]
+fn a_class_that_overrides_the_member_is_listed() {
+    let answer = ask(&overrides().build(), "base.ts", &["Base.place"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row(
+            "sub.ts",
+            1,
+            "overrides Base.place from base.ts",
+            &["Sub.place"]
+        )]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A class that implements the member of an interface is listed"
+)]
+#[test]
+fn a_class_that_implements_the_member_of_an_interface_is_listed() {
+    let index = Tree::new()
+        .symbols(
+            "provider.ts",
+            Code::new()
+                .declaration("GitProvider", (1, 3), &[])
+                .declaration("GitProvider.groups", (2, 2), &[]),
+        )
+        .exports("provider.ts", &["GitProvider"])
+        .imports_names("aws.ts", "provider.ts", &["GitProvider"])
+        .symbols(
+            "aws.ts",
+            Code::new()
+                .declaration("Aws", (1, 6), &[])
+                .declaration("Aws.groups", (2, 4), &[])
+                .overrides("Aws", "GitProvider"),
+        )
+        .exports("aws.ts", &["Aws"])
+        .build();
+
+    let answer = ask(&index, "provider.ts", &["GitProvider.groups"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row(
+            "aws.ts",
+            1,
+            "overrides GitProvider.groups from provider.ts",
+            &["Aws.groups"]
+        )]
+    );
+}
+
+#[scenario("queries", "An override through a chain of classes is listed")]
+#[test]
+fn an_override_through_a_chain_of_classes_is_listed() {
+    let index = overrides()
+        .symbols(
+            "sub.ts",
+            Code::new()
+                .declaration("Sub", (1, 6), &[])
+                .overrides("Sub", "Base"),
+        )
+        .exports("sub.ts", &["Sub"])
+        .imports_names("sub2.ts", "sub.ts", &["Sub"])
+        .symbols(
+            "sub2.ts",
+            Code::new()
+                .declaration("Sub2", (1, 6), &[])
+                .declaration("Sub2.place", (2, 4), &[])
+                .overrides("Sub2", "Sub"),
+        )
+        .exports("sub2.ts", &["Sub2"])
+        .build();
+
+    let answer = ask(&index, "base.ts", &["Base.place"], None);
+
+    assert_eq!(
+        rows(&answer.affected),
+        [row(
+            "sub2.ts",
+            1,
+            "overrides Base.place from base.ts",
+            &["Sub2.place"]
+        )]
+    );
+}
+
+#[scenario("queries", "A constructor is no override")]
+#[test]
+fn a_constructor_is_no_override() {
+    let answer = ask(&overrides().build(), "base.ts", &["Base.constructor"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
 }
 
 #[scenario("queries", "A member goes through a chain of subclasses")]

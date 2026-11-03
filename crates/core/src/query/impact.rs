@@ -204,16 +204,19 @@ pub enum Reason {
     Contract { role: Role, key: String },
     /// A walk by name: the file declares `names`, which were asked about, and its own declarations refer to them. They are in byte order.
     Declares { names: Vec<String> },
+    /// A walk by name: the file declares the same member as a class of `file`, which the walk had reached, and so overrides or implements `names`, the members of `file`, in byte order.
+    Overrides { file: String, names: Vec<String> },
 }
 
 impl Reason {
-    /// `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `re-exports useFoo as useBar from src/a.ts`, `imports src/a.ts`, `calls http GET /bookings/{}`, `declares useFoo`. Names are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    /// `imports useFoo, useBar from src/a.ts`, `re-exports fromA from src/a.ts`, `re-exports useFoo as useBar from src/a.ts`, `imports src/a.ts`, `calls http GET /bookings/{}`, `declares useFoo`, `overrides Base.place from src/base.ts`. Names are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
     fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         let (verb, file, names) = match self {
             Self::Imports { file, names } => ("imports", file, names),
             Self::ReExports { file, names } => ("re-exports", file, names),
             Self::Contract { role, key } => return write!(f, "{role} {key}"),
             Self::Declares { names } => return write!(f, "declares {}", name_list(names, entries)),
+            Self::Overrides { file, names } => ("overrides", file, names),
         };
         if names.is_empty() {
             write!(f, "{verb} {file}")
@@ -604,6 +607,10 @@ fn reason(graph: &Graph, cause: &Cause) -> Reason {
                 .unwrap_or_default(),
         },
         Cause::Declares { names } => Reason::Declares {
+            names: names.clone(),
+        },
+        Cause::Overrides { file, names } => Reason::Overrides {
+            file: path(*file),
             names: names.clone(),
         },
     }

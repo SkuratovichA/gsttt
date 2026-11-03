@@ -46,6 +46,47 @@ pub(super) fn overridden(index: &Index, file: FileId, name: &str) -> Vec<(FileId
     found.into_iter().collect()
 }
 
+/// The declarations that override the member at `place` in `file`: the same member of each class that extends or implements its class, at any depth, each as its file and its place, sorted. It is [`overridden`] read from the other side, so the two cannot disagree about what is a head.
+pub(super) fn overriding(index: &Index, file: FileId, place: usize) -> Vec<(FileId, usize)> {
+    let Some(name) = index
+        .graph
+        .symbols(file)
+        .and_then(|symbols| symbols.declaration(place))
+        .map(crate::graph::Declaration::name)
+    else {
+        return Vec::new();
+    };
+    let Some((_, member)) = name.split_once(MEMBER_SEPARATOR) else {
+        return Vec::new();
+    };
+    // A value is not called through a constructor.
+    if matches!(member, "constructor" | "__init__") {
+        return Vec::new();
+    }
+    let mut found = BTreeSet::new();
+    for (at, _) in index.graph.files() {
+        let Some(symbols) = index.graph.symbols(at) else {
+            continue;
+        };
+        let mut heirs: Vec<&str> = symbols.overrides().map(|(heir, _)| heir).collect();
+        heirs.sort_unstable();
+        heirs.dedup();
+        for heir in heirs {
+            let Some((position, decl)) = symbols
+                .declarations()
+                .enumerate()
+                .find(|(_, decl)| member_in(decl.name(), heir) == Some(member))
+            else {
+                continue;
+            };
+            if overridden(index, at, decl.name()).contains(&(file, place)) {
+                found.insert((at, position));
+            }
+        }
+    }
+    found.into_iter().collect()
+}
+
 /// The file that declares `spelled`, a name written in `file`, and the name it declares it under. `lib.Base` through `import * as lib` is `Base` of the file `lib` is.
 fn declaring<'a>(index: &'a Index, file: FileId, spelled: &'a str) -> Option<(FileId, &'a str)> {
     let mut seen = Seen::new();
@@ -137,7 +178,7 @@ fn bindings(
         .filter(|resolved| {
             matches!(
                 resolved.import.kind,
-                ImportKind::Static | ImportKind::ReExport
+                ImportKind::Static | ImportKind::ReExport | ImportKind::Require
             ) && resolved.import.names.len() == resolved.import.exported.len()
         })
         .flat_map(|resolved| {
