@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/constants.rs
+assertion_line: 140
 expression: json
 ---
 {
@@ -81,6 +82,9 @@ expression: json
           "app",
           "express",
           "router"
+        ],
+        "reads": [
+          "use"
         ]
       },
       "tags": 0,
@@ -109,7 +113,8 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -179,6 +184,11 @@ expression: json
           "PATHS.USERS",
           "Router",
           "router"
+        ],
+        "reads": [
+          "USERS",
+          "get",
+          "json"
         ]
       },
       "tags": 0,

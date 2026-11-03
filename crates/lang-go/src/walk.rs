@@ -26,6 +26,8 @@ pub(crate) struct Walk<'r, 'a> {
     pub(crate) on_load: BTreeSet<String>,
     /// The free names of the file: read, and bound by no scope, no import and no declaration of the file.
     pub(crate) free: BTreeSet<String>,
+    /// The member names the file reads on a value whose type it does not know: `x.M` for a local of unknown type, `f().M`, `items[0].M` and `pkgVar.M`. A package name, a value of a type the file knows and a struct literal key read none.
+    pub(crate) reads: BTreeSet<String>,
     /// The names read from each import, by its index in `cx.imports`.
     pub(crate) import_names: Vec<BTreeSet<String>>,
     pub(crate) contracts: Vec<ContractFact>,
@@ -46,6 +48,7 @@ impl<'r, 'a> Walk<'r, 'a> {
             uses: BTreeSet::new(),
             on_load: BTreeSet::new(),
             free: BTreeSet::new(),
+            reads: BTreeSet::new(),
             import_names: vec![BTreeSet::new(); cx.imports.len()],
             contracts: Vec::new(),
             embedded: Vec::new(),
@@ -292,8 +295,9 @@ impl<'r, 'a> Walk<'r, 'a> {
                 let name = text_of(operand, self.cx.source);
                 let binding = self.scopes.find(name);
                 if let Some(binding) = binding {
-                    if let Some(head) = binding.holds.clone() {
-                        self.use_member(&head, field);
+                    match binding.holds.clone() {
+                        Some(head) => self.use_member(&head, field),
+                        None => self.read(field),
                     }
                     return;
                 }
@@ -301,14 +305,26 @@ impl<'r, 'a> Walk<'r, 'a> {
                     self.use_qualified(index, field);
                     return;
                 }
+                self.read(field);
                 self.visit(operand);
             }
             "selector_expression" => {
                 if !self.field_chain(operand, field) {
+                    self.read(field);
                     self.visit(operand);
                 }
             }
-            _ => self.visit(operand),
+            _ => {
+                self.read(field);
+                self.visit(operand);
+            }
+        }
+    }
+
+    /// Records `member` as read on a value of unknown type. A name already seen allocates nothing.
+    fn read(&mut self, member: &str) {
+        if !self.reads.contains(member) {
+            self.reads.insert(member.to_owned());
         }
     }
 

@@ -710,7 +710,7 @@ async fn an_answer_with_many_callers_is_cut_to_the_budget() {
 
 #[tokio::test]
 async fn an_answer_reaching_many_members_through_their_class_is_cut_to_the_budget() {
-    // Every method of `Runner` uses `foo`, so a walk of two hops asks about each of them in its second.
+    // Every method of `Runner` uses `foo`, so a walk of two hops asks about each of them in its second, and `app.ts` holds the class without naming any of them.
     let methods = (0..2_000_u32).fold(
         Code::new().declaration("Runner", (1, 6_002), &[]),
         |code, number| {
@@ -728,6 +728,12 @@ async fn an_answer_reaching_many_members_through_their_class_is_cut_to_the_budge
             .imports_names("runner.ts", "lib.ts", &["foo"])
             .symbols("runner.ts", methods)
             .exports("runner.ts", &["Runner"])
+            .imports_names("app.ts", "runner.ts", &["Runner"])
+            .symbols(
+                "app.ts",
+                Code::new().declaration("main", (1, 3), &["Runner"]),
+            )
+            .exports("app.ts", &[])
             .build(),
     );
     let session = Session::start(source.clone()).await;
@@ -755,7 +761,7 @@ async fn an_answer_reaching_many_members_through_their_class_is_cut_to_the_budge
     assert_eq!(reply.text.matches("\nnote: ").count(), 1, "{}", reply.text);
     assert!(
         reply.text.contains(
-            "\nnote: callers of Runner.method0000, Runner.method0001, Runner.method0002 and 1,997 more through a value are found through the declarations that refer to their classes\n"
+            "\nnote: 1 file holds the classes of Runner.method0000, Runner.method0001, Runner.method0002 and 1,997 more and names none of them; ask about those classes to list them\n"
         ),
         "{}",
         reply.text

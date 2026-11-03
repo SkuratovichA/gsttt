@@ -80,6 +80,8 @@ struct Span {
     export_count: u32,
     heirs: u32,
     heir_count: u32,
+    reads: u32,
+    read_count: u32,
 }
 
 impl Table {
@@ -138,6 +140,10 @@ impl Table {
             self.push(&heir.name);
             self.push(&heir.of);
         }
+        let reads = len_u32(self.ends.len());
+        for name in &symbols.reads {
+            self.push(name);
+        }
         Span {
             decls,
             decl_count: len_u32(symbols.declared.len()),
@@ -147,6 +153,8 @@ impl Table {
             export_count: len_u32(symbols.exports.len()),
             heirs,
             heir_count: len_u32(symbols.heirs.len()),
+            reads,
+            read_count: len_u32(symbols.reads.len()),
         }
     }
 
@@ -246,6 +254,21 @@ impl<'g> FileSymbols<'g> {
             (table.text(name), table.text(name.saturating_add(1)))
         })
     }
+
+    /// Whether the file reads a member called `name` on a receiver whose class the connector did not know.
+    pub fn reads_member(self, name: &str) -> bool {
+        let first = self.span.reads;
+        let (mut low, mut high) = (0, self.span.read_count);
+        while low < high {
+            let middle = low + (high - low) / 2;
+            match self.table.text(first.saturating_add(middle)).cmp(name) {
+                std::cmp::Ordering::Less => low = middle + 1,
+                std::cmp::Ordering::Greater => high = middle,
+                std::cmp::Ordering::Equal => return true,
+            }
+        }
+        false
+    }
 }
 
 /// One declaration of a file.
@@ -310,6 +333,7 @@ mod tests {
                 name: "Sub".to_owned(),
                 of: "Base".to_owned(),
             }],
+            reads: owned(&["alpha", "omega"]),
         }
     }
 
@@ -344,6 +368,8 @@ mod tests {
         assert_eq!(read.on_load().collect::<Vec<_>>(), ["setup"]);
         assert_eq!(read.exports().collect::<Vec<_>>(), [("default", "run")]);
         assert_eq!(read.heirs().collect::<Vec<_>>(), [("Sub", "Base")]);
+        assert!(read.reads_member("alpha") && read.reads_member("omega"));
+        assert!(!read.reads_member("beta") && !read.reads_member(""));
         assert_eq!(read.len(), 2);
         assert_eq!(read.declaration(1).map(Declaration::name), Some("stop"));
         assert!(read.declaration(2).is_none());

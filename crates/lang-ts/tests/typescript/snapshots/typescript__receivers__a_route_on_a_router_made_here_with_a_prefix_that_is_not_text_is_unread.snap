@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/receivers.rs
+assertion_line: 291
 expression: json
 ---
 {
@@ -94,6 +95,11 @@ expression: json
           "fixed",
           "list",
           "makeRouter"
+        ],
+        "reads": [
+          "PREFIX",
+          "env",
+          "get"
         ]
       },
       "tags": 0,
@@ -153,6 +159,9 @@ expression: json
           "dynamic.get",
           "fixed.get",
           "list"
+        ],
+        "reads": [
+          "get"
         ]
       },
       "tags": 0,

@@ -6,7 +6,7 @@ use gsttt_scenario::scenario;
 
 use crate::support::{
     NOTHING, declared, edges, heirs, import_line, imports, local_exports, local_names, on_load,
-    run, status, uses,
+    reads, run, status, uses,
 };
 
 #[test]
@@ -934,5 +934,54 @@ fn a_member_read_from_a_name_with_a_head_is_used_by_its_name() -> Result<(), Box
     let path = "src/members.ts";
     assert_eq!(uses(&json, path, "use"), Some(vec!["orders.place"]));
     assert_eq!(uses(&json, path, "build"), Some(vec!["Sub.make"]));
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A file records the members it reads on a value of unknown class"
+)]
+fn a_file_records_the_members_it_reads_on_a_value_of_unknown_class() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-reads")?;
+    assert_eq!(
+        reads(&json, "src/unknown.tsx"),
+        ["a", "b", "c", "d", "e", "g", "h", "i", "j", "k", "spyOn"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A read of a known class or of the class itself records no name"
+)]
+fn a_read_of_a_known_class_or_of_the_class_itself_records_no_name() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-reads")?;
+    assert_eq!(reads(&json, "src/known.ts"), NOTHING);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member of a field of a class below the top level is read on an unknown value"
+)]
+fn a_member_of_a_field_of_a_class_below_the_top_level_is_read_on_an_unknown_value()
+-> Result<(), Box<dyn Error>> {
+    let json = run("symbols-reads-nested")?;
+    assert_eq!(reads(&json, "src/nested.ts"), ["update"]);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An indexed type names the member")]
+fn an_indexed_type_names_the_member() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-reads")?;
+    assert_eq!(
+        uses(&json, "src/known.ts", "P"),
+        Some(vec!["Service.place"])
+    );
     Ok(())
 }

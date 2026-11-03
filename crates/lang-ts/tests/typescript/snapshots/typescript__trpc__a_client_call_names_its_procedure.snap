@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/trpc.rs
+assertion_line: 29
 expression: json
 ---
 {
@@ -66,7 +67,14 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "booking",
+          "data",
+          "get",
+          "id",
+          "useQuery"
+        ]
       },
       "tags": 0,
       "unresolved": []

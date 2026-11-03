@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/scopes.rs
+assertion_line: 261
 expression: json
 ---
 {
@@ -59,7 +60,8 @@ expression: json
         "heirs": [],
         "on_load": [
           "express"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -108,6 +110,11 @@ expression: json
         "on_load": [
           "express.Router",
           "router"
+        ],
+        "reads": [
+          "Router",
+          "get",
+          "json"
         ]
       },
       "tags": 0,
@@ -177,7 +184,8 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

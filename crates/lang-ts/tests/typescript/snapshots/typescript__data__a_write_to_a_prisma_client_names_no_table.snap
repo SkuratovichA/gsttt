@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/data.rs
+assertion_line: 585
 expression: json
 ---
 {
@@ -80,6 +81,13 @@ expression: json
         "on_load": [
           "PrismaClient",
           "prisma.tenant"
+        ],
+        "reads": [
+          "booking",
+          "findFirst",
+          "findMany",
+          "fn",
+          "tenant"
         ]
       },
       "tags": 0,

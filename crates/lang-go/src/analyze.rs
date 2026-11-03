@@ -18,6 +18,8 @@ use crate::walk::Walk;
 pub(crate) struct Analysis {
     pub(crate) declared: Vec<Declared>,
     pub(crate) on_load: Vec<String>,
+    /// The member names the file reads on a value of unknown type, sorted.
+    pub(crate) reads: Vec<String>,
     pub(crate) exports: Vec<String>,
     /// The name in the package clause, or [`NO_PACKAGE`] for a file that `//go:build ignore` leaves out of every build.
     pub(crate) package: String,
@@ -120,6 +122,7 @@ pub(crate) fn analyze<'a>(cx: &FileCx<'a>, root: Node<'a>) -> Analysis {
     Analysis {
         declared: declarations.finish(),
         on_load: walk.on_load.into_iter().collect(),
+        reads: walk.reads.into_iter().collect(),
         exports: cx
             .top
             .iter()

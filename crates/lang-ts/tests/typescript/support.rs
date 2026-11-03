@@ -554,3 +554,12 @@ pub(crate) fn leads(json: &Value, path: &str, spec: &str) -> String {
         .and_then(|line| line.split_once("-> ").map(|(_, to)| to.to_owned()))
         .unwrap_or_else(|| "no such import".to_owned())
 }
+
+/// The member names the file at `path` reads on a value of an unknown class, in the order of the output.
+pub(crate) fn reads(json: &Value, path: &str) -> Vec<String> {
+    symbols(json, path)
+        .into_iter()
+        .flat_map(|symbols| items(symbols, "reads"))
+        .filter_map(|name| name.as_str().map(str::to_owned))
+        .collect()
+}

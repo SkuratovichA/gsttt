@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/http.rs
+assertion_line: 40
 expression: json
 ---
 {
@@ -81,6 +82,9 @@ expression: json
           "Router",
           "api",
           "bookings"
+        ],
+        "reads": [
+          "use"
         ]
       },
       "tags": 0,
@@ -151,6 +155,9 @@ expression: json
           "api",
           "app",
           "express"
+        ],
+        "reads": [
+          "use"
         ]
       },
       "tags": 0,
@@ -205,6 +212,10 @@ expression: json
         "on_load": [
           "Router",
           "router"
+        ],
+        "reads": [
+          "get",
+          "json"
         ]
       },
       "tags": 0,

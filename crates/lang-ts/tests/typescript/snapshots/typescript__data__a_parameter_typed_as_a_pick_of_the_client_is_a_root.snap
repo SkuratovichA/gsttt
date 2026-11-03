@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/data.rs
+assertion_line: 45
 expression: json
 ---
 {
@@ -39,6 +40,11 @@ expression: json
         "heirs": [],
         "on_load": [
           "mockPrisma"
+        ],
+        "reads": [
+          "findFirst",
+          "fn",
+          "tenant"
         ]
       },
       "tags": 1,
@@ -105,7 +111,14 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "findFirst",
+          "findMany",
+          "findUnique",
+          "tenant",
+          "tenantBranch"
+        ]
       },
       "tags": 0,
       "unresolved": []

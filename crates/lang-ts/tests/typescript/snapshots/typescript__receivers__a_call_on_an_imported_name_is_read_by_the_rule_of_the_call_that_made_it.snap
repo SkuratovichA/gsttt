@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/receivers.rs
+assertion_line: 198
 expression: json
 ---
 {
@@ -72,6 +73,9 @@ expression: json
           "api.get",
           "app.get",
           "params"
+        ],
+        "reads": [
+          "get"
         ]
       },
       "tags": 0,
@@ -120,7 +124,8 @@ expression: json
         "heirs": [],
         "on_load": [
           "express"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -168,6 +173,9 @@ expression: json
         "heirs": [],
         "on_load": [
           "axios.create"
+        ],
+        "reads": [
+          "create"
         ]
       },
       "tags": 0,

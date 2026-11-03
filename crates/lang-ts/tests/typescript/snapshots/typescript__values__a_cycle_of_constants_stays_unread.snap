@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/values.rs
+assertion_line: 196
 expression: json
 ---
 {
@@ -57,7 +58,8 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -103,7 +105,8 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -140,7 +143,8 @@ expression: json
         "heirs": [],
         "on_load": [
           "A"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

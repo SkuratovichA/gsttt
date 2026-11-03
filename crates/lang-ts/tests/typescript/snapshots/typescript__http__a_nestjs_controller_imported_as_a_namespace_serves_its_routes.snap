@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/http.rs
+assertion_line: 67
 expression: json
 ---
 {
@@ -90,6 +91,11 @@ expression: json
           "common.Controller",
           "common.Get",
           "common.Post"
+        ],
+        "reads": [
+          "Controller",
+          "Get",
+          "Post"
         ]
       },
       "tags": 0,

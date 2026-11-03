@@ -14,7 +14,7 @@ use crate::files::{MANIFEST, is_go_source, is_manifest};
 use crate::manifest::read_go_mod;
 
 /// Bumped when what the reader makes of a file changes without a change to the facts' shape, so that stored facts are read again.
-const READER_VERSION: &str = "1";
+const READER_VERSION: &str = "2";
 
 /// One file of a package, as `prepare` keeps it to resolve imports of the package.
 #[derive(Debug)]

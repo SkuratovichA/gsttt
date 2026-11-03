@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/symbols.rs
+assertion_line: 115
 expression: json
 ---
 {
@@ -126,7 +127,8 @@ expression: json
           "k",
           "mixin",
           "test"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

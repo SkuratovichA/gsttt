@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/trpc.rs
+assertion_line: 17
 expression: json
 ---
 {
@@ -79,6 +80,10 @@ expression: json
           "publicProcedure.input",
           "router",
           "s"
+        ],
+        "reads": [
+          "input",
+          "query"
         ]
       },
       "tags": 0,
@@ -144,7 +149,8 @@ expression: json
         "on_load": [
           "bookingRouter",
           "router"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -209,6 +215,11 @@ expression: json
         "heirs": [],
         "on_load": [
           "initTRPC.create"
+        ],
+        "reads": [
+          "create",
+          "procedure",
+          "router"
         ]
       },
       "tags": 0,

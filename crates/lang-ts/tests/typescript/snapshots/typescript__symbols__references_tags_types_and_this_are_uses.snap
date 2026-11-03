@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/symbols.rs
+assertion_line: 74
 expression: json
 ---
 {
@@ -134,7 +135,10 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "s"
+        ]
       },
       "tags": 0,
       "unresolved": []

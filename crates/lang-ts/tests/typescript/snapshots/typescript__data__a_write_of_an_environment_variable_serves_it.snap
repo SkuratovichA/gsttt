@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/data.rs
+assertion_line: 458
 expression: json
 ---
 {
@@ -46,7 +47,11 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "TARGET",
+          "env"
+        ]
       },
       "tags": 0,
       "unresolved": [
@@ -266,7 +271,29 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F",
+          "G",
+          "H",
+          "I",
+          "K",
+          "L",
+          "M",
+          "N",
+          "O",
+          "P",
+          "Q",
+          "R",
+          "S",
+          "env",
+          "map"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -322,7 +349,16 @@ expression: json
         "declared": [],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "G",
+          "H",
+          "I",
+          "J",
+          "K",
+          "L",
+          "env"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -348,7 +384,12 @@ expression: json
         "declared": [],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "J",
+          "env",
+          "foo"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -427,7 +468,13 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "API_URL",
+          "COUNT",
+          "RETRIES",
+          "env"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -477,7 +524,16 @@ expression: json
         "declared": [],
         "exports": [],
         "heirs": [],
-        "on_load": []
+        "on_load": [],
+        "reads": [
+          "A",
+          "B",
+          "C",
+          "E",
+          "F",
+          "env",
+          "stubEnv"
+        ]
       },
       "tags": 0,
       "unresolved": []

@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/constants.rs
+assertion_line: 203
 expression: json
 ---
 {
@@ -76,7 +77,8 @@ expression: json
         "on_load": [
           "Module",
           "UsersController"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
@@ -138,6 +140,10 @@ expression: json
           "API",
           "axios.create",
           "http"
+        ],
+        "reads": [
+          "create",
+          "get"
         ]
       },
       "tags": 0,
@@ -207,6 +213,11 @@ expression: json
         "heirs": [],
         "on_load": [
           "bootstrap"
+        ],
+        "reads": [
+          "create",
+          "listen",
+          "setGlobalPrefix"
         ]
       },
       "tags": 0,
@@ -271,6 +282,12 @@ expression: json
           "express",
           "express.Router",
           "router"
+        ],
+        "reads": [
+          "Router",
+          "get",
+          "json",
+          "use"
         ]
       },
       "tags": 0,
@@ -345,7 +362,8 @@ expression: json
           "BASE",
           "Controller",
           "Get"
-        ]
+        ],
+        "reads": []
       },
       "tags": 0,
       "unresolved": []

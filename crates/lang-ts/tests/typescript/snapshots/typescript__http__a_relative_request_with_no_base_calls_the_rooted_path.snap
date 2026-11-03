@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/http.rs
+assertion_line: 217
 expression: json
 ---
 {
@@ -206,6 +207,10 @@ expression: json
         "on_load": [
           "BASE",
           "axios.create"
+        ],
+        "reads": [
+          "create",
+          "get"
         ]
       },
       "tags": 0,

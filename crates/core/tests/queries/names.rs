@@ -207,6 +207,59 @@ fn a_star_barrel_gets_no_row_when_a_name_is_asked_about() {
     );
 }
 
+#[scenario("queries", "A re-export of a class gets no row for a member of it")]
+#[test]
+fn a_re_export_of_a_class_gets_no_row_for_a_member_of_it() {
+    let index = Tree::new()
+        .symbols(
+            "service.ts",
+            Code::new().declaration("Service", (1, 9), &[]).declaration(
+                "Service.place",
+                (2, 4),
+                &[],
+            ),
+        )
+        .exports("service.ts", &["Service"])
+        .re_exports("index.ts", "service.ts", &[("Service", "Service")])
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &["Service"])
+        .imports_names("page.ts", "index.ts", &["Service"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("go", (1, 3), &["Service.place"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let member = ask(&index, "service.ts", &["Service.place"], None);
+    let class = ask(&index, "service.ts", &["Service"], None);
+
+    assert_eq!(paths(&member.affected), ["page.ts"]);
+    assert_eq!(paths(&class.affected), ["index.ts", "page.ts"]);
+}
+
+#[scenario("queries", "A namespace re-export gets no row for a name it holds")]
+#[test]
+fn a_namespace_re_export_gets_no_row_for_a_name_it_holds() {
+    let index = Tree::new()
+        .symbols("a.ts", Code::new().declaration("helper", (1, 2), &[]))
+        .exports("a.ts", &["helper"])
+        .re_exports("index.ts", "a.ts", &[("lib", "*")])
+        .symbols("index.ts", Code::new())
+        .exports("index.ts", &["lib"])
+        .imports_names("page.ts", "index.ts", &["lib"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("go", (1, 3), &["lib.helper"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let answer = ask(&index, "a.ts", &["helper"], None);
+
+    assert_eq!(paths(&answer.affected), ["page.ts"]);
+}
+
 #[scenario("queries", "A chain of star barrels gets no row")]
 #[test]
 fn a_chain_of_star_barrels_gets_no_row() {
@@ -408,7 +461,9 @@ fn callers_of_a_member_are_found_through_this_and_through_its_class() {
         .imports_names("app.ts", "runner.ts", &["Runner"])
         .symbols(
             "app.ts",
-            Code::new().declaration("main", (1, 3), &["Runner"]),
+            Code::new()
+                .declaration("main", (1, 3), &["Runner"])
+                .reads("start"),
         )
         .exports("app.ts", &[])
         .build();
@@ -422,24 +477,11 @@ fn callers_of_a_member_are_found_through_this_and_through_its_class() {
             row("runner.ts", 1, "declares Runner.start", &["Runner.stop"]),
         ]
     );
-    assert_eq!(
-        notes(&answer),
-        [
-            "callers of Runner.start through a value are found through the declarations that refer to Runner"
-        ]
-    );
-    let text = answer.text(Entries::Capped);
-    assert!(
-        text.contains(
-            "\nnote: callers of Runner.start through a value are found through the declarations that refer to Runner\n"
-        ),
-        "{text}"
-    );
+    assert!(answer.notes.is_empty(), "{:?}", notes(&answer));
 }
 
-/// What a note about members reached through their classes says after the members, which stand for many classes at once.
-const THROUGH_THEIR_CLASSES: &str =
-    "through a value are found through the declarations that refer to their classes";
+/// What a note about members whose classes are held says after the members, which stand for many classes at once.
+const HELD_THEIR_CLASSES: &str = "and names none of them; ask about those classes to list them";
 
 /// `runner.ts` declares the class `Runner` with the methods `methods`, and `app.ts` has a `main` that refers to the class.
 fn runner(methods: &[&str]) -> Index {
@@ -499,9 +541,9 @@ fn members_reached_through_their_classes_are_one_note() {
         None,
     );
 
-    assert_eq!(paths(&answer.affected), ["app.ts"]);
+    assert_eq!(paths(&answer.affected), NONE);
     let note = format!(
-        "callers of ModuleRunner.import, Runner.start and Runner.stop {THROUGH_THEIR_CLASSES}"
+        "1 file holds the classes of ModuleRunner.import, Runner.start and Runner.stop {HELD_THEIR_CLASSES}"
     );
     assert_eq!(notes(&answer), [note.as_str()]);
     let text = answer.text(Entries::Capped);
@@ -566,7 +608,7 @@ fn a_call_through_a_field_names_the_member() {
             "resolver.ts",
             1,
             "imports InvoiceService from service.ts",
-            &["InvoiceResolver.all", "InvoiceResolver.issueInvoice"]
+            &["InvoiceResolver.issueInvoice"]
         )]
     );
 }
@@ -619,13 +661,13 @@ fn a_member_goes_on_to_the_files_that_import_its_class() {
                 "resolver.ts",
                 1,
                 "imports InvoiceService from service.ts",
-                &["InvoiceResolver.all", "InvoiceResolver.issueInvoice"]
+                &["InvoiceResolver.issueInvoice"]
             ),
             row(
                 "page.ts",
                 2,
                 "imports InvoiceResolver from resolver.ts",
-                &["Page.all", "Page.open"]
+                &["Page.open"]
             ),
         ]
     );
@@ -659,19 +701,13 @@ fn a_member_goes_on_under_the_name_a_barrel_exports_its_class_by() {
                 "resolver.ts",
                 1,
                 "imports InvoiceService from service.ts".to_owned(),
-                vec!["InvoiceResolver.all", "InvoiceResolver.issueInvoice"]
-            ),
-            (
-                "index.ts",
-                2,
-                "re-exports InvoiceResolver as Res from resolver.ts".to_owned(),
-                vec![]
+                vec!["InvoiceResolver.issueInvoice"]
             ),
             (
                 "page.ts",
                 2,
                 "imports Res from index.ts".to_owned(),
-                vec!["Page.all", "Page.open"]
+                vec!["Page.open"]
             ),
         ]
     );
@@ -698,9 +734,148 @@ fn a_namespace_import_takes_every_member_of_its_class() {
             "page.ts",
             2,
             "imports resolver.ts",
-            &["Page.all", "Page.close", "Page.open"]
+            &["Page.all", "Page.open"]
         ))
     );
+}
+
+/// `service.ts` declares `Service` with `place`, and `page.ts` imports it and has a `hold` that uses the class alone, reading `read` on some value when it is given.
+fn holder(read: Option<&str>) -> Index {
+    let mut code = Code::new().declaration("hold", (1, 3), &["Service"]);
+    if let Some(name) = read {
+        code = code.reads(name);
+    }
+    Tree::new()
+        .symbols(
+            "service.ts",
+            Code::new().declaration("Service", (1, 9), &[]).declaration(
+                "Service.place",
+                (2, 4),
+                &[],
+            ),
+        )
+        .exports("service.ts", &["Service"])
+        .imports_names("page.ts", "service.ts", &["Service"])
+        .symbols("page.ts", code)
+        .exports("page.ts", &[])
+        .build()
+}
+
+#[scenario(
+    "queries",
+    "A file that holds a class and never names the member is no caller"
+)]
+#[test]
+fn a_file_that_holds_a_class_and_never_names_the_member_is_no_caller() {
+    let answer = ask(&holder(None), "service.ts", &["Service.place"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert_eq!(
+        notes(&answer),
+        ["1 file holds Service and names no place; ask about Service to list them"]
+    );
+}
+
+#[scenario(
+    "queries",
+    "A file that holds a class and reads the member on any value is a caller"
+)]
+#[test]
+fn a_file_that_holds_a_class_and_reads_the_member_on_any_value_is_a_caller() {
+    let answer = ask(
+        &holder(Some("place")),
+        "service.ts",
+        &["Service.place"],
+        None,
+    );
+
+    assert_eq!(shown(&answer), [("page.ts", 1, vec!["hold"])]);
+    assert!(answer.notes.is_empty(), "{:?}", notes(&answer));
+}
+
+#[scenario("queries", "Asked about the class, a holder is listed")]
+#[test]
+fn asked_about_the_class_a_holder_is_listed() {
+    let answer = ask(&holder(None), "service.ts", &["Service"], None);
+
+    assert_eq!(shown(&answer), [("page.ts", 1, vec!["hold"])]);
+}
+
+#[scenario(
+    "queries",
+    "A value of a class passed away is no caller of its members"
+)]
+#[test]
+fn a_value_of_a_class_passed_away_is_no_caller_of_its_members() {
+    let index = Tree::new()
+        .symbols(
+            "service.ts",
+            Code::new()
+                .declaration("Service", (1, 9), &[])
+                .declaration("Service.place", (2, 4), &[])
+                .declaration("shared", (11, 12), &["Service"])
+                .heir("shared", "Service"),
+        )
+        .exports("service.ts", &["Service", "shared"])
+        .imports_names("page.ts", "service.ts", &["shared"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("go", (1, 3), &["shared"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let answer = ask(&index, "service.ts", &["Service.place"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+}
+
+#[scenario(
+    "queries",
+    "A holder in the file of the class needs the member's name too"
+)]
+#[test]
+fn a_holder_in_the_file_of_the_class_needs_the_members_name_too() {
+    let index = Tree::new()
+        .symbols(
+            "service.ts",
+            Code::new()
+                .declaration("Service", (1, 9), &[])
+                .declaration("Service.place", (2, 4), &[])
+                .declaration("make", (11, 13), &["Service"]),
+        )
+        .exports("service.ts", &["Service"])
+        .build();
+
+    let answer = ask(&index, "service.ts", &["Service.place"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+}
+
+#[scenario("queries", "A namespace passed away stays a use of every name")]
+#[test]
+fn a_namespace_passed_away_stays_a_use_of_every_name() {
+    let listed = |read: Option<&str>| {
+        let mut code = Code::new().declaration("go", (1, 3), &["lib"]);
+        if let Some(name) = read {
+            code = code.reads(name);
+        }
+        let index = Tree::new()
+            .symbols("lib.ts", Code::new().declaration("helper", (1, 3), &[]))
+            .exports("lib.ts", &["helper"])
+            .imports_as("page.ts", "lib.ts", &[("*", "lib")])
+            .symbols("page.ts", code)
+            .exports("page.ts", &[])
+            .build();
+        shown(&ask(&index, "lib.ts", &["helper"], None))
+            .into_iter()
+            .map(|(path, _, callers)| (path.to_owned(), callers.len()))
+            .collect::<Vec<_>>()
+    };
+
+    let expected = [("page.ts".to_owned(), 1)];
+    assert_eq!(listed(None), expected);
+    assert_eq!(listed(Some("helper")), expected);
 }
 
 #[test]
@@ -762,7 +937,9 @@ fn a_member_a_subclass_inherits_reaches_the_callers_of_the_subclass() {
         .imports_names("audit.ts", "service.ts", &["InvoiceService"])
         .symbols(
             "audit.ts",
-            Code::new().declaration("AuditedService", (1, 4), &["InvoiceService"]),
+            Code::new()
+                .declaration("AuditedService", (1, 4), &["InvoiceService"])
+                .reads("issue"),
         )
         .exports("audit.ts", &["AuditedService"])
         .imports_names("page.ts", "audit.ts", &["AuditedService"])
@@ -791,7 +968,7 @@ fn a_member_a_subclass_inherits_reaches_the_callers_of_the_subclass() {
                 "resolver.ts",
                 1,
                 "imports InvoiceService from service.ts",
-                &["InvoiceResolver.all", "InvoiceResolver.issueInvoice"]
+                &["InvoiceResolver.issueInvoice"]
             ),
             row(
                 "page.ts",
@@ -810,24 +987,23 @@ fn the_members_of_the_note_are_cut_after_three_unless_all_are_asked_for() {
 
     assert_eq!(answer.notes.len(), 1, "{:?}", notes(&answer));
     let capped = format!(
-        "\nnote: callers of Runner.pause, Runner.reset, Runner.resume and 2 more {THROUGH_THEIR_CLASSES}\n"
+        "\nnote: 1 file holds the classes of Runner.pause, Runner.reset, Runner.resume and 2 more {HELD_THEIR_CLASSES}\n"
     );
     // A text cut to rows cuts the names of a note as a cap does.
     for entries in [Entries::Capped, Entries::First(0), Entries::First(3)] {
         let text = answer.text(entries);
         assert!(text.contains(&capped), "{entries:?}: {text}");
     }
-    let whole =
-        "callers of Runner.pause, Runner.reset, Runner.resume, Runner.start and Runner.stop";
+    let whole = "1 file holds the classes of Runner.pause, Runner.reset, Runner.resume, Runner.start and Runner.stop";
     let text = answer.text(Entries::All);
     assert!(
-        text.contains(&format!("\nnote: {whole} {THROUGH_THEIR_CLASSES}\n")),
+        text.contains(&format!("\nnote: {whole} {HELD_THEIR_CLASSES}\n")),
         "{text}"
     );
     // The JSON holds the note whole whatever the text cuts, and as a string like every other note.
     assert_eq!(
         to_value(&answer).unwrap()["notes"],
-        json!([format!("{whole} {THROUGH_THEIR_CLASSES}")])
+        json!([format!("{whole} {HELD_THEIR_CLASSES}")])
     );
 }
 
@@ -838,7 +1014,7 @@ fn members_of_one_class_are_one_note_that_says_their_classes() {
     assert_eq!(
         notes(&answer),
         [format!(
-            "callers of Runner.start and Runner.stop {THROUGH_THEIR_CLASSES}"
+            "1 file holds the classes of Runner.start and Runner.stop {HELD_THEIR_CLASSES}"
         )]
     );
 }
@@ -2369,7 +2545,8 @@ fn written(case: &Case, uses: Uses, choices: &[bool]) -> Written {
             .map(|(_, declaration)| declaration.as_str())
             .chain(locals.iter().copied())
             .collect();
-        let mut code = Code::new();
+        // Every file names the member that is asked about, so that a use of a class alone stays a use of it.
+        let mut code = Code::new().reads("m");
         for (at, (exported, declaration)) in declares.iter().enumerate() {
             let refers: Vec<String> = match uses {
                 Uses::EveryImportAtLoad => Vec::new(),
@@ -2981,10 +3158,7 @@ fn heirs() -> Tree {
 fn a_caller_through_a_subclass_is_a_caller_of_the_member() {
     let answer = ask(&heirs().build(), "base.ts", &["Base.place"], None);
 
-    assert_eq!(
-        shown(&answer),
-        [("a.ts", 1, vec!["run"]), ("sub.ts", 1, vec!["Sub"])]
-    );
+    assert_eq!(shown(&answer), [("a.ts", 1, vec!["run"])]);
 }
 
 #[scenario("queries", "A subclass that declares the member keeps its own callers")]
@@ -3132,7 +3306,7 @@ fn a_subclass_in_the_file_of_its_base() {
     assert_eq!(
         shown(&answer),
         [
-            ("filemap.ts", 1, vec!["ModuleMap", "build"]),
+            ("filemap.ts", 1, vec!["build"]),
             ("user.ts", 1, vec!["load"])
         ]
     );
