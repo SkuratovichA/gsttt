@@ -826,8 +826,8 @@ Asked about a member, `impact` SHALL go on to each name that takes the members o
 
 #### Scenario: A subclass that declares the member keeps its own callers
 - **WHEN** `Sub` extends `Base` and declares `place`, `a.ts` uses `Sub.place`, and impact is asked about `Base.place`
-- **THEN** impact does not list `a.ts` when `Sub.place` does not use `Base.place`
-- **AND** it lists `sub.ts` with the caller `Sub.place` when `Sub.place` uses `Base.place`
+- **THEN** impact lists `sub.ts` with the caller `Sub.place`
+- **AND** it does not list `a.ts`
 
 #### Scenario: A member goes through a chain of subclasses
 - **WHEN** `Sub2` extends `Sub`, which extends `Base`, in a third file and within one file, a declaration of another file uses `Sub2.place`, and impact is asked about `Base.place`
@@ -974,3 +974,30 @@ Impact SHALL NOT pass a name a file only imports on to the files that require it
 - **WHEN** `a.js` imports a class, calls it in `run`, has `module.exports = run` and `module.exports[Symbol.for('x')] = { helper }`, `b.js` requires `./a`, and `c.js` has `require('./a')[Symbol.for('x')]`
 - **THEN** impact of the class lists `a.js` and not `b.js`
 - **AND** impact of `helper` in `a.js` lists `c.js`
+
+### Requirement: Overrides are listed
+Asked about a member, `impact` SHALL list, in the file that declares it, the same member of each class that extends or implements its class, at any depth, with the reason `overrides`, and a head it was reached through, with the reason `declares`. It SHALL list no sibling of a head, and no constructor as an override.
+
+#### Scenario: A class that overrides the member is listed
+- **WHEN** `Sub` extends `Base` and declares `place`, `a.ts` uses `Sub.place`, and impact is asked about `Base.place`
+- **THEN** impact lists `sub.ts` with the caller `Sub.place` and the reason `overrides`, and not `a.ts`
+
+#### Scenario: A class that implements the member of an interface is listed
+- **WHEN** `Aws` implements `GitProvider` and declares `groups`, and impact is asked about `GitProvider.groups`
+- **THEN** impact lists the file of `Aws` with the caller `Aws.groups` and the reason `overrides`
+
+#### Scenario: An override through a chain of classes is listed
+- **WHEN** `Sub2` extends `Sub`, which extends `Base` and does not declare `place`, `Sub2` declares `place`, and impact is asked about `Base.place`
+- **THEN** impact lists the file of `Sub2` with the reason `overrides`
+
+#### Scenario: The member an override overrides is listed
+- **WHEN** `Aws` implements `GitProvider`, and impact is asked about `Aws.getGitGroups`
+- **THEN** impact lists the file of `GitProvider` with the reason `declares GitProvider.getGitGroups`, and the note about the head stays
+
+#### Scenario: A sibling implementation is not listed
+- **WHEN** `Github` also implements `GitProvider` and declares `getGitGroups`, and impact is asked about `Aws.getGitGroups`
+- **THEN** impact does not list the file of `Github`
+
+#### Scenario: A constructor is no override
+- **WHEN** `Sub` extends `Base`, both declare `constructor`, and impact is asked about `Base.constructor`
+- **THEN** impact does not list `sub.ts`
