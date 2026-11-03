@@ -13,6 +13,7 @@ use oxc_ast::ast::{
 };
 use oxc_span::{GetSpan, Span};
 
+use super::jsdoc::Docs;
 use super::roots::is_class_like;
 use super::symbols::base_name;
 use super::{is_library, load_of, peel};
@@ -112,7 +113,7 @@ struct EnumScope {
 
 impl Constants {
     /// The constants `program` declares at its top level, in declaration order, so that a value may use a constant above it, and the names its imports bind.
-    pub(crate) fn collect(program: &Program<'_>, packs: &[Pack]) -> Self {
+    pub(crate) fn collect(program: &Program<'_>, packs: &[Pack], docs: Option<&Docs>) -> Self {
         let mut constants = Self::default();
         // Every import is known before a constant is read: an `import` is hoisted, so a constant may name one that is written below it, and a name that `require` binds is the module's wherever it is read.
         for statement in &program.body {
@@ -141,7 +142,7 @@ impl Constants {
         }
         constants.heads = class_heads(program);
         // The scopes are read last, so that a constant of a function may be built from a constant of the top level.
-        scopes::collect(&mut constants, program);
+        scopes::collect(&mut constants, program, docs);
         constants
     }
 
@@ -671,7 +672,7 @@ mod tests {
     fn constants_of(code: &str) -> Constants {
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
-        Constants::collect(&parsed.program, &[])
+        Constants::collect(&parsed.program, &[], None)
     }
 
     /// The constants of `code` as `name=value` lines in name order, with a name that another file declares written `<NAME>`.
@@ -856,7 +857,7 @@ mod tests {
     fn reads(code: &str) -> Vec<String> {
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
-        let constants = Constants::collect(&parsed.program, &[]);
+        let constants = Constants::collect(&parsed.program, &[], None);
         let mut reads = Reads {
             constants: &constants,
             found: Vec::new(),
@@ -1271,7 +1272,7 @@ mod tests {
         let allocator = Allocator::default();
         let code = format!("{prelude}\n({source});");
         let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
-        let constants = Constants::collect(&parsed.program, &[]);
+        let constants = Constants::collect(&parsed.program, &[], None);
         let Some(oxc_ast::ast::Statement::ExpressionStatement(statement)) =
             parsed.program.body.last()
         else {

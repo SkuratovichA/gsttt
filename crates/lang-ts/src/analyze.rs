@@ -2,6 +2,7 @@
 
 mod constants;
 mod doubles;
+mod jsdoc;
 mod makers;
 mod maps;
 mod mocks;
@@ -40,6 +41,7 @@ use oxc_syntax::operator::{AssignmentOperator, UnaryOperator};
 use oxc_syntax::scope::ScopeFlags;
 
 pub(crate) use self::constants::Constants;
+use self::jsdoc::{DocImport, Docs};
 use self::makers::{Maker, NEST_FACTORY_CREATE};
 use self::roots::{Roots, plain_class};
 use self::symbols::{Recorder, TYPE_ONLY};
@@ -83,7 +85,13 @@ pub(crate) fn analyze(
     tags: FileTags,
 ) -> Analysis {
     let gates = Gates::of(packs);
-    let constants = Constants::collect(program, packs);
+    // The compiler reads the types of JSDoc only in a JavaScript file.
+    let docs = if program.source_type.is_javascript() {
+        Docs::read(program, text)
+    } else {
+        None
+    };
+    let constants = Constants::collect(program, packs, docs.as_ref());
     let mut analyzer = Analyzer {
         text,
         index,
@@ -92,7 +100,7 @@ pub(crate) fn analyze(
         constants,
         roots: roots::collect(program, packs),
         doubles: doubles::collect(program, text, packs, tags),
-        symbols: Recorder::collect(program, index),
+        symbols: Recorder::collect(program, index, docs.iter().flat_map(Docs::locals)),
         done: BTreeSet::new(),
         top_call: None,
         top_assignment: None,
@@ -107,8 +115,14 @@ pub(crate) fn analyze(
         access: None,
         held_new: None,
         discarded: Vec::new(),
+        docs: None,
+        doc_at: None,
         out: Analysis::default(),
     };
+    if let Some(docs) = &docs {
+        analyzer.doc_imports(docs);
+        analyzer.docs = Some(docs);
+    }
     analyzer.visit_program(program);
     analyzer.finish()
 }
@@ -236,6 +250,10 @@ struct Analyzer<'p, 'a> {
     held_new: Option<u32>,
     /// The expressions whose value the code around them drops, parentheses peeled: a compound assignment or an update that is exactly one of them only writes. A mark lives while its parent is walked, so this holds as many as the nesting is deep.
     discarded: Vec<Span>,
+    /// The `JSDoc` comments of a JavaScript file, whose types are uses of the names they give.
+    docs: Option<&'p Docs>,
+    /// The start of the top-level variable statement being walked, until its first declarator takes it: the comment above that statement belongs to the declarator.
+    doc_at: Option<u32>,
     out: Analysis,
 }
 
@@ -286,6 +304,75 @@ impl<'a> Analyzer<'_, 'a> {
             name: name.to_owned(),
         });
         place
+    }
+
+    /// Lists `name` of the module of `import` under the local `local`, and binds the local to it. The place of the binding is given.
+    fn specify(&mut self, import: &mut Import, local: &str, name: String) -> usize {
+        let binding = self.bind(local, &import.spec, &name);
+        import.names.push(name);
+        import.exported.push(local.to_owned());
+        binding
+    }
+
+    /// The type-only imports that the `JSDoc` comments of a JavaScript file make, as `import type` makes them, and the names they bind.
+    fn doc_imports(&mut self, docs: &Docs) {
+        // An import with no local counts where its line is, so one that two declarations make is made once for each.
+        let mut made = BTreeSet::new();
+        for doc in &docs.imports {
+            // A comment's local never shadows code: when the code binds the name, the type is an import of that name and nothing else.
+            let shadowed = doc
+                .binds
+                .iter()
+                .any(|(local, _)| self.symbols.code_binds(local));
+            if shadowed {
+                for &anchor in &doc.anchors {
+                    self.doc_import(doc, anchor, false, &mut made);
+                }
+            } else {
+                self.doc_import(doc, doc.at, true, &mut made);
+            }
+        }
+    }
+
+    /// One type-only import of `doc` at `at`, which binds its locals when `binds` is set.
+    fn doc_import(
+        &mut self,
+        doc: &DocImport,
+        at: u32,
+        binds: bool,
+        made: &mut BTreeSet<(String, Vec<String>, Vec<String>, u32)>,
+    ) {
+        let line = self.line(at);
+        let exported = if binds {
+            doc.exported.clone()
+        } else {
+            Vec::new()
+        };
+        if !made.insert((doc.spec.clone(), doc.names.clone(), exported.clone(), line)) {
+            return;
+        }
+        let mut import = Import::new(&doc.spec, ImportKind::Static, line);
+        import.flags = import.flags | ImportFlags::TYPE_ONLY;
+        import.names.clone_from(&doc.names);
+        import.exported = exported;
+        if binds {
+            for (local, name) in &doc.binds {
+                self.bind(local, &doc.spec, name);
+            }
+        }
+        self.out.imports.push(import);
+    }
+
+    /// The classes that the `JSDoc` above the token at `at` names are used by the declaration under it. A type is no use of the value of the name.
+    fn use_documented(&mut self, at: u32) {
+        let Some(block) = self.docs.and_then(|docs| docs.block_at(at)) else {
+            return;
+        };
+        let outer = self.symbols.enter_type();
+        for class in block.used() {
+            self.symbols.reference(class);
+        }
+        self.symbols.leave_type(outer);
     }
 
     fn export(&mut self, name: &str, target: ExportTarget) {
@@ -1633,12 +1720,10 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 }
             };
             all_type &= is_type;
-            let binding = self.bind(local, spec, &name);
+            let binding = self.specify(&mut import, local, name.clone());
             if read_by_rules && !is_type && is_member(&name) {
                 self.imported.push(Imported { binding, line });
             }
-            import.names.push(name);
-            import.exported.push(local.to_owned());
         }
         if type_declaration || (all_type && !import.names.is_empty()) {
             import.flags = import.flags | ImportFlags::TYPE_ONLY;
@@ -1836,6 +1921,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             }
         }
         let outer = self.symbols.declarator(it.span.start);
+        if let Some(at) = self.doc_at.take() {
+            self.use_documented(at);
+        }
         self.visit_binding_pattern(&it.id);
         if let Some(type_annotation) = &it.type_annotation {
             match self.held_by_type(&it.id, type_annotation) {
@@ -1861,6 +1949,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         }
         match self.symbols.property(it.span.start) {
             Some(outer) => {
+                self.use_documented(it.span.start);
                 walk::walk_object_property(self, it);
                 self.symbols.restore(outer);
             }
@@ -2188,6 +2277,8 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     fn visit_program(&mut self, it: &Program<'a>) {
         for (position, statement) in it.body.iter().enumerate() {
             self.symbols.statement(position);
+            self.use_documented(statement.span().start);
+            self.doc_at = is_variable_statement(statement).then_some(statement.span().start);
             self.top_call = match statement {
                 Statement::ExpressionStatement(statement) => {
                     match statement.expression.get_inner_expression() {
@@ -2304,6 +2395,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     fn visit_class_body(&mut self, it: &ClassBody<'a>) {
         for (position, element) in it.body.iter().enumerate() {
             let outer = self.symbols.element(position);
+            self.use_documented(element.span().start);
             self.visit_class_element(element);
             self.symbols.restore(outer);
         }
@@ -2388,6 +2480,17 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
 }
 
 /// The expression with parentheses, type assertions and `await` taken off.
+/// Whether `statement` is a variable statement, exported or not.
+fn is_variable_statement(statement: &Statement<'_>) -> bool {
+    match statement {
+        Statement::VariableDeclaration(_) => true,
+        Statement::ExportDeclaration(export) => {
+            matches!(export.declaration, Declaration::VariableDeclaration(_))
+        }
+        _ => false,
+    }
+}
+
 fn peel<'e, 'a>(expr: &'e Expression<'a>) -> &'e Expression<'a> {
     match expr.get_inner_expression() {
         Expression::AwaitExpression(awaited) => peel(&awaited.argument),

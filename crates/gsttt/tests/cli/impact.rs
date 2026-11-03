@@ -2800,6 +2800,39 @@ fn a_file_that_calls_a_factory_and_reads_no_such_member_is_not_listed() {
     }
 }
 
+#[test]
+fn a_javascript_parameter_documented_with_a_class_is_a_caller_of_its_member() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/a.js",
+        "export class Sel {\n  compare(other) {\n    return other;\n  }\n}\n",
+    );
+    write(
+        &repo,
+        "src/calls.js",
+        "/**\n * @import { Sel } from './a.js'\n */\n\n/** @param {Sel} a */\nexport function calls(a) {\n  return a.compare(1);\n}\n",
+    );
+    write(
+        &repo,
+        "src/silent.js",
+        "/**\n * @import { Sel } from './a.js'\n */\n\n/** @param {Sel} a */\nexport function silent(a) {\n  return a;\n}\n",
+    );
+    let listed: Vec<String> = callers_in(&sandbox, &repo, "src/a.js", "Sel.compare")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    assert!(
+        listed.iter().any(|path| path == "src/calls.js"),
+        "{listed:?}"
+    );
+    assert!(
+        !listed.iter().any(|path| path == "src/silent.js"),
+        "{listed:?}"
+    );
+}
+
 #[scenario(
     "queries",
     "A value made by a factory and passed across a third file is a caller"

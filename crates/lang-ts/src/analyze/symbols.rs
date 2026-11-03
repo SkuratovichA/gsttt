@@ -178,6 +178,8 @@ pub(super) struct Recorder<'a> {
     called: Vec<(String, String)>,
     /// The start of each declarator that binds the names of a `require` as locals.
     modules: HashSet<u32>,
+    /// The names that only a `JSDoc` comment binds.
+    doc_only: HashSet<&'a str>,
     /// The top-level functions and classes, and the variables that hold a function, an arrow or a class, by name.
     callables: HashSet<&'a str>,
     /// The top-level `const` variables that hold an object literal which names all its keys, with the keys: what `module.exports = variable` exports besides the variable.
@@ -197,7 +199,11 @@ pub(super) struct Recorder<'a> {
 
 impl<'a> Recorder<'a> {
     /// The table of `program`: its declarations with their lines, what each statement is, and where the declarations inside classes and variable statements start.
-    pub(super) fn collect(program: &Program<'a>, index: &LineIndex) -> Self {
+    pub(super) fn collect(
+        program: &Program<'a>,
+        index: &LineIndex,
+        doc_locals: impl IntoIterator<Item = &'a str>,
+    ) -> Self {
         let mut recorder = Self {
             heads: class_heads(program),
             ..Self::default()
@@ -205,6 +211,13 @@ impl<'a> Recorder<'a> {
         for statement in &program.body {
             let plan = recorder.plan(statement, index);
             recorder.plans.push(plan);
+        }
+        // The names that the JSDoc of a JavaScript file imports are bound as an `import type` binds them, unless the code binds them: a comment never shadows code.
+        for local in doc_locals {
+            if !recorder.names.contains_key(local) {
+                recorder.entry(local, Kind::Import, None);
+                recorder.doc_only.insert(local);
+            }
         }
         // A class or a function may be declared below the code that names it, so these wait for every name.
         for (name, class) in std::mem::take(&mut recorder.factories) {
@@ -662,6 +675,11 @@ impl<'a> Recorder<'a> {
     /// Whether the declarator that starts at `start` binds the names of a `require` as locals.
     pub(super) fn binds_module(&self, start: u32) -> bool {
         self.modules.contains(&start)
+    }
+
+    /// Whether the code of the file binds `name` at its top level.
+    pub(super) fn code_binds(&self, name: &str) -> bool {
+        self.names.contains_key(name) && !self.doc_only.contains(name)
     }
 
     /// Whether `name` is a top-level function or class, or a variable that holds one.

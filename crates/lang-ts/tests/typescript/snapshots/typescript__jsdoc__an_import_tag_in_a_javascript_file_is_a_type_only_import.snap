@@ -1,0 +1,1022 @@
+---
+source: crates/lang-ts/tests/typescript/jsdoc.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "A",
+        "B"
+      ],
+      "imports": [],
+      "path": "src/ab.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "A",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "B",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Client",
+        "Thing"
+      ],
+      "imports": [],
+      "path": "src/client.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Client",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Thing",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "FlatConfigArray",
+        "Other"
+      ],
+      "imports": [],
+      "path": "src/config.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "FlatConfigArray",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Other",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "path": "src/def.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Def",
+            "uses": []
+          }
+        ],
+        "exports": [
+          {
+            "local": "Def",
+            "name": "default"
+          }
+        ],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "Linter",
+            "ConfigLoader"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "Linter",
+            "ConfigLoader"
+          ],
+          "spec": "./linter.js",
+          "to": {
+            "file": "src/linter.js"
+          }
+        }
+      ],
+      "path": "src/destructured.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 13,
+            "line": 10,
+            "name": "run",
+            "uses": [
+              "ConfigLoader",
+              "ConfigLoader.loadConfigArrayForDirectory",
+              "Linter",
+              "Linter.verifyAndFix"
+            ]
+          },
+          {
+            "end": 20,
+            "line": 18,
+            "name": "chained",
+            "uses": [
+              "Linter"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "configLoader",
+          "getFixPassCount",
+          "linter",
+          "text"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [],
+      "path": "src/example.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 10,
+            "line": 8,
+            "name": "load",
+            "uses": []
+          },
+          {
+            "end": 15,
+            "line": 15,
+            "name": "other",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "flags": 1,
+          "kind": "static",
+          "line": 14,
+          "names": [
+            "default"
+          ],
+          "spec": "./client",
+          "to": {
+            "file": "src/client.js"
+          }
+        },
+        {
+          "exported": [
+            "Thing"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 10,
+          "names": [
+            "Thing"
+          ],
+          "spec": "./client.js",
+          "to": {
+            "file": "src/client.js"
+          }
+        },
+        {
+          "exported": [
+            "FlatConfigArray",
+            "Renamed"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "FlatConfigArray",
+            "Other"
+          ],
+          "spec": "./config.js",
+          "to": {
+            "file": "src/config.js"
+          }
+        },
+        {
+          "exported": [
+            "Def"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 4,
+          "names": [
+            "default"
+          ],
+          "spec": "./def.js",
+          "to": {
+            "file": "src/def.js"
+          }
+        },
+        {
+          "exported": [
+            "ns"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 3,
+          "names": [
+            "*"
+          ],
+          "spec": "./ns.js",
+          "to": {
+            "file": "src/ns.js"
+          }
+        },
+        {
+          "exported": [
+            "Wrapped"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 12,
+          "names": [
+            "Wrapped"
+          ],
+          "spec": "./other",
+          "to": {
+            "file": "src/other.js"
+          }
+        },
+        {
+          "exported": [
+            "Z"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 16,
+          "names": [
+            "default"
+          ],
+          "spec": "./other",
+          "to": {
+            "file": "src/other.js"
+          }
+        }
+      ],
+      "path": "src/imports.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 14,
+            "line": 14,
+            "name": "f",
+            "uses": [
+              "Thing"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "ConfigLoader",
+        "Linter"
+      ],
+      "imports": [],
+      "path": "src/linter.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 1,
+            "name": "Linter",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Linter.verifyAndFix",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Linter.getFixPassCount",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "ConfigLoader",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "ConfigLoader.loadConfigArrayForDirectory",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Traverser",
+        "table"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Visitor"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "Visitor"
+          ],
+          "spec": "./visitor.js",
+          "to": {
+            "file": "src/visitor.js"
+          }
+        }
+      ],
+      "path": "src/methods.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 21,
+            "line": 5,
+            "name": "Traverser",
+            "uses": []
+          },
+          {
+            "end": 11,
+            "line": 9,
+            "name": "Traverser.run",
+            "uses": [
+              "Visitor",
+              "Visitor.callSync"
+            ]
+          },
+          {
+            "end": 16,
+            "line": 14,
+            "name": "Traverser.each",
+            "uses": [
+              "Visitor",
+              "Visitor.callSync"
+            ]
+          },
+          {
+            "end": 20,
+            "line": 18,
+            "name": "Traverser.skip",
+            "uses": []
+          },
+          {
+            "end": 28,
+            "line": 23,
+            "name": "table",
+            "uses": [
+              "Visitor.callSync"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [
+          "Traverser",
+          "table"
+        ],
+        "overrides": [],
+        "reads": [
+          "callSync",
+          "exports"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "A",
+            "B"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "A",
+            "B"
+          ],
+          "spec": "./ab.js",
+          "to": {
+            "file": "src/ab.js"
+          }
+        }
+      ],
+      "path": "src/no-class.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 17,
+            "line": 10,
+            "name": "f",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "five",
+          "four",
+          "one",
+          "six",
+          "three",
+          "two"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "ns"
+      ],
+      "imports": [],
+      "path": "src/ns.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "ns",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Wrapped"
+      ],
+      "imports": [],
+      "path": "src/other.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "Wrapped",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "assigned",
+        "optional"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Sel"
+          ],
+          "flags": 1,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "Sel"
+          ],
+          "spec": "./sel.js",
+          "to": {
+            "file": "src/sel.js"
+          }
+        }
+      ],
+      "path": "src/params.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 11,
+            "line": 9,
+            "name": "compareSpecificity",
+            "uses": [
+              "Sel",
+              "Sel.compare"
+            ]
+          },
+          {
+            "end": 16,
+            "line": 14,
+            "name": "optional",
+            "uses": [
+              "Sel",
+              "Sel.compare"
+            ]
+          },
+          {
+            "end": 19,
+            "line": 19,
+            "name": "arrow",
+            "uses": [
+              "Sel",
+              "Sel.compare"
+            ]
+          },
+          {
+            "end": 24,
+            "line": 22,
+            "name": "assigned",
+            "uses": [
+              "Sel",
+              "Sel.compare"
+            ]
+          },
+          {
+            "end": 28,
+            "line": 26,
+            "name": "undocumented",
+            "uses": []
+          },
+          {
+            "end": 36,
+            "line": 33,
+            "name": "shadowed",
+            "uses": [
+              "Sel"
+            ]
+          },
+          {
+            "end": 43,
+            "line": 41,
+            "name": "defaulted",
+            "uses": [
+              "Sel"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "assigned",
+          "compare"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Sel"
+      ],
+      "imports": [],
+      "path": "src/sel.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 5,
+            "line": 1,
+            "name": "Sel",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 2,
+            "name": "Sel.compare",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "flags": 1,
+          "kind": "static",
+          "line": 10,
+          "names": [
+            "default"
+          ],
+          "spec": "./client",
+          "to": {
+            "file": "src/client.js"
+          }
+        },
+        {
+          "flags": 1,
+          "kind": "static",
+          "line": 13,
+          "names": [
+            "default"
+          ],
+          "spec": "./client",
+          "to": {
+            "file": "src/client.js"
+          }
+        },
+        {
+          "flags": 1,
+          "kind": "static",
+          "line": 4,
+          "names": [
+            "Thing"
+          ],
+          "spec": "./client.js",
+          "to": {
+            "file": "src/client.js"
+          }
+        },
+        {
+          "flags": 1,
+          "kind": "static",
+          "line": 7,
+          "names": [
+            "Thing"
+          ],
+          "spec": "./client.js",
+          "to": {
+            "file": "src/client.js"
+          }
+        },
+        {
+          "exported": [
+            "Thing"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Thing"
+          ],
+          "spec": "./client.js",
+          "to": {
+            "file": "src/client.js"
+          }
+        }
+      ],
+      "path": "src/types.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "first",
+            "uses": [
+              "Thing"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "second",
+            "uses": [
+              "Thing"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "third",
+            "uses": []
+          },
+          {
+            "end": 13,
+            "line": 13,
+            "name": "fourth",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "f",
+        "g"
+      ],
+      "imports": [],
+      "path": "src/typescript.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 7,
+            "line": 5,
+            "name": "f",
+            "uses": []
+          },
+          {
+            "end": 12,
+            "line": 10,
+            "name": "g",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "compare"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Visitor"
+      ],
+      "imports": [],
+      "path": "src/visitor.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 1,
+            "name": "Visitor",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Visitor.callSync",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}
