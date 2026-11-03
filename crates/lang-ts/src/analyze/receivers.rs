@@ -6,8 +6,9 @@ use gsttt_core::fact::ImportKind;
 use oxc_ast::ast::{
     AssignmentExpression, AssignmentOperator, AssignmentTarget, BindingIdentifier, BindingPattern,
     ComputedMemberExpression, Expression, ForInStatement, ForOfStatement, ForStatementLeft,
-    IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, Program,
-    StaticMemberExpression, UpdateExpression, VariableDeclarator,
+    IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ObjectExpression,
+    ObjectPropertyKind, Program, StaticMemberExpression, UpdateExpression, VariableDeclaration,
+    VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 
@@ -24,6 +25,41 @@ pub(super) struct Receivers {
     bound_globals: BTreeSet<String>,
     /// The names that the file reads anywhere other than as the object of a member access: called, passed, returned or exported.
     bare: BTreeSet<String>,
+    /// The shape of the object literal that each name is bound to, once and by `const`, and never otherwise.
+    shapes: BTreeMap<String, Shape>,
+}
+
+/// The keys of an object literal, each with the shape of the literal it holds, `None` for any other value: a key can hold anything.
+#[derive(Debug, Default)]
+struct Shape {
+    keys: BTreeMap<String, Option<Shape>>,
+}
+
+impl Shape {
+    /// The keys that `object` names. A computed key adds none, and a spread may replace any key before it, so what those keys hold is no longer known.
+    fn of(object: &ObjectExpression<'_>) -> Self {
+        let mut shape = Shape::default();
+        for property in &object.properties {
+            match property {
+                ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
+                    if let Some(key) = property_name(&property.key) {
+                        let held = match property.value.get_inner_expression() {
+                            Expression::ObjectExpression(inner) if !property.method => {
+                                Some(Shape::of(inner))
+                            }
+                            _ => None,
+                        };
+                        shape.keys.insert(key, held);
+                    }
+                }
+                ObjectPropertyKind::ObjectProperty(_) => {}
+                ObjectPropertyKind::SpreadProperty(_) => {
+                    shape.keys.values_mut().for_each(|held| *held = None);
+                }
+            }
+        }
+        shape
+    }
 }
 
 impl Receivers {
@@ -37,6 +73,20 @@ impl Receivers {
     /// Whether the file uses `name` other than as the object of a member access, in any scope.
     pub(super) fn is_used_bare(&self, name: &str) -> bool {
         self.bare.contains(name)
+    }
+
+    /// How many links of `chain`, the names that follow `name` in a member chain, are keys of the object literal that `name` is bound to: those links are no reads, since the file wrote them.
+    pub(super) fn literal_links(&self, name: &str, chain: &[Option<String>]) -> usize {
+        let mut shape = self.shapes.get(name);
+        let mut links = 0;
+        for link in chain {
+            let Some(held) = shape.and_then(|shape| shape.keys.get(link.as_deref()?)) else {
+                break;
+            };
+            links += 1;
+            shape = held.as_ref();
+        }
+        links
     }
 
     /// Whether a member read on `name` is a read on a builtin value.
@@ -63,6 +113,9 @@ struct Fact {
     node: bool,
     /// The values given to the name by an initialiser or a plain assignment.
     values: Vec<Root>,
+    /// The shape of the object literal a `const` gives the name, and how many sites bind the name to one.
+    literal: Option<Shape>,
+    literals: u32,
 }
 
 #[derive(Default)]
@@ -72,6 +125,8 @@ struct Found {
     writing: bool,
     /// The walk is in the left side of a `for` loop that declares its name, which the loop gives a new value at each turn.
     loop_left: bool,
+    /// The declaration being walked is a `const`.
+    constant: bool,
     /// Where the identifier that is the object of the member access being walked starts.
     object_at: Option<u32>,
     /// The names read other than as the object of a member access.
@@ -123,10 +178,19 @@ impl Found {
             .filter(|name| is_global_builtin(name))
             .map(|name| (*name).clone())
             .collect();
+        let shapes = self
+            .facts
+            .into_iter()
+            .filter(|(_, fact)| {
+                !fact.bad && !fact.node && fact.values.is_empty() && fact.literals == 1
+            })
+            .filter_map(|(name, fact)| Some((name, fact.literal?)))
+            .collect();
         Receivers {
             known,
             bound_globals,
             bare: self.bare,
+            shapes,
         }
     }
 
@@ -205,8 +269,28 @@ impl<'a> Visit<'a> for Found {
         walk::walk_computed_member_expression(self, it);
     }
 
+    fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
+        let outer = std::mem::replace(
+            &mut self.constant,
+            it.kind == VariableDeclarationKind::Const,
+        );
+        walk::walk_variable_declaration(self, it);
+        self.constant = outer;
+    }
+
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         match (&it.id, &it.init) {
+            // `const o = { … }` gives the name the shape of the literal, which holds only while nothing else binds the name.
+            (BindingPattern::BindingIdentifier(id), Some(Expression::ObjectExpression(object)))
+                if self.constant && !self.loop_left =>
+            {
+                let shape = Shape::of(object);
+                self.edit(id.name.as_str(), |fact| {
+                    fact.literals += 1;
+                    fact.literal = Some(shape);
+                });
+                self.visit_object_expression(object);
+            }
             (BindingPattern::BindingIdentifier(id), Some(init)) if !self.loop_left => {
                 self.given(id.name.as_str(), init);
                 self.visit_expression(init);

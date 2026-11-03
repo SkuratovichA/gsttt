@@ -133,10 +133,7 @@ expression: "run(\"scopes-locals\")?"
         "heirs": [],
         "on_load": [],
         "overrides": [],
-        "reads": [
-          "orders",
-          "users"
-        ]
+        "reads": []
       },
       "tags": 0,
       "unresolved": []
