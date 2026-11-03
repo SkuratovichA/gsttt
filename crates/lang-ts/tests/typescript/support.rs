@@ -165,6 +165,25 @@ pub(crate) fn affected_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<
         .collect())
 }
 
+/// The files that `impact` lists for the declaration `name` of the file at `path` in `fixture`, in the order of the answer.
+pub(crate) fn callers_of(
+    fixture: &str,
+    path: &str,
+    name: &str,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let request = ImpactRequest {
+        files: vec![path.to_owned()],
+        names: vec![name.to_owned()],
+        ..ImpactRequest::default()
+    };
+    let answer = impact(&index_of(fixture)?, Freshness::Fresh, &request);
+    Ok(answer
+        .affected
+        .into_iter()
+        .map(|entry| entry.path)
+        .collect())
+}
+
 /// The tests a change to the file at `path` reaches in `fixture`, to the end of the walk, as `impact` lists them, in the order of the answer.
 pub(crate) fn tests_run_by(fixture: &str, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let request = ImpactRequest {
@@ -415,6 +434,21 @@ pub(crate) fn heirs(json: &Value, path: &str) -> Vec<String> {
     symbols(json, path)
         .into_iter()
         .flat_map(|symbols| items(symbols, "heirs"))
+        .map(|heir| {
+            format!(
+                "{} of {}",
+                text(heir, "name").unwrap_or("?"),
+                text(heir, "of").unwrap_or("?")
+            )
+        })
+        .collect()
+}
+
+/// The overrides of the file at `path`, in the order of the output: `<name> of <head>`.
+pub(crate) fn overrides(json: &Value, path: &str) -> Vec<String> {
+    symbols(json, path)
+        .into_iter()
+        .flat_map(|symbols| items(symbols, "overrides"))
         .map(|heir| {
             format!(
                 "{} of {}",

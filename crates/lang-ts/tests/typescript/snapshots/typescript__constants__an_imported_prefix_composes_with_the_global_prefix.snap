@@ -78,6 +78,7 @@ expression: json
           "Module",
           "UsersController"
         ],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -141,6 +142,7 @@ expression: json
         "on_load": [
           "bootstrap"
         ],
+        "overrides": [],
         "reads": [
           "create",
           "listen",
@@ -174,6 +176,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -251,6 +254,7 @@ expression: json
           "Get",
           "USERS"
         ],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,

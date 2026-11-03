@@ -82,6 +82,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "$transaction",
           "findMany",
@@ -148,6 +149,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "$transaction",
           "findMany",
@@ -200,6 +202,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "booking",
           "create"
@@ -232,6 +235,7 @@ expression: json
         "on_load": [
           "items"
         ],
+        "overrides": [],
         "reads": [
           "findMany",
           "forEach",
@@ -305,6 +309,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "$transaction",
           "findMany",
@@ -378,6 +383,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "$transaction",
           "findMany",

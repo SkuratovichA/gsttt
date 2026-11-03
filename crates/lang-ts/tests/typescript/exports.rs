@@ -4,7 +4,7 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{affected_by, exported_as, exports, run, sites, status};
+use crate::support::{affected_by, callers_of, exported_as, exports, run, sites, status};
 
 #[test]
 #[scenario("typescript", "Every export form is named")]
@@ -201,5 +201,54 @@ fn an_empty_module_exports_lists_what_is_added_to_it() -> Result<(), Box<dyn Err
     let json = run("commonjs-exports-local")?;
     assert_eq!(exports(&json, "src/empty.js"), Some(vec!["x", "y"]));
     assert_eq!(exports(&json, "src/only-empty.js"), Some(vec![]));
+    Ok(())
+}
+
+#[test]
+fn the_heads_of_a_class_and_the_mounts_are_found_through_the_same_stars_aliases_and_defaults()
+-> Result<(), Box<dyn Error>> {
+    // The walk resolves the head of `implements` in `query/walk/overrides.rs` and the linker resolves a mount in `link.rs::export_of`, and the two follow a star, an alias and a default alike.
+    assert_eq!(
+        sites("star-heads")?,
+        [
+            "serves http GET /direct/legacy @7 in src/routes.ts",
+            "serves http GET /members/{} @4 in src/routes.ts",
+        ],
+        "a name behind a star and an alias is mounted, and the default behind a star is not"
+    );
+    for (file, name, caller, reason) in [
+        (
+            "src/via-star.ts",
+            "ViaStar.run",
+            "src/by-run.ts",
+            "the head behind a star",
+        ),
+        (
+            "src/via-alias.ts",
+            "ViaAlias.run",
+            "src/by-run.ts",
+            "the head behind an alias",
+        ),
+        (
+            "src/via-default.ts",
+            "ViaDefault.stop",
+            "src/by-stop.ts",
+            "the default of the file that declares it",
+        ),
+    ] {
+        assert!(
+            callers_of("star-heads", file, name)?.contains(&caller.to_owned()),
+            "{reason}"
+        );
+    }
+    assert!(
+        !callers_of(
+            "star-heads",
+            "src/via-star-default.ts",
+            "ViaStarDefault.stop"
+        )?
+        .contains(&"src/by-stop.ts".to_owned()),
+        "a star forwards no default"
+    );
     Ok(())
 }

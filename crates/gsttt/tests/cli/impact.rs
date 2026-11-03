@@ -1884,6 +1884,44 @@ fn go_answer(files: &[(&str, &str)], file: &str, name: &str) -> Value {
     json(&sandbox.run(&["--json", "impact", file, "--name", name]))
 }
 
+/// A provider interface with two methods, two classes that implement it, and the files that hold one of them.
+fn write_providers(repo: &Path) {
+    write(
+        repo,
+        "src/provider.ts",
+        "export interface GitProvider {\n  getGitGroups(): string[];\n  other(): void;\n}\n",
+    );
+    write(
+        repo,
+        "src/aws.ts",
+        "import type { GitProvider } from './provider';\n\nexport class Aws implements GitProvider {\n  getGitGroups() {\n    return [];\n  }\n  other() {}\n  extra() {}\n}\n",
+    );
+    write(
+        repo,
+        "src/github.ts",
+        "import type { GitProvider } from './provider';\n\nexport class Github implements GitProvider {\n  getGitGroups() {\n    return [];\n  }\n  other() {}\n}\n",
+    );
+    write(
+        repo,
+        "src/app.ts",
+        "import type { GitProvider } from './provider';\n\nexport function groups(provider: GitProvider) {\n  return provider.getGitGroups();\n}\n",
+    );
+    write(
+        repo,
+        "src/rest.ts",
+        "import type { GitProvider } from './provider';\n\nexport function rest(provider: GitProvider) {\n  return provider.other();\n}\n",
+    );
+    write(
+        repo,
+        "src/only-github.ts",
+        "import { Github } from './github';\n\nexport function only(github: Github) {\n  return github.getGitGroups();\n}\n",
+    );
+}
+
+fn ask(sandbox: &Sandbox, repo: &Path, path: &str, name: &str) -> Value {
+    json(&sandbox.run_in(repo, &["--json", "impact", path, "--name", name]))
+}
+
 #[scenario(
     "queries",
     "A method called on what a function returns reaches the caller"
@@ -2002,5 +2040,178 @@ fn a_router_required_in_place_reaches_a_fetch_of_its_route() {
     assert!(
         paths(&impact["affected"]).contains(&"web/page.ts"),
         "{impact}"
+    );
+}
+
+#[scenario(
+    "queries",
+    "A caller through an interface is a caller of the method that implements it"
+)]
+#[test]
+fn a_caller_through_an_interface_is_a_caller_of_the_method_that_implements_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_providers(&repo);
+
+    let answer = ask(&sandbox, &repo, "src/aws.ts", "Aws.getGitGroups");
+    assert_eq!(paths(&answer["affected"]), ["src/app.ts"], "{answer}");
+    assert_eq!(
+        answer["affected"][0]["callers"],
+        value!([{ "name": "groups", "line": 3, "distance": 1 }])
+    );
+    assert!(
+        answer["notes"]
+            .as_array()
+            .is_some_and(|notes| notes.iter().any(|note| note
+                == "Aws.getGitGroups may run through GitProvider.getGitGroups in src/provider.ts, so its callers are listed")),
+        "{answer}"
+    );
+}
+
+#[scenario(
+    "queries",
+    "A caller through a base class is a caller of the method that overrides it"
+)]
+#[test]
+fn a_caller_through_a_base_class_is_a_caller_of_the_method_that_overrides_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(&repo, "src/base.ts", "export class Base {\n  run() {}\n}\n");
+    write(
+        &repo,
+        "src/sub.ts",
+        "import { Base } from './base';\n\nexport class Sub extends Base {\n  run() {}\n}\n",
+    );
+    write(
+        &repo,
+        "src/app.ts",
+        "import { Base } from './base';\n\nexport function go(base: Base) {\n  base.run();\n}\n",
+    );
+
+    let answer = ask(&sandbox, &repo, "src/sub.ts", "Sub.run");
+    assert!(
+        paths(&answer["affected"]).contains(&"src/app.ts"),
+        "{answer}"
+    );
+}
+
+#[scenario("queries", "A sibling implementation is no caller")]
+#[test]
+fn a_sibling_implementation_is_no_caller() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_providers(&repo);
+
+    let answer = ask(&sandbox, &repo, "src/aws.ts", "Aws.getGitGroups");
+    let listed = paths(&answer["affected"]);
+    assert!(!listed.contains(&"src/github.ts"), "{answer}");
+    assert!(!listed.contains(&"src/only-github.ts"), "{answer}");
+    assert!(!listed.contains(&"src/rest.ts"), "{answer}");
+}
+
+#[scenario(
+    "queries",
+    "A method the interface does not declare gets nothing from it"
+)]
+#[test]
+fn a_method_the_interface_does_not_declare_gets_nothing_from_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_providers(&repo);
+    write(
+        &repo,
+        "src/extra.ts",
+        "import type { GitProvider } from './provider';\n\nexport function extra(provider: GitProvider) {\n  return (provider as any).extra();\n}\n",
+    );
+
+    let answer = ask(&sandbox, &repo, "src/aws.ts", "Aws.extra");
+    assert!(
+        !paths(&answer["affected"]).contains(&"src/extra.ts"),
+        "{answer}"
+    );
+    assert!(
+        answer.get("notes").is_none_or(Value::is_null),
+        "no note about a head: {answer}"
+    );
+}
+
+#[scenario("queries", "A head is followed through a barrel")]
+#[test]
+fn a_head_is_followed_through_a_barrel() {
+    for barrel in [
+        "export { GitProvider } from './provider';\n",
+        "export * from './provider';\n",
+    ] {
+        let sandbox = Sandbox::new();
+        let repo = sandbox.repository();
+        write_providers(&repo);
+        write(&repo, "src/index.ts", barrel);
+        write(
+            &repo,
+            "src/aws.ts",
+            "import type { GitProvider } from './index';\n\nexport class Aws implements GitProvider {\n  getGitGroups() {\n    return [];\n  }\n}\n",
+        );
+
+        let answer = ask(&sandbox, &repo, "src/aws.ts", "Aws.getGitGroups");
+        assert!(
+            paths(&answer["affected"]).contains(&"src/app.ts"),
+            "{barrel}: {answer}"
+        );
+        assert!(
+            answer["notes"]
+                .as_array()
+                .is_some_and(|notes| notes.iter().any(|note| note
+                    == "Aws.getGitGroups may run through GitProvider.getGitGroups in src/provider.ts, so its callers are listed")),
+            "{barrel}: {answer}"
+        );
+    }
+}
+
+#[scenario("queries", "A changed method is followed through what it implements")]
+#[test]
+fn a_changed_method_is_followed_through_what_it_implements() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_providers(&repo);
+    commit_all(&repo);
+    write(
+        &repo,
+        "src/aws.ts",
+        "import type { GitProvider } from './provider';\n\nexport class Aws implements GitProvider {\n  getGitGroups() {\n    return ['changed'];\n  }\n  other() {}\n  extra() {}\n}\n",
+    );
+
+    let answer = json(&sandbox.run_in(&repo, &["--json", "impact", "--changed"]));
+    let listed = paths(&answer["affected"]);
+    assert!(listed.contains(&"src/app.ts"), "{answer}");
+    assert!(!listed.contains(&"src/rest.ts"), "{answer}");
+    assert!(!listed.contains(&"src/only-github.ts"), "{answer}");
+}
+
+#[scenario(
+    "queries",
+    "Callers of a member of an interface are the holders that name it"
+)]
+#[test]
+fn callers_of_a_member_of_an_interface_are_the_holders_that_name_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_providers(&repo);
+
+    let answer = ask(
+        &sandbox,
+        &repo,
+        "src/provider.ts",
+        "GitProvider.getGitGroups",
+    );
+    let listed = paths(&answer["affected"]);
+    assert!(listed.contains(&"src/app.ts"), "{answer}");
+    assert!(!listed.contains(&"src/rest.ts"), "{answer}");
+    assert!(
+        answer["notes"]
+            .as_array()
+            .is_none_or(|notes| !notes.iter().any(|note| note
+                .as_str()
+                .is_some_and(|note| note.contains("declares no")))),
+        "{answer}"
     );
 }

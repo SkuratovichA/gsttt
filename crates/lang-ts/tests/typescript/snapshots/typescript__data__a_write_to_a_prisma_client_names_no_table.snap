@@ -82,6 +82,7 @@ expression: json
           "PrismaClient",
           "prisma.tenant"
         ],
+        "overrides": [],
         "reads": [
           "booking",
           "findFirst",

@@ -541,6 +541,14 @@ fn note(graph: &Graph, walked: walk::Note) -> Note {
             "{} is followed whole because its connector records no declarations",
             path(file)
         )),
+        walk::Note::Overridden {
+            member,
+            through,
+            file,
+        } => Note::Said(format!(
+            "{member} may run through {through} in {}, so its callers are listed",
+            path(file)
+        )),
         walk::Note::HeldClass { members, files } => Note::HeldClass { members, files },
         walk::Note::HeldModule { files } => Note::HeldModule { files },
         walk::Note::Stopped => Note::Said("the walk stopped at the depth with callers left to follow; ask about a caller, or with a larger depth, to go on".to_owned()),

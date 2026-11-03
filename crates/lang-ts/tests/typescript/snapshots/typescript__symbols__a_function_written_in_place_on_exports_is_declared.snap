@@ -40,6 +40,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "go"
         ]
@@ -177,6 +178,7 @@ expression: json
           "compute",
           "dep"
         ],
+        "overrides": [],
         "reads": [
           "a",
           "again",

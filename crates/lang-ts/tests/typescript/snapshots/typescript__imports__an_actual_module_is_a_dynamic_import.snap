@@ -53,6 +53,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "importActual",
           "requireActual"
@@ -85,6 +86,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,

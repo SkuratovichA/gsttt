@@ -59,6 +59,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -83,6 +84,12 @@ expression: json
             "line": 1,
             "name": "Foo",
             "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Foo.n",
+            "uses": []
           }
         ],
         "exports": [
@@ -93,6 +100,7 @@ expression: json
         ],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,

@@ -104,6 +104,18 @@ expression: json
             "uses": []
           },
           {
+            "end": 25,
+            "line": 25,
+            "name": "I.first",
+            "uses": []
+          },
+          {
+            "end": 28,
+            "line": 28,
+            "name": "I.second",
+            "uses": []
+          },
+          {
             "end": 31,
             "line": 31,
             "name": "T",
@@ -125,6 +137,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "a",
           "b"

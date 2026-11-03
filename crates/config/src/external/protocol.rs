@@ -72,7 +72,7 @@ pub enum Response {
         path: String,
         /// What the process read out of the file: a `FileFacts` in the serde form of the core type, with `status`, `tags`, `imports`, `contracts`, `embedded` and `unresolved`, and optionally `exports`, the names the file exports itself, and in each import `exported`, the names a named re-export exports its `names` as.
         #[schemars(with = "serde_json::Value")]
-        facts: FileFacts,
+        facts: Box<FileFacts>,
     },
     /// The answer to `resolve`. It repeats the file and the import it answers, so that a line that arrives late or twice is never taken for the answer to another import.
     Resolution {
@@ -169,7 +169,6 @@ impl From<Reason> for UnresolvedReason {
 #[serde(untagged)]
 #[expect(
     dead_code,
-    clippy::large_enum_variant,
     reason = "never built: `schema` reads its schema, so the size of a value does not matter"
 )]
 enum Message<'a> {
@@ -257,7 +256,7 @@ mod tests {
         }))
         .unwrap();
         assert!(
-            matches!(facts, Response::Facts { path, facts } if path == "src/A.kt" && facts == FileFacts::default())
+            matches!(facts, Response::Facts { path, facts } if path == "src/A.kt" && *facts == FileFacts::default())
         );
         assert!(
             serde_json::from_value::<Response>(json!({ "type": "parse", "path": "x" })).is_err(),

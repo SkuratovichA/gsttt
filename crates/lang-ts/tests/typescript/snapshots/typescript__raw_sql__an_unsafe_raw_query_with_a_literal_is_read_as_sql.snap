@@ -90,6 +90,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "$queryRawUnsafe"
         ]
@@ -175,6 +176,7 @@ expression: json
           "Prisma.sql",
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "$queryRaw",
           "sql"
@@ -304,6 +306,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "$executeRawUnsafe",
           "$queryRaw",

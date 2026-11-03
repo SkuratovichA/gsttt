@@ -41,6 +41,7 @@ expression: json
         "on_load": [
           "mockPrisma"
         ],
+        "overrides": [],
         "reads": [
           "findFirst",
           "fn",
@@ -112,6 +113,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst",
           "findMany",

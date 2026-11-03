@@ -41,6 +41,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -163,6 +164,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "$executeRaw",
           "$queryRaw"
@@ -251,6 +253,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "$queryRaw",
           "client"

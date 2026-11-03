@@ -13,7 +13,7 @@ use oxc_ast::ast::{
     Declaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind, Expression,
     ImportDeclaration, MethodDefinitionKind, ObjectExpression, ObjectPropertyKind, Program,
     PropertyKey, SimpleAssignmentTarget, Statement, TSInterfaceDeclaration, TSModuleReference,
-    UnaryOperator, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
+    TSSignature, UnaryOperator, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_span::{GetSpan, Span};
 
@@ -173,6 +173,8 @@ pub(super) struct Recorder<'a> {
     callables: HashSet<&'a str>,
     /// The top-level `const` variables that hold an object literal which names all its keys, with the keys: what `module.exports = variable` exports besides the variable.
     objects: HashMap<&'a str, Vec<String>>,
+    /// The heads a value of a class may run the members of, in the order met.
+    overrides: Vec<Heir>,
     /// The member names the file reads on a value of a class it does not know, sorted by the set.
     reads: BTreeSet<String>,
     /// What the file refers to as it loads, in the order met.
@@ -382,7 +384,7 @@ impl<'a> Recorder<'a> {
             }
             Declaration::TSInterfaceDeclaration(interface) => {
                 let plan = self.single(Some(interface.id.name.as_str()), lines, Load::Later);
-                self.interface(interface);
+                self.interface(interface, index);
                 plan
             }
             Declaration::TSEnumDeclaration(declared) => {
@@ -432,7 +434,7 @@ impl<'a> Recorder<'a> {
             }
             ExportDefaultDeclarationKind::TSInterfaceDeclaration(interface) => {
                 let plan = self.single(Some(interface.id.name.as_str()), lines, Load::Later);
-                self.interface(interface);
+                self.interface(interface, index);
                 plan
             }
             // `export default name` declares nothing: it exports a name the file has.
@@ -458,11 +460,35 @@ impl<'a> Recorder<'a> {
         });
     }
 
-    /// An interface takes the members of each interface it extends.
-    fn interface(&mut self, interface: &TSInterfaceDeclaration<'a>) {
+    /// Records that a value of `name` may run the members of `head`.
+    fn overridden(&mut self, name: &str, head: &str) {
+        self.overrides.push(Heir {
+            name: name.to_owned(),
+            of: head.to_owned(),
+        });
+    }
+
+    /// An interface takes the members of each interface it extends, and declares the members it names.
+    fn interface(&mut self, interface: &TSInterfaceDeclaration<'a>, index: &LineIndex) {
         let name = interface.id.name.as_str();
         for base in &interface.extends {
             self.heir(name, &base.type_name.to_string());
+        }
+        let Some(&entry) = self.names.get(name) else {
+            return;
+        };
+        for signature in &interface.body.body {
+            let (key, computed, span) = match signature {
+                TSSignature::TSMethodSignature(method) => {
+                    (&method.key, method.computed, method.span)
+                }
+                TSSignature::TSPropertySignature(field) => (&field.key, field.computed, field.span),
+                _ => continue,
+            };
+            let Some((member, private)) = member_key(key).filter(|_| !computed) else {
+                continue;
+            };
+            self.declare_member(entry, private, member, line_pair(index, span));
         }
     }
 
@@ -586,6 +612,10 @@ impl<'a> Recorder<'a> {
             .and_then(|heritage| dotted_name(&heritage.expression));
         if let Some(head) = &head {
             self.heir(name, head);
+            self.overridden(name, head);
+        }
+        for implemented in &class.implements {
+            self.overridden(name, &implemented.expression.to_string());
         }
         let mut members = Vec::with_capacity(class.body.body.len());
         for element in &class.body.body {
@@ -674,9 +704,20 @@ impl<'a> Recorder<'a> {
             .first()
             .map_or(span.start, |decorator| decorator.span.start.min(span.start));
         let lines = line_pair(index, Span::new(start, span.end));
+        Some(self.declare_member(class, private, name, lines))
+    }
+
+    /// The entry of the member `name` of `class`, made when the class has none. An overload widens the entry it finds.
+    fn declare_member(
+        &mut self,
+        class: usize,
+        private: bool,
+        name: &'a str,
+        lines: (Line, Line),
+    ) -> usize {
         if let Some(&found) = self.members.get(&(class, private, name)) {
             self.widen(found, lines);
-            return Some(found);
+            return found;
         }
         let owner = self
             .entries
@@ -688,7 +729,7 @@ impl<'a> Recorder<'a> {
         if let Some(entry) = self.entries.get_mut(class) {
             entry.has_members = true;
         }
-        Some(found)
+        found
     }
 
     /// The entry of `name`, made when the table has none. A declaration of a name that an overload or a merge declared before it widens the lines.
@@ -1215,11 +1256,15 @@ impl<'a> Recorder<'a> {
         let mut heirs = std::mem::take(&mut self.heirs);
         heirs.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
         heirs.dedup();
+        let mut overrides = std::mem::take(&mut self.overrides);
+        overrides.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
+        overrides.dedup();
         Symbols {
             declared,
             on_load: self.names_of(self.on_load.iter().copied(), &ranks, &order),
             exports: local_exports(exports),
             heirs,
+            overrides,
             reads: std::mem::take(&mut self.reads).into_iter().collect(),
         }
     }

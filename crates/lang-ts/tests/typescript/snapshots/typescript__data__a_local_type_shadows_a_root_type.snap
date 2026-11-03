@@ -75,6 +75,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst"
         ]
@@ -115,6 +116,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst"
         ]
@@ -161,6 +163,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst"
         ]
@@ -201,6 +204,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst"
         ]
@@ -229,6 +233,12 @@ expression: json
             "uses": []
           },
           {
+            "end": 2,
+            "line": 2,
+            "name": "PrismaClient.tenant",
+            "uses": []
+          },
+          {
             "end": 7,
             "line": 5,
             "name": "find",
@@ -241,6 +251,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst"
         ]

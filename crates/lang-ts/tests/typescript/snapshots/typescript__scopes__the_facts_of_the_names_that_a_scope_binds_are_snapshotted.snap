@@ -130,6 +130,7 @@ expression: "run(\"scopes-hidden\")?"
         "on_load": [
           "BASE"
         ],
+        "overrides": [],
         "reads": [
           "BASE"
         ]

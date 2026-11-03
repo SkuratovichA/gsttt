@@ -61,6 +61,7 @@ expression: json
         "on_load": [
           "express"
         ],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -112,6 +113,7 @@ expression: json
         "on_load": [
           "i18next.createInstance"
         ],
+        "overrides": [],
         "reads": [
           "createInstance"
         ]
@@ -175,6 +177,7 @@ expression: json
           "app.use",
           "router"
         ],
+        "overrides": [],
         "reads": [
           "BASE",
           "env",
@@ -229,6 +232,7 @@ expression: json
           "express.Router",
           "router"
         ],
+        "overrides": [],
         "reads": [
           "Router",
           "get",
@@ -296,6 +300,7 @@ expression: json
           "i18n.use",
           "initReactI18next"
         ],
+        "overrides": [],
         "reads": [
           "BASE",
           "env",

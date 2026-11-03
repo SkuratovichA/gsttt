@@ -146,6 +146,15 @@ impl Code {
         self
     }
 
+    /// A value of `name` may run the members of `of`, as `class name implements of` does.
+    pub fn overrides(mut self, name: &str, of: &str) -> Self {
+        self.symbols.overrides.push(Heir {
+            name: name.to_owned(),
+            of: of.to_owned(),
+        });
+        self
+    }
+
     /// The file reads a member called `name` on a value of a class it does not know, as `x.name()` does.
     pub fn reads(mut self, name: &str) -> Self {
         self.symbols.reads.push(name.to_owned());
@@ -171,6 +180,10 @@ impl Code {
             .heirs
             .sort_by(|left, right| (&left.name, &left.of).cmp(&(&right.name, &right.of)));
         symbols.heirs.dedup();
+        symbols
+            .overrides
+            .sort_by(|left, right| (&left.name, &left.of).cmp(&(&right.name, &right.of)));
+        symbols.overrides.dedup();
         symbols.reads.sort_unstable();
         symbols.reads.dedup();
         symbols

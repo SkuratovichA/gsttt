@@ -76,6 +76,7 @@ expression: json
           "express",
           "router"
         ],
+        "overrides": [],
         "reads": [
           "use"
         ]
@@ -127,6 +128,7 @@ expression: json
         "on_load": [
           "express.Router"
         ],
+        "overrides": [],
         "reads": [
           "Router"
         ]
@@ -167,6 +169,7 @@ expression: json
         "on_load": [
           "router.get"
         ],
+        "overrides": [],
         "reads": [
           "get",
           "json"

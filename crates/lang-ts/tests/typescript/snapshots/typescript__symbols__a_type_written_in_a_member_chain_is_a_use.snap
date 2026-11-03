@@ -45,9 +45,21 @@ expression: json
             "uses": []
           },
           {
+            "end": 1,
+            "line": 1,
+            "name": "AsType.depth",
+            "uses": []
+          },
+          {
             "end": 2,
             "line": 2,
             "name": "SatisfiesType",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "SatisfiesType.depth",
             "uses": []
           },
           {
@@ -57,9 +69,21 @@ expression: json
             "uses": []
           },
           {
+            "end": 3,
+            "line": 3,
+            "name": "AssertionType.depth",
+            "uses": []
+          },
+          {
             "end": 4,
             "line": 4,
             "name": "InstantiatedType",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "InstantiatedType.depth",
             "uses": []
           },
           {
@@ -69,9 +93,21 @@ expression: json
             "uses": []
           },
           {
+            "end": 5,
+            "line": 5,
+            "name": "OuterType.depth",
+            "uses": []
+          },
+          {
             "end": 6,
             "line": 6,
             "name": "InnerType",
+            "uses": []
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "InnerType.depth",
             "uses": []
           },
           {
@@ -81,15 +117,33 @@ expression: json
             "uses": []
           },
           {
+            "end": 7,
+            "line": 7,
+            "name": "NonNullType.depth",
+            "uses": []
+          },
+          {
             "end": 8,
             "line": 8,
             "name": "DeepType",
             "uses": []
           },
           {
+            "end": 8,
+            "line": 8,
+            "name": "DeepType.a",
+            "uses": []
+          },
+          {
             "end": 9,
             "line": 9,
             "name": "RootType",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "RootType.depth",
             "uses": []
           },
           {
@@ -175,6 +229,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "a",
           "b",
