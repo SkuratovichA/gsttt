@@ -9,6 +9,8 @@ pub(crate) struct Head {
     pub(crate) import: Option<usize>,
     /// The name of the type.
     pub(crate) name: String,
+    /// Whether the type is written with type arguments, so a type parameter may stand behind it: `atomic.Pointer[T]` holds a `T` that the package of the head says nothing about.
+    pub(crate) generic: bool,
 }
 
 /// One name a scope binds.
@@ -21,6 +23,8 @@ pub(crate) struct Binding<'a> {
     pub(crate) text: Option<String>,
     /// The router the name holds, when it was made by a call that makes one or by a group of another router.
     pub(crate) router: Option<Router>,
+    /// Whether the name holds a value of a type outside the module, as a call of a function of the standard library gives, though the type is not written.
+    pub(crate) outside: bool,
 }
 
 /// The stack of scopes of the code being walked. Bindings are pushed as the source reaches them, so a name that is declared after its use is not yet bound at the use.
@@ -49,6 +53,7 @@ impl<'a> Scopes<'a> {
                 holds,
                 text,
                 router: None,
+                outside: false,
             });
         }
     }
@@ -62,6 +67,18 @@ impl<'a> Scopes<'a> {
             .find(|binding| binding.name == name)
         {
             binding.router = Some(router);
+        }
+    }
+
+    /// Notes that the innermost binding of `name` holds a value of a type outside the module.
+    pub(crate) fn set_outside(&mut self, name: &str) {
+        if let Some(binding) = self
+            .bindings
+            .iter_mut()
+            .rev()
+            .find(|binding| binding.name == name)
+        {
+            binding.outside = true;
         }
     }
 

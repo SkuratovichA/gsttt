@@ -6,7 +6,7 @@ use gsttt_core::fact::{ContractFact, Embedded, MEMBER_SEPARATOR, UnresolvedSite}
 use gsttt_core::rules::Outcome;
 use tree_sitter::Node;
 
-use crate::file::FileCx;
+use crate::file::{FileCx, ImportInfo};
 use crate::names::{is_predeclared, is_predeclared_function};
 use crate::routers::Router;
 use crate::scope::{Head, Scopes};
@@ -331,8 +331,10 @@ impl<'r, 'a> Walk<'r, 'a> {
                 let name = text_of(operand, self.cx.source);
                 let binding = self.scopes.find(name);
                 if let Some(binding) = binding {
+                    let outside = binding.outside;
                     match binding.holds.clone() {
                         Some(head) => self.use_member(&head, field),
+                        None if outside => {}
                         None => self.read(field),
                     }
                     return;
@@ -346,15 +348,124 @@ impl<'r, 'a> Walk<'r, 'a> {
             }
             "selector_expression" => {
                 if !self.field_chain(operand, field) {
-                    self.read(field);
+                    self.read_unless_outside(operand, field);
                     self.visit(operand);
                 }
             }
             _ => {
-                self.read(field);
+                self.read_unless_outside(operand, field);
                 self.visit(operand);
             }
         }
+    }
+
+    /// Records `member` as read on `operand`, unless `operand` is a value of a type outside the module: what is read on it is a member of that type.
+    fn read_unless_outside(&mut self, operand: Node<'a>, member: &str) {
+        if !self.stands_outside(operand, 0) {
+            self.read(member);
+        }
+    }
+
+    /// Whether the value of `node` is of a type outside the module, as far as the way it is written tells: a name that holds one, a field written with one, a call of a function of the standard library, or a member read or called on such a value. A value that is type-asserted stands on the asserted type, so it is none of these.
+    fn stands_outside(&self, node: Node<'a>, depth: usize) -> bool {
+        if depth > 8 {
+            return false;
+        }
+        match node.kind() {
+            "identifier" => {
+                self.scopes
+                    .find(text_of(node, self.cx.source))
+                    .is_some_and(|binding| {
+                        binding.outside
+                            || binding
+                                .holds
+                                .as_ref()
+                                .is_some_and(|head| self.cx.is_outside(head))
+                    })
+            }
+            "parenthesized_expression"
+            | "unary_expression"
+            | "index_expression"
+            | "slice_expression" => node
+                .child_by_field_name("operand")
+                .or_else(|| node.named_child(0))
+                .is_some_and(|inner| self.stands_outside(inner, depth + 1)),
+            "selector_expression" => {
+                node.child_by_field_name("operand").is_some_and(|operand| {
+                    self.stands_outside(operand, depth + 1) || self.names_outside_package(operand)
+                }) || self
+                    .field_head(node, depth + 1)
+                    .is_some_and(|head| self.cx.is_outside(&head))
+            }
+            "call_expression" => node
+                .child_by_field_name("function")
+                .is_some_and(|function| {
+                    self.calls_standard(function)
+                        || (function.kind() == "selector_expression"
+                            && function
+                                .child_by_field_name("operand")
+                                .is_some_and(|operand| self.stands_outside(operand, depth + 1)))
+                }),
+            _ => false,
+        }
+    }
+
+    /// Whether `operand` names a package outside the module, so `os.Stdout` in `os.Stdout.Write` is a value of a type of that package.
+    fn names_outside_package(&self, operand: Node<'a>) -> bool {
+        if operand.kind() != "identifier" {
+            return false;
+        }
+        let name = text_of(operand, self.cx.source);
+        self.scopes.find(name).is_none()
+            && self
+                .cx
+                .import_named(name)
+                .and_then(|index| self.cx.imports.get(index))
+                .is_some_and(|import| !import.local)
+    }
+
+    /// Whether `function` is a function of a package of the standard library, which gives a value of a type of the library.
+    fn calls_standard(&self, function: Node<'a>) -> bool {
+        let source = self.cx.source;
+        let Some(operand) = function.child_by_field_name("operand").filter(|operand| {
+            function.kind() == "selector_expression" && operand.kind() == "identifier"
+        }) else {
+            return false;
+        };
+        let name = text_of(operand, source);
+        self.scopes.find(name).is_none()
+            && self
+                .cx
+                .import_named(name)
+                .and_then(|index| self.cx.imports.get(index))
+                .is_some_and(ImportInfo::gives_outside_values)
+    }
+
+    /// The type a field is written as, for `x.f` where `x` holds a struct of this file, or `x.f.g` where `f` is written as one.
+    fn field_head(&self, selector: Node<'a>, depth: usize) -> Option<Head> {
+        if depth > 8 {
+            return None;
+        }
+        let operand = selector.child_by_field_name("operand")?;
+        let field = field_text(selector, "field", self.cx.source)?;
+        let holder = match operand.kind() {
+            "identifier" => self
+                .scopes
+                .find(text_of(operand, self.cx.source))?
+                .holds
+                .clone()?,
+            "selector_expression" => self.field_head(operand, depth + 1)?,
+            _ => return None,
+        };
+        self.struct_field(&holder, field)
+    }
+
+    /// The type the field `field` of the struct `holder` of this file is written as.
+    fn struct_field(&self, holder: &Head, field: &str) -> Option<Head> {
+        if holder.import.is_some() {
+            return None;
+        }
+        self.cx.structs.get(&holder.name)?.get(field)?.clone()
     }
 
     /// Records `member` as read on a value of unknown type. A name already seen allocates nothing.
@@ -393,15 +504,10 @@ impl<'r, 'a> Walk<'r, 'a> {
         else {
             return false;
         };
-        let cx = self.cx;
-        let Some(Some(field_type)) = (holder.import.is_none())
-            .then(|| cx.structs.get(&holder.name))
-            .flatten()
-            .and_then(|found| found.get(field))
-        else {
+        let Some(field_type) = self.struct_field(&holder, field) else {
             return false;
         };
-        self.use_member(field_type, member);
+        self.use_member(&field_type, member);
         self.use_member(&holder, field);
         true
     }
@@ -773,12 +879,23 @@ impl<'r, 'a> Walk<'r, 'a> {
                     .text(*value)
                 });
             let router = value.and_then(|value| self.router_of(*value));
-            pending.push((text, holds, known, router));
+            let outside = !self.cx.assigned.contains(text)
+                && first_result(&values, paired, index)
+                    .is_some_and(|value| self.stands_outside(*value, 0));
+            pending.push((text, holds, known, router, outside));
         }
-        for (name, holds, text, router) in pending {
+        self.bind_pending(pending);
+    }
+
+    /// Binds the names found, each with what its value tells: the type it holds, its text, its router, and whether it stands outside the module.
+    fn bind_pending(&mut self, pending: Vec<Pending<'a>>) {
+        for (name, holds, text, router, outside) in pending {
             self.scopes.bind(name, holds, text);
             if let Some(router) = router {
                 self.scopes.set_router(name, router);
+            }
+            if outside {
+                self.scopes.set_outside(name);
             }
         }
     }
@@ -841,6 +958,7 @@ impl<'r, 'a> Walk<'r, 'a> {
                 (self.scopes.find(name).is_none() && !is_predeclared(name)).then(|| Head {
                     import: None,
                     name: name.to_owned(),
+                    generic: false,
                 })
             }
             "selector_expression" | "qualified_type" => {
@@ -861,6 +979,7 @@ impl<'r, 'a> Walk<'r, 'a> {
                 Some(Head {
                     import: Some(self.cx.import_named(operand)?),
                     name: name.to_owned(),
+                    generic: false,
                 })
             }
             _ => self.head_of(node),
@@ -949,14 +1068,12 @@ impl<'r, 'a> Walk<'r, 'a> {
                     .text(*value)
                 });
             let router = value.and_then(|value| self.router_of(*value));
-            pending.push((text, holds, known, router));
+            let outside = !self.cx.assigned.contains(text)
+                && first_result(&values, paired, index)
+                    .is_some_and(|value| self.stands_outside(*value, 0));
+            pending.push((text, holds, known, router, outside));
         }
-        for (name, holds, text, router) in pending {
-            self.scopes.bind(name, holds, text);
-            if let Some(router) = router {
-                self.scopes.set_router(name, router);
-            }
-        }
+        self.bind_pending(pending);
     }
 
     /// `type` inside a function. The name is bound first, because a type may refer to itself.
@@ -977,6 +1094,9 @@ impl<'r, 'a> Walk<'r, 'a> {
         }
     }
 }
+
+/// A name about to be bound, with what its value tells: the type it holds, its text, its router, and whether it stands outside the module.
+type Pending<'a> = (&'a str, Option<Head>, Option<String>, Option<Router>, bool);
 
 /// The value that gives the type of the name at `index`: its own value, or for the first name of `a, err := NewT()` the one call that makes every name.
 pub(crate) fn first_result<'n, 'a>(
