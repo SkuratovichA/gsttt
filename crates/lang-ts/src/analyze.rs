@@ -442,6 +442,38 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
+    /// `const { a, b: c } = lib` uses `lib.a` and `lib.b`, as those chains do, and not `lib` whole, so that a file takes only the names it writes. A rest element or a computed key may take any name, so that destructuring stays a use of the whole. Answers whether it recorded the uses, so that the walk of `init` is skipped.
+    fn members_taken(&mut self, pattern: &BindingPattern<'a>, init: &Expression<'a>) -> bool {
+        let BindingPattern::ObjectPattern(object) = pattern else {
+            return false;
+        };
+        let Expression::Identifier(root) = init.get_inner_expression() else {
+            return false;
+        };
+        if object.rest.is_some() || object.properties.is_empty() {
+            return false;
+        }
+        let keys: Option<Vec<&str>> = object
+            .properties
+            .iter()
+            .map(|property| {
+                if property.computed {
+                    None
+                } else {
+                    property_str(&property.key)
+                }
+            })
+            .collect();
+        let Some(keys) = keys else {
+            return false;
+        };
+        for key in keys {
+            self.symbols
+                .chain(&[Some(root.name.as_str().to_owned()), Some(key.to_owned())]);
+        }
+        true
+    }
+
     /// `const { A, B } = process.env` reads the chains `process.env.A` and `process.env.B`.
     fn destructured_chain(
         &mut self,
@@ -1712,7 +1744,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 None => self.visit_ts_type_annotation(type_annotation),
             }
         }
-        if let Some(init) = &it.init {
+        if let Some(init) = &it.init
+            && !self.members_taken(&it.id, init)
+        {
             self.visit_expression(init);
         }
         self.symbols.restore(outer);
