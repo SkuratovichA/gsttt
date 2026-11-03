@@ -1,5 +1,6 @@
 ---
 source: crates/lang-rust/tests/rust/scopes.rs
+assertion_line: 20
 expression: "out.file(\"src/lib.rs\")[\"imports\"]"
 ---
 [
@@ -14,6 +15,9 @@ expression: "out.file(\"src/lib.rs\")[\"imports\"]"
     }
   },
   {
+    "exported": [
+      "Ball"
+    ],
     "flags": 0,
     "kind": "static",
     "line": 8,
@@ -26,6 +30,9 @@ expression: "out.file(\"src/lib.rs\")[\"imports\"]"
     }
   },
   {
+    "exported": [
+      "Circle"
+    ],
     "flags": 0,
     "kind": "re-export",
     "line": 17,
@@ -38,6 +45,9 @@ expression: "out.file(\"src/lib.rs\")[\"imports\"]"
     }
   },
   {
+    "exported": [
+      "Ball"
+    ],
     "flags": 0,
     "kind": "re-export",
     "line": 18,
@@ -50,20 +60,30 @@ expression: "out.file(\"src/lib.rs\")[\"imports\"]"
     }
   },
   {
+    "exported": [
+      "Circle"
+    ],
     "flags": 0,
     "kind": "static",
     "line": 20,
-    "names": [],
+    "names": [
+      "Circle"
+    ],
     "spec": "self::shapes::Circle",
     "to": {
       "file": "src/lib.rs"
     }
   },
   {
+    "exported": [
+      "Circle"
+    ],
     "flags": 0,
     "kind": "static",
     "line": 21,
-    "names": [],
+    "names": [
+      "Circle"
+    ],
     "spec": "self::shapes::Circle",
     "to": {
       "file": "src/lib.rs"

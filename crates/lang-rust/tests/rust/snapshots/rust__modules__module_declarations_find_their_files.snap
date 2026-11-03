@@ -1,5 +1,6 @@
 ---
 source: crates/lang-rust/tests/rust/modules.rs
+assertion_line: 19
 expression: "out.file(\"src/lib.rs\")[\"imports\"]"
 ---
 [
@@ -48,6 +49,9 @@ expression: "out.file(\"src/lib.rs\")[\"imports\"]"
     }
   },
   {
+    "exported": [
+      "Thing"
+    ],
     "flags": 0,
     "kind": "static",
     "line": 7,

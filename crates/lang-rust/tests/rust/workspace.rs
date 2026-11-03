@@ -5,7 +5,7 @@ use gsttt_scenario::scenario;
 use insta::assert_json_snapshot;
 use serde_json::json;
 
-use crate::support::{index, printed, unresolved};
+use crate::support::{crate_of, index, printed, unresolved};
 
 #[scenario("rust", "Every manifest is a project")]
 #[test]
@@ -50,6 +50,74 @@ fn a_workspace_dependency_takes_its_package_from_the_root() {
     assert_eq!(
         out.to("crates/web/src/main.rs", "engine::graph::Graph"),
         json!({ "file": "crates/core/src/graph.rs" })
+    );
+}
+
+#[scenario("rust", "A path goes on through what a crate re-exports")]
+#[test]
+fn a_path_goes_on_through_what_a_crate_re_exports() {
+    let out = index("forwards");
+
+    assert_eq!(
+        out.reached("crates/tool/src/lib.rs", &["Spade"], None),
+        ["crates/app/src/lib.rs@1"],
+        "pub extern crate tool as tools"
+    );
+    assert_eq!(
+        out.reached("crates/inner/src/builder.rs", &["Factory"], None),
+        ["crates/app/src/lib.rs@1"],
+        "pub use inner::*, and a module of that crate"
+    );
+    assert_eq!(
+        out.reached("crates/app/src/helpers/counting.rs", &["Cell"], None),
+        ["crates/app/src/local.rs@1"],
+        "a module that a glob of the same file brings in"
+    );
+}
+
+#[scenario("rust", "Modules that glob each other end a path")]
+#[test]
+fn modules_that_glob_each_other_end_a_path() {
+    // Twelve modules that glob the other eleven: a walk with no memory of them would take 11^8 steps here.
+    let names: Vec<String> = (0..12).map(|n| format!("m{n}")).collect();
+    let bodies: Vec<(String, String)> = names
+        .iter()
+        .map(|name| {
+            let globs: String = names
+                .iter()
+                .filter(|other| *other != name)
+                .map(|other| ["pub use crate::", other, "::*;\n"].concat())
+                .collect();
+            (format!("src/{name}.rs"), globs)
+        })
+        .collect();
+    let mut modules: Vec<&str> = names.iter().map(String::as_str).collect();
+    modules.push("user");
+    let mut files: Vec<(&str, &str)> = bodies
+        .iter()
+        .map(|(file, body)| (file.as_str(), body.as_str()))
+        .collect();
+    files.push(("src/user.rs", "use crate::m0::missing::Item;\n"));
+
+    let out = crate_of(&modules, &files);
+
+    assert_eq!(
+        out.file("src/user.rs")["imports"][0]["to"]["file"],
+        "src/m0.rs"
+    );
+}
+
+#[scenario(
+    "rust",
+    "A re-export of what its crate does not hand out leaves the glob its name"
+)]
+#[test]
+fn a_re_export_of_what_its_crate_does_not_hand_out_leaves_the_glob_its_name() {
+    let out = index("forwards");
+
+    assert_eq!(
+        out.reached("crates/inner/src/lib.rs", &["Thing"], None),
+        ["crates/app/src/lib.rs@1", "crates/front/src/lib.rs@1"]
     );
 }
 

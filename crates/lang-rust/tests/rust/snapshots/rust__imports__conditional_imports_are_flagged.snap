@@ -1,5 +1,6 @@
 ---
 source: crates/lang-rust/tests/rust/imports.rs
+assertion_line: 36
 expression: imports
 ---
 [
@@ -14,6 +15,9 @@ expression: imports
     }
   },
   {
+    "exported": [
+      "Args"
+    ],
     "flags": 2,
     "kind": "static",
     "line": 4,
@@ -26,6 +30,9 @@ expression: imports
     }
   },
   {
+    "exported": [
+      "Thing"
+    ],
     "flags": 8,
     "kind": "static",
     "line": 7,

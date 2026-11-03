@@ -1,12 +1,21 @@
 ---
 source: crates/lang-rust/tests/rust/imports.rs
-expression: "out.file(\"src/forms.rs\")"
+expression: file
 ---
 {
   "contracts": [],
   "embedded": [],
+  "exports": [
+    "BYTES",
+    "DATA",
+    "SAMPLE",
+    "call"
+  ],
   "imports": [
     {
+      "exported": [
+        "helper"
+      ],
       "flags": 0,
       "kind": "static",
       "line": 1,
@@ -19,6 +28,9 @@ expression: "out.file(\"src/forms.rs\")"
       }
     },
     {
+      "exported": [
+        "a"
+      ],
       "flags": 0,
       "kind": "static",
       "line": 2,
@@ -46,6 +58,9 @@ expression: "out.file(\"src/forms.rs\")"
       }
     },
     {
+      "exported": [
+        "SAMPLE"
+      ],
       "flags": 0,
       "kind": "re-export",
       "line": 3,
@@ -58,9 +73,27 @@ expression: "out.file(\"src/forms.rs\")"
       }
     },
     {
+      "exported": [
+        "*"
+      ],
       "flags": 0,
       "kind": "static",
       "line": 4,
+      "names": [
+        "*"
+      ],
+      "spec": "crate::a::c",
+      "to": {
+        "file": "src/a/c.rs"
+      }
+    },
+    {
+      "exported": [
+        "*"
+      ],
+      "flags": 0,
+      "kind": "static",
+      "line": 5,
       "names": [
         "*"
       ],
@@ -107,20 +140,30 @@ expression: "out.file(\"src/forms.rs\")"
       }
     },
     {
+      "exported": [
+        "helper"
+      ],
       "flags": 0,
       "kind": "static",
       "line": 10,
-      "names": [],
+      "names": [
+        "helper"
+      ],
       "spec": "crate::a::helper",
       "to": {
         "file": "src/a.rs"
       }
     },
     {
+      "exported": [
+        "go"
+      ],
       "flags": 0,
       "kind": "static",
       "line": 10,
-      "names": [],
+      "names": [
+        "go"
+      ],
       "spec": "self::local::go",
       "to": {
         "file": "src/forms/local.rs"
@@ -161,6 +204,47 @@ expression: "out.file(\"src/forms.rs\")"
   "project": "rust .",
   "status": {
     "status": "ok"
+  },
+  "symbols": {
+    "declared": [
+      {
+        "end": 11,
+        "line": 9,
+        "name": "call",
+        "uses": [
+          "go",
+          "helper",
+          "u32"
+        ]
+      },
+      {
+        "end": 13,
+        "line": 13,
+        "name": "DATA",
+        "uses": [
+          "include_str",
+          "str"
+        ]
+      },
+      {
+        "end": 14,
+        "line": 14,
+        "name": "BYTES",
+        "uses": [
+          "include_bytes",
+          "u8"
+        ]
+      }
+    ],
+    "exports": [],
+    "heirs": [],
+    "on_load": [
+      "Renamed",
+      "a",
+      "sd"
+    ],
+    "overrides": [],
+    "reads": []
   },
   "tags": 0,
   "unresolved": []

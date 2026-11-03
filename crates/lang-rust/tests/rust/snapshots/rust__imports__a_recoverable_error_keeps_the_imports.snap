@@ -1,5 +1,6 @@
 ---
 source: crates/lang-rust/tests/rust/imports.rs
+assertion_line: 47
 expression: file
 ---
 {
@@ -7,6 +8,9 @@ expression: file
   "embedded": [],
   "imports": [
     {
+      "exported": [
+        "B"
+      ],
       "flags": 0,
       "kind": "static",
       "line": 1,

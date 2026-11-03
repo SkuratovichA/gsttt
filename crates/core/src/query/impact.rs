@@ -249,6 +249,8 @@ pub enum Note {
     HeldClass {
         members: Vec<(String, String)>,
         files: usize,
+        /// Whether the walk went through a crowded head, where a file held may also call the member on a value of unknown type.
+        crowded: bool,
     },
     /// A file loads the module and reads none of the names asked about, so it is left out, and `files` counts them.
     HeldModule { files: usize },
@@ -259,12 +261,26 @@ impl Note {
     fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         match self {
             Self::Said(text) => f.write_str(text),
-            Self::HeldClass { members, files } => {
+            Self::HeldClass {
+                members,
+                files,
+                crowded,
+            } => {
                 let (holds, reads) = if *files == 1 {
                     ("file holds", "reads")
                 } else {
                     ("files hold", "read")
                 };
+                if *crowded {
+                    let list: Vec<String> =
+                        members.iter().map(|(member, _)| member.clone()).collect();
+                    return write!(
+                        f,
+                        "{} {holds} the classes of {}, and a call on a value of unknown type does not say which of them runs; ask about those classes to list them",
+                        thousands(*files),
+                        name_sentence(&list, entries)
+                    );
+                }
                 if let [(member, class)] = members.as_slice() {
                     let short = member_in(member, class).unwrap_or(member);
                     return write!(
@@ -576,7 +592,25 @@ fn note(graph: &Graph, walked: walk::Note) -> Note {
             "{member} may run through {through} in {}, so its callers are listed",
             path(file)
         )),
-        walk::Note::HeldClass { members, files } => Note::HeldClass { members, files },
+        walk::Note::Crowded {
+            member,
+            through,
+            file,
+            overriders,
+        } => Note::Said(format!(
+            "{member} may run through {through} in {}, which {} declarations override, so only the callers that name it are listed",
+            path(file),
+            thousands(overriders)
+        )),
+        walk::Note::HeldClass {
+            members,
+            files,
+            crowded,
+        } => Note::HeldClass {
+            members,
+            files,
+            crowded,
+        },
         walk::Note::HeldModule { files } => Note::HeldModule { files },
         walk::Note::Stopped => Note::Said("the walk stopped at the depth with callers left to follow; ask about a caller, or with a larger depth, to go on".to_owned()),
     }

@@ -19,4 +19,5 @@ mod provides;
 mod requests;
 mod routes;
 mod scopes;
+mod symbols;
 mod workspace;

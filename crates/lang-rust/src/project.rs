@@ -1,5 +1,6 @@
 //! One Rust project: a `Cargo.toml` and the files below it that no deeper manifest owns.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -24,7 +25,7 @@ use crate::provides;
 use crate::resolve::{Aliases, Resolver};
 use crate::sites;
 use crate::syntax::line_at;
-use crate::tree::{Registry, Trees};
+use crate::tree::{Published, Registry, Trees};
 
 /// The language name packs use to say they are for this connector.
 const LANGUAGE: &str = "rust";
@@ -41,7 +42,7 @@ pub struct RustProject {
     /// Shared by every project of the repository, so a path can continue into a workspace crate.
     registry: Arc<Registry>,
     trees: Arc<Trees>,
-    aliases: Aliases,
+    aliases: Arc<Aliases>,
     salt: u64,
 }
 
@@ -93,7 +94,7 @@ impl RustProject {
             repo: repo.clone(),
             registry,
             trees: Arc::new(Trees::default()),
-            aliases: Aliases::default(),
+            aliases: Arc::default(),
             salt,
         }
     }
@@ -162,6 +163,15 @@ impl Project for RustProject {
         let root = parse.syntax_node();
         let imports = imports::read(&root, &lines, self.reads_query_files(), self.edition);
         let sites = sites::read(&root, &lines, &self.packs, self.edition, &imports);
+        // A file the parser had to recover records no declarations: it is followed whole.
+        let declared = parse
+            .errors()
+            .is_empty()
+            .then(|| crate::symbols::read(&root, &lines, &imports));
+        let (exports, symbols) = match declared {
+            Some(read) => (Some(read.exports), Some(read.symbols)),
+            None => (None, None),
+        };
         Parsed {
             facts: FileFacts {
                 status,
@@ -174,9 +184,9 @@ impl Project for RustProject {
                 contracts: sites.found.into_iter().map(|found| found.fact).collect(),
                 embedded: sites.embedded,
                 unresolved: sites.unresolved,
-                exports: None,
+                exports,
                 package: None,
-                symbols: None,
+                symbols,
             },
             extra: sites.extra,
         }
@@ -192,13 +202,26 @@ impl Project for RustProject {
             .as_ref()
             .map_or(&[][..], |package| package.targets.as_slice());
         self.trees = Arc::new(Trees::build(targets, &self.repo, &facts));
-        self.aliases = aliases(files);
+        self.aliases = Arc::new(aliases(files));
         if self.package.is_some() {
-            self.registry.publish(&self.root, Arc::clone(&self.trees));
+            self.registry.publish(
+                &self.root,
+                Published {
+                    trees: Arc::clone(&self.trees),
+                    package: self.package.clone(),
+                    aliases: Arc::clone(&self.aliases),
+                    edition: self.edition,
+                },
+            );
         }
     }
 
+    fn code(&self, file: &SourceFile<'_>) -> Option<String> {
+        crate::code::blanked(file, self.edition)
+    }
+
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution {
+        let seen = RefCell::default();
         Resolver {
             repo: &self.repo,
             root: &self.root,
@@ -207,6 +230,8 @@ impl Project for RustProject {
             registry: &self.registry,
             aliases: &self.aliases,
             edition: self.edition,
+            forwards: 0,
+            seen: &seen,
         }
         .resolve(from, import)
     }
@@ -221,18 +246,25 @@ impl Project for RustProject {
 
 /// The names each file brings in with `use` or `extern crate`, each with the path it stands for. The first `use` of a name wins.
 fn aliases(files: &[PrepareFile<'_>]) -> Aliases {
-    files
-        .iter()
-        .filter_map(|file| {
-            let mut names = BTreeMap::new();
-            for (name, spec) in imports::bindings(&file.facts.imports) {
-                names
-                    .entry(name.to_owned())
-                    .or_insert_with(|| spec.to_owned());
-            }
-            (!names.is_empty()).then(|| (file.path.as_str().to_owned(), names))
-        })
-        .collect()
+    let mut aliases = Aliases::default();
+    for file in files {
+        let mut names = BTreeMap::new();
+        for (name, spec) in imports::bindings(&file.facts.imports) {
+            names
+                .entry(name.to_owned())
+                .or_insert_with(|| spec.to_owned());
+        }
+        if !names.is_empty() {
+            aliases.names.insert(file.path.as_str().to_owned(), names);
+        }
+        let globs: Vec<String> = imports::globs(&file.facts.imports)
+            .map(str::to_owned)
+            .collect();
+        if !globs.is_empty() {
+            aliases.globs.insert(file.path.as_str().to_owned(), globs);
+        }
+    }
+    aliases
 }
 
 #[cfg(test)]

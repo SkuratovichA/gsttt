@@ -12,8 +12,8 @@ use crate::support::{index, printed, unresolved};
 fn every_import_form_is_read() {
     let out = index("imports");
     let file = out.file("src/forms.rs");
-    // The names of a Rust file are not read, `pub use` included, so `impact` follows an import of it as the whole file. A reader of them would make the walk follow the names instead, which has to be decided and then pinned by the tests of the walk.
-    assert_eq!(file.get("exports"), None);
+    // The names of the file are read now, `pub use` included, so `impact` follows an import of it by the names it takes.
+    assert_eq!(file["exports"], json!(["BYTES", "DATA", "SAMPLE", "call"]));
     assert_json_snapshot!(file);
 }
 
