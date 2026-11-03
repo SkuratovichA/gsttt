@@ -187,8 +187,14 @@ pub struct Mount {
     pub host: String,
     /// The path the targets are mounted under, `""` for none; a computed part is written `${}`.
     pub prefix: String,
+    /// The prefix as written when it holds names that other files declare, for the link to read; `prefix` is then what the parse could read of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) named: Option<Part>,
     pub targets: Vec<MountTarget>,
     pub line: Line,
+    /// The call as written, cut to one line, when `named` is the only thing that reads the prefix: the site the link reports if it cannot. Empty otherwise.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
 }
 
 /// A `host.use(prefix, targets…)` call on a name imported from a file of the project: a mount only if the link finds that the name is a router or an app.
@@ -198,6 +204,9 @@ pub struct ImportedMount {
     pub host: String,
     /// The paths the targets are mounted under, `""` for none; a computed part is written `${}`.
     pub prefixes: Vec<String>,
+    /// The prefix as written when it holds names that other files declare, for the link to read; `prefixes` is then what the parse could read of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) named: Option<Part>,
     pub targets: Vec<MountTarget>,
     pub line: Line,
     /// Some prefix is not text, so the call is a site the file could not read when the host is a router or an app.

@@ -1,0 +1,1 @@
+{"name":"@acme/items","main":"src/index.ts","dependencies":{"@nestjs/common":"^11.0.0"}}

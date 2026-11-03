@@ -1,6 +1,5 @@
 ---
 source: crates/lang-ts/tests/typescript/data.rs
-assertion_line: 144
 expression: json
 ---
 {
@@ -255,7 +254,7 @@ expression: json
       "provides": [
         {
           "blind_spots": [
-            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name, and a constant of another package, are not read",
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
             "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
           ],
           "kind": "http",

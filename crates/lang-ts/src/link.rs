@@ -10,10 +10,12 @@ use gsttt_core::contract::{ContractKey, ContractKind, Role};
 use gsttt_core::fact::{ContractFact, Line, Resolution, UnresolvedSite};
 use gsttt_core::rules::{Pack, contract_key};
 
-use self::deferred::Resolved;
+use self::deferred::{Reader, Resolved};
 use crate::extra::{
     Binding, ClassRoute, ExportTarget, MountTarget, TrpcEntry, TrpcRouter, TsExtra,
 };
+use crate::parts::Part;
+use crate::shape::COMPUTED;
 
 /// How far a name is followed through imports and re-exports before the chain is given up.
 const MAX_DEPTH: usize = 16;
@@ -23,11 +25,18 @@ type Node = (FileId, String);
 
 /// The facts that need other files: Express routes under the prefixes their routers are mounted at, NestJS controller routes behind the global prefix of the apps that reach them and the routes they inherit from a base class, tRPC procedures under the routers that compose them, and the contracts of the sites whose rule needed the value of an imported constant or the client or router that an imported name stands for. An Express route and a procedure are found only here, so they key no parsed fact again and the engine keeps every fact the parse returned. A NestJS route a controller declares is parsed as written, and a fact keyed again by [`LinkedFact::rekeyed`] takes its place. The sites that a rule still cannot read once the constants are known come back as unread sites of their file.
 pub(crate) fn link(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Linked {
-    let resolved = deferred::resolve(input, packs);
+    let reader = Reader::new(input);
+    let resolved = deferred::resolve(input, packs, &reader);
     let mut unread = Vec::new();
-    let edges = parents(input, &mut unread);
+    let own: Vec<&LinkFile<'_, TsExtra>> = input.files().iter().collect();
+    let all: Vec<&LinkFile<'_, TsExtra>> = own.iter().copied().chain(input.neighbors()).collect();
+    let edges = parents(input, &reader, &all, &mut unread);
     let mut mounts = Mounts::new(&edges);
-    let mut facts = express(input, &resolved, &mut mounts);
+    // The mounts a neighbour makes among its own files, which is what the project it is in sees of them. A route that this project serves under more paths takes the place of the paths that project gives it.
+    let neighbors: Vec<&LinkFile<'_, TsExtra>> = input.neighbors().iter().collect();
+    let owner_edges = parents(input, &reader, &neighbors, &mut Vec::new());
+    let mut owner_mounts = Mounts::new(&owner_edges);
+    let mut facts = express(input, &resolved, &mut mounts, &mut owner_mounts);
     facts.extend(nestjs(input, &resolved, &mut mounts));
     facts.extend(trpc(input));
     facts.extend(resolved.own);
@@ -43,7 +52,7 @@ pub(crate) fn link(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Linked {
 
 /// The places of a file that only the link turns into facts, with the code that names each.
 ///
-/// Counted: a site the parse left to the link (`deferred`), a route on a host (`routes`), a route of a class without the decorator (`class_routes` that are inherited) and a tRPC procedure listed in a router (`routers`), since the parse records no fact for any of them. Not counted: a NestJS route a controller declares, whose parsed fact stands and which the link only keys again; mounts, class prefixes that name a constant and controllers that extend a base class, which name no site of their own; and the exports, bindings, constants and makers, which the link only reads.
+/// Counted: a site the parse left to the link (`deferred`), a route on a host (`routes`), a route of a class without the decorator (`class_routes` that are inherited) and a tRPC procedure listed in a router (`routers`) and a mount whose prefix only the link can read (`mounts` with a `detail`), since the parse records no fact for any of them. Not counted: a NestJS route a controller declares, whose parsed fact stands and which the link only keys again; mounts, class prefixes that name a constant and controllers that extend a base class, which name no site of their own; and the exports, bindings, constants and makers, which the link only reads.
 pub(crate) fn unlinked(extra: &TsExtra) -> Vec<(Line, String)> {
     let deferred = extra
         .deferred
@@ -69,10 +78,16 @@ pub(crate) fn unlinked(extra: &TsExtra) -> Vec<(Line, String)> {
             }
             TrpcEntry::Ref { .. } | TrpcEntry::Nested { .. } => None,
         });
+    let mounts = extra
+        .mounts
+        .iter()
+        .filter(|mount| !mount.detail.is_empty())
+        .map(|mount| (mount.line, mount.detail.clone()));
     deferred
         .chain(routes)
         .chain(inherited)
         .chain(procedures)
+        .chain(mounts)
         .collect()
 }
 
@@ -154,17 +169,32 @@ fn export_of(
 /// A `.use` on a name imported from another file is a mount only when that name is a variable made by a call a rule serves routes on. A computed prefix there is a site the file could not read, added to `unread`.
 fn parents(
     input: &LinkInput<'_, TsExtra>,
+    reader: &Reader<'_, '_>,
+    files: &[&LinkFile<'_, TsExtra>],
     unread: &mut Vec<(FileId, UnresolvedSite)>,
 ) -> BTreeMap<Node, Vec<(Node, String)>> {
     let mut parents: BTreeMap<Node, Vec<(Node, String)>> = BTreeMap::new();
-    for file in input.files() {
+    for &file in files {
         for mount in &file.extra.mounts {
+            let prefix = read_prefix(reader, file, &mount.prefix, mount.named.as_ref());
+            if !mount.detail.is_empty()
+                && !mount
+                    .named
+                    .as_ref()
+                    .and_then(|part| reader_text(reader, file, part))
+                    .is_some_and(|text| whole(&text))
+            {
+                unread.push((
+                    file.id,
+                    UnresolvedSite::non_literal(mount.line, &mount.detail),
+                ));
+            }
             for target in &mount.targets {
                 if let Some(child) = mounted_host(input, file, target) {
                     parents
                         .entry(child)
                         .or_default()
-                        .push(((file.id, mount.host.clone()), mount.prefix.clone()));
+                        .push(((file.id, mount.host.clone()), prefix.clone()));
                 }
             }
         }
@@ -178,15 +208,24 @@ fn parents(
             {
                 continue;
             }
-            if mount.computed {
+            let read = match (mount.prefixes.len(), mount.named.as_ref()) {
+                (1, Some(named)) => reader_text(reader, file, named).map(|text| vec![text]),
+                _ => None,
+            };
+            if mount.computed
+                && !read
+                    .as_ref()
+                    .is_some_and(|read| read.iter().all(|text| whole(text)))
+            {
                 unread.push((
                     file.id,
                     UnresolvedSite::non_literal(mount.line, &mount.detail),
                 ));
             }
+            let prefixes = read.as_ref().unwrap_or(&mount.prefixes);
             for target in &mount.targets {
                 if let Some(child) = mounted_host(input, file, target) {
-                    for prefix in &mount.prefixes {
+                    for prefix in prefixes {
                         parents
                             .entry(child.clone())
                             .or_default()
@@ -199,10 +238,37 @@ fn parents(
     parents
 }
 
+/// What `part`, written in `file`, reads as, given the constants of the files it names.
+fn reader_text(
+    reader: &Reader<'_, '_>,
+    file: &LinkFile<'_, TsExtra>,
+    part: &Part,
+) -> Option<String> {
+    part.read(&|name| reader.constant(file, name))
+}
+
+/// Whether a prefix read in full: a name the link cannot read stays in it as the computed mark, which leaves the mount a site the file could not read.
+fn whole(text: &str) -> bool {
+    !text.contains(COMPUTED)
+}
+
+/// The path of a mount: the prefix written with names that other files declare when the link reads it, and the prefix as the parse knew it when not.
+fn read_prefix(
+    reader: &Reader<'_, '_>,
+    file: &LinkFile<'_, TsExtra>,
+    parsed: &str,
+    named: Option<&Part>,
+) -> String {
+    named
+        .and_then(|part| reader_text(reader, file, part))
+        .unwrap_or_else(|| parsed.to_owned())
+}
+
 fn express(
     input: &LinkInput<'_, TsExtra>,
     resolved: &Resolved,
     mounts: &mut Mounts<'_>,
+    owner_mounts: &mut Mounts<'_>,
 ) -> Vec<LinkedFact> {
     let mut linked = Vec::new();
     for file in input.files() {
@@ -210,6 +276,30 @@ fn express(
             let node = (file.id, route.host.clone());
             for prefix in mounts.served_under(&node) {
                 linked.push(LinkedFact::found(file.id, rekey(&route.fact, &prefix)));
+            }
+        }
+    }
+    // A route of a neighbour is served under the mounts this project reads of it, and the project the neighbour is in gives it the paths its own mounts make, which these paths continue. A router that nothing here mounts is left to its own project, which reads it at the path written. Its deferred sites are not read here either: a rule means something only with the packs of the project that parsed the file.
+    for file in input.neighbors() {
+        for route in &file.extra.routes {
+            let node = (file.id, route.host.clone());
+            if !mounts.is_mounted(&node) {
+                continue;
+            }
+            let given: Vec<ContractKey> = owner_mounts
+                .served_under(&node)
+                .iter()
+                .map(|prefix| rekey(&route.fact, prefix).key)
+                .collect();
+            for prefix in mounts.served_under(&node) {
+                let fact = rekey(&route.fact, &prefix);
+                for key in &given {
+                    linked.push(LinkedFact {
+                        file: file.id,
+                        fact: fact.clone(),
+                        replaces: Some(key.clone()),
+                    });
+                }
             }
         }
     }
@@ -231,7 +321,8 @@ fn nestjs(
     mounts: &mut Mounts<'_>,
 ) -> Vec<LinkedFact> {
     let mut linked = Vec::new();
-    for file in input.files() {
+    // What `resolved` holds is read with the packs of this project, so it has nothing for a neighbour, whose declared routes and inherited routes are read from what its own parse stored.
+    for file in input.files().iter().chain(input.neighbors()) {
         for route in file
             .extra
             .class_routes
@@ -435,6 +526,11 @@ impl<'a> Mounts<'a> {
             self.memo.insert(member.clone(), prefixes.clone());
         }
         prefixes
+    }
+
+    /// Whether some mount attaches the node.
+    fn is_mounted(&self, node: &Node) -> bool {
+        self.parents.contains_key(node)
     }
 
     /// [`Mounts::prefixes_of`], with the empty path for a node that only a ring reaches, which is served where it is written.

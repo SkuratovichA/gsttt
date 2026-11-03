@@ -1,0 +1,295 @@
+---
+source: crates/lang-ts/tests/typescript/workspace.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "packages/shared/package.json",
+      "project": "ts packages/shared",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "API_PREFIX",
+        "USERS"
+      ],
+      "imports": [],
+      "path": "packages/shared/src/index.ts",
+      "project": "ts packages/shared",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "API_PREFIX",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "USERS",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "packages/web/package.json",
+      "project": "ts packages/web",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "byConcatenation",
+        "byTemplate"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "axios"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default"
+          ],
+          "spec": "axios",
+          "to": {
+            "external": "axios"
+          }
+        },
+        {
+          "exported": [
+            "API_PREFIX",
+            "USERS"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "API_PREFIX",
+            "USERS"
+          ],
+          "spec": "@acme/shared",
+          "to": {
+            "file": "packages/shared/src/index.ts"
+          }
+        }
+      ],
+      "path": "packages/web/src/client.ts",
+      "project": "ts packages/web",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "byTemplate",
+            "uses": [
+              "API_PREFIX",
+              "axios.get"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "byConcatenation",
+            "uses": [
+              "API_PREFIX",
+              "USERS",
+              "axios.get"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "get"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [
+    {
+      "file": "packages/web/src/client.ts",
+      "key": "http GET /api/v1/users/list",
+      "line": 4,
+      "role": "calls",
+      "via": "axios"
+    },
+    {
+      "file": "packages/web/src/client.ts",
+      "key": "http GET /api/v1/users",
+      "line": 5,
+      "role": "calls",
+      "via": "axios"
+    }
+  ],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    },
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "packages/shared"
+    },
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "axios",
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "packages/web"
+    }
+  ],
+  "unclaimed": []
+}

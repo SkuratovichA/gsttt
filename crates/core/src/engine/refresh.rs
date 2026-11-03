@@ -1389,6 +1389,139 @@ mod tests {
         (sites, named)
     }
 
+    /// The `queue sees` keys that the graph reports on `file`, in byte order.
+    fn seen_by(run: &Refresh, file: &str) -> Vec<String> {
+        let graph = &run.index.graph;
+        let mut seen: Vec<String> = graph
+            .contracts()
+            .filter(|(_, key)| key.to_string().starts_with("queue sees "))
+            .flat_map(|(id, key)| {
+                graph
+                    .sites(id)
+                    .iter()
+                    .filter(|site| {
+                        graph
+                            .path(site.file)
+                            .is_some_and(|path| path.as_str() == file)
+                    })
+                    .map(move |_| key.to_string())
+            })
+            .collect();
+        seen.sort();
+        seen
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A project that links across projects sees the files its files import"
+    )]
+    #[test]
+    fn a_project_that_links_across_projects_sees_the_files_its_files_import() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            ("ACROSS", ""),
+            ("a.txt", "peek\nuse pkg/b.txt\n"),
+            ("pkg/ROOT", ""),
+            ("pkg/b.txt", "use pkg2/c.txt\n"),
+            ("pkg2/ROOT", ""),
+            ("pkg2/c.txt", ""),
+            ("pkg3/ROOT", ""),
+            ("pkg3/d.txt", ""),
+        ]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        // The file of the second package comes through the first one, and the one nothing imports does not come at all.
+        assert_eq!(
+            seen_by(&run, "a.txt"),
+            ["queue sees pkg/b.txt", "queue sees pkg2/c.txt"]
+        );
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A project that does not link across projects sees only its own files"
+    )]
+    #[test]
+    fn a_project_that_does_not_link_across_projects_sees_only_its_own_files() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            ("a.txt", "peek\nuse pkg/b.txt\n"),
+            ("pkg/ROOT", ""),
+            ("pkg/b.txt", ""),
+        ]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(seen_by(&run, "a.txt"), Vec::<String>::new());
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A file of another connector is never a neighbour")]
+    #[test]
+    fn a_file_of_another_connector_is_never_a_neighbour() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            ("ACROSS", ""),
+            ("a.txt", "peek\nuse x.graphql\nuse pkg/b.txt\n"),
+            ("x.graphql", ""),
+            ("pkg/ROOT", ""),
+            ("pkg/b.txt", ""),
+        ]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(seen_by(&run, "a.txt"), ["queue sees pkg/b.txt"]);
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A neighbour whose link data does not read back is left out of the link"
+    )]
+    #[test]
+    fn a_neighbour_whose_link_data_does_not_read_back_is_left_out_of_the_link() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            ("ACROSS", ""),
+            ("a.txt", "peek\nuse pkg/b.txt\nuse pkg/c.txt\n"),
+            ("pkg/ROOT", ""),
+            ("pkg/b.txt", "poison\n"),
+            ("pkg/c.txt", ""),
+        ]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(seen_by(&run, "a.txt"), ["queue sees pkg/c.txt"]);
+        assert_eq!(sites_of(&run.index, "queue linked"), ["a.txt:1 calls"]);
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A linked fact that replaces a key takes away another project's linked fact of that key"
+    )]
+    #[test]
+    fn a_linked_fact_that_replaces_a_key_takes_away_the_fact_another_project_linked() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            ("ACROSS", ""),
+            ("a.txt", "use pkg/b.txt\n"),
+            ("pkg/ROOT", ""),
+            ("pkg/b.txt", "linked 1 serves queue b\n"),
+        ]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(sites_of(&run.index, "queue across"), ["pkg/b.txt:1 serves"]);
+        let own = sites_of(&run.index, "queue b");
+        assert!(own.is_empty(), "{own:?}");
+    }
+
+    #[gsttt_scenario::scenario("indexing", "Two projects giving the same linked fact give one")]
+    #[test]
+    fn two_projects_giving_the_same_linked_fact_give_one() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            ("ACROSS", ""),
+            ("a.txt", "use pkg/b.txt\n"),
+            ("pkg/ROOT", ""),
+            ("pkg/b.txt", "linked 1 serves queue b\n"),
+            ("pkg2/ROOT", ""),
+            ("pkg2/ACROSS", ""),
+            ("pkg2/c.txt", "use pkg/b.txt\n"),
+        ]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(sites_of(&run.index, "queue across"), ["pkg/b.txt:1 serves"]);
+    }
+
     #[gsttt_scenario::scenario("indexing", "A failed link leaves what waits for it unread")]
     #[test]
     fn a_failed_link_leaves_what_waits_for_it_unread() {

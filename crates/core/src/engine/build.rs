@@ -6,6 +6,7 @@ use std::time::Instant;
 use foldhash::fast::RandomState;
 
 use super::pipeline::{Output, display_root};
+use crate::connector::LinkedFact;
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{Line, ParseStatus, UnresolvedReason, UnresolvedSite};
@@ -166,13 +167,43 @@ pub fn build_index(
         }
     }
 
-    for linked in &output.linked {
-        let site = ContractSite {
-            file: linked.file,
-            line: linked.fact.line,
-            role: linked.fact.role,
-            via: linked.fact.via.clone(),
-        };
+    // A linked fact that another project's linked fact keyed again is no site, unless it keys that very key again itself. Two projects that give one fact (two apps mounting one router under one path) give one site.
+    let mut sites: Vec<(&LinkedFact, ContractSite)> = output
+        .linked
+        .iter()
+        .filter(|linked| {
+            linked.replaces.as_ref() == Some(&linked.fact.key)
+                || !replaced.contains(&(
+                    linked.file,
+                    linked.fact.line,
+                    linked.fact.role,
+                    &linked.fact.key,
+                ))
+        })
+        .map(|linked| {
+            let site = ContractSite {
+                file: linked.file,
+                line: linked.fact.line,
+                role: linked.fact.role,
+                via: linked.fact.via.clone(),
+            };
+            (linked, site)
+        })
+        .collect();
+    sites.sort_by(|(a, _), (b, _)| {
+        (a.file, a.fact.line, a.fact.role, &a.fact.key, &a.fact.via).cmp(&(
+            b.file,
+            b.fact.line,
+            b.fact.role,
+            &b.fact.key,
+            &b.fact.via,
+        ))
+    });
+    sites.dedup_by(|(a, _), (b, _)| {
+        (a.file, a.fact.line, a.fact.role, &a.fact.key, &a.fact.via)
+            == (b.file, b.fact.line, b.fact.role, &b.fact.key, &b.fact.via)
+    });
+    for (linked, site) in sites {
         graph.site(linked.fact.key.clone(), site);
     }
 

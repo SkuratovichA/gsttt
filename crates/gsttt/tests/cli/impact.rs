@@ -2215,3 +2215,62 @@ fn callers_of_a_member_of_an_interface_are_the_holders_that_name_it() {
         "{answer}"
     );
 }
+
+/// A router of one package that an app of another package mounts is served under the mount, so a change to the router reaches the client of the mounted path.
+#[test]
+#[scenario(
+    "queries",
+    "A router of another package reaches the client of the mounted path"
+)]
+fn a_router_of_another_package_reaches_the_client_of_the_mounted_path() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "package.json",
+        "{ \"private\": true, \"workspaces\": [\"packages/*\"] }\n",
+    );
+    write(
+        &repo,
+        "packages/routes/package.json",
+        "{ \"name\": \"@acme/routes\", \"main\": \"src/index.ts\", \"dependencies\": { \"express\": \"4\" } }\n",
+    );
+    write(
+        &repo,
+        "packages/routes/src/index.ts",
+        "import { Router } from 'express';\n\nexport const shared = Router();\nshared.get('/x', (req, res) => res.end());\n",
+    );
+    write(
+        &repo,
+        "packages/api/package.json",
+        "{ \"name\": \"@acme/api\", \"dependencies\": { \"@acme/routes\": \"1.0.0\", \"express\": \"4\" } }\n",
+    );
+    write(
+        &repo,
+        "packages/api/src/app.ts",
+        "import express from 'express';\nimport { shared } from '@acme/routes';\n\nconst app = express();\napp.use('/ext', shared);\n",
+    );
+    write(
+        &repo,
+        "packages/web/package.json",
+        "{ \"name\": \"@acme/web\" }\n",
+    );
+    write(
+        &repo,
+        "packages/web/src/client.ts",
+        "export const load = () => fetch('/ext/x');\n",
+    );
+
+    let answer =
+        json(&sandbox.run_in(&repo, &["--json", "impact", "packages/routes/src/index.ts"]));
+    assert_eq!(
+        paths(&answer["affected"]),
+        ["packages/api/src/app.ts", "packages/web/src/client.ts"],
+        "{answer}"
+    );
+    assert_eq!(
+        answer["affected"][1]["reason"],
+        value!({ "via": "contract", "role": "calls", "key": "http GET /ext/x" }),
+        "{answer}"
+    );
+}
