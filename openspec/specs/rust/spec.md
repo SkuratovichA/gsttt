@@ -534,3 +534,14 @@ A member read right on a field or on what a method gives SHALL be recorded as th
 #### Scenario: A chain through a typed field reaches the file that reads it
 - **WHEN** `printer.rs` holds a `Config` with a field `style: Style` and calls `self.config.style.changes()` without naming `Style`, and `noise.rs` calls `changes` on a closure parameter without a written type
 - **THEN** the impact of `Style.changes` lists `printer.rs` and not `noise.rs`
+
+### Requirement: A router imported through its module
+With the `axum` pack, a `Router` that a `use` brings in from `axum::routing` SHALL be the same type as one from `axum`, because axum exports it from both. A `Router` that a `use` brings in from another crate SHALL be no router of the pack, whatever its module is called.
+
+#### Scenario: A router imported through its module serves its routes
+- **WHEN** a file has `use axum::routing::{get, Router};` and `router.route("/nested", get(show))`, and `router` is a parameter of type `Router`
+- **THEN** it serves `http GET /nested`
+
+#### Scenario: A router of another crate serves nothing
+- **WHEN** a file has `use axum::routing::get;`, `use other_web::routing::Router;` and `router.route("/other_module", get(show))`, and `router` is a parameter of type `Router`
+- **THEN** the file serves nothing
