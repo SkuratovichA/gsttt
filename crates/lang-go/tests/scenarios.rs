@@ -122,6 +122,16 @@ impl Tree {
         symbols.reads.clone()
     }
 
+    /// The heirs of a file as `name of`.
+    fn heirs(&self, path: &str) -> Vec<String> {
+        let symbols = self.file(path).facts.symbols.as_ref().expect("symbols");
+        symbols
+            .heirs
+            .iter()
+            .map(|heir| format!("{} {}", heir.name, heir.of))
+            .collect()
+    }
+
     fn on_load(&self, path: &str) -> String {
         let symbols = self.file(path).facts.symbols.as_ref().expect("symbols");
         symbols.on_load.join(" ")
@@ -557,7 +567,7 @@ fn a_struct_field_key_is_no_use() {
         ),
         ("b.go", "package m\n\nconst name = \"n\"\n"),
     ]);
-    assert_eq!(t.uses("a.go", "A"), "T.");
+    assert_eq!(t.uses("a.go", "A"), "T");
     assert_eq!(t.uses("a.go", "B"), "name");
 }
 
@@ -633,9 +643,9 @@ fn functions_methods_types_fields_constants_and_variables_are_declared() {
     );
     // A struct carries no use of its field types; they belong to the fields.
     assert_eq!(t.uses("kinds.go", "Box"), "");
-    assert_eq!(t.uses("kinds.go", "Box.Inner"), "Inner.");
+    assert_eq!(t.uses("kinds.go", "Box.Inner"), "Inner");
     assert_eq!(t.uses("kinds.go", "C"), "Limit fmt.Sprint");
-    assert_eq!(t.uses("kinds.go", "Default"), "Box.");
+    assert_eq!(t.uses("kinds.go", "Default"), "Box");
 }
 
 #[gsttt_scenario::scenario("go", "A generic receiver names the type")]
@@ -651,7 +661,7 @@ fn a_generic_receiver_names_the_type() {
         .map(|l| l.split(' ').next().unwrap().to_owned())
         .collect();
     assert_eq!(names, ["Box", "Box.key", "Box.Get", "Box.Zero"]);
-    assert_eq!(t.uses("box.go", "Box.Get"), "Box. Box.key");
+    assert_eq!(t.uses("box.go", "Box.Get"), "Box Box.key");
 }
 
 #[gsttt_scenario::scenario("go", "init declares nothing and its uses run on load")]
@@ -719,7 +729,7 @@ fn a_parameters_type_is_a_use_of_the_type_and_of_no_member() {
         ),
         ("inv/i.go", "package inv\n\ntype Invoice struct{}\n"),
     ]);
-    assert_eq!(t.uses("p.go", "F"), "Footer. Header. inv.Invoice.");
+    assert_eq!(t.uses("p.go", "F"), "Footer Header inv.Invoice");
 }
 
 #[gsttt_scenario::scenario("go", "A method read through a receiver is that method")]
@@ -729,7 +739,7 @@ fn a_method_read_through_a_receiver_is_that_method() {
         "r.go",
         "package m\n\ntype S struct{}\n\nfunc (s *S) A() { s.B() }\n\nfunc (s *S) B() {}\n",
     )]);
-    assert_eq!(t.uses("r.go", "S.A"), "S. S.B");
+    assert_eq!(t.uses("r.go", "S.A"), "S S.B");
 }
 
 #[gsttt_scenario::scenario(
@@ -738,28 +748,20 @@ fn a_method_read_through_a_receiver_is_that_method() {
 )]
 #[test]
 fn a_method_read_through_a_parameter_a_local_a_constructor_and_a_range_variable_is_that_method() {
-    let t = module(&[
-        (
-            "h.go",
-            "package m\n\nimport \"example.com/m/inv\"\n\nfunc ByParam(h Header) { h.Title() }\n\nfunc ByLiteral() {\n\th := Header{}\n\th.Title()\n}\n\nfunc ByPointer() {\n\th := &Header{}\n\th.Title()\n}\n\nfunc ByNew() {\n\th := new(Header)\n\th.Title()\n}\n\nfunc ByConstructor() {\n\th := NewHeader()\n\th.Title()\n}\n\nfunc ByQualified() {\n\th := inv.NewHeader()\n\th.Title()\n}\n\nfunc ByRange(all []Header) {\n\tfor _, h := range all {\n\t\th.Title()\n\t}\n}\n\nfunc ByIndex(all []Header) {\n\th := all[0]\n\th.Title()\n}\n\nfunc ByCopy(h Header) {\n\tg := h\n\tg.Title()\n}\n\nfunc ByAssertion(x any) {\n\th := x.(Header)\n\th.Title()\n}\n\nfunc ByVar() {\n\tvar h Header\n\th.Title()\n}\n",
-        ),
-        (
-            "inv/i.go",
-            "package inv\n\ntype Header struct{}\n\nfunc NewHeader() *Header { return nil }\n",
-        ),
-    ]);
+    let t = module(&[(
+        "h.go",
+        "package m\n\nfunc ByParam(h Header) { h.Title() }\n\nfunc ByLiteral() {\n\th := Header{}\n\th.Title()\n}\n\nfunc ByPointer() {\n\th := &Header{}\n\th.Title()\n}\n\nfunc ByNew() {\n\th := new(Header)\n\th.Title()\n}\n\nfunc ByRange(all []Header) {\n\tfor _, h := range all {\n\t\th.Title()\n\t}\n}\n\nfunc ByIndex(all []Header) {\n\th := all[0]\n\th.Title()\n}\n\nfunc ByCopy(h Header) {\n\tg := h\n\tg.Title()\n}\n\nfunc ByAssertion(x any) {\n\th := x.(Header)\n\th.Title()\n}\n\nfunc ByVar() {\n\tvar h Header\n\th.Title()\n}\n",
+    )]);
     for (name, expected) in [
-        ("ByParam", "Header. Header.Title"),
-        ("ByLiteral", "Header. Header.Title"),
-        ("ByPointer", "Header. Header.Title"),
-        ("ByNew", "Header. Header.Title new"),
-        ("ByConstructor", "Header.Title NewHeader"),
-        ("ByQualified", "inv.Header.Title inv.NewHeader"),
-        ("ByRange", "Header. Header.Title"),
-        ("ByIndex", "Header. Header.Title"),
-        ("ByCopy", "Header. Header.Title"),
-        ("ByAssertion", "Header. Header.Title"),
-        ("ByVar", "Header. Header.Title"),
+        ("ByParam", "Header Header.Title"),
+        ("ByLiteral", "Header Header.Title"),
+        ("ByPointer", "Header Header.Title"),
+        ("ByNew", "Header Header.Title new"),
+        ("ByRange", "Header Header.Title"),
+        ("ByIndex", "Header Header.Title"),
+        ("ByCopy", "Header Header.Title"),
+        ("ByAssertion", "Header Header.Title"),
+        ("ByVar", "Header Header.Title"),
     ] {
         assert_eq!(t.uses("h.go", name), expected, "{name}");
     }
@@ -777,7 +779,7 @@ fn a_method_read_through_a_field_of_a_struct_of_the_file_is_that_method() {
     )]);
     assert_eq!(
         t.uses("s.go", "Service.Run"),
-        "DB.Query Service. Service.db Service.store Store.Save"
+        "DB.Query Service Service.db Service.store Store.Save"
     );
 }
 
@@ -788,7 +790,7 @@ fn a_value_passed_on_is_a_use_of_the_type() {
         "v.go",
         "package m\n\nfunc F() {\n\th := Header{}\n\tconsume(h)\n\tg := &Footer{}\n\tconsume(g)\n}\n",
     )]);
-    assert_eq!(t.uses("v.go", "F"), "Footer. Header. consume");
+    assert_eq!(t.uses("v.go", "F"), "Footer Header consume");
 }
 
 #[gsttt_scenario::scenario("go", "A method read through a value of no known type is not recorded")]
@@ -808,7 +810,7 @@ fn a_shadowing_local_is_no_use_of_the_package() {
         "s.go",
         "package m\n\nimport \"fmt\"\n\nfunc F() {\n\tfmt := Printer{}\n\tfmt.Println()\n}\n\nfunc G() {\n\tfmt.Println()\n}\n",
     )]);
-    assert_eq!(t.uses("s.go", "F"), "Printer. Printer.Println");
+    assert_eq!(t.uses("s.go", "F"), "Printer Printer.Println");
     assert_eq!(t.uses("s.go", "G"), "fmt.Println");
 }
 
@@ -1008,7 +1010,7 @@ fn a_syntax_error_inside_a_function_keeps_the_declarations_of_the_file() {
     assert!(matches!(status(&t, "h.go"), ParseStatus::Recovered { .. }));
     assert_eq!(
         t.declared("h.go"),
-        ["Limit L3-3: ", "New L5-5: f. new", "Run L7-7: Helper"]
+        ["Limit L3-3: ", "New L5-5: f new", "Run L7-7: Helper"]
     );
     assert_eq!(t.exports("h.go"), ["Limit", "New", "Run"]);
     assert_eq!(t.uses("h.go", "Run"), "Helper");
@@ -1109,19 +1111,16 @@ fn a_method_read_through_the_first_result_of_a_constructor_is_that_method() {
     let t = module(&[
         (
             "h.go",
-            "package m\n\nimport \"example.com/m/inv\"\n\nfunc ByTuple(cfg Cfg) {\n\tsvc, err := NewService(cfg)\n\t_ = err\n\tsvc.Charge()\n}\n\nfunc ByQualified() {\n\tsvc, _ := inv.NewService()\n\tsvc.Charge()\n}\n\nfunc ByUnknown() {\n\tsvc, err := load()\n\t_ = err\n\tsvc.Charge()\n}\n",
+            "package m\n\nimport \"example.com/m/inv\"\n\nfunc ByTuple(cfg Cfg) {\n\tsvc, err := NewService(cfg)\n\t_ = err\n\tsvc.Charge()\n}\n\nfunc ByQualified() {\n\tsvc, _ := inv.NewService()\n\tsvc.Charge()\n}\n",
         ),
         (
             "inv/i.go",
             "package inv\n\ntype Service struct{}\n\nfunc NewService() (*Service, error) { return nil, nil }\n",
         ),
     ]);
-    assert_eq!(t.uses("h.go", "ByTuple"), "Cfg. NewService Service.Charge");
-    assert_eq!(
-        t.uses("h.go", "ByQualified"),
-        "inv.NewService inv.Service.Charge"
-    );
-    assert_eq!(t.uses("h.go", "ByUnknown"), "load");
+    assert_eq!(t.uses("h.go", "ByTuple"), "Cfg NewService");
+    assert_eq!(t.uses("h.go", "ByQualified"), "inv.NewService");
+    assert_eq!(t.reads("h.go"), ["Charge"]);
 }
 
 #[gsttt_scenario::scenario("go", "A go.mod with no module line leaves the other projects")]
@@ -1289,9 +1288,9 @@ fn a_use_of_a_type_is_no_use_of_its_members() {
             "package m\n\ntype byName []*Command\n\nvar hook func(*Command)\n\nfunc Make() { _ = &Command{} }\n",
         ),
     ]);
-    assert_eq!(t.uses("u.go", "byName"), "Command.");
-    assert_eq!(t.uses("u.go", "hook"), "Command.");
-    assert_eq!(t.uses("u.go", "Make"), "Command.");
+    assert_eq!(t.uses("u.go", "byName"), "Command");
+    assert_eq!(t.uses("u.go", "hook"), "Command");
+    assert_eq!(t.uses("u.go", "Make"), "Command");
 }
 
 /// A package variable of a sibling is reached through its name even when an import is read by a name its path does not end in.
@@ -1351,6 +1350,141 @@ fn a_constant_built_by_doubling_is_read_in_bounded_work() {
     let t = module(&[("f.go", &text)]);
     assert_eq!(t.contracts("f.go"), Vec::<String>::new());
     assert_eq!(t.unresolved_lines("f.go").len(), 1);
+}
+
+#[gsttt_scenario::scenario("go", "A function takes the members of its first result")]
+#[test]
+fn a_function_takes_the_members_of_its_first_result() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+import \"pkg\"
+
+type Mux struct{}
+
+func NewRouter() *Mux { return nil }
+
+func F() (*Mux, error) { return nil, nil }
+
+func L() []*Mux { return nil }
+
+func Q() *pkg.T { return nil }
+
+func E() error { return nil }
+
+func G[T any]() T { var t T; return t }
+
+func (m *Mux) Self() *Mux { return m }
+",
+    )]);
+    assert_eq!(
+        t.heirs("a.go"),
+        ["F Mux", "L Mux", "NewRouter Mux", "Q pkg.T"]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "An embedded type gives its members")]
+#[test]
+fn an_embedded_type_gives_its_members() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+import \"pkg\"
+
+type Engine struct {
+	RouterGroup
+	*pkg.Base
+	name string
+}
+
+type A interface {
+	B
+	pkg.C
+	Do()
+}
+
+type Number interface {
+	~int | string
+}
+
+type Plain interface {
+	int
+}
+",
+    )]);
+    assert_eq!(
+        t.heirs("a.go"),
+        ["A B", "A pkg.C", "Engine RouterGroup", "Engine pkg.Base"]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "An alias takes the members of its type")]
+#[test]
+fn an_alias_takes_the_members_of_its_type() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+type T struct{}
+
+type A = T
+
+type D T
+",
+    )]);
+    assert_eq!(t.heirs("a.go"), ["A T"]);
+}
+
+#[gsttt_scenario::scenario("go", "A package variable takes the members of what it holds")]
+#[test]
+fn a_package_variable_takes_the_members_of_what_it_holds() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+import \"pkg\"
+
+type T struct{}
+
+func F() *T { return nil }
+
+var A T
+var B = T{}
+var C = &T{}
+var D = new(T)
+var E = F()
+var G = pkg.F()
+var _ = F()
+
+const K = T(1)
+",
+    )]);
+    assert_eq!(
+        t.heirs("a.go"),
+        ["A T", "B T", "C T", "D T", "E F", "F T", "G pkg.F"]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "A value a call returns is read")]
+#[test]
+fn a_value_a_call_returns_is_read() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+import \"pkg\"
+
+func Run() {
+	x := pkg.F()
+	x.M()
+	pkg.F().N()
+}
+",
+    )]);
+    assert_eq!(t.uses("a.go", "Run"), "pkg.F");
+    assert_eq!(t.reads("a.go"), ["M", "N"]);
 }
 
 /// The facts of the `service` fixture, for review: what each file declares, imports and finds.

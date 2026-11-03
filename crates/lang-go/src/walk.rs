@@ -13,9 +13,6 @@ use crate::site::{Callee, read_calls};
 use crate::syntax::{MAX_DEPTH, field_text, fields, named_children, text_of};
 use crate::value::Reader;
 
-/// The member of a type that a use of the type itself names: none. A type written as the type of a parameter, a result, a receiver or a local is `Type.`, which belongs to the type and to none of its members, so a query for one method does not list every function that takes the type.
-const NO_MEMBER: &str = "";
-
 /// The state of one walk over a file. The names it finds are kept per declaration: [`Walk::begin`] starts a declaration and [`Walk::take_uses`] ends it.
 #[derive(Debug)]
 pub(crate) struct Walk<'r, 'a> {
@@ -32,6 +29,8 @@ pub(crate) struct Walk<'r, 'a> {
     pub(crate) import_names: Vec<BTreeSet<String>>,
     pub(crate) contracts: Vec<ContractFact>,
     pub(crate) embedded: Vec<Embedded>,
+    /// The `(name, of)` pairs where `name` takes the members of the head `of`, spelled as the file writes it.
+    pub(crate) heirs: BTreeSet<(String, String)>,
     pub(crate) unresolved: Vec<UnresolvedSite>,
     depth: usize,
     /// Whether the code walked is a package-level initialiser, whose calls run as the package loads.
@@ -52,6 +51,7 @@ impl<'r, 'a> Walk<'r, 'a> {
             import_names: vec![BTreeSet::new(); cx.imports.len()],
             contracts: Vec::new(),
             embedded: Vec::new(),
+            heirs: BTreeSet::new(),
             unresolved: Vec::new(),
             depth: 0,
             load: false,
@@ -198,18 +198,50 @@ impl<'r, 'a> Walk<'r, 'a> {
         }
     }
 
-    fn head_of(&self, ty: Node<'a>) -> Option<Head> {
+    pub(crate) fn head_of(&self, ty: Node<'a>) -> Option<Head> {
         let scopes = &self.scopes;
         self.cx.head_of(ty, &|name| scopes.find(name).is_some())
     }
 
-    /// The use of a type, written `Type.`: a method runs only through a selector, so a type named in a declaration or a literal calls no member.
+    /// The use of a type, by its bare name: a file that names the type and reads a member reaches the type's callers through it.
     fn use_type(&mut self, head: &Head) {
-        let mut spelled = self.cx.spell(head);
-        spelled.push(MEMBER_SEPARATOR);
-        spelled.push_str(NO_MEMBER);
+        let spelled = self.cx.spell(head);
         self.uses.insert(spelled);
         self.note_head(head);
+    }
+
+    /// Records that `name` takes the members of the type `head`.
+    pub(crate) fn heir(&mut self, name: &str, head: &Head) {
+        self.heirs.insert((name.to_owned(), self.cx.spell(head)));
+    }
+
+    /// What a package-level value is an heir of: the type it holds, or the function whose result it holds.
+    pub(crate) fn held_name(&self, value: Node<'a>) -> Option<String> {
+        if let Some(head) = self.holds_of(value) {
+            return Some(self.cx.spell(&head));
+        }
+        if value.kind() != "call_expression" {
+            return None;
+        }
+        let function = value.child_by_field_name("function")?;
+        let source = self.cx.source;
+        match function.kind() {
+            "identifier" => {
+                let name = text_of(function, source);
+                (self.scopes.find(name).is_none() && !is_predeclared_function(name))
+                    .then(|| name.to_owned())
+            }
+            "selector_expression" => {
+                let operand = function.child_by_field_name("operand")?;
+                let name = field_text(function, "field", source)?;
+                let qualifier = text_of(operand, source);
+                (operand.kind() == "identifier"
+                    && self.scopes.find(qualifier).is_none()
+                    && self.cx.import_named(qualifier).is_some())
+                .then(|| format!("{qualifier}.{name}"))
+            }
+            _ => None,
+        }
     }
 
     /// The use of a member of a type: `Type.member`.
@@ -746,7 +778,7 @@ impl<'r, 'a> Walk<'r, 'a> {
         }
     }
 
-    /// `new(T)`, and a constructor by the convention `NewT(…)` or `package.NewT(…)`.
+    /// `new(T)`: any other call gives no holding, since the name of a function does not tell what it returns.
     fn holds_by_call(&self, call: Node<'a>) -> Option<Head> {
         let function = call.child_by_field_name("function")?;
         let source = self.cx.source;
@@ -762,22 +794,7 @@ impl<'r, 'a> Walk<'r, 'a> {
                         .next()?;
                     return self.head_of_expression(argument);
                 }
-                constructed(name).map(|made| Head {
-                    import: None,
-                    name: made.to_owned(),
-                })
-            }
-            "selector_expression" => {
-                let operand = function.child_by_field_name("operand")?;
-                let name = field_text(function, "field", source)?;
-                let qualifier = text_of(operand, source);
-                if operand.kind() != "identifier" || self.scopes.find(qualifier).is_some() {
-                    return None;
-                }
-                Some(Head {
-                    import: Some(self.cx.import_named(qualifier)?),
-                    name: constructed(name)?.to_owned(),
-                })
+                None
             }
             _ => None,
         }
@@ -926,7 +943,7 @@ impl<'r, 'a> Walk<'r, 'a> {
 }
 
 /// The value that gives the type of the name at `index`: its own value, or for the first name of `a, err := NewT()` the one call that makes every name.
-fn first_result<'n, 'a>(
+pub(crate) fn first_result<'n, 'a>(
     values: &'n [Node<'a>],
     paired: bool,
     index: usize,
@@ -938,12 +955,6 @@ fn first_result<'n, 'a>(
         [call] if index == 0 && call.kind() == "call_expression" => Some(call),
         _ => None,
     }
-}
-
-/// `T` for the name `NewT` of a constructor.
-fn constructed(name: &str) -> Option<&str> {
-    name.strip_prefix("New")
-        .filter(|made| made.chars().next().is_some_and(char::is_uppercase))
 }
 
 /// The type behind a pointer: the literal `&T{}` is elided as `{}` in a `[]*T`.
