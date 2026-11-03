@@ -28,10 +28,11 @@ const STAR_IMPORTS: &str =
 const MIXIN_TABLES: &str = "table names given by a declared_attr or inherited from a mixin";
 
 /// What the `dbapi` pack leaves out. SQL is declared (`CREATE TABLE`) or called (`SELECT`), so each is told under both.
-const DBAPI_GAPS: [&str; 3] = [
+const DBAPI_GAPS: [&str; 4] = [
     "execute and executemany calls on a receiver of more than three segments",
     "SQL held in a variable",
     "SQL built by a function call",
+    "a statement whose table or whole clause is computed does not parse and names no table",
 ];
 
 /// Gaps of every Python project, whatever its packs: contracts no pack of this connector reads.

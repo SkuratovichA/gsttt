@@ -66,7 +66,8 @@ expression: packs
           "*.*.*.executemany"
         ],
         "lang": "sql",
-        "text": null
+        "text": null,
+        "computed": "placeholder"
       }
     ],
     "assigns": []
@@ -471,7 +472,8 @@ expression: packs
           "sqlalchemy.text"
         ],
         "lang": "sql",
-        "text": null
+        "text": null,
+        "computed": "placeholder"
       }
     ],
     "assigns": [

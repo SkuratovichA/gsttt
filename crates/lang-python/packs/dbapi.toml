@@ -12,3 +12,4 @@ callee = [
   "*.*.*.executemany",
 ]
 lang = "sql"
+computed = "placeholder"

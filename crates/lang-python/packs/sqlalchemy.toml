@@ -18,3 +18,4 @@ key = "$arg1"
 [[embeds]]
 callee = ["text", "sa.text", "sqlalchemy.text"]
 lang = "sql"
+computed = "placeholder"
