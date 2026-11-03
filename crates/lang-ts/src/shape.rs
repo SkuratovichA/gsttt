@@ -987,7 +987,7 @@ mod tests {
         let allocator = Allocator::default();
         let code = "const BASE = 'https://a.test/v1/'; const ROUTES = { href: '/h' }; (new URL(`${BASE}x`)); (ROUTES.href);";
         let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
-        let constants = Constants::collect(&parsed.program);
+        let constants = Constants::collect(&parsed.program, &[]);
         let texts: Vec<String> = parsed
             .program
             .body
@@ -1138,7 +1138,7 @@ mod tests {
         let allocator = Allocator::default();
         let code = format!("{prelude}\nfetch({arguments});");
         let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
-        let constants = Constants::collect(&parsed.program);
+        let constants = Constants::collect(&parsed.program, &[]);
         let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.last() else {
             panic!("no call in {code}");
         };
@@ -1551,7 +1551,7 @@ mod tests {
     fn sum_in(source: &str, mode: Mode) -> Option<Part> {
         let allocator = Allocator::default();
         let imports = Parser::new(&allocator, IMPORT, SourceType::ts()).parse();
-        let constants = Constants::collect(&imports.program);
+        let constants = Constants::collect(&imports.program, &[]);
         let code = format!("({source});");
         let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
         let Some(Statement::ExpressionStatement(statement)) = parsed.program.body.last() else {

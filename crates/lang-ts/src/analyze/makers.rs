@@ -9,6 +9,7 @@ use oxc_ast::ast::{
     Expression, Program, PropertyDefinition, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
+use oxc_span::GetSpan;
 use oxc_syntax::scope::{ScopeFlags, ScopeId};
 
 use super::constants::exported_locals;
@@ -104,19 +105,21 @@ impl Collector<'_> {
         let Some(callee) = chain_of(callee).and_then(|names| dotted(&names)) else {
             return;
         };
+        let callee = self.constants.canonical(&callee, init.span().start);
+        let callee = &*callee;
         let mut receiver = false;
         let mut serves = false;
         for rule in self.packs.iter().flat_map(|pack| &pack.calls) {
             if rule
                 .receiver
                 .as_ref()
-                .is_some_and(|receiver| receiver.from.matches(&callee))
+                .is_some_and(|receiver| receiver.from.matches(callee))
             {
                 receiver = true;
                 serves |= serves_http(&rule.kind, rule.role);
             }
         }
-        let shape = Shape::of_call(&callee, arguments.iter(), self.constants);
+        let shape = Shape::of_call(callee, arguments.iter(), self.constants);
         let root = match arguments.first().and_then(Argument::as_expression) {
             Some(Expression::Identifier(first)) if callee == NEST_FACTORY_CREATE => {
                 Some(first.name.as_str().to_owned())
@@ -131,7 +134,7 @@ impl Collector<'_> {
         self.found.insert(
             name,
             Maker {
-                callee,
+                callee: callee.to_owned(),
                 shape,
                 root,
                 receiver,

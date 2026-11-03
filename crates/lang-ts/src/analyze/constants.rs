@@ -14,10 +14,13 @@ use oxc_ast::ast::{
 use oxc_span::{GetSpan, Span};
 
 use super::symbols::base_name;
-use super::{load_of, peel};
+use super::{is_library, load_of, peel};
+use crate::builtins::is_builtin;
 use crate::extra::{Export, ExportTarget};
 use crate::parts::{Mode, Part};
+use crate::pathing::split_package;
 use crate::shape::{dotted_name, field_name, literal_text, part_of, property_str};
+use gsttt_core::rules::Pack;
 
 /// The constants of a file by the name they are read under, those of its top level and those of its functions and blocks, and the names the file imports.
 #[derive(Debug, Default)]
@@ -28,6 +31,8 @@ pub(crate) struct Constants {
     roots: BTreeSet<String>,
     /// The local names an import binds, each with the specifier of the module it takes the name from.
     imported: BTreeMap<String, String>,
+    /// The local names that stand for a name a pack writes otherwise, each with that name: `http` of `import http from 'axios'` for `axios`, `R` of `import { Router as R } from 'express'` for `Router`. A name that is written as the pack writes it has no entry.
+    canonical: BTreeMap<String, String>,
     /// What each scope below the top level binds, by name: a parameter, a variable, a function, a class, a catch clause. A name read inside such a scope is what the innermost scope around it binds it to, and the constants of the file and the imports are no answer there. Only the names that can change an answer are kept.
     locals: BTreeMap<String, Locals>,
     /// The enum whose members are being read, while they are.
@@ -103,11 +108,11 @@ struct EnumScope {
 
 impl Constants {
     /// The constants `program` declares at its top level, in declaration order, so that a value may use a constant above it, and the names its imports bind.
-    pub(crate) fn collect(program: &Program<'_>) -> Self {
+    pub(crate) fn collect(program: &Program<'_>, packs: &[Pack]) -> Self {
         let mut constants = Self::default();
         // Every import is known before a constant is read: an `import` is hoisted, so a constant may name one that is written below it, and a name that `require` binds is the module's wherever it is read.
         for statement in &program.body {
-            constants.imports(statement);
+            constants.imports(statement, packs);
         }
         // One buffer holds the name of every declaration in turn, so that the names of the many declarations that hold no text cost nothing.
         let mut path = String::new();
@@ -136,12 +141,24 @@ impl Constants {
     }
 
     /// Notes the names that `statement` binds to a module: those of an `import`, of `import x = require('y')`, and of `const { a } = require('y')` and its dynamic kin, as the walk of the file binds them.
-    fn imports(&mut self, statement: &Statement<'_>) {
+    fn imports(&mut self, statement: &Statement<'_>, packs: &[Pack]) {
         let declaration = match statement {
             Statement::ImportDeclaration(import) => {
                 if let Some(spec) = import.source.value.as_str() {
-                    for local in import_locals(import) {
+                    for specifier in import.specifiers.iter().flatten() {
+                        let (local, taken) = match specifier {
+                            ImportDeclarationSpecifier::ImportSpecifier(item) => {
+                                (item.local.name.as_str(), Some(item.imported.name()))
+                            }
+                            ImportDeclarationSpecifier::ImportDefaultSpecifier(item) => {
+                                (item.local.name.as_str(), None)
+                            }
+                            ImportDeclarationSpecifier::ImportNamespaceSpecifier(item) => {
+                                (item.local.name.as_str(), None)
+                            }
+                        };
                         self.import(local, spec);
+                        self.canonical_of(local, spec, taken.as_deref(), packs);
                     }
                 }
                 return;
@@ -159,6 +176,7 @@ impl Constants {
                     && let Some(spec) = reference.expression.value.as_str()
                 {
                     self.import(equals.id.name.as_str(), spec);
+                    self.canonical_of(equals.id.name.as_str(), spec, None, packs);
                 }
             }
             Declaration::VariableDeclaration(variables) => {
@@ -167,7 +185,7 @@ impl Constants {
                         && let Some(load) = load_of(peel(init))
                         && let Some(spec) = load.argument.and_then(literal_text)
                     {
-                        self.loaded(&declarator.id, &spec);
+                        self.loaded(&declarator.id, &spec, packs);
                     }
                 }
             }
@@ -176,16 +194,20 @@ impl Constants {
     }
 
     /// Notes the names that `pattern` takes from the module `spec` that a load hands back: `x` of `const x = require('y')`, and each name of `{ a, b: c }` that is written as a name and bound to one.
-    fn loaded(&mut self, pattern: &BindingPattern<'_>, spec: &str) {
+    fn loaded(&mut self, pattern: &BindingPattern<'_>, spec: &str, packs: &[Pack]) {
         match pattern {
-            BindingPattern::BindingIdentifier(local) => self.import(local.name.as_str(), spec),
+            BindingPattern::BindingIdentifier(local) => {
+                self.import(local.name.as_str(), spec);
+                self.canonical_of(local.name.as_str(), spec, None, packs);
+            }
             BindingPattern::ObjectPattern(object) => {
                 for property in &object.properties {
                     if !property.computed
-                        && property_str(&property.key).is_some()
+                        && let Some(taken) = property_str(&property.key)
                         && let BindingPattern::BindingIdentifier(local) = &property.value
                     {
                         self.import(local.name.as_str(), spec);
+                        self.canonical_of(local.name.as_str(), spec, Some(taken), packs);
                     }
                 }
             }
@@ -197,6 +219,43 @@ impl Constants {
     pub(super) fn import(&mut self, local: &str, spec: &str) {
         if !self.imported.contains_key(local) {
             self.imported.insert(local.to_owned(), spec.to_owned());
+        }
+    }
+
+    /// Notes the name a pack writes for `local`, which the file takes from the package `spec` as `taken`: the package itself when `taken` is none or `default`. A module of the project, a built-in module, a path inside a package and a package no pack is for are written as the file spells them.
+    fn canonical_of(&mut self, local: &str, spec: &str, taken: Option<&str>, packs: &[Pack]) {
+        let Some((package, "")) = split_package(spec) else {
+            return;
+        };
+        if is_builtin(spec) || !is_library(packs, spec) {
+            return;
+        }
+        let name = taken.filter(|name| *name != "default").unwrap_or(package);
+        // A rule writes a callee as a chain of identifiers, so a package like `graphql-tag` is never written by one, and `gql` imported from it stays `gql`.
+        if !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        {
+            return;
+        }
+        if name != local {
+            self.canonical.insert(local.to_owned(), name.to_owned());
+        }
+    }
+
+    /// The name a pack writes for `callee`: its first name taken back to what the package exports. `http.get` under `import http from 'axios'` reads as `axios.get`, and `R` under `import { Router as R } from 'express'` as `Router`. A name a scope around `at` binds again, a name from a file of the project and a name the file spells as the package does stay as they are.
+    pub(super) fn canonical<'c>(&self, callee: &'c str, at: u32) -> Cow<'c, str> {
+        if self.canonical.is_empty() {
+            return Cow::Borrowed(callee);
+        }
+        let (root, rest) = callee.split_once('.').unwrap_or((callee, ""));
+        match self.canonical.get(root) {
+            Some(name) if self.local(root, at).is_none() => Cow::Owned(if rest.is_empty() {
+                name.clone()
+            } else {
+                format!("{name}.{rest}")
+            }),
+            _ => Cow::Borrowed(callee),
         }
     }
 
@@ -487,7 +546,7 @@ mod tests {
     fn constants_of(code: &str) -> Constants {
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
-        Constants::collect(&parsed.program)
+        Constants::collect(&parsed.program, &[])
     }
 
     /// The constants of `code` as `name=value` lines in name order, with a name that another file declares written `<NAME>`.
@@ -672,7 +731,7 @@ mod tests {
     fn reads(code: &str) -> Vec<String> {
         let allocator = Allocator::default();
         let parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
-        let constants = Constants::collect(&parsed.program);
+        let constants = Constants::collect(&parsed.program, &[]);
         let mut reads = Reads {
             constants: &constants,
             found: Vec::new(),
@@ -1087,7 +1146,7 @@ mod tests {
         let allocator = Allocator::default();
         let code = format!("{prelude}\n({source});");
         let parsed = Parser::new(&allocator, &code, SourceType::ts()).parse();
-        let constants = Constants::collect(&parsed.program);
+        let constants = Constants::collect(&parsed.program, &[]);
         let Some(oxc_ast::ast::Statement::ExpressionStatement(statement)) =
             parsed.program.body.last()
         else {

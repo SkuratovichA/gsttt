@@ -754,3 +754,77 @@ fn a_fetch_whose_options_cannot_be_read_keeps_any_method() -> Result<(), Box<dyn
     insta::assert_json_snapshot!(json);
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A renamed default import of a package is read")]
+fn a_renamed_default_import_of_a_package_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("renamed-default-import")?;
+    assert_eq!(
+        contracts(&json, "src/api.ts"),
+        ["calls http GET /a @3", "calls http GET /v1/d @5"]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A namespace import of a package is read")]
+fn a_namespace_import_of_a_package_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("renamed-namespace-import")?;
+    assert_eq!(contracts(&json, "src/api.ts"), ["calls http POST /b @3"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A renamed require of a package is read")]
+fn a_renamed_require_of_a_package_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("renamed-require")?;
+    assert_eq!(contracts(&json, "src/api.ts"), ["calls http PUT /c @3"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A renamed destructured require of a package is read")]
+fn a_renamed_destructured_require_of_a_package_is_read() -> Result<(), Box<dyn Error>> {
+    let json = run("renamed-destructured-require")?;
+    assert_eq!(linked(&json), ["serves http GET /f @3 in src/app.ts"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "Renamed imports of a router are read")]
+fn renamed_imports_of_a_router_are_read() -> Result<(), Box<dyn Error>> {
+    let json = run("renamed-router")?;
+    let plain = run("plain-router")?;
+    assert_eq!(linked(&json), linked(&plain));
+    assert_eq!(
+        linked(&json),
+        [
+            "serves http GET /e @4 in src/app.ts",
+            "serves http GET /f @6 in src/app.ts"
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A name no pack detects keeps its own name")]
+fn a_name_no_pack_detects_keeps_its_own_name() -> Result<(), Box<dyn Error>> {
+    let json = run("renamed-unknown-package")?;
+    assert_eq!(contracts(&json, "src/api.ts"), ["calls http GET /g @4"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A renamed import a scope binds again is not read")]
+fn a_renamed_import_a_scope_binds_again_is_not_read() -> Result<(), Box<dyn Error>> {
+    let json = run("renamed-rebound")?;
+    assert_eq!(contracts(&json, "src/api.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

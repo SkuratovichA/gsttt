@@ -82,7 +82,7 @@ pub(crate) fn analyze(
     tags: FileTags,
 ) -> Analysis {
     let gates = Gates::of(packs);
-    let constants = Constants::collect(program);
+    let constants = Constants::collect(program, packs);
     let mut analyzer = Analyzer {
         text,
         index,
@@ -1700,6 +1700,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                         self.names_a_load = true;
                     }
                 }
+                let callee = self.constants.canonical(&callee, it.span.start);
                 self.call(it, &callee);
             }
         }
@@ -1713,6 +1714,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
 
     fn visit_tagged_template_expression(&mut self, it: &TaggedTemplateExpression<'a>) {
         if let Some(tag) = chain_of(&it.tag).and_then(|names| dotted(&names)) {
+            let tag = self.constants.canonical(&tag, it.span.start);
             self.tagged(it, &tag);
         }
         let outer = self.symbols.run();
