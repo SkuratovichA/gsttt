@@ -948,3 +948,11 @@ Asked about a member, `impact` SHALL list the file that gets a value of the clas
 #### Scenario: A value made by a factory and passed across a third file is a caller
 - **WHEN** `service.ts` has `export const made = makeService()`, `third.ts` has `export { made } from './service'` and `shared.ts` has `made.place()`
 - **THEN** impact asked about `Service.place` lists `shared.ts`
+
+### Requirement: Impact through a computed export key
+Impact SHALL NOT pass a name a file only imports on to the files that require it because the file assigns a computed key of its exports at the top level, and SHALL still list the file that takes a name that key hands out.
+
+#### Scenario: A computed export key does not pass an imported name on
+- **WHEN** `a.js` imports a class, calls it in `run`, has `module.exports = run` and `module.exports[Symbol.for('x')] = { helper }`, `b.js` requires `./a`, and `c.js` has `require('./a')[Symbol.for('x')]`
+- **THEN** impact of the class lists `a.js` and not `b.js`
+- **AND** impact of `helper` in `a.js` lists `c.js`

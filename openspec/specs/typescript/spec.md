@@ -436,7 +436,7 @@ The connector SHALL record the names a file exports itself, sorted: its exported
 - **AND** its re-export of `./z` records `z` exported as `w`, matching the reviewed snapshot
 
 #### Scenario: CommonJS exports are unknown
-- **WHEN** one file assigns `module.exports = { ...a }` and another assigns `exports[k] = 1`
+- **WHEN** one file assigns `module.exports = { ...a }` and another assigns `exports[k] = 1` in a loop
 - **THEN** the exports of both are unknown
 
 #### Scenario: Exports of a file read past errors are unknown
@@ -1696,7 +1696,7 @@ A call rule SHALL read a name imported from a package a pack detects under the n
 - **THEN** it calls nothing
 
 ### Requirement: CommonJS exports
-The connector SHALL record the names a file exports where its CommonJS form lists them: `exports.a =`, `module.exports.a =`, the keys of `module.exports = { … }`, and for a local object its keys too; and `default` for a function, a class, a call, a local or another value. It SHALL leave them unknown for an object with a spread or a computed key, a local object that is empty or has one, `require(…)`, an indexed assignment, and `exports` handed to a call other than the `__esModule` marker.
+The connector SHALL record the names a file exports where its CommonJS form lists them: `exports.a =`, `module.exports.a =`, the keys of `module.exports = { … }`, and for a local object its keys too; and `default` for any other value. It SHALL leave them unknown for an object with a spread or a computed key, a local object that is empty or has one, `require(…)`, an indexed assignment outside the top level, and `exports` handed to a call other than the `__esModule` marker.
 
 #### Scenario: The names of a CommonJS file are listed
 - **WHEN** one file has `exports.d = 1` and `module.exports.e = f`, and another has `module.exports = { a, b: x, c() {} }`
@@ -1707,7 +1707,7 @@ The connector SHALL record the names a file exports where its CommonJS form list
 - **THEN** its exports are `default`
 
 #### Scenario: CommonJS exports that cannot be listed are unknown
-- **WHEN** a file has `module.exports = { ...a }`, `module.exports = { [k]: 1 }`, `module.exports = lib` for a constant that holds an object with a spread or none, `module.exports = require('./a')`, `exports[k] = 1`, `module.exports[k] = 1`, `Object.assign(module.exports, x)`, `factory(exports)` or `Object.defineProperty(exports, 'x', …)`, or has `export =`
+- **WHEN** a file has `module.exports = { ...a }`, `module.exports = { [k]: 1 }`, `module.exports = lib` for a constant that holds an object with a spread or none, `module.exports = require('./a')`, `for (const k of keys) exports[k] = 1`, `function add(k) { module.exports[k] = 1; }`, `Object.assign(module.exports, x)`, `factory(exports)` or `Object.defineProperty(exports, 'x', …)`, or has `export =`
 - **THEN** its exports are unknown
 - **AND** a module with export declarations keeps the names of them
 
@@ -1980,3 +1980,22 @@ A static call on a class, `Service.make()`, SHALL give a value of that class, an
 #### Scenario: A function required with CommonJS is a use of its class
 - **WHEN** a file has `const { makeService } = require('./service'); makeService().place();` and `const lib = require('./service'); lib.makeService().place();`
 - **THEN** the declarations use `makeService` and `lib.makeService`, and the file reads `place`
+
+### Requirement: Computed export keys
+An assignment to a computed key of `exports` or `module.exports` that is a whole statement of the top level SHALL leave the exports of the file known. A literal key SHALL export that name; any other key SHALL export what the value hands out under its own names, the keys of an object literal or the variable of an identifier, and never `default`. The same assignment in a function, a loop, a condition or a callback SHALL leave them unknown.
+
+#### Scenario: A computed key as a statement of the top level keeps the exports known
+- **WHEN** a file has `exports[key] = 1`, and another has `exports[kKey] = make()`
+- **THEN** both list no export and neither is unknown
+
+#### Scenario: A literal computed key exports its name
+- **WHEN** a file has `exports['a'] = x` and `module.exports['b'] = 2`
+- **THEN** its exports are `a` and `b`
+
+#### Scenario: A computed key exports the names its value hands out
+- **WHEN** a file has `module.exports = run` and `module.exports[Symbol.for('x')] = { helper, other, plain: 3 }`, and another has `module.exports[kInternals] = internals` for a constant `internals`
+- **THEN** the exports of the first are `default`, `helper`, `other` and `plain`, and those of the second are `internals`
+
+#### Scenario: A computed key inside a loop or a function leaves the exports unknown
+- **WHEN** a file has `for (const k of keys) exports[k] = 1`, another has `function add(k) { module.exports[k] = 1; }` and a third has `names.forEach((n) => { exports[n] = 1; })`
+- **THEN** the exports of the three are unknown
