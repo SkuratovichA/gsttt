@@ -467,7 +467,7 @@ Each line `gsttt update` prints for a person to run SHALL call `claude` by its n
 - **THEN** stderr ends with the line for the second, third and fourth, and does not have it for the first and the last
 
 ### Requirement: Changed declarations are walked
-`gsttt impact --changed` SHALL walk the declarations of a modified TypeScript file whose text differs from its old blob, not the file whole, and its header SHALL name them. The `--json` answer SHALL list them in `parts`.
+`gsttt impact --changed` SHALL walk the declarations of a modified file whose text differs from its old blob, not the file whole, for every language that gives its code (TypeScript, Python and Go), and its header SHALL name them. The `--json` answer SHALL list them in `parts`.
 
 #### Scenario: --changed walks the declarations a patch changes
 - **WHEN** one exported function of `src/format.ts` is edited, and two files import it and two import another export
@@ -611,3 +611,22 @@ A changed function, class or method of a Python file SHALL be named, a method wi
 #### Scenario: --changed follows a changed Python function to its callers and not to the callers of another
 - **WHEN** `tools/job.py` declares `run` and `stop`, `tools/main.py` calls `run` and `tools/halt.py` calls `stop`, and `run` is edited
 - **THEN** `parts` names `run` in `tools/job.py` and only `tools/main.py` is affected
+
+### Requirement: A changed Go declaration reaches its callers
+A changed function, method, type or field of a Go file SHALL be named and the walk SHALL reach the declarations that use that name and not those that use another name of the file. A comment added to the file SHALL name no declaration, and a changed `init` SHALL walk the file whole.
+
+#### Scenario: --changed follows a changed Go function to its callers and not to the callers of another
+- **WHEN** `job/job.go` declares `Run` and `Stop`, `cmd/main.go` calls `Run` and `halt/halt.go` calls `Stop`, and `Run` is edited
+- **THEN** `parts` names `Run` in `job/job.go` and only `cmd/main.go` is affected
+
+#### Scenario: --changed names no declaration for a comment added to a Go file
+- **WHEN** a comment is added above `Run` in `job/job.go`
+- **THEN** `parts` names no declaration of the file and nothing is affected
+
+#### Scenario: --changed names the field a Go struct gains and no sibling
+- **WHEN** a field `longerName` is added to a struct with a field `n`, which gofmt realigns
+- **THEN** `parts` names `Box.longerName` and not `Box.n`
+
+#### Scenario: --changed walks a Go file whole when init changes
+- **WHEN** the body of an `init` function in `job/job.go` is edited
+- **THEN** the callers of every declaration of the file are affected
