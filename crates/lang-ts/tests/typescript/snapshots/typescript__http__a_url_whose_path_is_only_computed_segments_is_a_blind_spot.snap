@@ -19,7 +19,7 @@ expression: json
     {
       "contracts": [
         {
-          "key": "http * /users/{}",
+          "key": "http GET /users/{}",
           "line": 8,
           "role": "calls",
           "via": "fetch"

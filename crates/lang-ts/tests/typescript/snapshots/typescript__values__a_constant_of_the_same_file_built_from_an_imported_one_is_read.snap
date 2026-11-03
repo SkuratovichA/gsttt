@@ -112,28 +112,28 @@ expression: json
   "linked": [
     {
       "file": "src/users.ts",
-      "key": "http * /api/v1/users",
+      "key": "http GET /api/v1/users",
       "line": 7,
       "role": "calls",
       "via": "fetch"
     },
     {
       "file": "src/users.ts",
-      "key": "http * /api/v1/orders",
+      "key": "http GET /api/v1/orders",
       "line": 8,
       "role": "calls",
       "via": "fetch"
     },
     {
       "file": "src/users.ts",
-      "key": "http * /api/v1/users/1",
+      "key": "http GET /api/v1/users/1",
       "line": 9,
       "role": "calls",
       "via": "fetch"
     },
     {
       "file": "src/users.ts",
-      "key": "http * /api/v1",
+      "key": "http GET /api/v1",
       "line": 10,
       "role": "calls",
       "via": "fetch"

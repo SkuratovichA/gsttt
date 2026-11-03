@@ -2466,7 +2466,7 @@ method = "$arg2.method|GET"
             .map(|fact| format!("{}@{}", fact.key, fact.line))
             .collect();
         // Inside the function the parameter answers: its template reads past the name and its bare call is unread.
-        assert_eq!(keys, ["http * /users@2"]);
+        assert_eq!(keys, ["http GET /users@2"]);
         assert_eq!(analysis.unresolved.len(), 1);
         // Outside it the import is still the name, so both calls wait for the link.
         assert_eq!(analysis.extra.deferred.len(), 2);

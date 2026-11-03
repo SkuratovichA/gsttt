@@ -1,4 +1,4 @@
-# fetch: a request to a URL. The method is the `method` option, any method when it is missing.
+# fetch: a request to a URL. The method is the `method` option, `GET` when the call writes none, any method when the options cannot be read.
 name = "fetch"
 language = "ts"
 relative_without_base = "rooted"
@@ -8,4 +8,4 @@ callee = ["fetch", "window.fetch", "globalThis.fetch"]
 kind = "http"
 role = "calls"
 key = "$arg1"
-method = "$arg2.method"
+method = "$arg2.method|GET"

@@ -19,25 +19,25 @@ expression: "run(\"scopes-hidden\")?"
     {
       "contracts": [
         {
-          "key": "http * /local",
+          "key": "http GET /local",
           "line": 9,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /api",
+          "key": "http GET /api",
           "line": 31,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /api",
+          "key": "http GET /api",
           "line": 35,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /api",
+          "key": "http GET /api",
           "line": 38,
           "role": "calls",
           "via": "fetch"

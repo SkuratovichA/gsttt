@@ -31,7 +31,7 @@ expression: json
           "via": "env"
         },
         {
-          "key": "http * /users",
+          "key": "http GET /users",
           "line": 11,
           "role": "calls",
           "via": "fetch"

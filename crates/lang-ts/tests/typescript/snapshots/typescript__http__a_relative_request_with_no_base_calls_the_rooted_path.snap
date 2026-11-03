@@ -19,7 +19,7 @@ expression: json
     {
       "contracts": [
         {
-          "key": "http * /items",
+          "key": "http GET /items",
           "line": 6,
           "role": "calls",
           "via": "fetch"
@@ -37,13 +37,13 @@ expression: json
           "via": "axios"
         },
         {
-          "key": "http * /items/{}",
+          "key": "http GET /items/{}",
           "line": 9,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /x",
+          "key": "http GET /x",
           "line": 13,
           "role": "calls",
           "via": "fetch"

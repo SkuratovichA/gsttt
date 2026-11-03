@@ -17,7 +17,10 @@ fn a_constant_in_the_same_file_is_read() -> Result<(), Box<dyn Error>> {
     let json = run("constants-same-file")?;
     assert_eq!(
         contracts(&json, "src/api.ts"),
-        ["calls http * /api/users @4", "calls http * /api/orders @5"]
+        [
+            "calls http GET /api/users @4",
+            "calls http GET /api/orders @5"
+        ]
     );
     assert_eq!(unread(&json, "src/api.ts"), NOTHING);
     Ok(())
@@ -29,16 +32,16 @@ fn every_form_of_constant_is_read_and_nothing_else() -> Result<(), Box<dyn Error
     assert_eq!(
         contracts(&json, "src/forms.ts"),
         [
-            "calls http * /a/b @16",
-            "calls http * /a/c @17",
-            "calls http * /d @18",
-            "calls http * /e @19",
-            "calls http * /g @21",
-            "calls http * /i @23",
-            "calls http * /j @24",
-            "calls http * /l @26",
-            "calls http * /a/b/{} @28",
-            "calls http * /last @31",
+            "calls http GET /a/b @16",
+            "calls http GET /a/c @17",
+            "calls http GET /d @18",
+            "calls http GET /e @19",
+            "calls http GET /g @21",
+            "calls http GET /i @23",
+            "calls http GET /j @24",
+            "calls http GET /l @26",
+            "calls http GET /a/b/{} @28",
+            "calls http GET /last @31",
         ]
     );
     assert_eq!(

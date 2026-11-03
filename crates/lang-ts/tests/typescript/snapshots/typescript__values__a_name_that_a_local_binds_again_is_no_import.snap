@@ -47,7 +47,7 @@ expression: json
     {
       "contracts": [
         {
-          "key": "http * /users",
+          "key": "http GET /users",
           "line": 4,
           "role": "calls",
           "via": "fetch"
@@ -112,21 +112,21 @@ expression: json
   "linked": [
     {
       "file": "src/users.ts",
-      "key": "http * /api/v1/orders",
+      "key": "http GET /api/v1/orders",
       "line": 7,
       "role": "calls",
       "via": "fetch"
     },
     {
       "file": "src/users.ts",
-      "key": "http * /api/v1",
+      "key": "http GET /api/v1",
       "line": 8,
       "role": "calls",
       "via": "fetch"
     },
     {
       "file": "src/users.ts",
-      "key": "http * /api/v1/items",
+      "key": "http GET /api/v1/items",
       "line": 11,
       "role": "calls",
       "via": "fetch"

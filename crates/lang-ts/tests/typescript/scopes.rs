@@ -34,7 +34,7 @@ fn the_facts_of_the_constants_of_functions_are_snapshotted() -> Result<(), Box<d
 #[scenario("typescript", "A function-local constant is read")]
 fn a_function_local_constant_is_read() -> Result<(), Box<dyn Error>> {
     let json = run("scopes-locals")?;
-    assert_eq!(calls_at(&json, "src/api.ts", 5), ["calls http * /a @5"]);
+    assert_eq!(calls_at(&json, "src/api.ts", 5), ["calls http GET /a @5"]);
     assert_eq!(unread_at(&json, "src/api.ts", 5), NOTHING);
     Ok(())
 }
@@ -49,7 +49,7 @@ fn a_local_built_from_another_local_and_a_constant_of_the_file_is_read()
     let json = run("scopes-locals")?;
     assert_eq!(
         calls_at(&json, "src/api.ts", 11),
-        ["calls http * /api/x/y @11"]
+        ["calls http GET /api/x/y @11"]
     );
     Ok(())
 }
@@ -60,11 +60,11 @@ fn two_blocks_that_declare_the_same_name_read_their_own() -> Result<(), Box<dyn 
     let json = run("scopes-locals")?;
     assert_eq!(
         calls_at(&json, "src/api.ts", 17),
-        ["calls http * /first @17"]
+        ["calls http GET /first @17"]
     );
     assert_eq!(
         calls_at(&json, "src/api.ts", 20),
-        ["calls http * /second @20"]
+        ["calls http GET /second @20"]
     );
     Ok(())
 }
@@ -78,7 +78,7 @@ fn a_closure_reads_a_constant_declared_after_it_in_the_same_scope() -> Result<()
     let json = run("scopes-locals")?;
     assert_eq!(
         calls_at(&json, "src/api.ts", 25),
-        ["calls http * /later @25"]
+        ["calls http GET /later @25"]
     );
     Ok(())
 }
@@ -92,7 +92,7 @@ fn an_inner_function_reads_a_constant_of_the_function_around_it() -> Result<(), 
     let json = run("scopes-locals")?;
     assert_eq!(
         calls_at(&json, "src/api.ts", 33),
-        ["calls http * /outer @33"]
+        ["calls http GET /outer @33"]
     );
     Ok(())
 }
@@ -103,11 +103,11 @@ fn a_local_object_constant_is_read_by_its_property() -> Result<(), Box<dyn Error
     let json = run("scopes-locals")?;
     assert_eq!(
         calls_at(&json, "src/api.ts", 40),
-        ["calls http * /users @40"]
+        ["calls http GET /users @40"]
     );
     assert_eq!(
         calls_at(&json, "src/api.ts", 41),
-        ["calls http * /orders @41"]
+        ["calls http GET /orders @41"]
     );
     Ok(())
 }
@@ -138,7 +138,10 @@ fn a_parameter_hides_a_constant_of_the_file_of_the_same_name() -> Result<(), Box
 )]
 fn a_local_constant_hides_a_constant_of_the_file_of_the_same_name() -> Result<(), Box<dyn Error>> {
     let json = run("scopes-hidden")?;
-    assert_eq!(calls_at(&json, "src/api.ts", 9), ["calls http * /local @9"]);
+    assert_eq!(
+        calls_at(&json, "src/api.ts", 9),
+        ["calls http GET /local @9"]
+    );
     Ok(())
 }
 
@@ -174,7 +177,10 @@ fn a_var_in_a_block_hides_a_constant_of_the_file_in_the_whole_function()
         ["@26 non-literal fetch"]
     );
     // Outside the function the constant is the name.
-    assert_eq!(calls_at(&json, "src/api.ts", 38), ["calls http * /api @38"]);
+    assert_eq!(
+        calls_at(&json, "src/api.ts", 38),
+        ["calls http GET /api @38"]
+    );
     Ok(())
 }
 
@@ -185,7 +191,7 @@ fn a_type_that_names_a_parameter_hides_nothing() -> Result<(), Box<dyn Error>> {
     for line in [31, 35] {
         assert_eq!(
             calls_at(&json, "src/api.ts", line),
-            [format!("calls http * /api @{line}")]
+            [format!("calls http GET /api @{line}")]
         );
     }
     Ok(())

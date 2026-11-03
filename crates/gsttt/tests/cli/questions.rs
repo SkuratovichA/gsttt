@@ -207,6 +207,34 @@ fn contract_joins_its_words_into_one_query() {
     );
 }
 
+#[scenario("queries", "Asking about a GET finds a fetch that writes no method")]
+#[test]
+fn asking_about_a_get_finds_a_fetch_that_writes_no_method() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/load.ts",
+        "export const load = () => fetch('/x');\n",
+    );
+
+    let get = sandbox.run_in(&repo, &["--json", "contract", "GET /x"]);
+    assert_eq!(get.code, Some(0), "{get:?}");
+    let matches = &json(&get)["found"]["matches"];
+    assert_eq!(matches[0]["key"], "http GET /x", "{get:?}");
+    assert_eq!(matches[0]["calls"], 1, "{get:?}");
+
+    let post = sandbox.run_in(&repo, &["--json", "contract", "POST /x"]);
+    assert_eq!(post.code, Some(0), "{post:?}");
+    assert_eq!(json(&post)["contracts"], 1, "{post:?}");
+    assert!(
+        json(&post)["found"]["matches"]
+            .as_array()
+            .is_none_or(Vec::is_empty),
+        "{post:?}"
+    );
+}
+
 /// The line `index` ends with is the line a question ends its footer with. The two are written in different places, because `gsttt-core` offers no way to take the one from the other.
 #[test]
 fn the_coverage_line_of_index_is_the_one_a_question_ends_with() {

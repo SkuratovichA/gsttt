@@ -89,7 +89,7 @@ fn a_base_url_in_a_template_is_dropped() -> Result<(), Box<dyn Error>> {
     let json = run("template-base-url")?;
     assert_eq!(
         contracts(&json, "src/api.ts"),
-        ["calls http * /bookings @3"]
+        ["calls http GET /bookings @3"]
     );
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -104,7 +104,7 @@ fn a_url_built_from_a_path_and_a_base_is_called() -> Result<(), Box<dyn Error>> 
         [
             "calls http POST /build-runner/success @7",
             "calls env API_URL @11",
-            "calls http * /users @11"
+            "calls http GET /users @11"
         ]
     );
     insta::assert_json_snapshot!(json);
@@ -121,7 +121,7 @@ fn a_url_built_from_a_template_that_starts_with_a_base_url_keeps_its_path()
     let json = run("new-url-template")?;
     assert_eq!(
         contracts(&json, "src/client.ts"),
-        ["calls http * /users @1", "calls http * /orders @2"]
+        ["calls http GET /users @1", "calls http GET /orders @2"]
     );
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -133,7 +133,7 @@ fn a_relative_path_joins_the_directory_of_a_literal_base() -> Result<(), Box<dyn
     let json = run("new-url-joined")?;
     assert_eq!(
         contracts(&json, "src/client.ts"),
-        ["calls http * /v1/users/{} @1", "calls http * /users @2"]
+        ["calls http GET /v1/users/{} @1", "calls http GET /users @2"]
     );
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -172,7 +172,7 @@ fn a_url_whose_path_is_only_computed_segments_is_a_blind_spot() -> Result<(), Bo
     );
     assert_eq!(
         contracts(&json, "src/api.ts"),
-        ["calls http * /users/{} @8"]
+        ["calls http GET /users/{} @8"]
     );
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -203,10 +203,10 @@ fn a_relative_request_with_no_base_calls_the_rooted_path() -> Result<(), Box<dyn
     let json = run("relative-without-base")?;
     let contracts = contracts(&json, "src/api.ts");
     for expected in [
-        "calls http * /items @6",
+        "calls http GET /items @6",
         "calls http GET /users @7",
         "calls http GET /users/me @8",
-        "calls http * /items/{} @9",
+        "calls http GET /items/{} @9",
         "calls http GET /users @17",
     ] {
         assert!(
@@ -256,7 +256,7 @@ fn a_request_target_that_names_no_path_is_no_request() -> Result<(), Box<dyn Err
 #[scenario("typescript", "An absolute request is unchanged by relative requests")]
 fn an_absolute_request_is_unchanged_by_relative_requests() -> Result<(), Box<dyn Error>> {
     let json = run("relative-without-base")?;
-    assert!(contracts(&json, "src/api.ts").contains(&"calls http * /x @13".to_owned()));
+    assert!(contracts(&json, "src/api.ts").contains(&"calls http GET /x @13".to_owned()));
     Ok(())
 }
 
@@ -354,12 +354,12 @@ fn routes_on_one_line_are_keyed_apart() -> Result<(), Box<dyn Error>> {
 fn a_fact_of_another_rule_on_the_line_of_a_route_is_kept() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         contracts(&run("express-and-nestjs-on-one-line")?, "src/app.ts"),
-        ["calls http * /c @4", "serves http GET /x/a @4"]
+        ["calls http GET /c @4", "serves http GET /x/a @4"]
     );
     assert_eq!(
         sites("express-and-nestjs-on-one-line")?,
         [
-            "calls http * /c @4 in src/app.ts",
+            "calls http GET /c @4 in src/app.ts",
             "serves http GET /b @4 in src/app.ts",
             "serves http GET /x/a @4 in src/app.ts",
         ]
@@ -653,12 +653,12 @@ fn a_route_behind_a_global_prefix_keeps_the_facts_of_other_rules_on_its_line()
             &run("nestjs-global-prefix-on-one-line")?,
             "src/user.controller.ts"
         ),
-        ["calls http * /c @5", "serves http GET /users/{} @5"]
+        ["calls http GET /c @5", "serves http GET /users/{} @5"]
     );
     assert_eq!(
         sites("nestjs-global-prefix-on-one-line")?,
         [
-            "calls http * /c @5 in src/user.controller.ts",
+            "calls http GET /c @5 in src/user.controller.ts",
             "serves http GET /api/users/{} @5 in src/user.controller.ts",
         ]
     );
@@ -718,6 +718,39 @@ fn a_request_on_a_receiver_that_no_axios_create_makes_is_silent() -> Result<(), 
     assert_eq!(contracts(&json, "src/cache.ts"), NOTHING);
     assert_eq!(linked(&json), NOTHING);
     assert_eq!(unread(&json, "src/cache.ts"), NOTHING);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A fetch that writes no method is a GET")]
+fn a_fetch_that_writes_no_method_is_a_get() -> Result<(), Box<dyn Error>> {
+    let json = run("fetch-no-method")?;
+    assert_eq!(
+        contracts(&json, "src/api.ts"),
+        [
+            "calls http GET /x @3",
+            "calls http GET /x @4",
+            "calls http GET /x @5",
+            "calls http PUT /x @6"
+        ]
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A fetch whose options cannot be read keeps any method")]
+fn a_fetch_whose_options_cannot_be_read_keeps_any_method() -> Result<(), Box<dyn Error>> {
+    let json = run("fetch-unread-options")?;
+    assert_eq!(
+        contracts(&json, "src/api.ts"),
+        [
+            "calls http * /x @4",
+            "calls http * /x @5",
+            "calls http * /x @6"
+        ]
+    );
     insta::assert_json_snapshot!(json);
     Ok(())
 }
