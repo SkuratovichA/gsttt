@@ -61,9 +61,14 @@ expression: json
             "name": "default"
           }
         ],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
-          "app",
+          "app.get",
           "express"
         ],
         "overrides": [],

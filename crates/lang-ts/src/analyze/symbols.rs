@@ -13,12 +13,15 @@ use oxc_ast::ast::{
     Declaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind, Expression,
     ImportDeclaration, MethodDefinitionKind, ObjectExpression, ObjectPropertyKind, Program,
     PropertyKey, SimpleAssignmentTarget, Statement, TSInterfaceDeclaration, TSModuleReference,
-    TSSignature, UnaryOperator, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
+    TSSignature, TSTypeAnnotation, UnaryOperator, VariableDeclaration, VariableDeclarationKind,
+    VariableDeclarator,
 };
 use oxc_span::{GetSpan, Span};
 
-use super::constants::import_locals;
-use super::roots::{constructed, declared_class, heads};
+use super::constants::{class_heads, import_locals};
+use super::roots::{
+    arrow_returns, constructed, constructed_returns, declared_class, heads, returned_class,
+};
 use super::{load_of, peel};
 use crate::extra::{Export, ExportTarget};
 use crate::shape::{
@@ -167,6 +170,12 @@ pub(super) struct Recorder<'a> {
     heirs: Vec<Heir>,
     /// The entries that appear in `heirs` as the name that takes the members.
     heir_entries: HashSet<usize>,
+    /// The upper-case names of the top level that a static call on them gives a value of: see [`class_heads`].
+    heads: BTreeSet<String>,
+    /// The top-level functions with the class each gives a value of, to be heirs of it once every name of the file is known.
+    factories: Vec<(String, String)>,
+    /// The top-level `const`s that hold the result of calling a bare name, with that name, to be heirs of it when the file binds it.
+    called: Vec<(String, String)>,
     /// The start of each declarator that binds the names of a `require` as locals.
     modules: HashSet<u32>,
     /// The top-level functions and classes, and the variables that hold a function, an arrow or a class, by name.
@@ -189,10 +198,24 @@ pub(super) struct Recorder<'a> {
 impl<'a> Recorder<'a> {
     /// The table of `program`: its declarations with their lines, what each statement is, and where the declarations inside classes and variable statements start.
     pub(super) fn collect(program: &Program<'a>, index: &LineIndex) -> Self {
-        let mut recorder = Self::default();
+        let mut recorder = Self {
+            heads: class_heads(program),
+            ..Self::default()
+        };
         for statement in &program.body {
             let plan = recorder.plan(statement, index);
             recorder.plans.push(plan);
+        }
+        // A class or a function may be declared below the code that names it, so these wait for every name.
+        for (name, class) in std::mem::take(&mut recorder.factories) {
+            if recorder.heads.contains(&class) {
+                recorder.heir(&name, &class);
+            }
+        }
+        for (name, callee) in std::mem::take(&mut recorder.called) {
+            if recorder.names.contains_key(callee.as_str()) {
+                recorder.heir(&name, &callee);
+            }
         }
         recorder.regions.sort_unstable_by_key(|&(start, _)| start);
         recorder
@@ -370,6 +393,14 @@ impl<'a> Recorder<'a> {
             Declaration::FunctionDeclaration(function) => {
                 let name = function.id.as_ref().map(|id| id.name.as_str());
                 self.callables.extend(name);
+                if let Some(name) = name {
+                    self.gives_class(name, function.return_type.as_deref(), || {
+                        function
+                            .body
+                            .as_deref()
+                            .map_or_else(Vec::new, constructed_returns)
+                    });
+                }
                 self.single(name, lines, Load::Later)
             }
             Declaration::ClassDeclaration(class) => match &class.id {
@@ -425,6 +456,12 @@ impl<'a> Recorder<'a> {
                     .id
                     .as_ref()
                     .map_or("default", |id| id.name.as_str());
+                self.gives_class(name, function.return_type.as_deref(), || {
+                    function
+                        .body
+                        .as_deref()
+                        .map_or_else(Vec::new, constructed_returns)
+                });
                 self.single(Some(name), lines, Load::Later)
             }
             ExportDefaultDeclarationKind::ClassDeclaration(class) => {
@@ -446,6 +483,22 @@ impl<'a> Recorder<'a> {
                 }
                 plan
             }
+        }
+    }
+
+    /// Notes that the function `name` gives a value of a class: the one its written return type stands for, else the one or ones that `returns` finds it constructs with `new`.
+    fn gives_class(
+        &mut self,
+        name: &str,
+        return_type: Option<&TSTypeAnnotation<'a>>,
+        returns: impl FnOnce() -> Vec<Cow<'a, str>>,
+    ) {
+        let classes = match return_type {
+            Some(annotation) => returned_class(annotation).into_iter().collect(),
+            None => returns(),
+        };
+        for class in classes {
+            self.factories.push((name.to_owned(), class.into_owned()));
         }
     }
 
@@ -568,9 +621,37 @@ impl<'a> Recorder<'a> {
             }
             if variables.kind == VariableDeclarationKind::Const
                 && let BindingPattern::BindingIdentifier(id) = &declarator.id
-                && let Some(held) = declared_class(declarator)
             {
-                self.heir(id.name.as_str(), &held);
+                let heads = &self.heads;
+                if let Some(held) = declared_class(declarator, |name, _| heads.contains(name)) {
+                    self.heir(id.name.as_str(), &held);
+                } else if let Some(Expression::CallExpression(call)) =
+                    declarator.init.as_ref().map(peel)
+                    && let Expression::Identifier(callee) = call.callee.get_inner_expression()
+                {
+                    self.called
+                        .push((id.name.as_str().to_owned(), callee.name.as_str().to_owned()));
+                }
+                match declarator
+                    .init
+                    .as_ref()
+                    .map(Expression::get_inner_expression)
+                {
+                    Some(Expression::ArrowFunctionExpression(arrow)) => {
+                        self.gives_class(id.name.as_str(), arrow.return_type.as_deref(), || {
+                            arrow_returns(&arrow.body)
+                        });
+                    }
+                    Some(Expression::FunctionExpression(function)) => {
+                        self.gives_class(id.name.as_str(), function.return_type.as_deref(), || {
+                            function
+                                .body
+                                .as_deref()
+                                .map_or_else(Vec::new, constructed_returns)
+                        });
+                    }
+                    _ => {}
+                }
             }
             let group = self.group(&declared);
             self.regions

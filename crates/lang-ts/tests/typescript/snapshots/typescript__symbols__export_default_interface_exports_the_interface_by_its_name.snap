@@ -56,7 +56,12 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "make",
+            "of": "Foo"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": []

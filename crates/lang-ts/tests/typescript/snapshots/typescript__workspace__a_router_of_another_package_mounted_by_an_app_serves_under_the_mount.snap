@@ -81,9 +81,14 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
-          "app",
+          "app.use",
           "express",
           "shared"
         ],
@@ -147,10 +152,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "shared",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
-          "shared"
+          "shared.get"
         ],
         "overrides": [],
         "reads": [

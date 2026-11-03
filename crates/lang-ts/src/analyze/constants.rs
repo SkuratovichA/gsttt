@@ -13,6 +13,7 @@ use oxc_ast::ast::{
 };
 use oxc_span::{GetSpan, Span};
 
+use super::roots::is_class_like;
 use super::symbols::base_name;
 use super::{is_library, load_of, peel};
 use crate::builtins::is_builtin;
@@ -36,6 +37,8 @@ pub(crate) struct Constants {
     canonical: BTreeMap<String, String>,
     /// What each scope below the top level binds, by name: a parameter, a variable, a function, a class, a catch clause. A name read inside such a scope is what the innermost scope around it binds it to, and the constants of the file and the imports are no answer there. Only the names that can change an answer are kept.
     locals: BTreeMap<String, Locals>,
+    /// The top-level names a static call on them is taken to give a value of the class they name: upper-case classes of the file and names an import takes by name or as the default, not a namespace.
+    heads: BTreeSet<String>,
     /// The enum whose members are being read, while they are.
     scope: Option<EnumScope>,
 }
@@ -136,9 +139,15 @@ impl Constants {
                 }
             }
         }
+        constants.heads = class_heads(program);
         // The scopes are read last, so that a constant of a function may be built from a constant of the top level.
         scopes::collect(&mut constants, program);
         constants
+    }
+
+    /// Whether `name` at the position `at` is a class of the top level of the file that a static call on it gives a value of, and no scope around binds it again.
+    pub(super) fn is_class_head(&self, name: &str, at: u32) -> bool {
+        self.heads.contains(name) && self.local(name, at).is_none()
     }
 
     /// Notes the names that `statement` binds to a module: those of an `import`, of `import x = require('y')`, and of `const { a } = require('y')` and its dynamic kin, as the walk of the file binds them.
@@ -483,6 +492,75 @@ pub(super) fn import_locals<'a>(import: &ImportDeclaration<'a>) -> impl Iterator
             ImportDeclarationSpecifier::ImportDefaultSpecifier(item) => item.local.name.as_str(),
             ImportDeclarationSpecifier::ImportNamespaceSpecifier(item) => item.local.name.as_str(),
         })
+}
+
+/// The upper-case names of the top level of `program` that stand for a class a static call can give a value of: a class it declares, a name an import takes by name or as the default, and a name a destructured `require` or dynamic import takes. A namespace import and a name that holds a whole `require`d module are not classes.
+pub(super) fn class_heads(program: &Program<'_>) -> BTreeSet<String> {
+    let mut heads = BTreeSet::new();
+    for statement in &program.body {
+        match statement {
+            Statement::ImportDeclaration(import) => {
+                for specifier in import.specifiers.iter().flatten() {
+                    match specifier {
+                        ImportDeclarationSpecifier::ImportSpecifier(item) => {
+                            add_head(&mut heads, item.local.name.as_str());
+                        }
+                        ImportDeclarationSpecifier::ImportDefaultSpecifier(item) => {
+                            add_head(&mut heads, item.local.name.as_str());
+                        }
+                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {}
+                    }
+                }
+            }
+            Statement::ExportDeclaration(export) => declared_heads(&mut heads, &export.declaration),
+            Statement::ExportDefaultDeclaration(export) => {
+                if let ExportDefaultDeclarationKind::ClassDeclaration(class) = &export.declaration
+                    && let Some(id) = &class.id
+                {
+                    add_head(&mut heads, id.name.as_str());
+                }
+            }
+            other => {
+                if let Some(declaration) = other.as_declaration() {
+                    declared_heads(&mut heads, declaration);
+                }
+            }
+        }
+    }
+    heads
+}
+
+fn declared_heads(heads: &mut BTreeSet<String>, declaration: &Declaration<'_>) {
+    match declaration {
+        Declaration::ClassDeclaration(class) => {
+            if let Some(id) = &class.id {
+                add_head(heads, id.name.as_str());
+            }
+        }
+        Declaration::VariableDeclaration(variables) => {
+            for declarator in &variables.declarations {
+                if let BindingPattern::ObjectPattern(object) = &declarator.id
+                    && declarator
+                        .init
+                        .as_ref()
+                        .is_some_and(|init| load_of(peel(init)).is_some())
+                {
+                    for property in &object.properties {
+                        if let BindingPattern::BindingIdentifier(local) = &property.value {
+                            add_head(heads, local.name.as_str());
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn add_head(heads: &mut BTreeSet<String>, name: &str) {
+    if is_class_like(name) {
+        heads.insert(name.to_owned());
+    }
 }
 
 /// Whether `init` can stand for text or for an object that holds some. Any other initializer (a call, a function, a number) is no constant, and nothing is built for its name.

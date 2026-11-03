@@ -206,6 +206,8 @@ expression: json
             "uses": [
               "AppModule",
               "NestFactory.create",
+              "NestFactory.listen",
+              "NestFactory.setGlobalPrefix",
               "P"
             ]
           }
@@ -217,9 +219,7 @@ expression: json
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "listen",
-          "setGlobalPrefix"
+          "create"
         ]
       },
       "tags": 0,
@@ -277,10 +277,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
           "MOUNT",
-          "app",
+          "app.use",
           "express",
           "express.Router",
           "router"

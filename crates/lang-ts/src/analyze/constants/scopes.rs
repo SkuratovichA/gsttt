@@ -48,11 +48,15 @@ impl Constants {
         let Self {
             roots,
             imported,
+            heads,
             locals,
             ..
         } = self;
         locals.retain(|name, locals| {
-            matters(locals) || roots.contains(name) || imported.contains_key(name)
+            matters(locals)
+                || roots.contains(name)
+                || imported.contains_key(name)
+                || heads.contains(name)
         });
     }
 }
@@ -202,7 +206,7 @@ impl<'a> Visit<'a> for Scopes<'_> {
         for declarator in &it.declarations {
             let class = (it.kind == VariableDeclarationKind::Const
                 && matches!(declarator.id, BindingPattern::BindingIdentifier(_)))
-            .then(|| declared_class(declarator))
+            .then(|| declared_class(declarator, |name, _| self.constants.heads.contains(name)))
             .flatten()
             .map(|class| Box::from(&*class));
             if let Some((id, _)) = text_constant(it.kind, declarator) {

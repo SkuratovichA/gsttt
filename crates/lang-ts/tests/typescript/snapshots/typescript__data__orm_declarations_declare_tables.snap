@@ -180,7 +180,12 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "items",
+            "of": "pgTable"
+          }
+        ],
         "on_load": [
           "pgTable",
           "serial"

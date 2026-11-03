@@ -132,7 +132,9 @@ expression: json
             "name": "bootstrap",
             "uses": [
               "AppModule",
-              "NestFactory.create"
+              "NestFactory.create",
+              "NestFactory.listen",
+              "NestFactory.setGlobalPrefix"
             ]
           }
         ],
@@ -143,9 +145,7 @@ expression: json
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "listen",
-          "setGlobalPrefix"
+          "create"
         ]
       },
       "tags": 0,
