@@ -20,8 +20,14 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "default"
+      ],
       "imports": [
         {
+          "exported": [
+            "axios"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -40,18 +46,11 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "axios",
-            "uses": []
-          }
-        ],
+        "declared": [],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ],
         "reads": [
           "create",
@@ -158,6 +157,9 @@ expression: json
       "exports": [],
       "imports": [
         {
+          "exported": [
+            "client"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -176,18 +178,11 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "client",
-            "uses": []
-          }
-        ],
+        "declared": [],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "client"
+          "client.get"
         ],
         "reads": [
           "get"

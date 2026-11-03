@@ -20,8 +20,14 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "client"
+      ],
       "imports": [
         {
+          "exported": [
+            "axios"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -40,18 +46,11 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "axios",
-            "uses": []
-          }
-        ],
+        "declared": [],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ],
         "reads": [
           "client",
@@ -64,8 +63,14 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "client"
+      ],
       "imports": [
         {
+          "exported": [
+            "axios"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -84,18 +89,11 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "axios",
-            "uses": []
-          }
-        ],
+        "declared": [],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ],
         "reads": [
           "client",
@@ -109,8 +107,14 @@ expression: json
     {
       "contracts": [],
       "embedded": [],
+      "exports": [
+        "client"
+      ],
       "imports": [
         {
+          "exported": [
+            "axios"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -129,18 +133,11 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "axios",
-            "uses": []
-          }
-        ],
+        "declared": [],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios"
+          "axios.create"
         ],
         "reads": [
           "create",
@@ -156,6 +153,9 @@ expression: json
       "exports": [],
       "imports": [
         {
+          "exported": [
+            "named"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -168,6 +168,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "member"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 2,
@@ -180,6 +183,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "inObject"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 3,
@@ -198,32 +204,13 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "named",
-            "uses": []
-          },
-          {
-            "end": 2,
-            "line": 2,
-            "name": "member",
-            "uses": []
-          },
-          {
-            "end": 3,
-            "line": 3,
-            "name": "inObject",
-            "uses": []
-          }
-        ],
+        "declared": [],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "inObject",
-          "member",
-          "named"
+          "inObject.get",
+          "member.get",
+          "named.get"
         ],
         "reads": [
           "client",

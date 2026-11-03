@@ -4,7 +4,9 @@ use std::error::Error;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, imports, run, status, tests_run_by, unread};
+use crate::support::{
+    NOTHING, bound_names, declared, imports, run, status, tests_run_by, unread, uses,
+};
 
 #[test]
 #[scenario("typescript", "Every import form is read")]
@@ -435,5 +437,46 @@ fn every_import_form_can_lead_to_a_file() -> Result<(), Box<dyn Error>> {
             .all(|line| line.ends_with("-> file src/present.ts")),
         "{lines:?}"
     );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A require at the top level binds locals")]
+fn a_require_at_the_top_level_binds_locals() -> Result<(), Box<dyn Error>> {
+    let json = run("require-binds")?;
+    let path = "src/user.js";
+    assert_eq!(
+        bound_names(&json, path),
+        ["./a @1 [default] as [lib]", "./a @2 [b,c] as [b,d]"]
+    );
+    assert_eq!(
+        declared(&json, path),
+        ["run @4-6"],
+        "`lib`, `b` and `d` declare nothing, as the names of an import do"
+    );
+    assert_eq!(
+        uses(&json, path, "run"),
+        Some(vec!["b", "d", "lib.x"]),
+        "`lib.x` is a use of `x` of `lib`"
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A require that cannot bind stays as it was")]
+fn a_require_that_cannot_bind_stays_as_it_was() -> Result<(), Box<dyn Error>> {
+    let json = run("require-unbound")?;
+    let path = "src/user.js";
+    assert_eq!(
+        bound_names(&json, path),
+        [
+            "./a @1 [a,default] as []",
+            "./a @2 [a] as []",
+            "./a @3 [a] as []",
+            "./a @6 [default] as []",
+        ]
+    );
+    insta::assert_json_snapshot!(json);
     Ok(())
 }

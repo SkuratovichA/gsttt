@@ -275,6 +275,27 @@ pub(crate) fn imports(json: &Value, path: &str) -> Vec<String> {
         .collect()
 }
 
+/// The names each import of the file at `path` takes and the locals it binds them to, in file order: `<specifier> @<line> [<names>] as [<locals>]`.
+pub(crate) fn bound_names(json: &Value, path: &str) -> Vec<String> {
+    file(json, path)
+        .into_iter()
+        .flat_map(|file| items(file, "imports"))
+        .map(|import| {
+            let names: Vec<&str> = items(import, "names").filter_map(Value::as_str).collect();
+            let locals: Vec<&str> = items(import, "exported")
+                .filter_map(Value::as_str)
+                .collect();
+            format!(
+                "{} @{} [{}] as [{}]",
+                text(import, "spec").unwrap_or("?"),
+                number(import, "line"),
+                names.join(","),
+                locals.join(",")
+            )
+        })
+        .collect()
+}
+
 /// The names the file at `path` exports itself, `None` when the output has no such file or says they are unknown.
 pub(crate) fn exports<'a>(json: &'a Value, path: &str) -> Option<Vec<&'a str>> {
     let exports = file(json, path)?.get("exports")?.as_array()?;

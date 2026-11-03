@@ -351,8 +351,8 @@ fn a_client_assigned_to_module_exports_is_called_by_a_file_that_requires_it()
     );
     assert_eq!(
         exports(&json, "src/default-client.js"),
-        None,
-        "assigning module.exports leaves the exports unknown"
+        Some(vec!["default"]),
+        "assigning a call to module.exports exports the default"
     );
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -379,7 +379,7 @@ fn a_client_assigned_to_a_named_commonjs_export_is_called_by_a_file_that_require
         "src/module-exports-client.js",
         "src/object-client.js",
     ] {
-        assert_eq!(exports(&json, path), None, "{path}");
+        assert_eq!(exports(&json, path), Some(vec!["client"]), "{path}");
     }
     insta::assert_json_snapshot!(json);
     Ok(())

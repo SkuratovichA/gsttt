@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/http.rs
+assertion_line: 784
 expression: json
 ---
 {
@@ -29,6 +30,9 @@ expression: json
       "exports": [],
       "imports": [
         {
+          "exported": [
+            "axiosLib"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -47,18 +51,11 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "axiosLib",
-            "uses": []
-          }
-        ],
+        "declared": [],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axiosLib"
+          "axiosLib.put"
         ],
         "reads": [
           "put"

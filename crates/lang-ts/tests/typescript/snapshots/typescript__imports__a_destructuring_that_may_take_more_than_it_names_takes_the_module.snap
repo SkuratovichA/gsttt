@@ -84,6 +84,9 @@ expression: json
           }
         },
         {
+          "exported": [
+            "c"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 3,
@@ -119,12 +122,6 @@ expression: json
             "end": 2,
             "line": 2,
             "name": "b",
-            "uses": []
-          },
-          {
-            "end": 3,
-            "line": 3,
-            "name": "c",
             "uses": []
           }
         ],

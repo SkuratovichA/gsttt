@@ -52,8 +52,8 @@ use crate::extra::{
 use crate::pathing::{is_relative, split_package};
 use crate::shape::{
     COMPUTED, ClassPrefix, Shape, assigned_value, chain_of, commonjs_exports, dotted, dotted_name,
-    export_key, field_name, jsx_chain, literal_text, member_chain, property_name, property_str,
-    static_chain, template_text, text_with, type_chain,
+    export_key, field_name, is_exports_object, is_open_object, jsx_chain, literal_text,
+    member_chain, property_name, property_str, static_chain, template_text, text_with, type_chain,
 };
 
 /// The most segments a chain rule's root can have. A root is tried at every length of the chain and each try reads the root again, so a chain of `n` names costs `n` squared without a limit, and no root a rule lists comes near this length.
@@ -116,8 +116,11 @@ pub(crate) fn analyze(
 enum Taking<'p, 'a> {
     /// Nothing: a mock, `import('x').then(start)`, a `require` used as it stands.
     Nothing,
-    /// What a declaration takes: `const { a } = await import('x')`, `const x = require('x')`.
-    Declared(&'p BindingPattern<'a>),
+    /// What a declaration takes: `const { a } = await import('x')`, `const x = require('x')`. `binds` says the declarator is a top-level `require` that binds each name it takes to a local, so that the import gives the local names too.
+    Declared {
+        pattern: &'p BindingPattern<'a>,
+        binds: bool,
+    },
     /// One member read from the loaded value: `(await import('x')).a`. It binds no local.
     Member(&'p str),
 }
@@ -318,11 +321,20 @@ impl<'a> Analyzer<'_, 'a> {
         import.flags = flags;
         match taking {
             Taking::Member(name) => import.names.push(name.to_owned()),
-            Taking::Declared(BindingPattern::BindingIdentifier(local)) => {
+            Taking::Declared {
+                pattern: BindingPattern::BindingIdentifier(local),
+                binds,
+            } => {
                 self.bind(local.name.as_str(), &spec, namespace);
                 import.names.push(namespace.to_owned());
+                if binds {
+                    import.exported.push(local.name.as_str().to_owned());
+                }
             }
-            Taking::Declared(BindingPattern::ObjectPattern(object)) => {
+            Taking::Declared {
+                pattern: BindingPattern::ObjectPattern(object),
+                binds,
+            } => {
                 // A rest element, or a key that is computed, may take any name, so the load takes the module itself as a namespace does.
                 let mut open = object.rest.is_some();
                 for property in &object.properties {
@@ -337,6 +349,9 @@ impl<'a> Analyzer<'_, 'a> {
                     };
                     if let BindingPattern::BindingIdentifier(local) = &property.value {
                         self.bind(local.name.as_str(), &spec, &name);
+                        if binds {
+                            import.exported.push(local.name.as_str().to_owned());
+                        }
                     }
                     import.names.push(name);
                 }
@@ -345,7 +360,7 @@ impl<'a> Analyzer<'_, 'a> {
                 }
             }
             // A load used as it stands names nothing, and neither does a declared pattern such as `[a]`.
-            Taking::Nothing | Taking::Declared(_) => {}
+            Taking::Nothing | Taking::Declared { .. } => {}
         }
         self.out.imports.push(import);
     }
@@ -381,14 +396,15 @@ impl<'a> Analyzer<'_, 'a> {
     }
 
     /// `const x = require('y')` and `const { a } = await import('y')`.
-    fn load_declared(&mut self, init: &Expression<'_>, pattern: &BindingPattern<'_>) {
+    fn load_declared(&mut self, init: &Expression<'_>, pattern: &BindingPattern<'_>, start: u32) {
         if let Some(load) = load_of(init) {
+            let binds = self.symbols.binds_module(start);
             self.load(
                 load.span,
                 load.argument,
                 load.kind,
                 load.flags,
-                Taking::Declared(pattern),
+                Taking::Declared { pattern, binds },
             );
         }
     }
@@ -1193,15 +1209,63 @@ impl<'a> Analyzer<'_, 'a> {
         }
     }
 
-    /// `module.exports = x` and `exports.name = x`. A file that does either lists no exports in its syntax, so they are unknown.
+    /// `module.exports = x` and `exports.name = x` list the names they give. The file stays unknown where the form leaves names open: see [`Self::leaves_names_open`].
     fn commonjs_export(&mut self, target: &str, value: &Expression<'_>) {
         let Some(exports) = commonjs_exports(target, value) else {
             return;
         };
-        self.exports_unknown = true;
+        self.exports_unknown |= self.leaves_names_open(target, value);
         for (name, value) in exports {
             self.export_value(&name, value);
         }
+        // `module.exports = codes` exports the variable as a whole and each key of the object it holds.
+        if target == "module.exports"
+            && let Expression::Identifier(local) = assigned_value(value)
+            && let Some(keys) = self
+                .symbols
+                .object_keys(local.name.as_str())
+                .map(<[String]>::to_vec)
+        {
+            for key in keys {
+                self.export(&key, ExportTarget::Local(local.name.as_str().to_owned()));
+            }
+        }
+    }
+
+    /// Whether `target = value` leaves names that the file exports unlisted. `module.exports` takes an object that may get more names, a variable that holds no function or class (so that its members are the exports), or the module another file exports. `exports.name = x` names its export.
+    fn leaves_names_open(&self, target: &str, value: &Expression<'_>) -> bool {
+        if target != "module.exports" {
+            return false;
+        }
+        let value = assigned_value(value);
+        match value {
+            Expression::ObjectExpression(object) => is_open_object(object),
+            Expression::Identifier(local) => {
+                let name = local.name.as_str();
+                !self.symbols.is_callable(name) && self.symbols.object_keys(name).is_none()
+            }
+            other => load_of(other).is_some(),
+        }
+    }
+
+    /// `exports` or `module.exports` handed to a call, as `Object.assign(module.exports, x)` and `factory(exports)` do, may get any name. `Object.defineProperty(exports, '__esModule', …)`, which every compiled file has, gets none that matters.
+    fn exports_handed_to(&mut self, call: &CallExpression<'_>) {
+        if self.exports_unknown
+            || !call
+                .arguments
+                .iter()
+                .any(|argument| argument.as_expression().is_some_and(is_exports_object))
+        {
+            return;
+        }
+        let marker = call.arguments.get(1).and_then(Argument::as_expression);
+        let marks_module = marker
+            .is_some_and(|marker| literal_text(marker).as_deref() == Some("__esModule"))
+            && matches!(
+                dotted_name(&call.callee).as_deref(),
+                Some("Object.defineProperty")
+            );
+        self.exports_unknown = !marks_module;
     }
 
     /// A name is exported as itself, and a call as the variable `makers` records under the key of the export, as `export default <call>` does.
@@ -1217,7 +1281,8 @@ impl<'a> Analyzer<'_, 'a> {
                 let local = local.unwrap_or_else(|| export_key(name));
                 self.export(name, ExportTarget::Local(local));
             }
-            _ => {}
+            // Any other value, `1` or `run() {}`, is no variable of the file, but the file does export the name.
+            _ => self.export(name, ExportTarget::Local(export_key(name))),
         }
     }
 
@@ -1574,7 +1639,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 self.names
                     .insert(made.span().start, id.name.as_str().to_owned());
             }
-            self.load_declared(init, &it.id);
+            self.load_declared(init, &it.id, it.span.start);
             if let BindingPattern::BindingIdentifier(id) = &it.id
                 && let Expression::NewExpression(new) = init
                 && let Some(class) = dotted_name(&new.callee)
@@ -1631,6 +1696,12 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             self.commonjs_export(&target, &it.right);
             self.assignment(&target, &it.right, it.span.start, false);
         }
+        // `exports[name] = x` gives a name that is not written in the file.
+        if let AssignmentTarget::ComputedMemberExpression(member) = &it.left
+            && is_exports_object(&member.object)
+        {
+            self.exports_unknown = true;
+        }
         if it.operator != AssignmentOperator::Assign {
             self.access = Some(self.modification(it.span));
         }
@@ -1669,6 +1740,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        self.exports_handed_to(it);
         let argument = it.arguments.first().and_then(Argument::as_expression);
         if is_require(it) {
             self.load(

@@ -1,6 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/symbols.rs
-assertion_line: 494
+assertion_line: 497
 expression: json
 ---
 {
@@ -25,6 +25,9 @@ expression: json
       ],
       "imports": [
         {
+          "exported": [
+            "x"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -45,17 +48,11 @@ expression: json
       "symbols": {
         "declared": [
           {
-            "end": 1,
-            "line": 1,
-            "name": "x",
-            "uses": []
-          },
-          {
             "end": 5,
             "line": 3,
             "name": "run",
             "uses": [
-              "x"
+              "x.foo"
             ]
           }
         ],

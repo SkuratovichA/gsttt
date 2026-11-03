@@ -1,5 +1,6 @@
 ---
 source: crates/lang-ts/tests/typescript/http.rs
+assertion_line: 793
 expression: json
 ---
 {
@@ -22,6 +23,9 @@ expression: json
       "exports": [],
       "imports": [
         {
+          "exported": [
+            "R"
+          ],
           "flags": 0,
           "kind": "require",
           "line": 1,
@@ -41,12 +45,6 @@ expression: json
       },
       "symbols": {
         "declared": [
-          {
-            "end": 1,
-            "line": 1,
-            "name": "R",
-            "uses": []
-          },
           {
             "end": 2,
             "line": 2,

@@ -358,6 +358,16 @@ impl Tree {
         self.import(from, import, file(to))
     }
 
+    /// `from` loads the file `to` with a `require` at the top level that binds `(name, local)` for each pair, as `const { name: local } = require('to')` does. `("default", "lib")` is `const lib = require('to')`.
+    pub fn requires_as(self, from: &str, to: &str, pairs: &[(&str, &str)]) -> Self {
+        let import = Import {
+            names: pairs.iter().map(|&(name, _)| name.to_owned()).collect(),
+            exported: pairs.iter().map(|&(_, local)| local.to_owned()).collect(),
+            ..Import::new(to, ImportKind::Require, 1)
+        };
+        self.import(from, import, file(to))
+    }
+
     /// `from` mocks the file `to` on `line`, as `vi.mock('to')` does: a mock the walk by name takes no name through.
     pub fn mocks(self, from: &str, to: &str, line: u32) -> Self {
         self.import(from, Import::new(to, ImportKind::Mock, line), file(to))
