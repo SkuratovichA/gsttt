@@ -87,9 +87,21 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Billing.svc",
+            "of": "InvoiceService"
+          },
+          {
+            "name": "Mailer.svc",
+            "of": "MailQueue"
+          }
+        ],
         "on_load": [],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "svc.push"
+        ]
       },
       "tags": 0,
       "unresolved": []

@@ -50,7 +50,8 @@ expression: json
         "overrides": [],
         "reads": [
           "TARGET",
-          "env"
+          "env",
+          "env.TARGET"
         ]
       },
       "tags": 0,
@@ -293,6 +294,24 @@ expression: json
           "R",
           "S",
           "env",
+          "env.A",
+          "env.B",
+          "env.C",
+          "env.D",
+          "env.E",
+          "env.F",
+          "env.G",
+          "env.H",
+          "env.I",
+          "env.K",
+          "env.L",
+          "env.M",
+          "env.N",
+          "env.O",
+          "env.P",
+          "env.Q",
+          "env.R",
+          "env.S",
           "map"
         ]
       },
@@ -359,7 +378,13 @@ expression: json
           "J",
           "K",
           "L",
-          "env"
+          "env",
+          "env.G",
+          "env.H",
+          "env.I",
+          "env.J",
+          "env.K",
+          "env.L"
         ]
       },
       "tags": 0,
@@ -390,7 +415,9 @@ expression: json
         "overrides": [],
         "reads": [
           "J",
+          "J.foo",
           "env",
+          "env.J",
           "foo"
         ]
       },
@@ -477,7 +504,10 @@ expression: json
           "API_URL",
           "COUNT",
           "RETRIES",
-          "env"
+          "env",
+          "env.API_URL",
+          "env.COUNT",
+          "env.RETRIES"
         ]
       },
       "tags": 0,
@@ -537,6 +567,10 @@ expression: json
           "E",
           "F",
           "env",
+          "env.A",
+          "env.B",
+          "env.C",
+          "env.F",
           "stubEnv"
         ]
       },

@@ -177,7 +177,8 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst"
+          "findFirst",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,

@@ -68,7 +68,8 @@ expression: json
         "overrides": [],
         "reads": [
           "append",
-          "exports"
+          "exports",
+          "exports.append"
         ]
       },
       "tags": 0,
@@ -108,6 +109,7 @@ expression: json
         "overrides": [],
         "reads": [
           "exports",
+          "exports.x",
           "x",
           "y"
         ]

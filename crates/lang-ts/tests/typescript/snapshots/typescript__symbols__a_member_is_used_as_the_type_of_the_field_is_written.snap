@@ -152,9 +152,25 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Notifier.local",
+            "of": "Local"
+          },
+          {
+            "name": "Notifier.mail",
+            "of": "services.MailQueue"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
+          "either.send",
+          "items.push",
+          "local.run",
+          "local.start",
+          "mail.items",
+          "mail.push",
           "push"
         ]
       },

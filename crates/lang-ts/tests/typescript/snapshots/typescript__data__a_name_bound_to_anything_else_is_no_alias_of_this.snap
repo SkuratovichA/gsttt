@@ -88,14 +88,24 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Both.prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
           "booking",
+          "booking.count",
           "count",
           "findFirst",
           "prisma",
-          "tenant"
+          "prisma.booking",
+          "prisma.tenant",
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -161,13 +171,22 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "TenantService.prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
           "findFirst",
           "findMany",
           "prisma",
-          "tenant"
+          "prisma.tenant",
+          "tenant",
+          "tenant.findFirst",
+          "tenant.findMany"
         ]
       },
       "tags": 0,
@@ -233,13 +252,22 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "TenantService.prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
           "findFirst",
           "findMany",
           "prisma",
-          "tenant"
+          "prisma.tenant",
+          "tenant",
+          "tenant.findFirst",
+          "tenant.findMany"
         ]
       },
       "tags": 0,

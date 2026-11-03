@@ -24,8 +24,8 @@ use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     AccessorProperty, Argument, ArrowFunctionExpression, AssignmentExpression, AssignmentTarget,
     AssignmentTargetPropertyIdentifier, AssignmentTargetPropertyProperty, BindingIdentifier,
-    BindingPattern, BindingProperty, CallExpression, Class, ClassBody, Declaration, Decorator,
-    ExportAllDeclaration, ExportDeclaration, ExportDefaultDeclaration,
+    BindingPattern, BindingProperty, CallExpression, ChainElement, Class, ClassBody, Declaration,
+    Decorator, ExportAllDeclaration, ExportDeclaration, ExportDefaultDeclaration,
     ExportDefaultDeclarationKind, ExportFromDeclaration, ExportNamedDeclaration, Expression,
     ExpressionStatement, ForStatement, ForStatementInit, FormalParameter, Function,
     IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ImportExpression,
@@ -1728,6 +1728,15 @@ impl<'a> Analyzer<'_, 'a> {
             .then(|| class.into_owned())
     }
 
+    /// Notes `property` as read right on the member that `object` was read as, when that is no chain of names: `get.name` for `x.get().name` and `(await x.get()).name`, and `#cache.size` for `this.#cache.size`. A chain that starts from a builtin is no read of the repository.
+    fn read_after_call(&mut self, object: &Expression<'a>, property: &str) {
+        if let Some((on, root)) = read_as(object)
+            && !root.is_some_and(|root| self.receivers.is_known(root))
+        {
+            self.symbols.read_on(&on, property);
+        }
+    }
+
     /// Walks what is computed inside a chain of member accesses, `a[b()].c[d]`, and the types written on the way down, `(a as T).c`, and nothing else of it. The chain itself goes through the wrappers, as `chain_of` reads it.
     fn walk_spine(&mut self, expr: &Expression<'a>) {
         match expr {
@@ -2228,6 +2237,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 MemberExpression::StaticMemberExpression(member) => {
                     let property = member.property.name.as_str();
                     self.member_of_load(&member.object, property);
+                    self.read_after_call(&member.object, property);
                     let object = member.object.get_inner_expression();
                     if matches!(object, Expression::Super(_)) {
                         self.symbols.super_use(property);
@@ -2295,11 +2305,20 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             1
         };
         // The keys of an object literal that the file wrote are no reads.
-        let known = known.max(root.map_or(0, |root| {
+        let literal = root.map_or(0, |root| {
             1 + self
                 .receivers
                 .literal_links(root, names.get(1..).unwrap_or_default())
-        }));
+        });
+        let known = known.max(literal);
+        // A member read right on another is also listed as the pair. The root is no member, and what is read on a builtin or on a literal's keys is no read of the repository.
+        if !root.is_some_and(|root| self.receivers.is_known(root)) {
+            for pair in names.windows(2).skip(literal.max(1)) {
+                if let [Some(on), Some(member)] = pair {
+                    self.symbols.read_on(on, member);
+                }
+            }
+        }
         match held {
             Some(class) => {
                 let member = names.get(1).and_then(Option::as_deref);
@@ -2652,6 +2671,54 @@ fn peel<'e, 'a>(expr: &'e Expression<'a>) -> &'e Expression<'a> {
     match expr.get_inner_expression() {
         Expression::AwaitExpression(awaited) => peel(&awaited.argument),
         inner => inner,
+    }
+}
+
+/// The member that `object` was read as, and the name its chain starts from: `get` and `x` for `x.get()`, also behind `await`, `!` and `?.`, and `#cache` for `this.#cache`. `None` for anything that is read as no member, such as a call of a bare name.
+fn read_as<'e>(object: &'e Expression<'_>) -> Option<(Cow<'e, str>, Option<&'e str>)> {
+    match peel(object) {
+        Expression::StaticMemberExpression(member) => Some((
+            Cow::Borrowed(member.property.name.as_str()),
+            chain_start(&member.object),
+        )),
+        Expression::PrivateFieldExpression(member) => Some((
+            Cow::Owned(format!("#{}", member.field.name)),
+            chain_start(&member.object),
+        )),
+        Expression::CallExpression(call) => read_as(&call.callee),
+        Expression::ChainExpression(chain) => match &chain.expression {
+            ChainElement::StaticMemberExpression(member) => Some((
+                Cow::Borrowed(member.property.name.as_str()),
+                chain_start(&member.object),
+            )),
+            ChainElement::PrivateFieldExpression(member) => Some((
+                Cow::Owned(format!("#{}", member.field.name)),
+                chain_start(&member.object),
+            )),
+            ChainElement::CallExpression(call) => read_as(&call.callee),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The name that a chain of accesses and calls starts from, `x` for `x.a.get().b`, and `this` for `this.a`.
+fn chain_start<'e>(expr: &'e Expression<'_>) -> Option<&'e str> {
+    match peel(expr) {
+        Expression::Identifier(name) => Some(name.name.as_str()),
+        Expression::ThisExpression(_) => Some("this"),
+        Expression::StaticMemberExpression(member) => chain_start(&member.object),
+        Expression::ComputedMemberExpression(member) => chain_start(&member.object),
+        Expression::PrivateFieldExpression(member) => chain_start(&member.object),
+        Expression::CallExpression(call) => chain_start(&call.callee),
+        Expression::ChainExpression(chain) => match &chain.expression {
+            ChainElement::StaticMemberExpression(member) => chain_start(&member.object),
+            ChainElement::ComputedMemberExpression(member) => chain_start(&member.object),
+            ChainElement::PrivateFieldExpression(member) => chain_start(&member.object),
+            ChainElement::CallExpression(call) => chain_start(&call.callee),
+            ChainElement::TSNonNullExpression(_) => None,
+        },
+        _ => None,
     }
 }
 

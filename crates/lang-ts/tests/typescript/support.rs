@@ -444,6 +444,21 @@ pub(crate) fn heirs(json: &Value, path: &str) -> Vec<String> {
         .collect()
 }
 
+/// The members of the file at `path` that hold a value of a class, in the order of the output: `<member> of <class>`.
+pub(crate) fn holds(json: &Value, path: &str) -> Vec<String> {
+    symbols(json, path)
+        .into_iter()
+        .flat_map(|symbols| items(symbols, "holds"))
+        .map(|held| {
+            format!(
+                "{} of {}",
+                text(held, "name").unwrap_or("?"),
+                text(held, "of").unwrap_or("?")
+            )
+        })
+        .collect()
+}
+
 /// The overrides of the file at `path`, in the order of the output: `<name> of <head>`.
 pub(crate) fn overrides(json: &Value, path: &str) -> Vec<String> {
     symbols(json, path)
@@ -610,8 +625,23 @@ pub(crate) fn leads(json: &Value, path: &str, spec: &str) -> String {
         .unwrap_or_else(|| "no such import".to_owned())
 }
 
-/// The member names the file at `path` reads on a value of an unknown class, in the order of the output.
+/// The member names the file at `path` reads on a value of an unknown class, in the order of the output, without the pairs `on.member`.
 pub(crate) fn reads(json: &Value, path: &str) -> Vec<String> {
+    read_names(json, path)
+        .into_iter()
+        .filter(|name| !name.contains('.'))
+        .collect()
+}
+
+/// The pairs `on.member` the file at `path` reads, in the order of the output.
+pub(crate) fn pairs(json: &Value, path: &str) -> Vec<String> {
+    read_names(json, path)
+        .into_iter()
+        .filter(|name| name.contains('.'))
+        .collect()
+}
+
+fn read_names(json: &Value, path: &str) -> Vec<String> {
     symbols(json, path)
         .into_iter()
         .flat_map(|symbols| items(symbols, "reads"))

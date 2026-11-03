@@ -103,8 +103,10 @@ expression: json
         "reads": [
           "Int",
           "input",
+          "input.query",
           "query",
-          "request"
+          "request",
+          "request.input"
         ]
       },
       "tags": 0,

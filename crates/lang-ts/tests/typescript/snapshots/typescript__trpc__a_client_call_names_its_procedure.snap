@@ -70,8 +70,11 @@ expression: json
         "overrides": [],
         "reads": [
           "booking",
+          "booking.get",
           "data",
+          "data.id",
           "get",
+          "get.useQuery",
           "id",
           "useQuery"
         ]

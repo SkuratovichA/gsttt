@@ -83,6 +83,7 @@ expression: json
         "overrides": [],
         "reads": [
           "booking",
+          "booking.count",
           "count"
         ]
       },
@@ -167,12 +168,21 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Repository.store",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
           "count",
           "findFirst",
-          "payment"
+          "invoice.findFirst",
+          "payment",
+          "payment.count",
+          "store.invoice"
         ]
       },
       "tags": 0,
@@ -234,7 +244,8 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst"
+          "findFirst",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -307,7 +318,8 @@ expression: json
         ],
         "overrides": [],
         "reads": [
-          "createMany"
+          "createMany",
+          "tenant.createMany"
         ]
       },
       "tags": 0,

@@ -147,7 +147,8 @@ expression: json
         "reads": [
           "LOGIN",
           "byId",
-          "users"
+          "users",
+          "users.byId"
         ]
       },
       "tags": 0,

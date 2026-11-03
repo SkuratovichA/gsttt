@@ -220,6 +220,7 @@ expression: json
           "configLoader",
           "getFixPassCount",
           "linter",
+          "linter.getFixPassCount",
           "text"
         ]
       },

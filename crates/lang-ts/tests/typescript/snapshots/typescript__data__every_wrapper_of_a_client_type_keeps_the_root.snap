@@ -68,7 +68,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -126,7 +127,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -184,7 +186,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -237,7 +240,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -295,7 +299,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -353,7 +358,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -411,7 +417,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -469,7 +476,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,

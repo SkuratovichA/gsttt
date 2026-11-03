@@ -189,6 +189,7 @@ expression: json
           "again",
           "b",
           "exports",
+          "exports.limit",
           "go",
           "label",
           "limit",

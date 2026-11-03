@@ -50,7 +50,8 @@ expression: json
         "reads": [
           "d",
           "e",
-          "exports"
+          "exports",
+          "exports.e"
         ]
       },
       "tags": 0,
@@ -83,6 +84,7 @@ expression: json
         "overrides": [],
         "reads": [
           "a",
+          "a.b",
           "b",
           "deep"
         ]

@@ -173,6 +173,7 @@ expression: json
         "overrides": [],
         "reads": [
           "app",
+          "app.use",
           "use"
         ]
       },

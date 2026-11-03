@@ -205,7 +205,9 @@ expression: json
         "reads": [
           "count",
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.count",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -295,6 +297,12 @@ expression: json
             "of": "PrismaClient"
           }
         ],
+        "holds": [
+          {
+            "name": "TenantRepository.store",
+            "of": "PrismaService"
+          }
+        ],
         "on_load": [],
         "overrides": [
           {
@@ -303,7 +311,9 @@ expression: json
           }
         ],
         "reads": [
-          "findFirst"
+          "findFirst",
+          "store.tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -388,7 +398,8 @@ expression: json
           }
         ],
         "reads": [
-          "findFirst"
+          "findFirst",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,

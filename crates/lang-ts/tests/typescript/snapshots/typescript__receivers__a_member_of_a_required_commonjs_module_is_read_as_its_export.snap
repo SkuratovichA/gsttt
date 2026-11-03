@@ -208,7 +208,8 @@ expression: json
         "overrides": [],
         "reads": [
           "get",
-          "httpClient"
+          "httpClient",
+          "httpClient.get"
         ]
       },
       "tags": 0,
@@ -250,7 +251,8 @@ expression: json
         "overrides": [],
         "reads": [
           "get",
-          "httpClient"
+          "httpClient",
+          "httpClient.get"
         ]
       },
       "tags": 0,

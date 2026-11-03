@@ -46,6 +46,12 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Box.value",
+            "of": "T"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": []

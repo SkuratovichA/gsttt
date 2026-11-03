@@ -209,9 +209,17 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Notifier.emitter",
+            "of": "EventEmitter2"
+          }
+        ],
         "on_load": [],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "emitter.emit"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -295,11 +303,19 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Events.kafka",
+            "of": "ClientKafka"
+          }
+        ],
         "on_load": [
           "Inject"
         ],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "kafka.emit"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -422,9 +438,17 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Publisher.kafka",
+            "of": "ClientKafka"
+          }
+        ],
         "on_load": [],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "kafka.emit"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -471,9 +495,17 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Sender.kafkaProducerService",
+            "of": "KafkaProducerService"
+          }
+        ],
         "on_load": [],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "kafkaProducerService.emitMessage"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -573,9 +605,21 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "KafkaSender.sender",
+            "of": "ClientKafka"
+          },
+          {
+            "name": "LocalSender.sender",
+            "of": "EventEmitter2"
+          }
+        ],
         "on_load": [],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "sender.emit"
+        ]
       },
       "tags": 0,
       "unresolved": []

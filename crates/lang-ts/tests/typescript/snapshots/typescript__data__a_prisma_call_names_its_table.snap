@@ -83,6 +83,7 @@ expression: json
         "overrides": [],
         "reads": [
           "bookingItem",
+          "bookingItem.findMany",
           "findMany"
         ]
       },

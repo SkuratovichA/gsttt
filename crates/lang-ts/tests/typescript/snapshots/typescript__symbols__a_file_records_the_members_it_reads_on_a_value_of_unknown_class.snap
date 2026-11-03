@@ -131,6 +131,12 @@ expression: json
             "of": "Base"
           }
         ],
+        "holds": [
+          {
+            "name": "Holder.repo",
+            "of": "Repo"
+          }
+        ],
         "on_load": [],
         "overrides": [
           {
@@ -138,7 +144,9 @@ expression: json
             "of": "Base"
           }
         ],
-        "reads": []
+        "reads": [
+          "repo.save"
+        ]
       },
       "tags": 0,
       "unresolved": []
@@ -216,6 +224,7 @@ expression: json
           "h",
           "i",
           "j",
+          "j.k",
           "k",
           "spyOn"
         ]

@@ -84,8 +84,10 @@ expression: json
         "overrides": [],
         "reads": [
           "booking",
+          "booking.count",
           "count",
-          "findFirst"
+          "findFirst",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -185,11 +187,19 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Later.client",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
+          "client.tenant",
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -247,7 +257,8 @@ expression: json
         "overrides": [],
         "reads": [
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -330,11 +341,19 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Reads.client",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
+          "client.tenant",
           "findFirst",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,

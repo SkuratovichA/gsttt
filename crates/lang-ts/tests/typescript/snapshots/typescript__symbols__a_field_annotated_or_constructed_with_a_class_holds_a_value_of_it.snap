@@ -1,0 +1,371 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "Alias",
+        "Field",
+        "Literal",
+        "Shape"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Logger",
+            "Store",
+            "Other"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Logger",
+            "Store",
+            "Other"
+          ],
+          "spec": "./lib",
+          "to": {
+            "unresolved": {
+              "reason": "not-found"
+            }
+          }
+        }
+      ],
+      "path": "src/holders.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 40,
+            "line": 3,
+            "name": "Field",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "Field.logger",
+            "uses": [
+              "Logger"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "Field.built",
+            "uses": [
+              "Store"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "Field.maybe",
+            "uses": [
+              "Logger"
+            ]
+          },
+          {
+            "end": 7,
+            "line": 7,
+            "name": "Field.#secret",
+            "uses": [
+              "Logger"
+            ]
+          },
+          {
+            "end": 8,
+            "line": 8,
+            "name": "Field.untyped",
+            "uses": []
+          },
+          {
+            "end": 9,
+            "line": 9,
+            "name": "Field.unionOf",
+            "uses": [
+              "Logger",
+              "Other"
+            ]
+          },
+          {
+            "end": 10,
+            "line": 10,
+            "name": "Field.primitive",
+            "uses": []
+          },
+          {
+            "end": 11,
+            "line": 11,
+            "name": "Field.own",
+            "uses": [
+              "Field"
+            ]
+          },
+          {
+            "end": 12,
+            "line": 12,
+            "name": "Field.stamp",
+            "uses": []
+          },
+          {
+            "end": 13,
+            "line": 13,
+            "name": "Field.list",
+            "uses": [
+              "Logger"
+            ]
+          },
+          {
+            "end": 19,
+            "line": 15,
+            "name": "Field.constructor",
+            "uses": [
+              "Logger.",
+              "Other.",
+              "Store."
+            ]
+          },
+          {
+            "end": 23,
+            "line": 21,
+            "name": "Field.current",
+            "uses": [
+              "Field.logger",
+              "Logger"
+            ]
+          },
+          {
+            "end": 27,
+            "line": 25,
+            "name": "Field.fetch",
+            "uses": [
+              "Store"
+            ]
+          },
+          {
+            "end": 31,
+            "line": 29,
+            "name": "Field.either",
+            "uses": [
+              "Field.logger",
+              "Logger",
+              "Other"
+            ]
+          },
+          {
+            "end": 35,
+            "line": 33,
+            "name": "Field.count",
+            "uses": []
+          },
+          {
+            "end": 39,
+            "line": 37,
+            "name": "Field.unknown",
+            "uses": [
+              "Field.logger",
+              "Logger"
+            ]
+          },
+          {
+            "end": 50,
+            "line": 42,
+            "name": "Shape",
+            "uses": [
+              "Logger",
+              "Other",
+              "Store"
+            ]
+          },
+          {
+            "end": 43,
+            "line": 43,
+            "name": "Shape.logger",
+            "uses": []
+          },
+          {
+            "end": 44,
+            "line": 44,
+            "name": "Shape.optional",
+            "uses": []
+          },
+          {
+            "end": 45,
+            "line": 45,
+            "name": "Shape.both",
+            "uses": []
+          },
+          {
+            "end": 46,
+            "line": 46,
+            "name": "Shape.size",
+            "uses": []
+          },
+          {
+            "end": 47,
+            "line": 47,
+            "name": "Shape.load",
+            "uses": []
+          },
+          {
+            "end": 48,
+            "line": 48,
+            "name": "Shape.later",
+            "uses": []
+          },
+          {
+            "end": 49,
+            "line": 49,
+            "name": "Shape.view",
+            "uses": []
+          },
+          {
+            "end": 55,
+            "line": 52,
+            "name": "Literal",
+            "uses": [
+              "Logger"
+            ]
+          },
+          {
+            "end": 57,
+            "line": 57,
+            "name": "Alias",
+            "uses": [
+              "Logger"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "holds": [
+          {
+            "name": "Field.#secret",
+            "of": "Logger"
+          },
+          {
+            "name": "Field.built",
+            "of": "Store"
+          },
+          {
+            "name": "Field.current",
+            "of": "Logger"
+          },
+          {
+            "name": "Field.fetch",
+            "of": "Store"
+          },
+          {
+            "name": "Field.injected",
+            "of": "Logger"
+          },
+          {
+            "name": "Field.logger",
+            "of": "Logger"
+          },
+          {
+            "name": "Field.maybe",
+            "of": "Logger"
+          },
+          {
+            "name": "Field.named",
+            "of": "Store"
+          },
+          {
+            "name": "Literal.logger",
+            "of": "Logger"
+          },
+          {
+            "name": "Shape.later",
+            "of": "Logger"
+          },
+          {
+            "name": "Shape.load",
+            "of": "Store"
+          },
+          {
+            "name": "Shape.logger",
+            "of": "Logger"
+          },
+          {
+            "name": "Shape.optional",
+            "of": "Store"
+          },
+          {
+            "name": "Shape.view",
+            "of": "Logger"
+          }
+        ],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}
