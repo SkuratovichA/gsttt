@@ -789,8 +789,6 @@ struct Local<'a> {
     member: Option<&'a str>,
     /// The member the walk asked about when the local is a namespace, whose `member` is the class and is all the namespace is told of it: `place` for `lib` with the member `Base`, when the walk is at `Base.place`.
     inner: Option<&'a str>,
-    /// Whether the local is a namespace import, whose own name is a use of every name it holds.
-    namespace: bool,
 }
 
 impl<'a> Local<'a> {
@@ -807,14 +805,14 @@ impl<'a> Local<'a> {
         }
     }
 
-    /// Whether a declaration that uses `used` refers to what the local stands for. A use of the local alone is a use of every member of it, and `Local.member` is a use of that member only, which for a namespace is a name of the file and for a class a member of it.
+    /// Whether a declaration that uses `used` refers to what the local stands for. A use of the local alone is a use of the member only where the file reads the member on some value, and `Local.member` is a use of that member only, which for a namespace is a name of the file and for a class a member of it.
     fn refers(&self, symbols: FileSymbols<'_>, used: &str) -> Refers {
         let Some(member) = self.member else {
             return Refers::from(belongs_to(used, self.name));
         };
         if used == self.name {
-            // A namespace passed away stays a use of every name, and a class or a value of it is a use of the member where the file names the member.
-            return if self.namespace || symbols.reads_member(member) {
+            // A namespace or a class passed away names nothing by itself: it is a use of the member where the file names the member, which for a namespace is the member of its class that the walk asked about.
+            return if symbols.reads_member(self.inner.unwrap_or(member)) {
                 Refers::Yes
             } else {
                 Refers::Held
@@ -1383,7 +1381,6 @@ impl<'w, 'a> Step<'w, 'a> {
                 name: heir,
                 member: Some(member),
                 inner: None,
-                namespace: false,
             });
             for exported in self.exported_as(importer, symbols, heir) {
                 work.push_back((importer, exported.with(Some(member))));
@@ -1507,13 +1504,10 @@ impl<'w, 'a> Step<'w, 'a> {
                 Name::Member(_, asked) if taken == "*" => Some(asked),
                 _ => None,
             };
-            // A require of a file that exports a default binds that value, so a bare use of the local is a use of the default and of a name only where the file reads the name.
-            let value = widened && exports_default(graph, from);
             via.locals.push(Local {
                 name: bound,
                 member,
                 inner,
-                namespace: taken == "*" && !value,
             });
             // A file that declares members of what it imports exports the name to start a walk at them, not to pass it on: it calls nothing of the import by that.
             if symbols

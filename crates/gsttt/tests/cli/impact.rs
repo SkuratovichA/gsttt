@@ -987,7 +987,7 @@ fn callers_in(
         .collect()
 }
 
-/// The real connector reading the namespace scenarios of the core tests: what `uses` holds for `lib.name`, `consume(lib)`, `lib[key]()` and `const { helper } = lib`.
+/// The real connector reading the namespace scenarios of the core tests: what `uses` holds for `lib.name`, `consume(lib)`, `lib[key]()` and `const { helper } = lib`, of which `consume(lib)` and `lib[key]()` name nothing.
 #[test]
 fn a_namespace_import_is_a_caller_only_of_the_names_it_uses_in_typescript() {
     let sandbox = Sandbox::new();
@@ -1086,17 +1086,14 @@ fn a_namespace_import_is_a_caller_only_of_the_names_it_uses_in_typescript() {
         "{helper:?}"
     );
     assert_eq!(listed("src/b.ts"), None, "{helper:?}");
-    for (path, name) in [
-        ("src/c.ts", "pass"),
-        ("src/d.ts", "pick"),
-        ("src/e.ts", "spread"),
-    ] {
-        assert_eq!(
-            listed(path).map(|(_, callers)| callers.clone()),
-            Some(owned(&[name])),
-            "{path}: {helper:?}"
-        );
-    }
+    // A namespace handed on as a value, or indexed by a key, names nothing by itself.
+    assert_eq!(listed("src/c.ts"), None, "{helper:?}");
+    assert_eq!(listed("src/d.ts"), None, "{helper:?}");
+    assert_eq!(
+        listed("src/e.ts").map(|(_, callers)| callers.clone()),
+        Some(owned(&["spread"])),
+        "{helper:?}"
+    );
     assert_eq!(listed("src/f.ts"), None, "{helper:?}");
     // A qualified type name and a JSX member are uses of the name they write, as a read of `lib.name` is.
     assert_eq!(listed("src/g.ts"), None, "{helper:?}");
