@@ -361,7 +361,7 @@ fn is_placeholder(segment: &str) -> bool {
 fn is_param(segment: &str) -> bool {
     // A `{…}` or `<…>` anywhere in a segment makes it a parameter here and not in `is_placeholder`, which also decides that a placeholder before the first `/` is a base URL that goes, while `{tenant}/x` keeps its first segment as a parameter.
     is_placeholder(segment)
-        || segment.starts_with(':')
+        || segment.starts_with([':', '*'])
         || holds_pair(segment, '{', '}')
         || holds_pair(segment, '<', '>')
 }
@@ -406,6 +406,20 @@ mod tests {
         assert_eq!(normalize_http_path("/a/b{c"), "/a/b{c");
         assert_eq!(normalize_http_path("/a/b<c"), "/a/b<c");
         assert_eq!(normalize_http_path("/a/>b<"), "/a/>b<");
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A catch-all segment is a parameter")]
+    #[test]
+    fn a_catch_all_segment_is_a_parameter() {
+        for spelling in [
+            "/files/*path",
+            "/files/*",
+            "/files/{path...}",
+            "/files/:path*",
+        ] {
+            assert_eq!(normalize_http_path(spelling), "/files/{}", "{spelling}");
+        }
+        assert_eq!(normalize_http_path("/files/a*b"), "/files/a*b");
     }
 
     #[gsttt_scenario::scenario(
@@ -562,7 +576,7 @@ mod tests {
 
     /// Text that reaches the edges of a path, with its separators, brackets, placeholders and a space, and any text at all.
     fn texts() -> impl Strategy<Value = String> {
-        prop_oneof!["[a-z/:{}$<>?#.+ -]{0,24}", ".{0,40}"]
+        prop_oneof!["[a-z/:{}$<>?#.+* -]{0,24}", ".{0,40}"]
     }
 
     proptest! {

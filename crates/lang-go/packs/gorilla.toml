@@ -1,0 +1,4 @@
+# gorilla/mux: its `HandleFunc` and `Handle` are the routes the `net-http` pack reads. This pack switches on what the connector reads beyond them: a sub-router, `r.PathPrefix("/api").Subrouter()`, which adds its prefix, and `.Methods("GET", "POST")`, which limits a route to those methods.
+name = "gorilla"
+language = "go"
+detect = ["github.com/gorilla/mux"]

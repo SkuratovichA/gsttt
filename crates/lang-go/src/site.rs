@@ -4,9 +4,10 @@ use std::borrow::Cow;
 use std::num::NonZeroU32;
 
 use gsttt_core::fact::{Embedded, Line, UnresolvedSite};
-use gsttt_core::rules::{CallRule, Outcome, Site, ValueSource};
+use gsttt_core::rules::{CallRule, Outcome, Site, ValueSource, serves_http};
 use tree_sitter::Node;
 
+use crate::routers::Receiver;
 use crate::syntax::{line_of, text_of};
 use crate::value::Reader;
 
@@ -31,6 +32,8 @@ struct GoSite<'r, 'a> {
     reader: Reader<'r, 'a>,
     arguments: &'r [Node<'a>],
     callee: &'r str,
+    /// The method a route is limited to by `.Methods(…)`, which takes the place of the one its pattern names.
+    method: Option<&'r str>,
 }
 
 impl GoSite<'_, '_> {
@@ -61,7 +64,10 @@ impl GoSite<'_, '_> {
             ValueSource::Arg(position) | ValueSource::ArgEach(position) => {
                 usize::try_from(position.get().saturating_sub(1)).is_ok_and(|at| self.typed_at(at))
             }
-            ValueSource::Keyword(name) if name.starts_with("pattern_") => self.typed_at(0),
+            // A text that gives no path is no pattern, which is not a value the site fails to read.
+            ValueSource::Keyword(name) if name.starts_with("pattern_") => {
+                self.typed_at(0) || self.text_at(0).is_some()
+            }
             _ => false,
         })
     }
@@ -93,8 +99,12 @@ impl Site for GoSite<'_, '_> {
             _ => (None, pattern),
         };
         match name {
-            "pattern_path" => Some(Cow::Owned(path)),
-            "pattern_method" => method.map(Cow::Owned),
+            // `net/http` takes no pattern without a `/`: such a text is the verb of another router's `Handle("GET", "/x", h)`.
+            "pattern_path" => path.contains('/').then_some(Cow::Owned(path)),
+            "pattern_method" => self
+                .method
+                .map(Cow::Borrowed)
+                .or_else(|| method.map(Cow::Owned)),
             _ => None,
         }
     }
@@ -116,49 +126,74 @@ impl Site for GoSite<'_, '_> {
     }
 }
 
-/// Applies the call, embed and server rules of the packs in force to one call.
+/// Applies the call, embed and server rules of the packs in force to one call. `receiver` tells what the file shows of the value the method is called on, and `methods` are the verbs `.Methods(…)` limits the route to.
 pub(crate) fn read_calls<'a>(
     reader: Reader<'_, 'a>,
     call: Node<'a>,
     arguments: &[Node<'a>],
     callee: &Callee,
+    receiver: &dyn Fn() -> Receiver,
+    methods: &[String],
 ) -> Read {
     let line = line_of(call);
-    let site = GoSite {
+    let cx = reader.cx;
+    let mut site = GoSite {
         reader,
         arguments,
         callee: &callee.written,
+        method: None,
     };
     let mut read = Read::default();
     let mut unread = false;
-    for pack in site.reader.cx.packs {
+    let mut found: Option<Receiver> = None;
+    for pack in cx.packs {
         for rule in &pack.calls {
-            // Go knows no declared type here, so a rule that asks for one or for a receiver reads nothing.
-            if !rule.receiver_types.is_empty() || rule.receiver.is_some() {
-                continue;
-            }
             if !rule.callee.matches(&callee.written) {
                 continue;
             }
-            let outcome = rule.apply(
-                &pack.name,
-                pack.relative_without_base,
-                &site,
-                None,
-                line,
-                &callee.written,
-            );
-            if matches!(outcome, Outcome::Blind(_)) && site.key_is_typed(rule) {
+            let serves = serves_http(&rule.kind, rule.role);
+            // Every router verb takes a handler after the path, so a call with one argument is the request of a test client.
+            if serves && arguments.len() < 2 {
                 continue;
             }
-            // Several rules may read one call and each reports the same blind spot: it is one unread site.
-            if matches!(outcome, Outcome::Blind(_)) {
-                if unread {
+            let gated = !rule.receiver_types.is_empty() || rule.receiver.is_some();
+            let receiver = (gated || serves).then(|| &*found.get_or_insert_with(receiver));
+            if gated && !receiver.is_some_and(|receiver| receiver.passes(rule)) {
+                continue;
+            }
+            let behind = receiver
+                .and_then(Receiver::prefix)
+                .map_or(Ok(None), |reading| rule.behind(reading));
+            let verbs: Vec<Option<&str>> = if serves && !methods.is_empty() {
+                methods.iter().map(|method| Some(method.as_str())).collect()
+            } else {
+                vec![None]
+            };
+            for verb in verbs {
+                site.method = verb;
+                let outcome = match behind {
+                    Ok(prefix) => rule.apply(
+                        &pack.name,
+                        pack.relative_without_base,
+                        &site,
+                        prefix,
+                        line,
+                        &callee.written,
+                    ),
+                    Err(_) => Outcome::blind(line, &callee.written),
+                };
+                if matches!(outcome, Outcome::Blind(_)) && site.key_is_typed(rule) {
                     continue;
                 }
-                unread = true;
+                // Several rules may read one call and each reports the same blind spot: it is one unread site.
+                if matches!(outcome, Outcome::Blind(_)) {
+                    if unread {
+                        continue;
+                    }
+                    unread = true;
+                }
+                read.outcomes.push(outcome);
             }
-            read.outcomes.push(outcome);
         }
         for rule in &pack.embeds {
             if !rule.callee.matches(&callee.written) {
@@ -175,6 +210,15 @@ pub(crate) fn read_calls<'a>(
                 Err(blind) => read.unresolved.push(blind),
             }
         }
+    }
+    // A call one rule reads is no blind spot because another cannot: `r.Handle(verb, "/x", h)` on a gin engine is unread only by the rule of `net/http`.
+    if read
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome, Outcome::Fact(_)))
+    {
+        read.outcomes
+            .retain(|outcome| !matches!(outcome, Outcome::Blind(_)));
     }
     read
 }

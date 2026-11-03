@@ -1,0 +1,45 @@
+# Gin: a verb called on an engine or a group serves its route. A group adds its prefix, which the connector reads from `Group("/v1")`. The receiver is not gated: an upper-case verb that takes a path and a handler is distinctive, and a router often sits in a field of a struct that another file of the package declares.
+name = "gin"
+language = "go"
+detect = ["github.com/gin-gonic/gin"]
+
+[[calls]]
+callee = [
+  "*.GET",
+  "*.POST",
+  "*.PUT",
+  "*.PATCH",
+  "*.DELETE",
+  "*.OPTIONS",
+  "*.HEAD",
+  "*.Any",
+  "*.*.GET",
+  "*.*.POST",
+  "*.*.PUT",
+  "*.*.PATCH",
+  "*.*.DELETE",
+  "*.*.OPTIONS",
+  "*.*.HEAD",
+  "*.*.Any",
+  "*.*.*.GET",
+  "*.*.*.POST",
+  "*.*.*.PUT",
+  "*.*.*.PATCH",
+  "*.*.*.DELETE",
+  "*.*.*.OPTIONS",
+  "*.*.*.HEAD",
+  "*.*.*.Any",
+]
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$callee"
+
+[[calls]]
+callee = ["*.Handle", "*.*.Handle", "*.*.*.Handle"]
+kind = "http"
+role = "serves"
+key = "$arg2"
+method = "$arg1|*"
+receiver_types = ["gin.Engine", "gin.RouterGroup", "gin.IRouter", "gin.IRoutes"]
+receiver = { from = ["gin.Default", "gin.New"] }

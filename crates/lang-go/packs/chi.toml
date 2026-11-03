@@ -1,0 +1,47 @@
+# chi: a verb called on a router made by `chi.NewRouter`, or held in a parameter or a field typed `chi.Router` or `chi.Mux`, serves its route. The gate keeps `cache.Get("/k", v)` and `client.Get("/x", nil)` from being routes. `Route` and `Group` closures hand their prefix to the router they receive, which the connector reads. The routes of `Handle` and `HandleFunc` are those of the `net-http` pack.
+name = "chi"
+language = "go"
+detect = ["github.com/go-chi/chi", "github.com/go-chi/chi/v5"]
+
+[[calls]]
+callee = [
+  "*.Get",
+  "*.Post",
+  "*.Put",
+  "*.Patch",
+  "*.Delete",
+  "*.Options",
+  "*.Head",
+  "*.Trace",
+  "*.*.Get",
+  "*.*.Post",
+  "*.*.Put",
+  "*.*.Patch",
+  "*.*.Delete",
+  "*.*.Options",
+  "*.*.Head",
+  "*.*.Trace",
+  "*.*.*.Get",
+  "*.*.*.Post",
+  "*.*.*.Put",
+  "*.*.*.Patch",
+  "*.*.*.Delete",
+  "*.*.*.Options",
+  "*.*.*.Head",
+  "*.*.*.Trace",
+]
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$callee"
+receiver_types = ["chi.Router", "chi.Mux"]
+receiver = { from = ["chi.NewRouter", "chi.NewMux"] }
+
+[[calls]]
+callee = ["*.Method", "*.MethodFunc", "*.*.Method", "*.*.MethodFunc", "*.*.*.Method", "*.*.*.MethodFunc"]
+kind = "http"
+role = "serves"
+key = "$arg2"
+method = "$arg1|*"
+receiver_types = ["chi.Router", "chi.Mux"]
+receiver = { from = ["chi.NewRouter", "chi.NewMux"] }

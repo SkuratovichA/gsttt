@@ -1,4 +1,4 @@
-//! Go for gsttt: one project per `go.mod`, imports read with tree-sitter and resolved against the module paths of the repository, the declarations of each file with the names they use, and the contracts of the environment, `net/http` and `database/sql` found by rule packs.
+//! Go for gsttt: one project per `go.mod`, imports read with tree-sitter and resolved against the module paths of the repository, the declarations of each file with the names they use, and the contracts of the environment, `net/http` and `database/sql` found by rule packs, and the routes of gin, chi, echo, gorilla and fiber.
 
 mod analyze;
 mod file;
@@ -9,6 +9,7 @@ mod parse;
 mod project;
 mod provides;
 mod resolve;
+mod routers;
 mod scope;
 mod site;
 mod syntax;
@@ -25,8 +26,13 @@ pub use project::GoProject;
 
 /// The rule packs shipped with the connector, as `(name, TOML source)` pairs. The name is the file name without `.toml`, which is also the `name` the pack declares.
 pub const PACKS: &[(&str, &str)] = &[
+    ("chi", include_str!("../packs/chi.toml")),
     ("database-sql", include_str!("../packs/database-sql.toml")),
+    ("echo", include_str!("../packs/echo.toml")),
     ("env", include_str!("../packs/env.toml")),
+    ("fiber", include_str!("../packs/fiber.toml")),
+    ("gin", include_str!("../packs/gin.toml")),
+    ("gorilla", include_str!("../packs/gorilla.toml")),
     ("net-http", include_str!("../packs/net-http.toml")),
 ];
 

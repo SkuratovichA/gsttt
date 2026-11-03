@@ -1,0 +1,49 @@
+# Echo: a verb called on an instance or a group serves its route. A group adds its prefix, which the connector reads from `Group("/v1")`. The receiver is not gated, for the reason given in `gin.toml`.
+name = "echo"
+language = "go"
+detect = [
+  "github.com/labstack/echo",
+  "github.com/labstack/echo/v4",
+  "github.com/labstack/echo/v5",
+]
+
+[[calls]]
+callee = [
+  "*.GET",
+  "*.POST",
+  "*.PUT",
+  "*.PATCH",
+  "*.DELETE",
+  "*.OPTIONS",
+  "*.HEAD",
+  "*.Any",
+  "*.*.GET",
+  "*.*.POST",
+  "*.*.PUT",
+  "*.*.PATCH",
+  "*.*.DELETE",
+  "*.*.OPTIONS",
+  "*.*.HEAD",
+  "*.*.Any",
+  "*.*.*.GET",
+  "*.*.*.POST",
+  "*.*.*.PUT",
+  "*.*.*.PATCH",
+  "*.*.*.DELETE",
+  "*.*.*.OPTIONS",
+  "*.*.*.HEAD",
+  "*.*.*.Any",
+]
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$callee"
+
+[[calls]]
+callee = ["*.Add", "*.*.Add", "*.*.*.Add"]
+kind = "http"
+role = "serves"
+key = "$arg2"
+method = "$arg1|*"
+receiver_types = ["echo.Echo", "echo.Group"]
+receiver = { from = ["echo.New"] }

@@ -25,21 +25,34 @@ fn always() -> Vec<(ContractKind, Role, &'static str)> {
     ]
 }
 
+/// What no router pack sees, then the gaps of the pack itself.
+fn router_gaps(own: &[&'static str]) -> Vec<(ContractKind, Role, &'static str)> {
+    std::iter::once("a router handed to another function, or mounted with Mount, keeps no prefix: its routes are read under the path written at the call")
+        .chain(own.iter().copied())
+        .map(|words| (ContractKind::Http, Role::Serves, words))
+        .collect()
+}
+
 /// What the rules of the pack named `pack` cannot see: `(kind, role, words)`.
 fn gaps(pack: &str) -> Vec<(ContractKind, Role, &'static str)> {
     match pack {
-        "net-http" => vec![
-            (
-                ContractKind::Http,
-                Role::Serves,
-                "routers (gin, chi, echo, gorilla, fiber) are not read yet",
-            ),
-            (
-                ContractKind::Http,
-                Role::Calls,
-                "HTTP calls on an http.Client held in a variable",
-            ),
-        ],
+        "net-http" => vec![(
+            ContractKind::Http,
+            Role::Calls,
+            "HTTP calls on an http.Client held in a variable",
+        )],
+        "gin" | "echo" => router_gaps(&[
+            "a route whose verb is text, Handle on gin or Add on echo, is read on a router made in the file, or held in a parameter, a field or a package variable typed in the same file",
+        ]),
+        "chi" => router_gaps(&[
+            "chi routes are read on a router made in the file, or held in a parameter, a field or a package variable typed in the same file",
+        ]),
+        "fiber" => router_gaps(&[
+            "fiber routes are read on a router made in the file, or held in a parameter, a field or a package variable typed in the same file",
+        ]),
+        "gorilla" => router_gaps(&[
+            "gorilla routes built with Path(...).Methods(...).HandlerFunc(...) are not read",
+        ]),
         "database-sql" => SQL_GAPS
             .iter()
             .flat_map(|&words| {

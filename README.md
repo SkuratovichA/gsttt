@@ -144,7 +144,7 @@ Every number, with the command that measured it, is in [`bench/results/benchmark
 - Build tags and `GOOS` suffixes: every file of a package counts, whatever its constraint.
 - `replace` directives of `go.mod` and `go.work` files: a module is read from its own `go.mod` alone.
 - Files that use the Go 1.26 form `new(expr)`: the grammar gsttt reads with does not know it yet, so such a file is read as recovered. It keeps its declarations, exports and imports, but inside the function that holds the form some uses may be lost.
-- Routers (chi, gin, echo), clients held in a variable (`client := &http.Client{}; client.Get(url)`), gRPC, and a value defined in another file.
+- Routers handed to another function or mounted with `Mount` (their routes keep no prefix), gorilla routes built with `Path(...).Methods(...).HandlerFunc(...)`, clients held in a variable (`client := &http.Client{}; client.Get(url)`), gRPC, and a value defined in another file.
 
 </details>
 

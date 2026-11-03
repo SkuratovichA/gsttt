@@ -600,7 +600,7 @@ pub fn contract_key(
 }
 
 /// `key` behind `prefix`, with `/` between them for HTTP and `.` otherwise; an empty side is left out.
-fn join<'a>(kind: &ContractKind, prefix: &'a str, key: &'a str) -> Cow<'a, str> {
+pub fn join<'a>(kind: &ContractKind, prefix: &'a str, key: &'a str) -> Cow<'a, str> {
     match (prefix.is_empty(), key.is_empty()) {
         (true, _) => Cow::Borrowed(key),
         (false, true) => Cow::Borrowed(prefix),

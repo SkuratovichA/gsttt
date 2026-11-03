@@ -49,6 +49,8 @@ pub(crate) struct FileCx<'a> {
     pub(crate) receivers: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The value of each constant and single-assignment variable the file declares at the top level.
     pub(crate) values: BTreeMap<&'a str, Node<'a>>,
+    /// The type each variable the file declares at the top level is written with.
+    pub(crate) vars: BTreeMap<&'a str, Head>,
     /// The fields of each struct type the file declares.
     pub(crate) structs: BTreeMap<String, Fields>,
     /// The names the file assigns to after they are declared: such a name stands for no one text.
@@ -83,6 +85,7 @@ impl<'a> FileCx<'a> {
             top: BTreeSet::new(),
             receivers: BTreeMap::new(),
             values: BTreeMap::new(),
+            vars: BTreeMap::new(),
             structs: BTreeMap::new(),
             assigned: survey.assigned,
             packs,
@@ -247,6 +250,12 @@ impl<'a> FileCx<'a> {
                 continue;
             }
             self.top.insert(text);
+            if spec.kind() == "var_spec"
+                && let Some(ty) = spec.child_by_field_name("type")
+                && let Some(head) = self.head_of(ty, &|_| false)
+            {
+                self.vars.insert(text, head);
+            }
             if names.len() == values.len()
                 && !self.assigned.contains(text)
                 && let Some(value) = values.get(index)
