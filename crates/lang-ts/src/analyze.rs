@@ -123,6 +123,12 @@ enum Taking<'p, 'a> {
     },
     /// One member read from the loaded value: `(await import('x')).a`. It binds no local.
     Member(&'p str),
+    /// A declarator that is bound to one member of the loaded value: `const c = require('x').a`. `binds` is as for `Declared`.
+    Named {
+        local: &'p str,
+        name: &'p str,
+        binds: bool,
+    },
 }
 
 /// A class being walked: its name, the decorators it carries, and the class it extends.
@@ -321,6 +327,13 @@ impl<'a> Analyzer<'_, 'a> {
         import.flags = flags;
         match taking {
             Taking::Member(name) => import.names.push(name.to_owned()),
+            Taking::Named { local, name, binds } => {
+                self.bind(local, &spec, name);
+                import.names.push(name.to_owned());
+                if binds {
+                    import.exported.push(local.to_owned());
+                }
+            }
             Taking::Declared {
                 pattern: BindingPattern::BindingIdentifier(local),
                 binds,
@@ -397,6 +410,25 @@ impl<'a> Analyzer<'_, 'a> {
 
     /// `const x = require('y')` and `const { a } = await import('y')`.
     fn load_declared(&mut self, init: &Expression<'_>, pattern: &BindingPattern<'_>, start: u32) {
+        // `const c = require('y').a` takes `a` from `y` and binds `c` to it.
+        if let Expression::StaticMemberExpression(member) = init
+            && let BindingPattern::BindingIdentifier(local) = pattern
+            && let Some(load) = load_of(&member.object).filter(|load| !load.promise)
+        {
+            let binds = self.symbols.binds_module(start);
+            self.load(
+                load.span,
+                load.argument,
+                load.kind,
+                load.flags,
+                Taking::Named {
+                    local: local.name.as_str(),
+                    name: member.property.name.as_str(),
+                    binds,
+                },
+            );
+            return;
+        }
         if let Some(load) = load_of(init) {
             let binds = self.symbols.binds_module(start);
             self.load(
@@ -1775,6 +1807,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 let callee = self.constants.canonical(&callee, it.span.start);
                 self.call(it, &callee);
             }
+        } else if let Some(callee) = constants::required_callee(&it.callee, self.packs) {
+            // `require('axios').get('/x')`: the inner require is walked below and records the import.
+            self.call(it, &callee);
         }
         if matches!(it.callee, Expression::Super(_)) {
             self.symbols.super_use("constructor");

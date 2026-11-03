@@ -12,7 +12,7 @@ use oxc_ast_visit::{Visit, walk};
 use oxc_span::GetSpan;
 use oxc_syntax::scope::{ScopeFlags, ScopeId};
 
-use super::constants::exported_locals;
+use super::constants::{exported_locals, required_callee};
 use super::{Constants, peel};
 use crate::extra::{Export, LinkMaker};
 use crate::shape::{
@@ -102,7 +102,10 @@ impl Collector<'_> {
             Expression::NewExpression(new) => (&new.callee, &new.arguments),
             _ => return,
         };
-        let Some(callee) = chain_of(callee).and_then(|names| dotted(&names)) else {
+        let Some(callee) = chain_of(callee)
+            .and_then(|names| dotted(&names))
+            .or_else(|| required_callee(callee, self.packs))
+        else {
             return;
         };
         let callee = self.constants.canonical(&callee, init.span().start);
