@@ -2,8 +2,10 @@
 
 use gsttt_config::builtin_packs;
 use gsttt_core::engine::build::build_index;
-use gsttt_core::engine::pipeline::{self, Module, Output};
-use gsttt_core::index::IndexInfo;
+use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
+use gsttt_core::fact::Symbols;
+use gsttt_core::index::{Freshness, IndexInfo};
+use gsttt_core::query::{Impact, ImpactRequest, impact};
 use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
 use gsttt_lang_rust::{PACKS, RUST};
@@ -41,6 +43,30 @@ fn described(sites: &[Value]) -> Vec<String> {
 pub(crate) struct Indexed {
     pub(crate) repo: RepoView,
     pub(crate) output: Output,
+    /// The directory an inline tree was written to, kept until the test ends.
+    dir: Option<tempfile::TempDir>,
+}
+
+/// A crate named `t` whose `src/lib.rs` declares `modules` and whose files are `files`, indexed like a fixture, for the programs of a few lines whose declarations a scenario reads.
+pub(crate) fn crate_of(modules: &[&str], files: &[(&str, &str)]) -> Indexed {
+    let dir = tempfile::tempdir().unwrap();
+    let lib: String = modules
+        .iter()
+        .map(|name| ["mod ", name, ";\n"].concat())
+        .collect();
+    let manifest = "[package]\nname = \"t\"\nversion = \"0.0.0\"\nedition = \"2021\"\n";
+    for (path, text) in [("Cargo.toml", manifest), ("src/lib.rs", lib.as_str())]
+        .into_iter()
+        .chain(files.iter().map(|(path, text)| (*path, *text)))
+    {
+        let file = dir.path().join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    let root = dir.path().to_str().unwrap().to_owned();
+    let mut indexed = index_at_with(&root, builtin_packs(PACKS).unwrap());
+    indexed.dir = Some(dir);
+    indexed
 }
 
 /// Indexes `tests/fixtures/<name>/` with the built-in packs.
@@ -68,10 +94,164 @@ fn index_at_with(root: &str, packs: Vec<Pack>) -> Indexed {
         packs,
     }];
     let output = pipeline::run(&repo, &modules, 1 << 20).unwrap();
-    Indexed { repo, output }
+    Indexed {
+        repo,
+        output,
+        dir: None,
+    }
 }
 
 impl Indexed {
+    /// The answer to `gsttt impact <path> --name <names>` over this tree, one hop unless `depth` says more.
+    pub(crate) fn ask(&self, path: &str, names: &[&str], depth: Option<u32>) -> Impact {
+        let index = build_index(
+            &self.repo,
+            &self.output,
+            &["rust"],
+            &[],
+            &[],
+            IndexInfo::default(),
+        );
+        let request = ImpactRequest {
+            files: vec![path.to_owned()],
+            names: names.iter().map(|&name| name.to_owned()).collect(),
+            depth,
+            ..ImpactRequest::default()
+        };
+        impact(&index, Freshness::Fresh, &request)
+    }
+
+    fn run_of(&self, path: &str) -> &FileRun {
+        self.output
+            .files
+            .iter()
+            .find(|file| {
+                self.repo
+                    .path(file.id)
+                    .is_some_and(|at| at.as_str() == path)
+            })
+            .unwrap_or_else(|| panic!("`{path}` is not among the indexed files"))
+    }
+
+    /// The declarations and uses a file records, which a file with syntax errors does not.
+    pub(crate) fn symbols(&self, path: &str) -> &Symbols {
+        self.run_of(path)
+            .facts
+            .symbols
+            .as_ref()
+            .unwrap_or_else(|| panic!("`{path}` records no declarations"))
+    }
+
+    /// Whether the file records declarations.
+    pub(crate) fn records(&self, path: &str) -> bool {
+        self.run_of(path).facts.symbols.is_some()
+    }
+
+    /// The declarations of a file as `name L<start>-<end>`, in the order it records them.
+    pub(crate) fn declared(&self, path: &str) -> Vec<String> {
+        self.symbols(path)
+            .declared
+            .iter()
+            .map(|declared| format!("{} L{}-{}", declared.name, declared.line, declared.end))
+            .collect()
+    }
+
+    /// What the declaration `name` of a file uses, in byte order.
+    pub(crate) fn uses(&self, path: &str, name: &str) -> Vec<&str> {
+        let mut uses: Vec<&str> = self
+            .symbols(path)
+            .declared
+            .iter()
+            .find(|declared| declared.name == name)
+            .unwrap_or_else(|| panic!("{path} does not declare {name}: {:?}", self.declared(path)))
+            .uses
+            .iter()
+            .map(String::as_str)
+            .collect();
+        uses.sort_unstable();
+        uses
+    }
+
+    /// What `path` uses as it loads.
+    pub(crate) fn on_load(&self, path: &str) -> Vec<&str> {
+        self.symbols(path)
+            .on_load
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// The member names a file reads on a value of a type it does not know, in byte order.
+    pub(crate) fn reads(&self, path: &str) -> Vec<&str> {
+        let mut reads: Vec<&str> = self
+            .symbols(path)
+            .reads
+            .iter()
+            .map(String::as_str)
+            .collect();
+        reads.sort_unstable();
+        reads
+    }
+
+    /// The heirs of a file as `name of`.
+    pub(crate) fn heirs(&self, path: &str) -> Vec<String> {
+        self.symbols(path)
+            .heirs
+            .iter()
+            .map(|heir| format!("{} {}", heir.name, heir.of))
+            .collect()
+    }
+
+    /// What the file overrides, as `name of`.
+    pub(crate) fn overrides(&self, path: &str) -> Vec<String> {
+        self.symbols(path)
+            .overrides
+            .iter()
+            .map(|heir| format!("{} {}", heir.name, heir.of))
+            .collect()
+    }
+
+    /// The names an importer of the file can take by name, in byte order.
+    pub(crate) fn exports(&self, path: &str) -> Vec<&str> {
+        let mut exports: Vec<&str> = self
+            .run_of(path)
+            .facts
+            .exports
+            .as_ref()
+            .unwrap_or_else(|| panic!("`{path}` records no exports"))
+            .iter()
+            .map(String::as_str)
+            .collect();
+        exports.sort_unstable();
+        exports
+    }
+
+    /// The static imports of a file as `spec [names] [exported]`, in its order.
+    pub(crate) fn imports(&self, path: &str) -> Vec<String> {
+        self.run_of(path)
+            .imports
+            .iter()
+            .map(|resolved| {
+                let import = &resolved.import;
+                format!(
+                    "{} [{}] [{}]",
+                    import.spec,
+                    import.names.join(","),
+                    import.exported.join(",")
+                )
+            })
+            .collect()
+    }
+
+    /// The files a walk by name reaches as `<path>@<distance>`, in the order of the answer.
+    pub(crate) fn reached(&self, path: &str, names: &[&str], depth: Option<u32>) -> Vec<String> {
+        self.ask(path, names, depth)
+            .affected
+            .iter()
+            .map(|entry| format!("{}@{}", entry.path, entry.distance))
+            .collect()
+    }
+
     /// The whole run as JSON, the shape the snapshots hold, with the keys of every object in byte order.
     pub(crate) fn json(&self) -> Value {
         // Sorted here, so that no snapshot depends on whether serde_json keeps insertion order: its `preserve_order` feature, which another crate of the workspace may switch on or off.

@@ -1718,12 +1718,9 @@ fn changed_walks_a_file_whole_when_a_side_effect_import_or_a_top_level_statement
     }
 }
 
-#[scenario(
-    "cli",
-    "--changed walks a changed file whole when its language records no declarations"
-)]
+#[scenario("cli", "--changed walks a new file whole")]
 #[test]
-fn changed_walks_a_changed_file_whole_when_its_language_records_no_declarations() {
+fn changed_walks_a_new_file_whole() {
     let sandbox = Sandbox::new();
     let repo = formatting(&sandbox);
     write(
@@ -1746,11 +1743,14 @@ fn changed_walks_a_changed_file_whole_when_its_language_records_no_declarations(
 
     let answer = changed(&sandbox, &repo, &[]);
 
-    assert!(answer.get("parts").is_none(), "{answer}");
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "tools/src/lib.rs", "names": ["run"] }])
+    );
     let text = sandbox.run_in(&repo, &["impact", "--changed"]);
     assert!(
         text.stdout.starts_with(
-            "impact of src/fresh.ts and tools/src/lib.rs, within 1 hop through code\n"
+            "impact of run in tools/src/lib.rs, and of src/fresh.ts, within 1 hop through code\n"
         ),
         "{text:?}"
     );
@@ -1882,6 +1882,52 @@ fn changed_walks_a_go_file_whole_when_init_changes() {
     let answer = changed(&sandbox, &repo, &[]);
 
     assert_eq!(reached(&answer), ["cmd/main.go", "halt/halt.go"]);
+}
+
+#[scenario(
+    "cli",
+    "--changed follows a changed Rust function to its callers and not to the callers of another"
+)]
+#[test]
+fn changed_follows_a_changed_rust_function_to_its_callers_and_not_to_the_callers_of_another() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "tools/Cargo.toml",
+        "[package]\nname = \"tools\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    );
+    write(
+        &repo,
+        "tools/src/lib.rs",
+        "pub mod job;\npub mod main_app;\npub mod halt;\n",
+    );
+    let job = "pub fn run() -> i32 {\n    1\n}\n\npub fn stop() -> i32 {\n    0\n}\n";
+    write(&repo, "tools/src/job.rs", job);
+    write(
+        &repo,
+        "tools/src/main_app.rs",
+        "use crate::job::run;\n\npub fn main_app() -> i32 {\n    run()\n}\n",
+    );
+    write(
+        &repo,
+        "tools/src/halt.rs",
+        "use crate::job::stop;\n\npub fn halt() -> i32 {\n    stop()\n}\n",
+    );
+    commit_all(&repo);
+    write(
+        &repo,
+        "tools/src/job.rs",
+        &job.replace("    1\n", "    2\n"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), ["tools/src/main_app.rs"]);
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "tools/src/job.rs", "names": ["run"] }])
+    );
 }
 
 /// The real Python connector reading the three ways a name reaches a file without the file declaring it: a module that imports it and lists it nowhere hands it on, a settings file that reads it before it binds it again takes it from its star import, and one that binds it without reading it does not.
@@ -2882,9 +2928,9 @@ fn a_function_removed_from_a_python_module_walks_by_its_old_name() {
     assert_eq!(reached(&answer), ["tools/main.py"], "{answer}");
 }
 
-/// Rust records no declarations either, so a function removed from a module walks the module whole.
+/// Rust records declarations, so a function removed from a module reaches the callers of that function and not those of its neighbour.
 #[test]
-fn a_function_removed_from_a_rust_module_walks_the_module_whole() {
+fn a_function_removed_from_a_rust_module_reaches_its_callers_only() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repository();
     write(
@@ -2917,12 +2963,11 @@ fn a_function_removed_from_a_rust_module_walks_the_module_whole() {
 
     let answer = changed(&sandbox, &repo, &[]);
 
-    assert!(answer.get("parts").is_none(), "{answer}");
     assert_eq!(
-        reached(&answer),
-        ["src/halt.rs", "src/main_user.rs"],
-        "{answer}"
+        answer["parts"],
+        value!([{ "file": "src/job.rs", "names": [], "removed": ["run"] }])
     );
+    assert_eq!(reached(&answer), ["src/main_user.rs"], "{answer}");
 }
 
 /// A function removed from one file of a package is walked by its old name, so its caller is listed and the caller of a function that stays is not.

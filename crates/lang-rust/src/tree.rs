@@ -7,8 +7,10 @@ use gsttt_core::fact::{FileFacts, ImportKind};
 use gsttt_core::ids::FileId;
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
+use ra_ap_edition::Edition;
 
-use crate::manifest::{Target, TargetKind, at};
+use crate::manifest::{Package, Target, TargetKind, at};
+use crate::resolve::Aliases;
 
 /// How many files deep `mod` declarations are followed. A `#[path]` that points back at an ancestor would otherwise loop.
 const MAX_DEPTH: usize = 64;
@@ -234,21 +236,23 @@ impl CrateTree {
         self.modules.contains_key(&child_key(key, name))
     }
 
-    /// The deepest module that following `names` from the module at `key` reaches. A name that is no module ends the walk: it is an item, a function or a type in the module before it.
-    pub(crate) fn walk<'n>(
+    /// The deepest module that `names` reach from the module at `key`, with the names past it. A name that is no module ends the walk: it is an item, a function or a type in the module before it.
+    pub(crate) fn reach<'n, 's>(
         &self,
         key: &str,
-        names: impl IntoIterator<Item = &'n str>,
-    ) -> Option<&Module> {
+        names: &'s [&'n str],
+    ) -> Option<(&Module, &'s [&'n str])> {
         let mut current = key.to_owned();
-        for name in names {
+        let mut rest = names;
+        while let Some((name, after)) = rest.split_first() {
             let next = child_key(&current, name);
             if !self.modules.contains_key(&next) {
                 break;
             }
             current = next;
+            rest = after;
         }
-        self.modules.get(&current)
+        self.modules.get(&current).map(|module| (module, rest))
     }
 }
 
@@ -308,19 +312,28 @@ impl Trees {
 /// The module trees of every package, by package directory, so that a path can continue into the library of a workspace crate. Projects publish in `prepare` and read in `resolve`, and the engine finishes every `prepare` before it starts any `resolve`.
 #[derive(Debug, Default)]
 pub(crate) struct Registry {
-    trees: RwLock<BTreeMap<String, Arc<Trees>>>,
+    crates: RwLock<BTreeMap<String, Arc<Published>>>,
+}
+
+/// What a project shares with the others, so that a path can go on through it: its module trees and what it needs to resolve a path of its own.
+#[derive(Debug)]
+pub(crate) struct Published {
+    pub(crate) trees: Arc<Trees>,
+    pub(crate) package: Option<Package>,
+    pub(crate) aliases: Arc<Aliases>,
+    pub(crate) edition: Edition,
 }
 
 impl Registry {
-    pub(crate) fn publish(&self, dir: &str, trees: Arc<Trees>) {
-        self.trees
+    pub(crate) fn publish(&self, dir: &str, published: Published) {
+        self.crates
             .write()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(dir.to_owned(), trees);
+            .insert(dir.to_owned(), Arc::new(published));
     }
 
-    pub(crate) fn trees(&self, dir: &str) -> Option<Arc<Trees>> {
-        self.trees
+    pub(crate) fn crate_at(&self, dir: &str) -> Option<Arc<Published>> {
+        self.crates
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .get(dir)

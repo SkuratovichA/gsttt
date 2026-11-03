@@ -96,6 +96,14 @@ pub(crate) fn binding(import: &Import) -> Option<&str> {
     (bound != "*" && bound != "_").then_some(bound.as_str())
 }
 
+/// The paths of the glob imports of a file.
+pub(crate) fn globs(imports: &[Import]) -> impl Iterator<Item = &str> {
+    imports
+        .iter()
+        .filter(|import| import.kind == ImportKind::Static && import.exported == ["*"])
+        .map(|import| import.spec.as_str())
+}
+
 /// The name a `use` leaf or an `extern crate` renames its item to: `_` for `as _`, and none when there is no `as`.
 fn renamed(rename: Option<ast::Rename>) -> Option<String> {
     let rename = rename?;
@@ -214,10 +222,22 @@ impl Reader<'_> {
         let mut import = self.import(spec, kind, tree.syntax(), cx.flags);
         if glob {
             import.names = vec!["*".to_owned()];
+            // The star of a `pub use` hands the names on, and binds them in the file as well.
+            if cx.reexport {
+                let mut bound = import.clone();
+                bound.kind = ImportKind::Static;
+                bound.exported = vec!["*".to_owned()];
+                out.push(bound);
+            } else {
+                import.exported = vec!["*".to_owned()];
+            }
         } else {
-            // What the module is asked for is the name it declares, as in the other connectors; the name the file knows it by, when that differs, goes to `exported`.
-            import.names = path.last().cloned().into_iter().collect();
-            import.exported = renamed(tree.rename()).into_iter().collect();
+            // What the module is asked for is the name it declares, as in the other connectors: the type of `use a::Color::Red`. The name the file knows it by is the leaf, or the one it renames it to.
+            import.names = taken(&path).cloned().into_iter().collect();
+            import.exported = renamed(tree.rename())
+                .or_else(|| path.last().cloned())
+                .into_iter()
+                .collect();
         }
         out.push(import);
     }
@@ -307,7 +327,9 @@ impl Reader<'_> {
             return;
         }
         let spec = file_path(node, &names).join("::");
-        out.push(self.import(spec, ImportKind::Static, node, cfg_flags(node)));
+        let mut import = self.import(spec, ImportKind::Static, node, cfg_flags(node));
+        bind_taken(&mut import, &names);
+        out.push(import);
     }
 
     fn macro_call(&self, call: &ast::MacroCall, out: &mut Vec<Import>) {
@@ -406,39 +428,66 @@ impl Reader<'_> {
         flags: ImportFlags,
         out: &mut Vec<Import>,
     ) {
-        let mut index = 0;
-        while let Some(token) = tokens.get(index) {
-            let after_access = index
+        for chain in chains(tokens) {
+            let after_access = chain
+                .start
                 .checked_sub(1)
                 .and_then(|before| tokens.get(before))
                 .is_some_and(|before| {
                     matches!(before.kind(), SyntaxKind::DOT | SyntaxKind::DOLLAR)
                 });
-            if after_access || !starts_segment(token.kind()) {
-                index += 1;
+            if after_access || !qualifies(&chain.names) {
                 continue;
             }
-            let mut names = vec![token.text().to_owned()];
-            let mut next = index + 1;
-            while let Some(width) = separator_width(tokens, next)
-                && let Some(segment) = tokens.get(next + width)
-                && starts_segment(segment.kind())
-            {
-                names.push(segment.text().to_owned());
-                next += width + 1;
-            }
-            if qualifies(&names) {
-                let line = line_at(self.lines, token.text_range().start());
-                out.push(Self::import_at(
-                    file_path(context, &names).join("::"),
-                    ImportKind::Static,
-                    line,
-                    flags,
-                ));
-            }
-            index = next;
+            let Some(first) = tokens.get(chain.start) else {
+                continue;
+            };
+            let line = line_at(self.lines, first.text_range().start());
+            let mut import = Self::import_at(
+                file_path(context, &chain.names).join("::"),
+                ImportKind::Static,
+                line,
+                flags,
+            );
+            bind_taken(&mut import, &chain.names);
+            out.push(import);
         }
     }
+}
+
+/// A run of path segments written in tokens: `a::b::C`.
+pub(crate) struct Chain {
+    /// The segments.
+    pub(crate) names: Vec<String>,
+    /// The index in the tokens of the first segment.
+    pub(crate) start: usize,
+}
+
+/// The paths among `tokens`, the arguments of a macro or an attribute, each as the segments it names and where it stands.
+pub(crate) fn chains(tokens: &[SyntaxToken]) -> Vec<Chain> {
+    let mut found = Vec::new();
+    let mut index = 0;
+    while let Some(token) = tokens.get(index) {
+        if !starts_segment(token.kind()) {
+            index += 1;
+            continue;
+        }
+        let mut names = vec![token.text().to_owned()];
+        let mut next = index + 1;
+        while let Some(width) = separator_width(tokens, next)
+            && let Some(segment) = tokens.get(next + width)
+            && starts_segment(segment.kind())
+        {
+            names.push(segment.text().to_owned());
+            next += width + 1;
+        }
+        found.push(Chain {
+            names,
+            start: index,
+        });
+        index = next;
+    }
+    found
 }
 
 /// How many tokens the `::` at `index` takes: one `COLON2`, or two touching `COLON`s, which is how a token tree keeps the separator. `None` when the token is no separator.
@@ -459,8 +508,26 @@ fn separator_width(tokens: &[SyntaxToken], index: usize) -> Option<usize> {
 fn starts_segment(kind: SyntaxKind) -> bool {
     matches!(
         kind,
-        SyntaxKind::IDENT | SyntaxKind::CRATE_KW | SyntaxKind::SELF_KW | SyntaxKind::SUPER_KW
+        SyntaxKind::IDENT
+            | SyntaxKind::CRATE_KW
+            | SyntaxKind::SELF_KW
+            | SyntaxKind::SELF_TYPE_KW
+            | SyntaxKind::SUPER_KW
     )
+}
+
+/// The name a path takes from the module it reaches: the first segment in CamelCase, the type that the rest of the path is a variant or an associated item of, else the last one.
+pub(crate) fn taken(names: &[String]) -> Option<&String> {
+    names
+        .iter()
+        .find(|name| name.starts_with(char::is_uppercase))
+        .or(names.last())
+}
+
+/// Makes `import`, a path written in code, take the name `taken` and bind it as itself, so that a walk by name sees the declarations that use it.
+fn bind_taken(import: &mut Import, names: &[String]) {
+    import.names = taken(names).cloned().into_iter().collect();
+    import.exported = import.names.clone();
 }
 
 /// Whether a path of a module or a crate is meant: two or more segments, starting with `crate`, `self`, `super` or a lower case name that is no primitive type. `Vec::new` and `u32::MAX` are not.
@@ -475,7 +542,7 @@ fn qualifies(names: &[String]) -> bool {
 }
 
 /// The tokens below `node` that are not whitespace or comments, in order.
-fn significant_tokens(node: &SyntaxNode) -> Vec<SyntaxToken> {
+pub(crate) fn significant_tokens(node: &SyntaxNode) -> Vec<SyntaxToken> {
     node.descendants_with_tokens()
         .filter_map(NodeOrToken::into_token)
         .filter(|token| !token.kind().is_trivia())

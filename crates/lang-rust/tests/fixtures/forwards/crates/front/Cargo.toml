@@ -1,0 +1,9 @@
+[package]
+name = "front"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+derived = { path = "../derived" }
+inner = { path = "../inner" }
+tool = { path = "../tool" }

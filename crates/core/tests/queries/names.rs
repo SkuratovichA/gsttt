@@ -1709,13 +1709,17 @@ fn a_walk_that_runs_out_says_nothing_about_stopping() {
     assert!(answer.notes.is_empty(), "{:?}", notes(&answer));
 }
 
-#[scenario("queries", "A Rust file asked about by name is followed whole")]
+#[scenario(
+    "queries",
+    "A file read past syntax errors asked about by name is followed whole"
+)]
 #[test]
-fn a_rust_file_asked_about_by_name_is_followed_whole() {
+fn a_file_read_past_syntax_errors_asked_about_by_name_is_followed_whole() {
     let index = Tree::new()
         .read_by("rust", "lib.rs")
         .read_by("rust", "user.rs")
         .read_by("rust", "app.rs")
+        .recovered("lib.rs", 1, 3)
         .imports_names("user.rs", "lib.rs", &["parse"])
         .imports("app.rs", "user.rs")
         .build();
@@ -1730,6 +1734,173 @@ fn a_rust_file_asked_about_by_name_is_followed_whole() {
         "{:?}",
         notes(&answer)
     );
+}
+
+/// `a.rs` declares `Runner` with `start` and `stop`, and `b.rs` imports `Runner` and has one declaration that uses `uses`.
+fn runner_user(uses: &[&str]) -> Index {
+    Tree::new()
+        .symbols(
+            "a.rs",
+            Code::new()
+                .declaration("Runner", (1, 4), &[])
+                .declaration("Runner.start", (2, 2), &["Runner"])
+                .declaration("Runner.stop", (3, 3), &["Runner"]),
+        )
+        .exports("a.rs", &["Runner"])
+        .imports_names("b.rs", "a.rs", &["Runner"])
+        .symbols("b.rs", Code::new().declaration("go", (1, 3), uses))
+        .exports("b.rs", &[])
+        .build()
+}
+
+#[scenario(
+    "queries",
+    "A member read on an unknown value reaches the members of that name"
+)]
+#[test]
+fn a_member_read_on_an_unknown_value_reaches_the_members_of_that_name() {
+    let index = runner_user(&[".start"]);
+
+    let started = ask(&index, "a.rs", &["Runner.start"], None);
+    let stopped = ask(&index, "a.rs", &["Runner.stop"], None);
+
+    assert_eq!(
+        rows(&started.affected),
+        [row("b.rs", 1, "imports Runner from a.rs", &["go"])]
+    );
+    assert!(stopped.affected.is_empty(), "{:?}", rows(&stopped.affected));
+}
+
+/// `b.rs` and `c.rs` hold `use a::*`; only `b.rs` uses `foo`.
+fn glob_importers() -> Index {
+    let glob = Import {
+        names: vec!["*".to_owned()],
+        exported: vec!["*".to_owned()],
+        ..Import::new("a", ImportKind::Static, 1)
+    };
+    Tree::new()
+        .symbols("a.rs", Code::new().declaration("foo", (1, 1), &[]))
+        .exports("a.rs", &["foo"])
+        .import("b.rs", glob.clone(), file("a.rs"))
+        .symbols("b.rs", Code::new().declaration("run", (2, 3), &["foo"]))
+        .exports("b.rs", &[])
+        .import("c.rs", glob, file("a.rs"))
+        .symbols("c.rs", Code::new().declaration("stop", (2, 3), &[]))
+        .exports("c.rs", &[])
+        .build()
+}
+
+#[scenario("queries", "A glob import passes the name to a glob below it")]
+#[test]
+fn a_glob_import_passes_the_name_to_a_glob_below_it() {
+    let glob = Import {
+        names: vec!["*".to_owned()],
+        exported: vec!["*".to_owned()],
+        ..Import::new("a", ImportKind::Static, 1)
+    };
+    let index = Tree::new()
+        .symbols("a.rs", Code::new().declaration("foo", (1, 1), &[]))
+        .exports("a.rs", &["foo"])
+        .import("b.rs", glob.clone(), file("a.rs"))
+        .symbols("b.rs", Code::new().declaration("run", (2, 3), &["foo"]))
+        .exports("b.rs", &[])
+        .import("c.rs", glob, file("b.rs"))
+        .symbols("c.rs", Code::new().declaration("go", (2, 3), &["foo"]))
+        .exports("c.rs", &[])
+        .build();
+
+    let answer = ask(&index, "a.rs", &["foo"], None);
+
+    assert_eq!(paths(&answer.affected), ["b.rs", "c.rs"]);
+}
+
+/// `root.rs` re-exports everything of `builder.rs`, and `Parser` by name from `derive.rs`, and `user.rs` takes `Parser` of `root.rs`.
+fn star_and_name(taken: &str, derive_exports: &[&str]) -> Index {
+    let star = Import {
+        names: vec!["*".to_owned()],
+        exported: vec!["*".to_owned()],
+        ..Import::new("builder", ImportKind::ReExportAll, 1)
+    };
+    let by_name = Import {
+        names: vec![taken.to_owned()],
+        exported: vec!["Parser".to_owned()],
+        ..Import::new("derive", ImportKind::ReExport, 2)
+    };
+    Tree::new()
+        .symbols("builder.rs", Code::new().declaration("Parser", (1, 1), &[]))
+        .exports("builder.rs", &["Parser"])
+        .symbols("derive.rs", Code::new().declaration("parser", (1, 1), &[]))
+        .exports("derive.rs", derive_exports)
+        .import("root.rs", star, file("builder.rs"))
+        .import("root.rs", by_name, file("derive.rs"))
+        .symbols("root.rs", Code::new())
+        .exports("root.rs", &[])
+        .imports_names("user.rs", "root.rs", &["Parser"])
+        .symbols(
+            "user.rs",
+            Code::new().declaration("go", (1, 3), &["Parser"]),
+        )
+        .exports("user.rs", &[])
+        .build()
+}
+
+#[scenario(
+    "queries",
+    "A re-export of a name its file does not hand out leaves the star its name"
+)]
+#[test]
+fn a_re_export_of_a_name_its_file_does_not_hand_out_leaves_the_star_its_name() {
+    let answer = ask(
+        &star_and_name("Parser", &["parser"]),
+        "builder.rs",
+        &["Parser"],
+        None,
+    );
+    assert!(paths(&answer.affected).contains(&"user.rs"));
+
+    let answer = ask(
+        &star_and_name("Parser", &["Parser", "parser"]),
+        "builder.rs",
+        &["Parser"],
+        None,
+    );
+    assert!(!paths(&answer.affected).contains(&"user.rs"));
+
+    let answer = ask(
+        &star_and_name("*", &["parser"]),
+        "builder.rs",
+        &["Parser"],
+        None,
+    );
+    assert!(!paths(&answer.affected).contains(&"user.rs"));
+}
+
+#[scenario("queries", "A glob import binds the name asked about")]
+#[test]
+fn a_glob_import_binds_the_name_asked_about() {
+    let answer = ask(&glob_importers(), "a.rs", &["foo"], None);
+
+    assert_eq!(paths(&answer.affected), ["b.rs"]);
+}
+
+#[scenario("queries", "A module declaration takes no name")]
+#[test]
+fn a_module_declaration_takes_no_name() {
+    let index = Tree::new()
+        .symbols("a.rs", Code::new().declaration("foo", (1, 1), &[]))
+        .exports("a.rs", &["foo"])
+        .import(
+            "lib.rs",
+            Import::new("a", ImportKind::Module, 1),
+            file("a.rs"),
+        )
+        .symbols("lib.rs", Code::new())
+        .exports("lib.rs", &[])
+        .build();
+
+    let answer = ask(&index, "a.rs", &["foo"], None);
+
+    assert!(answer.affected.is_empty(), "{:?}", rows(&answer.affected));
 }
 
 #[scenario("queries", "An importer without declarations is followed whole")]
@@ -3737,6 +3908,180 @@ fn a_class_that_implements_the_member_of_an_interface_is_listed() {
             &["Aws.groups"]
         )]
     );
+}
+
+/// As many declarations override `GitProvider.groups` as `overriders` says, one of them `Aws.groups`. `typed.ts` names the member of the head, `unknown.ts` holds the head and reads the member on a value of unknown type, `named.ts` holds it and reads the member too, `gcp.ts` takes the members of the head and `user.ts` calls one on it.
+fn head_readers(overriders: usize) -> Index {
+    let others = (1..overriders).fold(Code::new(), |code, n| {
+        let class = format!("Other{n}");
+        code.declaration(&class, (1, 1), &[])
+            .declaration(&format!("{class}.groups"), (1, 1), &[])
+            .overrides(&class, "GitProvider")
+    });
+    Tree::new()
+        .symbols(
+            "provider.ts",
+            Code::new()
+                .declaration("GitProvider", (1, 3), &[])
+                .declaration("GitProvider.groups", (2, 2), &[]),
+        )
+        .exports("provider.ts", &["GitProvider"])
+        .imports_names("aws.ts", "provider.ts", &["GitProvider"])
+        .symbols(
+            "aws.ts",
+            Code::new()
+                .declaration("Aws", (1, 6), &[])
+                .declaration("Aws.groups", (2, 4), &[])
+                .overrides("Aws", "GitProvider"),
+        )
+        .exports("aws.ts", &["Aws"])
+        .imports_names("others.ts", "provider.ts", &["GitProvider"])
+        .symbols("others.ts", others)
+        .exports("others.ts", &[])
+        .imports_names("typed.ts", "provider.ts", &["GitProvider"])
+        .symbols(
+            "typed.ts",
+            Code::new().declaration("go", (1, 3), &["GitProvider", "GitProvider.groups"]),
+        )
+        .exports("typed.ts", &[])
+        .imports_names("unknown.ts", "provider.ts", &["GitProvider"])
+        .symbols(
+            "unknown.ts",
+            Code::new()
+                .declaration("go", (1, 3), &["GitProvider", ".groups"])
+                .reads("groups"),
+        )
+        .exports("unknown.ts", &[])
+        .imports_names("named.ts", "provider.ts", &["GitProvider"])
+        .symbols(
+            "named.ts",
+            Code::new()
+                .declaration("go", (1, 3), &["GitProvider"])
+                .reads("groups"),
+        )
+        .exports("named.ts", &[])
+        .imports_names("gcp.ts", "provider.ts", &["GitProvider"])
+        .symbols(
+            "gcp.ts",
+            Code::new()
+                .declaration("Gcp", (1, 3), &[])
+                .heir("Gcp", "GitProvider"),
+        )
+        .exports("gcp.ts", &["Gcp"])
+        .imports_names("user.ts", "gcp.ts", &["Gcp"])
+        .symbols(
+            "user.ts",
+            Code::new().declaration("go", (1, 3), &["Gcp", "Gcp.groups"]),
+        )
+        .exports("user.ts", &[])
+        .build()
+}
+
+/// One more declaration than a head may have overriding it before a read on an unknown value stops counting through it.
+const CROWDED: usize = 33;
+
+#[scenario(
+    "queries",
+    "A read on an unknown value does not count through a crowded head"
+)]
+#[test]
+fn a_read_on_an_unknown_value_does_not_count_through_a_crowded_head() {
+    let index = head_readers(CROWDED);
+
+    let through = ask(&index, "aws.ts", &["Aws.groups"], None);
+    assert_eq!(paths(&through.affected), ["provider.ts", "typed.ts"]);
+    let notes: Vec<String> = through.notes.iter().map(ToString::to_string).collect();
+    assert_eq!(
+        notes,
+        [
+            "2 files hold the classes of Aws.groups and GitProvider.groups, and a call on a value of unknown type does not say which of them runs; ask about those classes to list them",
+            "Aws.groups may run through GitProvider.groups in provider.ts, which 33 declarations override, so only the callers that name it are listed",
+        ]
+    );
+
+    let asked = ask(&index, "provider.ts", &["GitProvider.groups"], None);
+    let listed = paths(&asked.affected);
+    for file in ["named.ts", "typed.ts", "unknown.ts"] {
+        assert!(listed.contains(&file), "{file} is not in {listed:?}");
+    }
+}
+
+#[scenario("queries", "A head asked about too is no crowded head")]
+#[test]
+fn a_head_asked_about_too_is_no_crowded_head() {
+    let index = head_readers(CROWDED);
+
+    // `aws.ts` sorts before `provider.ts`, so the member reaches the head first.
+    let answer = ask_in(
+        &index,
+        &["aws.ts", "provider.ts"],
+        &["Aws.groups", "GitProvider.groups"],
+        None,
+    );
+
+    assert!(paths(&answer.affected).contains(&"unknown.ts"));
+}
+
+#[scenario(
+    "queries",
+    "A read on an unknown value counts through a head few declarations override"
+)]
+#[test]
+fn a_read_on_an_unknown_value_counts_through_a_head_few_declarations_override() {
+    let index = head_readers(CROWDED - 1);
+
+    let through = ask(&index, "aws.ts", &["Aws.groups"], None);
+    let listed = paths(&through.affected);
+    for file in ["named.ts", "typed.ts", "unknown.ts", "user.ts"] {
+        assert!(listed.contains(&file), "{file} is not in {listed:?}");
+    }
+}
+
+#[scenario(
+    "queries",
+    "A class that takes the members of a crowded head is no caller through it"
+)]
+#[test]
+fn a_class_that_takes_the_members_of_a_crowded_head_is_no_caller_through_it() {
+    let index = head_readers(CROWDED);
+
+    let through = ask(&index, "aws.ts", &["Aws.groups"], None);
+    assert!(!paths(&through.affected).contains(&"user.ts"));
+
+    let asked = ask(&index, "provider.ts", &["GitProvider.groups"], None);
+    assert!(paths(&asked.affected).contains(&"user.ts"));
+}
+
+/// `b.rs` declares `Foo.m` on the `Foo` it imports from `a.rs`, `c.rs` holds `Foo` of `a.rs` and uses `Foo.m`, and `d.rs` holds `Foo` and uses another member.
+#[scenario(
+    "queries",
+    "A member declared on an imported class reaches the holders of the class"
+)]
+#[test]
+fn a_member_declared_on_an_imported_class_reaches_the_holders_of_the_class() {
+    let index = Tree::new()
+        .symbols("a.rs", Code::new().declaration("Foo", (1, 1), &[]))
+        .exports("a.rs", &["Foo"])
+        .imports_names("b.rs", "a.rs", &["Foo"])
+        .symbols("b.rs", Code::new().declaration("Foo.m", (1, 1), &["Foo"]))
+        .exports("b.rs", &[])
+        .imports_names("c.rs", "a.rs", &["Foo"])
+        .symbols(
+            "c.rs",
+            Code::new().declaration("go", (1, 3), &["Foo", "Foo.m"]),
+        )
+        .exports("c.rs", &[])
+        .imports_names("d.rs", "a.rs", &["Foo"])
+        .symbols(
+            "d.rs",
+            Code::new().declaration("go", (1, 3), &["Foo", "Foo.n"]),
+        )
+        .exports("d.rs", &[])
+        .build();
+
+    let answer = ask(&index, "b.rs", &["Foo.m"], None);
+
+    assert_eq!(paths(&answer.affected), ["c.rs"]);
 }
 
 #[scenario("queries", "An override through a chain of classes is listed")]

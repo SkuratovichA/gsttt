@@ -8,7 +8,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::contract::Role;
 use crate::fact::{
-    Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR, belongs_to, member_in, member_of,
+    Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR, ResolvedImport, belongs_to, member_in,
+    member_of,
 };
 use crate::graph::{ContractSite, Declaration, Edge, FileSymbols, Graph};
 use crate::ids::{ContractId, FileId, Id, NameId};
@@ -30,6 +31,15 @@ pub(in crate::query) enum Note {
     HeldClass {
         members: Vec<(String, String)>,
         files: usize,
+        /// Whether the walk went through a crowded head, where a file held may also call the member on a value of unknown type.
+        crowded: bool,
+    },
+    /// A member runs through a head that so many declarations override that only the callers naming the member of the head are listed.
+    Crowded {
+        member: String,
+        through: String,
+        file: FileId,
+        overriders: usize,
     },
     /// A file loads the module and reads none of the names asked about, so it cannot be told from a caller of the module, and is left out: `files` of them. It holds the module in a local, or loads it below the top level.
     HeldModule { files: usize },
@@ -250,6 +260,7 @@ fn walk_from<'r>(
         held: BTreeSet::new(),
         held_modules: BTreeSet::new(),
         heads: BTreeSet::new(),
+        crowded: BTreeSet::new(),
     };
     let mut crossed = Crossed::new(Direction::ToCallers, &index.graph);
     let mut notes = BTreeSet::new();
@@ -285,6 +296,7 @@ fn walk_from<'r>(
         notes.insert(Note::HeldClass {
             members: walk.through_class.into_iter().collect(),
             files: held,
+            crowded: !walk.crowded.is_empty(),
         });
     }
     let modules = modules.iter().filter(|file| outside(file)).count();
@@ -324,6 +336,9 @@ struct Hops {
     /// The hops of the way through code, which the depth bounds.
     code: u32,
 }
+
+/// How many declarations may override the member of a head before a read of that member on a value of unknown type stops saying anything about the class asked about. With 70 types behind `impl IntoResponse`, a `.into_response()` anywhere in the repository is a caller of each one only in the way a grep is, so the file goes to a note unless it names the member of the head.
+const MANY_OVERRIDERS: usize = 32;
 
 /// The hops of a declaration asked about, which the walk starts from.
 const START: Hops = Hops {
@@ -456,6 +471,8 @@ struct Walk<'a> {
     held_modules: BTreeSet<FileId>,
     /// The declarations the walk started from only because the member asked about overrides them. A sibling that implements them is no caller, so the walk lists no overrides of them.
     heads: BTreeSet<Unit>,
+    /// The heads so many declarations override that a read of the member on a value of unknown type says nothing about which of them runs.
+    crowded: BTreeSet<Unit>,
 }
 
 impl Walk<'_> {
@@ -467,6 +484,7 @@ impl Walk<'_> {
         notes: &mut BTreeSet<Note>,
     ) -> Vec<Front> {
         let mut started = BTreeSet::new();
+        let mut members = Vec::new();
         for &file in changed {
             let touch = self.files.entry(file).or_default();
             let Some(symbols) = self.graph.symbols(file) else {
@@ -497,9 +515,11 @@ impl Walk<'_> {
                     });
                 }
             }
-            for name in names {
-                self.start_overridden(file, name, &mut started, notes);
-            }
+            members.extend(names.iter().map(|name| (file, name.as_str())));
+        }
+        // A head asked about too is no head, whichever file comes first.
+        for (file, name) in members {
+            self.start_overridden(file, name, &mut started, notes);
         }
         started
             .into_iter()
@@ -514,6 +534,7 @@ impl Walk<'_> {
         notes: &mut BTreeSet<Note>,
     ) -> Vec<Front> {
         let mut started = BTreeSet::new();
+        let mut members = Vec::new();
         for (&file, seed) in seeds {
             let touch = self.files.entry(file).or_default();
             match seed {
@@ -540,15 +561,18 @@ impl Walk<'_> {
                         });
                     }
                     let graph = self.graph;
-                    for name in decls
-                        .iter()
-                        .filter_map(|&index| graph.symbols(file)?.declaration(index))
-                        .map(Declaration::name)
-                    {
-                        self.start_overridden(file, name, &mut started, notes);
-                    }
+                    members.extend(
+                        decls
+                            .iter()
+                            .filter_map(|&index| graph.symbols(file)?.declaration(index))
+                            .map(|decl| (file, decl.name())),
+                    );
                 }
             }
+        }
+        // A head that changed too is no head, whichever file comes first.
+        for (file, name) in members {
+            self.start_overridden(file, name, &mut started, notes);
         }
         started
             .into_iter()
@@ -584,10 +608,29 @@ impl Walk<'_> {
             if started.insert(unit) {
                 self.heads.insert(unit);
             }
-            notes.insert(Note::Overridden {
-                member: name.to_owned(),
-                through: decl.name().to_owned(),
-                file: owner,
+            let overriders = if self.heads.contains(&unit) {
+                overriding(self.index, owner, place).len()
+            } else {
+                0
+            };
+            let crowded = overriders > MANY_OVERRIDERS;
+            if crowded {
+                self.crowded.insert(unit);
+            }
+            let (member, through) = (name.to_owned(), decl.name().to_owned());
+            notes.insert(if crowded {
+                Note::Crowded {
+                    member,
+                    through,
+                    file: owner,
+                    overriders,
+                }
+            } else {
+                Note::Overridden {
+                    member,
+                    through,
+                    file: owner,
+                }
             });
         }
     }
@@ -790,6 +833,8 @@ struct Local<'a> {
     member: Option<&'a str>,
     /// The member the walk asked about when the local is a namespace, whose `member` is the class and is all the namespace is told of it: `place` for `lib` with the member `Base`, when the walk is at `Base.place`.
     inner: Option<&'a str>,
+    /// Whether the walk reached the member through a crowded head of the class it asked about. A call on a value of unknown type then says nothing about the class, and a class that takes the members of the head is a sibling of the class asked about.
+    through_head: bool,
 }
 
 impl<'a> Local<'a> {
@@ -806,18 +851,35 @@ impl<'a> Local<'a> {
         }
     }
 
+    /// What a read of the member on a value of unknown type makes of a file that holds what the local stands for: a use of it, unless the walk came through a crowded head, where the read says nothing about the class asked about.
+    fn read_counts(&self, symbols: FileSymbols<'_>) -> Refers {
+        let read = self
+            .inner
+            .or(self.member)
+            .is_some_and(|member| symbols.reads_member(member));
+        if read && !self.through_head {
+            Refers::Yes
+        } else {
+            Refers::Held
+        }
+    }
+
     /// Whether a declaration that uses `used` refers to what the local stands for. A use of the local alone is a use of the member only where the file reads the member on some value, and `Local.member` is a use of that member only, which for a namespace is a name of the file and for a class a member of it.
     fn refers(&self, symbols: FileSymbols<'_>, used: &str) -> Refers {
         let Some(member) = self.member else {
             return Refers::from(belongs_to(used, self.name));
         };
+        // `.member` is a member read on a value whose class the connector did not know, by a file that holds the class or the trait, which a call through a value never names.
+        if used.strip_prefix(MEMBER_SEPARATOR) == Some(self.inner.unwrap_or(member)) {
+            return if self.through_head {
+                Refers::Held
+            } else {
+                Refers::Yes
+            };
+        }
         if used == self.name {
             // A namespace or a class passed away names nothing by itself: it is a use of the member where the file names the member, which for a namespace is the member of its class that the walk asked about.
-            return if symbols.reads_member(self.inner.unwrap_or(member)) {
-                Refers::Yes
-            } else {
-                Refers::Held
-            };
+            return self.read_counts(symbols);
         }
         let Some(rest) = member_in(used, self.name) else {
             return Refers::No;
@@ -825,7 +887,7 @@ impl<'a> Local<'a> {
         match self.inner {
             // `lib.Base` alone is a use of `Base` as a whole, and `lib.Base.place` of the member.
             Some(inner) if rest == member => {
-                if symbols.reads_member(inner) {
+                if !self.through_head && symbols.reads_member(inner) {
                     Refers::Yes
                 } else {
                     Refers::Held
@@ -905,6 +967,8 @@ struct Step<'w, 'a> {
     layer: Layer,
     /// The fewest hops through code of the parts of the frontier that leave each contract, when they differ.
     leavers: Leavers<'a>,
+    /// The names the step hands out that it reached through a crowded head of the class the walk asked about.
+    through_crowd: BTreeSet<Name<'a>>,
     /// The hops through code of the parts the step reaches now: one more than the part they come from after a hop through code, as many after a hop across a contract.
     hops: u32,
 }
@@ -916,6 +980,7 @@ impl<'w, 'a> Step<'w, 'a> {
             crossed,
             layer: Layer::default(),
             leavers: Leavers::new(Direction::ToCallers, walk.crossing),
+            through_crowd: BTreeSet::new(),
             hops: 0,
         }
     }
@@ -1097,7 +1162,7 @@ impl<'w, 'a> Step<'w, 'a> {
         if import.flags.contains(ImportFlags::TYPE_ONLY)
             && let Name::Member(class, member) = name
             && import.names.iter().any(|taken| taken == class)
-            && !symbols.reads_member(member)
+            && (self.through_crowd.contains(&name) || !symbols.reads_member(member))
         {
             self.layer.held.insert(importer);
             return;
@@ -1202,13 +1267,69 @@ impl<'w, 'a> Step<'w, 'a> {
     /// The names `file` exports the `declared` ones as, which its importers take. The class of a member is the name it is exported as, because the member is not. A file whose exports are unknown could export them as any name.
     fn exports(&mut self, file: FileId, symbols: FileSymbols<'a>, declared: &[usize]) {
         let mut exported = BTreeSet::new();
-        for decl in declared
-            .iter()
-            .filter_map(|&index| symbols.declaration(index))
-        {
-            self.exported_decl(file, symbols, decl.name(), &mut exported);
+        let mut through_crowd = BTreeSet::new();
+        for &index in declared {
+            let Some(decl) = symbols.declaration(index) else {
+                continue;
+            };
+            let unit = Unit {
+                file,
+                part: Part::Decl(index),
+            };
+            if self.walk.crowded.contains(&unit) {
+                through_crowd.extend(self.exported_member(file, symbols, decl.name()));
+            } else {
+                self.exported_decl(file, symbols, decl.name(), &mut exported);
+            }
         }
+        // A name reached both ways is reached as the class asked about.
+        through_crowd.retain(|name| !exported.contains(name));
+        exported.extend(through_crowd.iter().copied());
+        self.through_crowd = through_crowd;
         self.flow_exported(file, exported);
+        self.through_crowd.clear();
+        for &index in declared {
+            if let Some(decl) = symbols.declaration(index) {
+                self.reach_from_home(file, symbols, decl.name());
+            }
+        }
+    }
+
+    /// A member a file declares on a class it imports, as `impl Foo` in another file than `struct Foo`: whoever holds the class holds the member, so the walk goes on from the file of the class.
+    fn reach_from_home(&mut self, file: FileId, symbols: FileSymbols<'a>, name: &'a str) {
+        let Some((class, member)) = split_member(name) else {
+            return;
+        };
+        if !self.exported_as(file, symbols, class).is_empty() {
+            return;
+        }
+        let walk = self.walk;
+        let imports = walk
+            .index
+            .records
+            .get(file.index())
+            .map_or(&[][..], |record| record.imports.as_slice());
+        for resolved in imports {
+            let import = &resolved.import;
+            let [taken] = import.names.as_slice() else {
+                continue;
+            };
+            if import.exported.first().unwrap_or(taken) != class {
+                continue;
+            }
+            for &home in resolved.to.files() {
+                if let Some(home_symbols) = walk.graph.symbols(home) {
+                    let local = Local {
+                        name: taken,
+                        member: Some(member),
+                        inner: None,
+                        through_head: false,
+                    };
+                    self.users(home, home_symbols, &[local]);
+                }
+                self.flow(home, BTreeSet::from([Name::Member(taken, member)]));
+            }
+        }
     }
 
     /// Adds to `exported` the names `file` exports the declaration `name` as, with its member when it is one, and the members of the names that take the members of its class.
@@ -1219,19 +1340,31 @@ impl<'w, 'a> Step<'w, 'a> {
         name: &'a str,
         exported: &mut BTreeSet<Name<'a>>,
     ) {
-        let (local, member) = match split_member(name) {
-            Some((class, member)) => (class, Some(member)),
-            None => (name, None),
-        };
-        let names = self.exported_as(file, symbols, local);
-        exported.extend(names.into_iter().map(|name| name.with(member)));
+        exported.extend(self.exported_member(file, symbols, name));
         // A name that takes the members of the class takes this one too.
-        if let Some(member) = member {
-            for heir in heirs_of(symbols, |of| of == local, member) {
+        if let Some((class, member)) = split_member(name) {
+            for heir in heirs_of(symbols, |of| of == class, member) {
                 let names = self.exported_as(file, symbols, heir);
                 exported.extend(names.into_iter().map(|name| name.with(Some(member))));
             }
         }
+    }
+
+    /// The names `file` exports the declaration `name` as, with its member when it is one.
+    fn exported_member(
+        &self,
+        file: FileId,
+        symbols: FileSymbols<'a>,
+        name: &'a str,
+    ) -> Vec<Name<'a>> {
+        let (local, member) = match split_member(name) {
+            Some((class, member)) => (class, Some(member)),
+            None => (name, None),
+        };
+        self.exported_as(file, symbols, local)
+            .into_iter()
+            .map(|name| name.with(member))
+            .collect()
     }
 
     /// Follows what `file` exports to its importers.
@@ -1267,7 +1400,34 @@ impl<'w, 'a> Step<'w, 'a> {
                             .exported
                             .iter()
                             .any(|exported| exported == name)
+                        && !self.hands_out_none(resolved)
                 })
+            })
+    }
+
+    /// Whether the files a re-export comes from list what they export and none of what it takes, nor bring in more with a star: the name is of another namespace, as `pub use clap_derive::Parser` is a macro beside the trait `pub use clap_builder::*` brings in. A re-export of a whole file under a name, `export * as ns`, hands that name out whatever the file exports.
+    fn hands_out_none(&self, resolved: &ResolvedImport) -> bool {
+        let files = resolved.to.files();
+        !files.is_empty()
+            && !resolved.import.names.iter().any(|taken| taken == "*")
+            && files.iter().all(|&file| {
+                self.walk.graph.exports(file).is_some()
+                    && !resolved
+                        .import
+                        .names
+                        .iter()
+                        .any(|taken| exports_name(self.walk.graph, file, taken))
+                    && !self
+                        .walk
+                        .index
+                        .records
+                        .get(file.index())
+                        .is_some_and(|record| {
+                            record
+                                .imports
+                                .iter()
+                                .any(|import| import.import.kind == ImportKind::ReExportAll)
+                        })
             })
     }
 
@@ -1396,7 +1556,8 @@ impl<'w, 'a> Step<'w, 'a> {
         work: &mut VecDeque<(FileId, Name<'a>)>,
     ) {
         let mut heirs = Vec::new();
-        for local in &via.locals {
+        // A class that takes the members of a crowded head is one more sibling of the class asked about.
+        for local in via.locals.iter().filter(|local| !local.through_head) {
             if let Some(member) = local.passes() {
                 for heir in heirs_of(symbols, |of| local.extends(of), member) {
                     heirs.push((heir, member));
@@ -1408,6 +1569,7 @@ impl<'w, 'a> Step<'w, 'a> {
                 name: heir,
                 member: Some(member),
                 inner: None,
+                through_head: false,
             });
             for exported in self.exported_as(importer, symbols, heir) {
                 work.push_back((importer, exported.with(Some(member))));
@@ -1457,6 +1619,7 @@ impl<'w, 'a> Step<'w, 'a> {
                         name: listed,
                         member: None,
                         inner: None,
+                        through_head: false,
                     });
                 }
                 // `export *` never forwards `default`, nor a name the importer binds itself: its own wins, so `from .base import *` followed by `DEBUG = False` hands on the new `DEBUG` and not the one of `base`, and `export { helper } from './b'` beside `export * from './a'` hands on the `helper` of `b`.
@@ -1514,12 +1677,13 @@ impl<'w, 'a> Step<'w, 'a> {
                     if import.kind == ImportKind::Require
                         && let Name::Member(class, member) = name
                         && import.names.iter().any(|taken| taken == class)
-                        && !symbols.reads_member(member)
+                        && (self.through_crowd.contains(&name) || !symbols.reads_member(member))
                     {
                         let local = Local {
                             name: class,
                             member: Some(member),
                             inner: None,
+                            through_head: self.through_crowd.contains(&name),
                         };
                         via.used |= self.users(importer, symbols, &[local]);
                         return;
@@ -1527,6 +1691,8 @@ impl<'w, 'a> Step<'w, 'a> {
                     self.use_taken(name, importer, symbols, import, via);
                 }
             }
+            // A `mod` declaration owns the child file and uses nothing of it by name; a path import beside it reaches the names.
+            ImportKind::Module if name != Name::Any => {}
             ImportKind::Reference | ImportKind::Module | ImportKind::Include => {
                 via.taken = Taken::Everything;
                 via.whole = true;
@@ -1548,6 +1714,11 @@ impl<'w, 'a> Step<'w, 'a> {
         let graph = self.walk.graph;
         let re_export = import.kind == ImportKind::ReExport;
         for (taken, bound) in import.names.iter().zip(&import.exported) {
+            // A glob that is not a re-export, Rust's `use a::*`, binds every name the file hands out as itself.
+            if bound == "*" && !re_export {
+                self.glob(name, importer, symbols, import, via, work);
+                continue;
+            }
             // A name that a package hands out may be one of its modules, and the file reached is then that module itself, which the local stands for as a namespace does. A module that exports the name itself hands out that value when the import names the module, so `from app.logger import logger` binds the object and not the module of that stem, while `from . import cli` still binds the module `cli`, whatever it declares.
             let module = import.flags.contains(ImportFlags::MODULES)
                 && graph
@@ -1574,7 +1745,11 @@ impl<'w, 'a> Step<'w, 'a> {
                 if let (Some(source), Some(target)) = (graph.name_id(taken), graph.name_id(bound)) {
                     via.passes.push((source, target));
                 }
-                work.push_back((importer, Name::Is(bound).with(member)));
+                let passed = Name::Is(bound).with(member);
+                if self.through_crowd.contains(&name) {
+                    self.through_crowd.insert(passed);
+                }
+                work.push_back((importer, passed));
                 continue;
             }
             let inner = match name {
@@ -1585,6 +1760,7 @@ impl<'w, 'a> Step<'w, 'a> {
                 name: bound,
                 member,
                 inner,
+                through_head: self.through_crowd.contains(&name),
             });
             // A file that declares members of what it imports exports the name to start a walk at them, not to pass it on: it calls nothing of the import by that.
             if symbols
@@ -1599,6 +1775,40 @@ impl<'w, 'a> Step<'w, 'a> {
                 work.push_back((importer, exported.with(member)));
             }
         }
+    }
+
+    /// What a glob import that binds the names itself makes of `name`: a local of that name, unless the importer declares it, because a name a file declares beats one a glob brings in. A walk of every name takes the file as an import of all of them.
+    fn glob(
+        &mut self,
+        name: Name<'a>,
+        importer: FileId,
+        symbols: FileSymbols<'a>,
+        import: &'a Import,
+        via: &mut Via<'a>,
+        work: &mut VecDeque<(FileId, Name<'a>)>,
+    ) {
+        let Some(asked) = name.exported() else {
+            self.use_taken(name, importer, symbols, import, via);
+            return;
+        };
+        if symbols
+            .declarations()
+            .any(|decl| belongs_to(decl.name(), asked))
+        {
+            return;
+        }
+        via.taken.name(self.walk.graph, asked);
+        via.locals.push(Local {
+            name: asked,
+            member: match name {
+                Name::Member(_, member) => Some(member),
+                Name::Is(_) | Name::Any => None,
+            },
+            inner: None,
+            through_head: self.through_crowd.contains(&name),
+        });
+        // A module sees what its parent brings in, private or not, so a `use super::*` below this file takes the name too.
+        work.push_back((importer, name));
     }
 
     /// The declarations of `importer` that refer to one of `locals`, and its load when it does. Says whether any is new.

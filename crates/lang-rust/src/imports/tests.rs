@@ -240,7 +240,7 @@ fn a_use_of_a_macro_declared_in_the_file_reads_no_import() {
 #[test]
 fn a_renamed_use_takes_the_name_the_module_declares_and_binds_the_new_one() {
     let pair = |taken: &str, bound: &str| (vec![taken.to_owned()], vec![bound.to_owned()]);
-    let own = |taken: &str| (vec![taken.to_owned()], Vec::<String>::new());
+    let own = |taken: &str| (vec![taken.to_owned()], vec![taken.to_owned()]);
     assert_eq!(
         taken_and_bound(
             "use a::Foo as Bar;\npub use a::Foo as Baz;\nuse a::{self as m, Plain};\nuse a::Anon as _;\nextern crate serde as sd;\nextern crate log;"
@@ -252,12 +252,12 @@ fn a_renamed_use_takes_the_name_the_module_declares_and_binds_the_new_one() {
             own("Plain"),
             pair("Anon", "_"),
             pair("serde", "sd"),
-            own("log"),
+            (vec!["log".to_owned()], Vec::new()),
         ]
     );
     assert_eq!(
         taken_and_bound("use a::*;\npub use a::*;"),
-        [own("*"), own("*")]
+        [own("*"), own("*"), (vec!["*".to_owned()], Vec::new())]
     );
 }
 

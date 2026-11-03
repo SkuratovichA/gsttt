@@ -1,6 +1,7 @@
 //! Where an import of a Rust file points: through the module tree of its crate, the library of its package, its dependencies, and the workspace's other crates.
 
-use std::collections::{BTreeMap, HashMap};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use gsttt_core::fact::{Import, ImportKind, Resolution, UnresolvedReason};
 use gsttt_core::path::RepoPath;
@@ -13,10 +14,20 @@ use crate::tree::{CrateTree, Module, Registry, Trees, locate, parent_key};
 /// Crates every Rust program can name without declaring them.
 const BUILTINS: [&str; 5] = ["std", "core", "alloc", "proc_macro", "test"];
 
-/// The names a file brings in with `use`, by file, each with the path it stands for.
-pub(crate) type Aliases = HashMap<String, BTreeMap<String, String>>;
+/// How many times a path goes on through a re-export before the resolver stops at the module it reached, so that two crates that glob each other end.
+const MAX_FORWARDS: u8 = 8;
+
+/// What the files of a project bring in with `use`.
+#[derive(Debug, Default)]
+pub(crate) struct Aliases {
+    /// The names, by file, each with the path it stands for.
+    pub(crate) names: HashMap<String, BTreeMap<String, String>>,
+    /// The paths of the glob imports, by file, in the order of the file.
+    pub(crate) globs: HashMap<String, Vec<String>>,
+}
 
 /// What resolving needs, borrowed from the project that asks.
+#[derive(Clone, Copy)]
 pub(crate) struct Resolver<'a> {
     pub(crate) repo: &'a RepoView,
     pub(crate) root: &'a str,
@@ -26,6 +37,10 @@ pub(crate) struct Resolver<'a> {
     pub(crate) aliases: &'a Aliases,
     /// The edition of the crate, which decides where a `use` path starts.
     pub(crate) edition: Edition,
+    /// How many re-exports the path has gone on through.
+    pub(crate) forwards: u8,
+    /// The files and the paths left that one import has gone on from, because modules that glob each other lead back to them with nothing new.
+    pub(crate) seen: &'a RefCell<BTreeSet<(String, String)>>,
 }
 
 fn not_found() -> Resolution {
@@ -92,6 +107,7 @@ impl Resolver<'_> {
             // The `use` that is being resolved defines its own name; replacing that name by the path would repeat it.
             && let Some(target) = self
                 .aliases
+                .names
                 .get(from)
                 .and_then(|names| names.get(first))
                 .filter(|target| target.as_str() != spec)
@@ -112,7 +128,7 @@ impl Resolver<'_> {
                 self.land(tree, key, names.get(1..).unwrap_or_default())
             }),
             Some("super") => self.above(home, &names),
-            Some(_) => self.named(home, &names),
+            Some(_) => self.named(from, home, &names),
             None => not_found(),
         }
     }
@@ -135,7 +151,7 @@ impl Resolver<'_> {
     /// A path whose first segment names a child module, a crate, or a module at the crate root, in that order.
     ///
     /// The last step is not Rust's rule, which starts a path at the module or at a crate. It stands in for the names that `use super::*` and `use crate::…::*` bring in, which the connector does not read: a first segment that is a module at the crate root is more likely one of those than a mistake.
-    fn named(&self, home: Option<(&CrateTree, &str)>, names: &[&str]) -> Resolution {
+    fn named(&self, from: &str, home: Option<(&CrateTree, &str)>, names: &[&str]) -> Resolution {
         let Some((first, rest)) = names.split_first() else {
             return not_found();
         };
@@ -152,7 +168,9 @@ impl Resolver<'_> {
         {
             return self.land(tree, "", names);
         }
-        Resolution::Unresolved(UnresolvedReason::UnknownPackage)
+        // `use counting::Foo` with `counting` brought in by a glob of the same file.
+        self.forwarded(from, names)
+            .unwrap_or(Resolution::Unresolved(UnresolvedReason::UnknownPackage))
     }
 
     /// `::name::…`: the crate root in 2015, where `use` paths start; a crate from 2018 on, so a module of this crate is not one.
@@ -198,22 +216,78 @@ impl Resolver<'_> {
 
     /// A dependency: the library of a workspace crate when it is one, else the package it names.
     fn dependency(&self, dependency: &Dependency, rest: &[&str]) -> Resolution {
-        let trees = dependency
+        let published = dependency
             .path
             .as_deref()
-            .and_then(|dir| self.registry.trees(dir));
-        match trees.as_deref().and_then(Trees::library) {
-            Some(library) => self.land(library, "", rest),
-            None => Resolution::External {
+            .and_then(|dir| Some((dir, self.registry.crate_at(dir)?)));
+        let found = published
+            .as_ref()
+            .and_then(|(dir, published)| Some((*dir, published, published.trees.library()?)));
+        let Some((dir, published, library)) = found else {
+            return Resolution::External {
                 package: dependency.package.clone(),
-            },
+            };
+        };
+        // The rest of the path is the dependency's own: it goes on through what that crate re-exports, with the dependencies of that crate.
+        Resolver {
+            root: dir,
+            package: published.package.as_ref(),
+            trees: &published.trees,
+            aliases: &published.aliases,
+            edition: published.edition,
+            ..*self
         }
+        .land(library, "", rest)
     }
 
-    /// The file of the deepest module that `names` reach from the module at `key`.
+    /// The file of the deepest module that `names` reach from the module at `key`, or of what the path goes on through from there.
     fn land(&self, tree: &CrateTree, key: &str, names: &[&str]) -> Resolution {
-        tree.walk(key, names.iter().copied())
-            .and_then(|module| self.repo.lookup(module.file.as_str()))
+        let Some((module, rest)) = tree.reach(key, names) else {
+            return not_found();
+        };
+        if let Some(found) = self.forwarded(module.file.as_str(), rest) {
+            return found;
+        }
+        self.repo
+            .lookup(module.file.as_str())
             .map_or_else(not_found, |file| Resolution::File { file })
+    }
+
+    /// Where a path goes on from `file` when its next segment is no module there and more follows: `grep::cli::X` with `pub extern crate grep_cli as cli`, or `clap::builder::X` with `pub use clap_builder::*`. A segment of CamelCase is a type, and what follows it is a member.
+    fn forwarded(&self, file: &str, rest: &[&str]) -> Option<Resolution> {
+        let (first, tail) = rest.split_first()?;
+        if tail.is_empty()
+            || self.forwards >= MAX_FORWARDS
+            || !first.starts_with(|ch: char| ch.is_lowercase() || ch == '_')
+            || !self
+                .seen
+                .borrow_mut()
+                .insert((file.to_owned(), rest.join("::")))
+        {
+            return None;
+        }
+        let next = Self {
+            forwards: self.forwards + 1,
+            ..*self
+        };
+        let join = |head: &str, names: &[&str]| {
+            let mut spec = vec![head];
+            spec.extend_from_slice(names);
+            spec.join("::")
+        };
+        if let Some(target) = self
+            .aliases
+            .names
+            .get(file)
+            .and_then(|names| names.get(*first))
+        {
+            return Some(next.path(file, &join(target, tail)));
+        }
+        self.aliases.globs.get(file)?.iter().find_map(|glob| {
+            let found = next.path(file, &join(glob, rest));
+            // A glob of a crate without that module reaches no more than the glob itself does.
+            (matches!(found, Resolution::File { .. }) && found != next.path(file, glob))
+                .then_some(found)
+        })
     }
 }
