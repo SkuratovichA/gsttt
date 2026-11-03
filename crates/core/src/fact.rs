@@ -353,7 +353,10 @@ pub struct Symbols {
     pub heirs: Vec<Heir>,
     /// The heads a value of which may run the members of a name: `GitProvider` for `class Aws implements GitProvider`, `Base` for `class Sub extends Base`. It is kept apart from `heirs`, which means "takes the members of": a Go embedding takes members without any dispatch, since a call on the embedded type never reaches the outer type. Sorted by name and then by head, each pair once.
     pub overrides: Vec<Heir>,
-    /// The member names the file reads on a receiver whose class the connector does not know, such as `place` for `x.place()` or `const { place } = x`, and on a class that a name below the top level holds, sorted, once each. A read on a builtin, such as `Object.entries(x)` or `path.normalize(p)`, is no read of a member of the repository and is not listed. A file that holds a class and never reads the name of one of its members cannot call that member.
+    /// Each member of a class that holds a value of another class, written as the name of the member and the class it holds: `Poetry.file` holding `TOMLFile`. Sorted by name and then by class, each pair once. It is kept apart from `heirs` because a walk reads through it only where a file reads the whole chain.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<Heir>,
+    /// The member names the file reads on a receiver whose class the connector does not know, such as `place` for `x.place()` or `const { place } = x`, and on a class that a name below the top level holds, sorted, once each. A member read right on another is listed as `on.member` beside the read of each name, `file.read` for `self.poetry.file.read()`. A read on a builtin, such as `Object.entries(x)` or `path.normalize(p)`, is no read of a member of the repository and is not listed. A file that holds a class and never reads the name of one of its members cannot call that member.
     pub reads: Vec<String>,
 }
 

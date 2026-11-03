@@ -354,6 +354,54 @@ struct Front {
     code: u32,
 }
 
+/// The most names a chain of members holds: `Command.poetry`, `Poetry.file` and `TOMLFile.read` are three.
+const MAX_CHAIN: usize = 4;
+
+/// The members a file must read one on another to reach the member asked about through members that hold a value of its class: `poetry`, `file`, `read` for `self.poetry.file.read()`. Empty for the walk of the member itself.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+struct Chain<'a> {
+    names: [&'a str; MAX_CHAIN],
+    len: usize,
+}
+
+impl<'a> Chain<'a> {
+    fn is_empty(self) -> bool {
+        self.len == 0
+    }
+
+    /// This chain read through `field`: `field` and `member` when it is empty, and otherwise `field` before the names it has, since `member` is then the first of them. `None` when it would grow too long.
+    fn through(self, field: &'a str, member: &'a str) -> Option<Self> {
+        if self.len == 0 {
+            let mut names = [""; MAX_CHAIN];
+            let [first, second, ..] = &mut names;
+            *first = field;
+            *second = member;
+            return Some(Self { names, len: 2 });
+        }
+        if self.len >= MAX_CHAIN {
+            return None;
+        }
+        let mut names = [""; MAX_CHAIN];
+        let mut parts = std::iter::once(field).chain(self.names.iter().copied());
+        for slot in &mut names {
+            *slot = parts.next().unwrap_or("");
+        }
+        Some(Self {
+            names,
+            len: self.len + 1,
+        })
+    }
+
+    /// Whether the file reads each name of the chain on the one before it.
+    fn read_in(self, symbols: FileSymbols<'_>) -> bool {
+        self.names
+            .iter()
+            .take(self.len)
+            .zip(self.names.iter().take(self.len).skip(1))
+            .all(|(on, member)| symbols.reads_on(on, member))
+    }
+}
+
 /// A name a file exports that the walk has reached.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Name<'a> {
@@ -969,6 +1017,12 @@ struct Step<'w, 'a> {
     leavers: Leavers<'a>,
     /// The names the step hands out that it reached through a crowded head of the class the walk asked about.
     through_crowd: BTreeSet<Name<'a>>,
+    /// The chain the step follows now, which every part it reaches must read.
+    chain: Chain<'a>,
+    /// The members found to hold a value of what the step reached, with the file that declares each and the chain a file must read through it.
+    carried: Vec<(FileId, &'a str, Chain<'a>)>,
+    /// Whether any file reads each pair of names asked about so far: `member` right on `on`.
+    chains_read: BTreeMap<(&'a str, &'a str), bool>,
     /// The hops through code of the parts the step reaches now: one more than the part they come from after a hop through code, as many after a hop across a contract.
     hops: u32,
 }
@@ -981,6 +1035,9 @@ impl<'w, 'a> Step<'w, 'a> {
             layer: Layer::default(),
             leavers: Leavers::new(Direction::ToCallers, walk.crossing),
             through_crowd: BTreeSet::new(),
+            chain: Chain::default(),
+            carried: Vec::new(),
+            chains_read: BTreeMap::new(),
             hops: 0,
         }
     }
@@ -1022,6 +1079,7 @@ impl<'w, 'a> Step<'w, 'a> {
                 }
             }
             self.flow_exported(file, exported);
+            self.flow_carried();
         }
     }
 
@@ -1122,6 +1180,15 @@ impl<'w, 'a> Step<'w, 'a> {
 
     /// Reaches a part of a file and says whether it is new. A part found again in the layer by a way with fewer hops through code keeps the fewer.
     fn unit(&mut self, file: FileId, part: Part) -> bool {
+        if !self.chain.is_empty()
+            && !self
+                .walk
+                .graph
+                .symbols(file)
+                .is_some_and(|symbols| self.chain.read_in(symbols))
+        {
+            return false;
+        }
         let unit = Unit { file, part };
         if self.walk.reached(unit) {
             return false;
@@ -1164,7 +1231,9 @@ impl<'w, 'a> Step<'w, 'a> {
             && import.names.iter().any(|taken| taken == class)
             && (self.through_crowd.contains(&name) || !symbols.reads_member(member))
         {
-            self.layer.held.insert(importer);
+            if self.chain.is_empty() {
+                self.layer.held.insert(importer);
+            }
             return;
         }
         if !take_names(self.walk.graph, name, import, via) {
@@ -1291,7 +1360,71 @@ impl<'w, 'a> Step<'w, 'a> {
         for &index in declared {
             if let Some(decl) = symbols.declaration(index) {
                 self.reach_from_home(file, symbols, decl.name());
+                let unit = Unit {
+                    file,
+                    part: Part::Decl(index),
+                };
+                if !self.walk.crowded.contains(&unit)
+                    && let Some((class, member)) = split_member(decl.name())
+                {
+                    self.carry(file, symbols, |of| of == class, member);
+                }
             }
+        }
+        self.flow_carried();
+    }
+
+    /// Notes the members of `file` that hold a value of what `extends` accepts, through which a file may read `member`.
+    fn carry(
+        &mut self,
+        file: FileId,
+        symbols: FileSymbols<'a>,
+        extends: impl Fn(&str) -> bool,
+        member: &'a str,
+    ) {
+        for (holder, of) in symbols.holds() {
+            if let Some((_, field)) = holder.rsplit_once(MEMBER_SEPARATOR)
+                && extends(of)
+                && self.read_somewhere(field, member)
+                && let Some(chain) = self.chain.through(field, member)
+            {
+                self.carried.push((file, holder, chain));
+            }
+        }
+    }
+
+    /// Whether any file of the repository reads `member` right on `on`. A member that holds a value is followed only then: a class may have many, most chains are read nowhere, and following them all made one query take 28 s instead of 1.2 s.
+    fn read_somewhere(&mut self, on: &'a str, member: &'a str) -> bool {
+        let graph = self.walk.graph;
+        *self.chains_read.entry((on, member)).or_insert_with(|| {
+            graph.files().any(|(file, _)| {
+                graph
+                    .symbols(file)
+                    .is_some_and(|symbols| symbols.reads_on(on, member))
+            })
+        })
+    }
+
+    /// Follows the members noted to hold a value of what the step reached, each to the files that read the whole chain through it.
+    fn flow_carried(&mut self) {
+        let mut seen = BTreeSet::new();
+        while let Some((file, holder, chain)) = self.carried.pop() {
+            if !seen.insert((file, holder, chain)) {
+                continue;
+            }
+            let Some(symbols) = self.walk.graph.symbols(file) else {
+                continue;
+            };
+            let mut exported = BTreeSet::new();
+            self.exported_decl(file, symbols, holder, &mut exported);
+            // A file that hides what it exports hands the walk every name, which says nothing about a member.
+            if exported.contains(&Name::Any) {
+                continue;
+            }
+            self.chain = chain;
+            self.flow_exported(file, exported);
+            self.reach_from_home(file, symbols, holder);
+            self.chain = Chain::default();
         }
     }
 
@@ -1575,6 +1708,17 @@ impl<'w, 'a> Step<'w, 'a> {
                 work.push_back((importer, exported.with(Some(member))));
             }
         }
+        let locals: Vec<Local<'a>> = via
+            .locals
+            .iter()
+            .copied()
+            .filter(|local| !local.through_head)
+            .collect();
+        for local in locals {
+            if let Some(member) = local.passes() {
+                self.carry(importer, symbols, |of| local.extends(of), member);
+            }
+        }
     }
 
     /// One import of `from` by a file that records its declarations.
@@ -1667,7 +1811,9 @@ impl<'w, 'a> Step<'w, 'a> {
                             .read_on_a_module()
                             .is_some_and(|read| !symbols.reads_member(read))
                     {
-                        self.layer.held_modules.insert(importer);
+                        if self.chain.is_empty() {
+                            self.layer.held_modules.insert(importer);
+                        }
                         return;
                     }
                     via.taken = Taken::Everything;
@@ -1830,7 +1976,7 @@ impl<'w, 'a> Step<'w, 'a> {
             Refers::Held => held = true,
             Refers::No => {}
         }
-        if held {
+        if held && self.chain.is_empty() {
             self.layer.held.insert(importer);
         }
         found

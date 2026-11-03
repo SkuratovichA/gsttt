@@ -215,6 +215,12 @@ expression: "tree.file_json(\"settings.py\")"
         "of": "BaseSettings"
       }
     ],
+    "holds": [
+      {
+        "name": "Settings.model_config",
+        "of": "SettingsConfigDict"
+      }
+    ],
     "reads": []
   },
   "path": "settings.py",

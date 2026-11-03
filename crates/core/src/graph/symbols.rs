@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::connector::LinkedOverride;
-use crate::fact::{Line, Symbols};
+use crate::fact::{Line, MEMBER_SEPARATOR, Symbols};
 use crate::ids::{FileId, Id};
 
 use super::len_u32;
@@ -104,6 +104,8 @@ struct Span {
     heir_count: u32,
     overrides: u32,
     override_count: u32,
+    holds: u32,
+    hold_count: u32,
     reads: u32,
     read_count: u32,
     linked: u32,
@@ -171,6 +173,11 @@ impl Table {
             self.push(&heir.name);
             self.push(&heir.of);
         }
+        let holds = len_u32(self.ends.len());
+        for heir in &symbols.holds {
+            self.push(&heir.name);
+            self.push(&heir.of);
+        }
         let reads = len_u32(self.ends.len());
         for name in &symbols.reads {
             self.push(name);
@@ -186,6 +193,8 @@ impl Table {
             heir_count: len_u32(symbols.heirs.len()),
             overrides,
             override_count: len_u32(symbols.overrides.len()),
+            holds,
+            hold_count: len_u32(symbols.holds.len()),
             reads,
             read_count: len_u32(symbols.reads.len()),
             linked: 0,
@@ -324,6 +333,16 @@ impl<'g> FileSymbols<'g> {
         })
     }
 
+    /// Each member of a class that holds a value of another class and that class, as the name of the member and the class, sorted.
+    pub fn holds(self) -> impl ExactSizeIterator<Item = (&'g str, &'g str)> + 'g {
+        let table = self.table;
+        let first = self.span.holds;
+        (0..self.span.hold_count).map(move |offset| {
+            let name = first.saturating_add(offset.saturating_mul(2));
+            (table.text(name), table.text(name.saturating_add(1)))
+        })
+    }
+
     /// Each name and the head the link found for it in the file that declares the head, as the name, the file and the head, sorted.
     pub fn linked_overrides(
         self,
@@ -343,13 +362,28 @@ impl<'g> FileSymbols<'g> {
         })
     }
 
-    /// Whether the file reads a member called `name` on a receiver whose class the connector did not know.
+    /// Whether the file reads a member called `name` on a receiver whose class the connector did not know. A read of one member right on another is written `on.member`, and `reads_on` asks for it.
     pub fn reads_member(self, name: &str) -> bool {
+        self.reads_chars(&name.chars())
+    }
+
+    /// Whether the file reads `member` right on `on`, listed as `on.member`: `file.read` for `self.poetry.file.read()`. It compares the parts in place, because a walk asks it of every file of the repository.
+    pub fn reads_on(self, on: &str, member: &str) -> bool {
+        self.reads_chars(&on.chars().chain([MEMBER_SEPARATOR]).chain(member.chars()))
+    }
+
+    /// Whether the sorted reads of the file hold the text `name` spells. Strings order by their bytes, and so do their chars, so the sorted reads are in the order this compares by.
+    fn reads_chars(self, name: &(impl Iterator<Item = char> + Clone)) -> bool {
         let first = self.span.reads;
         let (mut low, mut high) = (0, self.span.read_count);
         while low < high {
             let middle = low + (high - low) / 2;
-            match self.table.text(first.saturating_add(middle)).cmp(name) {
+            match self
+                .table
+                .text(first.saturating_add(middle))
+                .chars()
+                .cmp(name.clone())
+            {
                 std::cmp::Ordering::Less => low = middle + 1,
                 std::cmp::Ordering::Greater => high = middle,
                 std::cmp::Ordering::Equal => return true,
@@ -425,6 +459,10 @@ mod tests {
                 name: "Aws".to_owned(),
                 of: "GitProvider".to_owned(),
             }],
+            holds: vec![Heir {
+                name: "Poetry.file".to_owned(),
+                of: "TOMLFile".to_owned(),
+            }],
             reads: owned(&["alpha", "omega"]),
         }
     }
@@ -463,6 +501,10 @@ mod tests {
         assert_eq!(
             read.overrides().collect::<Vec<_>>(),
             [("Aws", "GitProvider")]
+        );
+        assert_eq!(
+            read.holds().collect::<Vec<_>>(),
+            [("Poetry.file", "TOMLFile")]
         );
         assert!(read.reads_member("alpha") && read.reads_member("omega"));
         assert!(!read.reads_member("beta") && !read.reads_member(""));

@@ -133,7 +133,9 @@ expression: "tree.file_json(\"config.py\")"
         "of": "BaseSettings"
       }
     ],
-    "reads": []
+    "reads": [
+      "environ.get"
+    ]
   },
   "path": "config.py",
   "project": "python ."

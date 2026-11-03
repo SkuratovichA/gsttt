@@ -63,6 +63,7 @@ pub(crate) fn parse(project: &GoProject, file: &SourceFile<'_>) -> Parsed<GoExtr
                 exports: Vec::new(),
                 heirs: analysis.heirs,
                 overrides: Vec::new(),
+                holds: Vec::new(),
                 reads: analysis.reads,
             }),
             Some(exports),

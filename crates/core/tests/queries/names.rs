@@ -3912,6 +3912,11 @@ fn a_class_that_implements_the_member_of_an_interface_is_listed() {
 
 /// As many declarations override `GitProvider.groups` as `overriders` says, one of them `Aws.groups`. `typed.ts` names the member of the head, `unknown.ts` holds the head and reads the member on a value of unknown type, `named.ts` holds it and reads the member too, `gcp.ts` takes the members of the head and `user.ts` calls one on it.
 fn head_readers(overriders: usize) -> Index {
+    head_tree(overriders).build()
+}
+
+/// The tree of `head_readers`, before it is built.
+fn head_tree(overriders: usize) -> Tree {
     let others = (1..overriders).fold(Code::new(), |code, n| {
         let class = format!("Other{n}");
         code.declaration(&class, (1, 1), &[])
@@ -3974,7 +3979,6 @@ fn head_readers(overriders: usize) -> Index {
             Code::new().declaration("go", (1, 3), &["Gcp", "Gcp.groups"]),
         )
         .exports("user.ts", &[])
-        .build()
 }
 
 /// One more declaration than a head may have overriding it before a read on an unknown value stops counting through it.
@@ -4035,6 +4039,396 @@ fn a_read_on_an_unknown_value_counts_through_a_head_few_declarations_override() 
     for file in ["named.ts", "typed.ts", "unknown.ts", "user.ts"] {
         assert!(listed.contains(&file), "{file} is not in {listed:?}");
     }
+}
+
+/// `toml.py` declares `TOMLFile` with `read`, and `poetry.py` declares `Poetry`, whose member `file` holds a value of `TOMLFile`.
+fn chain_tree() -> Tree {
+    Tree::new()
+        .symbols(
+            "toml.py",
+            Code::new()
+                .declaration("TOMLFile", (1, 5), &[])
+                .declaration("TOMLFile.read", (2, 3), &[]),
+        )
+        .exports("toml.py", &["TOMLFile"])
+        .imports_names("poetry.py", "toml.py", &["TOMLFile"])
+        .symbols(
+            "poetry.py",
+            Code::new()
+                .declaration("Poetry", (1, 5), &[])
+                .declaration("Poetry.file", (2, 4), &["TOMLFile"])
+                .holds("Poetry.file", "TOMLFile"),
+        )
+        .exports("poetry.py", &["Poetry"])
+}
+
+/// A file that imports `class` from `from` and reads the members `reads`.
+fn reader(tree: Tree, path: &str, from: &str, class: &str, reads: &[&str]) -> Tree {
+    let code = reads.iter().fold(
+        Code::new().declaration("go", (1, 3), &[class]),
+        |code, read| code.reads(read),
+    );
+    tree.imports_names(path, from, &[class])
+        .symbols(path, code)
+        .exports(path, &[])
+}
+
+#[scenario(
+    "queries",
+    "A file that reads the chain through a member that holds a value is a caller"
+)]
+#[test]
+fn a_file_that_reads_the_chain_through_a_member_that_holds_a_value_is_a_caller() {
+    let index = reader(
+        chain_tree(),
+        "add.py",
+        "poetry.py",
+        "Poetry",
+        &["file", "read", "file.read"],
+    )
+    .build();
+
+    let answer = ask(&index, "toml.py", &["TOMLFile.read"], None);
+
+    assert!(
+        paths(&answer.affected).contains(&"add.py"),
+        "{:?}",
+        paths(&answer.affected)
+    );
+}
+
+#[scenario(
+    "queries",
+    "A file that reads the names apart is no caller through the member"
+)]
+#[test]
+fn a_file_that_reads_the_names_apart_is_no_caller_through_the_member() {
+    let together = reader(
+        chain_tree(),
+        "add.py",
+        "poetry.py",
+        "Poetry",
+        &["file", "read", "file.read"],
+    );
+    let index = reader(
+        together,
+        "apart.py",
+        "poetry.py",
+        "Poetry",
+        &["file", "read"],
+    )
+    .build();
+
+    let answer = ask(&index, "toml.py", &["TOMLFile.read"], None);
+
+    assert!(paths(&answer.affected).contains(&"add.py"));
+    assert!(!paths(&answer.affected).contains(&"apart.py"));
+    assert!(
+        notes(&answer).iter().all(|note| !note.contains("apart.py")),
+        "{:?}",
+        notes(&answer)
+    );
+}
+
+#[scenario("queries", "A file that imports no class of the chain is no caller")]
+#[test]
+fn a_file_that_imports_no_class_of_the_chain_is_no_caller() {
+    let index = chain_tree()
+        .symbols(
+            "loose.py",
+            Code::new()
+                .declaration("go", (1, 3), &[])
+                .reads("file.read"),
+        )
+        .exports("loose.py", &[])
+        .build();
+
+    let answer = ask(&index, "toml.py", &["TOMLFile.read"], None);
+
+    assert!(!paths(&answer.affected).contains(&"loose.py"));
+}
+
+/// `command.py` declares `Command`, whose member `poetry` holds a value of `Poetry`.
+fn command_tree() -> Tree {
+    chain_tree()
+        .imports_names("command.py", "poetry.py", &["Poetry"])
+        .symbols(
+            "command.py",
+            Code::new()
+                .declaration("Command", (1, 5), &[])
+                .declaration("Command.poetry", (2, 4), &["Poetry"])
+                .holds("Command.poetry", "Poetry"),
+        )
+        .exports("command.py", &["Command"])
+}
+
+#[scenario("queries", "A chain goes through two members")]
+#[test]
+fn a_chain_goes_through_two_members() {
+    let index = reader(
+        command_tree(),
+        "add.py",
+        "command.py",
+        "Command",
+        &["poetry", "file", "read", "poetry.file", "file.read"],
+    )
+    .build();
+
+    let answer = ask(&index, "toml.py", &["TOMLFile.read"], None);
+
+    assert!(
+        paths(&answer.affected).contains(&"add.py"),
+        "{:?}",
+        paths(&answer.affected)
+    );
+}
+
+#[scenario(
+    "queries",
+    "A chain goes through an heir of the class that holds the member"
+)]
+#[test]
+fn a_chain_goes_through_an_heir_of_the_class_that_holds_the_member() {
+    let tree = command_tree()
+        .imports_names("sub.py", "command.py", &["Command"])
+        .symbols(
+            "sub.py",
+            Code::new()
+                .declaration("Sub", (1, 3), &[])
+                .heir("Sub", "Command"),
+        )
+        .exports("sub.py", &["Sub"]);
+    let index = reader(
+        tree,
+        "add.py",
+        "sub.py",
+        "Sub",
+        &["poetry", "file", "read", "poetry.file", "file.read"],
+    )
+    .build();
+
+    let answer = ask(&index, "toml.py", &["TOMLFile.read"], None);
+
+    assert!(
+        paths(&answer.affected).contains(&"add.py"),
+        "{:?}",
+        paths(&answer.affected)
+    );
+}
+
+#[scenario("queries", "A chain goes through an heir of the class asked about")]
+#[test]
+fn a_chain_goes_through_an_heir_of_the_class_asked_about() {
+    let index = Tree::new()
+        .symbols(
+            "toml.py",
+            Code::new()
+                .declaration("TOMLFile", (1, 5), &[])
+                .declaration("TOMLFile.read", (2, 3), &[]),
+        )
+        .exports("toml.py", &["TOMLFile"])
+        .imports_names("sub.py", "toml.py", &["TOMLFile"])
+        .symbols(
+            "sub.py",
+            Code::new()
+                .declaration("Sub", (1, 3), &[])
+                .heir("Sub", "TOMLFile"),
+        )
+        .exports("sub.py", &["Sub"])
+        .imports_names("poetry.py", "sub.py", &["Sub"])
+        .symbols(
+            "poetry.py",
+            Code::new()
+                .declaration("Poetry", (1, 5), &[])
+                .declaration("Poetry.file", (2, 4), &["Sub"])
+                .holds("Poetry.file", "Sub"),
+        )
+        .exports("poetry.py", &["Poetry"]);
+    let index = reader(
+        index,
+        "add.py",
+        "poetry.py",
+        "Poetry",
+        &["file", "read", "file.read"],
+    )
+    .build();
+
+    let answer = ask(&index, "toml.py", &["TOMLFile.read"], None);
+
+    assert!(
+        paths(&answer.affected).contains(&"add.py"),
+        "{:?}",
+        paths(&answer.affected)
+    );
+}
+
+/// A tree of `members` classes, `C1` to `C<members>`, each with a member `m<n>` that holds a value of the next, the last of `T`, which declares `read`. `reader.py` holds `C1` and reads every pair of the chain.
+fn long_chain(members: usize) -> Index {
+    let mut tree = Tree::new()
+        .symbols(
+            "t.py",
+            Code::new()
+                .declaration("T", (1, 3), &[])
+                .declaration("T.read", (2, 3), &[]),
+        )
+        .exports("t.py", &["T"]);
+    for n in 1..=members {
+        let (from, of) = if n == members {
+            ("t.py".to_owned(), "T".to_owned())
+        } else {
+            (format!("c{}.py", n + 1), format!("C{}", n + 1))
+        };
+        let holder = format!("C{n}.m{n}");
+        tree = tree
+            .imports_names(&format!("c{n}.py"), &from, &[&of])
+            .symbols(
+                &format!("c{n}.py"),
+                Code::new()
+                    .declaration(&format!("C{n}"), (1, 5), &[])
+                    .declaration(&holder, (2, 4), &[&of])
+                    .holds(&holder, &of),
+            )
+            .exports(&format!("c{n}.py"), &[&format!("C{n}")]);
+    }
+    let mut reads: Vec<String> = (1..=members).map(|n| format!("m{n}")).collect();
+    reads.extend((1..members).map(|n| format!("m{n}.m{}", n + 1)));
+    reads.push("read".to_owned());
+    reads.push(format!("m{members}.read"));
+    let reads: Vec<&str> = reads.iter().map(String::as_str).collect();
+    reader(tree, "reader.py", "c1.py", "C1", &reads).build()
+}
+
+#[scenario("queries", "A chain stops at four names")]
+#[test]
+fn a_chain_stops_at_four_names() {
+    let followed = long_chain(3);
+    let answer = ask(&followed, "t.py", &["T.read"], None);
+    assert!(
+        paths(&answer.affected).contains(&"reader.py"),
+        "{:?}",
+        paths(&answer.affected)
+    );
+
+    let too_long = long_chain(4);
+    let answer = ask(&too_long, "t.py", &["T.read"], None);
+    assert!(
+        !paths(&answer.affected).contains(&"reader.py"),
+        "{:?}",
+        paths(&answer.affected)
+    );
+}
+
+#[scenario("queries", "Members that hold each other end the walk")]
+#[test]
+fn members_that_hold_each_other_end_the_walk() {
+    let tree = Tree::new()
+        .imports_names("a.py", "b.py", &["B"])
+        .symbols(
+            "a.py",
+            Code::new()
+                .declaration("A", (1, 5), &[])
+                .declaration("A.x", (2, 3), &[])
+                .declaration("A.b", (4, 5), &["B"])
+                .holds("A.b", "B"),
+        )
+        .exports("a.py", &["A"])
+        .imports_names("b.py", "a.py", &["A"])
+        .symbols(
+            "b.py",
+            Code::new()
+                .declaration("B", (1, 3), &[])
+                .declaration("B.a", (2, 3), &["A"])
+                .holds("B.a", "A"),
+        )
+        .exports("b.py", &["B"]);
+    let index = reader(
+        tree,
+        "reader.py",
+        "b.py",
+        "B",
+        &["a", "b", "x", "a.x", "b.a"],
+    )
+    .build();
+
+    let answer = ask(&index, "a.py", &["A.x"], None);
+
+    assert!(
+        paths(&answer.affected).contains(&"reader.py"),
+        "{:?}",
+        paths(&answer.affected)
+    );
+}
+
+#[scenario("queries", "A crowded head starts no chain")]
+#[test]
+fn a_crowded_head_starts_no_chain() {
+    let tree = head_tree(CROWDED)
+        .imports_names("holder.ts", "provider.ts", &["GitProvider"])
+        .symbols(
+            "holder.ts",
+            Code::new()
+                .declaration("Holder", (1, 5), &[])
+                .declaration("Holder.provider", (2, 4), &["GitProvider"])
+                .holds("Holder.provider", "GitProvider"),
+        )
+        .exports("holder.ts", &["Holder"]);
+    let index = reader(
+        tree,
+        "chain.ts",
+        "holder.ts",
+        "Holder",
+        &["provider", "groups", "provider.groups"],
+    )
+    .build();
+
+    let through = ask(&index, "aws.ts", &["Aws.groups"], None);
+    assert!(
+        !paths(&through.affected).contains(&"chain.ts"),
+        "{:?}",
+        paths(&through.affected)
+    );
+
+    let asked = ask(&index, "provider.ts", &["GitProvider.groups"], None);
+    assert!(
+        paths(&asked.affected).contains(&"chain.ts"),
+        "{:?}",
+        paths(&asked.affected)
+    );
+
+    // The member may be declared in the file of the head, where no import comes between them.
+    let beside = head_tree(CROWDED)
+        .symbols(
+            "provider.ts",
+            Code::new()
+                .declaration("GitProvider", (1, 3), &[])
+                .declaration("GitProvider.groups", (2, 2), &[])
+                .declaration("Holder", (4, 6), &[])
+                .declaration("Holder.provider", (5, 5), &["GitProvider"])
+                .holds("Holder.provider", "GitProvider"),
+        )
+        .exports("provider.ts", &["GitProvider", "Holder"]);
+    let index = reader(
+        beside,
+        "chain.ts",
+        "provider.ts",
+        "Holder",
+        &["provider", "groups", "provider.groups"],
+    )
+    .build();
+
+    let through = ask(&index, "aws.ts", &["Aws.groups"], None);
+    assert!(
+        !paths(&through.affected).contains(&"chain.ts"),
+        "{:?}",
+        paths(&through.affected)
+    );
+
+    let asked = ask(&index, "provider.ts", &["GitProvider.groups"], None);
+    assert!(
+        paths(&asked.affected).contains(&"chain.ts"),
+        "{:?}",
+        paths(&asked.affected)
+    );
 }
 
 #[scenario(
