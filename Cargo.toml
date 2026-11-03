@@ -21,6 +21,7 @@ gsttt-core = { path = "crates/core" }
 gsttt-lang-ts = { path = "crates/lang-ts" }
 gsttt-lang-python = { path = "crates/lang-python" }
 gsttt-lang-rust = { path = "crates/lang-rust" }
+gsttt-lang-go = { path = "crates/lang-go" }
 gsttt-contracts = { path = "crates/contracts" }
 gsttt-config = { path = "crates/config" }
 gsttt-mcp = { path = "crates/mcp" }
@@ -42,6 +43,9 @@ ruff_text_size = "=0.0.20"
 ra_ap_edition = "=0.0.360"
 ra_ap_parser = "=0.0.360"
 ra_ap_syntax = "=0.0.360"
+# Go has no pure Rust parser worth trusting, so it is read with the tree-sitter grammar.
+tree-sitter = "0.27.1"
+tree-sitter-go = "0.25.0"
 apollo-parser = "0.8.7"
 protox-parse = "0.10.0"
 sqlparser = { version = "0.63.0", features = ["visitor"] }

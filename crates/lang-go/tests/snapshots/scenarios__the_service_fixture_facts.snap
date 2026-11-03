@@ -1,0 +1,115 @@
+---
+source: crates/lang-go/tests/scenarios.rs
+expression: files
+---
+{
+  "service.go": {
+    "declared": [
+      "Service L14-17: ",
+      "Service.header L15-15: invoice.Header.",
+      "Service.db L16-16: DB.",
+      "Service.Place L19-26: Service. Service.header chi.NewRouter fmt.Println invoice.Header. invoice.Header.Title invoice.NewHeader os.Getenv yaml.Marshal",
+      "Service.Cancel L28-32: DB.Query Service. Service.db http.Get",
+      "main L34-37: Service. Service.Place invoice.Header."
+    ],
+    "on_load": "",
+    "exports": [
+      "Service",
+      "main"
+    ],
+    "imports": [
+      "fmt [Println] [fmt.Println] -> builtin",
+      "net/http [Get] [http.Get] -> builtin",
+      "os [Getenv] [os.Getenv] -> builtin",
+      "github.com/go-chi/chi/v5 [NewRouter] [chi.NewRouter] -> package github.com/go-chi/chi/v5",
+      "example.com/shop/invoice [Header,NewHeader] [invoice.Header,invoice.NewHeader] -> invoice/footer.go + invoice/header.go",
+      "gopkg.in/yaml.v3 [Marshal] [yaml.Marshal] -> package gopkg.in/yaml.v3",
+      "example.com/shop/billing [] [] -> billing/init.go",
+      ". [DB] [DB] -> db.go"
+    ],
+    "contracts": [
+      "calls env API_URL@24",
+      "calls http GET /api/users@31"
+    ],
+    "embedded": [
+      "sql L29 SELECT id FROM orders"
+    ]
+  },
+  "db.go": {
+    "declared": [
+      "DB L3-5: ",
+      "DB.Query L4-4: "
+    ],
+    "on_load": "",
+    "exports": [
+      "DB"
+    ],
+    "imports": [],
+    "contracts": [],
+    "embedded": []
+  },
+  "invoice/header.go": {
+    "declared": [
+      "Header L4-7: ",
+      "Header.Number L5-5: ",
+      "Header.Lines L6-6: Line.",
+      "NewHeader L9-11: Header.",
+      "Header.Title L13-15: Header. Header.Number suffix"
+    ],
+    "on_load": "",
+    "exports": [
+      "Header",
+      "NewHeader"
+    ],
+    "imports": [
+      ". [Line,suffix] [Line,suffix] -> invoice/footer.go + invoice/line.go"
+    ],
+    "contracts": [],
+    "embedded": []
+  },
+  "invoice/footer.go": {
+    "declared": [
+      "Footer L3-3: ",
+      "Footer.Note L3-3: ",
+      "Footer.Render L5-5: Footer. Footer.Note",
+      "suffix L7-7: loadSuffix"
+    ],
+    "on_load": "loadSuffix register",
+    "exports": [
+      "Footer",
+      "suffix"
+    ],
+    "imports": [
+      ". [loadSuffix,register] [loadSuffix,register] -> invoice/line.go"
+    ],
+    "contracts": [],
+    "embedded": []
+  },
+  "invoice/line.go": {
+    "declared": [
+      "Line L3-5: ",
+      "Line.Amount L4-4: ",
+      "loadSuffix L7-7: min",
+      "register L9-9: "
+    ],
+    "on_load": "",
+    "exports": [
+      "Line",
+      "loadSuffix",
+      "register"
+    ],
+    "imports": [
+      ". [min] [min] -> "
+    ],
+    "contracts": [],
+    "embedded": []
+  },
+  "billing/init.go": {
+    "declared": [],
+    "on_load": "",
+    "exports": [],
+    "imports": [],
+    "contracts": [],
+    "embedded": []
+  }
+}

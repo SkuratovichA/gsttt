@@ -68,7 +68,7 @@ Every number, with the command that measured it, is in [`bench/results/benchmark
 
 ## What it reads
 
-- Languages: TypeScript and JavaScript, Python, Rust.
+- Languages: TypeScript and JavaScript, Python, Rust, Go.
 - Contracts: OpenAPI, GraphQL, protobuf, Prisma, SQL, `.env` files.
 - Framework knowledge lives in TOML rule packs, and any other language can join as an external connector that speaks JSON lines.
 - Configuration is TOML, in `.gsttt/config.toml`, with a JSON Schema that checks it in the editor; `gsttt init` writes both.
@@ -133,6 +133,18 @@ Every number, with the command that measured it, is in [`bench/results/benchmark
 - A request through a client returned by another function or hidden behind a type alias, and a URL with no literal path.
 - tonic gRPC services, Diesel `table!`, and queries written with the Diesel or SeaORM builders.
 - *Not reported:* axum 0.7 wildcard paths such as `/*rest`; facade crates such as `shuttle-axum`, because a framework's rules apply only to a dependency the manifest declares itself; a dependency renamed to a framework's name, such as `axum = { package = "my-router" }`, switches that framework's rules on; dev-dependencies are visible to non-test code; the functions a router reaches are matched by name within a file.
+
+</details>
+
+<details>
+<summary>Go</summary>
+
+- A method called on a value whose type the file does not show, so a file that holds only such a caller is not listed by `impact --name`.
+- Calls through an interface, which are not followed to the types that implement it, and methods promoted from an embedded type.
+- Build tags and `GOOS` suffixes: every file of a package counts, whatever its constraint.
+- `replace` directives of `go.mod` and `go.work` files: a module is read from its own `go.mod` alone.
+- Files that use the Go 1.26 form `new(expr)`: the grammar gsttt reads with does not know it yet, so such a file is read as recovered. It keeps its declarations, exports and imports, but inside the function that holds the form some uses may be lost.
+- Routers (chi, gin, echo), clients held in a variable (`client := &http.Client{}; client.Get(url)`), gRPC, and a value defined in another file.
 
 </details>
 

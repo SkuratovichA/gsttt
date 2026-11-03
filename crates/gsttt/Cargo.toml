@@ -14,6 +14,7 @@ gsttt-contracts.workspace = true
 gsttt-core.workspace = true
 gsttt-lang-python.workspace = true
 gsttt-lang-rust.workspace = true
+gsttt-lang-go.workspace = true
 gsttt-lang-ts.workspace = true
 gsttt-mcp.workspace = true
 anstream.workspace = true

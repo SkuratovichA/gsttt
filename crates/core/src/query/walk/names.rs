@@ -1198,6 +1198,13 @@ impl<'w, 'a> Step<'w, 'a> {
                         member,
                         inner,
                     });
+                    // A file that declares members of what it imports exports the name to start a walk at them, not to pass it on: it calls nothing of the import by that.
+                    if symbols
+                        .declarations()
+                        .any(|decl| member_of(decl.name(), bound))
+                    {
+                        continue;
+                    }
                     for exported in self.exported_as(importer, symbols, bound) {
                         via.used = true;
                         work.push_back((importer, exported.with(member)));

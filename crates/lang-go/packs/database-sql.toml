@@ -1,0 +1,38 @@
+# SQL of `database/sql`: the statement given to `Query`, `QueryRow`, `Exec` and `Prepare` on a database, a transaction or a connection held in a variable of up to three segments (`db.Query`, `s.db.Query`, `s.store.db.Query`), and the `Context` variants, whose statement is the second argument. Always on: no `go.mod` tells that a project uses `database/sql`.
+name = "database-sql"
+language = "go"
+
+[[embeds]]
+callee = [
+  "*.Query",
+  "*.*.Query",
+  "*.*.*.Query",
+  "*.QueryRow",
+  "*.*.QueryRow",
+  "*.*.*.QueryRow",
+  "*.Exec",
+  "*.*.Exec",
+  "*.*.*.Exec",
+  "*.Prepare",
+  "*.*.Prepare",
+  "*.*.*.Prepare",
+]
+lang = "sql"
+
+[[embeds]]
+callee = [
+  "*.QueryContext",
+  "*.*.QueryContext",
+  "*.*.*.QueryContext",
+  "*.QueryRowContext",
+  "*.*.QueryRowContext",
+  "*.*.*.QueryRowContext",
+  "*.ExecContext",
+  "*.*.ExecContext",
+  "*.*.*.ExecContext",
+  "*.PrepareContext",
+  "*.*.PrepareContext",
+  "*.*.*.PrepareContext",
+]
+lang = "sql"
+text = "$arg2"

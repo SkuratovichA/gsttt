@@ -522,7 +522,12 @@ impl GraphBuilder {
 
     /// The names `file` exports itself, `None` when they are not known.
     pub fn exports(&mut self, file: FileId, names: Option<&[String]>) {
-        let numbers = names.map(|names| names.iter().map(|name| self.number(name)).collect());
+        let numbers = names.map(|names| {
+            let mut numbers: Vec<u32> = names.iter().map(|name| self.number(name)).collect();
+            numbers.sort_unstable();
+            numbers.dedup();
+            numbers
+        });
         if let Some(slot) = self.exports.get_mut(file.index()) {
             *slot = numbers;
         }
@@ -577,7 +582,17 @@ impl GraphBuilder {
             }
         }
         let mut bindings = Bindings::default();
-        for (_, _, edge, taken) in &mut merged {
+        for (_, to, edge, taken) in &mut merged {
+            // The names of a package are read from the directory as a whole, so an edge to one file of it keeps what that file exports; when none is left the file is reached for what it runs as it loads.
+            if edge.flags.contains(ImportFlags::PACKAGE)
+                && !taken.all
+                && let Some(Some(exported)) = self.exports.get(to.index())
+            {
+                taken
+                    .uses
+                    .retain(|name| exported.binary_search(name).is_ok());
+                taken.all = taken.uses.is_empty() && taken.passes.is_empty();
+            }
             if taken.all && !taken.star && taken.passes.is_empty() {
                 continue;
             }

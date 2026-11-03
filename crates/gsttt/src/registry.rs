@@ -10,9 +10,9 @@ struct Builtin {
     packs: &'static [(&'static str, &'static str)],
 }
 
-/// The built-in connectors in registry order: `ts`, `python`, `rust`, `openapi`, `graphql`, `proto`, `prisma`, `sql`, `env`. The order is behaviour, because the engine gives a file to the first connector that claims it.
+/// The built-in connectors in registry order: `ts`, `python`, `rust`, `go`, `openapi`, `graphql`, `proto`, `prisma`, `sql`, `env`. The order is behaviour, because the engine gives a file to the first connector that claims it.
 ///
-/// All nine are here, in the order of the design: a connector left out, or put in another place, changes which connector reads a file and which modules `config show` lists.
+/// All ten are here, in the order of the design: a connector left out, or put in another place, changes which connector reads a file and which modules `config show` lists.
 fn builtins() -> Vec<Builtin> {
     vec![
         Builtin {
@@ -26,6 +26,10 @@ fn builtins() -> Vec<Builtin> {
         Builtin {
             connector: Box::new(gsttt_lang_rust::RUST),
             packs: gsttt_lang_rust::PACKS,
+        },
+        Builtin {
+            connector: Box::new(gsttt_lang_go::GO),
+            packs: gsttt_lang_go::PACKS,
         },
         Builtin {
             connector: Box::new(gsttt_contracts::OPENAPI),
@@ -108,8 +112,8 @@ mod tests {
     use super::*;
 
     /// The order of the design, which a connector's place in the registry has to follow. The binary's own test keeps the same list (`REGISTRY_ORDER` in `tests/cli/config.rs`) and checks it against `config show`, so a list that drifts from the registry fails one of the two.
-    const ORDER: [&str; 9] = [
-        "ts", "python", "rust", "openapi", "graphql", "proto", "prisma", "sql", "env",
+    const ORDER: [&str; 10] = [
+        "ts", "python", "rust", "go", "openapi", "graphql", "proto", "prisma", "sql", "env",
     ];
 
     fn names(registry: &Registry) -> Vec<&'static str> {
@@ -120,7 +124,7 @@ mod tests {
             .collect()
     }
 
-    /// The registry holds the nine connectors of the design, each at its place: a connector left out, or one in another place, fails here.
+    /// The registry holds the ten connectors of the design, each at its place: a connector left out, or one in another place, fails here.
     #[test]
     fn the_connectors_come_in_the_order_of_the_design() {
         let registry = Registry::builtin().unwrap();

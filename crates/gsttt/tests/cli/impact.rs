@@ -1533,3 +1533,227 @@ fn a_member_passes_on_to_what_takes_it_in_typescript() {
         "`notice.ts` calls `info`, and the constant that holds the instance uses the class alone"
     );
 }
+
+/// A Go module whose package `invoice` has `Header` in `header.go` and `Footer` in `footer.go`, and a `Service` with two methods.
+fn go_module(dir: &Path) {
+    write(dir, "go.mod", "module example.com/shop\n\ngo 1.22\n");
+    write(
+        dir,
+        "invoice/header.go",
+        "package invoice\n\nfunc Header() string { return \"h\" }\n",
+    );
+    write(
+        dir,
+        "invoice/footer.go",
+        "package invoice\n\nfunc Footer() string { return \"f\" }\n",
+    );
+    write(
+        dir,
+        "invoice/service.go",
+        "package invoice\n\ntype Service struct{}\n\nfunc (s *Service) Place() {}\n\nfunc (s *Service) Cancel() {}\n",
+    );
+    write(
+        dir,
+        "report.go",
+        "package main\n\nimport \"example.com/shop/invoice\"\n\nfunc Print() string {\n\treturn invoice.Header()\n}\n",
+    );
+    write(
+        dir,
+        "ship.go",
+        "package main\n\nimport \"example.com/shop/invoice\"\n\nfunc Ship() string {\n\treturn invoice.Footer()\n}\n",
+    );
+    write(
+        dir,
+        "order.go",
+        "package main\n\nimport \"example.com/shop/invoice\"\n\nfunc Order(s *invoice.Service) {\n\ts.Place()\n}\n",
+    );
+    write(
+        dir,
+        "refund.go",
+        "package main\n\nimport \"example.com/shop/invoice\"\n\nfunc Refund(s *invoice.Service) {\n\ts.Cancel()\n}\n",
+    );
+}
+
+#[scenario(
+    "queries",
+    "A Go caller of a function is listed and a caller of another function is not"
+)]
+#[test]
+fn a_go_caller_of_a_function_is_listed_and_a_caller_of_another_function_is_not() {
+    let sandbox = Sandbox::new();
+    go_module(sandbox.work.path());
+
+    let answer = json(&sandbox.run(&["--json", "impact", "invoice/header.go", "--name", "Header"]));
+    assert_eq!(paths(&answer["affected"]), ["report.go"]);
+    assert_eq!(
+        answer["affected"][0]["callers"],
+        value!([{ "name": "Print", "line": 5, "distance": 1 }])
+    );
+}
+
+#[scenario(
+    "queries",
+    "A Go caller of a method is told apart from a caller of another method"
+)]
+#[test]
+fn a_go_caller_of_a_method_is_told_apart_from_a_caller_of_another_method() {
+    let sandbox = Sandbox::new();
+    go_module(sandbox.work.path());
+
+    let place = json(&sandbox.run(&[
+        "--json",
+        "impact",
+        "invoice/service.go",
+        "--name",
+        "Service.Place",
+    ]));
+    let cancel = json(&sandbox.run(&[
+        "--json",
+        "impact",
+        "invoice/service.go",
+        "--name",
+        "Service.Cancel",
+    ]));
+    let callers = |answer: &Value| -> Vec<String> {
+        answer["affected"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|entry| {
+                entry["callers"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|caller| caller["name"].as_str().unwrap().to_owned())
+            })
+            .collect()
+    };
+    assert_eq!(callers(&place), ["Order"], "{place}");
+    assert_eq!(callers(&cancel), ["Refund"], "{cancel}");
+}
+
+#[scenario(
+    "queries",
+    "A Go method declared in a file of its own is found through its type"
+)]
+#[test]
+fn a_go_method_declared_in_a_file_of_its_own_is_found_through_its_type() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.work.path();
+    write(dir, "go.mod", "module example.com/shop\n\ngo 1.22\n");
+    write(
+        dir,
+        "invoice/service.go",
+        "package invoice\n\ntype Service struct{}\n",
+    );
+    write(
+        dir,
+        "invoice/charge.go",
+        "package invoice\n\nfunc (s *Service) Charge() {}\n",
+    );
+    write(
+        dir,
+        "order.go",
+        "package main\n\nimport \"example.com/shop/invoice\"\n\nfunc Order(s *invoice.Service) {\n\ts.Charge()\n}\n",
+    );
+
+    let answer = json(&sandbox.run(&[
+        "--json",
+        "impact",
+        "invoice/charge.go",
+        "--name",
+        "Service.Charge",
+    ]));
+    assert_eq!(paths(&answer["affected"]), ["order.go"], "{answer}");
+}
+
+#[scenario("go", "A file with methods of a type does not pass the type on")]
+#[test]
+fn a_file_with_methods_of_a_type_does_not_pass_the_type_on() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.work.path();
+    write(dir, "go.mod", "module example.com/shop\n\ngo 1.22\n");
+    write(
+        dir,
+        "command.go",
+        "package shop\n\ntype Command struct{}\n\nfunc (c *Command) Run() { c.Init() }\n",
+    );
+    write(
+        dir,
+        "init.go",
+        "package shop\n\nfunc (c *Command) Init() {}\n",
+    );
+    write(
+        dir,
+        "other.go",
+        "package shop\n\nfunc (c *Command) Other() {}\n",
+    );
+
+    let answer = json(&sandbox.run(&["--json", "impact", "init.go", "--name", "Command.Init"]));
+    assert_eq!(paths(&answer["affected"]), ["command.go"], "{answer}");
+}
+
+#[scenario("go", "An edge of a package carries only the names its target exports")]
+#[test]
+fn an_edge_of_a_package_carries_only_the_names_its_target_exports() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.work.path();
+    write(dir, "go.mod", "module example.com/shop\n\ngo 1.22\n");
+    write(
+        dir,
+        "a.go",
+        "package shop\n\nfunc A(xs []int) int { return len(xs) + Helper() }\n",
+    );
+    write(
+        dir,
+        "b.go",
+        "package shop\n\nfunc Helper() int { return 1 }\n",
+    );
+    write(dir, "c.go", "package shop\n\nfunc Other() {}\n");
+
+    let answer = json(&sandbox.run(&["--json", "dependencies", "a.go"]));
+    let text = answer.to_string();
+    assert!(text.contains("Helper"), "{text}");
+    assert!(!text.contains("len"), "{text}");
+}
+
+#[scenario("queries", "A Go client meets a route served in another language")]
+#[test]
+fn a_go_client_meets_a_route_served_in_another_language() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.work.path();
+    write(
+        dir,
+        "api/package.json",
+        r#"{ "name": "api", "dependencies": { "express": "^4.0.0" } }"#,
+    );
+    write(
+        dir,
+        "api/src/users.ts",
+        "import express from 'express';\nconst app = express();\napp.get('/api/users', (req, res) => res.json([]));\n",
+    );
+    write(dir, "billing/go.mod", "module example.com/billing\n");
+    write(
+        dir,
+        "billing/main.go",
+        "package main\n\nimport \"net/http\"\n\nfunc main() {\n\tbase := \"http://api\"\n\thttp.Get(base + \"/api/users\")\n}\n",
+    );
+
+    let found = json(&sandbox.run(&["--json", "contract", "http GET /api/users"]));
+    let site = |role: &str| -> Vec<String> {
+        found["found"][role]
+            .as_array()
+            .map(|sites| {
+                sites
+                    .iter()
+                    .map(|site| site["path"].as_str().unwrap().to_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(site("serves"), ["api/src/users.ts"], "{found}");
+    assert_eq!(site("calls"), ["billing/main.go"], "{found}");
+
+    let impact = json(&sandbox.run(&["--json", "impact", "api/src/users.ts"]));
+    assert_eq!(paths(&impact["affected"]), ["billing/main.go"], "{impact}");
+}

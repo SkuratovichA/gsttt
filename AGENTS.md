@@ -9,7 +9,7 @@ Read `docs/architecture.md` before changing anything in `crates/core`, and the s
 | Path | What lives there |
 | --- | --- |
 | `crates/core` | The data model, the connector contract, the engine, the queries. Language-independent. |
-| `crates/lang-ts`, `crates/lang-python`, `crates/lang-rust` | Language connectors, each with its built-in rule packs in `packs/*.toml`. Each depends on `gsttt-core` only. |
+| `crates/lang-ts`, `crates/lang-python`, `crates/lang-rust`, `crates/lang-go` | Language connectors, each with its built-in rule packs in `packs/*.toml`. Each depends on `gsttt-core` only. |
 | `crates/contracts` | Contract-format connectors: OpenAPI, GraphQL, protobuf, Prisma, SQL, env files. Depends on `gsttt-core` only. |
 | `crates/config` | The TOML config (`.gsttt/config.toml`), the rule packs (`.gsttt/packs/*.toml`), the JSON Schemas of both, external connectors over JSON lines. |
 | `crates/mcp` | The MCP server. |

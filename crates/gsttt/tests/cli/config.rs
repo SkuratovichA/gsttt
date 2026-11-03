@@ -102,8 +102,8 @@ fn config_show_lists_the_graphql_endpoints() {
 }
 
 /// The built-in modules in the order the spec gives for the registry, written out here so that the test does not read the order from the code it checks. The unit test of the registry holds the same list as `ORDER`, because a test of the binary's library cannot share a constant with this one.
-const REGISTRY_ORDER: [&str; 9] = [
-    "ts", "python", "rust", "openapi", "graphql", "proto", "prisma", "sql", "env",
+const REGISTRY_ORDER: [&str; 10] = [
+    "ts", "python", "rust", "go", "openapi", "graphql", "proto", "prisma", "sql", "env",
 ];
 
 #[scenario("cli", "config show lists the modules in registry order")]

@@ -243,7 +243,7 @@ fn read_manifests(repo: &RepoView, root: &str, requirements: &[&RepoPath]) -> Ma
         else {
             continue;
         };
-        let Some(text) = read_text(repo, &path) else {
+        let Some(text) = repo.read_regular_file(&path) else {
             continue;
         };
         match name {
@@ -269,7 +269,7 @@ fn read_requirement_files(repo: &RepoView, files: &[&RepoPath], manifest: &mut M
         if !seen.insert(file.clone()) {
             continue;
         }
-        let Some(text) = read_text(repo, file.as_str()) else {
+        let Some(text) = repo.read_regular_file(file.as_str()) else {
             continue;
         };
         manifest.absorb(read_requirements(&text));
@@ -282,28 +282,6 @@ fn read_requirement_files(repo: &RepoView, files: &[&RepoPath], manifest: &mut M
                     "an included requirements file is not in the repository and is skipped"
                 ),
             }
-        }
-    }
-}
-
-/// The text of a manifest, or `None` when it is not a regular file or cannot be read. A file set made from git lists a symbolic link as a file, and a link can point out of the repository, which nothing here may read.
-fn read_text(repo: &RepoView, path: &str) -> Option<String> {
-    if repo
-        .absolute(path)
-        .symlink_metadata()
-        .is_ok_and(|meta| !meta.is_file())
-    {
-        tracing::warn!(
-            file = path,
-            "a manifest that is not a regular file is skipped"
-        );
-        return None;
-    }
-    match repo.read_to_string(path) {
-        Ok(text) => Some(text),
-        Err(error) => {
-            tracing::warn!(file = path, %error, "a manifest cannot be read and is skipped");
-            None
         }
     }
 }

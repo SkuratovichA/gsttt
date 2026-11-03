@@ -1,0 +1,56 @@
+# HTTP with the standard library: the calls of `net/http` that take a URL, and the handlers a server registers on `http` or on a mux held in a variable. A URL with no base, `"/api/users"` or the part of `base + "/api/users"` after a computed base, is read as the path it names. A method pattern of Go 1.22, `"GET /users/{id}"`, gives the method and the path.
+name = "net-http"
+language = "go"
+relative_without_base = "unread"
+
+[[calls]]
+callee = ["http.Get", "http.DefaultClient.Get"]
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "GET"
+
+[[calls]]
+callee = ["http.Head", "http.DefaultClient.Head"]
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "HEAD"
+
+[[calls]]
+callee = ["http.Post", "http.PostForm", "http.DefaultClient.Post", "http.DefaultClient.PostForm"]
+kind = "http"
+role = "calls"
+key = "$arg1"
+method = "POST"
+
+[[calls]]
+callee = "http.NewRequest"
+kind = "http"
+role = "calls"
+key = "$arg2"
+method = "$arg1"
+
+[[calls]]
+callee = "http.NewRequestWithContext"
+kind = "http"
+role = "calls"
+key = "$arg3"
+method = "$arg2"
+
+[[calls]]
+callee = [
+  "http.HandleFunc",
+  "http.Handle",
+  "http.DefaultServeMux.HandleFunc",
+  "*.HandleFunc",
+  "*.*.HandleFunc",
+  "*.*.*.HandleFunc",
+  "*.Handle",
+  "*.*.Handle",
+  "*.*.*.Handle",
+]
+kind = "http"
+role = "serves"
+key = "$pattern_path"
+method = "$pattern_method|*"
