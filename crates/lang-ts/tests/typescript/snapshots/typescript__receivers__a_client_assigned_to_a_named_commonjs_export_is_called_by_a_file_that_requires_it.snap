@@ -1,6 +1,5 @@
 ---
 source: crates/lang-ts/tests/typescript/receivers.rs
-assertion_line: 384
 expression: json
 ---
 {
@@ -46,7 +45,16 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "client",
+            "uses": [
+              "axios.create"
+            ]
+          }
+        ],
         "exports": [],
         "heirs": [],
         "on_load": [
@@ -89,7 +97,16 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "client",
+            "uses": [
+              "axios.create"
+            ]
+          }
+        ],
         "exports": [],
         "heirs": [],
         "on_load": [
@@ -133,7 +150,16 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "client",
+            "uses": [
+              "axios.create"
+            ]
+          }
+        ],
         "exports": [],
         "heirs": [],
         "on_load": [

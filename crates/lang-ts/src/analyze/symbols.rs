@@ -9,11 +9,11 @@ use std::rc::Rc;
 use gsttt_core::fact::{Declared, Heir, ImportKind, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
-    BindingPattern, ChainElement, Class, ClassElement, Declaration, ExportDefaultDeclaration,
-    ExportDefaultDeclarationKind, Expression, ImportDeclaration, MethodDefinitionKind,
-    ObjectPropertyKind, Program, PropertyKey, SimpleAssignmentTarget, Statement,
-    TSInterfaceDeclaration, TSModuleReference, VariableDeclaration, VariableDeclarationKind,
-    VariableDeclarator,
+    AssignmentOperator, AssignmentTarget, BindingPattern, ChainElement, Class, ClassElement,
+    Declaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind, Expression,
+    ImportDeclaration, MethodDefinitionKind, ObjectExpression, ObjectPropertyKind, Program,
+    PropertyKey, SimpleAssignmentTarget, Statement, TSInterfaceDeclaration, TSModuleReference,
+    UnaryOperator, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_span::{GetSpan, Span};
 
@@ -22,8 +22,8 @@ use super::roots::{constructed, declared_class, heads};
 use super::{load_of, peel};
 use crate::extra::{Export, ExportTarget};
 use crate::shape::{
-    dotted_name, is_export_key, is_open_object, is_parameter_property, literal_text, property_name,
-    property_str,
+    dotted, dotted_name, exports_member, is_export_key, is_open_object, is_parameter_property,
+    literal_text, property_name, property_str, static_chain,
 };
 
 /// The member that stands for a class used by its type alone: recorded as `Class.`, so that a question about the class reaches it and a question about one of its members does not.
@@ -106,6 +106,8 @@ enum Plan {
     One(usize, Load),
     /// A class or a variable statement: the declarations inside are found by the start of their node.
     Inside,
+    /// A statement that is not a declaration, all of which runs as the file loads, with properties of an object inside it that declare a name: `module.exports = { run() {} }`. Their regions are found by the start of the property.
+    Properties,
 }
 
 /// A declaration inside a top-level statement, found by the start of its node.
@@ -113,6 +115,8 @@ enum Plan {
 enum Region {
     Declarator(usize),
     Class(usize),
+    /// A property of an object in `module.exports = { … }` that declares its key: its group, if it has one, and how far its code runs at load. A class holds no group of its own, and waits for its region to be entered.
+    Property(Option<usize>, Load),
 }
 
 /// A top-level class: the group of its decorators, `extends` and members without a name, and the group of each member by its position in the body.
@@ -133,6 +137,8 @@ pub(super) struct Place {
     class: Option<usize>,
     /// How far the code around the function being walked runs at load, which is how far the decorators of its parameters do.
     around: Load,
+    /// Whether the statement being walked has properties that declare a name, so that an object property looks its region up.
+    properties: bool,
 }
 
 /// The names at the head of the type of a field, shared so that reading the field clones none of them.
@@ -206,10 +212,137 @@ impl<'a> Recorder<'a> {
             | Statement::ExportAllDeclaration(_)
             | Statement::TSNamespaceExportDeclaration(_) => Plan::Skip,
             Statement::TSExportAssignment(_) => Plan::Load,
+            Statement::ExpressionStatement(statement) => {
+                self.exports_in_place(&statement.expression, span, index)
+            }
             other => match other.as_declaration() {
                 Some(declaration) => self.declaration(declaration, span, index),
                 None => Plan::Load,
             },
+        }
+    }
+
+    /// A top-level assignment to `exports.x` or `module.exports` declares the names whose value it writes in place. A local, a `require` and anything but the forms below declare nothing, and the statement stays code that runs as the file loads.
+    fn exports_in_place(
+        &mut self,
+        expression: &Expression<'a>,
+        span: Span,
+        index: &LineIndex,
+    ) -> Plan {
+        let Expression::AssignmentExpression(first) = expression.get_inner_expression() else {
+            return Plan::Load;
+        };
+        let mut names = Vec::new();
+        let (mut module, mut alias) = (false, false);
+        let mut assignment = first;
+        let value = loop {
+            if assignment.operator != AssignmentOperator::Assign {
+                return Plan::Load;
+            }
+            match written(&assignment.left) {
+                Some(Written::Name(name)) => names.push(name),
+                Some(Written::Module) => module = true,
+                Some(Written::Alias) => alias = true,
+                None => return Plan::Load,
+            }
+            match assignment.right.get_inner_expression() {
+                Expression::AssignmentExpression(inner) => assignment = inner,
+                value => break value,
+            }
+        };
+        let lines = line_pair(index, span);
+        match (module, alias, names.is_empty()) {
+            (true, _, true) => self.module_export(value, lines, span, index),
+            (false, false, false) => self.named_exports(&names, value, lines, span, index),
+            _ => Plan::Load,
+        }
+    }
+
+    /// `exports.a = exports.b = value`: `names` are declared by one group, as the names of a destructuring are.
+    fn named_exports(
+        &mut self,
+        names: &[&'a str],
+        value: &Expression<'a>,
+        lines: (Line, Line),
+        span: Span,
+        index: &LineIndex,
+    ) -> Plan {
+        match value {
+            Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_) => {
+                self.callables.extend(names);
+                self.together(names, lines, Load::Later)
+            }
+            // The class is declared under the name it is exported as, whatever name it carries.
+            Expression::ClassExpression(class) => match names {
+                [name] => {
+                    self.class(class, name, span, index);
+                    Plan::Inside
+                }
+                _ => Plan::Load,
+            },
+            Expression::Identifier(_) => Plan::Load,
+            other if is_void(other) || load_of(peel(other)).is_some() => Plan::Load,
+            _ => self.together(names, lines, Load::Static),
+        }
+    }
+
+    /// `module.exports = value`: a function or a class declares the name it carries, an object declares the keys whose value it writes in place, and anything else declares nothing.
+    fn module_export(
+        &mut self,
+        value: &Expression<'a>,
+        lines: (Line, Line),
+        span: Span,
+        index: &LineIndex,
+    ) -> Plan {
+        match value {
+            Expression::FunctionExpression(function) => {
+                let name = function.id.as_ref().map(|id| id.name.as_str());
+                self.callables.extend(name);
+                self.single(name, lines, Load::Later)
+            }
+            Expression::ClassExpression(class) => match &class.id {
+                Some(id) => {
+                    self.class(class, id.name.as_str(), span, index);
+                    Plan::Inside
+                }
+                None => Plan::Load,
+            },
+            Expression::ObjectExpression(object) => self.properties(object, index),
+            _ => Plan::Load,
+        }
+    }
+
+    /// The keys of an object that `module.exports` takes whose value is written in place, each with the lines and the code of its own property. A key that holds a local or a `require`, a computed key and a spread declare nothing.
+    fn properties(&mut self, object: &ObjectExpression<'a>, index: &LineIndex) -> Plan {
+        let mut declared = false;
+        for property in &object.properties {
+            let ObjectPropertyKind::ObjectProperty(property) = property else {
+                continue;
+            };
+            let Some(name) = property_str(&property.key).filter(|_| !property.computed) else {
+                continue;
+            };
+            let lines = line_pair(index, property.span);
+            let region = match property.value.get_inner_expression() {
+                Expression::Identifier(_) => continue,
+                other if is_void(other) || load_of(peel(other)).is_some() => continue,
+                Expression::ClassExpression(class) => {
+                    self.class(class, name, property.span, index);
+                    Region::Property(None, Load::Pending)
+                }
+                Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_) => {
+                    self.callables.insert(name);
+                    Region::Property(Some(self.declare(&[name], lines)), Load::Later)
+                }
+                _ => Region::Property(Some(self.declare(&[name], lines)), Load::Static),
+            };
+            self.regions.push((property.span.start, region));
+            declared = true;
+        }
+        if declared {
+            Plan::Properties
+        } else {
+            Plan::Load
         }
     }
 
@@ -338,8 +471,21 @@ impl<'a> Recorder<'a> {
         let Some(name) = name else {
             return Plan::Load;
         };
-        let entry = self.entry(name, Kind::Other, Some(lines));
-        Plan::One(self.group(&[entry]), load)
+        self.together(&[name], lines, load)
+    }
+
+    /// Declarations of `names` whose code is one group.
+    fn together(&mut self, names: &[&'a str], lines: (Line, Line), load: Load) -> Plan {
+        Plan::One(self.declare(names, lines), load)
+    }
+
+    /// The group that declares `names` over `lines`.
+    fn declare(&mut self, names: &[&'a str], lines: (Line, Line)) -> usize {
+        let entries: Vec<usize> = names
+            .iter()
+            .map(|&name| self.entry(name, Kind::Other, Some(lines)))
+            .collect();
+        self.group(&entries)
     }
 
     /// The names of each declarator, with a group and a region for the declarator. A statement with one declarator spans its keyword and `export` too.
@@ -620,6 +766,11 @@ impl<'a> Recorder<'a> {
                 load: Load::Pending,
                 ..Place::default()
             },
+            Some(Plan::Properties) => Place {
+                load: Load::Always,
+                properties: true,
+                ..Place::default()
+            },
             Some(Plan::Skip) | None => Place::default(),
         };
     }
@@ -643,6 +794,23 @@ impl<'a> Recorder<'a> {
             };
         }
         outer
+    }
+
+    /// Enters the property that starts at `start` when it declares a key in the statement being walked, and gives back where the walk was. Any other property costs one flag read.
+    pub(super) fn property(&mut self, start: u32) -> Option<Place> {
+        let outer = self.place;
+        if !outer.properties {
+            return None;
+        }
+        let Some(Region::Property(group, load)) = self.region(start) else {
+            return None;
+        };
+        self.place = Place {
+            group,
+            load,
+            ..Place::default()
+        };
+        Some(outer)
     }
 
     /// Enters the class that starts at `start` when it is a top-level class. A class inside it has a `this` of its own.
@@ -814,6 +982,7 @@ impl<'a> Recorder<'a> {
             return;
         }
         let Some(&binding) = self.names.get(root.as_str()) else {
+            self.exported_use(names);
             return;
         };
         self.mark_value(binding);
@@ -834,6 +1003,31 @@ impl<'a> Recorder<'a> {
                 self.note(used);
             }
             None => self.note(binding),
+        }
+    }
+
+    /// `exports.run` and `module.exports.run`, when the file binds neither `exports` nor `module`: a use of the top-level `run` that the file declares. The code that declares it does not use it.
+    fn exported_use(&mut self, names: &[Option<String>]) {
+        let member = match names {
+            [Some(root), Some(member), ..] if root == "exports" => member,
+            [Some(root), Some(exports), Some(member), ..]
+                if root == "module" && exports == "exports" =>
+            {
+                member
+            }
+            _ => return,
+        };
+        let Some(&binding) = self.names.get(member.as_str()) else {
+            return;
+        };
+        let declaring = self
+            .place
+            .group
+            .and_then(|group| self.groups.get(group))
+            .and_then(|group| self.group_members.get(group.start..group.end))
+            .is_some_and(|members| members.contains(&binding));
+        if !declaring {
+            self.note(binding);
         }
     }
 
@@ -1054,6 +1248,42 @@ impl<'a> Recorder<'a> {
             .map(|&entry| self.name(entry).to_owned())
             .collect()
     }
+}
+
+/// A target of an assignment that the exports of a `CommonJS` file are written to.
+enum Written<'a> {
+    /// `exports.name` and `module.exports.name`.
+    Name(&'a str),
+    /// `module.exports`.
+    Module,
+    /// `exports`, the other name of `module.exports` until it is assigned.
+    Alias,
+}
+
+/// What `target` writes of the exports of a `CommonJS` file, if it writes any.
+fn written<'a>(target: &AssignmentTarget<'a>) -> Option<Written<'a>> {
+    match target {
+        AssignmentTarget::AssignmentTargetIdentifier(identifier)
+            if identifier.name.as_str() == "exports" =>
+        {
+            Some(Written::Alias)
+        }
+        AssignmentTarget::StaticMemberExpression(member) => {
+            let name = member.property.name.as_str();
+            let chain = static_chain(&member.object, name)?;
+            let path = dotted(&chain)?;
+            if path == "module.exports" {
+                return Some(Written::Module);
+            }
+            exports_member(&path).map(|_| Written::Name(name))
+        }
+        _ => None,
+    }
+}
+
+/// Whether `expr` is `void …`, which compiled code writes as `exports.a = void 0` to reserve a name that a function declares lower down.
+fn is_void(expr: &Expression<'_>) -> bool {
+    matches!(expr, Expression::UnaryExpression(unary) if unary.operator == UnaryOperator::Void)
 }
 
 /// The lines a span starts and ends on.

@@ -988,3 +988,170 @@ fn an_indexed_type_names_the_member() -> Result<(), Box<dyn Error>> {
     );
     Ok(())
 }
+
+#[test]
+#[scenario("typescript", "A function written in place on exports is declared")]
+fn a_function_written_in_place_on_exports_is_declared() -> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-declared-functions")?;
+    let path = "src/lib.js";
+    assert_eq!(
+        declared(&json, path),
+        [
+            "dep @2",
+            "run @4-6",
+            "stop @8-10",
+            "a @12-14",
+            "b @12-14",
+            "limit @16",
+            "label @18",
+            "compute @23-25",
+            "again @27-29",
+        ],
+        "a function, an arrow and a chain declare over their statement, a value declares like a const, and a local or a require declares nothing"
+    );
+    assert_eq!(
+        uses(&json, path, "run"),
+        Some(vec!["dep", "helper.go"]),
+        "what the body uses counts for `run`"
+    );
+    assert_eq!(uses(&json, path, "a"), Some(vec!["dep"]));
+    assert_eq!(uses(&json, path, "label"), Some(vec!["compute", "dep"]));
+    assert_eq!(
+        on_load(&json, path),
+        Some(vec!["compute", "dep"]),
+        "only the call that runs at load counts, not the bodies of `run` and `stop`"
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A call on exports is a use of the name the file declares"
+)]
+fn a_call_on_exports_is_a_use_of_the_name_the_file_declares() -> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-declared-functions")?;
+    assert_eq!(uses(&json, "src/lib.js", "again"), Some(vec!["run"]));
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "An object assigned to module.exports declares each property written in place"
+)]
+fn an_object_assigned_to_module_exports_declares_each_property_written_in_place()
+-> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-declared-object")?;
+    let path = "src/lib.js";
+    assert_eq!(
+        declared(&json, path),
+        [
+            "dep @3",
+            "other @4",
+            "a @5",
+            "run @8-10",
+            "stop @11-13",
+            "limit @14",
+            "Bar @15-19",
+            "Bar.go @16-18",
+        ]
+    );
+    assert_eq!(uses(&json, path, "run"), Some(vec!["dep"]));
+    assert_eq!(uses(&json, path, "stop"), Some(vec!["other"]));
+    assert_eq!(uses(&json, path, "Bar.go"), Some(vec!["dep"]));
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A property that holds a local or a require declares nothing"
+)]
+fn a_property_that_holds_a_local_or_a_require_declares_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-declared-object")?;
+    let path = "src/lib.js";
+    let declared = declared(&json, path);
+    for name in ["b ", "c ", "d "] {
+        assert!(
+            !declared.iter().any(|line| line.starts_with(name)),
+            "{name}: {declared:?}"
+        );
+    }
+    assert_eq!(
+        on_load(&json, path),
+        Some(vec!["a", "c", "dep", "local"]),
+        "the names the properties hold are read as the file loads, and so is the method of the computed key, which declares nothing"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A computed key declares nothing")]
+fn a_computed_key_declares_nothing() -> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-declared-object")?;
+    let declared = declared(&json, "src/lib.js");
+    assert!(
+        !declared.iter().any(|line| line.starts_with("computed")),
+        "{declared:?}"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A class written in place on exports is declared under its exported name"
+)]
+fn a_class_written_in_place_on_exports_is_declared_under_its_exported_name()
+-> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-declared-class")?;
+    let path = "src/named.js";
+    assert_eq!(
+        declared(&json, path),
+        ["dep @1", "Foo @3-7", "Foo.run @4-6"]
+    );
+    assert_eq!(uses(&json, path, "Foo.run"), Some(vec!["dep"]));
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A class assigned to module.exports is declared and exported as default"
+)]
+fn a_class_assigned_to_module_exports_is_declared_and_exported_as_default()
+-> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-declared-class")?;
+    let path = "src/whole.js";
+    assert_eq!(declared(&json, path), ["dep @1", "Foo @3-7", "Foo.go @4-6"]);
+    assert_eq!(local_exports(&json, path), ["default from Foo"]);
+    assert_eq!(declared(&json, "src/fn.js"), ["run @1-3"]);
+    assert_eq!(local_exports(&json, "src/fn.js"), ["default from run"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "An anonymous function assigned to module.exports declares nothing"
+)]
+fn an_anonymous_function_assigned_to_module_exports_declares_nothing() -> Result<(), Box<dyn Error>>
+{
+    let json = run("commonjs-declared-class")?;
+    assert_eq!(declared(&json, "src/anonymous.js"), ["dep @1"]);
+    assert_eq!(on_load(&json, "src/anonymous.js"), Some(vec!["dep"]));
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A void placeholder on exports is no declaration")]
+fn a_void_placeholder_on_exports_is_no_declaration() -> Result<(), Box<dyn Error>> {
+    let json = run("commonjs-declared-void")?;
+    assert_eq!(declared(&json, "src/compiled.js"), ["a @3-5"]);
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}

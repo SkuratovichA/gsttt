@@ -782,10 +782,26 @@ pub(crate) fn commonjs_exports<'e, 'a>(
                 .collect(),
         );
     }
+    let name = exports_member(target)?;
+    Some(vec![(name.to_owned(), assigned_value(value))])
+}
+
+/// The name `exports.a` and `module.exports.a` write, and nothing for a deeper path such as `exports.a.b`, which changes a member of `a` and not the exports.
+pub(crate) fn exports_member(target: &str) -> Option<&str> {
     let name = target
         .strip_prefix("exports.")
         .or_else(|| target.strip_prefix("module.exports."))?;
-    Some(vec![(name.to_owned(), assigned_value(value))])
+    (!name.contains('.')).then_some(name)
+}
+
+/// The name a function or class expression carries, `run` for `function run() {}`.
+pub(crate) fn named_callable<'a>(expr: &Expression<'a>) -> Option<&'a str> {
+    let id = match expr {
+        Expression::FunctionExpression(function) => function.id.as_ref(),
+        Expression::ClassExpression(class) => class.id.as_ref(),
+        _ => None,
+    };
+    id.map(|id| id.name.as_str())
 }
 
 /// Whether `expr` is the exports object of a `CommonJS` file, `exports` or `module.exports`.

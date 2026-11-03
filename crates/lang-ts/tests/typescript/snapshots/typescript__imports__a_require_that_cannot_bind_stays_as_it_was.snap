@@ -1,6 +1,5 @@
 ---
 source: crates/lang-ts/tests/typescript/imports.rs
-assertion_line: 480
 expression: json
 ---
 {
@@ -30,7 +29,14 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "a",
+            "uses": []
+          }
+        ],
         "exports": [],
         "heirs": [],
         "on_load": [],
