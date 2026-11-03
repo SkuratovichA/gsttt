@@ -15,7 +15,7 @@ use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
 use crate::query::cross::{Crossed, Crossing, Direction, Leavers, keep_fewest, sites_of};
 
-use super::overrides::overridden;
+use super::overrides::{overridden, overriding};
 use super::{Cause, Reached, holds};
 
 /// What the answer says about the walk beside the files it reached.
@@ -248,6 +248,7 @@ fn walk_from<'r>(
         through_class: BTreeSet::new(),
         held: BTreeSet::new(),
         held_modules: BTreeSet::new(),
+        heads: BTreeSet::new(),
     };
     let mut crossed = Crossed::new(Direction::ToCallers, &index.graph);
     let mut notes = BTreeSet::new();
@@ -452,6 +453,8 @@ struct Walk<'a> {
     held: BTreeSet<FileId>,
     /// The files that load the module and read none of the names asked about.
     held_modules: BTreeSet<FileId>,
+    /// The declarations the walk started from only because the member asked about overrides them. A sibling that implements them is no caller, so the walk lists no overrides of them.
+    heads: BTreeSet<Unit>,
 }
 
 impl Walk<'_> {
@@ -573,10 +576,13 @@ impl Walk<'_> {
                 .or_default()
                 .decls
                 .insert(place, START);
-            started.insert(Unit {
+            let unit = Unit {
                 file: owner,
                 part: Part::Decl(place),
-            });
+            };
+            if started.insert(unit) {
+                self.heads.insert(unit);
+            }
             notes.insert(Note::Overridden {
                 member: name.to_owned(),
                 through: decl.name().to_owned(),
@@ -716,9 +722,10 @@ impl Walk<'_> {
 fn rank(cause: &Cause) -> u8 {
     match cause {
         Cause::Declares { .. } => 0,
-        Cause::Imports { .. } => 1,
-        Cause::ReExports { .. } => 2,
-        Cause::Contract { .. } => 3,
+        Cause::Overrides { .. } => 1,
+        Cause::Imports { .. } => 2,
+        Cause::ReExports { .. } => 3,
+        Cause::Contract { .. } => 4,
     }
 }
 
@@ -740,6 +747,13 @@ fn merge(cause: &mut Cause, other: &Cause) -> bool {
             },
         ) if file == same => union(names, more),
         (Cause::Declares { names }, Cause::Declares { names: more }) => union(names, more),
+        (
+            Cause::Overrides { file, names },
+            Cause::Overrides {
+                file: same,
+                names: more,
+            },
+        ) if file == same => union(names, more),
         _ => return false,
     }
     true
@@ -1032,6 +1046,7 @@ impl<'w, 'a> Step<'w, 'a> {
         if let Some(symbols) = parts.symbols {
             self.callers_in(file, symbols, &parts.declared);
             self.exports(file, symbols, &parts.declared);
+            self.overriders(file, symbols, &parts.declared);
         }
         if parts.load {
             self.loaders(file);
@@ -1139,6 +1154,41 @@ impl<'w, 'a> Step<'w, 'a> {
         let asked = self.walk.asked(file);
         if !asked.is_empty() {
             self.list(file, file, Cause::Declares { names: asked });
+        }
+    }
+
+    /// The files that declare what the `declared` members override or are overridden by. A head the walk started from because of the member asked about is listed for the declaration the member overrides; any other member lists the declarations that override it, which are reached as its callers are. The siblings of a head stay out.
+    fn overriders(&mut self, file: FileId, symbols: FileSymbols<'a>, declared: &[usize]) {
+        for &index in declared {
+            let Some(decl) = symbols.declaration(index) else {
+                continue;
+            };
+            let unit = Unit {
+                file,
+                part: Part::Decl(index),
+            };
+            if self.walk.heads.contains(&unit) {
+                self.list(
+                    file,
+                    file,
+                    Cause::Declares {
+                        names: vec![decl.name().to_owned()],
+                    },
+                );
+                continue;
+            }
+            for (owner, place) in overriding(self.walk.index, file, index) {
+                if self.unit(owner, Part::Decl(place)) {
+                    self.list(
+                        owner,
+                        file,
+                        Cause::Overrides {
+                            file,
+                            names: vec![decl.name().to_owned()],
+                        },
+                    );
+                }
+            }
         }
     }
 

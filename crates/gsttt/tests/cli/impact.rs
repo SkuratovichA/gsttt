@@ -2339,7 +2339,11 @@ fn a_caller_through_an_interface_is_a_caller_of_the_method_that_implements_it() 
     write_providers(&repo);
 
     let answer = ask(&sandbox, &repo, "src/aws.ts", "Aws.getGitGroups");
-    assert_eq!(paths(&answer["affected"]), ["src/app.ts"], "{answer}");
+    assert_eq!(
+        paths(&answer["affected"]),
+        ["src/app.ts", "src/provider.ts"],
+        "{answer}"
+    );
     assert_eq!(
         answer["affected"][0]["callers"],
         value!([{ "name": "groups", "line": 3, "distance": 1 }])
@@ -2349,6 +2353,30 @@ fn a_caller_through_an_interface_is_a_caller_of_the_method_that_implements_it() 
             .as_array()
             .is_some_and(|notes| notes.iter().any(|note| note
                 == "Aws.getGitGroups may run through GitProvider.getGitGroups in src/provider.ts, so its callers are listed")),
+        "{answer}"
+    );
+}
+
+#[scenario("queries", "The member an override overrides is listed")]
+#[test]
+fn the_member_an_override_overrides_is_listed() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_providers(&repo);
+
+    let answer = ask(&sandbox, &repo, "src/aws.ts", "Aws.getGitGroups");
+    let row = answer["affected"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["path"] == "src/provider.ts"));
+    assert_eq!(
+        row.map(|row| &row["reason"]),
+        Some(&value!({ "via": "declares", "names": ["GitProvider.getGitGroups"] })),
+        "{answer}"
+    );
+    assert!(
+        answer["notes"]
+            .as_array()
+            .is_some_and(|notes| !notes.is_empty()),
         "{answer}"
     );
 }
@@ -2392,6 +2420,20 @@ fn a_sibling_implementation_is_no_caller() {
     assert!(!listed.contains(&"src/github.ts"), "{answer}");
     assert!(!listed.contains(&"src/only-github.ts"), "{answer}");
     assert!(!listed.contains(&"src/rest.ts"), "{answer}");
+}
+
+#[scenario("queries", "A sibling implementation is not listed")]
+#[test]
+fn a_sibling_implementation_is_not_listed() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_providers(&repo);
+
+    let answer = ask(&sandbox, &repo, "src/aws.ts", "Aws.getGitGroups");
+    assert!(
+        !paths(&answer["affected"]).contains(&"src/github.ts"),
+        "{answer}"
+    );
 }
 
 #[scenario(

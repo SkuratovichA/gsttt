@@ -31,6 +31,8 @@ pub(super) enum Cause {
     Contract { role: Role, contract: ContractId },
     /// A walk by name only: the file declares the names the walk came from, and its own declarations refer to them. `names` are the declarations asked about, in byte order.
     Declares { names: Vec<String> },
+    /// A walk by name: the file declares the same member of a class that extends or implements the class of the member in `file`, which the walk had reached. `names` are the members of `file`, in byte order.
+    Overrides { file: FileId, names: Vec<String> },
 }
 
 /// A file the walk reached.
