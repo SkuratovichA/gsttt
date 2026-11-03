@@ -155,28 +155,28 @@ expression: json
   "linked": [
     {
       "file": "src/client.ts",
-      "key": "http * /api/v1/users",
+      "key": "http GET /api/v1/users",
       "line": 3,
       "role": "calls",
       "via": "fetch"
     },
     {
       "file": "src/client.ts",
-      "key": "http * /api/v1/orders",
+      "key": "http GET /api/v1/orders",
       "line": 4,
       "role": "calls",
       "via": "fetch"
     },
     {
       "file": "src/client.ts",
-      "key": "http * /api/v1/items",
+      "key": "http GET /api/v1/items",
       "line": 5,
       "role": "calls",
       "via": "fetch"
     },
     {
       "file": "src/client.ts",
-      "key": "http * /api/v1/users/1",
+      "key": "http GET /api/v1/users/1",
       "line": 6,
       "role": "calls",
       "via": "fetch"

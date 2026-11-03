@@ -47,8 +47,8 @@ fn a_template_with_an_imported_constant_is_read() -> Result<(), Box<dyn Error>> 
     assert_eq!(
         linked(&json),
         [
-            "calls http * /api/v1/users @3 in src/users.ts",
-            "calls http * /api/v1/orders @4 in src/users.ts",
+            "calls http GET /api/v1/users @3 in src/users.ts",
+            "calls http GET /api/v1/orders @4 in src/users.ts",
         ]
     );
     assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
@@ -67,10 +67,10 @@ fn an_exported_constant_built_from_an_imported_one_is_read() -> Result<(), Box<d
     assert_eq!(
         linked(&json),
         [
-            "calls http * /api/v1/users @3 in src/client.ts",
-            "calls http * /api/v1/orders @4 in src/client.ts",
-            "calls http * /api/v1/items @5 in src/client.ts",
-            "calls http * /api/v1/users/1 @6 in src/client.ts",
+            "calls http GET /api/v1/users @3 in src/client.ts",
+            "calls http GET /api/v1/orders @4 in src/client.ts",
+            "calls http GET /api/v1/items @5 in src/client.ts",
+            "calls http GET /api/v1/users/1 @6 in src/client.ts",
         ]
     );
     assert_eq!(contracts(&json, "src/client.ts"), NOTHING);
@@ -89,10 +89,10 @@ fn a_constant_of_the_same_file_built_from_an_imported_one_is_read() -> Result<()
     assert_eq!(
         linked(&json),
         [
-            "calls http * /api/v1/users @7 in src/users.ts",
-            "calls http * /api/v1/orders @8 in src/users.ts",
-            "calls http * /api/v1/users/1 @9 in src/users.ts",
-            "calls http * /api/v1 @10 in src/users.ts",
+            "calls http GET /api/v1/users @7 in src/users.ts",
+            "calls http GET /api/v1/orders @8 in src/users.ts",
+            "calls http GET /api/v1/users/1 @9 in src/users.ts",
+            "calls http GET /api/v1 @10 in src/users.ts",
         ]
     );
     assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
@@ -134,13 +134,13 @@ fn an_imported_name_the_link_cannot_read_keeps_its_reading() -> Result<(), Box<d
     let json = run("values-unreadable")?;
     // The template and the client read the name as nothing, as the parse did before the link was asked; the two bare names stay unread.
     let read = [
-        "calls http * /users @5 in src/users.ts",
+        "calls http GET /users @5 in src/users.ts",
         "calls http GET /orders @10 in src/users.ts",
     ];
     assert_eq!(linked(&json), read);
     assert_eq!(
         sites("values-unreadable")?,
-        ["calls env API_URL @1 in src/env.ts", read[0], read[1]]
+        ["calls env API_URL @1 in src/env.ts", read[1], read[0]]
     );
     assert_eq!(contracts(&json, "src/users.ts"), NOTHING);
     // `PATH` is a constant that names an import, and the link finds nothing to read it with: `BASE` is no text in `env.ts`.
@@ -160,12 +160,15 @@ fn a_name_that_a_local_binds_again_is_no_import() -> Result<(), Box<dyn Error>> 
     assert_eq!(
         linked(&json),
         [
-            "calls http * /api/v1/orders @7 in src/users.ts",
-            "calls http * /api/v1 @8 in src/users.ts",
-            "calls http * /api/v1/items @11 in src/users.ts",
+            "calls http GET /api/v1/orders @7 in src/users.ts",
+            "calls http GET /api/v1 @8 in src/users.ts",
+            "calls http GET /api/v1/items @11 in src/users.ts",
         ]
     );
-    assert_eq!(contracts(&json, "src/users.ts"), ["calls http * /users @4"]);
+    assert_eq!(
+        contracts(&json, "src/users.ts"),
+        ["calls http GET /users @4"]
+    );
     assert_eq!(unread(&json, "src/users.ts"), NOTHING);
     insta::assert_json_snapshot!(json);
     Ok(())
@@ -177,8 +180,8 @@ fn a_constant_names_an_import_written_below_it() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         linked(&json),
         [
-            "calls http * /api/v1/users @4 in src/users.ts",
-            "calls http * /root/orders @5 in src/users.ts",
+            "calls http GET /api/v1/users @4 in src/users.ts",
+            "calls http GET /root/orders @5 in src/users.ts",
         ]
     );
     assert_eq!(unread(&json, "src/users.ts"), NOTHING);
@@ -232,7 +235,10 @@ fn a_diamond_of_constants_across_many_files_is_read_once_per_constant() -> Resul
         format!("import {{ A }} from './l{DIAMOND_LEVELS}';\nfetch(`${{A}}/users`);\n"),
     )?;
     let json = run_tree_within(tree.path(), CYCLE_LIMIT)?;
-    assert_eq!(linked(&json), ["calls http * /api/users @2 in src/use.ts"]);
+    assert_eq!(
+        linked(&json),
+        ["calls http GET /api/users @2 in src/use.ts"]
+    );
     assert_eq!(unread(&json, "src/use.ts"), NOTHING);
     Ok(())
 }
@@ -311,7 +317,7 @@ fn a_chain_of_constants_across_two_files_is_read_to_its_end() -> Result<(), Box<
     assert_eq!(
         linked(&json),
         [format!(
-            "calls http * /end{} @2 in src/use.ts",
+            "calls http GET /end{} @2 in src/use.ts",
             "/y".repeat(CHAIN_LENGTH - 1)
         )]
     );
@@ -353,9 +359,9 @@ fn a_constant_built_deeper_than_the_limit_is_no_constant_and_the_project_still_l
     assert_eq!(
         found,
         [
-            "calls http * /api/users @2 in src/other.ts".to_owned(),
+            "calls http GET /api/users @2 in src/other.ts".to_owned(),
             format!(
-                "calls http * /api{} @{} in src/deep.ts",
+                "calls http GET /api{} @{} in src/deep.ts",
                 "/x".repeat(32),
                 DEEP_LEVELS + 2
             ),
@@ -404,7 +410,7 @@ fn a_constant_that_doubles_past_the_limit_is_no_constant_and_the_index_completes
     let json = run_tree_within(tree.path(), CYCLE_LIMIT)?;
     assert_eq!(
         linked(&json),
-        ["calls http * /xyz/xyz/xyz/xyz @2 in src/use.ts"]
+        ["calls http GET /xyz/xyz/xyz/xyz @2 in src/use.ts"]
     );
     assert_eq!(unread(&json, "src/use.ts"), ["@3 non-literal fetch"]);
     assert_eq!(problems(&json), NOTHING);
@@ -470,12 +476,12 @@ fn a_deep_sum_in_a_url_is_linked_and_read_back_whole() -> Result<(), Box<dyn Err
     let own = contracts(&json, "use.ts");
     assert_eq!(
         own,
-        [format!("calls http * {} @3", "/y".repeat(DEEP_SUM + 1))]
+        [format!("calls http GET {} @3", "/y".repeat(DEEP_SUM + 1))]
     );
     assert_eq!(
         linked(&json),
         [format!(
-            "calls http * /api{} @2 in use.ts",
+            "calls http GET /api{} @2 in use.ts",
             "/x".repeat(DEEP_SUM)
         )]
     );

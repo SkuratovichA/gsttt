@@ -19,13 +19,13 @@ expression: json
     {
       "contracts": [
         {
-          "key": "http * /v1/users/{}",
+          "key": "http GET /v1/users/{}",
           "line": 1,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /users",
+          "key": "http GET /users",
           "line": 2,
           "role": "calls",
           "via": "fetch"

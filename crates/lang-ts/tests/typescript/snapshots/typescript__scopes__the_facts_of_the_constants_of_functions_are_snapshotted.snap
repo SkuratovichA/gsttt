@@ -19,49 +19,49 @@ expression: "run(\"scopes-locals\")?"
     {
       "contracts": [
         {
-          "key": "http * /a",
+          "key": "http GET /a",
           "line": 5,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /api/x/y",
+          "key": "http GET /api/x/y",
           "line": 11,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /first",
+          "key": "http GET /first",
           "line": 17,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /second",
+          "key": "http GET /second",
           "line": 20,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /later",
+          "key": "http GET /later",
           "line": 25,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /outer",
+          "key": "http GET /outer",
           "line": 33,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /users",
+          "key": "http GET /users",
           "line": 40,
           "role": "calls",
           "via": "fetch"
         },
         {
-          "key": "http * /orders",
+          "key": "http GET /orders",
           "line": 41,
           "role": "calls",
           "via": "fetch"

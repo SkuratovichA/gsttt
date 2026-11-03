@@ -36,7 +36,7 @@ fn a_changed_constant_of_an_exporter_moves_the_key_of_an_importer_that_is_reused
         first.stdout.contains(": 2 parsed, 0 reused.\n"),
         "{first:?}"
     );
-    assert_eq!(callers(&sandbox, "http * /users"), ["src/client.ts"]);
+    assert_eq!(callers(&sandbox, "http GET /users"), ["src/client.ts"]);
 
     write(dir, "src/paths.ts", "export const USERS = '/people';\n");
     let second = sandbox.run(&["index"]);
@@ -46,9 +46,9 @@ fn a_changed_constant_of_an_exporter_moves_the_key_of_an_importer_that_is_reused
         second.stdout.contains(": 1 parsed, 1 reused.\n"),
         "{second:?}"
     );
-    assert_eq!(callers(&sandbox, "http * /people"), ["src/client.ts"]);
+    assert_eq!(callers(&sandbox, "http GET /people"), ["src/client.ts"]);
 
-    let stale = sandbox.run(&["--json", "contract", "http * /users"]);
+    let stale = sandbox.run(&["--json", "contract", "http GET /users"]);
     assert_eq!(stale.code, Some(0), "{stale:?}");
     assert_eq!(
         json(&stale)["found"]["lookup"],

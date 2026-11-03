@@ -208,7 +208,7 @@ expression: packs
         "kind": "http",
         "role": "calls",
         "key": "$arg1",
-        "method": "$arg2.method",
+        "method": "$arg2.method|GET",
         "receiver": null
       }
     ],
