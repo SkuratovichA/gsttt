@@ -8,6 +8,7 @@ use tree_sitter::Node;
 
 use crate::file::FileCx;
 use crate::names::{is_predeclared, is_predeclared_function};
+use crate::routers::Router;
 use crate::scope::{Head, Scopes};
 use crate::site::{Callee, read_calls};
 use crate::syntax::{MAX_DEPTH, field_text, fields, named_children, text_of};
@@ -37,6 +38,8 @@ pub(crate) struct Walk<'r, 'a> {
     load: bool,
     /// Whether some part of the tree nested past [`MAX_DEPTH`] and was left unread.
     pub(crate) cut: bool,
+    /// The router the function literal about to be visited receives as its first parameter, set just before the argument is visited.
+    pending_router: Option<Router>,
 }
 
 impl<'r, 'a> Walk<'r, 'a> {
@@ -56,6 +59,7 @@ impl<'r, 'a> Walk<'r, 'a> {
             depth: 0,
             load: false,
             cut: false,
+            pending_router: None,
         }
     }
 
@@ -413,8 +417,19 @@ impl<'r, 'a> Walk<'r, 'a> {
             self.note_load_call(function);
         }
         self.visit(function);
-        if let Some(arguments) = arguments {
+        let Some(arguments) = arguments else {
+            return;
+        };
+        let closure = self.closure_router(function, &named_children(arguments));
+        let Some((literal, router)) = closure else {
             self.visit_children(arguments);
+            return;
+        };
+        for argument in named_children(arguments) {
+            if argument == literal {
+                self.pending_router = Some(router.clone());
+            }
+            self.visit(argument);
         }
     }
 
@@ -459,6 +474,12 @@ impl<'r, 'a> Walk<'r, 'a> {
             return;
         }
         let arguments = arguments.map(named_children).unwrap_or_default();
+        let operand = self.receiver_operand(function);
+        let receiver = || {
+            operand
+                .map(|node| self.receiver_of(node))
+                .unwrap_or_default()
+        };
         let read = read_calls(
             Reader {
                 cx: self.cx,
@@ -467,6 +488,8 @@ impl<'r, 'a> Walk<'r, 'a> {
             call,
             &arguments,
             &callee,
+            &receiver,
+            &self.methods_of(call),
         );
         for outcome in read.outcomes {
             match outcome {
@@ -480,7 +503,7 @@ impl<'r, 'a> Walk<'r, 'a> {
     }
 
     /// The callee as the rules of the packs see it: dotted, with the qualifier of an import replaced by the name the package is known by.
-    fn callee_of(&self, function: Node<'a>) -> Option<Callee> {
+    pub(crate) fn callee_of(&self, function: Node<'a>) -> Option<Callee> {
         let mut segments: Vec<&str> = Vec::new();
         let mut node = function;
         let first = loop {
@@ -490,6 +513,7 @@ impl<'r, 'a> Walk<'r, 'a> {
                     segments.push(field_text(node, "field", self.cx.source)?);
                     node = node.child_by_field_name("operand")?;
                 }
+                "call_expression" => node = self.through_with(node)?,
                 _ => return None,
             }
         };
@@ -572,8 +596,12 @@ impl<'r, 'a> Walk<'r, 'a> {
 
     fn func_literal(&mut self, node: Node<'a>) {
         self.scopes.push_scope();
+        let router = self.pending_router.take();
         let load = std::mem::replace(&mut self.load, false);
         self.signature(node);
+        if let Some(router) = router {
+            self.bind_closure_router(node, router);
+        }
         if let Some(body) = node.child_by_field_name("body") {
             self.visit(body);
         }
@@ -744,10 +772,14 @@ impl<'r, 'a> Walk<'r, 'a> {
                     }
                     .text(*value)
                 });
-            pending.push((text, holds, known));
+            let router = value.and_then(|value| self.router_of(*value));
+            pending.push((text, holds, known, router));
         }
-        for (name, holds, text) in pending {
+        for (name, holds, text, router) in pending {
             self.scopes.bind(name, holds, text);
+            if let Some(router) = router {
+                self.scopes.set_router(name, router);
+            }
         }
     }
 
@@ -916,10 +948,14 @@ impl<'r, 'a> Walk<'r, 'a> {
                     }
                     .text(*value)
                 });
-            pending.push((text, holds, known));
+            let router = value.and_then(|value| self.router_of(*value));
+            pending.push((text, holds, known, router));
         }
-        for (name, holds, text) in pending {
+        for (name, holds, text, router) in pending {
             self.scopes.bind(name, holds, text);
+            if let Some(router) = router {
+                self.scopes.set_router(name, router);
+            }
         }
     }
 

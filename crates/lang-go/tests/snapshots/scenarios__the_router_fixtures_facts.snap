@@ -1,0 +1,61 @@
+---
+source: crates/lang-go/tests/scenarios.rs
+expression: facts
+---
+{
+  "routers-gin": {
+    "contracts": [
+      "serves http GET /health@6",
+      "serves http POST /orders@7",
+      "serves http GET /v1/users/{}@9",
+      "serves http GET /v1/files/{}@10",
+      "serves http DELETE /v1/users/{}@12",
+      "serves http * /v1/users/ping@13"
+    ],
+    "unresolved": []
+  },
+  "routers-echo": {
+    "contracts": [
+      "serves http GET /health@7",
+      "serves http GET /api/items/{}@9",
+      "serves http POST /api/v2/items@11"
+    ],
+    "unresolved": []
+  },
+  "routers-fiber": {
+    "contracts": [
+      "serves http GET /health@7",
+      "serves http GET /api/users/{}@9",
+      "serves http POST /api/v2/users@11",
+      "serves http GET /admin/stats@13",
+      "serves http GET /shared@22",
+      "serves http POST /todo/create@24"
+    ],
+    "unresolved": []
+  },
+  "routers-chi": {
+    "contracts": [
+      "serves http GET /ping@11",
+      "serves http GET /v1/users/{}@13",
+      "serves http POST /v1/users@15",
+      "serves http DELETE /v1/users/{}@17",
+      "serves http PUT /things@19",
+      "serves http PUT /typed@27"
+    ],
+    "unresolved": []
+  },
+  "routers-gorilla": {
+    "contracts": [
+      "serves http * /health@7",
+      "serves http GET /api/users/{}@9",
+      "serves http POST /api/users/{}@9",
+      "serves http PUT /api/orders@10",
+      "serves http * /api/v1/files@12"
+    ],
+    "unresolved": []
+  },
+  "routers-unrequired": {
+    "contracts": [],
+    "unresolved": []
+  }
+}

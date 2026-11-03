@@ -1487,6 +1487,190 @@ func Run() {
     assert_eq!(t.reads("a.go"), ["M", "N"]);
 }
 
+#[gsttt_scenario::scenario("go", "A verb on a gin engine serves its route")]
+#[test]
+fn a_verb_on_a_gin_engine_serves_its_route() {
+    let t = index("routers-gin");
+    let contracts = t.contracts("routes.go");
+    assert_eq!(contracts[0], "serves http GET /health@6");
+    // The field's type is declared in another file, so its type is unknown here.
+    assert_eq!(contracts[1], "serves http POST /orders@7");
+    // `probe.GET("/health")` has one argument: a request of a test client.
+    assert!(!contracts.iter().any(|fact| fact.ends_with("@14")));
+    assert_eq!(t.unresolved_lines("routes.go"), Vec::<u32>::new());
+}
+
+#[gsttt_scenario::scenario("go", "A verb given as text serves its route")]
+#[test]
+fn a_verb_given_as_text_serves_its_route() {
+    let t = index("routers-gin");
+    let contracts = t.contracts("handle.go");
+    assert!(
+        contracts.contains(&"serves http GET /handled@6".to_owned()),
+        "{contracts:?}"
+    );
+    assert!(
+        !contracts.iter().any(|fact| fact.contains("http * GET")),
+        "{contracts:?}"
+    );
+    assert_eq!(t.unresolved_lines("handle.go"), Vec::<u32>::new());
+    for fixture in ["routers-echo", "routers-fiber"] {
+        let contracts = index(fixture).contracts("add.go");
+        assert_eq!(contracts, ["serves http GET /added@6"], "{fixture}");
+    }
+}
+
+#[gsttt_scenario::scenario("go", "A group adds its prefix")]
+#[test]
+fn a_group_adds_its_prefix() {
+    let gin = index("routers-gin");
+    assert_eq!(
+        gin.contracts("routes.go")[2..],
+        [
+            "serves http GET /v1/users/{}@9",
+            "serves http GET /v1/files/{}@10",
+            "serves http DELETE /v1/users/{}@12",
+            "serves http * /v1/users/ping@13"
+        ]
+    );
+    assert_eq!(
+        index("routers-echo").contracts("routes.go"),
+        [
+            "serves http GET /health@7",
+            "serves http GET /api/items/{}@9",
+            "serves http POST /api/v2/items@11"
+        ]
+    );
+    assert_eq!(
+        index("routers-fiber").contracts("routes.go"),
+        [
+            "serves http GET /health@7",
+            "serves http GET /api/users/{}@9",
+            "serves http POST /api/v2/users@11",
+            "serves http GET /admin/stats@13",
+            "serves http GET /shared@22",
+            "serves http POST /todo/create@24"
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "A chi verb on a router it can see serves its route")]
+#[test]
+fn a_chi_verb_on_a_router_it_can_see_serves_its_route() {
+    let t = index("routers-chi");
+    let contracts = t.contracts("routes.go");
+    assert!(contracts.contains(&"serves http GET /ping@11".to_owned()));
+    assert!(contracts.contains(&"serves http PUT /typed@27".to_owned()));
+    assert!(contracts.contains(&"serves http PUT /things@19".to_owned()));
+}
+
+#[gsttt_scenario::scenario("go", "A chi closure adds its prefix")]
+#[test]
+fn a_chi_closure_adds_its_prefix() {
+    let t = index("routers-chi");
+    let contracts = t.contracts("routes.go");
+    // `Route` adds its prefix, `Group` adds none, and `With` is the router it wraps.
+    for fact in [
+        "serves http GET /v1/users/{}@13",
+        "serves http POST /v1/users@15",
+        "serves http DELETE /v1/users/{}@17",
+    ] {
+        assert!(
+            contracts.contains(&fact.to_owned()),
+            "{fact} in {contracts:?}"
+        );
+    }
+}
+
+#[gsttt_scenario::scenario("go", "A Get on what is no router is no route")]
+#[test]
+fn a_get_on_what_is_no_router_is_no_route() {
+    let t = index("routers-chi");
+    let contracts = t.contracts("routes.go");
+    assert!(
+        !contracts
+            .iter()
+            .any(|fact| fact.ends_with("@20") || fact.ends_with("@22"))
+    );
+    assert_eq!(t.unresolved_lines("routes.go"), Vec::<u32>::new());
+    let fiber = index("routers-fiber");
+    assert!(
+        !fiber
+            .contracts("routes.go")
+            .iter()
+            .any(|fact| fact.ends_with("@15"))
+    );
+    assert_eq!(fiber.unresolved_lines("routes.go"), Vec::<u32>::new());
+}
+
+#[gsttt_scenario::scenario("go", "A gorilla sub-router adds its prefix")]
+#[test]
+fn a_gorilla_sub_router_adds_its_prefix() {
+    let t = index("routers-gorilla");
+    assert_eq!(
+        t.contracts("routes.go"),
+        [
+            "serves http * /health@7",
+            "serves http GET /api/users/{}@9",
+            "serves http POST /api/users/{}@9",
+            "serves http PUT /api/orders@10",
+            "serves http * /api/v1/files@12"
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "A group whose prefix is no text serves no route")]
+#[test]
+fn a_group_whose_prefix_is_no_text_serves_no_route() {
+    let t = tree(&[
+        (
+            "go.mod",
+            "module example.com/m\n\ngo 1.22\n\nrequire github.com/gin-gonic/gin v1.9.1\n",
+        ),
+        (
+            "r.go",
+            "package main\n\nimport \"github.com/gin-gonic/gin\"\n\nfunc f(r *gin.Engine, p string) {\n\tg := r.Group(p)\n\tg.GET(\"/x\", h)\n}\n",
+        ),
+    ]);
+    assert_eq!(t.contracts("r.go"), Vec::<String>::new());
+    assert_eq!(t.unresolved_lines("r.go"), [7]);
+}
+
+#[gsttt_scenario::scenario(
+    "go",
+    "A pack reads nothing where go.mod does not require its framework"
+)]
+#[test]
+fn a_pack_reads_nothing_where_go_mod_does_not_require_its_framework() {
+    let t = index("routers-unrequired");
+    assert_eq!(t.contracts("routes.go"), Vec::<String>::new());
+    assert_eq!(t.unresolved_lines("routes.go"), Vec::<u32>::new());
+}
+
+/// The facts of the router fixtures, for review.
+#[test]
+fn the_router_fixtures_facts() {
+    let facts: serde_json::Map<String, Value> = [
+        "routers-gin",
+        "routers-echo",
+        "routers-fiber",
+        "routers-chi",
+        "routers-gorilla",
+        "routers-unrequired",
+    ]
+    .into_iter()
+    .map(|name| {
+        let t = index(name);
+        let value = serde_json::json!({
+            "contracts": t.contracts("routes.go"),
+            "unresolved": t.unresolved_lines("routes.go"),
+        });
+        (name.to_owned(), value)
+    })
+    .collect();
+    insta::assert_json_snapshot!("the_router_fixtures_facts", facts);
+}
+
 /// The facts of the `service` fixture, for review: what each file declares, imports and finds.
 #[test]
 fn the_service_fixture_facts() {

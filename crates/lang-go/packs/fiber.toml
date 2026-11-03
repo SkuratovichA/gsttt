@@ -1,0 +1,54 @@
+# Fiber: a verb called on an app made by `fiber.New`, or held in a parameter or a field typed `fiber.App` or `fiber.Router`, serves its route. A group and a `Route` closure add their prefix, which the connector reads. The gate is the one of the `chi` pack, for the same reason.
+name = "fiber"
+language = "go"
+detect = [
+  "github.com/gofiber/fiber",
+  "github.com/gofiber/fiber/v2",
+  "github.com/gofiber/fiber/v3",
+]
+
+[[calls]]
+callee = [
+  "*.Get",
+  "*.Post",
+  "*.Put",
+  "*.Patch",
+  "*.Delete",
+  "*.Options",
+  "*.Head",
+  "*.Trace",
+  "*.All",
+  "*.*.Get",
+  "*.*.Post",
+  "*.*.Put",
+  "*.*.Patch",
+  "*.*.Delete",
+  "*.*.Options",
+  "*.*.Head",
+  "*.*.Trace",
+  "*.*.All",
+  "*.*.*.Get",
+  "*.*.*.Post",
+  "*.*.*.Put",
+  "*.*.*.Patch",
+  "*.*.*.Delete",
+  "*.*.*.Options",
+  "*.*.*.Head",
+  "*.*.*.Trace",
+  "*.*.*.All",
+]
+kind = "http"
+role = "serves"
+key = "$arg1"
+method = "$callee"
+receiver_types = ["fiber.App", "fiber.Router"]
+receiver = { from = ["fiber.New"] }
+
+[[calls]]
+callee = ["*.Add", "*.*.Add", "*.*.*.Add"]
+kind = "http"
+role = "serves"
+key = "$arg2"
+method = "$arg1|*"
+receiver_types = ["fiber.App", "fiber.Router"]
+receiver = { from = ["fiber.New"] }

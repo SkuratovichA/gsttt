@@ -2848,3 +2848,33 @@ fn a_value_made_by_a_factory_and_passed_across_a_third_file_is_a_caller() {
         "{listed:?}"
     );
 }
+
+#[test]
+fn a_gin_route_under_a_group_is_reached_from_the_client_that_fetches_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "server/go.mod",
+        "module example.com/shop\n\ngo 1.22\n\nrequire github.com/gin-gonic/gin v1.9.1\n",
+    );
+    write(
+        &repo,
+        "server/routes.go",
+        "package main\n\nimport \"github.com/gin-gonic/gin\"\n\nfunc routes(r *gin.Engine) {\n\tv1 := r.Group(\"/v1\")\n\tv1.GET(\"/users/:id\", getUser)\n}\n",
+    );
+    write(
+        &repo,
+        "web/client.ts",
+        "export const user = () => fetch('/v1/users/1');\n",
+    );
+
+    let answer = json(&sandbox.run_in(&repo, &["--json", "impact", "server/routes.go"]));
+
+    assert_eq!(paths(&answer["affected"]), ["web/client.ts"], "{answer}");
+    assert_eq!(
+        answer["affected"][0]["reason"],
+        value!({ "via": "contract", "role": "calls", "key": "http GET /v1/users/1" }),
+        "{answer}"
+    );
+}
