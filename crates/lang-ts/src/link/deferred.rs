@@ -154,11 +154,14 @@ impl Resolved {
 }
 
 /// Reads the constants that the deferred sites of every file name, finds what the files that make a client or a router a site is called on make of it, and applies the rule of each site again.
-pub(super) fn resolve(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Resolved {
+pub(super) fn resolve(
+    input: &LinkInput<'_, TsExtra>,
+    packs: &[Pack],
+    reader: &Reader<'_, '_>,
+) -> Resolved {
     let mut resolved = Resolved::default();
-    let reader = Reader::new(input);
     for file in input.files() {
-        let prefixes = resolved.read_prefixes(&reader, packs, file);
+        let prefixes = resolved.read_prefixes(reader, packs, file);
         for deferred in &file.extra.deferred {
             let mut shape = deferred.shape.clone();
             shape.fill(|name| reader.constant(file, name));
@@ -179,13 +182,13 @@ pub(super) fn resolve(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Resolve
             }
             let (outcome, served) = match &deferred.target {
                 DeferredTarget::Receiver { host } => {
-                    match on_made(&reader, packs, file, deferred, host, &shape) {
+                    match on_made(reader, packs, file, deferred, host, &shape) {
                         Some(read) => read,
                         None => continue,
                     }
                 }
                 DeferredTarget::Made { host } => {
-                    match on_own(&reader, packs, file, deferred, host, &shape) {
+                    match on_own(reader, packs, file, deferred, host, &shape) {
                         Some(read) => read,
                         None => continue,
                     }
@@ -403,7 +406,7 @@ struct Frame<'a, 'i> {
 const MAX_KEPT: usize = 32 << 20;
 
 /// What the link reads of the constants of the files, and the text each constant read as once it was read. A constant that many others name is read once, not once for every way to it: a stored constant reads as text only when everything it names does, so a constant that names one on the way to itself reads as none whichever of them the read starts from, and what a constant reads as does not depend on the constants it is read inside of. A chain of constants is as long as the files are big, so the read keeps its own stack of the constants it is inside of and never calls itself.
-struct Reader<'a, 'i> {
+pub(super) struct Reader<'a, 'i> {
     input: &'a LinkInput<'i, TsExtra>,
     read: RefCell<HashMap<Node, Option<String>>>,
     /// The bytes of text in `read`.
@@ -411,7 +414,7 @@ struct Reader<'a, 'i> {
 }
 
 impl<'a, 'i> Reader<'a, 'i> {
-    fn new(input: &'a LinkInput<'i, TsExtra>) -> Self {
+    pub(super) fn new(input: &'a LinkInput<'i, TsExtra>) -> Self {
         Self {
             input,
             read: RefCell::default(),
@@ -432,7 +435,7 @@ impl<'a, 'i> Reader<'a, 'i> {
     /// The text that `name`, written in `file`, stands for in the file it is imported from: `LOGIN_PATH` taken by name, `Env.API_URL` for a member, `ROUTES.users.byId` for a nested property, and `paths.LOGIN_PATH` for a constant taken through a namespace. A constant built from names that other files declare is read in the file that declares it, and only when it reads whole: one that comes back to itself has no text.
     ///
     /// The constants a read needs are read first, one at a time, each on top of the one that needs it. A name that is read already, or is one of the constants the read is inside of, is not read again; when none is left, the constant on top reads its own part with the names that were read, and a name it is inside of reads as none. Only a name that is really on the way down is inside, not one that waits for its turn among the names of a constant: a constant that names two which both name a third is no cycle.
-    fn constant(&self, file: &LinkFile<'_, TsExtra>, name: &str) -> Option<String> {
+    pub(super) fn constant(&self, file: &LinkFile<'_, TsExtra>, name: &str) -> Option<String> {
         let root = self.node(file, name)?;
         if let Some(read) = self.read.borrow().get(&root) {
             return read.clone();

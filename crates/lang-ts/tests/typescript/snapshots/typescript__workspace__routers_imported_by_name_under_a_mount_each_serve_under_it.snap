@@ -1,0 +1,296 @@
+---
+source: crates/lang-ts/tests/typescript/workspace.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "packages/api/package.json",
+      "project": "ts packages/api",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [],
+      "imports": [
+        {
+          "exported": [
+            "express",
+            "Router"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "default",
+            "Router"
+          ],
+          "spec": "express",
+          "to": {
+            "external": "express"
+          }
+        },
+        {
+          "exported": [
+            "ra",
+            "rb"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 2,
+          "names": [
+            "ra",
+            "rb"
+          ],
+          "spec": "./rs",
+          "to": {
+            "file": "packages/api/src/rs.ts"
+          }
+        }
+      ],
+      "path": "packages/api/src/app.ts",
+      "project": "ts packages/api",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 4,
+            "line": 4,
+            "name": "app",
+            "uses": [
+              "express"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "w",
+            "uses": [
+              "Router"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [
+          "Router",
+          "app",
+          "express",
+          "ra",
+          "rb",
+          "w"
+        ],
+        "overrides": [],
+        "reads": [
+          "use"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "ra",
+        "rb"
+      ],
+      "imports": [
+        {
+          "exported": [
+            "Router"
+          ],
+          "flags": 0,
+          "kind": "static",
+          "line": 1,
+          "names": [
+            "Router"
+          ],
+          "spec": "express",
+          "to": {
+            "external": "express"
+          }
+        }
+      ],
+      "path": "packages/api/src/rs.ts",
+      "project": "ts packages/api",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "ra",
+            "uses": [
+              "Router"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "rb",
+            "uses": [
+              "Router"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [
+          "Router",
+          "ra",
+          "rb"
+        ],
+        "overrides": [],
+        "reads": [
+          "end",
+          "get"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [
+    {
+      "file": "packages/api/src/rs.ts",
+      "key": "http GET /w/ra",
+      "line": 4,
+      "role": "serves",
+      "via": "express"
+    },
+    {
+      "file": "packages/api/src/rs.ts",
+      "key": "http GET /w/rb",
+      "line": 7,
+      "role": "serves",
+      "via": "express"
+    }
+  ],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    },
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "file-system routes (Next.js, Remix, SvelteKit) are not read",
+            "routers mounted from another package are followed only when the mounting file imports them, directly or through a package it imports: a router of another package that no such file mounts keeps the path it is written with, and a route of another package that only its own rules read from a call it makes is served at the path written there",
+            "a route path is read from a string, a template or a concatenation, and from a constant (a const, an enum member, a static property or a property of a constant object) declared in the same file, in the function or block around the route, or in a file of the same project that it is imported from; a path held in a parameter, in a variable that is not a `const` with a plain name, or in a key that an object spread follows, is not read",
+            "a static property or an object property that the program assigns again is read with the value it declares",
+            "a NestJS global prefix is applied only when it is a string or a constant of the same file set on an app that NestFactory.create(<name>) makes in the same file, and the exclude option is not read, so excluded routes get the prefix too; RouterModule paths are not read",
+            "NestJS modules are followed through @Module imports and controllers written as names or forwardRef(() => Name); modules made by a call (forRoot, register), names read from a namespace (ns.Module) and anonymous default exports are not",
+            "a NestJS controller serves the routes of the class it extends only when that class is named directly (not ns.Base), carries no @Controller of its own, and is its direct base",
+            "routes on an app or router received as a function parameter are not read: the receiver must be made in the file that registers the route, or be imported from a file of the same project that makes it; a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a router or app the file makes is read as that one",
+            "a mount on an app or router imported from another file (importedApp.use('/x', router)) is read only when the name is the app or router itself, not a member of it (server.app.use) and not a name from a package; the routes of a router that no read mount reaches are served at the paths they are written with",
+            "a mount path is read from a string or a constant, of the same file or imported, when a router follows it, and a mount path array with an element that is not text is read for its other elements only",
+            "a NestJS controller whose @Controller prefix is not text (a call, a constant that is not text) serves no route and is reported as a site the file could not read: its own routes and those of the class it extends are not served",
+            "a NestJS @Controller({ path: [...] }) serves its routes under the first path of the array that is text only, where @Controller([...]) serves them under every path",
+            "routers that mount each other in a cycle are followed until the cycle closes"
+          ],
+          "kind": "http",
+          "role": "serves",
+          "via": [
+            "express"
+          ]
+        },
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "packages/api"
+    }
+  ],
+  "unclaimed": []
+}

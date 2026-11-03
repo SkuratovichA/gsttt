@@ -93,6 +93,11 @@ pub trait Project: Send + Sync + 'static {
         Linked::default()
     }
 
+    /// Whether [`Project::link`] reads the files of other projects of the same connector that its files import (`LinkInput::neighbors`). Such a project decodes more files per link, so the default is no.
+    fn links_across_projects(&self) -> bool {
+        false
+    }
+
     /// The places in one file that only the link turns into facts, each with its line and the code in question. When the link fails they count as unread sites of the file. A site that also has an own fact is not one of them: that fact stands without the link.
     fn unlinked(&self, extra: &Self::Extra) -> Vec<(Line, String)> {
         let _ = extra;
@@ -160,10 +165,11 @@ pub struct PrepareFile<'a> {
     pub facts: &'a FileFacts,
 }
 
-/// The files of one project, resolved, handed to [`Project::link`] in id order.
+/// The files of one project, resolved, handed to [`Project::link`] in id order, and the files of other projects it reads when it asks to ([`Project::links_across_projects`]).
 #[derive(Debug)]
 pub struct LinkInput<'a, X: ?Sized> {
     files: Vec<LinkFile<'a, X>>,
+    neighbors: Vec<LinkFile<'a, X>>,
 }
 
 /// One file in a [`LinkInput`].
@@ -185,21 +191,44 @@ impl<X: ?Sized> Clone for LinkFile<'_, X> {
 impl<X: ?Sized> Copy for LinkFile<'_, X> {}
 
 impl<'a, X: ?Sized> LinkInput<'a, X> {
-    pub fn new(mut files: Vec<LinkFile<'a, X>>) -> Self {
-        files.sort_unstable_by_key(|file| file.id);
-        Self { files }
+    pub fn new(files: Vec<LinkFile<'a, X>>) -> Self {
+        Self::with_neighbors(files, Vec::new())
     }
 
+    /// `files` of the project and the `neighbors` it reads, files of other projects of the same connector, read-only.
+    pub fn with_neighbors(
+        mut files: Vec<LinkFile<'a, X>>,
+        mut neighbors: Vec<LinkFile<'a, X>>,
+    ) -> Self {
+        files.sort_unstable_by_key(|file| file.id);
+        neighbors.sort_unstable_by_key(|file| file.id);
+        Self { files, neighbors }
+    }
+
+    /// The files of the project, which are what a link emits facts for by default.
     pub fn files(&self) -> &[LinkFile<'a, X>] {
         &self.files
     }
 
-    pub fn get(&self, id: FileId) -> Option<&LinkFile<'a, X>> {
-        self.files
-            .binary_search_by_key(&id, |file| file.id)
-            .ok()
-            .and_then(|index| self.files.get(index))
+    /// The files of other projects that the files of this one reach through imports, directly or through further projects. Empty unless the project asks for them.
+    pub fn neighbors(&self) -> &[LinkFile<'a, X>] {
+        &self.neighbors
     }
+
+    /// A file of the project or of its neighbours.
+    pub fn get(&self, id: FileId) -> Option<&LinkFile<'a, X>> {
+        find(&self.files, id).or_else(|| find(&self.neighbors, id))
+    }
+}
+
+fn find<'f, 'a, X: ?Sized>(
+    files: &'f [LinkFile<'a, X>],
+    id: FileId,
+) -> Option<&'f LinkFile<'a, X>> {
+    files
+        .binary_search_by_key(&id, |file| file.id)
+        .ok()
+        .and_then(|index| files.get(index))
 }
 
 /// What [`Project::link`] returns: the contract sites it found, and the sites the parse left to it that it could not read either.
@@ -349,6 +378,8 @@ pub trait DynProject: Send + Sync {
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution;
     /// Links with the extra data as JSON, the way [`DynProject::parse`] gave it.
     fn link(&self, input: &LinkInput<'_, [u8]>) -> Result<Linked, ConnectorError>;
+    /// Whether the link reads the neighbouring projects, as [`Project::links_across_projects`] says.
+    fn links_across_projects(&self) -> bool;
     /// What [`Project::unlinked`] names for the extra data as JSON; nothing when it does not decode, since that is why a link fails and its coverage line says so.
     fn unlinked(&self, extra: &[u8]) -> Vec<(Line, String)>;
     fn embeds(&self) -> &[&str];
@@ -445,6 +476,24 @@ impl<P: Project> ErasedProject<P> {
     }
 }
 
+/// The files of a link input with their decoded extras.
+fn linked<'a, 'x, X>(
+    files: impl Iterator<Item = (&'x LinkFile<'a, [u8]>, &'x X)>,
+) -> Vec<LinkFile<'x, X>>
+where
+    'a: 'x,
+{
+    files
+        .map(|(file, extra)| LinkFile {
+            id: file.id,
+            path: file.path,
+            facts: file.facts,
+            imports: file.imports,
+            extra,
+        })
+        .collect()
+}
+
 impl<P: Project> DynProject for ErasedProject<P> {
     fn connector(&self) -> Meta {
         self.meta
@@ -496,19 +545,33 @@ impl<P: Project> DynProject for ErasedProject<P> {
             .iter()
             .map(|file| self.decode(file.extra))
             .collect::<Result<Vec<P::Extra>, _>>()?;
-        let files = input
-            .files()
+        // A neighbour that does not decode is left out and never fails this link: its own project reports it.
+        let neighbor_extras: Vec<Option<P::Extra>> = input
+            .neighbors()
             .iter()
-            .zip(&extras)
-            .map(|(file, extra)| LinkFile {
-                id: file.id,
-                path: file.path,
-                facts: file.facts,
-                imports: file.imports,
-                extra,
+            .map(|file| match self.decode(file.extra) {
+                Ok(extra) => Some(extra),
+                Err(error) => {
+                    tracing::debug!(file = %file.path, %error, "a neighbour's link data does not read back, so the link leaves the file out");
+                    None
+                }
             })
             .collect();
-        Ok(self.project.link(&LinkInput::new(files)))
+        let files = linked(input.files().iter().zip(&extras));
+        let neighbors = linked(
+            input
+                .neighbors()
+                .iter()
+                .zip(&neighbor_extras)
+                .filter_map(|(file, extra)| Some((file, extra.as_ref()?))),
+        );
+        Ok(self
+            .project
+            .link(&LinkInput::with_neighbors(files, neighbors)))
+    }
+
+    fn links_across_projects(&self) -> bool {
+        self.project.links_across_projects()
     }
 
     fn unlinked(&self, extra: &[u8]) -> Vec<(Line, String)> {

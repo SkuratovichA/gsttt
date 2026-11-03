@@ -49,12 +49,13 @@ use crate::extra::{
     Binding, ClassRoute, Deferred, DeferredTarget, Export, ExportTarget, ImportedMount, Inherit,
     Mount, MountTarget, Route, RuleRef, TsExtra, WaitingPrefix,
 };
+use crate::parts::{Mode, Part};
 use crate::pathing::{is_relative, split_package};
 use crate::shape::{
     COMPUTED, ClassPrefix, Shape, assigned_value, chain_of, commonjs_exports, dotted, dotted_name,
     export_key, field_name, is_exports_object, is_open_object, jsx_chain, literal_text,
-    member_chain, named_callable, property_name, property_str, static_chain, template_text,
-    text_with, type_chain,
+    member_chain, named_callable, part_of, property_name, property_str, static_chain,
+    template_text, text_with, type_chain,
 };
 
 /// The most segments a chain rule's root can have. A root is tried at every length of the chain and each try reads the root again, so a chain of `n` names costs `n` squared without a limit, and no root a rule lists comes near this length.
@@ -242,6 +243,8 @@ struct MountRead {
     targets: Vec<MountTarget>,
     /// Some prefix is not text.
     computed: bool,
+    /// The prefix when it is written with names that other files declare, for the link to read.
+    named: Option<Part>,
 }
 
 /// A name an import takes from a package that an import rule reads.
@@ -804,6 +807,8 @@ impl<'a> Analyzer<'_, 'a> {
         self.out.extra.mounts.push(Mount {
             host: app.to_owned(),
             prefix,
+            named: None,
+            detail: String::new(),
             targets: vec![MountTarget::Local(root)],
             line,
         });
@@ -876,6 +881,8 @@ impl<'a> Analyzer<'_, 'a> {
                 self.out.extra.mounts.push(Mount {
                     host: module.to_owned(),
                     prefix: String::new(),
+                    named: None,
+                    detail: String::new(),
                     targets,
                     line: self.line(decorator.span.start),
                 });
@@ -978,13 +985,21 @@ impl<'a> Analyzer<'_, 'a> {
         let Some(read) = self.read_mount(call) else {
             return;
         };
-        if read.computed {
+        // A prefix with names in it is the link's to read, and a site only when it cannot.
+        let detail = if read.computed && read.named.is_some() {
+            self.snippet(call.span)
+        } else {
+            String::new()
+        };
+        if read.computed && read.named.is_none() {
             self.unread(call.span, line, UnresolvedReason::NonLiteral);
         }
         for prefix in read.prefixes {
             self.out.extra.mounts.push(Mount {
                 host: host.to_owned(),
                 prefix,
+                named: read.named.clone(),
+                detail: detail.clone(),
                 targets: read.targets.clone(),
                 line,
             });
@@ -1004,6 +1019,7 @@ impl<'a> Analyzer<'_, 'a> {
         self.out.extra.imported_mounts.push(ImportedMount {
             host: host.to_owned(),
             prefixes: read.prefixes,
+            named: read.named,
             targets: read.targets,
             line,
             computed: read.computed,
@@ -1016,6 +1032,12 @@ impl<'a> Analyzer<'_, 'a> {
         let mut prefixes = vec![String::new()];
         let mut targets = Vec::new();
         let mut computed = false;
+        let mut named = None;
+        let arguments = call
+            .arguments
+            .iter()
+            .filter_map(Argument::as_expression)
+            .count();
         for (position, argument) in call
             .arguments
             .iter()
@@ -1047,6 +1069,18 @@ impl<'a> Analyzer<'_, 'a> {
                     );
                 }
             } else if position == 0
+                && arguments > 1
+                && let Some(part) =
+                    part_of(argument, &self.constants, Mode::Use).filter(Part::has_names)
+            {
+                // A prefix with an imported name in it is a path when something follows it, whatever the name turns out to be; the link reads it, and a name it cannot read leaves the prefix as the parse knows it.
+                if let Some(text) = part.clone().lax() {
+                    prefixes = vec![text];
+                }
+                named = Some(part);
+                // The name may as well be the router, which only the link can tell.
+                targets.extend(mount_target(argument));
+            } else if position == 0
                 && let Some(text) = text_with(argument, &self.constants)
             {
                 prefixes = vec![text];
@@ -1062,6 +1096,7 @@ impl<'a> Analyzer<'_, 'a> {
             prefixes,
             targets,
             computed,
+            named,
         })
     }
 

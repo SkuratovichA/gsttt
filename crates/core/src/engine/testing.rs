@@ -250,7 +250,7 @@ pub(crate) struct Options {
     pub(crate) tag: String,
 }
 
-/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. `unread <line> <detail>` is a site that `link` cannot read, `waits <line> <detail>` one that only `link` turns into a fact (the project's `unlinked`), `poison` makes the file's extra data fail to decode so that the link fails, and `blind <line> <detail>` one that `parse` cannot. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
+/// Reads `.txt` files: `use <path>` imports a file, `use boom` panics in `resolve`, `use linkboom` makes `link` panic, `embed <lang> <text>` carries a document, and `boom` panics in `parse`. `fact <line> <role> <key>` is a contract fact of the file (`fact 1 serves http GET /{}`), and `linked <line> <role> <key>` one that `link` returns for it. `linked <line> <role> <key> replaces <own key>` names the own fact it keys again, the way a mount keys a route; without `replaces` it names none. `unread <line> <detail>` is a site that `link` cannot read, `waits <line> <detail>` one that only `link` turns into a fact (the project's `unlinked`), `poison` makes the file's extra data fail to decode so that the link fails, and `blind <line> <detail>` one that `parse` cannot. A file called `explode.txt` makes `matches` panic, and a file called `DETECT_BOOM` anywhere makes `detect` panic. A project sits at the root and in every directory with a `ROOT` file; `link` reports a site for every file with a resolved import. A project with an `ACROSS` file in its directory links across projects: `link` reports `queue sees <path>` for every neighbour, on each file with a `peek` line, and for every `linked` fact of a neighbour a `queue across` fact on the same line that replaces it. `open` saves the file [`Counters::rewrite_on_next_open`] names, or removes the one [`Counters::remove_on_next_open`] names, and keeps the packs it received for [`Counters::opened_with`].
 pub(crate) struct Notes {
     pub(crate) counters: &'static Counters,
 }
@@ -258,6 +258,8 @@ pub(crate) struct Notes {
 pub(crate) struct NotesProject {
     repo: RepoView,
     root: String,
+    /// Whether an `ACROSS` file in the project's directory opts it in to see the files of other projects.
+    across: bool,
     counters: &'static Counters,
 }
 
@@ -305,6 +307,9 @@ impl Connector for Notes {
             .chain(roots)
             .map(|root| NotesProject {
                 repo: repo.clone(),
+                across: repo
+                    .lookup(format!("{root}/ACROSS").trim_start_matches('/'))
+                    .is_some(),
                 root,
                 counters: self.counters,
             })
@@ -364,6 +369,8 @@ impl Project for NotesProject {
             } else if let Some(text) = line.strip_prefix("waits ") {
                 let site = unread_line(text);
                 extra.waits.push((site.line, site.detail));
+            } else if line == "peek" {
+                extra.peek = true;
             } else if line == "poison" {
                 extra.poison = true;
             } else if let Some(text) = line.strip_prefix("blind ") {
@@ -403,6 +410,10 @@ impl Project for NotesProject {
         extra.waits.clone()
     }
 
+    fn links_across_projects(&self) -> bool {
+        self.across
+    }
+
     fn link(&self, input: &LinkInput<'_, Self::Extra>) -> Linked {
         self.counters.link.fetch_add(1, Ordering::Relaxed);
         assert!(
@@ -432,8 +443,35 @@ impl Project for NotesProject {
                     replaces: replaces.clone(),
                 })
         });
+        let seen = input
+            .files()
+            .iter()
+            .filter(|file| file.extra.peek)
+            .flat_map(|file| {
+                input.neighbors().iter().map(move |neighbor| {
+                    LinkedFact::found(file.id, fact(&format!("queue sees {}", neighbor.path)))
+                })
+            });
+        let across = input.neighbors().iter().flat_map(|neighbor| {
+            neighbor
+                .extra
+                .linked
+                .iter()
+                .map(|(declared, _)| LinkedFact {
+                    file: neighbor.id,
+                    fact: ContractFact {
+                        key: ContractKey::parse("queue across").unwrap(),
+                        ..declared.clone()
+                    },
+                    replaces: Some(declared.key.clone()),
+                })
+        });
         Linked {
-            facts: imported.chain(keyed_again).collect(),
+            facts: imported
+                .chain(keyed_again)
+                .chain(seen)
+                .chain(across)
+                .collect(),
             unread: input
                 .files()
                 .iter()
@@ -452,6 +490,9 @@ pub(crate) struct NotesExtra {
     unread: Vec<UnresolvedSite>,
     /// The places `unlinked` names: the `waits` lines of its text.
     waits: Vec<(Line, String)>,
+    /// A `peek` line makes the link report the neighbours the project sees.
+    #[serde(default)]
+    peek: bool,
     /// A `poison` line makes the extra data unreadable, so that the link of the project fails without a panic.
     #[serde(deserialize_with = "refuse_poison")]
     poison: bool,

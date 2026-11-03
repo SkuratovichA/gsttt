@@ -439,26 +439,34 @@ pub fn execute(
     let resolve_time = started.elapsed();
 
     let started = Instant::now();
+    let link_file = |index: usize| {
+        let file = owned.get(index)?;
+        let made = parsed.get(index)?;
+        let (imports, _) = resolved.get(index)?;
+        Some(LinkFile {
+            id: file.id,
+            path: file.path,
+            facts: &made.facts,
+            imports: imports.as_slice(),
+            extra: made.extra.as_slice(),
+        })
+    };
+    let reach = Reach::new(&owned, &projects, &resolved);
     let linked: Vec<(Linked, Option<Problem>)> = projects
         .par_iter()
         .zip(members.par_iter())
-        .map(|(project, members)| {
+        .enumerate()
+        .map(|(at, (project, members))| {
             let files = members
                 .iter()
-                .filter_map(|&index| {
-                    let file = owned.get(index)?;
-                    let made = parsed.get(index)?;
-                    let (imports, _) = resolved.get(index)?;
-                    Some(LinkFile {
-                        id: file.id,
-                        path: file.path,
-                        facts: &made.facts,
-                        imports: imports.as_slice(),
-                        extra: made.extra.as_slice(),
-                    })
-                })
+                .filter_map(|&index| link_file(index))
                 .collect();
-            let input = LinkInput::new(files);
+            let neighbors = reach
+                .neighbors(at, members)
+                .into_iter()
+                .filter_map(link_file)
+                .collect();
+            let input = LinkInput::with_neighbors(files, neighbors);
             match contain(|| project.link(&input)) {
                 Ok(Ok(linked)) => (linked, None),
                 Ok(Err(error)) => (
@@ -777,6 +785,77 @@ fn read_embedded(
         })
         .collect();
     (runs, problems)
+}
+
+/// What the imports of the files say about which files of other projects a link can read.
+struct Reach<'r> {
+    owned: &'r [Owned<'r>],
+    /// The index in `owned` of each file, by file id.
+    at_file: Vec<Option<usize>>,
+    resolved: &'r [(Vec<ResolvedImport>, Vec<Problem>)],
+    /// The connector of each project, and whether its link reads the neighbouring projects.
+    projects: Vec<(&'static str, bool)>,
+}
+
+impl<'r> Reach<'r> {
+    fn new(
+        owned: &'r [Owned<'r>],
+        projects: &[Box<dyn DynProject>],
+        resolved: &'r [(Vec<ResolvedImport>, Vec<Problem>)],
+    ) -> Self {
+        let mut at_file: Vec<Option<usize>> = Vec::new();
+        for (index, file) in owned.iter().enumerate() {
+            if at_file.len() <= file.id.index() {
+                at_file.resize(file.id.index() + 1, None);
+            }
+            if let Some(slot) = at_file.get_mut(file.id.index()) {
+                *slot = Some(index);
+            }
+        }
+        Self {
+            owned,
+            at_file,
+            resolved,
+            projects: projects
+                .iter()
+                .map(|project| (project.connector().name, project.links_across_projects()))
+                .collect(),
+        }
+    }
+
+    /// The files, as indexes in `owned` in id order, of other projects of the same connector that the files `members` of project `project` import, and that those import in turn: nothing for a project that does not read its neighbours.
+    fn neighbors(&self, project: usize, members: &[usize]) -> Vec<usize> {
+        let Some(&(connector, true)) = self.projects.get(project) else {
+            return Vec::new();
+        };
+        let mut seen: std::collections::HashSet<usize, RandomState> =
+            std::collections::HashSet::with_hasher(RandomState::default());
+        let mut found = Vec::new();
+        let mut pending: Vec<usize> = members.to_vec();
+        while let Some(index) = pending.pop() {
+            let Some((imports, _)) = self.resolved.get(index) else {
+                continue;
+            };
+            for target in imports.iter().flat_map(|import| import.to.files()) {
+                let Some(&Some(next)) = self.at_file.get(target.index()) else {
+                    continue;
+                };
+                let Some(file) = self.owned.get(next) else {
+                    continue;
+                };
+                let same_connector = self
+                    .projects
+                    .get(file.project)
+                    .is_some_and(|&(name, _)| name == connector);
+                if file.project != project && same_connector && seen.insert(next) {
+                    found.push(next);
+                    pending.push(next);
+                }
+            }
+        }
+        found.sort_unstable_by_key(|&index| self.owned.get(index).map(|file| file.id));
+        found
+    }
 }
 
 /// The reason of a site that waited for a link that failed.

@@ -18,7 +18,7 @@ use crate::source::{blanked_code, is_code, parse_code};
 use crate::{link, provides, resolve};
 
 /// Changes whenever the facts this reader produces for the same text and packs could change.
-const READER_VERSION: u32 = 27;
+const READER_VERSION: u32 = 28;
 
 /// A TypeScript project and the rule packs active in it.
 #[derive(Debug)]
@@ -120,6 +120,10 @@ impl Project for TsProject {
 
     fn link(&self, input: &LinkInput<'_, TsExtra>) -> Linked {
         link::link(input, &self.packs)
+    }
+
+    fn links_across_projects(&self) -> bool {
+        true
     }
 
     fn unlinked(&self, extra: &TsExtra) -> Vec<(Line, String)> {
