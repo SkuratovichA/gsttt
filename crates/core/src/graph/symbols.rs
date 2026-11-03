@@ -80,6 +80,8 @@ struct Span {
     export_count: u32,
     heirs: u32,
     heir_count: u32,
+    overrides: u32,
+    override_count: u32,
     reads: u32,
     read_count: u32,
 }
@@ -140,6 +142,11 @@ impl Table {
             self.push(&heir.name);
             self.push(&heir.of);
         }
+        let overrides = len_u32(self.ends.len());
+        for heir in &symbols.overrides {
+            self.push(&heir.name);
+            self.push(&heir.of);
+        }
         let reads = len_u32(self.ends.len());
         for name in &symbols.reads {
             self.push(name);
@@ -153,6 +160,8 @@ impl Table {
             export_count: len_u32(symbols.exports.len()),
             heirs,
             heir_count: len_u32(symbols.heirs.len()),
+            overrides,
+            override_count: len_u32(symbols.overrides.len()),
             reads,
             read_count: len_u32(symbols.reads.len()),
         }
@@ -255,6 +264,16 @@ impl<'g> FileSymbols<'g> {
         })
     }
 
+    /// Each name and the head a value of which may run its members, as the name and the head, sorted.
+    pub fn overrides(self) -> impl ExactSizeIterator<Item = (&'g str, &'g str)> + 'g {
+        let table = self.table;
+        let first = self.span.overrides;
+        (0..self.span.override_count).map(move |offset| {
+            let name = first.saturating_add(offset.saturating_mul(2));
+            (table.text(name), table.text(name.saturating_add(1)))
+        })
+    }
+
     /// Whether the file reads a member called `name` on a receiver whose class the connector did not know.
     pub fn reads_member(self, name: &str) -> bool {
         let first = self.span.reads;
@@ -333,6 +352,10 @@ mod tests {
                 name: "Sub".to_owned(),
                 of: "Base".to_owned(),
             }],
+            overrides: vec![Heir {
+                name: "Aws".to_owned(),
+                of: "GitProvider".to_owned(),
+            }],
             reads: owned(&["alpha", "omega"]),
         }
     }
@@ -368,6 +391,10 @@ mod tests {
         assert_eq!(read.on_load().collect::<Vec<_>>(), ["setup"]);
         assert_eq!(read.exports().collect::<Vec<_>>(), [("default", "run")]);
         assert_eq!(read.heirs().collect::<Vec<_>>(), [("Sub", "Base")]);
+        assert_eq!(
+            read.overrides().collect::<Vec<_>>(),
+            [("Aws", "GitProvider")]
+        );
         assert!(read.reads_member("alpha") && read.reads_member("omega"));
         assert!(!read.reads_member("beta") && !read.reads_member(""));
         assert_eq!(read.len(), 2);

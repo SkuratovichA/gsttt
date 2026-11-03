@@ -41,6 +41,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -96,6 +97,7 @@ expression: json
         "on_load": [
           "Get"
         ],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -182,6 +184,12 @@ expression: json
         "on_load": [
           "Controller",
           "USERS"
+        ],
+        "overrides": [
+          {
+            "name": "UserController",
+            "of": "UserControllerBase"
+          }
         ],
         "reads": []
       },

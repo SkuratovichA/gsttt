@@ -170,7 +170,7 @@ impl Process {
             Response::Facts {
                 path: answered,
                 facts,
-            } if answered == path => Ok(facts),
+            } if answered == path => Ok(*facts),
             other => Err(out_of_turn(&other, &format!("facts for `{path}`"))),
         }
     }

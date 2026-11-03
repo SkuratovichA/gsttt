@@ -6,7 +6,7 @@ use gsttt_scenario::scenario;
 
 use crate::support::{
     NOTHING, declared, edges, heirs, import_line, imports, local_exports, local_names, on_load,
-    reads, run, status, uses,
+    overrides, reads, run, status, uses,
 };
 
 #[test]
@@ -29,6 +29,8 @@ fn every_declaration_form_is_recorded() -> Result<(), Box<dyn Error>> {
             "C.v @16-19",
             "E @22",
             "I @24-29",
+            "I.first @25",
+            "I.second @28",
             "T @31",
             "N @33",
             "default @35",
@@ -529,7 +531,7 @@ fn a_type_written_in_a_member_chain_is_a_use() -> Result<(), Box<dyn Error>> {
 fn export_default_interface_exports_the_interface_by_its_name() -> Result<(), Box<dyn Error>> {
     let json = run("symbols-default-interface")?;
     let path = "src/shape.ts";
-    assert_eq!(declared(&json, path), ["Foo @1-3"]);
+    assert_eq!(declared(&json, path), ["Foo @1-3", "Foo.n @2"]);
     assert_eq!(
         local_exports(&json, path),
         ["default from Foo"],
@@ -1153,5 +1155,35 @@ fn a_void_placeholder_on_exports_is_no_declaration() -> Result<(), Box<dyn Error
     let json = run("commonjs-declared-void")?;
     assert_eq!(declared(&json, "src/compiled.js"), ["a @3-5"]);
     insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A member of an interface is a declaration")]
+fn a_member_of_an_interface_is_a_declaration() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-interfaces")?;
+    assert_eq!(
+        declared(&json, "src/provider.ts"),
+        [
+            "Provider @1-7",
+            "Provider.name @2",
+            "Provider.list @3-4",
+            "Named @9-11",
+            "Named.id @10",
+            "Shape @13-15"
+        ],
+        "overloads are one member, a computed key and an index signature declare none, and a type alias stays one declaration"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A class records what it extends and implements")]
+fn a_class_records_what_it_extends_and_implements() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-overrides")?;
+    assert_eq!(
+        overrides(&json, "src/classes.ts"),
+        ["Aws of Base", "Aws of Provider", "Aws of lib.Other"]
+    );
     Ok(())
 }

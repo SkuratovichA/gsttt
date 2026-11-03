@@ -116,6 +116,7 @@ expression: json
           "graphql.ResolveField",
           "graphql.Resolver"
         ],
+        "overrides": [],
         "reads": [
           "Mutation",
           "Query",

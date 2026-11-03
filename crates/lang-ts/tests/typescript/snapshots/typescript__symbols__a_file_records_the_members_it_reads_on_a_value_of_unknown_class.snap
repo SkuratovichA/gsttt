@@ -133,6 +133,12 @@ expression: json
           }
         ],
         "on_load": [],
+        "overrides": [
+          {
+            "name": "Holder",
+            "of": "Base"
+          }
+        ],
         "reads": []
       },
       "tags": 0,
@@ -200,6 +206,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "a",
           "b",

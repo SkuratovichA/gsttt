@@ -81,6 +81,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "bookingItem",
           "findMany"

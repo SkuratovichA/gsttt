@@ -67,6 +67,7 @@ expression: json
         "on_load": [
           "Get"
         ],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -136,6 +137,12 @@ expression: json
         ],
         "on_load": [
           "Controller"
+        ],
+        "overrides": [
+          {
+            "name": "ItemsController",
+            "of": "ItemsControllerBase"
+          }
         ],
         "reads": []
       },

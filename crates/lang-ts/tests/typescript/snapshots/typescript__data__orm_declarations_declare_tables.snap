@@ -68,6 +68,7 @@ expression: json
         "on_load": [
           "Entity"
         ],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -124,6 +125,7 @@ expression: json
         "on_load": [
           "Entity"
         ],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -184,6 +186,7 @@ expression: json
           "pgTable",
           "serial"
         ],
+        "overrides": [],
         "reads": [
           "primaryKey"
         ]

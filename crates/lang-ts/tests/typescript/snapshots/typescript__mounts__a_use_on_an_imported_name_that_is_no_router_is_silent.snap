@@ -63,6 +63,7 @@ expression: json
         "on_load": [
           "i18next.createInstance"
         ],
+        "overrides": [],
         "reads": [
           "createInstance"
         ]
@@ -121,6 +122,7 @@ expression: json
           "i18n.use",
           "initReactI18next"
         ],
+        "overrides": [],
         "reads": [
           "use"
         ]

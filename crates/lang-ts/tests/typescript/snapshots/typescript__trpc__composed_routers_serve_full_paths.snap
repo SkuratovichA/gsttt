@@ -81,6 +81,7 @@ expression: json
           "router",
           "s"
         ],
+        "overrides": [],
         "reads": [
           "input",
           "query"
@@ -150,6 +151,7 @@ expression: json
           "bookingRouter",
           "router"
         ],
+        "overrides": [],
         "reads": []
       },
       "tags": 0,
@@ -216,6 +218,7 @@ expression: json
         "on_load": [
           "initTRPC.create"
         ],
+        "overrides": [],
         "reads": [
           "create",
           "procedure",

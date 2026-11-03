@@ -42,6 +42,7 @@ expression: json
         "on_load": [
           "dep"
         ],
+        "overrides": [],
         "reads": [
           "exports"
         ]
@@ -78,6 +79,7 @@ expression: json
         ],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "exports"
         ]
@@ -123,6 +125,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "Foo"
         ]
@@ -173,6 +176,7 @@ expression: json
         ],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "exports"
         ]

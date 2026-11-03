@@ -40,6 +40,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "a"
         ]
@@ -143,6 +144,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "a",
           "b"

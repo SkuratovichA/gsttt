@@ -51,7 +51,7 @@ pub(super) fn exported(
 }
 
 /// The files `file` re-exports everything from.
-fn star_targets(graph: &Graph, file: FileId) -> impl Iterator<Item = FileId> + '_ {
+pub(super) fn star_targets(graph: &Graph, file: FileId) -> impl Iterator<Item = FileId> + '_ {
     graph
         .dependencies(file)
         .iter()

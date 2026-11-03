@@ -139,6 +139,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst"
         ]
@@ -239,6 +240,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "count",
           "findMany"
@@ -280,6 +282,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst"
         ]

@@ -81,6 +81,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "booking",
           "count"
@@ -168,6 +169,7 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "count",
           "findFirst",
@@ -231,6 +233,7 @@ expression: json
           }
         ],
         "on_load": [],
+        "overrides": [],
         "reads": [
           "findFirst"
         ]
@@ -303,6 +306,7 @@ expression: json
         "on_load": [
           "PrismaClient"
         ],
+        "overrides": [],
         "reads": [
           "createMany"
         ]

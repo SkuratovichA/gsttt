@@ -193,6 +193,16 @@ expression: json
         "on_load": [
           "Logged"
         ],
+        "overrides": [
+          {
+            "name": "Audited",
+            "of": "PrismaClient"
+          },
+          {
+            "name": "Logged",
+            "of": "Audited"
+          }
+        ],
         "reads": [
           "count",
           "findFirst",
@@ -287,6 +297,12 @@ expression: json
           }
         ],
         "on_load": [],
+        "overrides": [
+          {
+            "name": "PrismaService",
+            "of": "PrismaClient"
+          }
+        ],
         "reads": [
           "findFirst"
         ]
@@ -313,6 +329,12 @@ expression: json
             "end": 3,
             "line": 1,
             "name": "Base",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Base.base",
             "uses": []
           },
           {
@@ -360,6 +382,12 @@ expression: json
           }
         ],
         "on_load": [],
+        "overrides": [
+          {
+            "name": "Cache",
+            "of": "Map"
+          }
+        ],
         "reads": [
           "findFirst"
         ]

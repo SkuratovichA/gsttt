@@ -15,6 +15,7 @@ use crate::ids::{ContractId, FileId, Id, NameId};
 use crate::index::Index;
 use crate::query::cross::{Crossed, Crossing, Direction, Leavers, keep_fewest, sites_of};
 
+use super::overrides::overridden;
 use super::{Cause, Reached, holds};
 
 /// What the answer says about the walk beside the files it reached.
@@ -31,6 +32,12 @@ pub(in crate::query) enum Note {
     },
     /// A file loads the module and reads none of the names asked about, so it cannot be told from a caller of the module, and is left out: `files` of them. It holds the module in a local, or loads it below the top level.
     HeldModule { files: usize },
+    /// The member `member` of a class may be run through the same member of a head of the class, `through`, which `file` declares, so its callers are listed.
+    Overridden {
+        member: String,
+        through: String,
+        file: FileId,
+    },
     /// The depth ended the walk while callers were left to follow.
     Stopped,
 }
@@ -118,7 +125,9 @@ pub(in crate::query) fn reach_changed(
         let whole: Vec<FileId> = seeds.keys().copied().collect();
         return super::reach(&index.graph, crossing, &whole, depth);
     }
-    walk_from(index, crossing, depth, |walk, _| walk.start_seeds(&seeds))
+    walk_from(index, crossing, depth, |walk, notes| {
+        walk.start_seeds(&seeds, notes)
+    })
 }
 
 /// Where the walk starts in `file`, `None` when nothing in it changed. `names` are the declarations that changed, `None` when the request does not say.
@@ -455,6 +464,9 @@ impl Walk<'_> {
                     });
                 }
             }
+            for name in names {
+                self.start_overridden(file, name, &mut started, notes);
+            }
         }
         started
             .into_iter()
@@ -463,7 +475,11 @@ impl Walk<'_> {
     }
 
     /// Marks what each seed names as reached at distance 0 and returns it as the first frontier. A file followed whole is reached whole.
-    fn start_seeds(&mut self, seeds: &BTreeMap<FileId, Seed>) -> Vec<Front> {
+    fn start_seeds(
+        &mut self,
+        seeds: &BTreeMap<FileId, Seed>,
+        notes: &mut BTreeSet<Note>,
+    ) -> Vec<Front> {
         let mut started = BTreeSet::new();
         for (&file, seed) in seeds {
             let touch = self.files.entry(file).or_default();
@@ -490,6 +506,14 @@ impl Walk<'_> {
                             part: Part::Load,
                         });
                     }
+                    let graph = self.graph;
+                    for name in decls
+                        .iter()
+                        .filter_map(|&index| graph.symbols(file)?.declaration(index))
+                        .map(Declaration::name)
+                    {
+                        self.start_overridden(file, name, &mut started, notes);
+                    }
                 }
             }
         }
@@ -497,6 +521,39 @@ impl Walk<'_> {
             .into_iter()
             .map(|unit| Front { unit, code: 0 })
             .collect()
+    }
+
+    /// Marks the same member of each head of the class of `name`, a member `Class.member` declared in `file`, as reached at distance 0: a value of the head may run the member, so those that hold the head may call it.
+    fn start_overridden(
+        &mut self,
+        file: FileId,
+        name: &str,
+        started: &mut BTreeSet<Unit>,
+        notes: &mut BTreeSet<Note>,
+    ) {
+        for (owner, place) in overridden(self.index, file, name) {
+            let Some(decl) = self
+                .graph
+                .symbols(owner)
+                .and_then(|symbols| symbols.declaration(place))
+            else {
+                continue;
+            };
+            self.files
+                .entry(owner)
+                .or_default()
+                .decls
+                .insert(place, START);
+            started.insert(Unit {
+                file: owner,
+                part: Part::Decl(place),
+            });
+            notes.insert(Note::Overridden {
+                member: name.to_owned(),
+                through: decl.name().to_owned(),
+                file: owner,
+            });
+        }
     }
 
     fn reached(&self, unit: Unit) -> bool {
