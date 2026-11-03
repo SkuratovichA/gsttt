@@ -1756,6 +1756,58 @@ fn changed_walks_a_new_file_whole() {
     );
 }
 
+/// `printer.rs` never names `Style`, and reaches `Style.changes` through the field `Config.style`; `noise.rs` holds a `Config` and reads `changes` on a parameter it does not type, so it reads no `style.changes`.
+#[scenario("rust", "A chain through a typed field reaches the file that reads it")]
+#[test]
+fn a_chain_through_a_typed_field_reaches_the_file_that_reads_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "Cargo.toml",
+        "[package]\nname = \"shop\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    );
+    write(
+        &repo,
+        "src/lib.rs",
+        "pub mod config;\npub mod noise;\npub mod printer;\npub mod style;\n",
+    );
+    write(
+        &repo,
+        "src/style.rs",
+        "pub struct Style;\n\nimpl Style {\n    pub fn changes(&self) {}\n}\n",
+    );
+    write(
+        &repo,
+        "src/config.rs",
+        "use crate::style::Style;\n\npub struct Config {\n    pub style: Style,\n}\n",
+    );
+    write(
+        &repo,
+        "src/printer.rs",
+        "use crate::config::Config;\n\npub struct Printer {\n    config: Config,\n}\n\nimpl Printer {\n    pub fn print(&self) {\n        self.config.style.changes();\n    }\n}\n",
+    );
+    write(
+        &repo,
+        "src/noise.rs",
+        "use crate::config::Config;\n\npub struct Noise {\n    config: Config,\n}\n\nimpl Noise {\n    pub fn each(&self, items: Vec<u8>) {\n        items.iter().for_each(|x| x.changes());\n    }\n}\n",
+    );
+    commit_all(&repo);
+
+    let answer = json(&sandbox.run_in(
+        &repo,
+        &[
+            "--json",
+            "impact",
+            "src/style.rs",
+            "--name",
+            "Style.changes",
+        ],
+    ));
+
+    assert_eq!(reached(&answer), ["src/printer.rs"], "{answer}");
+}
+
 #[scenario(
     "cli",
     "--changed follows a changed Python function to its callers and not to the callers of another"

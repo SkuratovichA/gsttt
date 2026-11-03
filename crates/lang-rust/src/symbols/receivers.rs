@@ -226,6 +226,12 @@ impl<'r, 'a> Scan<'r, 'a> {
         if member.starts_with(|ch: char| ch.is_ascii_digit()) {
             return;
         }
+        // Recorded for a known class and an unknown one alike: the pair is about the names, and no use of a class.
+        if let Some(on) = receiver.and_then(read_before) {
+            self.rec
+                .reads
+                .insert(format!("{on}{MEMBER_SEPARATOR}{member}"));
+        }
         match receiver.and_then(|receiver| self.class_of(receiver)) {
             Some(class) => self.class_member(&class, &member),
             None => self.unknown(&member),
@@ -376,6 +382,32 @@ impl<'r, 'a> Scan<'r, 'a> {
                 }
             }
         }
+    }
+}
+
+/// The methods that give back the value they were called on, or the one inside it, so that a member read after them is read on what came before: `x.range().expect("..").min()` reads `min` on what `range` gives.
+const HANDS_ON: &[&str] = &["unwrap", "expect", "as_ref", "as_mut", "as_deref", "clone"];
+
+/// The name of the field or method that gives the value of `expr`, through parentheses, references, `?`, `.await` and the calls of `HANDS_ON`.
+fn read_before(expr: &ast::Expr) -> Option<String> {
+    match expr {
+        ast::Expr::ParenExpr(expr) => read_before(&expr.expr()?),
+        ast::Expr::RefExpr(expr) => read_before(&expr.expr()?),
+        ast::Expr::TryExpr(expr) => read_before(&expr.expr()?),
+        ast::Expr::AwaitExpr(expr) => read_before(&expr.expr()?),
+        ast::Expr::FieldExpr(field) => {
+            let name = text(&field.name_ref()?);
+            (!name.starts_with(|ch: char| ch.is_ascii_digit())).then_some(name)
+        }
+        ast::Expr::MethodCallExpr(call) => {
+            let name = text(&call.name_ref()?);
+            if HANDS_ON.contains(&name.as_str()) {
+                read_before(&call.receiver()?)
+            } else {
+                Some(name)
+            }
+        }
+        _ => None,
     }
 }
 

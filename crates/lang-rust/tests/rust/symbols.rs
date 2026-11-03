@@ -91,7 +91,8 @@ fn a_receiver_with_a_written_type_names_its_type() {
         ["Cache.get", "Holder", "Holder.cache"]
     );
     assert_eq!(tree.uses("src/a.rs", "typed"), ["Cache", "Cache.get"]);
-    assert_eq!(tree.reads("src/a.rs"), Vec::<&str>::new());
+    // No member is read on a value of an unknown type; the only read is the pair, which names two members and no class.
+    assert_eq!(tree.reads("src/a.rs"), ["cache.get"]);
 }
 
 #[scenario("rust", "A name bound by a pattern is no use")]
@@ -445,6 +446,129 @@ fn an_implementation_is_reached_through_its_trait() {
     assert_eq!(tree.overrides("src/imp.rs"), ["Bash Tr"]);
     let reached = tree.reached("src/tr.rs", &["Tr"], Some(1));
     assert!(reached.contains(&"src/imp.rs@1".to_owned()), "{reached:?}");
+}
+
+#[scenario("rust", "A field of a class type holds a value of it")]
+#[test]
+fn a_field_of_a_class_type_holds_a_value_of_it() {
+    let tree = crate_of(
+        &["a"],
+        &[(
+            "src/a.rs",
+            "pub struct Style;\npub struct Config {\n    pub style: Style,\n    pub maybe: Option<Style>,\n    pub shared: std::sync::Arc<Style>,\n}\n",
+        )],
+    );
+
+    assert_eq!(
+        tree.holds("src/a.rs"),
+        [
+            "Config.maybe Style",
+            "Config.shared Style",
+            "Config.style Style"
+        ]
+    );
+}
+
+#[scenario("rust", "A method that returns a class holds a value of it")]
+#[test]
+fn a_method_that_returns_a_class_holds_a_value_of_it() {
+    let tree = crate_of(
+        &["a"],
+        &[(
+            "src/a.rs",
+            "pub struct ValueRange;\npub struct Error;\npub struct Arg;\n\nimpl Arg {\n    pub fn by_ref(&self) -> &ValueRange {\n        todo!()\n    }\n\n    pub fn get_num_args(&self) -> Option<ValueRange> {\n        None\n    }\n\n    pub fn checked(&self) -> Result<ValueRange, Error> {\n        todo!()\n    }\n}\n",
+        )],
+    );
+
+    assert_eq!(
+        tree.holds("src/a.rs"),
+        [
+            "Arg.by_ref ValueRange",
+            "Arg.checked ValueRange",
+            "Arg.get_num_args ValueRange"
+        ]
+    );
+}
+
+#[scenario("rust", "An associated function without self holds nothing")]
+#[test]
+fn an_associated_function_without_self_holds_nothing() {
+    let tree = crate_of(
+        &["a"],
+        &[(
+            "src/a.rs",
+            "pub struct Style;\npub struct Config;\n\nimpl Config {\n    pub fn default_style() -> Style {\n        Style\n    }\n}\n",
+        )],
+    );
+
+    assert_eq!(tree.holds("src/a.rs"), [] as [String; 0]);
+}
+
+#[scenario(
+    "rust",
+    "A member of its own class or of the standard library holds nothing"
+)]
+#[test]
+fn a_member_of_its_own_class_or_of_the_standard_library_holds_nothing() {
+    let tree = crate_of(
+        &["a"],
+        &[(
+            "src/a.rs",
+            "pub struct Foo {\n    name: String,\n}\n\nimpl Foo {\n    pub fn with(self) -> Self {\n        self\n    }\n\n    pub fn again(&self) -> Foo {\n        todo!()\n    }\n\n    pub fn len(&self) -> usize {\n        0\n    }\n}\n",
+        )],
+    );
+
+    assert_eq!(tree.holds("src/a.rs"), [] as [String; 0]);
+}
+
+#[scenario("rust", "A member read right on another is read as a pair")]
+#[test]
+fn a_member_read_right_on_another_is_read_as_a_pair() {
+    let tree = crate_of(
+        &["a"],
+        &[(
+            "src/a.rs",
+            "pub fn run(x: u8) {\n    self.config.style.changes();\n    (&self.name).len();\n}\n",
+        )],
+    );
+
+    let reads = tree.reads("src/a.rs");
+    for pair in ["config.style", "style.changes", "name.len"] {
+        assert!(reads.contains(&pair), "{reads:?}");
+    }
+}
+
+#[scenario("rust", "A pair goes through a call that only hands on the value")]
+#[test]
+fn a_pair_goes_through_a_call_that_only_hands_on_the_value() {
+    let tree = crate_of(
+        &["a"],
+        &[(
+            "src/a.rs",
+            "pub fn run(arg: u8) -> Option<u8> {\n    arg.range().expect(\"x\").min();\n    arg.other.as_ref().unwrap().max();\n    arg.third()?.top();\n    arg.fourth().await.low();\n    None\n}\n",
+        )],
+    );
+
+    let reads = tree.reads("src/a.rs");
+    for pair in ["range.min", "other.max", "third.top", "fourth.low"] {
+        assert!(reads.contains(&pair), "{reads:?}");
+    }
+}
+
+#[scenario("rust", "A call that changes the value breaks the pair")]
+#[test]
+fn a_call_that_changes_the_value_breaks_the_pair() {
+    let tree = crate_of(
+        &["a"],
+        &[(
+            "src/a.rs",
+            "pub fn run(arg: u8) {\n    arg.range().map(f).min();\n}\n",
+        )],
+    );
+
+    let reads = tree.reads("src/a.rs");
+    assert!(!reads.contains(&"range.min"), "{reads:?}");
+    assert!(reads.contains(&"map.min"), "{reads:?}");
 }
 
 #[scenario("rust", "A derive names the trait it derives")]
