@@ -87,11 +87,24 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "bare",
+            "of": "makeRouter"
+          },
+          {
+            "name": "dynamic",
+            "of": "makeRouter"
+          },
+          {
+            "name": "fixed",
+            "of": "makeRouter"
+          }
+        ],
         "on_load": [
-          "bare",
-          "dynamic",
-          "fixed",
+          "bare.get",
+          "dynamic.get",
+          "fixed.get",
           "list",
           "makeRouter"
         ],

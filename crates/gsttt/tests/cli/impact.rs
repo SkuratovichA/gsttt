@@ -2634,3 +2634,98 @@ fn a_rewritten_export_alias_walks_the_file_whole() {
     assert!(answer.get("parts").is_none(), "{answer}");
     assert_eq!(reached(&answer), ["src/other.ts", "src/use.ts"], "{answer}");
 }
+
+/// A class with `place` and `other`, a static factory and two function factories, one typed and one not, and a caller of each.
+fn factory_project(repo: &Path) {
+    write(
+        repo,
+        "src/service.ts",
+        "export class Service {\n  static make(): Service { return new Service(); }\n  place() {}\n  other() {}\n}\n\nexport function makeService(): Service { return new Service(); }\n\nexport const made = makeService();\n",
+    );
+    write(
+        repo,
+        "src/by-static.ts",
+        "import { Service } from './service';\n\nexport function byStatic() {\n  const s = Service.make();\n  s.place();\n}\n",
+    );
+    write(
+        repo,
+        "src/by-function.ts",
+        "import { makeService } from './service';\n\nexport function byFunction() {\n  const s = makeService();\n  s.place();\n}\n",
+    );
+    write(
+        repo,
+        "src/other-member.ts",
+        "import { Service } from './service';\nimport { makeService } from './service';\n\nexport function otherMember() {\n  Service.make().other();\n  makeService().other();\n}\n",
+    );
+    write(
+        repo,
+        "src/unrelated.ts",
+        "import { makeService } from './service';\n\nexport function unrelated() {\n  makeService();\n}\n",
+    );
+    write(repo, "src/third.ts", "export { made } from './service';\n");
+    write(
+        repo,
+        "src/shared.ts",
+        "import { made } from './third';\n\nexport function shared() {\n  made.place();\n}\n",
+    );
+}
+
+/// The paths `impact` lists for the member `Service.place`.
+fn factory_callers(sandbox: &Sandbox, repo: &Path) -> Vec<String> {
+    callers_in(sandbox, repo, "src/service.ts", "Service.place")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect()
+}
+
+#[scenario(
+    "queries",
+    "A caller through a static factory and through a function factory is listed"
+)]
+#[test]
+fn a_caller_through_a_static_factory_and_through_a_function_factory_is_listed() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    factory_project(&repo);
+    let listed = factory_callers(&sandbox, &repo);
+    for path in ["src/by-static.ts", "src/by-function.ts"] {
+        assert!(
+            listed.iter().any(|listed| listed == path),
+            "{path}: {listed:?}"
+        );
+    }
+}
+
+#[scenario(
+    "queries",
+    "A file that calls a factory and reads no such member is not listed"
+)]
+#[test]
+fn a_file_that_calls_a_factory_and_reads_no_such_member_is_not_listed() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    factory_project(&repo);
+    let listed = factory_callers(&sandbox, &repo);
+    for path in ["src/other-member.ts", "src/unrelated.ts"] {
+        assert!(
+            !listed.iter().any(|listed| listed == path),
+            "{path}: {listed:?}"
+        );
+    }
+}
+
+#[scenario(
+    "queries",
+    "A value made by a factory and passed across a third file is a caller"
+)]
+#[test]
+fn a_value_made_by_a_factory_and_passed_across_a_third_file_is_a_caller() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    factory_project(&repo);
+    let listed = factory_callers(&sandbox, &repo);
+    assert!(
+        listed.iter().any(|listed| listed == "src/shared.ts"),
+        "{listed:?}"
+    );
+}

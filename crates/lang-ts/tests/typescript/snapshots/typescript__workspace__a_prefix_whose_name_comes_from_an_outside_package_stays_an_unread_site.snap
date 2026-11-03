@@ -96,10 +96,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
           "OUTSIDE",
-          "app",
+          "app.use",
           "e",
           "express"
         ],
@@ -151,10 +156,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "e",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
-          "e"
+          "e.get"
         ],
         "overrides": [],
         "reads": [

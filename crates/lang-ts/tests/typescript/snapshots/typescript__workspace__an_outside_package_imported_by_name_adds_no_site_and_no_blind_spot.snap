@@ -81,9 +81,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
-          "app",
+          "app.get",
+          "app.use",
           "express",
           "shared"
         ],

@@ -93,14 +93,24 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          },
+          {
+            "name": "w",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
-          "app",
+          "app.use",
           "express",
           "ra",
           "rb",
-          "w"
+          "w",
+          "w.use"
         ],
         "overrides": [],
         "reads": [
@@ -159,11 +169,20 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "ra",
+            "of": "Router"
+          },
+          {
+            "name": "rb",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
-          "ra",
-          "rb"
+          "ra.get",
+          "rb.get"
         ],
         "overrides": [],
         "reads": [

@@ -54,10 +54,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "router",
+            "of": "R"
+          }
+        ],
         "on_load": [
           "R",
-          "router"
+          "router.get"
         ],
         "overrides": [],
         "reads": [

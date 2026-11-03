@@ -73,7 +73,16 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "loaded",
+            "of": "load"
+          },
+          {
+            "name": "rename",
+            "of": "Tenant"
+          }
+        ],
         "on_load": [
           "Tenant",
           "load"

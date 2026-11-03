@@ -69,9 +69,14 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
-          "app",
+          "app.use",
           "express",
           "router"
         ],

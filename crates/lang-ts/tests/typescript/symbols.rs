@@ -1187,3 +1187,159 @@ fn a_class_records_what_it_extends_and_implements() -> Result<(), Box<dyn Error>
     );
     Ok(())
 }
+
+/// What the declaration `name` of `src/uses.ts` of the fixture `factory-members` uses.
+fn factory_uses(path: &str, name: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let json = run("factory-members")?;
+    let used = uses(&json, path, name).ok_or("the file records no such declaration")?;
+    Ok(used.into_iter().map(str::to_owned).collect())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read from a constant made by a static call is a use of that member"
+)]
+fn a_member_read_from_a_constant_made_by_a_static_call_is_a_use_of_that_member()
+-> Result<(), Box<dyn Error>> {
+    let used = factory_uses("src/uses.ts", "viaConstant")?;
+    assert!(used.contains(&"Service.place".to_owned()), "{used:?}");
+    assert!(!used.contains(&"Service.other".to_owned()), "{used:?}");
+    assert!(!used.contains(&"Service".to_owned()), "{used:?}");
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read from the result of a static call is a use of that member"
+)]
+fn a_member_read_from_the_result_of_a_static_call_is_a_use_of_that_member()
+-> Result<(), Box<dyn Error>> {
+    for name in ["viaInstance", "viaAwait", "viaParentheses"] {
+        let used = factory_uses("src/uses.ts", name)?;
+        assert!(
+            used.contains(&"Service.place".to_owned()),
+            "{name}: {used:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A chain of calls stays on the class")]
+fn a_chain_of_calls_stays_on_the_class() -> Result<(), Box<dyn Error>> {
+    for name in ["viaChain", "viaConstantChain"] {
+        let used = factory_uses("src/uses.ts", name)?;
+        for member in ["FixTracker.retain", "FixTracker.remove"] {
+            assert!(used.contains(&member.to_owned()), "{name}: {used:?}");
+        }
+    }
+    let used = factory_uses("src/uses.ts", "viaStaticChain")?;
+    for member in ["Service.with", "Service.place"] {
+        assert!(used.contains(&member.to_owned()), "{used:?}");
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A call on a lower-case name or a namespace import names no class"
+)]
+fn a_call_on_a_lower_case_name_or_a_namespace_import_names_no_class() -> Result<(), Box<dyn Error>>
+{
+    let json = run("factory-members")?;
+    let read = reads(&json, "src/uses.ts");
+    for member in ["info", "place"] {
+        assert!(read.iter().any(|read| read == member), "{member}: {read:?}");
+    }
+    for name in ["viaLowerCase", "viaNamespace"] {
+        let used = factory_uses("src/uses.ts", name)?;
+        assert!(
+            used.iter().all(|used| !used.starts_with("Service.")),
+            "{name}: {used:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A function that gives a class is an heir of it")]
+fn a_function_that_gives_a_class_is_an_heir_of_it() -> Result<(), Box<dyn Error>> {
+    let json = run("factory-members")?;
+    let all = heirs(&json, "src/heirs.ts");
+    for pair in [
+        "typed of Service",
+        "promised of Service",
+        "nullable of Service",
+        "untyped of Service",
+        "arrow of Service",
+        "awaited of Service",
+        "expression of Service",
+        "deep of Service",
+        "either of Service",
+        "either of Other",
+    ] {
+        assert!(all.iter().any(|heir| heir == pair), "{pair}: {all:?}");
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A function that gives a class only from a nested function is no heir"
+)]
+fn a_function_that_gives_a_class_only_from_a_nested_function_is_no_heir()
+-> Result<(), Box<dyn Error>> {
+    let json = run("factory-members")?;
+    let all = heirs(&json, "src/heirs.ts");
+    for name in ["nested", "unbound", "many"] {
+        assert!(
+            !all.iter().any(|heir| heir.starts_with(&format!("{name} "))),
+            "{name} gives no class: {all:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A top-level value made by a call is an heir of what it calls"
+)]
+fn a_top_level_value_made_by_a_call_is_an_heir_of_what_it_calls() -> Result<(), Box<dyn Error>> {
+    let json = run("factory-members")?;
+    let all = heirs(&json, "src/heirs.ts");
+    for pair in [
+        "made of typed",
+        "waited of promised",
+        "fromStatic of Service",
+    ] {
+        assert!(all.iter().any(|heir| heir == pair), "{pair}: {all:?}");
+    }
+    for name in ["unknown", "fromLower"] {
+        assert!(
+            !all.iter().any(|heir| heir.starts_with(&format!("{name} "))),
+            "{name} takes no head: {all:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A function required with CommonJS is a use of its class"
+)]
+fn a_function_required_with_commonjs_is_a_use_of_its_class() -> Result<(), Box<dyn Error>> {
+    let json = run("factory-members")?;
+    for (name, call) in [("named", "makeService"), ("namespaced", "lib.makeService")] {
+        let used = uses(&json, "src/commonjs.js", name).ok_or("no declaration")?;
+        assert!(used.contains(&call), "{name}: {used:?}");
+    }
+    let read = reads(&json, "src/commonjs.js");
+    assert!(read.iter().any(|read| read == "place"), "{read:?}");
+    Ok(())
+}

@@ -1425,6 +1425,32 @@ impl<'a> Analyzer<'_, 'a> {
         self.discarded.truncate(mark);
     }
 
+    /// The class that `expr` gives a value of: what `new` constructs, what a name holds, and what a call of a static member gives, `Service.make()`, or a call of a member of a value of a known class, `new Tracker(a).retain(b)`, which stays on the class. Parentheses and `await` pass through.
+    fn expr_class<'e>(&'e self, expr: &'e Expression<'a>) -> Option<Cow<'e, str>> {
+        match peel(expr) {
+            Expression::NewExpression(new) => dotted_name(&new.callee),
+            Expression::Identifier(name) => self
+                .constants
+                .class_held(name.name.as_str(), name.span.start)
+                .map(Cow::Borrowed),
+            call @ Expression::CallExpression(_) => {
+                roots::static_call_head(call, |name, at| self.constants.is_class_head(name, at))
+                    .or_else(|| {
+                        let Expression::CallExpression(call) = call else {
+                            return None;
+                        };
+                        let Expression::StaticMemberExpression(member) =
+                            call.callee.get_inner_expression()
+                        else {
+                            return None;
+                        };
+                        self.expr_class(&member.object)
+                    })
+            }
+            _ => None,
+        }
+    }
+
     /// The class that a name holds by the plain type `annotation` it is declared with, which is then used by its type alone.
     fn held_by_type(
         &self,
@@ -1949,11 +1975,12 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                     if matches!(object, Expression::Super(_)) {
                         self.symbols.super_use(property);
                     }
-                    // `new Service().run()` reads one member of the class it constructs.
-                    let constructed = if let Expression::NewExpression(new) = object
-                        && let Some(class) = dotted_name(&new.callee)
-                    {
-                        self.held_new = Some(new.span.start);
+                    // `new Service().run()` and `Service.make().run()` read one member of the class they give a value of.
+                    let known = self.expr_class(&member.object).map(Cow::into_owned);
+                    let constructed = if let Some(class) = known {
+                        if let Expression::NewExpression(new) = object {
+                            self.held_new = Some(new.span.start);
+                        }
                         let outer = self.symbols.run();
                         self.symbols.through_class(&class, Some(property));
                         self.symbols.restore(outer);

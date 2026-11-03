@@ -96,10 +96,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
           "API_PREFIX",
-          "app",
+          "app.use",
           "express",
           "users"
         ],
@@ -151,10 +156,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "users",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
-          "users"
+          "users.get"
         ],
         "overrides": [],
         "reads": [

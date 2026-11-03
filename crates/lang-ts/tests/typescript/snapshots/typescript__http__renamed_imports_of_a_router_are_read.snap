@@ -64,12 +64,21 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "ex"
+          },
+          {
+            "name": "router",
+            "of": "R"
+          }
+        ],
         "on_load": [
           "R",
-          "app",
+          "app.get",
           "ex",
-          "router"
+          "router.get"
         ],
         "overrides": [],
         "reads": [

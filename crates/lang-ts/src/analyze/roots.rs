@@ -6,14 +6,16 @@ use std::ops::Range;
 
 use gsttt_core::rules::{ChainRule, Pack, callee_matches};
 use oxc_ast::ast::{
-    Argument, BindingIdentifier, BindingPattern, CallExpression, Class, Expression,
-    FormalParameter, Function, Program, PropertyDefinition, TSEnumDeclaration,
-    TSInterfaceDeclaration, TSType, TSTypeAliasDeclaration, TSTypeAnnotation, TSTypeName,
-    TSTypeParameter, TSTypeParameterInstantiation, VariableDeclarator,
+    Argument, ArrowFunctionBody, ArrowFunctionExpression, BindingIdentifier, BindingPattern,
+    CallExpression, Class, Expression, FormalParameter, Function, FunctionBody, Program,
+    PropertyDefinition, ReturnStatement, TSEnumDeclaration, TSInterfaceDeclaration, TSType,
+    TSTypeAliasDeclaration, TSTypeAnnotation, TSTypeName, TSTypeParameter,
+    TSTypeParameterInstantiation, VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::ScopeFlags;
 
+use super::peel;
 use crate::shape::{dotted_name, field_name, is_parameter_property, this_key};
 
 /// The generic types that keep the members of their first type argument: `Pick<PrismaClient, 'tenant'>` is a client with fewer models.
@@ -446,7 +448,12 @@ pub(super) fn constructed<'a>(init: &Expression<'a>) -> Option<Cow<'a, str>> {
 
 /// The class that an annotation names when it is a plain reference, `OrderService` or `Orders.Service`. A reference with type arguments, a union, an array or any other type names none.
 pub(super) fn plain_class<'a>(annotation: &TSTypeAnnotation<'a>) -> Option<Cow<'a, str>> {
-    let TSType::TSTypeReference(reference) = &annotation.type_annotation else {
+    plain_type_class(&annotation.type_annotation)
+}
+
+/// [`plain_class`] for a type that is not inside an annotation.
+fn plain_type_class<'a>(ty: &TSType<'a>) -> Option<Cow<'a, str>> {
+    let TSType::TSTypeReference(reference) = ty else {
         return None;
     };
     if reference.type_arguments.is_some() {
@@ -458,13 +465,117 @@ pub(super) fn plain_class<'a>(annotation: &TSTypeAnnotation<'a>) -> Option<Cow<'
     })
 }
 
-/// The class that a `const` declarator holds: its plain type when it has one, else the class it constructs.
-pub(super) fn declared_class<'a>(declarator: &VariableDeclarator<'a>) -> Option<Cow<'a, str>> {
+/// The class that a written return type stands for: a plain class, that class inside `Promise<…>`, or a union of one class with `null` or `undefined`. Any other type names none.
+pub(super) fn returned_class<'a>(annotation: &TSTypeAnnotation<'a>) -> Option<Cow<'a, str>> {
+    returned_type_class(&annotation.type_annotation)
+}
+
+fn returned_type_class<'a>(ty: &TSType<'a>) -> Option<Cow<'a, str>> {
+    match ty {
+        TSType::TSParenthesizedType(inner) => returned_type_class(&inner.type_annotation),
+        TSType::TSUnionType(union) => {
+            let mut classes = union.types.iter().filter(|member| {
+                !matches!(
+                    member,
+                    TSType::TSNullKeyword(_) | TSType::TSUndefinedKeyword(_)
+                )
+            });
+            let class = returned_type_class(classes.next()?);
+            classes.next().is_none().then_some(class).flatten()
+        }
+        TSType::TSTypeReference(reference) => {
+            match (&reference.type_name, &reference.type_arguments) {
+                (TSTypeName::IdentifierReference(name), Some(arguments))
+                    if name.name.as_str() == "Promise" =>
+                {
+                    match arguments.params.as_slice() {
+                        [awaited] => returned_type_class(awaited),
+                        _ => None,
+                    }
+                }
+                _ => plain_type_class(ty),
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Whether `name` is written like a class, with an upper-case first letter, which a static call on it is taken to be.
+pub(super) fn is_class_like(name: &str) -> bool {
+    name.chars().next().is_some_and(char::is_uppercase)
+}
+
+/// The class `Service` of a call `Service.make()`, also behind `await` and parentheses, when `is_head` says that the name, at its position, is a class the file binds at its top level.
+pub(super) fn static_call_head<'a>(
+    expr: &Expression<'a>,
+    is_head: impl Fn(&str, u32) -> bool,
+) -> Option<Cow<'a, str>> {
+    let Expression::CallExpression(call) = peel(expr) else {
+        return None;
+    };
+    let Expression::StaticMemberExpression(member) = call.callee.get_inner_expression() else {
+        return None;
+    };
+    let Expression::Identifier(object) = member.object.get_inner_expression() else {
+        return None;
+    };
+    let name = object.name.as_str();
+    is_head(name, object.span.start).then_some(Cow::Borrowed(name))
+}
+
+/// The classes that a function returns with no return type written: what its `return` statements construct with `new`, at any depth of its own body and not inside a function nested in it.
+pub(super) fn constructed_returns<'a>(body: &FunctionBody<'a>) -> Vec<Cow<'a, str>> {
+    let mut found = Returns(Vec::new());
+    found.visit_function_body(body);
+    found.0
+}
+
+/// [`constructed_returns`] for an arrow, whose body may be the expression it returns.
+pub(super) fn arrow_returns<'a>(body: &ArrowFunctionBody<'a>) -> Vec<Cow<'a, str>> {
+    match body {
+        ArrowFunctionBody::FunctionBody(body) => constructed_returns(body),
+        other => other
+            .as_expression()
+            .and_then(|expression| constructed(peel(expression)))
+            .into_iter()
+            .collect(),
+    }
+}
+
+/// The `new` classes of the `return` statements of one function body.
+struct Returns<'a>(Vec<Cow<'a, str>>);
+
+impl<'a> Visit<'a> for Returns<'a> {
+    fn visit_return_statement(&mut self, it: &ReturnStatement<'a>) {
+        if let Some(class) = it.argument.as_ref().map(peel).and_then(constructed) {
+            self.0.push(class);
+        }
+    }
+
+    // A function or a class nested in the body returns for itself.
+    fn visit_function(&mut self, _it: &Function<'a>, _flags: ScopeFlags) {}
+
+    fn visit_arrow_function_expression(&mut self, _it: &ArrowFunctionExpression<'a>) {}
+
+    fn visit_class(&mut self, _it: &Class<'a>) {}
+}
+
+/// The class that a `const` declarator holds: its plain type when it has one, else the class it constructs, else the class whose static member it calls.
+pub(super) fn declared_class<'a>(
+    declarator: &VariableDeclarator<'a>,
+    is_head: impl Fn(&str, u32) -> bool,
+) -> Option<Cow<'a, str>> {
     declarator
         .type_annotation
         .as_deref()
         .and_then(plain_class)
         .or_else(|| declarator.init.as_ref().and_then(constructed))
+        .or_else(|| {
+            declarator
+                .init
+                .as_ref()
+                .and_then(|init| static_call_head(init, is_head))
+        })
 }
 
 /// Calls `found` with the name of every type that `ty` stands for at its head: a reference is its own name, a union or an intersection is each of its members, and a wrapper such as `Pick<T, …>` is what it wraps.

@@ -73,6 +73,10 @@ expression: json
         "exports": [],
         "heirs": [
           {
+            "name": "app",
+            "of": "express"
+          },
+          {
             "name": "cache",
             "of": "Map"
           }

@@ -76,9 +76,14 @@ expression: json
             "name": "default"
           }
         ],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
-          "app",
+          "app.use",
           "express",
           "router"
         ],
@@ -180,11 +185,16 @@ expression: json
             "name": "default"
           }
         ],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "router",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "PATHS.USERS",
           "Router",
-          "router"
+          "router.get"
         ],
         "overrides": [],
         "reads": [

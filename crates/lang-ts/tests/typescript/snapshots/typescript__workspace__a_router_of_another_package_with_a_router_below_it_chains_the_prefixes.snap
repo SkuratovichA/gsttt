@@ -81,9 +81,14 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
-          "app",
+          "app.use",
           "express",
           "outer"
         ],
@@ -162,11 +167,16 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "outer",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
           "inner",
-          "outer"
+          "outer.use"
         ],
         "overrides": [],
         "reads": [
@@ -216,10 +226,15 @@ expression: json
           }
         ],
         "exports": [],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "inner",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
-          "inner"
+          "inner.get"
         ],
         "overrides": [],
         "reads": [

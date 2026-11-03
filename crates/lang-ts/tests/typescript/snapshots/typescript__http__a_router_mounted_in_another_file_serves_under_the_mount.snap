@@ -76,10 +76,15 @@ expression: json
             "name": "default"
           }
         ],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "api",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
-          "api",
+          "api.use",
           "bookings"
         ],
         "overrides": [],
@@ -150,10 +155,15 @@ expression: json
             "name": "default"
           }
         ],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "app",
+            "of": "express"
+          }
+        ],
         "on_load": [
           "api",
-          "app",
+          "app.use",
           "express"
         ],
         "overrides": [],
@@ -209,10 +219,15 @@ expression: json
             "name": "default"
           }
         ],
-        "heirs": [],
+        "heirs": [
+          {
+            "name": "router",
+            "of": "Router"
+          }
+        ],
         "on_load": [
           "Router",
-          "router"
+          "router.get"
         ],
         "overrides": [],
         "reads": [
