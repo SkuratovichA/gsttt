@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use gsttt_scenario::scenario;
 
-use crate::support::{NOTHING, contracts, linked, run, run_tree_within, sites, unread};
+use crate::support::{NOTHING, contracts, linked, run, run_tree_within, sites, unlinked, unread};
 
 /// More time than any tree of this file takes to index.
 const LIMIT: Duration = Duration::from_secs(60);
@@ -431,5 +431,24 @@ fn a_changed_constant_moves_the_routes_of_a_controller_that_did_not_change()
         linked(&after),
         ["serves http GET /people/x @6 in src/users.controller.ts"]
     );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A site left to the link is named as waiting for it")]
+fn a_site_left_to_the_link_is_named_as_waiting_for_it() -> Result<(), Box<dyn Error>> {
+    // A call on a constant of another file, and a route on an Express app, become facts only in the link.
+    assert_eq!(
+        unlinked("unlinked-sites", "src/client.ts")?,
+        [(3, "fetch".to_owned())]
+    );
+    assert_eq!(
+        unlinked("unlinked-sites", "src/server.ts")?,
+        [(5, "http GET /health".to_owned())]
+    );
+    // A NestJS route the controller declares is a fact of its file, which stands without the link.
+    assert_eq!(unlinked("unlinked-sites", "src/users.controller.ts")?, []);
+    // Nothing waits in a file with no site of the kind.
+    assert_eq!(unlinked("unlinked-sites", "src/paths.ts")?, []);
     Ok(())
 }

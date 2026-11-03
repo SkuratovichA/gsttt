@@ -1368,6 +1368,70 @@ mod tests {
         assert_eq!(record("ok2.txt").imports.len(), 1);
     }
 
+    /// The unread sites of `file` that a failed link left, as `@<line> <detail>`, and whether a coverage line names the failed link.
+    fn left_by_failed_link(run: &Refresh, file: &str) -> (Vec<String>, bool) {
+        let id = run.index.graph.file_id(file).unwrap();
+        let sites = run
+            .index
+            .record(id)
+            .unwrap()
+            .unresolved
+            .iter()
+            .filter(|site| site.reason == UnresolvedReason::Unsupported("link failed".to_owned()))
+            .map(|site| format!("@{} {}", site.line, site.detail))
+            .collect();
+        let named = run
+            .index
+            .coverage
+            .problems
+            .iter()
+            .any(|line| line.contains("`notes`") && line.contains("link"));
+        (sites, named)
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A failed link leaves what waits for it unread")]
+    #[test]
+    fn a_failed_link_leaves_what_waits_for_it_unread() {
+        let rig = Rig::new();
+        let dir = init_repo(&[
+            ("a.txt", "\n\nwaits 3 fetch(ROUTES.users)\n"),
+            ("b.txt", "poison\nwaits 2 fetch(ROUTES.carts)\n"),
+        ]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        // The file whose extra data does not decode is why the link failed, and it names no site.
+        assert_eq!(
+            left_by_failed_link(&run, "a.txt"),
+            (vec!["@3 fetch(ROUTES.users)".to_owned()], true)
+        );
+        assert_eq!(left_by_failed_link(&run, "b.txt").0, Vec::<String>::new());
+        let blind = &run.index.coverage.connector("notes").unwrap().blind;
+        assert_eq!(blind.len(), 1);
+        assert_eq!((blind[0].count, blind[0].first.line), (1, 3));
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A panicking link leaves what waits for it unread")]
+    #[test]
+    fn a_panicking_link_leaves_what_waits_for_it_unread() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "use linkboom\n\nwaits 3 fetch(ROUTES.users)\n")]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(
+            left_by_failed_link(&run, "a.txt"),
+            (vec!["@3 fetch(ROUTES.users)".to_owned()], true)
+        );
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A link that succeeds reports nothing of the kind")]
+    #[test]
+    fn a_link_that_succeeds_reports_nothing_of_the_kind() {
+        let rig = Rig::new();
+        let dir = init_repo(&[("a.txt", "\n\nwaits 3 fetch(ROUTES.users)\n")]);
+        let run = index(&rig, &dir, &Setup::default()).unwrap();
+        assert_eq!(left_by_failed_link(&run, "a.txt"), (Vec::new(), false));
+        let blind = &run.index.coverage.connector("notes").unwrap().blind;
+        assert_eq!(blind.len(), 0);
+    }
+
     #[gsttt_scenario::scenario("indexing", "A panicking link loses only linked facts")]
     #[test]
     fn a_panicking_link_loses_only_linked_facts() {

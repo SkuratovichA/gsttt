@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use gsttt_config::pack::{builtin_packs, read_pack};
+use gsttt_core::connector::DynConnector;
 use gsttt_core::contract::{ContractKind, Role};
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
 use gsttt_core::fact::{
@@ -3179,4 +3180,28 @@ method = "GET"
         builtin_packs(&[("sessions", pack)]).unwrap(),
     );
     assert_eq!(tree.contracts("sessions.py"), ["calls http GET /x@1"]);
+}
+
+/// A route on a router is no fact of its file, so the project names it as waiting for the link, at its line and with its decorator; a route on no router is a fact and waits for nothing.
+#[gsttt_scenario::scenario("python", "A route on a router is named as waiting for the link")]
+#[test]
+fn a_route_on_a_router_is_named_as_waiting_for_the_link() {
+    let tree = index("fastapi_router");
+    let projects = PYTHON
+        .open(&tree.repo, &Value::Null, &builtin_packs(PACKS).unwrap())
+        .unwrap();
+    let waiting = |path: &str| {
+        let file = tree.file(path);
+        let owner = RepoPath::normalize(path).unwrap();
+        let project = projects
+            .iter()
+            .find(|project| project.matches(&owner))
+            .unwrap();
+        project.unlinked(&file.extra)
+    };
+    assert_eq!(
+        waiting("app/api/bookings.py"),
+        [(6, "router.get".to_owned())]
+    );
+    assert_eq!(waiting("app/main.py"), []);
 }

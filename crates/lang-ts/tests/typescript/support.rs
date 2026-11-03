@@ -10,10 +10,12 @@ use std::time::Duration;
 
 use gsttt_config::{builtin_packs, read_pack};
 use gsttt_core::RepoView;
+use gsttt_core::connector::{DynConnector, SourceFile};
 use gsttt_core::engine::build::build_index;
 use gsttt_core::engine::pipeline::{self, Module, Output};
-use gsttt_core::fact::{FileTags, ImportFlags};
+use gsttt_core::fact::{FileTags, ImportFlags, Line};
 use gsttt_core::index::{Freshness, Index, IndexInfo};
+use gsttt_core::path::RepoPath;
 use gsttt_core::query::{ImpactRequest, impact};
 use gsttt_core::rules::Pack;
 use serde_json::Value;
@@ -71,6 +73,26 @@ pub(crate) fn run_with_pack(fixture: &str, pack: &str) -> Result<Value, Box<dyn 
     packs.push(read_pack("fixture.toml", pack)?);
     let (repo, output) = pipeline_with(&fixture_root(fixture), packs)?;
     Ok(json_of(&repo, &output))
+}
+
+/// What the project of `path` names as waiting for the link, for the file `path` of the tree `tests/fixtures/<fixture>`: the line and the code of each place, from the extra data `parse` gives it.
+pub(crate) fn unlinked(fixture: &str, path: &str) -> Result<Vec<(Line, String)>, Box<dyn Error>> {
+    let repo = RepoView::scan(fixture_root(fixture))?;
+    let packs = builtin_packs(gsttt_lang_ts::PACKS)?;
+    let projects = gsttt_lang_ts::TYPESCRIPT.open(&repo, &Value::Null, &packs)?;
+    let repo_path = RepoPath::normalize(path)?;
+    let id = repo.lookup(path).ok_or("a file of the fixture")?;
+    let project = projects
+        .iter()
+        .find(|project| project.matches(&repo_path))
+        .ok_or("a project that owns the file")?;
+    let text = repo.read_to_string(path)?;
+    let (_, extra) = project.parse(&SourceFile {
+        id,
+        path: &repo_path,
+        text: &text,
+    });
+    Ok(project.unlinked(&extra))
 }
 
 /// Runs `work` on another thread and gives up after `limit`, so that a walk that does not end fails its test instead of hanging the run.

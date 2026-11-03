@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use gsttt_core::connector::{LinkInput, Linked, Parsed, Project, Provide, SourceFile, salt_of};
-use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, ParseFailure, Resolution};
+use gsttt_core::fact::{FileFacts, FileTags, Import, ImportKind, Line, ParseFailure, Resolution};
 use gsttt_core::rules::Pack;
 use gsttt_core::tree;
 use gsttt_core::{RepoPath, RepoView};
@@ -120,6 +120,10 @@ impl Project for TsProject {
 
     fn link(&self, input: &LinkInput<'_, TsExtra>) -> Linked {
         link::link(input, &self.packs)
+    }
+
+    fn unlinked(&self, extra: &TsExtra) -> Vec<(Line, String)> {
+        link::unlinked(extra)
     }
 }
 

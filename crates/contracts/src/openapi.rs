@@ -240,6 +240,15 @@ impl Project for OpenApiProject {
         resolve_relative(&self.repo, from, &import.spec)
     }
 
+    /// The operations of a fragment, which no fact of the fragment declares: only a document that refers to it does, through the link.
+    fn unlinked(&self, extra: &OpenApiExtra) -> Vec<(Line, String)> {
+        extra
+            .operations
+            .iter()
+            .map(|operation| (operation.line, operation.method.clone()))
+            .collect()
+    }
+
     fn link(&self, input: &LinkInput<'_, OpenApiExtra>) -> Linked {
         let mut linked = Vec::new();
         for file in input.files() {

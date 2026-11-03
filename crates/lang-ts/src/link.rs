@@ -41,6 +41,41 @@ pub(crate) fn link(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Linked {
     Linked { facts, unread }
 }
 
+/// The places of a file that only the link turns into facts, with the code that names each.
+///
+/// Counted: a site the parse left to the link (`deferred`), a route on a host (`routes`), a route of a class without the decorator (`class_routes` that are inherited) and a tRPC procedure listed in a router (`routers`), since the parse records no fact for any of them. Not counted: a NestJS route a controller declares, whose parsed fact stands and which the link only keys again; mounts, class prefixes that name a constant and controllers that extend a base class, which name no site of their own; and the exports, bindings, constants and makers, which the link only reads.
+pub(crate) fn unlinked(extra: &TsExtra) -> Vec<(Line, String)> {
+    let deferred = extra
+        .deferred
+        .iter()
+        .map(|site| (site.line, site.what.clone()));
+    let routes = extra
+        .routes
+        .iter()
+        .map(|route| (route.fact.line, route.fact.key.to_string()));
+    let inherited = extra
+        .class_routes
+        .iter()
+        .filter(|route| route.inherited)
+        .map(|route| (route.fact.line, route.fact.key.to_string()));
+    let procedures = extra
+        .routers
+        .iter()
+        .flat_map(|router| &router.entries)
+        .filter_map(|entry| match entry {
+            TrpcEntry::Procedure { name, line } => Some((*line, name.clone())),
+            TrpcEntry::Ref { name, local, line } if extra.procedures.contains(local) => {
+                Some((*line, name.clone()))
+            }
+            TrpcEntry::Ref { .. } | TrpcEntry::Nested { .. } => None,
+        });
+    deferred
+        .chain(routes)
+        .chain(inherited)
+        .chain(procedures)
+        .collect()
+}
+
 /// The file a specifier written in `file` leads to.
 fn module_file(file: &LinkFile<'_, TsExtra>, spec: &str) -> Option<FileId> {
     file.imports.iter().find_map(|resolved| match &resolved.to {
