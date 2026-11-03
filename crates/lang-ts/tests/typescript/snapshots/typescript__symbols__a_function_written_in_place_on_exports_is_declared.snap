@@ -79,10 +79,15 @@ expression: json
           }
         },
         {
+          "exported": [
+            "loaded"
+          ],
           "flags": 0,
-          "kind": "require",
+          "kind": "re-export",
           "line": 21,
-          "names": [],
+          "names": [
+            "default"
+          ],
           "spec": "./other",
           "to": {
             "unresolved": {

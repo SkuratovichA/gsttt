@@ -55,10 +55,15 @@ expression: json
           }
         },
         {
+          "exported": [
+            "d"
+          ],
           "flags": 0,
-          "kind": "require",
+          "kind": "re-export",
           "line": 23,
-          "names": [],
+          "names": [
+            "default"
+          ],
           "spec": "./d",
           "to": {
             "unresolved": {
