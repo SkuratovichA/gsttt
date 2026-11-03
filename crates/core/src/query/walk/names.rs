@@ -1473,7 +1473,8 @@ impl<'w, 'a> Step<'w, 'a> {
                 continue;
             }
             for exported in self.exported_as(importer, symbols, bound) {
-                via.used = true;
+                // A file that hands a member's class on names no member of it, so it is no caller.
+                via.used |= member.is_none();
                 work.push_back((importer, exported.with(member)));
             }
         }
@@ -1487,13 +1488,13 @@ impl<'w, 'a> Step<'w, 'a> {
         let mut found = false;
         let mut held = false;
         for (index, decl) in symbols.declarations().enumerate() {
-            match refers_any(locals, symbols, decl.uses()) {
+            match refers_decl(locals, symbols, Some(decl.name()), decl.uses()) {
                 Refers::Yes => found |= self.unit(importer, Part::Decl(index)),
                 Refers::Held => held = true,
                 Refers::No => {}
             }
         }
-        match refers_any(locals, symbols, symbols.on_load()) {
+        match refers_decl(locals, symbols, None, symbols.on_load()) {
             Refers::Yes => found |= self.unit(importer, Part::Load),
             Refers::Held => held = true,
             Refers::No => {}
@@ -1654,16 +1655,34 @@ fn whole_if_taken(graph: &Graph, name: Name<'_>, import: &Import, via: &mut Via<
     }
 }
 
-/// Whether any of the `uses` of a file refers to one of its `locals`.
-fn refers_any<'u>(
+/// Whether the declaration `owner` takes the members of `used`: `class B extends A`, `const a = new A()`. Naming `A` there says where the members come from and reads none of them, and a read through it is written `B.member`. The load of a file has no owner, and runs the heritage of its classes, so there any heir of `used` counts.
+fn takes_members(symbols: FileSymbols<'_>, owner: Option<&str>, used: &str) -> bool {
+    symbols
+        .heirs()
+        .any(|(name, of)| of == used && owner.is_none_or(|owner| name == owner))
+}
+
+/// Whether `name` takes the members of another name in the file.
+fn is_heir(symbols: FileSymbols<'_>, name: &str) -> bool {
+    symbols.heirs().any(|(heir, _)| heir == name)
+}
+
+/// Whether the code of `owner` (the load when none) that makes the `uses` refers to one of `locals`. Asked about a member, code that takes the members of the class it names refers to it at most as a holder, and so does code that hands on such a class by its name, which names no member of it.
+fn refers_decl<'u>(
     locals: &[Local<'_>],
     symbols: FileSymbols<'_>,
+    owner: Option<&str>,
     uses: impl Iterator<Item = &'u str>,
 ) -> Refers {
     let mut best = Refers::No;
     for used in uses {
         for local in locals {
-            best = best.max(local.refers(symbols, used));
+            let refers = local.refers(symbols, used);
+            let capped = refers == Refers::Yes
+                && local.member.is_some()
+                && (takes_members(symbols, owner, used)
+                    || (used == local.name && is_heir(symbols, used)));
+            best = best.max(if capped { Refers::Held } else { refers });
         }
         if best == Refers::Yes {
             break;
@@ -1789,7 +1808,9 @@ impl Reach<'_, '_> {
             .iter()
             .any(|&(heir, member)| used == heir && outside(heir) && names_member(member));
         if class_held || heir_held {
-            return Refers::Yes;
+            // Naming a class only to take its members reads none of them.
+            let takes = takes_members(self.symbols, owner, used);
+            return if takes { Refers::Held } else { Refers::Yes };
         }
         let held = (holds(self.classes, &used) && outside(used))
             || self

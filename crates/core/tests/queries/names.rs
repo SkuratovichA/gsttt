@@ -481,7 +481,7 @@ fn callers_of_a_member_are_found_through_this_and_through_its_class() {
 }
 
 /// What a note about members whose classes are held says after the members, which stand for many classes at once.
-const HELD_THEIR_CLASSES: &str = "and names none of them; ask about those classes to list them";
+const HELD_THEIR_CLASSES: &str = "and reads none of them; ask about those classes to list them";
 
 /// `runner.ts` declares the class `Runner` with the methods `methods`, and `app.ts` has a `main` that refers to the class.
 fn runner(methods: &[&str]) -> Index {
@@ -772,7 +772,7 @@ fn a_file_that_holds_a_class_and_never_names_the_member_is_no_caller() {
     assert_eq!(paths(&answer.affected), NONE);
     assert_eq!(
         notes(&answer),
-        ["1 file holds Service and names no place; ask about Service to list them"]
+        ["1 file holds Service and reads no place through it; ask about Service to list them"]
     );
 }
 
@@ -3279,6 +3279,125 @@ fn a_top_level_value_of_a_class_is_a_callers_way_to_the_member() {
     let answer = ask(&index, "service.ts", &["OrderService.place"], None);
 
     assert_eq!(shown(&answer), [("page.ts", 1, vec!["render"])]);
+}
+
+/// `base.ts` declares `Base` with `destroy`, and `sub.ts` `Sub`, which extends it and has `run`, which reads `destroy` on `uses`.
+fn subclass_reading(uses: &[&str]) -> Tree {
+    let mut code = Code::new()
+        .declaration("Sub", (1, 6), &["Base"])
+        .heir("Sub", "Base");
+    code = if uses.is_empty() {
+        code.declaration("Sub.run", (2, 4), &[]).reads("destroy")
+    } else {
+        code.declaration("Sub.run", (2, 4), uses)
+    };
+    Tree::new()
+        .symbols(
+            "base.ts",
+            Code::new()
+                .declaration("Base", (1, 9), &[])
+                .declaration("Base.destroy", (2, 3), &[]),
+        )
+        .exports("base.ts", &["Base"])
+        .imports_names("sub.ts", "base.ts", &["Base"])
+        .symbols("sub.ts", code)
+        .exports("sub.ts", &["Sub"])
+}
+
+#[scenario(
+    "queries",
+    "A subclass that names the member only on another value is not a caller"
+)]
+#[test]
+fn a_subclass_that_names_the_member_only_on_another_value_is_not_a_caller() {
+    let answer = ask(
+        &subclass_reading(&[]).build(),
+        "base.ts",
+        &["Base.destroy"],
+        None,
+    );
+
+    assert_eq!(paths(&answer.affected), NONE);
+    assert_eq!(
+        notes(&answer),
+        ["1 file holds Base and reads no destroy through it; ask about Base to list them"]
+    );
+}
+
+#[scenario("queries", "A subclass that reads the member through this is a caller")]
+#[test]
+fn a_subclass_that_reads_the_member_through_this_is_a_caller() {
+    let answer = ask(
+        &subclass_reading(&["Sub.destroy"]).build(),
+        "base.ts",
+        &["Base.destroy"],
+        None,
+    );
+
+    assert_eq!(shown(&answer), [("sub.ts", 1, vec!["Sub.run"])]);
+}
+
+#[scenario(
+    "queries",
+    "A top-level value made by new is a caller at its reader and not at its declarator"
+)]
+#[test]
+fn a_top_level_value_made_by_new_is_a_caller_at_its_reader_and_not_at_its_declarator() {
+    let index = Tree::new()
+        .symbols(
+            "base.ts",
+            Code::new()
+                .declaration("Base", (1, 9), &[])
+                .declaration("Base.destroy", (2, 3), &[]),
+        )
+        .exports("base.ts", &["Base"])
+        .imports_names("store.ts", "base.ts", &["Base"])
+        .symbols(
+            "store.ts",
+            Code::new()
+                .declaration("shared", (1, 1), &["Base"])
+                .declaration("stop", (3, 5), &["shared.destroy"])
+                .heir("shared", "Base")
+                .reads("destroy"),
+        )
+        .exports("store.ts", &[])
+        .build();
+
+    let answer = ask(&index, "base.ts", &["Base.destroy"], None);
+
+    assert_eq!(shown(&answer), [("store.ts", 1, vec!["stop"])]);
+}
+
+#[scenario(
+    "queries",
+    "A file that hands a class on gets no row for a member of it"
+)]
+#[test]
+fn a_file_that_hands_a_class_on_gets_no_row_for_a_member_of_it() {
+    let index = Tree::new()
+        .symbols(
+            "base.ts",
+            Code::new()
+                .declaration("Base", (1, 9), &[])
+                .declaration("Base.destroy", (2, 3), &[]),
+        )
+        .exports("base.ts", &["Base"])
+        .imports_names("mid.ts", "base.ts", &["Base"])
+        .symbols("mid.ts", Code::new().exports_from("Agent", "Base"))
+        .exports("mid.ts", &["Agent"])
+        .imports_names("page.ts", "mid.ts", &["Agent"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("go", (1, 3), &["Agent.destroy"]),
+        )
+        .exports("page.ts", &[])
+        .build();
+
+    let member = ask(&index, "base.ts", &["Base.destroy"], None);
+    let class = ask(&index, "base.ts", &["Base"], None);
+
+    assert_eq!(paths(&member.affected), ["page.ts"]);
+    assert_eq!(paths(&class.affected), ["mid.ts", "page.ts"]);
 }
 
 #[scenario("queries", "A subclass in the file of its base")]
