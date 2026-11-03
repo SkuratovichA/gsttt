@@ -494,7 +494,7 @@ pub(super) fn import_locals<'a>(import: &ImportDeclaration<'a>) -> impl Iterator
         })
 }
 
-/// The upper-case names of the top level of `program` that stand for a class a static call can give a value of: a class it declares, a name an import takes by name or as the default, and a name a destructured `require` or dynamic import takes. A namespace import and a name that holds a whole `require`d module are not classes.
+/// The upper-case names of the top level of `program` that stand for a class a static call can give a value of: a class it declares, a name an import takes by name or as the default, and a name a destructured `require` or dynamic import takes, and an upper-case name that holds a whole `require`d module (`const Service = require('./service')`, where the module is the class). A namespace import and a lower-case name are not classes.
 pub(super) fn class_heads(program: &Program<'_>) -> BTreeSet<String> {
     let mut heads = BTreeSet::new();
     for statement in &program.body {
@@ -539,17 +539,22 @@ fn declared_heads(heads: &mut BTreeSet<String>, declaration: &Declaration<'_>) {
         }
         Declaration::VariableDeclaration(variables) => {
             for declarator in &variables.declarations {
-                if let BindingPattern::ObjectPattern(object) = &declarator.id
-                    && declarator
-                        .init
-                        .as_ref()
-                        .is_some_and(|init| load_of(peel(init)).is_some())
-                {
-                    for property in &object.properties {
-                        if let BindingPattern::BindingIdentifier(local) = &property.value {
-                            add_head(heads, local.name.as_str());
+                let loads = declarator
+                    .init
+                    .as_ref()
+                    .is_some_and(|init| load_of(peel(init)).is_some());
+                match &declarator.id {
+                    BindingPattern::ObjectPattern(object) if loads => {
+                        for property in &object.properties {
+                            if let BindingPattern::BindingIdentifier(local) = &property.value {
+                                add_head(heads, local.name.as_str());
+                            }
                         }
                     }
+                    BindingPattern::BindingIdentifier(local) if loads => {
+                        add_head(heads, local.name.as_str());
+                    }
+                    _ => {}
                 }
             }
         }

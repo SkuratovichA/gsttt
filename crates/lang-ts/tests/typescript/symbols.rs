@@ -1261,6 +1261,33 @@ fn a_call_on_a_lower_case_name_or_a_namespace_import_names_no_class() -> Result<
             "{name}: {used:?}"
         );
     }
+    let used = factory_uses("src/required.js", "viaRequiredLower")?;
+    assert!(
+        used.iter().all(|used| !used.starts_with("Service.")),
+        "viaRequiredLower: {used:?}"
+    );
+    assert!(read.iter().any(|read| read == "place"), "{read:?}");
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A static call on a class bound by require gives that class"
+)]
+fn a_static_call_on_a_class_bound_by_require_gives_that_class() -> Result<(), Box<dyn Error>> {
+    let used = factory_uses("src/required.js", "viaRequire")?;
+    assert!(used.contains(&"Service.place".to_owned()), "{used:?}");
+    let json = run("factory-members")?;
+    let all = heirs(&json, "src/required.js");
+    assert!(
+        all.iter().any(|heir| heir == "shared of Service"),
+        "{all:?}"
+    );
+    assert!(
+        !all.iter().any(|heir| heir.starts_with("fromLib ")),
+        "{all:?}"
+    );
     Ok(())
 }
 
