@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use foldhash::fast::RandomState;
 use serde::{Deserialize, Serialize};
 
+use crate::connector::LinkedOverride;
 use crate::contract::{ContractKey, Role};
 use crate::fact::{FileTags, Import, ImportFlags, ImportKind, Line, Symbols};
 use crate::ids::{ContractId, FileId, Id, IdSet, NameId};
@@ -536,6 +537,11 @@ impl GraphBuilder {
     /// The declarations of `file`, `None` when its connector records none. They are copied into one buffer in the order of the calls, so that the same tree gives the same bytes when the calls come in file order, as the engine's do.
     pub fn symbols(&mut self, file: FileId, symbols: Option<&Symbols>) {
         self.symbols.insert(file, symbols);
+    }
+
+    /// The heads the link found for the names of `file`, which count only when the file has symbols. Called after [`GraphBuilder::symbols`] for the file.
+    pub fn linked_overrides(&mut self, file: FileId, found: &[LinkedOverride]) {
+        self.symbols.link(file, found);
     }
 
     pub fn site(&mut self, key: ContractKey, site: ContractSite) {

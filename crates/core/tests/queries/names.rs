@@ -3712,6 +3712,49 @@ fn an_override_through_a_chain_of_classes_is_listed() {
     );
 }
 
+/// `store.go` declares `Store` with `Get`, `pg.go` declares `PG` with `Get` and no mention of `Store`, which the link found it to satisfy, and `use.go` calls `Store.Get`.
+fn linked() -> Tree {
+    Tree::new()
+        .symbols(
+            "store.go",
+            Code::new()
+                .declaration("Store", (1, 3), &[])
+                .declaration("Store.Get", (2, 2), &[]),
+        )
+        .exports("store.go", &["Store"])
+        .symbols(
+            "pg.go",
+            Code::new()
+                .declaration("PG", (1, 2), &[])
+                .declaration("PG.Get", (3, 5), &[])
+                .linked_overrides("PG", "store.go", "Store"),
+        )
+        .exports("pg.go", &["PG"])
+        .imports_names("use.go", "store.go", &["Store"])
+        .symbols(
+            "use.go",
+            Code::new().declaration("run", (1, 3), &["Store.Get"]),
+        )
+        .exports("use.go", &[])
+}
+
+#[scenario("queries", "A head found across files is followed")]
+#[test]
+fn a_head_found_across_files_is_followed() {
+    let index = linked().build();
+
+    let member = ask(&index, "pg.go", &["PG.Get"], None);
+    let head = ask(&index, "store.go", &["Store.Get"], None);
+
+    assert!(shown(&member).contains(&("use.go", 1, vec!["run"])));
+    assert!(rows(&head.affected).contains(&row(
+        "pg.go",
+        1,
+        "overrides Store.Get from store.go",
+        &["PG.Get"]
+    )));
+}
+
 #[scenario("queries", "A constructor is no override")]
 #[test]
 fn a_constructor_is_no_override() {

@@ -6,11 +6,12 @@ use gsttt_core::fact::{FileFacts, ParseFailure, ParseStatus, Symbols};
 use crate::analyze::analyze;
 use crate::file::FileCx;
 use crate::files::{is_manifest, tags_of};
+use crate::interfaces::GoExtra;
 use crate::project::GoProject;
 use crate::syntax::{parse_tree, scan, top_level_intact};
 
 /// Reads `file`. A `go.mod` is a manifest the project read when it opened, so it carries a tag and nothing else.
-pub(crate) fn parse(project: &GoProject, file: &SourceFile<'_>) -> Parsed<()> {
+pub(crate) fn parse(project: &GoProject, file: &SourceFile<'_>) -> Parsed<GoExtra> {
     let tags = tags_of(file.path);
     if is_manifest(file.path) {
         return Parsed::new(FileFacts {
@@ -47,6 +48,12 @@ pub(crate) fn parse(project: &GoProject, file: &SourceFile<'_>) -> Parsed<()> {
         ParseStatus::Recovered { .. } => !analysis.cut && top_level_intact(root),
         ParseStatus::Failed(_) => false,
     };
+    // A file that was read past errors may hide a method or an interface, so it adds nothing to the link.
+    let extra = if clean {
+        analysis.extra
+    } else {
+        GoExtra::default()
+    };
     let (symbols, exports) = if clean {
         let exports = analysis.exports;
         (
@@ -63,15 +70,18 @@ pub(crate) fn parse(project: &GoProject, file: &SourceFile<'_>) -> Parsed<()> {
     } else {
         (None, None)
     };
-    Parsed::new(FileFacts {
-        status,
-        tags,
-        imports: analysis.imports,
-        contracts: analysis.contracts,
-        embedded: analysis.embedded,
-        unresolved: analysis.unresolved,
-        exports,
-        package: clean.then_some(analysis.package),
-        symbols,
-    })
+    Parsed {
+        facts: FileFacts {
+            status,
+            tags,
+            imports: analysis.imports,
+            contracts: analysis.contracts,
+            embedded: analysis.embedded,
+            unresolved: analysis.unresolved,
+            exports,
+            package: clean.then_some(analysis.package),
+            symbols,
+        },
+        extra,
+    }
 }

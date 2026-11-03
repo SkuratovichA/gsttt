@@ -10,6 +10,7 @@ use tree_sitter::Node;
 
 use crate::file::{FileCx, Shape};
 use crate::files::NO_PACKAGE;
+use crate::interfaces::{GoExtra, InterfaceFact, Method, MethodFact, sig_of};
 use crate::scope::Head;
 use crate::syntax::{end_line_of, field_text, fields, line_of, named_children, text_of};
 use crate::walk::{Walk, first_result};
@@ -32,6 +33,8 @@ pub(crate) struct Analysis {
     pub(crate) unresolved: Vec<UnresolvedSite>,
     /// Whether some part of the tree nested too deep to be read.
     pub(crate) cut: bool,
+    /// What the link of method sets reads back.
+    pub(crate) extra: GoExtra,
 }
 
 /// The lines and uses of a declaration, merged when a name is declared twice.
@@ -83,6 +86,7 @@ pub(crate) fn analyze<'a>(cx: &FileCx<'a>, root: Node<'a>) -> Analysis {
     let mut declarations = Declarations {
         spans: BTreeMap::new(),
     };
+    let mut extra = GoExtra::default();
     let mut package_line = 1;
     let mut package = String::new();
     let mut ignored = false;
@@ -99,10 +103,10 @@ pub(crate) fn analyze<'a>(cx: &FileCx<'a>, root: Node<'a>) -> Analysis {
                     .unwrap_or_default();
             }
             "function_declaration" => function(&mut walk, &mut declarations, child),
-            "method_declaration" => method(&mut walk, &mut declarations, child),
+            "method_declaration" => method(&mut walk, &mut declarations, &mut extra, child),
             "type_declaration" => {
                 for spec in named_children(child) {
-                    type_spec(&mut walk, &mut declarations, spec);
+                    type_spec(&mut walk, &mut declarations, &mut extra, spec);
                 }
             }
             "const_declaration" | "var_declaration" => {
@@ -149,6 +153,7 @@ pub(crate) fn analyze<'a>(cx: &FileCx<'a>, root: Node<'a>) -> Analysis {
             .collect(),
         unresolved: walk.unresolved,
         cut: walk.cut,
+        extra,
     }
 }
 
@@ -189,7 +194,12 @@ fn first_result_head<'a>(walk: &Walk<'_, 'a>, node: Node<'a>) -> Option<Head> {
     walk.head_of(ty)
 }
 
-fn method<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, node: Node<'a>) {
+fn method<'a>(
+    walk: &mut Walk<'_, 'a>,
+    declarations: &mut Declarations,
+    extra: &mut GoExtra,
+    node: Node<'a>,
+) {
     let source = walk.cx.source;
     let (Some(name), Some(receiver)) = (
         field_text(node, "name", source),
@@ -211,13 +221,27 @@ fn method<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, node: No
     walk.scopes.pop_scope();
     let uses = walk.take_uses();
     let name = match class {
-        Some(class) => format!("{class}{MEMBER_SEPARATOR}{name}"),
+        Some(class) => {
+            extra.methods.push(MethodFact {
+                receiver: class.clone(),
+                method: Method {
+                    name: name.to_owned(),
+                    sig: sig_of(node, source),
+                },
+            });
+            format!("{class}{MEMBER_SEPARATOR}{name}")
+        }
         None => name.to_owned(),
     };
     declarations.add(name, line_of(node), end_line_of(node), uses);
 }
 
-fn type_spec<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, spec: Node<'a>) {
+fn type_spec<'a>(
+    walk: &mut Walk<'_, 'a>,
+    declarations: &mut Declarations,
+    extra: &mut GoExtra,
+    spec: Node<'a>,
+) {
     let source = walk.cx.source;
     if !matches!(spec.kind(), "type_spec" | "type_alias") {
         return;
@@ -232,6 +256,7 @@ fn type_spec<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, spec:
     walk.scopes.push_scope();
     if let Some(list) = spec.child_by_field_name("type_parameters") {
         walk.type_parameters(list);
+        extra.generic.push(name.to_owned());
     }
     // An alias has the methods of its type; a defined type `type A T` has none of them.
     if spec.kind() == "type_alias"
@@ -247,10 +272,10 @@ fn type_spec<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, spec:
         "struct_type" => {
             let own = walk.take_uses();
             declarations.add(name.to_owned(), line_of(spec), end_line_of(spec), own);
-            struct_fields(walk, declarations, name, ty);
+            struct_fields(walk, declarations, extra, name, ty);
         }
         "interface_type" => {
-            interface_members(walk, declarations, name, ty);
+            interface_members(walk, declarations, extra, name, ty);
             let own = walk.take_uses();
             declarations.add(name.to_owned(), line_of(spec), end_line_of(spec), own);
         }
@@ -267,6 +292,7 @@ fn type_spec<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, spec:
 fn struct_fields<'a>(
     walk: &mut Walk<'_, 'a>,
     declarations: &mut Declarations,
+    extra: &mut GoExtra,
     class: &str,
     ty: Node<'a>,
 ) {
@@ -288,6 +314,7 @@ fn struct_fields<'a>(
                 let head = walk.head_of(field_type);
                 if let Some(head) = &head {
                     walk.heir(class, head);
+                    extra.embeds.push((class.to_owned(), walk.cx.spell(head)));
                 }
                 head.map(|head| head.name).into_iter().collect()
             } else {
@@ -312,10 +339,17 @@ fn struct_fields<'a>(
 fn interface_members<'a>(
     walk: &mut Walk<'_, 'a>,
     declarations: &mut Declarations,
+    extra: &mut GoExtra,
     class: &str,
     ty: Node<'a>,
 ) {
     let source = walk.cx.source;
+    let mut fact = InterfaceFact {
+        name: class.to_owned(),
+        methods: Vec::new(),
+        embeds: Vec::new(),
+        open: false,
+    };
     for member in named_children(ty) {
         match member.kind() {
             "method_elem" => {
@@ -328,6 +362,10 @@ fn interface_members<'a>(
                 walk.scopes.pop_scope();
                 let uses = walk.take_uses();
                 walk.uses_extend(carried);
+                fact.methods.push(Method {
+                    name: name.to_owned(),
+                    sig: sig_of(member, source),
+                });
                 declarations.add(
                     format!("{class}{MEMBER_SEPARATOR}{name}"),
                     line_of(member),
@@ -336,18 +374,31 @@ fn interface_members<'a>(
                 );
             }
             "type_elem" => {
-                // `B` and `pkg.C` embed an interface; a union or a constraint such as `~int | string` has more than one term or a term of another kind.
-                if let [term] = named_children(member).as_slice()
-                    && matches!(term.kind(), "type_identifier" | "qualified_type")
-                    && let Some(head) = walk.head_of(*term)
-                {
-                    walk.heir(class, &head);
+                // `B`, `pkg.C` and `G[int]` embed an interface; a union or a constraint such as `~int | string` has more than one term or a term of another kind.
+                let head = match named_children(member).as_slice() {
+                    [term]
+                        if matches!(
+                            term.kind(),
+                            "type_identifier" | "qualified_type" | "generic_type"
+                        ) =>
+                    {
+                        walk.head_of(*term)
+                    }
+                    _ => None,
+                };
+                match head {
+                    Some(head) => {
+                        walk.heir(class, &head);
+                        fact.embeds.push(walk.cx.spell(&head));
+                    }
+                    None => fact.open = true,
                 }
                 walk.visit(member);
             }
             _ => walk.visit(member),
         }
     }
+    extra.interfaces.push(fact);
 }
 
 /// `const` and `var` at the top level, a declaration for each name.

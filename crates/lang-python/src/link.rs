@@ -134,6 +134,7 @@ pub(crate) fn link(project: &PythonProject, input: &LinkInput<'_, PyExtra>) -> L
     Linked {
         facts,
         unread: cuts.iter().filter_map(Cut::unread).collect(),
+        ..Linked::default()
     }
 }
 

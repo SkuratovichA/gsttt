@@ -231,21 +231,34 @@ fn find<'f, 'a, X: ?Sized>(
         .and_then(|index| files.get(index))
 }
 
-/// What [`Project::link`] returns: the contract sites it found, and the sites the parse left to it that it could not read either.
+/// What [`Project::link`] returns: the contract sites it found, the sites the parse left to it that it could not read either, and the heads it found for names.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Linked {
     pub facts: Vec<LinkedFact>,
     /// Each counts in coverage as an unread site of its file, as a site the parse could not read does.
     pub unread: Vec<(FileId, UnresolvedSite)>,
+    /// Heads that values of a name may run the members of, found across files.
+    pub overrides: Vec<LinkedOverride>,
 }
 
 impl From<Vec<LinkedFact>> for Linked {
     fn from(facts: Vec<LinkedFact>) -> Self {
         Self {
             facts,
-            unread: Vec::new(),
+            ..Self::default()
         }
     }
+}
+
+/// A name whose members may run through a head its file never names, found across files: a Go type and an interface it satisfies.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LinkedOverride {
+    /// The file that declares the name or a member of it.
+    pub file: FileId,
+    pub name: String,
+    /// The file that declares the head.
+    pub owner: FileId,
+    pub head: String,
 }
 
 /// A contract site found by [`Project::link`].

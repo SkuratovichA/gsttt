@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::connector::LinkedOverride;
 use crate::fact::{Line, Symbols};
 use crate::ids::{FileId, Id};
 
@@ -34,6 +35,27 @@ pub(super) struct Table {
     /// The position in `spans` of the symbols of each file, [`NONE`] for a file whose connector records none.
     slots: Vec<u32>,
     spans: Vec<Span>,
+    /// The heads the link found for the names of each file, a run per file in `spans`.
+    linked: Vec<Linked>,
+}
+
+/// A head found across files: the strings of the name and of the head, and the file that declares the head.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+struct Linked {
+    name: u32,
+    owner: u32,
+    head: u32,
 }
 
 /// One declaration: the string of its name is followed by the strings of what it uses.
@@ -84,6 +106,8 @@ struct Span {
     override_count: u32,
     reads: u32,
     read_count: u32,
+    linked: u32,
+    linked_count: u32,
 }
 
 impl Table {
@@ -164,6 +188,32 @@ impl Table {
             override_count: len_u32(symbols.overrides.len()),
             reads,
             read_count: len_u32(symbols.reads.len()),
+            linked: 0,
+            linked_count: 0,
+        }
+    }
+
+    /// Notes the heads the link found for the names of `file`, which the table keeps only for a file with symbols.
+    pub(super) fn link(&mut self, file: FileId, found: &[LinkedOverride]) {
+        let Some(&slot) = self.slots.get(file.index()) else {
+            return;
+        };
+        if found.is_empty() || slot == NONE {
+            return;
+        }
+        let first = len_u32(self.linked.len());
+        for one in found {
+            let name = self.push(&one.name);
+            let head = self.push(&one.head);
+            self.linked.push(Linked {
+                name,
+                owner: one.owner.raw(),
+                head,
+            });
+        }
+        if let Some(span) = self.spans.get_mut(slot as usize) {
+            span.linked = first;
+            span.linked_count = len_u32(found.len());
         }
     }
 
@@ -271,6 +321,25 @@ impl<'g> FileSymbols<'g> {
         (0..self.span.override_count).map(move |offset| {
             let name = first.saturating_add(offset.saturating_mul(2));
             (table.text(name), table.text(name.saturating_add(1)))
+        })
+    }
+
+    /// Each name and the head the link found for it in the file that declares the head, as the name, the file and the head, sorted.
+    pub fn linked_overrides(
+        self,
+    ) -> impl ExactSizeIterator<Item = (&'g str, FileId, &'g str)> + 'g {
+        let table = self.table;
+        let first = self.span.linked as usize;
+        let rows = table
+            .linked
+            .get(first..first.saturating_add(self.span.linked_count as usize))
+            .unwrap_or_default();
+        rows.iter().map(move |row| {
+            (
+                table.text(row.name),
+                FileId::from_raw(row.owner),
+                table.text(row.head),
+            )
         })
     }
 

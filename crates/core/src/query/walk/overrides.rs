@@ -27,10 +27,15 @@ pub(super) fn overridden(index: &Index, file: FileId, name: &str) -> Vec<(FileId
         let Some(symbols) = index.graph.symbols(at) else {
             continue;
         };
-        for (_, of) in symbols.overrides().filter(|&(heir, _)| heir == class) {
-            let Some((owner, head)) = declaring(index, at, of) else {
-                continue;
-            };
+        let written = symbols
+            .overrides()
+            .filter(|&(heir, _)| heir == class)
+            .filter_map(|(_, of)| declaring(index, at, of));
+        let linked = symbols
+            .linked_overrides()
+            .filter(|&(heir, _, _)| heir == class)
+            .map(|(_, owner, head)| (owner, head));
+        for (owner, head) in written.chain(linked) {
             if !visited.insert((owner, head)) {
                 continue;
             }
@@ -68,7 +73,11 @@ pub(super) fn overriding(index: &Index, file: FileId, place: usize) -> Vec<(File
         let Some(symbols) = index.graph.symbols(at) else {
             continue;
         };
-        let mut heirs: Vec<&str> = symbols.overrides().map(|(heir, _)| heir).collect();
+        let mut heirs: Vec<&str> = symbols
+            .overrides()
+            .map(|(heir, _)| heir)
+            .chain(symbols.linked_overrides().map(|(heir, _, _)| heir))
+            .collect();
         heirs.sort_unstable();
         heirs.dedup();
         for heir in heirs {

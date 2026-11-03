@@ -101,6 +101,7 @@ pub fn build_index(
         graph.tag(file.id, file.facts.tags);
         graph.exports(file.id, file.facts.exports.as_deref());
         graph.symbols(file.id, file.facts.symbols.as_ref());
+        graph.linked_overrides(file.id, output.overrides_of(file.id));
 
         for resolved in &file.imports {
             entry.count_import(file.id, resolved);

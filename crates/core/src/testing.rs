@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::connector::LinkedOverride;
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{
@@ -104,6 +105,8 @@ impl To {
 #[must_use = "code is nothing until a tree is given it"]
 pub struct Code {
     symbols: Symbols,
+    /// The heads the link found: the name, the path of the file that declares the head, and the head.
+    linked: Vec<(String, String, String)>,
 }
 
 impl Code {
@@ -152,6 +155,13 @@ impl Code {
             name: name.to_owned(),
             of: of.to_owned(),
         });
+        self
+    }
+
+    /// A value of `name` may run the members of `of`, declared in the file at `owner`, as a link that found it across files says.
+    pub fn linked_overrides(mut self, name: &str, owner: &str, of: &str) -> Self {
+        self.linked
+            .push((name.to_owned(), owner.to_owned(), of.to_owned()));
         self
     }
 
@@ -210,6 +220,7 @@ struct Entry {
     exports: Option<Vec<String>>,
     /// The declarations of the file, `None` when the connector records none.
     symbols: Option<Symbols>,
+    linked: Vec<(String, String, String)>,
     sites: Vec<(ContractKey, Role, u32)>,
     blind: Vec<UnresolvedSite>,
 }
@@ -223,6 +234,7 @@ impl Entry {
             imports: Vec::new(),
             exports: None,
             symbols: None,
+            linked: Vec::new(),
             sites: Vec::new(),
             blind: Vec::new(),
         }
@@ -430,7 +442,9 @@ impl Tree {
 
     /// `path` has the declarations `code` writes down. A file the tree gives none is one whose connector records none. A static import of a file with declarations that names what it takes and says nothing of the locals binds each under its own name, as a connector records it.
     pub fn symbols(mut self, path: &str, code: Code) -> Self {
-        self.entry(path).symbols = Some(code.finish());
+        let entry = self.entry(path);
+        entry.linked.clone_from(&code.linked);
+        entry.symbols = Some(code.finish());
         self
     }
 
@@ -565,6 +579,18 @@ impl Tree {
             graph.tag(from, entry.tags);
             graph.exports(from, entry.exports.as_deref());
             graph.symbols(from, entry.symbols.as_ref());
+            let mut linked: Vec<LinkedOverride> = entry
+                .linked
+                .iter()
+                .map(|(name, owner, head)| LinkedOverride {
+                    file: from,
+                    name: name.clone(),
+                    owner: ids[owner],
+                    head: head.clone(),
+                })
+                .collect();
+            linked.sort();
+            graph.linked_overrides(from, &linked);
             for written in &entry.imports {
                 for target in written.to.paths() {
                     graph.import(from, ids[target], &written.import);
