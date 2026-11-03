@@ -1370,6 +1370,7 @@ impl<'a> Recorder<'a> {
             exports: local_exports(exports),
             heirs,
             overrides,
+            holds: Vec::new(),
             reads: std::mem::take(&mut self.reads).into_iter().collect(),
         }
     }

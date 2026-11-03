@@ -4,6 +4,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::mem;
 use std::rc::Rc;
 
+use gsttt_core::fact::MEMBER_SEPARATOR;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
     Expr, ExprContext, ExprSubscript, Operator, Pattern, Stmt, StmtClassDef, StmtFunctionDef,
@@ -147,6 +148,8 @@ pub(super) struct Table {
 #[derive(Default)]
 struct ClassInfo {
     members: HashSet<String>,
+    /// The class each method says it returns.
+    returns: HashMap<String, Ty>,
     /// Every field a class body or a method assigns.
     fields: HashMap<String, Field>,
     bases: Vec<String>,
@@ -235,6 +238,23 @@ impl Table {
     /// Whether `name` is a class of this file.
     pub(super) fn has_class(&self, name: &str) -> bool {
         self.classes.contains_key(name)
+    }
+
+    /// Each member of a class of the file that holds a value of a class: a field, a property or a method that says so.
+    pub(super) fn holders(&self) -> impl Iterator<Item = (String, Rc<str>)> + '_ {
+        self.classes.iter().flat_map(|(class, info)| {
+            let fields = info
+                .fields
+                .iter()
+                .filter_map(|(name, field)| Some((name, field.ty()?)));
+            let returns = info.returns.iter().map(|(name, ty)| (name, ty.clone()));
+            fields
+                .chain(returns)
+                .filter_map(move |(name, ty)| match ty {
+                    Ty::Class(of) => Some((format!("{class}{MEMBER_SEPARATOR}{name}"), of)),
+                    Ty::Builtin => None,
+                })
+        })
     }
 
     /// The type of the field `member` of `class`, looked up in its bases too.
@@ -347,6 +367,17 @@ impl Table {
             match stmt {
                 Stmt::FunctionDef(function) => {
                     info.members.insert(function.name.as_str().to_owned());
+                    if let Some(returns) = &function.returns {
+                        let ty = self.annotation_type(returns);
+                        if is_property(function) {
+                            info.fields
+                                .entry(function.name.as_str().to_owned())
+                                .or_default()
+                                .annotated(ty);
+                        } else if let Some(ty) = ty {
+                            info.returns.insert(function.name.as_str().to_owned(), ty);
+                        }
+                    }
                     methods.push(function);
                 }
                 Stmt::ClassDef(inner) => {
@@ -647,6 +678,14 @@ pub(super) fn base_of(base: &Expr) -> &Expr {
         Expr::Subscript(subscript) => &subscript.value,
         other => other,
     }
+}
+
+/// Whether the function is a `@property` or a `cached_property`, which reads as a field.
+fn is_property(function: &StmtFunctionDef) -> bool {
+    function.decorator_list.iter().any(|decorator| {
+        dotted(&decorator.expression)
+            .is_some_and(|name| name == "property" || name.ends_with("cached_property"))
+    })
 }
 
 /// Whether the function is a `@staticmethod`, which has no instance to read members through.
@@ -990,6 +1029,14 @@ impl SelfScan<'_> {
         (root.id.as_str() == self.receiver).then_some(attribute.attr.as_str())
     }
 
+    /// What a call of a method of the receiver says it returns.
+    fn returned(&self, value: &Expr) -> Option<Ty> {
+        let Expr::Call(call) = value else {
+            return None;
+        };
+        self.info.returns.get(self.member(&call.func)?).cloned()
+    }
+
     /// Notes the member, and what the statement that writes it gives its field.
     fn note(&mut self, member: &str, note: impl FnOnce(&mut Field)) {
         self.info.members.insert(member.to_owned());
@@ -1003,7 +1050,10 @@ impl<'a> Visitor<'a> for SelfScan<'_> {
             // A function or a class inside the method has an instance of its own.
             Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {}
             Stmt::Assign(assign) => {
-                let ty = self.table.value_type(&assign.value, self.typed);
+                let ty = self
+                    .table
+                    .value_type(&assign.value, self.typed)
+                    .or_else(|| self.returned(&assign.value));
                 for target in &assign.targets {
                     if let Some(member) = self.member(target) {
                         self.note(member, |field| field.assigned(&assign.value, ty.clone()));

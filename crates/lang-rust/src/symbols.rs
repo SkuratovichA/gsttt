@@ -433,6 +433,7 @@ impl<'a> Recorder<'a> {
                 exports: Vec::new(),
                 heirs,
                 overrides,
+                holds: Vec::new(),
                 reads: reads.into_iter().collect(),
             },
             exports: exports.into_iter().collect(),

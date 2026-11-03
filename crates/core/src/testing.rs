@@ -149,6 +149,15 @@ impl Code {
         self
     }
 
+    /// The member `name` of a class holds a value of the class `of`, as a property `Poetry.file` annotated to return `TOMLFile` does.
+    pub fn holds(mut self, name: &str, of: &str) -> Self {
+        self.symbols.holds.push(Heir {
+            name: name.to_owned(),
+            of: of.to_owned(),
+        });
+        self
+    }
+
     /// A value of `name` may run the members of `of`, as `class name implements of` does.
     pub fn overrides(mut self, name: &str, of: &str) -> Self {
         self.symbols.overrides.push(Heir {
@@ -194,6 +203,10 @@ impl Code {
             .overrides
             .sort_by(|left, right| (&left.name, &left.of).cmp(&(&right.name, &right.of)));
         symbols.overrides.dedup();
+        symbols
+            .holds
+            .sort_by(|left, right| (&left.name, &left.of).cmp(&(&right.name, &right.of)));
+        symbols.holds.dedup();
         symbols.reads.sort_unstable();
         symbols.reads.dedup();
         symbols

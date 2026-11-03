@@ -295,6 +295,15 @@ impl Tree {
             .collect()
     }
 
+    /// The members of a class of the file that hold a value of a class, as `name of`.
+    fn holds(&self, path: &str) -> Vec<String> {
+        self.symbols(path)
+            .holds
+            .iter()
+            .map(|held| format!("{} {}", held.name, held.of))
+            .collect()
+    }
+
     /// What the file overrides, as `name of`.
     fn overrides(&self, path: &str) -> Vec<String> {
         self.symbols(path)
@@ -3629,7 +3638,12 @@ fn a_value_of_several_classes_is_no_class() {
     ] {
         let tree = module(&format!("{head}{code}"));
         // Either class may be the receiver, so `run` is read by name, and no member of one class is used as if it were the only one.
-        assert_eq!(tree.reads(MODULE), ["run"], "{code}");
+        let reads: Vec<&str> = tree
+            .reads(MODULE)
+            .into_iter()
+            .filter(|read| !read.contains('.'))
+            .collect();
+        assert_eq!(reads, ["run"], "{code}");
         let used = tree.uses(MODULE, name);
         assert!(
             !used.iter().any(|used| used
@@ -3727,13 +3741,177 @@ fn a_field_annotated_with_a_builtin_is_no_receiver_of_a_member() {
          \x20       self.other.run()\n",
     );
     // Only the field nothing types is read by name, and each field is still used.
-    assert_eq!(tree.reads(MODULE), ["run"]);
+    assert_eq!(tree.reads(MODULE), ["other.run", "run"]);
     assert_eq!(
         tree.uses(MODULE, "K.m"),
         [
             "K.count", "K.items", "K.label", "K.log", "K.names", "K.other"
         ]
     );
+}
+
+#[gsttt_scenario::scenario("python", "A property that names a class holds a value of it")]
+#[test]
+fn a_property_that_names_a_class_holds_a_value_of_it() {
+    let tree = module(
+        "from base import TOMLFile\n\
+         \n\
+         class Poetry:\n\
+         \x20   @property\n\
+         \x20   def file(self) -> TOMLFile:\n\
+         \x20       return make()\n",
+    );
+    assert_eq!(tree.holds(MODULE), ["Poetry.file TOMLFile"]);
+}
+
+#[gsttt_scenario::scenario("python", "A field annotated or assigned a class holds a value of it")]
+#[test]
+fn a_field_annotated_or_assigned_a_class_holds_a_value_of_it() {
+    let tree = module(
+        "from base import T\n\
+         \n\
+         class K:\n\
+         \x20   c: T\n\
+         \n\
+         \x20   def __init__(self):\n\
+         \x20       self.a: T = make()\n\
+         \x20       self.b = T()\n",
+    );
+    assert_eq!(tree.holds(MODULE), ["K.a T", "K.b T", "K.c T"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A method that names a class as its return holds a value of it"
+)]
+#[test]
+fn a_method_that_names_a_class_as_its_return_holds_a_value_of_it() {
+    let tree = module(
+        "from base import T\n\
+         \n\
+         class K:\n\
+         \x20   def make(self) -> T:\n\
+         \x20       return make()\n",
+    );
+    assert_eq!(tree.holds(MODULE), ["K.make T"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A field assigned from a method of the class holds what the method returns"
+)]
+#[test]
+fn a_field_assigned_from_a_method_of_the_class_holds_what_the_method_returns() {
+    let tree = module(
+        "from base import T\n\
+         \n\
+         class K:\n\
+         \x20   def make(self) -> T:\n\
+         \x20       return make()\n\
+         \n\
+         \x20   def __init__(self):\n\
+         \x20       self.x = self.make()\n",
+    );
+    assert_eq!(tree.holds(MODULE), ["K.make T", "K.x T"]);
+}
+
+#[gsttt_scenario::scenario("python", "A member of a builtin type holds nothing")]
+#[test]
+fn a_member_of_a_builtin_type_holds_nothing() {
+    let tree = module(
+        "class K:\n\
+         \x20   n: int\n\
+         \n\
+         \x20   @property\n\
+         \x20   def name(self) -> str:\n\
+         \x20       return \"\"\n\
+         \n\
+         \x20   def items(self) -> list[str]:\n\
+         \x20       return []\n\
+         \n\
+         \x20   def bare(self):\n\
+         \x20       return 1\n",
+    );
+    assert_eq!(tree.holds(MODULE), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A property that names a builtin ends the chain")]
+#[test]
+fn a_property_that_names_a_builtin_ends_the_chain() {
+    let tree = module(
+        "class K:\n\
+         \x20   @property\n\
+         \x20   def name(self) -> str:\n\
+         \x20       return \"\"\n\
+         \n\
+         \x20   def m(self):\n\
+         \x20       return self.name.upper()\n",
+    );
+    assert_eq!(tree.reads(MODULE), Vec::<&str>::new());
+}
+
+#[gsttt_scenario::scenario("python", "An attribute read right on another is a read of both")]
+#[test]
+fn an_attribute_read_right_on_another_is_a_read_of_both() {
+    let tree = module(
+        "class K:\n\
+         \x20   def m(self):\n\
+         \x20       return self.poetry.file.read()\n",
+    );
+    assert_eq!(
+        tree.reads(MODULE),
+        ["file", "file.read", "poetry", "poetry.file", "read"]
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "An attribute read on what a method gives is read on the method"
+)]
+#[test]
+fn an_attribute_read_on_what_a_method_gives_is_read_on_the_method() {
+    let tree = module("def f(x):\n    return x.get().name\n");
+    assert_eq!(tree.reads(MODULE), ["get", "get.name", "name"]);
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A chain on a builtin value records no read of one on another"
+)]
+#[test]
+fn a_chain_on_a_builtin_value_records_no_read_of_one_on_another() {
+    let tree = module(
+        "def f(text: str, n: int | None):\n\
+         \x20   text.upper.__doc__\n\
+         \x20   n.real.imag\n\
+         \x20   [].copy.__name__\n\
+         \x20   \"-\".join.__doc__\n",
+    );
+    assert_eq!(tree.reads(MODULE), Vec::<&str>::new());
+}
+
+#[gsttt_scenario::scenario("python", "A nested class stays an heir of its base and holds nothing")]
+#[test]
+fn a_nested_class_stays_an_heir_of_its_base_and_holds_nothing() {
+    let tree = module(
+        "from base import Base\n\
+         \n\
+         class Outer:\n\
+         \x20   class Inner(Base):\n\
+         \x20       pass\n",
+    );
+    assert_eq!(tree.heirs(MODULE), ["Outer.Inner Base"]);
+    assert_eq!(tree.holds(MODULE), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario(
+    "python",
+    "A chain on a name the file binds is read one member on another"
+)]
+#[test]
+fn a_chain_on_a_name_the_file_binds_is_read_one_member_on_another() {
+    let tree = module("from m import app\n\napp.config.from_mapping(1)\n");
+    assert_eq!(tree.reads(MODULE), ["config.from_mapping"]);
 }
 
 #[gsttt_scenario::scenario("python", "A builtin local that is bound again is read by name")]

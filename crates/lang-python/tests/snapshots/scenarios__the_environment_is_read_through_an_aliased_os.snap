@@ -84,7 +84,9 @@ expression: "tree.file_json(\"environment.py\")"
     "exports": [],
     "heirs": [],
     "overrides": [],
-    "reads": []
+    "reads": [
+      "environ.get"
+    ]
   },
   "path": "environment.py",
   "project": "python ."

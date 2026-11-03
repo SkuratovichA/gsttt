@@ -122,6 +122,7 @@ expression: "tree.file_json(\"db.py\")"
     "heirs": [],
     "overrides": [],
     "reads": [
+      "connect.cursor",
       "cursor",
       "execute",
       "fetchall",

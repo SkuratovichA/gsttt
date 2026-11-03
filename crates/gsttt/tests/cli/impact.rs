@@ -1966,6 +1966,67 @@ fn a_python_name_reaches_a_file_that_imports_it_or_reads_it_before_binding_it_ag
     assert_eq!(listed("conf/base.py", "DEBUG"), Vec::<String>::new());
 }
 
+/// The real Python connector reading `self.poetry.file.read()` and `poetry.file.read()` through properties that name their class, which neither file names `TOMLFile` to say. A file that reads `file.read` on a value nothing types, and one that reads `poetry.name`, are no callers.
+#[scenario(
+    "python",
+    "A chain through typed properties reaches the file that reads it"
+)]
+#[test]
+fn a_python_chain_through_typed_properties_reaches_the_file_that_reads_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "pkg/toml.py",
+        "class TOMLFile:\n    def read(self):\n        return 1\n",
+    );
+    write(
+        &repo,
+        "pkg/poetry.py",
+        "from __future__ import annotations\nfrom typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from pkg.toml import TOMLFile\n\n\nclass Poetry:\n    @property\n    def file(self) -> TOMLFile:\n        return make()\n",
+    );
+    write(
+        &repo,
+        "pkg/command.py",
+        "from __future__ import annotations\nfrom typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from pkg.poetry import Poetry\n\n\nclass Command:\n    @property\n    def poetry(self) -> Poetry:\n        return make()\n",
+    );
+    write(
+        &repo,
+        "pkg/add.py",
+        "from pkg.command import Command\n\n\nclass Add(Command):\n    def handle(self):\n        return self.poetry.file.read()\n",
+    );
+    write(
+        &repo,
+        "pkg/noise.py",
+        "from pkg.command import Command\n\n\nclass Other(Command):\n    def handle(self):\n        name = self.poetry.name\n        return open(name).read()\n",
+    );
+    write(
+        &repo,
+        "pkg/typed.py",
+        "from pkg.poetry import Poetry\n\n\ndef run(poetry: Poetry):\n    return poetry.file.read()\n",
+    );
+    write(
+        &repo,
+        "pkg/unrelated.py",
+        "def run(thing):\n    return thing.file.read()\n",
+    );
+
+    let listed = listed_in(&sandbox, &repo, "pkg/toml.py", "TOMLFile.read");
+
+    for file in ["pkg/add.py", "pkg/typed.py"] {
+        assert!(
+            listed.iter().any(|path| path == file),
+            "{file} is not in {listed:?}"
+        );
+    }
+    for file in ["pkg/noise.py", "pkg/unrelated.py"] {
+        assert!(
+            listed.iter().all(|path| path != file),
+            "{file} is in {listed:?}"
+        );
+    }
+}
+
 #[scenario("cli", "--changed with --base compares with the merge base")]
 #[test]
 fn changed_with_base_compares_with_the_merge_base() {

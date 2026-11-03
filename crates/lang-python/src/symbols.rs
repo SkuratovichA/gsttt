@@ -318,9 +318,25 @@ impl<'a> Recorder<'a> {
         }
     }
 
+    /// Notes each member as read, and each as read right on the one before it. A walk by name needs the pairs to tell `self.poetry.file.read()` from a file that reads `file` and `read` apart.
     fn read_members(&mut self, members: &[&str]) {
         for member in members {
             self.read_member(member);
+        }
+        self.read_pairs(members);
+    }
+
+    /// Notes each member as read right on the one before it, as `on.member`, and not the members themselves.
+    fn read_pairs(&mut self, members: &[&str]) {
+        for (on, member) in members.iter().zip(members.iter().skip(1)) {
+            self.read_member(&[on, ".", member].concat());
+        }
+    }
+
+    /// Notes the first of `rest` as read right on `first`, which is read on a value that may be of the repository.
+    fn read_after(&mut self, first: &str, rest: &[&str]) {
+        if let Some(next) = rest.first() {
+            self.read_member(&[first, ".", next].concat());
         }
     }
 
@@ -361,9 +377,7 @@ impl<'a> Recorder<'a> {
             return;
         }
         let (segs, beyond) = segs.split_at(segs.len().min(MAX_CHAIN));
-        for seg in beyond {
-            self.read_member(seg);
-        }
+        self.read_members(beyond);
         match binding {
             Binding::Receiver(class) => self.through_receiver(&class, segs),
             Binding::Typed(Ty::Class(class)) => self.through_type(&class, segs),
@@ -375,8 +389,12 @@ impl<'a> Recorder<'a> {
             }
             Binding::Member(class) => {
                 self.note_path([&*class, root].into_iter().chain(segs.iter().copied()));
+                self.read_pairs(segs);
             }
-            Binding::File => self.note_path(iter::once(root).chain(segs.iter().copied())),
+            Binding::File => {
+                self.note_path(iter::once(root).chain(segs.iter().copied()));
+                self.read_pairs(segs);
+            }
         }
     }
 
@@ -402,9 +420,15 @@ impl<'a> Recorder<'a> {
         };
         self.member_of(class, first);
         match self.table.field_type(class, first) {
-            Some(Ty::Class(ty)) => self.through_type(&ty, rest),
+            Some(Ty::Class(ty)) => {
+                self.read_after(first, rest);
+                self.through_type(&ty, rest);
+            }
             Some(Ty::Builtin) => {}
-            None => self.read_members(rest),
+            None => {
+                self.read_after(first, rest);
+                self.read_members(rest);
+            }
         }
     }
 
@@ -416,11 +440,13 @@ impl<'a> Recorder<'a> {
             self.member_of(&ty, first);
             match self.table.field_type(&ty, first) {
                 Some(Ty::Class(next)) => {
+                    self.read_after(first, rest);
                     ty = next;
                     segs = rest;
                 }
                 Some(Ty::Builtin) => return,
                 None => {
+                    self.read_after(first, rest);
                     self.read_members(rest);
                     return;
                 }
@@ -466,6 +492,7 @@ impl<'a> Recorder<'a> {
             .iter()
             .rev()
             .find_map(|scope| scope.receiver.as_ref().map(|(_, class)| Rc::clone(class)));
+        self.read_after(member, rest);
         let table = self.table;
         for base in class.iter().flat_map(|class| table.bases(class)) {
             let found = table.member_uses(base, member, &mut |owner, name| {
@@ -495,7 +522,13 @@ impl<'a> Recorder<'a> {
                 match self.class_called(call) {
                     Some(class) => self.through_type(&class, &segs),
                     None if self.is_builtin_value(root) => {}
-                    None => self.read_members(&segs),
+                    None => {
+                        // What a method call gives is read on the method, which a chain through its return type needs.
+                        if let Expr::Attribute(method) = &*call.func {
+                            self.read_after(method.attr.as_str(), &segs);
+                        }
+                        self.read_members(&segs);
+                    }
                 }
             }
             other => {
@@ -1035,6 +1068,14 @@ impl<'a> Recorder<'a> {
     }
 
     fn finish(self) -> Symbols {
+        let mut holds: Vec<Heir> = self
+            .table
+            .holders()
+            .map(|(name, of)| Heir {
+                name,
+                of: of.as_ref().to_owned(),
+            })
+            .collect();
         let Self {
             mut entries,
             index,
@@ -1073,12 +1114,15 @@ impl<'a> Recorder<'a> {
         heirs.dedup();
         overrides.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
         overrides.dedup();
+        holds.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
+        holds.dedup();
         Symbols {
             declared,
             on_load: on_load.into_iter().collect(),
             exports: Vec::new(),
             heirs,
             overrides,
+            holds,
             reads: reads.into_iter().collect(),
         }
     }
@@ -1277,7 +1321,7 @@ mod tests {
             symbols.on_load
         );
         assert!(strictly_increasing(&symbols.reads), "{:?}", symbols.reads);
-        for pairs in [&symbols.heirs, &symbols.overrides] {
+        for pairs in [&symbols.heirs, &symbols.overrides, &symbols.holds] {
             let pairs: Vec<(&str, &str)> = pairs
                 .iter()
                 .map(|heir| (heir.name.as_str(), heir.of.as_str()))

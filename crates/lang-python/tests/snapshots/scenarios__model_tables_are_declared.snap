@@ -177,6 +177,12 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
           "of": "models.Model"
         }
       ],
+      "holds": [
+        {
+          "name": "BookingItem.note",
+          "of": "models.TextField"
+        }
+      ],
       "reads": []
     },
     "path": "items/models.py",
