@@ -63,6 +63,7 @@ expression: json
         "overrides": [],
         "reads": [
           "location",
+          "location.origin",
           "origin"
         ]
       },

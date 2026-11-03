@@ -164,11 +164,25 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Spellings.#queue",
+            "of": "MailQueue"
+          },
+          {
+            "name": "Spellings.mail",
+            "of": "MailQueue"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
+          "#queue.push",
           "bind",
-          "push"
+          "both.send",
+          "mail.push",
+          "push",
+          "push.bind"
         ]
       },
       "tags": 0,

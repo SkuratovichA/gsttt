@@ -13,8 +13,8 @@ use oxc_ast::ast::{
     Declaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind, Expression,
     ImportDeclaration, MethodDefinitionKind, ObjectExpression, ObjectPropertyKind, Program,
     PropertyKey, SimpleAssignmentTarget, Statement, TSInterfaceDeclaration, TSModuleReference,
-    TSSignature, TSTypeAnnotation, UnaryOperator, VariableDeclaration, VariableDeclarationKind,
-    VariableDeclarator,
+    TSSignature, TSType, TSTypeAnnotation, UnaryOperator, VariableDeclaration,
+    VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_span::{GetSpan, Span};
 
@@ -23,6 +23,7 @@ use super::roots::{
     arrow_returns, constructed, constructed_returns, declared_class, heads, returned_class,
 };
 use super::{Form, load_forms, load_of, peel};
+use crate::builtins::is_global_builtin;
 use crate::extra::{Export, ExportTarget};
 use crate::shape::{
     dotted, dotted_name, exports_member, is_export_key, is_open_object, is_parameter_property,
@@ -168,6 +169,10 @@ pub(super) struct Recorder<'a> {
     class_plans: Vec<ClassPlan<'a>>,
     /// The names that take the members of another, in the order met.
     heirs: Vec<Heir>,
+    /// Each member of a class or an interface and the one class its written type stands for, in the order met. A builtin is dropped once every name of the file is known.
+    holds: Vec<Heir>,
+    /// The text of the read being made, kept to spare an allocation for each member read.
+    scratch: String,
     /// The entries that appear in `heirs` as the name that takes the members.
     heir_entries: HashSet<usize>,
     /// The upper-case names of the top level that a static call on them gives a value of: see [`class_heads`].
@@ -424,6 +429,9 @@ impl<'a> Recorder<'a> {
                 None => Plan::Load,
             },
             Declaration::TSTypeAliasDeclaration(alias) => {
+                if let TSType::TSTypeLiteral(literal) = &alias.type_annotation {
+                    self.signature_holds(alias.id.name.as_str(), &literal.members);
+                }
                 self.single(Some(alias.id.name.as_str()), lines, Load::Later)
             }
             Declaration::TSInterfaceDeclaration(interface) => {
@@ -555,6 +563,59 @@ impl<'a> Recorder<'a> {
                 continue;
             };
             self.declare_member(entry, private, member, line_pair(index, span));
+        }
+        self.signature_holds(name, &interface.body.body);
+    }
+
+    /// Records the members of an interface or of an object type that are written with the one class their value is.
+    fn signature_holds(&mut self, owner: &str, signatures: &[TSSignature<'a>]) {
+        for signature in signatures {
+            let (key, computed, held) = match signature {
+                TSSignature::TSMethodSignature(method) => (
+                    &method.key,
+                    method.computed,
+                    method
+                        .return_type
+                        .as_deref()
+                        .and_then(returned_class)
+                        .into_iter()
+                        .collect(),
+                ),
+                TSSignature::TSPropertySignature(field) => (
+                    &field.key,
+                    field.computed,
+                    field
+                        .type_annotation
+                        .as_deref()
+                        .map_or_else(Vec::new, |annotation| {
+                            head_list(&annotation.type_annotation)
+                        }),
+                ),
+                _ => continue,
+            };
+            if let Some((member, private)) = member_key(key).filter(|_| !computed) {
+                self.hold(owner, private, member, &held);
+            }
+        }
+    }
+
+    /// Records that the member of `owner` holds a value of the class `held` names, when the type has exactly one head. A member never holds its own class: `next: Node` in `Node` leads the walk nowhere.
+    fn hold(&mut self, owner: &str, private: bool, member: &str, held: &[Cow<'a, str>]) {
+        if let [class] = held
+            && class != owner
+        {
+            self.holds.push(Heir {
+                name: member_name(owner, private, member),
+                of: class.as_ref().to_owned(),
+            });
+        }
+    }
+
+    /// [`Self::hold`] for a member of the top-level class `class`, whose name is only copied when there is something to record.
+    fn hold_in_class(&mut self, class: usize, private: bool, member: &str, held: &[Cow<'a, str>]) {
+        if held.len() == 1 {
+            let owner = self.name(class).to_owned();
+            self.hold(&owner, private, member, held);
         }
     }
 
@@ -732,20 +793,25 @@ impl<'a> Recorder<'a> {
         self.regions.push((class.span.start, Region::Class(plan)));
     }
 
-    /// The names at the head of the type of each field that `element` declares: a property with an annotation or a `new` initializer, and the parameter properties of a constructor.
+    /// The names at the head of the type of each field that `element` declares: a property with an annotation or a `new` initializer, and the parameter properties of a constructor. It also records the class that a field, a getter or a method holds a value of.
     fn field_types(&mut self, class: usize, element: &ClassElement<'a>) {
         match element {
             ClassElement::PropertyDefinition(field) if !field.computed => {
                 let Some((name, private)) = member_key(&field.key) else {
                     return;
                 };
-                let found = Rc::make_mut(self.fields.entry((class, private, name)).or_default());
-                match field.type_annotation.as_deref() {
-                    Some(annotation) => {
-                        heads(&annotation.type_annotation, &mut |head| found.push(head));
-                    }
-                    None => found.extend(field.value.as_ref().and_then(constructed)),
-                }
+                let written = match field.type_annotation.as_deref() {
+                    Some(annotation) => head_list(&annotation.type_annotation),
+                    None => field
+                        .value
+                        .as_ref()
+                        .and_then(constructed)
+                        .into_iter()
+                        .collect(),
+                };
+                self.hold_in_class(class, private, name, &written);
+                Rc::make_mut(self.fields.entry((class, private, name)).or_default())
+                    .extend(written);
             }
             ClassElement::MethodDefinition(method)
                 if method.kind == MethodDefinitionKind::Constructor =>
@@ -757,13 +823,30 @@ impl<'a> Recorder<'a> {
                         continue;
                     };
                     if is_parameter_property(parameter) {
-                        let found = Rc::make_mut(
+                        let written = head_list(&annotation.type_annotation);
+                        self.hold_in_class(class, false, id.name.as_str(), &written);
+                        Rc::make_mut(
                             self.fields
                                 .entry((class, false, id.name.as_str()))
                                 .or_default(),
-                        );
-                        heads(&annotation.type_annotation, &mut |head| found.push(head));
+                        )
+                        .extend(written);
                     }
+                }
+            }
+            // `Promise<Service>` of an async method stands for the `Service` that `await` gives.
+            ClassElement::MethodDefinition(method)
+                if !method.computed
+                    && matches!(
+                        method.kind,
+                        MethodDefinitionKind::Method | MethodDefinitionKind::Get
+                    ) =>
+            {
+                if let Some((name, private)) = member_key(&method.key)
+                    && let Some(returned) =
+                        method.value.return_type.as_deref().and_then(returned_class)
+                {
+                    self.hold_in_class(class, private, name, &[returned]);
                 }
             }
             _ => {}
@@ -1091,6 +1174,17 @@ impl<'a> Recorder<'a> {
         }
     }
 
+    /// Records that the file reads the member `member` right on `on`, listed as `on.member`. The name at the root of a chain is no `on`, because a local's name is no member.
+    pub(super) fn read_on(&mut self, on: &str, member: &str) {
+        let mut key = std::mem::take(&mut self.scratch);
+        key.clear();
+        key.push_str(on);
+        key.push(MEMBER_SEPARATOR);
+        key.push_str(member);
+        self.read(&key);
+        self.scratch = key;
+    }
+
     /// A chain of member accesses from a name or `this`, `C.s` or `this.m`. The name at its base is a use, and so is the member of a class; `this.field` also uses the names the type of the field stands for, and `this.field.member` the member of each.
     pub(super) fn chain(&mut self, names: &[Option<String>]) {
         let Some(Some(root)) = names.first() else {
@@ -1361,6 +1455,13 @@ impl<'a> Recorder<'a> {
         let mut heirs = std::mem::take(&mut self.heirs);
         heirs.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
         heirs.dedup();
+        // A name the file binds shadows a global of the same name.
+        let mut holds = std::mem::take(&mut self.holds);
+        holds.retain(|held| {
+            !is_global_builtin(&held.of) || self.names.contains_key(held.of.as_str())
+        });
+        holds.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
+        holds.dedup();
         let mut overrides = std::mem::take(&mut self.overrides);
         overrides.sort_unstable_by(|a, b| (&a.name, &a.of).cmp(&(&b.name, &b.of)));
         overrides.dedup();
@@ -1370,7 +1471,7 @@ impl<'a> Recorder<'a> {
             exports: local_exports(exports),
             heirs,
             overrides,
-            holds: Vec::new(),
+            holds,
             reads: std::mem::take(&mut self.reads).into_iter().collect(),
         }
     }
@@ -1441,6 +1542,13 @@ fn is_void(expr: &Expression<'_>) -> bool {
 fn line_pair(index: &LineIndex, span: Span) -> (Line, Line) {
     let last = span.end.saturating_sub(1).max(span.start);
     (index.line(span.start), index.line(last))
+}
+
+/// The names at the head of `ty`, in the order written.
+fn head_list<'a>(ty: &TSType<'a>) -> Vec<Cow<'a, str>> {
+    let mut found = Vec::new();
+    heads(ty, &mut |head| found.push(head));
+    found
 }
 
 /// The name a declaration lists a member under: `Class.member`, and `Class.#member` for a private one.

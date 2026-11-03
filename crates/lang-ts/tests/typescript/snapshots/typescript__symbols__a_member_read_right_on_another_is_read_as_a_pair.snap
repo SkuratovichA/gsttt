@@ -1,0 +1,191 @@
+---
+source: crates/lang-ts/tests/typescript/symbols.rs
+expression: json
+---
+{
+  "files": [
+    {
+      "contracts": [],
+      "embedded": [],
+      "imports": [],
+      "path": "package.json",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "tags": 4,
+      "unresolved": []
+    },
+    {
+      "contracts": [
+        {
+          "key": "env HOME",
+          "line": 38,
+          "role": "calls",
+          "via": "env"
+        }
+      ],
+      "embedded": [],
+      "exports": [
+        "Holder",
+        "afterAwait",
+        "afterCall",
+        "builtin",
+        "param",
+        "sees"
+      ],
+      "imports": [],
+      "path": "src/pairs.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 12,
+            "line": 1,
+            "name": "Holder",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "Holder.constructor",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "Holder.#cache",
+            "uses": []
+          },
+          {
+            "end": 7,
+            "line": 5,
+            "name": "Holder.deep",
+            "uses": []
+          },
+          {
+            "end": 11,
+            "line": 9,
+            "name": "Holder.hidden",
+            "uses": [
+              "Holder.#cache"
+            ]
+          },
+          {
+            "end": 16,
+            "line": 14,
+            "name": "param",
+            "uses": []
+          },
+          {
+            "end": 22,
+            "line": 18,
+            "name": "sees",
+            "uses": []
+          },
+          {
+            "end": 27,
+            "line": 24,
+            "name": "afterCall",
+            "uses": []
+          },
+          {
+            "end": 33,
+            "line": 29,
+            "name": "afterAwait",
+            "uses": []
+          },
+          {
+            "end": 39,
+            "line": 35,
+            "name": "builtin",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "#cache.size",
+          "HOME",
+          "a",
+          "a.b",
+          "b",
+          "c",
+          "c.d",
+          "ctx.logger",
+          "d",
+          "e",
+          "e.f",
+          "error",
+          "f",
+          "f.g",
+          "g",
+          "get",
+          "get.name",
+          "get.other",
+          "length",
+          "load",
+          "load.title",
+          "logger",
+          "logger.error",
+          "name",
+          "other",
+          "size",
+          "size.valueOf",
+          "title",
+          "valueOf"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    }
+  ],
+  "linked": [],
+  "problems": [],
+  "projects": [
+    {
+      "connector": "ts",
+      "provides": [
+        {
+          "blind_spots": [
+            "a URL is read from a string, a template, a concatenation or new URL(…), and from a constant declared in the same file, in the function or block around the call, or in a file of the same project that it is imported from; a URL held in a parameter or in a variable that is not a `const` with a plain name is not read; a constant of another package is read when the file imports it",
+            "a client is recognised when axios.create makes it in the file that calls it, or in a file of the same project that it is imported from; a client received as a parameter or injected is not, and a name is looked up in the variables the file makes with no scope resolution, so a parameter or a variable inside a function that is named like a client the file makes is read as that one"
+          ],
+          "kind": "http",
+          "role": "calls",
+          "via": [
+            "fetch"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables written through an alias of the environment object are not seen",
+            "variables written by Object.assign(process.env, …), jest.replaceProperty(process.env, …) or process.env = {…} are not seen"
+          ],
+          "kind": "env",
+          "role": "serves",
+          "via": [
+            "env"
+          ]
+        },
+        {
+          "blind_spots": [
+            "variables read through an alias of the environment object are not seen"
+          ],
+          "kind": "env",
+          "role": "calls",
+          "via": [
+            "env"
+          ]
+        }
+      ],
+      "root": "."
+    }
+  ],
+  "unclaimed": []
+}

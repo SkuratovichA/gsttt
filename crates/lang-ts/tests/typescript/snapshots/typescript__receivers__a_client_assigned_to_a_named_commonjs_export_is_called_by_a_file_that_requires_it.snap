@@ -117,7 +117,8 @@ expression: json
         "reads": [
           "client",
           "create",
-          "exports"
+          "exports",
+          "exports.client"
         ]
       },
       "tags": 0,

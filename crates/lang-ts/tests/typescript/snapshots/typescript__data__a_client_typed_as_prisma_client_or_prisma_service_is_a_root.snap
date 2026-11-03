@@ -140,14 +140,31 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "InvoiceRepo.client",
+            "of": "PrismaClient"
+          },
+          {
+            "name": "InvoiceRepo.store",
+            "of": "PrismaService"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
           "booking",
+          "booking.count",
+          "client.payment",
           "count",
           "findMany",
           "findUnique",
-          "refund"
+          "invoice.findMany",
+          "payment.findUnique",
+          "plain.refund",
+          "refund",
+          "refund.findMany",
+          "store.invoice"
         ]
       },
       "tags": 0,

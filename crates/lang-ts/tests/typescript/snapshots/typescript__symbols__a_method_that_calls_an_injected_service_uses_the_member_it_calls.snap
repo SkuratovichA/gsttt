@@ -109,9 +109,27 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "InvoiceResolver.invoices",
+            "of": "InvoiceService"
+          },
+          {
+            "name": "InvoiceResolver.jobs",
+            "of": "JobQueue"
+          },
+          {
+            "name": "InvoiceResolver.mail",
+            "of": "MailQueue"
+          }
+        ],
         "on_load": [],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "invoices.issue",
+          "jobs.add",
+          "mail.push"
+        ]
       },
       "tags": 0,
       "unresolved": []

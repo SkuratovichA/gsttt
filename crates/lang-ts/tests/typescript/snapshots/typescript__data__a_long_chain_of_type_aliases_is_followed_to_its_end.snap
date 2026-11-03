@@ -140,7 +140,8 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst"
+          "findFirst",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,
@@ -241,8 +242,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
+          "booking.count",
           "count",
-          "findMany"
+          "findMany",
+          "tenant.findMany"
         ]
       },
       "tags": 0,
@@ -283,7 +286,8 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst"
+          "findFirst",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,

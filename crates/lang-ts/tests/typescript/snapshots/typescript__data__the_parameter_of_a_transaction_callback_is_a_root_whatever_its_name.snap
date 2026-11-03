@@ -85,7 +85,8 @@ expression: json
         "reads": [
           "$transaction",
           "findMany",
-          "user"
+          "user",
+          "user.findMany"
         ]
       },
       "tags": 0,
@@ -200,11 +201,19 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Bookings.prisma",
+            "of": "PrismaService"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
           "booking",
-          "create"
+          "booking.create",
+          "create",
+          "prisma.$transaction"
         ]
       },
       "tags": 0,
@@ -238,7 +247,8 @@ expression: json
         "reads": [
           "findMany",
           "forEach",
-          "user"
+          "user",
+          "user.findMany"
         ]
       },
       "tags": 0,
@@ -312,7 +322,8 @@ expression: json
         "reads": [
           "$transaction",
           "findMany",
-          "user"
+          "user",
+          "user.findMany"
         ]
       },
       "tags": 0,
@@ -386,7 +397,8 @@ expression: json
         "reads": [
           "$transaction",
           "findMany",
-          "user"
+          "user",
+          "user.findMany"
         ]
       },
       "tags": 0,

@@ -128,7 +128,10 @@ expression: json
         "reads": [
           "findFirst",
           "findMany",
-          "findUnique"
+          "findUnique",
+          "tenant.findFirst",
+          "tenant.findMany",
+          "tenant.findUnique"
         ]
       },
       "tags": 0,

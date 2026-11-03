@@ -107,7 +107,8 @@ expression: json
         "reads": [
           "a",
           "b",
-          "exports"
+          "exports",
+          "exports.b"
         ]
       },
       "tags": 0,

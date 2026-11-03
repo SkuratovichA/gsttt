@@ -231,7 +231,9 @@ expression: json
         "overrides": [],
         "reads": [
           "a",
+          "a.b",
           "b",
+          "b.c",
           "c",
           "depth",
           "name"

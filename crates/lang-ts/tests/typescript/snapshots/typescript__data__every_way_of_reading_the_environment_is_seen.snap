@@ -107,7 +107,9 @@ expression: json
           "E",
           "VITE_C",
           "env",
-          "meta"
+          "env.VITE_C",
+          "meta",
+          "meta.env"
         ]
       },
       "tags": 0,

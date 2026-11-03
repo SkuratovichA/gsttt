@@ -84,10 +84,12 @@ expression: json
         "overrides": [],
         "reads": [
           "booking",
+          "booking.findMany",
           "findFirst",
           "findMany",
           "fn",
-          "tenant"
+          "tenant",
+          "tenant.findFirst"
         ]
       },
       "tags": 0,

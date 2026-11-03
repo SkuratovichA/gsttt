@@ -2956,6 +2956,38 @@ fn callers_of_a_member_of_an_interface_are_the_holders_that_name_it() {
     );
 }
 
+/// The real TypeScript connector reading `ctx.logger.error()` through an interface property that names its class, which `use.ts` never names. A file that reads `ctx.logger` and calls `error` on a value nothing types is no caller.
+#[test]
+#[scenario(
+    "typescript",
+    "A chain through an interface property reaches the file that reads it"
+)]
+fn a_chain_through_an_interface_property_reaches_the_file_that_reads_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(&repo, "logger.ts", "export class Logger { error() {} }\n");
+    write(
+        &repo,
+        "types.ts",
+        "import { Logger } from './logger';\nexport interface Ctx { logger: Logger }\n",
+    );
+    write(
+        &repo,
+        "use.ts",
+        "import { Ctx } from './types';\nexport function go(ctx: Ctx) { ctx.logger.error(); }\n",
+    );
+    write(
+        &repo,
+        "noise.ts",
+        "import { Ctx } from './types';\nexport function go(ctx: Ctx, other) { ctx.logger; other.error(); }\n",
+    );
+
+    let listed = listed_in(&sandbox, &repo, "logger.ts", "Logger.error");
+
+    assert!(listed.iter().any(|path| path == "use.ts"), "{listed:?}");
+    assert!(listed.iter().all(|path| path != "noise.ts"), "{listed:?}");
+}
+
 /// A router of one package that an app of another package mounts is served under the mount, so a change to the router reaches the client of the mounted path.
 #[test]
 #[scenario(

@@ -97,17 +97,29 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "TenantService.prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
           "booking",
+          "booking.count",
           "count",
           "findMany",
           "findUnique",
           "invoice",
+          "invoice.findMany",
           "map",
           "prisma",
-          "tenant"
+          "prisma.booking",
+          "prisma.invoice",
+          "prisma.tenant",
+          "tenant",
+          "tenant.findUnique"
         ]
       },
       "tags": 0,

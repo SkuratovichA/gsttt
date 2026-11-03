@@ -93,6 +93,7 @@ expression: json
           "a",
           "b",
           "c",
+          "c.d",
           "d",
           "e",
           "f"

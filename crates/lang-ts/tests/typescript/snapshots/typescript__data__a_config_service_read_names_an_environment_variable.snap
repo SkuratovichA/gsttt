@@ -103,11 +103,19 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "AppService.configService",
+            "of": "ConfigService"
+          }
+        ],
         "on_load": [
           "Injectable"
         ],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "configService.get"
+        ]
       },
       "tags": 0,
       "unresolved": [

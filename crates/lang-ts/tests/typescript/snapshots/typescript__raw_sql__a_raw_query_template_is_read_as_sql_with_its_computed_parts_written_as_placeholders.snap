@@ -251,11 +251,20 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Reports.prisma",
+            "of": "PrismaService"
+          }
+        ],
         "on_load": [],
         "overrides": [],
         "reads": [
           "$queryRaw",
-          "client"
+          "client",
+          "client.$queryRaw",
+          "db.client",
+          "prisma.$queryRaw"
         ]
       },
       "tags": 0,

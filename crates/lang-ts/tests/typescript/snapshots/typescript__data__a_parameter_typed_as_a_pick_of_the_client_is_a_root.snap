@@ -116,7 +116,10 @@ expression: json
           "findMany",
           "findUnique",
           "tenant",
-          "tenantBranch"
+          "tenant.findFirst",
+          "tenant.findUnique",
+          "tenantBranch",
+          "tenantBranch.findMany"
         ]
       },
       "tags": 0,

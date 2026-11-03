@@ -290,6 +290,7 @@ expression: json
         "overrides": [],
         "reads": [
           "held",
+          "held.hung",
           "hung",
           "proxied"
         ]

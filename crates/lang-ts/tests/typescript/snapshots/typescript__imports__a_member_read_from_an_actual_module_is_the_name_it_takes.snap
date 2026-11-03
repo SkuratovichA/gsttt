@@ -126,8 +126,12 @@ expression: json
         "reads": [
           "helper",
           "importActual",
+          "importActual.helper",
+          "importActual.then",
           "other",
           "requireActual",
+          "requireActual.helper",
+          "requireActual.other",
           "then",
           "third"
         ]

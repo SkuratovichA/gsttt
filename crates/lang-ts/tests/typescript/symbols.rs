@@ -5,8 +5,8 @@ use std::error::Error;
 use gsttt_scenario::scenario;
 
 use crate::support::{
-    NOTHING, declared, edges, heirs, import_line, imports, local_exports, local_names, on_load,
-    overrides, reads, run, status, uses,
+    NOTHING, declared, edges, heirs, holds, import_line, imports, local_exports, local_names,
+    on_load, overrides, pairs, reads, run, status, uses,
 };
 
 #[test]
@@ -965,6 +965,7 @@ fn a_file_records_the_members_it_reads_on_a_value_of_unknown_class() -> Result<(
 fn a_read_of_a_known_class_or_of_the_class_itself_records_no_name() -> Result<(), Box<dyn Error>> {
     let json = run("symbols-reads")?;
     assert_eq!(reads(&json, "src/known.ts"), NOTHING);
+    assert_eq!(pairs(&json, "src/known.ts"), ["repo.save"]);
     Ok(())
 }
 
@@ -1505,5 +1506,163 @@ fn a_function_required_with_commonjs_is_a_use_of_its_class() -> Result<(), Box<d
     }
     let read = reads(&json, "src/commonjs.js");
     assert!(read.iter().any(|read| read == "place"), "{read:?}");
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A field annotated or constructed with a class holds a value of it"
+)]
+fn a_field_annotated_or_constructed_with_a_class_holds_a_value_of_it() -> Result<(), Box<dyn Error>>
+{
+    let json = run("symbols-holds")?;
+    let all = holds(&json, "src/holders.ts");
+    for pair in [
+        "Field.logger of Logger",
+        "Field.built of Store",
+        "Field.maybe of Logger",
+        "Field.#secret of Logger",
+    ] {
+        assert!(all.iter().any(|held| held == pair), "{pair}: {all:?}");
+    }
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A parameter property holds a value of its class")]
+fn a_parameter_property_holds_a_value_of_its_class() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-holds")?;
+    let all = holds(&json, "src/holders.ts");
+    for pair in ["Field.injected of Logger", "Field.named of Store"] {
+        assert!(all.iter().any(|held| held == pair), "{pair}: {all:?}");
+    }
+    assert!(
+        !all.iter().any(|held| held.starts_with("Field.plain ")),
+        "a plain parameter is no member: {all:?}"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "An interface property holds a value of its class")]
+fn an_interface_property_holds_a_value_of_its_class() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-holds")?;
+    let all = holds(&json, "src/holders.ts");
+    for pair in [
+        "Shape.logger of Logger",
+        "Shape.optional of Store",
+        "Literal.logger of Logger",
+    ] {
+        assert!(all.iter().any(|held| held == pair), "{pair}: {all:?}");
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A getter or a method that returns a class holds a value of it"
+)]
+fn a_getter_or_a_method_that_returns_a_class_holds_a_value_of_it() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-holds")?;
+    let all = holds(&json, "src/holders.ts");
+    for pair in [
+        "Field.current of Logger",
+        "Field.fetch of Store",
+        "Shape.load of Store",
+        "Shape.later of Logger",
+        "Shape.view of Logger",
+    ] {
+        assert!(all.iter().any(|held| held == pair), "{pair}: {all:?}");
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A primitive, a union of classes and the class itself hold nothing"
+)]
+fn a_primitive_a_union_of_classes_and_the_class_itself_hold_nothing() -> Result<(), Box<dyn Error>>
+{
+    let json = run("symbols-holds")?;
+    assert_eq!(
+        holds(&json, "src/holders.ts"),
+        [
+            "Field.#secret of Logger",
+            "Field.built of Store",
+            "Field.current of Logger",
+            "Field.fetch of Store",
+            "Field.injected of Logger",
+            "Field.logger of Logger",
+            "Field.maybe of Logger",
+            "Field.named of Store",
+            "Literal.logger of Logger",
+            "Shape.later of Logger",
+            "Shape.load of Store",
+            "Shape.logger of Logger",
+            "Shape.optional of Store",
+            "Shape.view of Logger",
+        ],
+        "`Logger | Other`, `string`, `Date`, `Array<…>`, `number`, a type alias of a class, a method with no return type and the class itself hold nothing"
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A member read right on another is read as a pair")]
+fn a_member_read_right_on_another_is_read_as_a_pair() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-pairs")?;
+    let all = pairs(&json, "src/pairs.ts");
+    for pair in ["ctx.logger", "logger.error", "#cache.size", "size.valueOf"] {
+        assert!(all.iter().any(|read| read == pair), "{pair}: {all:?}");
+    }
+    assert_eq!(
+        all.iter()
+            .filter(|read| read.as_str() == "ctx.logger")
+            .count(),
+        1,
+        "`ctx.logger` comes from `this.ctx.logger` alone: the parameter `ctx` is a local, not a member"
+    );
+    insta::assert_json_snapshot!(json);
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A pair sees through a non-null assertion and optional chaining"
+)]
+fn a_pair_sees_through_a_non_null_assertion_and_optional_chaining() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-pairs")?;
+    let all = pairs(&json, "src/pairs.ts");
+    for pair in ["a.b", "c.d", "e.f", "f.g"] {
+        assert!(all.iter().any(|read| read == pair), "{pair}: {all:?}");
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read on what a call gives is read on the method"
+)]
+fn a_member_read_on_what_a_call_gives_is_read_on_the_method() -> Result<(), Box<dyn Error>> {
+    let json = run("symbols-pairs")?;
+    let all = pairs(&json, "src/pairs.ts");
+    for pair in ["get.name", "get.other", "load.title"] {
+        assert!(all.iter().any(|read| read == pair), "{pair}: {all:?}");
+    }
+    assert!(
+        !all.iter().any(|read| read == "x.get" || read == "x.a"),
+        "the name at the root of a chain is no `on`: {all:?}"
+    );
+    assert!(
+        !all.iter()
+            .any(|read| read == "keys.length" || read == "parse.a" || read == "env.HOME"),
+        "what is read on a builtin makes no pair: {all:?}"
+    );
     Ok(())
 }

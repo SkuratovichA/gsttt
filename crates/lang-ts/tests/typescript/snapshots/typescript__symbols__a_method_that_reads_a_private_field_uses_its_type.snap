@@ -105,9 +105,22 @@ expression: json
         ],
         "exports": [],
         "heirs": [],
+        "holds": [
+          {
+            "name": "Mailer.#jobs",
+            "of": "JobQueue"
+          },
+          {
+            "name": "Mailer.#queue",
+            "of": "MailQueue"
+          }
+        ],
         "on_load": [],
         "overrides": [],
-        "reads": []
+        "reads": [
+          "#jobs.add",
+          "#queue.push"
+        ]
       },
       "tags": 0,
       "unresolved": []
