@@ -2898,6 +2898,7 @@ fn a_changed_declaration_is_walked_with_the_declarations_of_its_file_that_use_it
         parts: vec![ChangedPart {
             file: "lib.ts".to_owned(),
             names: names.iter().map(|name| (*name).to_owned()).collect(),
+            removed: Vec::new(),
         }],
         ..by_default(&["lib.ts"])
     };

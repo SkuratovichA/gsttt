@@ -241,12 +241,12 @@ pub(super) struct Pair<'a> {
     pub old: Option<String>,
 }
 
-/// The declarations that differ in each of `pairs`, in order, `None` for a file that cannot be compared. The new version is read from the work tree. A read, a parse or a connector that fails or panics leaves its file whole and no other.
+/// The declarations that differ, and those that are gone, in each of `pairs`, in order, `None` for a file that cannot be compared. The new version is read from the work tree. A read, a parse or a connector that fails or panics leaves its file whole and no other.
 pub(super) fn changed_names(
     repo: &RepoView,
     pairs: &[Pair<'_>],
     max_file_bytes: u64,
-) -> Vec<Option<Vec<String>>> {
+) -> Vec<Option<declarations::Declarations>> {
     pairs
         .par_iter()
         .map(|pair| {

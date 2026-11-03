@@ -1316,27 +1316,265 @@ fn changed_follows_a_re_pointed_import_to_the_declarations_that_use_it() {
     assert_eq!(answer["parts"][0]["names"], value!(["now"]));
 }
 
-#[scenario(
-    "cli",
-    "--changed walks a file whole when a declaration is removed or renamed"
-)]
+/// `src/format.ts` without `formatId`.
+fn without_format_id() -> &'static str {
+    FORMAT.split("export function formatId").next().unwrap()
+}
+
+#[scenario("cli", "--changed walks the importers of a removed declaration")]
 #[test]
-fn changed_walks_a_file_whole_when_a_declaration_is_removed_or_renamed() {
+fn changed_walks_the_importers_of_a_removed_declaration() {
     let sandbox = Sandbox::new();
     let repo = formatting(&sandbox);
-    let without_id = FORMAT.split("export function formatId").next().unwrap();
-    for edited in [
-        without_id.to_owned(),
-        FORMAT.replace("formatId", "formatIdent"),
+    write(&repo, "src/format.ts", without_format_id());
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(
+        reached(&answer),
+        ["src/admin/audit.test.ts", "src/admin/audit.ts"],
+        "{answer}"
+    );
+    assert_eq!(
+        answer["parts"],
+        value!([{ "file": "src/format.ts", "names": [], "removed": ["formatId"] }])
+    );
+    let text = sandbox.run_in(&repo, &["impact", "--changed"]);
+    assert!(
+        text.stdout
+            .starts_with("impact of removed formatId in src/format.ts, within 1 hop"),
+        "{text:?}"
+    );
+}
+
+#[scenario(
+    "cli",
+    "--changed lists no importer of a removed declaration nobody imports"
+)]
+#[test]
+fn changed_lists_no_importer_of_a_removed_declaration_nobody_imports() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(&repo, "src/format.ts", FORMAT);
+    write(&repo, "src/users/page.ts", PAGE);
+    commit_all(&repo);
+    write(&repo, "src/format.ts", without_format_id());
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), Vec::<&str>::new(), "{answer}");
+    assert_eq!(answer["changed"], value!(["src/format.ts"]));
+}
+
+#[scenario("cli", "--changed walks a renamed declaration by its old name")]
+#[test]
+fn changed_walks_a_renamed_declaration_by_its_old_name() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(
+        &repo,
+        "src/keys.ts",
+        "import { formatKey } from './format';\n\nexport const key = formatKey(1);\n",
+    );
+    commit_all(&repo);
+    write(
+        &repo,
+        "src/format.ts",
+        &FORMAT.replace("formatId", "formatKey"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(
+        reached(&answer),
+        [
+            "src/admin/audit.test.ts",
+            "src/admin/audit.ts",
+            "src/keys.ts"
+        ],
+        "{answer}"
+    );
+    assert_eq!(
+        answer["parts"],
+        value!([{
+            "file": "src/format.ts",
+            "names": ["formatKey"],
+            "removed": ["formatId"]
+        }])
+    );
+}
+
+#[scenario(
+    "cli",
+    "--changed lists only the changed importers of a healthy rename"
+)]
+#[test]
+fn changed_lists_only_the_changed_importers_of_a_healthy_rename() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(
+        &repo,
+        "src/format.ts",
+        &FORMAT.replace("formatId", "formatKey"),
+    );
+    write(
+        &repo,
+        "src/admin/audit.ts",
+        &AUDIT.replace("formatId", "formatKey"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(
+        answer["changed"],
+        value!(["src/admin/audit.ts", "src/format.ts"])
+    );
+    let listed = reached(&answer);
+    assert!(
+        !listed.iter().any(|path| path.starts_with("src/users/")),
+        "{answer}"
+    );
+    assert_eq!(listed, ["src/admin/audit.test.ts"], "{answer}");
+}
+
+#[scenario(
+    "cli",
+    "--changed walks the importers of a declaration that stops being exported"
+)]
+#[test]
+fn changed_walks_the_importers_of_a_declaration_that_stops_being_exported() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    write(
+        &repo,
+        "src/format.ts",
+        &FORMAT.replace("export function formatId", "function formatId"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(
+        reached(&answer),
+        ["src/admin/audit.test.ts", "src/admin/audit.ts"],
+        "{answer}"
+    );
+    assert_eq!(answer["parts"][0]["removed"], value!(["formatId"]));
+}
+
+#[scenario("cli", "--changed walks the importers of a removed default export")]
+#[test]
+fn changed_walks_the_importers_of_a_removed_default_export() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    let base = "export default function greet(): string {\n  return 'hi';\n}\n\nexport function other(): number {\n  return 1;\n}\n";
+    write(&repo, "src/def.ts", base);
+    write(
+        &repo,
+        "src/hello.ts",
+        "import greet from './def';\n\nexport const hello = greet();\n",
+    );
+    write(
+        &repo,
+        "src/more.ts",
+        "import { other } from './def';\n\nexport const more = other();\n",
+    );
+    commit_all(&repo);
+    write(
+        &repo,
+        "src/def.ts",
+        "export function other(): number {\n  return 1;\n}\n",
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), ["src/hello.ts"], "{answer}");
+}
+
+#[scenario("cli", "--changed walks the callers of a removed member")]
+#[test]
+fn changed_walks_the_callers_of_a_removed_member() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write_order_service(&repo);
+    commit_all(&repo);
+    write(
+        &repo,
+        "src/service.ts",
+        "export class OrderService {\n  place(id: string) {}\n}\n",
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    let listed = reached(&answer);
+    assert!(listed.contains(&"src/refunds.ts"), "{answer}");
+    assert!(!listed.contains(&"src/checkout.ts"), "{answer}");
+    assert_eq!(
+        answer["parts"][0]["removed"],
+        value!(["OrderService.cancel"])
+    );
+}
+
+#[scenario("cli", "--changed walks a removed declaration through a barrel")]
+#[test]
+fn changed_walks_a_removed_declaration_through_a_barrel() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(&repo, "src/format.ts", FORMAT);
+    write(&repo, "src/star.ts", "export * from './format';\n");
+    write(
+        &repo,
+        "src/named.ts",
+        "export { formatId, formatUser } from './format';\n",
+    );
+    for (barrel, name) in [
+        ("star", "formatId"),
+        ("star", "formatUser"),
+        ("named", "formatId"),
+        ("named", "formatUser"),
     ] {
-        write(&repo, "src/format.ts", &edited);
-
-        let answer = changed(&sandbox, &repo, &[]);
-
-        assert_eq!(reached(&answer), EVERYONE, "{answer}");
-        assert!(answer.get("parts").is_none(), "{answer}");
-        git(&repo, &["checkout", "--", "."]);
+        write(
+            &repo,
+            &format!("src/use-{barrel}-{name}.ts"),
+            &format!("import {{ {name} }} from './{barrel}';\n\nexport const x = {name}(1);\n"),
+        );
     }
+    commit_all(&repo);
+    write(&repo, "src/format.ts", without_format_id());
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(
+        reached(&answer),
+        [
+            "src/named.ts",
+            "src/use-named-formatId.ts",
+            "src/use-star-formatId.ts"
+        ],
+        "{answer}"
+    );
+}
+
+#[scenario(
+    "cli",
+    "--changed walks a file whole when a declaration moves and another is removed"
+)]
+#[test]
+fn changed_walks_a_file_whole_when_a_declaration_moves_and_another_is_removed() {
+    let sandbox = Sandbox::new();
+    let repo = formatting(&sandbox);
+    let (user, rest) = without_format_id()
+        .split_once("\nfunction normalize")
+        .unwrap();
+    write(
+        &repo,
+        "src/format.ts",
+        &format!("function normalize{rest}\n{user}"),
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert_eq!(reached(&answer), EVERYONE, "{answer}");
+    assert!(answer.get("parts").is_none(), "{answer}");
 }
 
 #[scenario(
@@ -2273,4 +2511,126 @@ fn a_router_of_another_package_reaches_the_client_of_the_mounted_path() {
         value!({ "via": "contract", "role": "calls", "key": "http GET /ext/x" }),
         "{answer}"
     );
+}
+
+/// Python records no declarations, so a function removed from a module walks the module whole and lists the importer of the function that stays too.
+#[test]
+fn a_function_removed_from_a_python_module_walks_the_module_whole() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "tools/job.py",
+        "def run():\n    return 1\n\n\ndef stop():\n    return 2\n",
+    );
+    write(&repo, "tools/__init__.py", "");
+    write(&repo, "tools/main.py", "from .job import run\n\nrun()\n");
+    write(&repo, "tools/halt.py", "from .job import stop\n\nstop()\n");
+    commit_all(&repo);
+    write(&repo, "tools/job.py", "def stop():\n    return 2\n");
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert!(answer.get("parts").is_none(), "{answer}");
+    assert_eq!(
+        reached(&answer),
+        ["tools/halt.py", "tools/main.py"],
+        "{answer}"
+    );
+}
+
+/// Rust records no declarations either, so a function removed from a module walks the module whole.
+#[test]
+fn a_function_removed_from_a_rust_module_walks_the_module_whole() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "Cargo.toml",
+        "[package]\nname = \"shop\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    );
+    write(
+        &repo,
+        "src/lib.rs",
+        "pub mod job;\npub mod main_user;\npub mod halt;\n",
+    );
+    write(
+        &repo,
+        "src/job.rs",
+        "pub fn run() -> u8 {\n    1\n}\n\npub fn stop() -> u8 {\n    2\n}\n",
+    );
+    write(
+        &repo,
+        "src/main_user.rs",
+        "use crate::job::run;\n\npub fn go() -> u8 {\n    run()\n}\n",
+    );
+    write(
+        &repo,
+        "src/halt.rs",
+        "use crate::job::stop;\n\npub fn go() -> u8 {\n    stop()\n}\n",
+    );
+    commit_all(&repo);
+    write(&repo, "src/job.rs", "pub fn stop() -> u8 {\n    2\n}\n");
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert!(answer.get("parts").is_none(), "{answer}");
+    assert_eq!(
+        reached(&answer),
+        ["src/halt.rs", "src/main_user.rs"],
+        "{answer}"
+    );
+}
+
+/// The Go connector gives no blanked code to compare two versions by declaration, so a function removed from one file of a package walks the file whole and the caller of a function that stays in it is listed too.
+#[test]
+fn a_function_removed_from_a_go_package_walks_the_file_whole() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    go_module(&repo);
+    write(
+        &repo,
+        "invoice/header.go",
+        "package invoice\n\nfunc Header() string { return \"h\" }\n\nfunc Title() string { return \"t\" }\n",
+    );
+    commit_all(&repo);
+    write(
+        &repo,
+        "invoice/header.go",
+        "package invoice\n\nfunc Title() string { return \"t\" }\n",
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert!(answer.get("parts").is_none(), "{answer}");
+    assert_eq!(reached(&answer), ["report.go"], "{answer}");
+}
+
+/// A rewritten `export { b as c }` is a changed statement, which the comparison cannot tell by declaration, so the file is walked whole.
+#[test]
+fn a_rewritten_export_alias_walks_the_file_whole() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/alias.ts",
+        "function inner(): number {\n  return 1;\n}\n\nexport { inner as first };\n",
+    );
+    write(
+        &repo,
+        "src/use.ts",
+        "import { first } from './alias';\n\nexport const x = first();\n",
+    );
+    write(&repo, "src/other.ts", "import './alias';\n");
+    commit_all(&repo);
+    write(
+        &repo,
+        "src/alias.ts",
+        "function inner(): number {\n  return 1;\n}\n\nexport { inner as second };\n",
+    );
+
+    let answer = changed(&sandbox, &repo, &[]);
+
+    assert!(answer.get("parts").is_none(), "{answer}");
+    assert_eq!(reached(&answer), ["src/other.ts", "src/use.ts"], "{answer}");
 }

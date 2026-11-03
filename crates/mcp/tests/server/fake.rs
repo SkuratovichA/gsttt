@@ -121,6 +121,7 @@ impl Fake {
                 path: RepoPath::normalize(path).expect("a path from the root"),
                 kind,
                 names: None,
+                removed: Vec::new(),
             })
             .collect();
         self

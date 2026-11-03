@@ -466,6 +466,7 @@ async fn changed_asks_about_the_declarations_a_patch_changes() {
         parts: vec![ChangedPart {
             file: "lib/util.ts".to_owned(),
             names: vec!["render".to_owned()],
+            removed: Vec::new(),
         }],
         ..ImpactRequest::default()
     };
