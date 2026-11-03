@@ -146,6 +146,11 @@ When several ways reach a file at the same distance, `impact` SHALL give as its 
 - **THEN** it returns an error that says to give a contract key or part of one
 - **AND** it does not list the contracts of the index
 
+#### Scenario: Asking about a GET finds a fetch that writes no method
+- **WHEN** `GET /x` is looked up, and a TypeScript file has `fetch('/x')`
+- **THEN** the answer lists `http GET /x` with one call
+- **AND** looking up `POST /x` lists no key
+
 ### Requirement: HTTP matching
 Two HTTP keys SHALL meet when their methods are equal or either is `*`, and their paths have the same number of segments, each pair equal or `{}` on either side, with or without one prefix from the index's `http_prefixes` removed from the start of one of the two paths. A prefix SHALL NOT be removed from both paths, and SHALL NOT be removed from a path that it is all of. When both paths hold a literal segment, at least one pair SHALL be the same literal on both sides.
 
