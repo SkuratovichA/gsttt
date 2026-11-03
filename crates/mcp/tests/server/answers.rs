@@ -762,7 +762,7 @@ async fn an_answer_reaching_many_members_through_their_class_is_cut_to_the_budge
     assert_eq!(reply.text.matches("\nnote: ").count(), 1, "{}", reply.text);
     assert!(
         reply.text.contains(
-            "\nnote: 1 file holds the classes of Runner.method0000, Runner.method0001, Runner.method0002 and 1,997 more and names none of them; ask about those classes to list them\n"
+            "\nnote: 1 file holds the classes of Runner.method0000, Runner.method0001, Runner.method0002 and 1,997 more and reads none of them; ask about those classes to list them\n"
         ),
         "{}",
         reply.text

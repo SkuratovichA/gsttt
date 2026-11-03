@@ -252,28 +252,28 @@ pub enum Note {
 }
 
 impl Note {
-    /// The note as a sentence. One member names its class and the member, `1 file holds Runner and names no start`, and several say `the classes of` them, `3 files hold the classes of Runner.start, Runner.stop and name none of them`. The members are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
+    /// The note as a sentence. One member names its class and the member, `1 file holds Runner and reads no start through it`, and several say `the classes of` them, `3 files hold the classes of Runner.start, Runner.stop and name none of them`. The members are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
     fn write(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         match self {
             Self::Said(text) => f.write_str(text),
             Self::HeldClass { members, files } => {
-                let (holds, names) = if *files == 1 {
-                    ("file holds", "names")
+                let (holds, reads) = if *files == 1 {
+                    ("file holds", "reads")
                 } else {
-                    ("files hold", "name")
+                    ("files hold", "read")
                 };
                 if let [(member, class)] = members.as_slice() {
                     let short = member_in(member, class).unwrap_or(member);
                     return write!(
                         f,
-                        "{} {holds} {class} and {names} no {short}; ask about {class} to list them",
+                        "{} {holds} {class} and {reads} no {short} through it; ask about {class} to list them",
                         thousands(*files)
                     );
                 }
                 let list: Vec<String> = members.iter().map(|(member, _)| member.clone()).collect();
                 write!(
                     f,
-                    "{} {holds} the classes of {} and {names} none of them; ask about those classes to list them",
+                    "{} {holds} the classes of {} and {reads} none of them; ask about those classes to list them",
                     thousands(*files),
                     name_sentence(&list, entries)
                 )

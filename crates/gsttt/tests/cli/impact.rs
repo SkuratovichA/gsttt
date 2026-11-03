@@ -686,7 +686,9 @@ fn a_file_that_only_holds_a_class_is_counted_and_not_listed_in_typescript() {
     assert_eq!(paths(&answer["affected"]), ["src/caller.ts"], "{answer}");
     assert_eq!(
         answer["notes"],
-        value!(["1 file holds Service and names no place; ask about Service to list them"])
+        value!([
+            "1 file holds Service and reads no place through it; ask about Service to list them"
+        ])
     );
 }
 
@@ -816,7 +818,11 @@ fn a_computed_export_key_does_not_pass_an_imported_name_on() {
     );
     let helper =
         json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.js", "--name", "helper"]));
-    assert!(paths(&helper["affected"]).contains(&"src/c.js"), "{helper}");
+    assert_eq!(
+        paths(&helper["affected"]),
+        ["src/a.js", "src/c.js"],
+        "{helper}"
+    );
 }
 
 #[test]
@@ -2232,7 +2238,7 @@ fn a_method_called_on_what_a_function_returns_reaches_the_caller() {
     assert_eq!(paths(&answer["affected"]), ["app/uses.go"], "{answer}");
     assert_eq!(
         answer["notes"],
-        value!(["2 files hold Mux and name no Get; ask about Mux to list them"]),
+        value!(["2 files hold Mux and read no Get through it; ask about Mux to list them"]),
         "`app/other.go` reads `Put` and `lib/new.go` reads nothing"
     );
 }
