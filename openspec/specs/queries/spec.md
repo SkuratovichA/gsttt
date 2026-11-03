@@ -869,3 +869,10 @@ Asked about a Go method, `impact` SHALL list a file that calls it on a value a f
 #### Scenario: A method through a package variable reaches the caller
 - **WHEN** `var V2 = v2{}` is declared, a file calls `lib.V2.Make()`, and impact is asked about `v2.Make`
 - **THEN** impact lists that file
+
+### Requirement: Impact through a package required in place
+Impact SHALL reach the caller of a route that a file serves through a router made by a package required in place and mounted with a module required in place.
+
+#### Scenario: A router required in place reaches a fetch of its route
+- **WHEN** `a.js` has `require('express').Router()` with `router.get('/a', h)`, `b.js` mounts `require('./a')` at `/api`, and a TypeScript file calls `fetch('/api/a')`
+- **THEN** impact of `a.js` lists the TypeScript file
