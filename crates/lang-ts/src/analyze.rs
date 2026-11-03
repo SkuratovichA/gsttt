@@ -53,7 +53,8 @@ use crate::pathing::{is_relative, split_package};
 use crate::shape::{
     COMPUTED, ClassPrefix, Shape, assigned_value, chain_of, commonjs_exports, dotted, dotted_name,
     export_key, field_name, is_exports_object, is_open_object, jsx_chain, literal_text,
-    member_chain, property_name, property_str, static_chain, template_text, text_with, type_chain,
+    member_chain, named_callable, property_name, property_str, static_chain, template_text,
+    text_with, type_chain,
 };
 
 /// The most segments a chain rule's root can have. A root is tried at every length of the chain and each try reads the root again, so a chain of `n` names costs `n` squared without a limit, and no root a rule lists comes near this length.
@@ -1247,8 +1248,16 @@ impl<'a> Analyzer<'_, 'a> {
             return;
         };
         self.exports_unknown |= self.leaves_names_open(target, value);
-        for (name, value) in exports {
-            self.export_value(&name, value);
+        // `module.exports = function run() {}` exports the function the file declares under the name it carries, as `module.exports = run` does.
+        if target == "module.exports"
+            && let Some(name) = named_callable(assigned_value(value))
+            && self.symbols.is_callable(name)
+        {
+            self.export("default", ExportTarget::Local(name.to_owned()));
+        } else {
+            for (name, value) in exports {
+                self.export_value(&name, value);
+            }
         }
         // `module.exports = codes` exports the variable as a whole and each key of the object it holds.
         if target == "module.exports"
@@ -1717,7 +1726,13 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         {
             self.resolver_map(object);
         }
-        walk::walk_object_property(self, it);
+        match self.symbols.property(it.span.start) {
+            Some(outer) => {
+                walk::walk_object_property(self, it);
+                self.symbols.restore(outer);
+            }
+            None => walk::walk_object_property(self, it),
+        }
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {

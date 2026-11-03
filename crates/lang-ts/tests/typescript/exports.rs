@@ -44,6 +44,11 @@ fn the_names_of_a_commonjs_file_are_listed() -> Result<(), Box<dyn Error>> {
         Some(vec!["d", "e"]),
         "`exports.d = 1` and `module.exports.e = f`"
     );
+    assert_eq!(
+        exports(&json, "src/nested.js"),
+        Some(vec!["deep"]),
+        "`exports.a.b = 1` changes a member of `a` and exports no name"
+    );
     insta::assert_json_snapshot!(json);
     Ok(())
 }

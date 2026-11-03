@@ -1,6 +1,5 @@
 ---
 source: crates/lang-ts/tests/typescript/exports.rs
-assertion_line: 47
 expression: json
 ---
 {
@@ -31,7 +30,14 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "d",
+            "uses": []
+          }
+        ],
         "exports": [
           {
             "local": "f",
@@ -44,6 +50,39 @@ expression: json
           "d",
           "e",
           "exports"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [],
+      "exports": [
+        "deep"
+      ],
+      "imports": [],
+      "path": "src/nested.js",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "deep",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "reads": [
+          "a",
+          "b",
+          "deep"
         ]
       },
       "tags": 0,
@@ -69,6 +108,12 @@ expression: json
             "end": 1,
             "line": 1,
             "name": "x",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "c",
             "uses": []
           }
         ],

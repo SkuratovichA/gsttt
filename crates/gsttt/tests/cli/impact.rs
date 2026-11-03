@@ -729,6 +729,32 @@ fn a_file_that_loads_a_commonjs_module_in_a_function_and_reads_no_name_is_counte
     );
 }
 
+/// The real connector reading `CommonJS`: a file that writes its exports in place declares them, so a question about one name lists the file that reads it through a require and not the file that reads another.
+#[scenario("queries", "A name written in place lists the files that read it")]
+#[test]
+fn a_name_a_commonjs_file_writes_in_place_lists_the_files_that_read_it() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/lib.js",
+        "exports.run = function () {\n  return 1;\n};\n\nexports.stop = function () {\n  return 2;\n};\n",
+    );
+    write(
+        &repo,
+        "src/runs.js",
+        "const lib = require('./lib');\n\nmodule.exports = lib.run();\n",
+    );
+    write(
+        &repo,
+        "src/stops.js",
+        "const lib = require('./lib');\n\nmodule.exports = lib.stop();\n",
+    );
+
+    let answer = json(&sandbox.run_in(&repo, &["--json", "impact", "src/lib.js", "--name", "run"]));
+    assert_eq!(paths(&answer["affected"]), ["src/runs.js"], "{answer}");
+}
+
 #[test]
 fn a_path_the_index_does_not_hold_does_not_fail_the_others() {
     let sandbox = Sandbox::new();

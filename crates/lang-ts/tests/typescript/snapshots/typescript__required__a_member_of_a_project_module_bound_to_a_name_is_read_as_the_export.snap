@@ -45,7 +45,16 @@ expression: json
         "status": "ok"
       },
       "symbols": {
-        "declared": [],
+        "declared": [
+          {
+            "end": 3,
+            "line": 3,
+            "name": "client",
+            "uses": [
+              "axios.create"
+            ]
+          }
+        ],
         "exports": [],
         "heirs": [],
         "on_load": [
