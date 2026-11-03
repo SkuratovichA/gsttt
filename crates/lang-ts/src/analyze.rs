@@ -2294,6 +2294,12 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         } else {
             1
         };
+        // The keys of an object literal that the file wrote are no reads.
+        let known = known.max(root.map_or(0, |root| {
+            1 + self
+                .receivers
+                .literal_links(root, names.get(1..).unwrap_or_default())
+        }));
         match held {
             Some(class) => {
                 let member = names.get(1).and_then(Option::as_deref);

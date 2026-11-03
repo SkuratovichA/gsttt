@@ -990,6 +990,90 @@ fn a_member_read_on_a_global_builtin_records_no_name() -> Result<(), Box<dyn Err
 }
 
 #[test]
+#[scenario("typescript", "A key of an object literal the file wrote is no read")]
+fn a_key_of_an_object_literal_the_file_wrote_is_no_read() -> Result<(), Box<dyn Error>> {
+    let json = run("reads-literal")?;
+    for ext in ["ts", "js"] {
+        assert_eq!(
+            reads(&json, &format!("src/mock.{ext}")),
+            ["mockResolvedValueOnce", "mockReturnValueOnce"],
+            "mock.{ext}"
+        );
+        for file in ["method", "exported"] {
+            assert_eq!(
+                reads(&json, &format!("src/{file}.{ext}")),
+                NOTHING,
+                "{file}.{ext}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A member read below a key that holds another value is a read"
+)]
+fn a_member_read_below_a_key_that_holds_another_value_is_a_read() -> Result<(), Box<dyn Error>> {
+    let json = run("reads-literal")?;
+    for ext in ["ts", "js"] {
+        for (file, expected) in [
+            ("held", vec!["place"]),
+            ("made", vec!["place"]),
+            ("nested", vec!["b", "other"]),
+        ] {
+            assert_eq!(
+                reads(&json, &format!("src/{file}.{ext}")),
+                expected,
+                "{file}.{ext}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+#[scenario(
+    "typescript",
+    "A spread, a computed key, a cast or a destructuring hides no read"
+)]
+fn a_spread_a_computed_key_a_cast_or_a_destructuring_hides_no_read() -> Result<(), Box<dyn Error>> {
+    let json = run("reads-literal")?;
+    for ext in ["ts", "js"] {
+        for file in ["spread", "computed", "assigned"] {
+            assert_eq!(
+                reads(&json, &format!("src/{file}.{ext}")),
+                ["place"],
+                "{file}.{ext}"
+            );
+        }
+    }
+    assert_eq!(reads(&json, "src/cast.ts"), ["other", "place", "third"]);
+    assert_eq!(
+        reads(&json, "src/destructured.ts"),
+        ["findMany", "resource"]
+    );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A name bound again gives no shape")]
+fn a_name_bound_again_gives_no_shape() -> Result<(), Box<dyn Error>> {
+    let json = run("reads-literal")?;
+    for ext in ["ts", "js"] {
+        for file in ["reassigned", "parameter", "inner"] {
+            assert_eq!(
+                reads(&json, &format!("src/{file}.{ext}")),
+                ["place"],
+                "{file}.{ext}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 #[scenario(
     "typescript",
     "A member read on a proxy or on globalThis records the name"

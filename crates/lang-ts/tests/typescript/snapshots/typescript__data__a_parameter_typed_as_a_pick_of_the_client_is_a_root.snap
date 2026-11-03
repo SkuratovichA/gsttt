@@ -42,9 +42,7 @@ expression: json
         ],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "fn",
-          "tenant"
+          "fn"
         ]
       },
       "tags": 1,
