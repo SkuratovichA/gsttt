@@ -78,6 +78,133 @@ expression: json
         {
           "contracts": [],
           "lang": "sql",
+          "line": 4,
+          "read_by": null,
+          "text": "lower(?)",
+          "via": "sql-drivers"
+        }
+      ],
+      "exports": [
+        "lowered"
+      ],
+      "imports": [],
+      "path": "src/drizzle.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "sql",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "x",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "lowered",
+            "uses": [
+              "sql",
+              "x"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": []
+      },
+      "tags": 0,
+      "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [
+        {
+          "contracts": [],
+          "lang": "sql",
+          "line": 4,
+          "read_by": null,
+          "text": "SELECT id FROM invoices",
+          "via": "sql-drivers"
+        }
+      ],
+      "exports": [
+        "built",
+        "invoices"
+      ],
+      "imports": [],
+      "path": "src/object.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "pool",
+            "uses": []
+          },
+          {
+            "end": 2,
+            "line": 2,
+            "name": "build",
+            "uses": []
+          },
+          {
+            "end": 4,
+            "line": 4,
+            "name": "invoices",
+            "uses": [
+              "pool"
+            ]
+          },
+          {
+            "end": 6,
+            "line": 6,
+            "name": "built",
+            "uses": [
+              "build",
+              "pool"
+            ]
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "query"
+        ]
+      },
+      "tags": 0,
+      "unresolved": [
+        {
+          "detail": "pool.query",
+          "line": 6,
+          "reason": {
+            "reason": "non-literal"
+          }
+        }
+      ]
+    },
+    {
+      "contracts": [],
+      "embedded": [
+        {
+          "contracts": [],
+          "lang": "sql",
           "line": 3,
           "read_by": null,
           "text": "ls -la",
@@ -324,6 +451,63 @@ expression: json
       },
       "tags": 0,
       "unresolved": []
+    },
+    {
+      "contracts": [],
+      "embedded": [
+        {
+          "contracts": [],
+          "lang": "sql",
+          "line": 3,
+          "read_by": null,
+          "text": "SELECT id FROM audits",
+          "via": "sql-drivers"
+        }
+      ],
+      "exports": [
+        "audits",
+        "nothing"
+      ],
+      "imports": [],
+      "path": "src/value.ts",
+      "project": "ts .",
+      "status": {
+        "status": "ok"
+      },
+      "symbols": {
+        "declared": [
+          {
+            "end": 1,
+            "line": 1,
+            "name": "getDb",
+            "uses": []
+          },
+          {
+            "end": 3,
+            "line": 3,
+            "name": "audits",
+            "uses": [
+              "getDb"
+            ]
+          },
+          {
+            "end": 5,
+            "line": 5,
+            "name": "nothing",
+            "uses": []
+          }
+        ],
+        "exports": [],
+        "heirs": [],
+        "on_load": [],
+        "overrides": [],
+        "reads": [
+          "exec",
+          "query"
+        ]
+      },
+      "tags": 0,
+      "unresolved": []
     }
   ],
   "linked": [],
@@ -345,7 +529,7 @@ expression: json
         },
         {
           "blind_spots": [
-            "SQL drivers are read from a literal or a template given to query, execute, prepare or exec; a query given as an object (pool.query({ text })) is not read, and a statement whose table or whole clause is computed does not parse and names no table",
+            "SQL drivers are read from a literal or a template given to query, execute, prepare or exec, from an object given to them under text or sql, and from a template tagged sql; a query held in a variable is not read, and a statement whose table or whole clause is computed does not parse and names no table",
             "query builders and SQL built at run time are not read; raw SQL is read from a literal or a template given to $queryRaw, $executeRaw, $queryRawUnsafe or $executeRawUnsafe on a receiver of up to three segments, and from Prisma.sql, and a Prisma.sql fragment that is no statement names no table",
             "clients under a root other than the chain roots of the pack are recognised only through an alias of this, or a name the same file declares with one of the root types of the pack, directly or through a type alias of that file, or the first parameter of a callback given to $transaction; a name that the file also binds anywhere else to anything but this or a root type is not recognised (function a(tx2: PrismaClient) beside items.map(tx2 => tx2) reads no table), and a root type that the file declares as a type of its own is that local type",
             "a root type is not read when the file imports it under another name (PrismaClient as Base), reaches it through a renamed namespace (P.TransactionClient), writes it as typeof a name, or aliases an import type of it (type Db = import('@prisma/client').PrismaClient)",

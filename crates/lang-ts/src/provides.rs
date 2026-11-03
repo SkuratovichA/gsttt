@@ -53,7 +53,7 @@ pub(crate) fn provides(packs: &[Pack]) -> Vec<Provide> {
 }
 
 /// What the `sql-drivers` pack does not read.
-const SQL_DRIVERS_BLIND_SPOT: &str = "SQL drivers are read from a literal or a template given to query, execute, prepare or exec; a query given as an object (pool.query({ text })) is not read, and a statement whose table or whole clause is computed does not parse and names no table";
+const SQL_DRIVERS_BLIND_SPOT: &str = "SQL drivers are read from a literal or a template given to query, execute, prepare or exec, from an object given to them under text or sql, and from a template tagged sql; a query held in a variable is not read, and a statement whose table or whole clause is computed does not parse and names no table";
 
 fn blind_spots(kind: &ContractKind, role: Role) -> Vec<String> {
     let spots: &[&str] = match (kind, role) {

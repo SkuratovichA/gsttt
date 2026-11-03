@@ -698,6 +698,27 @@ pub(crate) fn chain_of(expr: &Expression<'_>) -> Option<Vec<Option<String>>> {
     push_chain(expr, &mut names).then_some(names)
 }
 
+/// The callee of a call on a value no name stands for, `pool.request().query(…)` or `new sql.Request().query(…)` as `().query`: a static member access whose object, through more static members, is a call, a `new` or an `await`. `None` for any other callee, so `/x/.exec(…)` and `a.b.query(…)` are not such calls. Only a pattern that names no receiver can match the result.
+pub(crate) fn on_a_value(callee: &Expression<'_>) -> Option<String> {
+    let Expression::StaticMemberExpression(member) = callee.get_inner_expression() else {
+        return None;
+    };
+    let mut object = member.object.get_inner_expression();
+    loop {
+        match object {
+            Expression::StaticMemberExpression(inner) => {
+                object = inner.object.get_inner_expression();
+            }
+            Expression::CallExpression(_)
+            | Expression::NewExpression(_)
+            | Expression::AwaitExpression(_) => {
+                return Some(format!("().{}", member.property.name));
+            }
+            _ => return None,
+        }
+    }
+}
+
 /// Like [`chain_of`] for an expression that is already a member access.
 pub(crate) fn member_chain(member: &MemberExpression<'_>) -> Option<Vec<Option<String>>> {
     let mut names = Vec::new();
