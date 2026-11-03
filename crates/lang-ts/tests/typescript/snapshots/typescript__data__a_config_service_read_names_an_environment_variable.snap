@@ -102,6 +102,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Injectable"
         ]

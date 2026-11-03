@@ -111,6 +111,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Controller",
           "Get"

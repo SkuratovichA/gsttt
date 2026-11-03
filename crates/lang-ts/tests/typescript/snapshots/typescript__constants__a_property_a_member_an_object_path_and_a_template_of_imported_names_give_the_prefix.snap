@@ -142,6 +142,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "BASE",
           "Controller",
@@ -197,6 +198,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,

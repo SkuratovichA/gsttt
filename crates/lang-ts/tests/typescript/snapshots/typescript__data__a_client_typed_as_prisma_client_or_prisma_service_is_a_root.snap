@@ -139,6 +139,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -184,6 +185,12 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "PrismaService",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": []
       },
       "tags": 0,

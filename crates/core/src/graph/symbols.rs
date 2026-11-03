@@ -78,6 +78,8 @@ struct Span {
     on_load_count: u32,
     exports: u32,
     export_count: u32,
+    heirs: u32,
+    heir_count: u32,
 }
 
 impl Table {
@@ -131,6 +133,11 @@ impl Table {
             self.push(&export.name);
             self.push(&export.local);
         }
+        let heirs = len_u32(self.ends.len());
+        for heir in &symbols.heirs {
+            self.push(&heir.name);
+            self.push(&heir.of);
+        }
         Span {
             decls,
             decl_count: len_u32(symbols.declared.len()),
@@ -138,6 +145,8 @@ impl Table {
             on_load_count: len_u32(symbols.on_load.len()),
             exports,
             export_count: len_u32(symbols.exports.len()),
+            heirs,
+            heir_count: len_u32(symbols.heirs.len()),
         }
     }
 
@@ -227,6 +236,16 @@ impl<'g> FileSymbols<'g> {
             (table.text(name), table.text(name.saturating_add(1)))
         })
     }
+
+    /// Each name that takes the members of another, as the name and the head it takes them from, sorted.
+    pub fn heirs(self) -> impl ExactSizeIterator<Item = (&'g str, &'g str)> + 'g {
+        let table = self.table;
+        let first = self.span.heirs;
+        (0..self.span.heir_count).map(move |offset| {
+            let name = first.saturating_add(offset.saturating_mul(2));
+            (table.text(name), table.text(name.saturating_add(1)))
+        })
+    }
 }
 
 /// One declaration of a file.
@@ -262,7 +281,7 @@ impl<'g> Declaration<'g> {
 
 #[cfg(test)]
 mod tests {
-    use crate::fact::{Declared, LocalExport};
+    use crate::fact::{Declared, Heir, LocalExport};
     use crate::testing::owned;
 
     use super::*;
@@ -286,6 +305,10 @@ mod tests {
             exports: vec![LocalExport {
                 name: "default".to_owned(),
                 local: "run".to_owned(),
+            }],
+            heirs: vec![Heir {
+                name: "Sub".to_owned(),
+                of: "Base".to_owned(),
             }],
         }
     }
@@ -320,6 +343,7 @@ mod tests {
         );
         assert_eq!(read.on_load().collect::<Vec<_>>(), ["setup"]);
         assert_eq!(read.exports().collect::<Vec<_>>(), [("default", "run")]);
+        assert_eq!(read.heirs().collect::<Vec<_>>(), [("Sub", "Base")]);
         assert_eq!(read.len(), 2);
         assert_eq!(read.declaration(1).map(Declaration::name), Some("stop"));
         assert!(read.declaration(2).is_none());

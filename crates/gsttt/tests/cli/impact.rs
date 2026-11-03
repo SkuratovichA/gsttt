@@ -797,7 +797,17 @@ fn asked_about_the_class_every_caller_of_a_member_is_listed() {
 
 /// The `affected` entries of the impact of `name` declared in `src/svc.ts`, as each path with the names of its callers.
 fn callers_of(sandbox: &Sandbox, repo: &Path, name: &str) -> Vec<(String, Vec<String>)> {
-    let answer = json(&sandbox.run_in(repo, &["--json", "impact", "src/svc.ts", "--name", name]));
+    callers_in(sandbox, repo, "src/svc.ts", name)
+}
+
+/// The `affected` entries of the impact of `name` declared in `file`, as each path with the names of its callers.
+fn callers_in(
+    sandbox: &Sandbox,
+    repo: &Path,
+    file: &str,
+    name: &str,
+) -> Vec<(String, Vec<String>)> {
+    let answer = json(&sandbox.run_in(repo, &["--json", "impact", file, "--name", name]));
     answer["affected"]
         .as_array()
         .unwrap()
@@ -1434,5 +1444,92 @@ fn changed_reads_the_whitespace_inside_a_template_as_a_change() {
     assert_eq!(
         outside["parts"],
         value!([{ "file": "src/sql.ts", "names": [] }])
+    );
+}
+
+/// The real connector reading classes that take the members of another: a subclass in the file of its base, a generated-style subclass whose instance a constructor receives, and a constant that holds an instance.
+#[test]
+fn a_member_passes_on_to_what_takes_it_in_typescript() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/filemap.ts",
+        "export class FileMap<V> {\n  set(key: string, value?: V) {}\n  get(key: string) {}\n}\n\nexport class ModuleMap extends FileMap<string> {}\n",
+    );
+    write(
+        &repo,
+        "src/loader.ts",
+        "import { ModuleMap } from './filemap';\n\nexport function load(file: string) {\n  new ModuleMap().set(file);\n}\n",
+    );
+    write(
+        &repo,
+        "src/version-base.ts",
+        "export class VersionServiceBase {\n  count() {}\n  reset() {}\n}\n",
+    );
+    write(
+        &repo,
+        "src/version.ts",
+        "import { VersionServiceBase } from './version-base';\n\nexport class VersionService extends VersionServiceBase {}\n",
+    );
+    write(
+        &repo,
+        "src/totals.ts",
+        "import { VersionService } from './version';\n\nexport class Totals {\n  constructor(private readonly service: VersionService) {}\n\n  sum() {\n    return this.service.count();\n  }\n}\n",
+    );
+    write(
+        &repo,
+        "src/logger.ts",
+        "export class Logger {\n  error() {}\n  info() {}\n}\n",
+    );
+    write(
+        &repo,
+        "src/log.ts",
+        "import { Logger } from './logger';\n\nexport const logger = new Logger();\n",
+    );
+    write(
+        &repo,
+        "src/failure.ts",
+        "import { logger } from './log';\n\nexport function fail() {\n  logger.error();\n}\n",
+    );
+    write(
+        &repo,
+        "src/notice.ts",
+        "import { logger } from './log';\n\nexport function notice() {\n  logger.info();\n}\n",
+    );
+
+    let owned = |names: &[&str]| {
+        names
+            .iter()
+            .map(|&name| name.to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        callers_in(&sandbox, &repo, "src/filemap.ts", "FileMap.set"),
+        [
+            ("src/filemap.ts".to_owned(), owned(&["ModuleMap"])),
+            ("src/loader.ts".to_owned(), owned(&["load"]))
+        ],
+        "`ModuleMap` extends the class, which is a use of the class alone"
+    );
+    assert_eq!(
+        callers_in(
+            &sandbox,
+            &repo,
+            "src/version-base.ts",
+            "VersionServiceBase.count"
+        ),
+        [
+            ("src/totals.ts".to_owned(), owned(&["Totals.sum"])),
+            ("src/version.ts".to_owned(), owned(&["VersionService"]))
+        ]
+    );
+    assert_eq!(
+        callers_in(&sandbox, &repo, "src/logger.ts", "Logger.error"),
+        [
+            ("src/failure.ts".to_owned(), owned(&["fail"])),
+            ("src/log.ts".to_owned(), owned(&["logger"]))
+        ],
+        "`notice.ts` calls `info`, and the constant that holds the instance uses the class alone"
     );
 }

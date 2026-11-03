@@ -66,6 +66,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "axios.create"
         ]
@@ -102,6 +103,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "api.get"
         ]

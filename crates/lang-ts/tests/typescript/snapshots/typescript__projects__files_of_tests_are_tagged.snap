@@ -29,6 +29,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 1,
@@ -47,6 +48,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 1,
@@ -65,6 +67,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,
@@ -83,6 +86,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 1,

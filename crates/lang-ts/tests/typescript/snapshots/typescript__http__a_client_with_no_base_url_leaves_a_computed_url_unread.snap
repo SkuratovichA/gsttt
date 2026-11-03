@@ -142,6 +142,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "axios.create",
           "host"

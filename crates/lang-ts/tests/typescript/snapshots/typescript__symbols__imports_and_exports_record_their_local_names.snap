@@ -119,6 +119,7 @@ expression: json
             "name": "g"
           }
         ],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,

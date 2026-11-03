@@ -66,11 +66,17 @@ expression: json
             "line": 5,
             "name": "all",
             "uses": [
-              "prisma"
+              "prisma.bookingItem"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "prisma",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": [
           "PrismaClient"
         ]

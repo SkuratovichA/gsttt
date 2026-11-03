@@ -56,6 +56,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "express.Router",
           "router"
@@ -104,6 +105,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "express"
         ]
@@ -155,6 +157,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "router",
           "server.app"

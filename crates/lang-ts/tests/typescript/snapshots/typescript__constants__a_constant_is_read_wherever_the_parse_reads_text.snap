@@ -72,6 +72,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Module",
           "UsersController"
@@ -132,6 +133,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "API",
           "axios.create",
@@ -202,6 +204,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "bootstrap"
         ]
@@ -261,6 +264,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "MOUNT",
           "app",
@@ -336,6 +340,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "BASE",
           "Controller",

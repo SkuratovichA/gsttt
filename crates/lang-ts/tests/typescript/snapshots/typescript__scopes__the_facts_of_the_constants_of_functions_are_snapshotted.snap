@@ -130,6 +130,7 @@ expression: "run(\"scopes-locals\")?"
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,

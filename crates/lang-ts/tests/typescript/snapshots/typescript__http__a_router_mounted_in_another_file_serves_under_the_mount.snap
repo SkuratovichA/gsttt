@@ -76,6 +76,7 @@ expression: json
             "name": "default"
           }
         ],
+        "heirs": [],
         "on_load": [
           "Router",
           "api",
@@ -145,6 +146,7 @@ expression: json
             "name": "default"
           }
         ],
+        "heirs": [],
         "on_load": [
           "api",
           "app",
@@ -199,6 +201,7 @@ expression: json
             "name": "default"
           }
         ],
+        "heirs": [],
         "on_load": [
           "Router",
           "router"

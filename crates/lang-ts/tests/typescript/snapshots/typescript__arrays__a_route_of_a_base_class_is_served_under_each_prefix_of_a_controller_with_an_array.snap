@@ -62,6 +62,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Get"
         ]
@@ -125,6 +126,12 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "ItemsController",
+            "of": "ItemsControllerBase"
+          }
+        ],
         "on_load": [
           "Controller"
         ]

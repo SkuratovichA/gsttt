@@ -1692,6 +1692,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 self.call(it, &callee);
             }
         }
+        if matches!(it.callee, Expression::Super(_)) {
+            self.symbols.super_use("constructor");
+        }
         let outer = self.symbols.call(&it.callee);
         walk::walk_call_expression(self, it);
         self.symbols.restore(outer);
@@ -1716,6 +1719,9 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                 MemberExpression::StaticMemberExpression(member) => {
                     let property = member.property.name.as_str();
                     self.member_of_load(&member.object, property);
+                    if matches!(member.object.get_inner_expression(), Expression::Super(_)) {
+                        self.symbols.super_use(property);
+                    }
                     // `new Service().run()` reads one member of the class it constructs.
                     if let Expression::NewExpression(new) = member.object.get_inner_expression()
                         && let Some(class) = dotted_name(&new.callee)

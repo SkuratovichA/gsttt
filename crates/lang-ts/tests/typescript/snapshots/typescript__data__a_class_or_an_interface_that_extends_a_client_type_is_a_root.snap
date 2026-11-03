@@ -162,11 +162,33 @@ expression: json
             "line": 29,
             "name": "count",
             "uses": [
-              "made"
+              "made.tenant"
             ]
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "Audited",
+            "of": "PrismaClient"
+          },
+          {
+            "name": "Logged",
+            "of": "Audited"
+          },
+          {
+            "name": "Narrow",
+            "of": "Pick"
+          },
+          {
+            "name": "Wide",
+            "of": "Narrow"
+          },
+          {
+            "name": "made",
+            "of": "Logged"
+          }
+        ],
         "on_load": [
           "Logged"
         ]
@@ -224,7 +246,9 @@ expression: json
             "end": 6,
             "line": 4,
             "name": "PrismaService.onModuleInit",
-            "uses": []
+            "uses": [
+              "PrismaClient.$connect"
+            ]
           },
           {
             "end": 15,
@@ -250,6 +274,12 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "PrismaService",
+            "of": "PrismaClient"
+          }
+        ],
         "on_load": []
       },
       "tags": 0,
@@ -310,6 +340,16 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [
+          {
+            "name": "Cache",
+            "of": "Map"
+          },
+          {
+            "name": "Shape",
+            "of": "Base"
+          }
+        ],
         "on_load": []
       },
       "tags": 0,

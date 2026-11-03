@@ -65,6 +65,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "axios.create"
         ]
@@ -101,6 +102,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "client.get"
         ]
@@ -148,6 +150,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "axios",
           "httpClient"
@@ -185,6 +188,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "clients.httpClient"
         ]
@@ -225,6 +229,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "clients"
         ]

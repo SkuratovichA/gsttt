@@ -154,10 +154,11 @@ fn close_over(symbols: FileSymbols<'_>, mut seeded: BTreeSet<usize>) -> (BTreeSe
     let mut load = false;
     while !fresh.is_empty() {
         let (names, classes) = referred(symbols, &fresh);
-        load = load || loads_any(symbols, &names, &classes);
+        // Inside one file a subclass and a value of the class are reached through the use of the class itself, so the closure needs no heirs.
+        load = load || loads_any(symbols, &names, &classes, &[]);
         fresh.clear();
         pending.retain(|&index| {
-            let refers_to_fresh = uses_any(symbols, index, &names, &classes);
+            let refers_to_fresh = uses_any(symbols, index, &names, &classes, &[]);
             if refers_to_fresh {
                 fresh.push(index);
             }
@@ -169,18 +170,29 @@ fn close_over(symbols: FileSymbols<'_>, mut seeded: BTreeSet<usize>) -> (BTreeSe
 }
 
 /// Whether the declaration at `index` refers to one of the `names` or `classes`.
-fn uses_any(symbols: FileSymbols<'_>, index: usize, names: &[&str], classes: &[&str]) -> bool {
+fn uses_any(
+    symbols: FileSymbols<'_>,
+    index: usize,
+    names: &[&str],
+    classes: &[&str],
+    heirs: &[(&str, &str)],
+) -> bool {
     symbols.declaration(index).is_some_and(|decl| {
         decl.uses()
-            .any(|used| refers(names, classes, Some(decl.name()), used))
+            .any(|used| refers(names, classes, heirs, Some(decl.name()), used))
     })
 }
 
 /// Whether the code that runs as the file loads refers to one of the `names` or `classes`.
-fn loads_any(symbols: FileSymbols<'_>, names: &[&str], classes: &[&str]) -> bool {
+fn loads_any(
+    symbols: FileSymbols<'_>,
+    names: &[&str],
+    classes: &[&str],
+    heirs: &[(&str, &str)],
+) -> bool {
     symbols
         .on_load()
-        .any(|used| refers(names, classes, None, used))
+        .any(|used| refers(names, classes, heirs, None, used))
 }
 
 /// The names of the declarations at `indices`, and the classes of those that are members, each sorted and once.
@@ -655,9 +667,24 @@ struct Via<'a> {
 struct Local<'a> {
     name: &'a str,
     member: Option<&'a str>,
+    /// The member the walk asked about when the local is a namespace, whose `member` is the class and is all the namespace is told of it: `place` for `lib` with the member `Base`, when the walk is at `Base.place`.
+    inner: Option<&'a str>,
 }
 
-impl Local<'_> {
+impl<'a> Local<'a> {
+    /// The member that a name taking the members of what the local stands for takes: none for a local the walk reached no member of.
+    fn passes(&self) -> Option<&'a str> {
+        self.member.and(self.inner.or(self.member))
+    }
+
+    /// Whether a name that takes the members of `of` takes them from what the local stands for. Through a namespace `of` is written `lib.Base`.
+    fn extends(&self, of: &str) -> bool {
+        match self.inner {
+            Some(_) => member_in(of, self.name) == self.member,
+            None => of == self.name,
+        }
+    }
+
     /// Whether a declaration that uses `used` refers to what the local stands for. A use of the local alone is a use of every member of it, and `Local.member` is a use of that member only, which for a namespace is a name of the file and for a class a member of it.
     fn refers(&self, used: &str) -> bool {
         match self.member {
@@ -918,13 +945,21 @@ impl<'w, 'a> Step<'w, 'a> {
                     .insert(((*member).to_owned(), class.to_owned()));
             }
         }
+        let mut heirs: Vec<(&'a str, &'a str)> = Vec::new();
+        for name in &names {
+            if let Some((class, member)) = split_member(name) {
+                for heir in heirs_of(symbols, |of| of == class, member) {
+                    heirs.push((heir, member));
+                }
+            }
+        }
         let mut found = false;
         for index in 0..symbols.len() {
-            if uses_any(symbols, index, &names, &classes) {
+            if uses_any(symbols, index, &names, &classes, &heirs) {
                 found |= self.unit(file, Part::Decl(index));
             }
         }
-        if loads_any(symbols, &names, &classes) {
+        if loads_any(symbols, &names, &classes, &heirs) {
             found |= self.unit(file, Part::Load);
         }
         if !found {
@@ -949,6 +984,13 @@ impl<'w, 'a> Step<'w, 'a> {
             };
             let names = self.exported_as(file, symbols, local);
             exported.extend(names.into_iter().map(|name| name.with(member)));
+            // A name that takes the members of the class takes this one too.
+            if let Some(member) = member {
+                for heir in heirs_of(symbols, |of| of == local, member) {
+                    let names = self.exported_as(file, symbols, heir);
+                    exported.extend(names.into_iter().map(|name| name.with(Some(member))));
+                }
+            }
         }
         if exported.contains(&Name::Any) {
             exported = BTreeSet::from([Name::Any]);
@@ -1044,6 +1086,7 @@ impl<'w, 'a> Step<'w, 'a> {
             }
         }
         if let Some(symbols) = symbols {
+            self.pass_on(importer, symbols, &mut via, work);
             via.used |= self.users(importer, symbols, &via.locals);
         }
         let passes = std::mem::take(&mut via.passes);
@@ -1071,6 +1114,34 @@ impl<'w, 'a> Step<'w, 'a> {
                     names: passes,
                 },
             );
+        }
+    }
+
+    /// The names of `importer` that take the members of a local with a member, which the importer uses as that local: each is a local too, and its importers get the member in the same hop. Whether the importer is listed is left to its own uses of the locals.
+    fn pass_on(
+        &mut self,
+        importer: FileId,
+        symbols: FileSymbols<'a>,
+        via: &mut Via<'a>,
+        work: &mut VecDeque<(FileId, Name<'a>)>,
+    ) {
+        let mut heirs = Vec::new();
+        for local in &via.locals {
+            if let Some(member) = local.passes() {
+                for heir in heirs_of(symbols, |of| local.extends(of), member) {
+                    heirs.push((heir, member));
+                }
+            }
+        }
+        for (heir, member) in heirs {
+            via.locals.push(Local {
+                name: heir,
+                member: Some(member),
+                inner: None,
+            });
+            for exported in self.exported_as(importer, symbols, heir) {
+                work.push_back((importer, exported.with(Some(member))));
+            }
         }
     }
 
@@ -1118,9 +1189,14 @@ impl<'w, 'a> Step<'w, 'a> {
                         work.push_back((importer, Name::Is(bound).with(member)));
                         continue;
                     }
+                    let inner = match name {
+                        Name::Member(_, asked) if taken == "*" => Some(asked),
+                        _ => None,
+                    };
                     via.locals.push(Local {
                         name: bound,
                         member,
+                        inner,
                     });
                     for exported in self.exported_as(importer, symbols, bound) {
                         via.used = true;
@@ -1369,11 +1445,48 @@ fn narrowest<'g>(symbols: FileSymbols<'g>, line: Line) -> impl Iterator<Item = u
 }
 
 /// Whether code that uses `used` refers to one of the `names` of the declarations reached, or to a member of them. `classes` are the classes of the reached names that are members. A use of such a class alone is a use of every member of it, and a use of `Class.member` is a use of that member and of `Class`. The code of `owner` belongs to a class it is a member of, which it does not refer to by being in it. The load of a file has no owner.
-fn refers(names: &[&str], classes: &[&str], owner: Option<&str>, used: &str) -> bool {
+fn refers(
+    names: &[&str],
+    classes: &[&str],
+    heirs: &[(&str, &str)],
+    owner: Option<&str>,
+    used: &str,
+) -> bool {
     let outside = |class: &str| owner.is_none_or(|owner| !belongs_to(owner, class));
     holds(names, &used)
         || (holds(classes, &used) && outside(used))
         || class_of(used).is_some_and(|class| holds(names, &class) && outside(class))
+        || heirs.iter().any(|&(heir, member)| {
+            member_in(used, heir) == Some(member) || (used == heir && outside(heir))
+        })
+}
+
+/// The names of a file that take `member` from what `extends` accepts as the head they take the members of, through the heirs of the heirs, without a name that declares the member itself, which keeps its own callers and passes its own member on. A private member is not taken. Names come in the order of the file's heirs, once each.
+fn heirs_of<'g>(
+    symbols: FileSymbols<'g>,
+    extends: impl Fn(&str) -> bool,
+    member: &str,
+) -> Vec<&'g str> {
+    let mut found: Vec<&'g str> = Vec::new();
+    if member.starts_with('#') {
+        return found;
+    }
+    let declares = |heir: &str| {
+        symbols
+            .declarations()
+            .any(|decl| member_in(decl.name(), heir) == Some(member))
+    };
+    loop {
+        let before = found.len();
+        for (name, of) in symbols.heirs() {
+            if !found.contains(&name) && (extends(of) || found.contains(&of)) && !declares(name) {
+                found.push(name);
+            }
+        }
+        if found.len() == before {
+            return found;
+        }
+    }
 }
 
 /// `Class` and `member` for the member `Class.member`.

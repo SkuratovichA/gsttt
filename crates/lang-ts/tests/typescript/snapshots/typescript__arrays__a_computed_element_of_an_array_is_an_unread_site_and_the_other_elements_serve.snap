@@ -95,6 +95,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "Controller",
           "Post",
@@ -134,6 +135,7 @@ expression: json
           }
         ],
         "exports": [],
+        "heirs": [],
         "on_load": []
       },
       "tags": 0,

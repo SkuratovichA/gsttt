@@ -64,6 +64,7 @@ expression: json
       "symbols": {
         "declared": [],
         "exports": [],
+        "heirs": [],
         "on_load": [
           "i18n.use",
           "initReactI18next"

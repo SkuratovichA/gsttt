@@ -2934,3 +2934,267 @@ fn a_name_goes_on_through_a_namespace_a_barrel_exports_from_a_local() {
         Some(vec!["open".to_owned()])
     );
 }
+
+/// What a reader sees of the files an answer lists: the path, the distance and the callers.
+fn shown(answer: &Impact) -> Vec<(&str, u32, Vec<&str>)> {
+    rows(&answer.affected)
+        .into_iter()
+        .map(|(path, distance, _, callers, _)| (path, distance, callers))
+        .collect()
+}
+
+/// `base.ts` declares `Base` with `place` and `cancel`, and `sub.ts` `Sub`, which extends it. `a.ts` imports `Sub` and its `run` uses `Sub.place`, and `b.ts` its `stop` uses `Sub.cancel`.
+fn heirs() -> Tree {
+    Tree::new()
+        .symbols(
+            "base.ts",
+            Code::new()
+                .declaration("Base", (1, 9), &[])
+                .declaration("Base.place", (2, 3), &[])
+                .declaration("Base.cancel", (5, 6), &[]),
+        )
+        .exports("base.ts", &["Base"])
+        .imports_names("sub.ts", "base.ts", &["Base"])
+        .symbols(
+            "sub.ts",
+            Code::new()
+                .declaration("Sub", (1, 3), &["Base"])
+                .heir("Sub", "Base"),
+        )
+        .exports("sub.ts", &["Sub"])
+        .imports_names("a.ts", "sub.ts", &["Sub"])
+        .symbols(
+            "a.ts",
+            Code::new().declaration("run", (1, 3), &["Sub.place"]),
+        )
+        .exports("a.ts", &[])
+        .imports_names("b.ts", "sub.ts", &["Sub"])
+        .symbols(
+            "b.ts",
+            Code::new().declaration("stop", (1, 3), &["Sub.cancel"]),
+        )
+        .exports("b.ts", &[])
+}
+
+#[scenario("queries", "A caller through a subclass is a caller of the member")]
+#[test]
+fn a_caller_through_a_subclass_is_a_caller_of_the_member() {
+    let answer = ask(&heirs().build(), "base.ts", &["Base.place"], None);
+
+    assert_eq!(
+        shown(&answer),
+        [("a.ts", 1, vec!["run"]), ("sub.ts", 1, vec!["Sub"])]
+    );
+}
+
+#[scenario("queries", "A subclass that declares the member keeps its own callers")]
+#[test]
+fn a_subclass_that_declares_the_member_keeps_its_own_callers() {
+    let own = |uses: &[&str]| {
+        Tree::new()
+            .symbols(
+                "base.ts",
+                Code::new()
+                    .declaration("Base", (1, 9), &[])
+                    .declaration("Base.place", (2, 3), &[]),
+            )
+            .exports("base.ts", &["Base"])
+            .imports_names("sub.ts", "base.ts", &["Base"])
+            .symbols(
+                "sub.ts",
+                Code::new()
+                    .declaration("Sub", (1, 6), &[])
+                    .declaration("Sub.place", (2, 4), uses)
+                    .heir("Sub", "Base"),
+            )
+            .exports("sub.ts", &["Sub"])
+            .imports_names("a.ts", "sub.ts", &["Sub"])
+            .symbols(
+                "a.ts",
+                Code::new().declaration("run", (1, 3), &["Sub.place"]),
+            )
+            .exports("a.ts", &[])
+            .build()
+    };
+
+    let apart = ask(&own(&[]), "base.ts", &["Base.place"], None);
+    let calling = ask(&own(&["Base.place"]), "base.ts", &["Base.place"], None);
+
+    assert_eq!(paths(&apart.affected), NONE);
+    assert_eq!(shown(&calling), [("sub.ts", 1, vec!["Sub.place"])]);
+}
+
+#[scenario("queries", "A member goes through a chain of subclasses")]
+#[test]
+fn a_member_goes_through_a_chain_of_subclasses() {
+    let across = heirs()
+        .imports_names("sub2.ts", "sub.ts", &["Sub"])
+        .symbols(
+            "sub2.ts",
+            Code::new()
+                .declaration("Sub2", (1, 3), &[])
+                .heir("Sub2", "Sub"),
+        )
+        .exports("sub2.ts", &["Sub2"])
+        .imports_names("c.ts", "sub2.ts", &["Sub2"])
+        .symbols(
+            "c.ts",
+            Code::new().declaration("go", (1, 3), &["Sub2.place"]),
+        )
+        .exports("c.ts", &[])
+        .build();
+    let within = heirs()
+        .symbols(
+            "sub.ts",
+            Code::new()
+                .declaration("Sub", (1, 3), &["Base"])
+                .declaration("Sub2", (5, 7), &[])
+                .heir("Sub", "Base")
+                .heir("Sub2", "Sub"),
+        )
+        .exports("sub.ts", &["Sub", "Sub2"])
+        .imports_names("c.ts", "sub.ts", &["Sub2"])
+        .symbols(
+            "c.ts",
+            Code::new().declaration("go", (1, 3), &["Sub2.place"]),
+        )
+        .exports("c.ts", &[])
+        .build();
+
+    let across = ask(&across, "base.ts", &["Base.place"], None);
+    let within = ask(&within, "base.ts", &["Base.place"], None);
+
+    assert!(shown(&across).contains(&("c.ts", 1, vec!["go"])));
+    assert!(shown(&within).contains(&("c.ts", 1, vec!["go"])));
+}
+
+#[scenario(
+    "queries",
+    "A top-level value of a class is a caller's way to the member"
+)]
+#[test]
+fn a_top_level_value_of_a_class_is_a_callers_way_to_the_member() {
+    let index = Tree::new()
+        .symbols(
+            "service.ts",
+            Code::new()
+                .declaration("OrderService", (1, 9), &[])
+                .declaration("OrderService.place", (2, 3), &[])
+                .declaration("OrderService.cancel", (5, 6), &[]),
+        )
+        .exports("service.ts", &["OrderService"])
+        .imports_names("store.ts", "service.ts", &["OrderService"])
+        .symbols("store.ts", Code::new().heir("orders", "OrderService"))
+        .exports("store.ts", &["orders"])
+        .imports_names("page.ts", "store.ts", &["orders"])
+        .symbols(
+            "page.ts",
+            Code::new().declaration("render", (1, 3), &["orders.place"]),
+        )
+        .exports("page.ts", &[])
+        .imports_names("other.ts", "store.ts", &["orders"])
+        .symbols(
+            "other.ts",
+            Code::new().declaration("clear", (1, 3), &["orders.cancel"]),
+        )
+        .exports("other.ts", &[])
+        .build();
+
+    let answer = ask(&index, "service.ts", &["OrderService.place"], None);
+
+    assert_eq!(shown(&answer), [("page.ts", 1, vec!["render"])]);
+}
+
+#[scenario("queries", "A subclass in the file of its base")]
+#[test]
+fn a_subclass_in_the_file_of_its_base() {
+    let index = Tree::new()
+        .symbols(
+            "filemap.ts",
+            Code::new()
+                .declaration("FileMap", (1, 9), &[])
+                .declaration("FileMap.set", (2, 3), &[])
+                .declaration("ModuleMap", (11, 12), &["FileMap"])
+                .declaration("build", (14, 16), &["ModuleMap.set"])
+                .heir("ModuleMap", "FileMap"),
+        )
+        .exports("filemap.ts", &["FileMap", "ModuleMap"])
+        .imports_names("user.ts", "filemap.ts", &["ModuleMap"])
+        .symbols(
+            "user.ts",
+            Code::new().declaration("load", (1, 3), &["ModuleMap.set"]),
+        )
+        .exports("user.ts", &[])
+        .build();
+
+    let answer = ask(&index, "filemap.ts", &["FileMap.set"], None);
+
+    assert_eq!(
+        shown(&answer),
+        [
+            ("filemap.ts", 1, vec!["ModuleMap", "build"]),
+            ("user.ts", 1, vec!["load"])
+        ]
+    );
+}
+
+#[scenario("queries", "A private member does not pass on")]
+#[test]
+fn a_private_member_does_not_pass_on() {
+    let index = Tree::new()
+        .symbols(
+            "base.ts",
+            Code::new()
+                .declaration("Base", (1, 9), &[])
+                .declaration("Base.#secret", (2, 3), &[]),
+        )
+        .exports("base.ts", &["Base"])
+        .imports_names("sub.ts", "base.ts", &["Base"])
+        .symbols("sub.ts", Code::new().heir("Sub", "Base"))
+        .exports("sub.ts", &["Sub"])
+        .imports_names("a.ts", "sub.ts", &["Sub"])
+        .symbols(
+            "a.ts",
+            Code::new().declaration("run", (1, 3), &["Sub.#secret"]),
+        )
+        .exports("a.ts", &[])
+        .build();
+
+    let answer = ask(&index, "base.ts", &["Base.#secret"], None);
+
+    assert_eq!(paths(&answer.affected), NONE);
+}
+
+#[scenario("queries", "A member goes on through a namespace")]
+#[test]
+fn a_member_goes_on_through_a_namespace() {
+    let index = Tree::new()
+        .symbols(
+            "lib.ts",
+            Code::new()
+                .declaration("Base", (1, 9), &[])
+                .declaration("Base.place", (2, 3), &[])
+                .declaration("Base.cancel", (5, 6), &[]),
+        )
+        .exports("lib.ts", &["Base"])
+        .imports_as("sub.ts", "lib.ts", &[("*", "lib")])
+        .symbols("sub.ts", Code::new().heir("Sub", "lib.Base"))
+        .exports("sub.ts", &["Sub"])
+        .imports_names("a.ts", "sub.ts", &["Sub"])
+        .symbols(
+            "a.ts",
+            Code::new().declaration("run", (1, 3), &["Sub.place"]),
+        )
+        .exports("a.ts", &[])
+        .imports_names("b.ts", "sub.ts", &["Sub"])
+        .symbols(
+            "b.ts",
+            Code::new().declaration("stop", (1, 3), &["Sub.cancel"]),
+        )
+        .exports("b.ts", &[])
+        .build();
+
+    let answer = ask(&index, "lib.ts", &["Base.place"], None);
+
+    assert_eq!(shown(&answer), [("a.ts", 1, vec!["run"])]);
+}
