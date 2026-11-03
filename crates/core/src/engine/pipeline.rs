@@ -18,8 +18,8 @@ use serde_json::{Map, Value};
 use super::declarations;
 use super::files::{FileState, Stamp};
 use crate::connector::{
-    ConnectorError, DynConnector, DynProject, LinkFile, LinkInput, Linked, LinkedFact, Meta,
-    PrepareFile, Provide, SourceFile,
+    ConnectorError, DynConnector, DynProject, LinkFile, LinkInput, Linked, LinkedFact,
+    LinkedOverride, Meta, PrepareFile, Provide, SourceFile,
 };
 use crate::fact::{
     ContractFact, FileFacts, ParseFailure, Resolution, ResolvedImport, UnresolvedReason,
@@ -53,6 +53,8 @@ pub struct Output {
     pub linked: Vec<LinkedFact>,
     /// Sites a project left to `link` that it could not read either, sorted by file, then line and detail, once each. [`Output::unread_of`] finds the run of a file by that order.
     pub unread: Vec<(FileId, UnresolvedSite)>,
+    /// Heads that `link` found for names across files, sorted by file, once each. [`Output::overrides_of`] finds the run of a file by that order.
+    pub overrides: Vec<LinkedOverride>,
     /// Connector calls that failed outside a single file's parse.
     pub problems: Vec<Problem>,
 }
@@ -501,9 +503,11 @@ pub fn execute(
     }
     let mut linked_facts = Vec::new();
     let mut unread = Vec::new();
+    let mut overrides = Vec::new();
     for (linked, link_problem) in linked {
         linked_facts.extend(linked.facts);
         unread.extend(linked.unread);
+        overrides.extend(linked.overrides);
         problems.extend(link_problem);
     }
     linked_facts.sort_by_key(|fact| fact.file);
@@ -511,6 +515,8 @@ pub fn execute(
         (a_file, a.line, &a.detail, &a.reason).cmp(&(b_file, b.line, &b.detail, &b.reason))
     });
     unread.dedup();
+    overrides.sort();
+    overrides.dedup();
 
     let output = Output {
         projects: project_runs(&projects),
@@ -518,6 +524,7 @@ pub fn execute(
         unclaimed,
         linked: linked_facts,
         unread,
+        overrides,
         problems,
     };
     let phases = Phases {
@@ -887,6 +894,7 @@ fn left_to_link(project: &dyn DynProject, input: &LinkInput<'_, [u8]>) -> Linked
     Linked {
         facts: Vec::new(),
         unread: unread.unwrap_or_default(),
+        ..Linked::default()
     }
 }
 
@@ -989,6 +997,13 @@ impl Output {
             .map(|(_, site)| site)
     }
 
+    /// The heads the link found for the names of `file`.
+    pub fn overrides_of(&self, file: FileId) -> &[LinkedOverride] {
+        let start = self.overrides.partition_point(|found| found.file < file);
+        let end = self.overrides.partition_point(|found| found.file <= file);
+        self.overrides.get(start..end).unwrap_or_default()
+    }
+
     /// The output as JSON, with paths in place of file ids and `<connector> <root>` in place of project ids, for snapshots and for looking at what a connector made of a tree.
     pub fn to_json(&self, repo: &RepoView) -> Value {
         let path = |id: FileId| {
@@ -1079,6 +1094,21 @@ impl Output {
                 })
                 .collect();
             output.insert("unread".to_owned(), Value::Array(unread));
+        }
+        if !self.overrides.is_empty() {
+            let overrides = self
+                .overrides
+                .iter()
+                .map(|found| {
+                    let mut entry = Map::new();
+                    entry.insert("file".to_owned(), path(found.file));
+                    entry.insert("name".to_owned(), found.name.clone().into());
+                    entry.insert("owner".to_owned(), path(found.owner));
+                    entry.insert("head".to_owned(), found.head.clone().into());
+                    Value::Object(entry)
+                })
+                .collect();
+            output.insert("overrides".to_owned(), Value::Array(overrides));
         }
         output.insert(
             "unclaimed".to_owned(),

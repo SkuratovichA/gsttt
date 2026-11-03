@@ -2209,6 +2209,45 @@ fn a_file_with_methods_of_a_type_does_not_pass_the_type_on() {
     assert_eq!(paths(&answer["affected"]), ["command.go"], "{answer}");
 }
 
+#[scenario("go", "A caller through an interface is listed by impact")]
+#[test]
+fn a_go_method_is_reached_through_an_interface_its_type_satisfies() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.work.path();
+    write(dir, "go.mod", "module example.com/shop\n\ngo 1.22\n");
+    write(
+        dir,
+        "store/pg.go",
+        "package store\n\ntype PG struct{}\n\nfunc (p *PG) Get(id string) (*User, error) { return nil, nil }\n",
+    );
+    write(
+        dir,
+        "store/cache.go",
+        "package store\n\ntype Cache struct{}\n\nfunc (c *Cache) Get(key int) string { return \"\" }\n",
+    );
+    write(
+        dir,
+        "svc/svc.go",
+        "package svc\n\ntype Store interface {\n\tGet(id string) (*User, error)\n}\n",
+    );
+    write(
+        dir,
+        "svc/use.go",
+        "package svc\n\nfunc Run(s Store) {\n\ts.Get(\"x\")\n}\n",
+    );
+
+    let answer = json(&sandbox.run(&["--json", "impact", "store/pg.go", "--name", "PG.Get"]));
+    assert!(
+        paths(&answer["affected"]).contains(&"svc/use.go"),
+        "{answer}"
+    );
+    let answer = json(&sandbox.run(&["--json", "impact", "store/cache.go", "--name", "Cache.Get"]));
+    assert!(
+        !paths(&answer["affected"]).contains(&"svc/use.go"),
+        "{answer}"
+    );
+}
+
 #[scenario("go", "An edge of a package carries only the names its target exports")]
 #[test]
 fn an_edge_of_a_package_carries_only_the_names_its_target_exports() {

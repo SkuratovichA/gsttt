@@ -477,6 +477,7 @@ impl Project for NotesProject {
                 .iter()
                 .flat_map(|file| file.extra.unread.iter().map(|site| (file.id, site.clone())))
                 .collect(),
+            ..Linked::default()
         }
     }
 }

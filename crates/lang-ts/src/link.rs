@@ -47,7 +47,11 @@ pub(crate) fn link(input: &LinkInput<'_, TsExtra>, packs: &[Pack]) -> Linked {
         );
     }
     unread.extend(resolved.unread);
-    Linked { facts, unread }
+    Linked {
+        facts,
+        unread,
+        ..Linked::default()
+    }
 }
 
 /// The places of a file that only the link turns into facts, with the code that names each.

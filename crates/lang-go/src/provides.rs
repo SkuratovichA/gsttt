@@ -10,6 +10,8 @@ use gsttt_core::rules::Pack;
 const SQL_GAPS: [&str; 1] = ["SQL held in a variable or built by a call"];
 
 /// Gaps of every Go project, whatever its packs: contracts no pack of this connector reads.
+///
+/// A gap that is no contract stays here too: the link of method sets reads the files of one module, so a type satisfies an interface of another module of the repository without being found (`links_across_projects` is false). A type alias spelt in one signature and not in the other is no match either: `Put(k Key)` with `type Key = string` does not meet `Put(k string)`.
 fn always() -> Vec<(ContractKind, Role, &'static str)> {
     vec![
         (

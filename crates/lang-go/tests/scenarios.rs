@@ -89,6 +89,23 @@ impl Tree {
             .collect()
     }
 
+    /// The interfaces the link found for types, as `file: type -> file-of-interface Interface`.
+    fn overrides(&self) -> Vec<String> {
+        self.output
+            .overrides
+            .iter()
+            .map(|found| {
+                format!(
+                    "{}: {} -> {} {}",
+                    self.path_of(found.file),
+                    found.name,
+                    self.path_of(found.owner),
+                    found.head
+                )
+            })
+            .collect()
+    }
+
     /// The declarations of a file as `name L<start>-<end>: uses`.
     fn declared(&self, path: &str) -> Vec<String> {
         let symbols = self.file(path).facts.symbols.as_ref().expect("symbols");
@@ -1435,6 +1452,362 @@ type D T
 ",
     )]);
     assert_eq!(t.heirs("a.go"), ["A T"]);
+}
+
+const STORE_IFACE: &str = "package svc
+
+type Store interface {
+	Get(id string) (*User, error)
+}
+";
+
+const USE: &str = "package svc
+
+func Run(s Store) {
+	s.Get(\"x\")
+}
+";
+
+#[gsttt_scenario::scenario("go", "A method is reached through an interface its type satisfies")]
+#[test]
+fn a_method_is_reached_through_an_interface_its_type_satisfies() {
+    let t = module(&[
+        (
+            "store/pg.go",
+            "package store
+
+type PG struct{}
+
+func (p *PG) Get(id string) (*User, error) { return nil, nil }
+",
+        ),
+        ("svc/svc.go", STORE_IFACE),
+        ("svc/use.go", USE),
+    ]);
+    assert_eq!(t.overrides(), ["store/pg.go: PG -> svc/svc.go Store"]);
+}
+
+#[gsttt_scenario::scenario("go", "A method of another signature is no implementation")]
+#[test]
+fn a_method_of_another_signature_is_no_implementation() {
+    let t = module(&[
+        (
+            "store/cache.go",
+            "package store
+
+type Cache struct{}
+
+func (c *Cache) Get(key int) string { return \"\" }
+",
+        ),
+        (
+            "store/other.go",
+            "package store
+
+type Pkg struct{}
+
+func (c *Pkg) Get(id string, more ...string) (*User, error) { return nil, nil }
+",
+        ),
+        ("svc/svc.go", STORE_IFACE),
+        ("svc/use.go", USE),
+    ]);
+    assert_eq!(t.overrides(), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("go", "A type needs every method of the interface")]
+#[test]
+fn a_type_needs_every_method_of_the_interface() {
+    let t = module(&[
+        (
+            "store/one.go",
+            "package store
+
+type One struct{}
+
+func (One) Get(id string) int { return 0 }
+",
+        ),
+        (
+            "store/two.go",
+            "package store
+
+type Two struct{}
+
+func (Two) Get(id string) int { return 0 }
+
+func (Two) Put(id string) {}
+",
+        ),
+        (
+            "svc/svc.go",
+            "package svc
+
+type Store interface {
+	Get(id string) int
+	Put(name string)
+}
+",
+        ),
+    ]);
+    assert_eq!(t.overrides(), ["store/two.go: Two -> svc/svc.go Store"]);
+}
+
+#[gsttt_scenario::scenario("go", "The methods of a package count together")]
+#[test]
+fn the_methods_of_a_package_count_together() {
+    let t = module(&[
+        ("store/pg.go", "package store\n\ntype PG struct{}\n"),
+        (
+            "store/get.go",
+            "package store\n\nfunc (PG) Get(id string) int { return 0 }\n",
+        ),
+        (
+            "store/put.go",
+            "package store\n\nfunc (PG) Put(name string) {}\n",
+        ),
+        (
+            "svc/svc.go",
+            "package svc
+
+type Store interface {
+	Get(a string) int
+	Put(b string)
+}
+",
+        ),
+    ]);
+    assert_eq!(
+        t.overrides(),
+        [
+            "store/get.go: PG -> svc/svc.go Store",
+            "store/put.go: PG -> svc/svc.go Store",
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "An embedded type lends its methods")]
+#[test]
+fn an_embedded_type_lends_its_methods() {
+    let t = module(&[
+        (
+            "lib/base.go",
+            "package lib\n\ntype Base struct{}\n\nfunc (Base) Get(id string) int { return 0 }\n",
+        ),
+        (
+            "app/local.go",
+            "package app
+
+type Local struct{}
+
+func (Local) Get(id string) int { return 0 }
+
+type Wrap struct {
+	Local
+}
+
+func (Wrap) Put(name string) {}
+",
+        ),
+        (
+            "app/t.go",
+            "package app
+
+import \"example.com/m/lib\"
+
+type T struct {
+	lib.Base
+}
+
+func (T) Put(name string) {}
+
+type Store interface {
+	Get(id string) int
+	Put(name string)
+}
+",
+        ),
+    ]);
+    assert_eq!(
+        t.overrides(),
+        [
+            "app/local.go: Local -> app/t.go Store",
+            "app/local.go: Wrap -> app/t.go Store",
+            "app/t.go: T -> app/t.go Store",
+            "lib/base.go: Base -> app/t.go Store",
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "A type that lends its methods is a head in its own files")]
+#[test]
+fn a_type_that_lends_its_methods_is_a_head_in_its_own_files() {
+    let t = module(&[
+        (
+            "jobs/base.go",
+            "package jobs\n\ntype Base struct{}\n\nfunc (Base) Name() string { return \"\" }\n",
+        ),
+        (
+            "jobs/job.go",
+            "package jobs\n\ntype Job struct {\n\tBase\n}\n\nfunc (Job) Run() {}\n",
+        ),
+        (
+            "jobs/task.go",
+            "package jobs\n\ntype Task interface {\n\tName() string\n\tRun()\n}\n",
+        ),
+        (
+            "use/use.go",
+            "package use\n\nimport \"example.com/m/jobs\"\n\nfunc Use(t jobs.Task) string { t.Run(); return t.Name() }\n",
+        ),
+    ]);
+    assert_eq!(
+        t.overrides(),
+        [
+            "jobs/base.go: Base -> jobs/task.go Task",
+            "jobs/job.go: Job -> jobs/task.go Task",
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "Names inside a function type do not count")]
+#[test]
+fn names_inside_a_function_type_do_not_count() {
+    let t = module(&[
+        (
+            "mem/tree.go",
+            "package mem
+
+type Tree struct{}
+
+func (Tree) Walk(fn func(path string, n int) error) error { return nil }
+func (Tree) Pick(f func(a, b int) (int, error), g []func(x string) bool) {}
+func (Tree) Half(fn func(path string, n int) error) error { return nil }
+",
+        ),
+        (
+            "store/store.go",
+            "package store
+
+type Walker interface {
+	Walk(visit func(p string, count int) error) error
+	Pick(f func(c, d int) (int, error), h []func(y string) bool)
+}
+
+type Half interface {
+	Half(visit func(p string) error) error
+}
+",
+        ),
+    ]);
+    assert_eq!(
+        t.overrides(),
+        ["mem/tree.go: Tree -> store/store.go Walker"]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "An interface that embeds a generic one is a head")]
+#[test]
+fn an_interface_that_embeds_a_generic_one_is_a_head() {
+    let t = module(&[
+        (
+            "mem/is.go",
+            "package mem
+
+type IS struct{}
+
+func (IS) Get(k string) int { return 0 }
+func (IS) Size() int        { return 0 }
+",
+        ),
+        (
+            "store/store.go",
+            "package store
+
+type Getter[T any] interface {
+	Get(k string) T
+}
+
+type IntStore interface {
+	Getter[int]
+	Size() int
+}
+",
+        ),
+    ]);
+    assert_eq!(
+        t.overrides(),
+        [
+            "mem/is.go: IS -> store/store.go Getter",
+            "mem/is.go: IS -> store/store.go IntStore",
+            "store/store.go: IntStore -> store/store.go Getter",
+        ]
+    );
+}
+
+#[gsttt_scenario::scenario("go", "An interface with a union is no head")]
+#[test]
+fn an_interface_with_a_union_is_no_head() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+type Num interface {
+	~int | ~string
+	Get() int
+}
+
+type Only interface {
+	int
+	Get() int
+}
+
+type T struct{}
+
+func (T) Get() int { return 0 }
+",
+    )]);
+    assert_eq!(t.overrides(), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("go", "An interface that knows no method is no head")]
+#[test]
+fn an_interface_that_knows_no_method_is_no_head() {
+    let t = module(&[(
+        "a.go",
+        "package m
+
+type Nothing interface{}
+
+type Also interface {
+	Nothing
+}
+
+type T struct{}
+
+func (T) Get() int { return 0 }
+",
+    )]);
+    assert_eq!(t.overrides(), Vec::<String>::new());
+}
+
+#[gsttt_scenario::scenario("go", "Package clause separates a test package")]
+#[test]
+fn a_package_clause_separates_a_test_package() {
+    let t = module(&[
+        (
+            "foo/t.go",
+            "package foo\n\ntype T struct{}\n\nfunc (T) Get() int { return 0 }\n",
+        ),
+        (
+            "foo/t_test.go",
+            "package foo_test\n\ntype T struct{}\n\nfunc (T) Get() string { return \"\" }\n",
+        ),
+        (
+            "other/i.go",
+            "package other\n\ntype I interface {\n\tGet() int\n}\n",
+        ),
+    ]);
+    assert_eq!(t.overrides(), ["foo/t.go: T -> other/i.go I"]);
 }
 
 #[gsttt_scenario::scenario("go", "A package variable takes the members of what it holds")]

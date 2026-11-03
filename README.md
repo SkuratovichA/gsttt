@@ -140,7 +140,7 @@ Every number, with the command that measured it, is in [`bench/results/benchmark
 <summary>Go</summary>
 
 - A method called on a value whose type the file does not show, so a file that holds only such a caller is not listed by `impact --name`.
-- Calls through an interface, which are not followed to the types that implement it, and methods promoted from an embedded type.
+- Calls through an interface, which are followed to the types of the same Go module that have every method of it in the same shape, and not to the types of another module, and methods promoted from an embedded type. A type alias spelt in one signature and not in the other is no match: `Put(k Key)` with `type Key = string` does not meet `Put(k string)`.
 - Build tags and `GOOS` suffixes: every file of a package counts, whatever its constraint.
 - `replace` directives of `go.mod` and `go.work` files: a module is read from its own `go.mod` alone.
 - Files that use the Go 1.26 form `new(expr)`: the grammar gsttt reads with does not know it yet, so such a file is read as recovered. It keeps its declarations, exports and imports, but inside the function that holds the form some uses may be lost.

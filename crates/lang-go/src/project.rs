@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
-use gsttt_core::connector::{Parsed, Project, Provide, SourceFile, salt_of};
+use gsttt_core::connector::{LinkInput, Linked, Parsed, Project, Provide, SourceFile, salt_of};
 use gsttt_core::fact::{Import, Resolution};
 use gsttt_core::ids::FileId;
 use gsttt_core::path::RepoPath;
@@ -11,10 +11,11 @@ use gsttt_core::repo::RepoView;
 use gsttt_core::rules::Pack;
 
 use crate::files::{MANIFEST, is_go_source, is_manifest};
+use crate::interfaces::GoExtra;
 use crate::manifest::read_go_mod;
 
 /// Bumped when what the reader makes of a file changes without a change to the facts' shape, so that stored facts are read again.
-const READER_VERSION: &str = "4";
+const READER_VERSION: &str = "5";
 
 /// One file of a package, as `prepare` keeps it to resolve imports of the package.
 #[derive(Debug)]
@@ -117,7 +118,7 @@ pub(crate) fn open_projects(repo: &RepoView, packs: &[Pack]) -> Vec<GoProject> {
 }
 
 impl Project for GoProject {
-    type Extra = ();
+    type Extra = GoExtra;
 
     fn root(&self) -> &str {
         &self.root
@@ -135,7 +136,7 @@ impl Project for GoProject {
         crate::provides::provides(&self.packs)
     }
 
-    fn parse(&self, file: &SourceFile<'_>) -> Parsed<()> {
+    fn parse(&self, file: &SourceFile<'_>) -> Parsed<GoExtra> {
         crate::parse::parse(self, file)
     }
 
@@ -145,5 +146,12 @@ impl Project for GoProject {
 
     fn resolve(&self, from: &RepoPath, import: &Import) -> Resolution {
         crate::resolve::resolve(self, from, import)
+    }
+
+    fn link(&self, input: &LinkInput<'_, GoExtra>) -> Linked {
+        Linked {
+            overrides: crate::interfaces::link(input),
+            ..Linked::default()
+        }
     }
 }

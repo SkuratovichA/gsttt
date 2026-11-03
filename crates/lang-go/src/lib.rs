@@ -3,6 +3,7 @@
 mod analyze;
 mod file;
 mod files;
+mod interfaces;
 mod manifest;
 mod names;
 mod parse;
