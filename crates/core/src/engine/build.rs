@@ -5,11 +5,12 @@ use std::time::Instant;
 
 use foldhash::fast::RandomState;
 
+use super::generated::Rules;
 use super::pipeline::{Output, display_root};
 use crate::connector::LinkedFact;
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
-use crate::fact::{Line, ParseStatus, UnresolvedReason, UnresolvedSite};
+use crate::fact::{FileTags, Line, ParseStatus, UnresolvedReason, UnresolvedSite};
 use crate::glob::glob_set;
 use crate::graph::{ContractSite, GraphBuilder};
 use crate::ids::{FileId, Id};
@@ -79,6 +80,8 @@ pub fn build_index(
         })
         .collect();
 
+    // What the tree says is generated is read again on every build: a `.gitattributes` can change without any file it names changing.
+    let generated = Rules::read(repo);
     let mut skipped = Vec::new();
     for file in &output.files {
         let Some(entry) = slot_of_project
@@ -98,7 +101,10 @@ pub fn build_index(
             }
             status => entry.count_file(file.id, status),
         }
-        graph.tag(file.id, file.facts.tags);
+        let by_name = repo
+            .path(file.id)
+            .map_or(FileTags::NONE, |path| generated.tags(path));
+        graph.tag(file.id, file.facts.tags | by_name);
         graph.exports(file.id, file.facts.exports.as_deref());
         graph.symbols(file.id, file.facts.symbols.as_ref());
         graph.linked_overrides(file.id, output.overrides_of(file.id));

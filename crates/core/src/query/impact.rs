@@ -40,6 +40,10 @@ pub struct ImpactRequest {
     pub no_tests: bool,
     /// What a caller of the library says to get the tests listed, such as `ask with tests=true`. The line that counts the tests left out carries it in brackets. Nothing is added when this is `None`.
     pub tests_hint: Option<&'static str>,
+    /// Leave the files tagged as generated out of the answer, and count them instead. They are listed in a group of their own when this is false. A file that is both a test and generated is a test. The walk is the same either way.
+    pub no_generated: bool,
+    /// What a caller of the library says to get the generated files listed, such as `ask with generated=true`. The line that counts them carries it in brackets. Nothing is added when this is `None`.
+    pub generated_hint: Option<&'static str>,
     /// Files of `files` of which only these declarations changed. The walk starts from them and from the declarations of the file that use them, and a file with an entry that names nothing is not walked. A file without an entry is walked whole, and so is every file when `names` is given.
     pub parts: Vec<ChangedPart>,
 }
@@ -112,6 +116,15 @@ pub struct Impact {
     /// What the request said to get the tests listed, shown beside the count of those left out. Not part of the JSON, which holds the count alone.
     #[serde(skip)]
     tests_hint: Option<&'static str>,
+    /// The files tagged as generated that the change reaches within the depth, nearest first and then by path, without those that are tests. Empty when the request left them out. Left out of the JSON when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub generated: Vec<Affected>,
+    /// How many files tagged as generated the change reaches within the depth that the request left out. Left out when there are none.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub generated_left_out: u32,
+    /// What the request said to get the generated files listed, shown beside the count of those left out. Not part of the JSON, which holds the count alone.
+    #[serde(skip)]
+    generated_hint: Option<&'static str>,
     /// The paths reported deleted that the index no longer holds.
     pub deleted: Vec<Deleted>,
     /// The paths the index does not hold that nobody reported deleted.
@@ -474,12 +487,29 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     // The walk with no depth exists only to count what the depth leaves behind and to give each listed test the distance, the reason and the load it has at the end.
     let to_the_end = reach_asked(index, &crossing, &changed, &names, &by_part, None);
     let is_test = |hit: &Hit| graph.tags(hit.file).contains(FileTags::TEST);
+    // A generated test is still a test to run, so the tests keep it.
+    let is_generated = |hit: &Hit| {
+        let tags = graph.tags(hit.file);
+        tags.contains(FileTags::GENERATED) && !tags.contains(FileTags::TEST)
+    };
     let affected = walked
         .hits
         .iter()
-        .filter(|hit| !is_test(hit))
+        .filter(|hit| !is_test(hit) && !is_generated(hit))
         .filter_map(|hit| entry(index, hit))
         .collect();
+    let mut generated = Vec::new();
+    let mut generated_left_out = 0;
+    for hit in walked.hits.iter().filter(|hit| is_generated(hit)) {
+        let Some(file) = entry(index, hit) else {
+            continue;
+        };
+        if request.no_generated {
+            generated_left_out += 1;
+        } else {
+            generated.push(file);
+        }
+    }
     let mut tests = Vec::new();
     let mut tests_left_out = 0;
     // A test that swaps a module for a factory mock runs none of its code, so it is listed only where it still reaches the change without that module.
@@ -556,6 +586,9 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         tests,
         tests_left_out,
         tests_hint: request.tests_hint,
+        generated,
+        generated_left_out,
+        generated_hint: request.generated_hint,
         deleted,
         unknown,
         notes,
@@ -876,7 +909,7 @@ impl Impact {
         if self.footer.freshness != Freshness::Fresh {
             return;
         }
-        for list in [&mut self.affected, &mut self.tests] {
+        for list in [&mut self.affected, &mut self.tests, &mut self.generated] {
             for affected in list.iter_mut().take(LIST_CAP) {
                 if affected.spot.is_none() {
                     continue;
@@ -931,6 +964,20 @@ impl Answer for Impact {
             }
             f.write_str("\n")?;
         }
+        list(
+            f,
+            "generated files",
+            &self.generated,
+            entries,
+            affected_line,
+        )?;
+        if self.generated_left_out > 0 {
+            write!(f, "generated: {}", noun(self.generated_left_out, "file"))?;
+            if let Some(hint) = self.generated_hint {
+                write!(f, " ({hint})")?;
+            }
+            f.write_str("\n")?;
+        }
         for part in self.parts.iter().filter(|part| part.subjects().is_empty()) {
             writeln!(
                 f,
@@ -957,6 +1004,8 @@ impl Answer for Impact {
             && self.affected.is_empty()
             && self.tests.is_empty()
             && self.tests_left_out == 0
+            && self.generated.is_empty()
+            && self.generated_left_out == 0
         {
             let subject = if self.names.is_empty() {
                 summary(&self.changed)

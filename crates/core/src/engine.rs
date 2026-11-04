@@ -6,6 +6,7 @@ pub mod build;
 pub mod changes;
 mod declarations;
 pub mod files;
+mod generated;
 pub mod keys;
 pub mod packs;
 pub mod pipeline;

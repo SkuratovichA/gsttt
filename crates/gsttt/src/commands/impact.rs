@@ -8,6 +8,9 @@ use crate::cli::ImpactArgs;
 use crate::error::CliError;
 use crate::streams::{Io, Outcome};
 
+/// What the line that counts the generated files left out says to get them listed.
+const GENERATED_HINT: &str = "ask with --generated";
+
 /// `gsttt impact <path>...` and `gsttt impact --changed`.
 pub(super) fn impact(
     session: &Session<'_>,
@@ -28,6 +31,8 @@ fn request(session: &Session<'_>, args: &ImpactArgs) -> Result<ImpactRequest, Cl
         depth: args.depth,
         names: args.names.clone(),
         no_tests: args.no_tests,
+        no_generated: !args.generated,
+        generated_hint: Some(GENERATED_HINT),
         ..ImpactRequest::default()
     };
     if args.changed {

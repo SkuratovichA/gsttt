@@ -17,6 +17,7 @@ use serde_json::{Map, Value};
 
 use super::declarations;
 use super::files::{FileState, Stamp};
+use super::generated;
 use crate::connector::{
     ConnectorError, DynConnector, DynProject, LinkFile, LinkInput, Linked, LinkedFact,
     LinkedOverride, Meta, PrepareFile, Provide, SourceFile,
@@ -667,12 +668,19 @@ fn parse(
                 path: file.path,
                 text: &text,
             };
-            contain_reading(text.len(), || project.parse(&source)).unwrap_or_else(|message| {
-                (
-                    FileFacts::failed(ParseFailure::Panicked { message }),
-                    Vec::new(),
-                )
-            })
+            contain_reading(text.len(), || project.parse(&source)).map_or_else(
+                |message| {
+                    (
+                        FileFacts::failed(ParseFailure::Panicked { message }),
+                        Vec::new(),
+                    )
+                },
+                |(mut facts, extra)| {
+                    // The marker is read from the content here, where the text is, so the cached facts carry it.
+                    facts.tags = facts.tags | generated::marked(file.path, &text);
+                    (facts, extra)
+                },
+            )
         }
         Err(failure) => (FileFacts::failed(failure), Vec::new()),
     };
