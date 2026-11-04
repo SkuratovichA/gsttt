@@ -265,6 +265,23 @@ const TOOLS: [&str; 7] = [
     "index_status",
 ];
 
+#[gsttt_scenario::scenario("distribution", "The skill holds no advice to lengthen an answer")]
+#[test]
+fn the_skill_holds_no_advice_to_lengthen_an_answer() {
+    let skill = fs::read_to_string(workspace_root().join("plugin/skills/gsttt/SKILL.md")).unwrap();
+
+    for advice in [
+        "tests: true",
+        "larger depth",
+        "4294967295",
+        "Ask for every entry",
+    ] {
+        assert!(!skill.contains(advice), "the skill says `{advice}`");
+    }
+    assert!(skill.contains("generated=true"));
+    assert!(skill.contains("starts with `> `"));
+}
+
 #[gsttt_scenario::scenario(
     "distribution",
     "The skill names a tool only by the id the manifest gives"
