@@ -28,8 +28,11 @@ async fn initialize_carries_instructions() {
         .as_deref()
         .expect("the server gives instructions");
 
-    assert!(instructions.contains("Call impact before changing a file that others may use"));
-    assert!(instructions.contains("with changed=true before finishing a task"));
+    assert!(
+        instructions.contains("Call impact before you edit a file that other files import or call")
+    );
+    assert!(instructions.contains("again with changed=true before you finish a change"));
+    assert!(instructions.contains("load the schema of impact before the first call"));
     assert!(
         instructions
             .contains("when coverage names a gap, say so instead of assuming nothing is affected")
@@ -42,6 +45,24 @@ async fn initialize_carries_instructions() {
     );
     // The words are part of the contract with the model, so a change to them is read before it is accepted.
     insta::assert_snapshot!(instructions);
+}
+
+#[scenario("mcp", "The instructions say when in the work to call impact")]
+#[tokio::test]
+async fn the_instructions_say_to_call_impact_before_an_edit_and_to_load_its_schema() {
+    let session = Session::start(Fake::small()).await;
+
+    let info = session.server_info();
+    let instructions = info
+        .instructions
+        .as_deref()
+        .expect("the server gives instructions");
+
+    assert!(
+        instructions.contains("Call impact before you edit a file that other files import or call")
+    );
+    assert!(instructions.contains("again with changed=true before you finish a change"));
+    assert!(instructions.contains("If your client lists the tools by name only, load the schema of impact before the first call"));
 }
 
 #[tokio::test]

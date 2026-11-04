@@ -16,6 +16,9 @@ use crate::source::IndexSource;
 /// The most characters an answer holds: it stays under Claude Code's warning at 10,000 tokens, and at half the 50,000 characters above which Claude Code saves a result to a file.
 pub const BUDGET: usize = 25_000;
 
+/// What the line that counts the tests left out tells a model to do to have them listed.
+const TESTS_HINT: &str = "ask with tests=true";
+
 /// What `index_status` says before the first index. It points at the questions that build one, because the tool does not.
 const NO_INDEX: &str = "There is no index yet: the first question builds one. Ask `impact`, `dependents` or \
                         `dependencies` about a file to build it, which can take a while on a large repository.";
@@ -128,6 +131,7 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
     let mut request = ImpactRequest {
         depth,
         no_tests: !tests,
+        tests_hint: Some(TESTS_HINT),
         ..ImpactRequest::default()
     };
     match subject {

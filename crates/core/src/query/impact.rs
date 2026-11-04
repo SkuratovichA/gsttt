@@ -38,6 +38,8 @@ pub struct ImpactRequest {
     pub names: Vec<String>,
     /// Leave the tests out of the answer, and count them instead. The walk is the same, so the footer still covers the tests it reached.
     pub no_tests: bool,
+    /// What a caller of the library says to get the tests listed, such as `ask with tests=true`. The line that counts the tests left out carries it in brackets. Nothing is added when this is `None`.
+    pub tests_hint: Option<&'static str>,
     /// Files of `files` of which only these declarations changed. The walk starts from them and from the declarations of the file that use them, and a file with an entry that names nothing is not walked. A file without an entry is walked whole, and so is every file when `names` is given.
     pub parts: Vec<ChangedPart>,
 }
@@ -107,6 +109,9 @@ pub struct Impact {
     /// How many files tagged as tests the change reaches that the request left out, not counting those that replace every module they reach it by. Left out when there are none.
     #[serde(skip_serializing_if = "is_zero")]
     pub tests_left_out: u32,
+    /// What the request said to get the tests listed, shown beside the count of those left out. Not part of the JSON, which holds the count alone.
+    #[serde(skip)]
+    tests_hint: Option<&'static str>,
     /// The paths reported deleted that the index no longer holds.
     pub deleted: Vec<Deleted>,
     /// The paths the index does not hold that nobody reported deleted.
@@ -465,6 +470,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         affected,
         tests,
         tests_left_out,
+        tests_hint: request.tests_hint,
         deleted,
         unknown,
         notes,
@@ -727,7 +733,11 @@ impl Answer for Impact {
         list(f, "affected files", &self.affected, entries, affected_line)?;
         list(f, "tests", &self.tests, entries, affected_line)?;
         if self.tests_left_out > 0 {
-            writeln!(f, "{} left out", noun(self.tests_left_out, "test file"))?;
+            write!(f, "{} left out", noun(self.tests_left_out, "test file"))?;
+            if let Some(hint) = self.tests_hint {
+                write!(f, " ({hint})")?;
+            }
+            f.write_str("\n")?;
         }
         for part in self.parts.iter().filter(|part| part.subjects().is_empty()) {
             writeln!(

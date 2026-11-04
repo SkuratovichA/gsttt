@@ -254,8 +254,23 @@ fn the_marketplace_lists_the_plugin_and_the_plugin_declares_its_parts() {
     );
 }
 
+/// The tools of the server, which `crates/mcp/src/tools.rs` names and the specification of the `mcp` capability lists.
+const TOOLS: [&str; 7] = [
+    "impact",
+    "dependents",
+    "dependencies",
+    "path",
+    "contract",
+    "coverage",
+    "index_status",
+];
+
+#[gsttt_scenario::scenario(
+    "distribution",
+    "The skill names a tool only by the id the manifest gives"
+)]
 #[test]
-fn the_skill_has_a_name_and_a_description_and_names_no_tool() {
+fn the_skill_has_a_name_and_a_description_and_names_a_tool_only_by_the_id_the_manifest_gives() {
     let skill = fs::read_to_string(workspace_root().join("plugin/skills/gsttt/SKILL.md")).unwrap();
 
     assert!(
@@ -263,8 +278,52 @@ fn the_skill_has_a_name_and_a_description_and_names_no_tool() {
         "{}",
         skill.lines().take(3).collect::<Vec<_>>().join("\n")
     );
+    // Claude Code names a plugin's tool `mcp__plugin_<plugin>_<server>__<tool>`, and the agent loads it by that id when its tools are deferred.
+    let manifest = json_file("plugin/.claude-plugin/plugin.json");
+    let plugin = manifest["name"].as_str().unwrap();
+    let server = manifest["mcpServers"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap();
+    let prefix = format!("mcp__plugin_{plugin}_{server}__");
+    let mut named = 0;
+    for token in skill.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+        if !token.starts_with("mcp__") {
+            continue;
+        }
+        let tool = token.strip_prefix(prefix.as_str());
+        assert!(
+            tool.is_some_and(|tool| TOOLS.contains(&tool)),
+            "the skill names `{token}`, which is not `{prefix}` and a tool of the server"
+        );
+        named += 1;
+    }
     assert!(
-        !skill.contains("mcp__"),
-        "the skill names an MCP tool id, which the server decides"
+        named > 0,
+        "the skill tells the agent how to load the tools, which are deferred"
+    );
+}
+
+#[gsttt_scenario::scenario(
+    "distribution",
+    "The description of the skill names the moment of work"
+)]
+#[test]
+fn the_skill_description_speaks_of_the_moment_of_work() {
+    let skill = fs::read_to_string(workspace_root().join("plugin/skills/gsttt/SKILL.md")).unwrap();
+    let description = skill
+        .lines()
+        .find_map(|line| line.strip_prefix("description: "))
+        .unwrap();
+
+    assert!(
+        description.starts_with("Use before you edit a file that other files import or call"),
+        "{description}"
+    );
+    assert!(
+        description.contains("before you finish a change"),
+        "{description}"
     );
 }

@@ -72,14 +72,8 @@ pub(crate) struct ImpactArguments {
     /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
-    /// Whether to list the files tagged as tests, which is what happens when this is left out. False leaves them out of the answer and says how many it left out, to save context when they do not matter; the walk is the same.
-    #[serde(default = "on_by_default")]
-    pub(crate) tests: bool,
-}
-
-/// What a flag that is on unless the call turns it off reads when it is left out.
-fn on_by_default() -> bool {
-    true
+    /// Whether to list the files tagged as tests. Left out, it is true with `changed`, at the end of a task, when the tests are what to run, and false otherwise, while you are still working out what to edit: the answer then counts the test files and says how to ask for them. False with `changed` leaves them out there too; the walk is the same.
+    pub(crate) tests: Option<bool>,
 }
 
 impl Arguments for ImpactArguments {
@@ -207,6 +201,8 @@ impl TryFrom<ImpactArguments> for ImpactCall {
             all,
             tests,
         } = arguments;
+        // Before an edit the tests are noise next to the files to change; at the end they are what to run.
+        let tests = tests.unwrap_or(changed);
         let subject = match (paths.is_empty(), changed) {
             (false, true) => return Err(ToolError::PathsAndChanged),
             (true, true) if !names.is_empty() => return Err(ToolError::NamesWithChanged),
@@ -423,6 +419,27 @@ mod tests {
     }
 
     #[test]
+    fn tests_left_out_follow_changed_and_an_explicit_value_wins() {
+        let tests = |arguments: Value| {
+            let Ok(Call::Impact(call)) = Call::read(ToolName::Impact, Some(object(arguments)))
+            else {
+                panic!("expected an impact call");
+            };
+            call.tests
+        };
+
+        assert!(
+            !tests(json!({ "paths": ["a.ts"] })),
+            "while working out an edit"
+        );
+        assert!(tests(json!({ "changed": true })), "at the end of a change");
+        assert!(tests(json!({ "paths": ["a.ts"], "tests": true })));
+        assert!(!tests(json!({ "changed": true, "tests": false })));
+        assert!(!tests(json!({ "paths": ["a.ts"], "tests": null })));
+        assert!(tests(json!({ "changed": true, "tests": null })));
+    }
+
+    #[test]
     fn names_go_with_the_paths_they_are_declared_in() {
         let read = |arguments: Value| Call::read(ToolName::Impact, Some(object(arguments)));
 
@@ -485,6 +502,11 @@ mod tests {
         ]
     }
 
+    /// A value that is neither true or false nor the null that leaves `tests` out.
+    fn not_an_optional_flag() -> impl Strategy<Value = Value> {
+        not_a_flag().prop_filter("null leaves the argument out", |value| !value.is_null())
+    }
+
     /// A value that is neither a string nor the null that leaves an optional argument out.
     fn not_text() -> impl Strategy<Value = Value> {
         prop_oneof![
@@ -530,7 +552,7 @@ mod tests {
             not_a_count().prop_map(|value| ("depth", value)),
             not_paths().prop_map(|value| ("names", value)),
             not_a_flag().prop_map(|value| ("all", value)),
-            not_a_flag().prop_map(|value| ("tests", value)),
+            not_an_optional_flag().prop_map(|value| ("tests", value)),
         ]
     }
 

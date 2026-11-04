@@ -24,12 +24,14 @@ use crate::tools::{self, ToolName};
 
 /// What the client is told on `initialize` about when to call each tool. The specification test pins the words.
 const INSTRUCTIONS: &str = "gsttt answers what a change affects, from an index of imports and contracts (HTTP routes, \
-GraphQL operations, gRPC methods, tables, queues, env variables) across the repository. Call impact before changing a \
-file that others may use, or with changed=true before finishing a task, which walks only from the declarations a patch changes where the language records them; dependents before renaming or deleting; path \
-to learn how two files are connected; contract to find who serves and who calls an endpoint. A question about one \
-function, class, method or variable goes to impact with its name in names, beside the file in paths: the answer lists \
-its direct callers, and asking again about a caller goes further. Every answer ends with what it covered and how fresh it is; when coverage names a gap, say so instead of \
-assuming nothing is affected.";
+GraphQL operations, gRPC methods, tables, queues, env variables) across the repository. Call impact before you edit a \
+file that other files import or call, with the file in paths, and again with changed=true before you finish a change: \
+it lists the files your edits reach and the tests to run, and walks only from the declarations a patch changes where the language records them. \
+A question about one function, class, method or variable goes to impact with its name in names, beside the file in \
+paths: the answer lists its direct callers, and asking again about a caller goes further. dependents before renaming \
+or deleting a file; path to learn how two files are connected; contract to find who serves and who calls an endpoint. \
+If your client lists the tools by name only, load the schema of impact before the first call. Every answer ends with \
+what it covered and how fresh it is; when coverage names a gap, say so instead of assuming nothing is affected.";
 
 /// The server: it answers `initialize` and `tools/list` from itself, and every other question through the source.
 pub(crate) struct Server<S> {
