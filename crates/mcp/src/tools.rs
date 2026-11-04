@@ -71,16 +71,17 @@ impl ToolName {
     const fn description(self) -> &'static str {
         match self {
             Self::Impact => {
-                "Lists the files that a change to some files can break: the files that import them, and the files that \
-                 share a contract with them (an HTTP route, a GraphQL operation, a gRPC method, a table, a queue or \
-                 an environment variable). It goes one hop through code, so it lists the files that use what changed \
-                 directly; a larger `depth` goes through other files. Tests within the depth are listed apart, \
-                 and those past it are only counted. Call it before changing a file that other code may use, and with `changed` set \
-                 to true before finishing a task, to see what your edits reach. A question about one function, \
-                 class, method or variable is asked with its name in `names`, beside the file that declares it in \
-                 `paths`: the answer then lists its direct callers, the declarations that refer to it and the lines \
-                 they start on, and the tests among them, so ask again about a caller to go further. The answer ends with what the index \
-                 covered and how fresh it is."
+                "Lists what an edit to some files affects: the files that import them, and the files that share a \
+                 contract with them (an HTTP route, a GraphQL operation, a gRPC method, a table, a queue or an \
+                 environment variable). Call it before you edit a file that other files import or call, and with \
+                 `changed` set to true before you finish a change, to see what your edits reach and which tests to \
+                 run. It goes one hop through code, so it lists the files that use what changed directly; a larger \
+                 `depth` goes through other files. Tests are listed with `changed` or with `tests` set to true, and \
+                 otherwise only counted, as are those past the depth. A question about one function, class, method \
+                 or variable is asked with its name in `names`, beside the file that declares it in `paths`: the \
+                 answer then lists its direct callers, the declarations that refer to it and the lines they start \
+                 on, and the tests among them, so ask again about a caller to go further. The answer ends with \
+                 what the index covered and how fresh it is."
             }
             Self::Dependents => {
                 "Lists the files that import one file, one level up, with how each import is written. Call it \

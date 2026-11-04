@@ -924,6 +924,54 @@ fn tests_can_be_left_out_and_counted() {
     assert!(to_value(&listed).unwrap().get("tests_left_out").is_none());
 }
 
+#[scenario("queries", "A hint says how to list the tests left out")]
+#[test]
+fn the_hint_of_a_request_follows_the_count_of_the_tests_left_out() {
+    let index = Tree::new()
+        .imports("b.ts", "a.ts")
+        .imports("a.test.ts", "a.ts")
+        .tag("a.test.ts", FileTags::TEST)
+        .build();
+    let hinted = ImpactRequest {
+        no_tests: true,
+        tests_hint: Some("ask with tests=true"),
+        ..request(&["a.ts"])
+    };
+
+    let answer = impact(&index, Freshness::Fresh, &hinted);
+
+    let text = answer.to_string();
+    assert!(
+        text.contains("1 test file left out (ask with tests=true)\n"),
+        "{text}"
+    );
+    // The JSON holds the count and nothing of the hint, and a request with no hint adds no brackets.
+    assert_eq!(to_value(&answer).unwrap()["tests_left_out"], json!(1));
+    assert!(!to_value(&answer).unwrap().to_string().contains("ask with"));
+    let plain = impact(
+        &index,
+        Freshness::Fresh,
+        &ImpactRequest {
+            no_tests: true,
+            ..request(&["a.ts"])
+        },
+    );
+    assert!(
+        plain.to_string().contains("1 test file left out\n"),
+        "{plain}"
+    );
+    // Tests that are listed leave nothing to hint at.
+    let listed = impact(
+        &index,
+        Freshness::Fresh,
+        &ImpactRequest {
+            tests_hint: Some("ask with tests=true"),
+            ..request(&["a.ts"])
+        },
+    );
+    assert!(!listed.to_string().contains("ask with"), "{listed}");
+}
+
 #[scenario("queries", "Only tests reached is not nothing")]
 #[test]
 fn an_answer_that_reached_only_tests_does_not_say_nothing_is_affected() {

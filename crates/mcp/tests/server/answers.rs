@@ -565,16 +565,21 @@ async fn impact_takes_names_and_answers_as_the_command_line_does() {
     );
 }
 
-#[scenario("mcp", "impact leaves the tests out")]
-#[tokio::test]
-async fn impact_with_tests_false_leaves_the_tests_out_as_the_command_line_does() {
-    let source = Fake::over(
+/// `a.ts`, imported by `b.ts` and by the test file `a.test.ts`.
+fn imported_by_a_file_and_a_test() -> Fake {
+    Fake::over(
         Tree::new()
             .imports("b.ts", "a.ts")
             .imports("a.test.ts", "a.ts")
             .tag("a.test.ts", FileTags::TEST)
             .build(),
-    );
+    )
+}
+
+#[scenario("mcp", "impact leaves the tests out")]
+#[tokio::test]
+async fn impact_with_tests_false_leaves_the_tests_out_as_the_command_line_does() {
+    let source = imported_by_a_file_and_a_test();
     let session = Session::start(source.clone()).await;
 
     let reply = session
@@ -585,23 +590,78 @@ async fn impact_with_tests_false_leaves_the_tests_out_as_the_command_line_does()
     let request = ImpactRequest {
         files: vec!["a.ts".to_owned()],
         no_tests: true,
+        tests_hint: Some("ask with tests=true"),
         ..ImpactRequest::default()
     };
     assert_eq!(reply.text, impact_text(&source, &request, Entries::Capped));
     assert!(reply.text.contains("b.ts  distance 1"), "{}", reply.text);
     assert!(
-        reply.text.contains("1 test file left out\n"),
+        reply
+            .text
+            .contains("1 test file left out (ask with tests=true)\n"),
         "{}",
         reply.text
     );
     assert!(!reply.text.contains("a.test.ts"), "{}", reply.text);
+}
+
+#[scenario(
+    "mcp",
+    "impact counts the tests while the edit is still being worked out"
+)]
+#[tokio::test]
+async fn impact_counts_the_tests_when_the_call_gives_no_tests_and_no_changed() {
+    let session = Session::start(imported_by_a_file_and_a_test()).await;
+
+    let reply = session
+        .call("impact", json!({ "paths": ["a.ts"] }))
+        .await
+        .text;
+
+    assert!(reply.contains("b.ts  distance 1"), "{reply}");
+    assert!(
+        reply.contains("1 test file left out (ask with tests=true)\n"),
+        "{reply}"
+    );
+    assert!(!reply.contains("a.test.ts"), "{reply}");
+}
+
+#[scenario("mcp", "impact lists the tests when asked")]
+#[tokio::test]
+async fn impact_with_tests_true_lists_the_tests_and_leaves_no_count() {
+    let session = Session::start(imported_by_a_file_and_a_test()).await;
+
+    let reply = session
+        .call("impact", json!({ "paths": ["a.ts"], "tests": true }))
+        .await
+        .text;
+
+    assert!(reply.contains("a.test.ts  distance 1"), "{reply}");
+    assert!(!reply.contains("left out"), "{reply}");
+}
+
+#[scenario("mcp", "impact lists the tests of a change")]
+#[tokio::test]
+async fn impact_with_changed_lists_the_tests_unless_the_call_leaves_them_out() {
+    let source = imported_by_a_file_and_a_test().changes(&[("a.ts", ChangeKind::Modified)]);
+    let session = Session::start(source).await;
 
     let listed = session
-        .call("impact", json!({ "paths": ["a.ts"] }))
+        .call("impact", json!({ "changed": true }))
         .await
         .text;
     assert!(listed.contains("a.test.ts  distance 1"), "{listed}");
     assert!(!listed.contains("left out"), "{listed}");
+
+    let counted = session
+        .call("impact", json!({ "changed": true, "tests": false }))
+        .await
+        .text;
+    assert!(!counted.contains("a.test.ts"), "{counted}");
+    assert!(
+        counted.contains("1 test file left out (ask with tests=true)\n"),
+        "{counted}"
+    );
 }
 
 #[tokio::test]
