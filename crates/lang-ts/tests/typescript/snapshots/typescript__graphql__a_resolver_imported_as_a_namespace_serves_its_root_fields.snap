@@ -76,7 +76,10 @@ expression: json
             "line": 6,
             "name": "UsersResolver",
             "uses": [
-              "graphql.Resolver"
+              {
+                "line": 6,
+                "name": "graphql.Resolver"
+              }
             ]
           },
           {
@@ -84,8 +87,14 @@ expression: json
             "line": 8,
             "name": "UsersResolver.users",
             "uses": [
-              "User",
-              "graphql.Query"
+              {
+                "line": 8,
+                "name": "User"
+              },
+              {
+                "line": 8,
+                "name": "graphql.Query"
+              }
             ]
           },
           {
@@ -93,8 +102,14 @@ expression: json
             "line": 11,
             "name": "UsersResolver.remove",
             "uses": [
-              "User",
-              "graphql.Mutation"
+              {
+                "line": 11,
+                "name": "User"
+              },
+              {
+                "line": 11,
+                "name": "graphql.Mutation"
+              }
             ]
           },
           {
@@ -102,25 +117,55 @@ expression: json
             "line": 14,
             "name": "UsersResolver.org",
             "uses": [
-              "Org",
-              "graphql.ResolveField"
+              {
+                "line": 14,
+                "name": "Org"
+              },
+              {
+                "line": 14,
+                "name": "graphql.ResolveField"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "graphql.Mutation",
-          "graphql.Query",
-          "graphql.ResolveField",
-          "graphql.Resolver"
+          {
+            "line": 11,
+            "name": "graphql.Mutation"
+          },
+          {
+            "line": 8,
+            "name": "graphql.Query"
+          },
+          {
+            "line": 14,
+            "name": "graphql.ResolveField"
+          },
+          {
+            "line": 6,
+            "name": "graphql.Resolver"
+          }
         ],
         "overrides": [],
         "reads": [
-          "Mutation",
-          "Query",
-          "ResolveField",
-          "Resolver"
+          {
+            "line": 11,
+            "name": "Mutation"
+          },
+          {
+            "line": 8,
+            "name": "Query"
+          },
+          {
+            "line": 14,
+            "name": "ResolveField"
+          },
+          {
+            "line": 6,
+            "name": "Resolver"
+          }
         ]
       },
       "tags": 0,

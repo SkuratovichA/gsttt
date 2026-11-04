@@ -53,7 +53,10 @@ expression: json
             "line": 3,
             "name": "foo",
             "uses": [
-              "dep"
+              {
+                "line": 3,
+                "name": "dep"
+              }
             ]
           }
         ],

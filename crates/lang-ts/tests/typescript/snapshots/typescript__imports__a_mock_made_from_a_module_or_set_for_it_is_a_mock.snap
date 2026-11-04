@@ -114,11 +114,26 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "createMockFromModule",
-          "deepUnmock",
-          "genMockFromModule",
-          "setMock",
-          "unstable_mockModule"
+          {
+            "line": 2,
+            "name": "createMockFromModule"
+          },
+          {
+            "line": 5,
+            "name": "deepUnmock"
+          },
+          {
+            "line": 3,
+            "name": "genMockFromModule"
+          },
+          {
+            "line": 1,
+            "name": "setMock"
+          },
+          {
+            "line": 4,
+            "name": "unstable_mockModule"
+          }
         ]
       },
       "tags": 1,

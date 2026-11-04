@@ -91,10 +91,22 @@ expression: json
             "line": 7,
             "name": "View",
             "uses": [
-              "Props.",
-              "Widget",
-              "helper",
-              "useX"
+              {
+                "line": 7,
+                "name": "Props."
+              },
+              {
+                "line": 9,
+                "name": "Widget"
+              },
+              {
+                "line": 9,
+                "name": "helper"
+              },
+              {
+                "line": 8,
+                "name": "useX"
+              }
             ]
           },
           {
@@ -108,7 +120,10 @@ expression: json
             "line": 13,
             "name": "C.a",
             "uses": [
-              "C.b"
+              {
+                "line": 14,
+                "name": "C.b"
+              }
             ]
           },
           {
@@ -128,7 +143,10 @@ expression: json
             "line": 20,
             "name": "d",
             "uses": [
-              "C.s"
+              {
+                "line": 21,
+                "name": "C.s"
+              }
             ]
           }
         ],
@@ -137,7 +155,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "s"
+          {
+            "line": 21,
+            "name": "s"
+          }
         ]
       },
       "tags": 0,

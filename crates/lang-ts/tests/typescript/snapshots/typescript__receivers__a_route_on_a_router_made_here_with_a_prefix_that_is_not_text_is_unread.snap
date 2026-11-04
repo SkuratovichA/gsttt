@@ -60,7 +60,10 @@ expression: json
             "line": 3,
             "name": "dynamic",
             "uses": [
-              "makeRouter"
+              {
+                "line": 3,
+                "name": "makeRouter"
+              }
             ]
           },
           {
@@ -68,7 +71,10 @@ expression: json
             "line": 4,
             "name": "fixed",
             "uses": [
-              "makeRouter"
+              {
+                "line": 4,
+                "name": "makeRouter"
+              }
             ]
           },
           {
@@ -76,7 +82,10 @@ expression: json
             "line": 5,
             "name": "bare",
             "uses": [
-              "makeRouter"
+              {
+                "line": 5,
+                "name": "makeRouter"
+              }
             ]
           },
           {
@@ -102,16 +111,37 @@ expression: json
           }
         ],
         "on_load": [
-          "bare.get",
-          "dynamic.get",
-          "fixed.get",
-          "list",
-          "makeRouter"
+          {
+            "line": 11,
+            "name": "bare.get"
+          },
+          {
+            "line": 9,
+            "name": "dynamic.get"
+          },
+          {
+            "line": 10,
+            "name": "fixed.get"
+          },
+          {
+            "line": 9,
+            "name": "list"
+          },
+          {
+            "line": 3,
+            "name": "makeRouter"
+          }
         ],
         "overrides": [],
         "reads": [
-          "PREFIX",
-          "get"
+          {
+            "line": 3,
+            "name": "PREFIX"
+          },
+          {
+            "line": 9,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,
@@ -167,14 +197,29 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "bare.get",
-          "dynamic.get",
-          "fixed.get",
-          "list"
+          {
+            "line": 7,
+            "name": "bare.get"
+          },
+          {
+            "line": 5,
+            "name": "dynamic.get"
+          },
+          {
+            "line": 6,
+            "name": "fixed.get"
+          },
+          {
+            "line": 5,
+            "name": "list"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get"
+          {
+            "line": 5,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

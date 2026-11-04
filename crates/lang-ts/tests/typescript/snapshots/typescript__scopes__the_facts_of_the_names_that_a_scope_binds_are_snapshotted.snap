@@ -72,7 +72,10 @@ expression: "run(\"scopes-hidden\")?"
             "line": 3,
             "name": "param",
             "uses": [
-              "BASE"
+              {
+                "line": 4,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -80,7 +83,10 @@ expression: "run(\"scopes-hidden\")?"
             "line": 7,
             "name": "shadow",
             "uses": [
-              "BASE"
+              {
+                "line": 9,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -88,7 +94,10 @@ expression: "run(\"scopes-hidden\")?"
             "line": 12,
             "name": "mutable",
             "uses": [
-              "BASE"
+              {
+                "line": 14,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -96,7 +105,10 @@ expression: "run(\"scopes-hidden\")?"
             "line": 17,
             "name": "destructured",
             "uses": [
-              "BASE"
+              {
+                "line": 19,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -104,7 +116,10 @@ expression: "run(\"scopes-hidden\")?"
             "line": 22,
             "name": "hoisted",
             "uses": [
-              "BASE"
+              {
+                "line": 26,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -112,7 +127,10 @@ expression: "run(\"scopes-hidden\")?"
             "line": 29,
             "name": "typed",
             "uses": [
-              "BASE"
+              {
+                "line": 31,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -120,18 +138,27 @@ expression: "run(\"scopes-hidden\")?"
             "line": 34,
             "name": "callback",
             "uses": [
-              "BASE"
+              {
+                "line": 35,
+                "name": "BASE"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "BASE"
+          {
+            "line": 38,
+            "name": "BASE"
+          }
         ],
         "overrides": [],
         "reads": [
-          "BASE"
+          {
+            "line": 18,
+            "name": "BASE"
+          }
         ]
       },
       "tags": 0,

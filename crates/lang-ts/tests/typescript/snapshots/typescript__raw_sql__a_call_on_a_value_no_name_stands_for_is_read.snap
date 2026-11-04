@@ -74,8 +74,14 @@ expression: json
             "line": 4,
             "name": "order",
             "uses": [
-              "pool",
-              "sql"
+              {
+                "line": 5,
+                "name": "pool"
+              },
+              {
+                "line": 5,
+                "name": "sql"
+              }
             ]
           },
           {
@@ -83,8 +89,14 @@ expression: json
             "line": 7,
             "name": "refund",
             "uses": [
-              "sql.Request.constructor",
-              "sql.Request.query"
+              {
+                "line": 7,
+                "name": "sql.Request.constructor"
+              },
+              {
+                "line": 7,
+                "name": "sql.Request.query"
+              }
             ]
           },
           {
@@ -92,7 +104,10 @@ expression: json
             "line": 9,
             "name": "cart",
             "uses": [
-              "sql"
+              {
+                "line": 9,
+                "name": "sql"
+              }
             ]
           }
         ],
@@ -101,12 +116,30 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "Int",
-          "input",
-          "input.query",
-          "query",
-          "request",
-          "request.input"
+          {
+            "line": 5,
+            "name": "Int"
+          },
+          {
+            "line": 5,
+            "name": "input"
+          },
+          {
+            "line": 5,
+            "name": "input.query"
+          },
+          {
+            "line": 5,
+            "name": "query"
+          },
+          {
+            "line": 5,
+            "name": "request"
+          },
+          {
+            "line": 5,
+            "name": "request.input"
+          }
         ]
       },
       "tags": 0,

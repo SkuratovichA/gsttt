@@ -72,8 +72,10 @@ pub(crate) struct ImpactArguments {
     /// Show every entry of each list, as far as the 25,000 characters of an answer allow. Without it a long list stops at 30 entries. A cut list ends with a line that counts the rest.
     #[serde(default)]
     pub(crate) all: bool,
-    /// Whether to list the files tagged as tests. Left out, it is true with `changed`, at the end of a task, when the tests are what to run, and false otherwise, while you are still working out what to edit: the answer then counts the test files and says how to ask for them. False with `changed` leaves them out there too; the walk is the same.
+    /// Whether to list the files tagged as tests. Left out, it is true with `changed`, when the tests are what to run, and false otherwise: the answer then counts the test files and says how to ask for them. False with `changed` leaves them out there too; the walk is the same.
     pub(crate) tests: Option<bool>,
+    /// Whether to list the files tagged as generated, which a tool wrote: a header that says so, a `linguist-generated` attribute, or a name such as `*.pb.go` or `__generated__`. Left out, it is false: the answer counts them and says how to ask for them. The walk is the same either way.
+    pub(crate) generated: Option<bool>,
 }
 
 impl Arguments for ImpactArguments {
@@ -85,6 +87,7 @@ impl Arguments for ImpactArguments {
         Field::optional("names", NAMES),
         Field::optional("all", FLAG),
         Field::optional("tests", FLAG),
+        Field::optional("generated", FLAG),
     ];
 }
 
@@ -186,6 +189,7 @@ pub(crate) struct ImpactCall {
     pub(crate) depth: Option<u32>,
     pub(crate) all: bool,
     pub(crate) tests: bool,
+    pub(crate) generated: bool,
 }
 
 impl TryFrom<ImpactArguments> for ImpactCall {
@@ -200,6 +204,7 @@ impl TryFrom<ImpactArguments> for ImpactCall {
             names,
             all,
             tests,
+            generated,
         } = arguments;
         // Before an edit the tests are noise next to the files to change; at the end they are what to run.
         let tests = tests.unwrap_or(changed);
@@ -220,6 +225,7 @@ impl TryFrom<ImpactArguments> for ImpactCall {
             depth,
             all,
             tests,
+            generated: generated.unwrap_or(false),
         })
     }
 }
@@ -412,6 +418,7 @@ mod tests {
             depth: None,
             all: false,
             tests: true,
+            generated: false,
         })) = call
         else {
             panic!("expected changed files with no base and no depth, got {call:?}");

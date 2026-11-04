@@ -56,8 +56,14 @@ expression: json
             "line": 4,
             "name": "projects",
             "uses": [
-              "QueryTypes",
-              "sequelize"
+              {
+                "line": 4,
+                "name": "QueryTypes"
+              },
+              {
+                "line": 4,
+                "name": "sequelize"
+              }
             ]
           }
         ],
@@ -66,8 +72,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "SELECT",
-          "query"
+          {
+            "line": 4,
+            "name": "SELECT"
+          },
+          {
+            "line": 4,
+            "name": "query"
+          }
         ]
       },
       "tags": 0,

@@ -60,7 +60,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -74,8 +77,14 @@ expression: json
             "line": 7,
             "name": "constant",
             "uses": [
-              "TEXT",
-              "prisma.$queryRawUnsafe"
+              {
+                "line": 7,
+                "name": "TEXT"
+              },
+              {
+                "line": 7,
+                "name": "prisma.$queryRawUnsafe"
+              }
             ]
           }
         ],
@@ -87,11 +96,17 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "$queryRawUnsafe"
+          {
+            "line": 7,
+            "name": "$queryRawUnsafe"
+          }
         ]
       },
       "tags": 0,
@@ -143,7 +158,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -151,7 +169,10 @@ expression: json
             "line": 5,
             "name": "query",
             "uses": [
-              "Prisma.sql"
+              {
+                "line": 5,
+                "name": "Prisma.sql"
+              }
             ]
           },
           {
@@ -159,8 +180,14 @@ expression: json
             "line": 7,
             "name": "held",
             "uses": [
-              "prisma.$queryRaw",
-              "query"
+              {
+                "line": 7,
+                "name": "prisma.$queryRaw"
+              },
+              {
+                "line": 7,
+                "name": "query"
+              }
             ]
           }
         ],
@@ -172,13 +199,25 @@ expression: json
           }
         ],
         "on_load": [
-          "Prisma.sql",
-          "PrismaClient"
+          {
+            "line": 5,
+            "name": "Prisma.sql"
+          },
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "$queryRaw",
-          "sql"
+          {
+            "line": 7,
+            "name": "$queryRaw"
+          },
+          {
+            "line": 5,
+            "name": "sql"
+          }
         ]
       },
       "tags": 0,
@@ -250,7 +289,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -258,7 +300,10 @@ expression: json
             "line": 5,
             "name": "literal",
             "uses": [
-              "prisma.$queryRawUnsafe"
+              {
+                "line": 5,
+                "name": "prisma.$queryRawUnsafe"
+              }
             ]
           },
           {
@@ -266,7 +311,10 @@ expression: json
             "line": 7,
             "name": "run",
             "uses": [
-              "prisma.$executeRawUnsafe"
+              {
+                "line": 7,
+                "name": "prisma.$executeRawUnsafe"
+              }
             ]
           },
           {
@@ -274,7 +322,10 @@ expression: json
             "line": 9,
             "name": "computed",
             "uses": [
-              "prisma.$queryRawUnsafe"
+              {
+                "line": 9,
+                "name": "prisma.$queryRawUnsafe"
+              }
             ]
           },
           {
@@ -282,8 +333,14 @@ expression: json
             "line": 11,
             "name": "wrapped",
             "uses": [
-              "Prisma.sql",
-              "prisma.$queryRaw"
+              {
+                "line": 12,
+                "name": "Prisma.sql"
+              },
+              {
+                "line": 12,
+                "name": "prisma.$queryRaw"
+              }
             ]
           },
           {
@@ -291,7 +348,10 @@ expression: json
             "line": 14,
             "name": "variable",
             "uses": [
-              "prisma.$executeRawUnsafe"
+              {
+                "line": 14,
+                "name": "prisma.$executeRawUnsafe"
+              }
             ]
           }
         ],
@@ -303,14 +363,29 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "$executeRawUnsafe",
-          "$queryRaw",
-          "$queryRawUnsafe",
-          "sql"
+          {
+            "line": 7,
+            "name": "$executeRawUnsafe"
+          },
+          {
+            "line": 12,
+            "name": "$queryRaw"
+          },
+          {
+            "line": 5,
+            "name": "$queryRawUnsafe"
+          },
+          {
+            "line": 12,
+            "name": "sql"
+          }
         ]
       },
       "tags": 0,

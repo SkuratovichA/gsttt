@@ -10,4 +10,5 @@ mod names;
 mod neighbours;
 mod paths;
 mod reports;
+mod source;
 mod text;

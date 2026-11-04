@@ -5,12 +5,12 @@
 mod locals;
 mod table;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::mem;
 use std::rc::Rc;
 
-use gsttt_core::fact::{Declared, Heir, Line, MEMBER_SEPARATOR, Symbols};
+use gsttt_core::fact::{Declared, Heir, Line, MEMBER_SEPARATOR, Symbols, Uses};
 use gsttt_core::text::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
@@ -165,7 +165,7 @@ struct Entry {
     name: String,
     line: Line,
     end: Line,
-    uses: BTreeSet<String>,
+    uses: Uses,
     /// A member that a method creates by assigning `self.name`. Its span is the first assignment, and a declaration of the member in the class body takes its place.
     weak: bool,
 }
@@ -181,8 +181,10 @@ struct Recorder<'a> {
     owners: Vec<usize>,
     /// The variable a function assigns through `global`, with the function.
     writers: Vec<(String, usize)>,
-    on_load: BTreeSet<String>,
-    reads: BTreeSet<String>,
+    on_load: Uses,
+    reads: Uses,
+    /// The byte offset of the code being read, where a use it finds is written.
+    at: u32,
     heirs: Vec<Heir>,
     overrides: Vec<Heir>,
     scopes: Vec<Scope>,
@@ -207,8 +209,9 @@ impl<'a> Recorder<'a> {
             index: HashMap::new(),
             owners: Vec::new(),
             writers: Vec::new(),
-            on_load: BTreeSet::new(),
-            reads: BTreeSet::new(),
+            on_load: Uses::default(),
+            reads: Uses::default(),
+            at: 0,
             heirs: Vec::new(),
             overrides: Vec::new(),
             scopes: Vec::new(),
@@ -278,7 +281,7 @@ impl<'a> Recorder<'a> {
             name,
             line: span.0,
             end: span.1,
-            uses: BTreeSet::new(),
+            uses: Uses::default(),
             weak,
         });
         position
@@ -286,15 +289,14 @@ impl<'a> Recorder<'a> {
 
     /// Notes that the code refers to `used`: under every declaration it is in and, when it runs as the file loads, in what the file runs then.
     fn note(&mut self, used: &str) {
+        let line = self.lines.line(self.at);
         for &owner in &self.owners {
-            if let Some(entry) = self.entries.get_mut(owner)
-                && !entry.uses.contains(used)
-            {
-                entry.uses.insert(used.to_owned());
+            if let Some(entry) = self.entries.get_mut(owner) {
+                entry.uses.insert(used, line);
             }
         }
-        if matches!(self.load, Load::Called | Load::Always) && !self.on_load.contains(used) {
-            self.on_load.insert(used.to_owned());
+        if matches!(self.load, Load::Called | Load::Always) {
+            self.on_load.insert(used, line);
         }
     }
 
@@ -313,9 +315,8 @@ impl<'a> Recorder<'a> {
     }
 
     fn read_member(&mut self, member: &str) {
-        if !self.reads.contains(member) {
-            self.reads.insert(member.to_owned());
-        }
+        let line = self.lines.line(self.at);
+        self.reads.insert(member, line);
     }
 
     /// Notes each member as read, and each as read right on the one before it. A walk by name needs the pairs to tell `self.poetry.file.read()` from a file that reads `file` and `read` apart.
@@ -507,6 +508,14 @@ impl<'a> Recorder<'a> {
 
     /// `expr`, an attribute chain, read as a name and what is read on it.
     fn attribute(&mut self, expr: &'a Expr) {
+        // A use is written where its last attribute is, which is on a later line than the root of a chain broken across lines.
+        let member = match expr {
+            Expr::Attribute(outer) => Some(u32::from(outer.attr.range().start())),
+            _ => None,
+        };
+        if let Some(at) = member {
+            self.at = at;
+        }
         let mut segs: Vec<&'a str> = Vec::new();
         let mut root = expr;
         while let Expr::Attribute(attribute) = root {
@@ -519,6 +528,10 @@ impl<'a> Recorder<'a> {
             Expr::Call(call) if is_super(call) => self.through_super(&segs),
             Expr::Call(call) => {
                 self.call(call);
+                // The call may have been a chain of its own, which moved the position on.
+                if let Some(at) = member {
+                    self.at = at;
+                }
                 match self.class_called(call) {
                     Some(class) => self.through_type(&class, &segs),
                     None if self.is_builtin_value(root) => {}
@@ -533,6 +546,9 @@ impl<'a> Recorder<'a> {
             }
             other => {
                 self.visit_expr(other);
+                if let Some(at) = member {
+                    self.at = at;
+                }
                 if !self.is_builtin_value(other) {
                     self.read_members(&segs);
                 }
@@ -545,6 +561,7 @@ impl<'a> Recorder<'a> {
         self.load = saved.called();
         self.visit_expr(&call.func);
         if let Some(class) = self.class_called(call) {
+            self.at = u32::from(call.range().start());
             self.constructed(&class);
         }
         visitor::walk_arguments(self, &call.arguments);
@@ -892,9 +909,12 @@ impl<'a> Recorder<'a> {
                 .filter_map(|&owner| self.entries.get(owner))
                 .map(|entry| entry.name.clone())
                 .collect();
+            // The member is written where the assignment starts.
             for &member in &written {
                 if let Some(entry) = self.entries.get_mut(member) {
-                    entry.uses.extend(writers.iter().cloned());
+                    for writer in &writers {
+                        entry.uses.insert(writer, span.0);
+                    }
                 }
             }
             self.owners.extend(written);
@@ -1023,6 +1043,7 @@ impl<'a> Recorder<'a> {
 
     fn augmented(&mut self, stmt: &'a StmtAugAssign) {
         if let Expr::Name(name) = &*stmt.target {
+            self.at = u32::from(name.range().start());
             self.chain(name.id.as_str(), &[]);
         } else {
             self.visit_expr(&stmt.target);
@@ -1088,10 +1109,12 @@ impl<'a> Recorder<'a> {
             ..
         } = self;
         for (variable, owner) in writers {
-            let writer = entries.get(owner).map(|entry| entry.name.clone());
+            let writer = entries
+                .get(owner)
+                .map(|entry| (entry.name.clone(), entry.line));
             let variable = index.get(&variable).and_then(|&at| entries.get_mut(at));
-            if let (Some(variable), Some(writer)) = (variable, writer) {
-                variable.uses.insert(writer);
+            if let (Some(variable), Some((writer, line))) = (variable, writer) {
+                variable.uses.insert_owned(writer, line);
             }
         }
         let mut declared: Vec<Declared> = entries
@@ -1101,8 +1124,9 @@ impl<'a> Recorder<'a> {
                 // The `X` that `X = wrap(X)` reads is the import it rebinds.
                 uses: entry
                     .uses
+                    .into_vec()
                     .into_iter()
-                    .filter(|used| *used != entry.name || rebinding.contains(&at))
+                    .filter(|used| used.name != entry.name || rebinding.contains(&at))
                     .collect(),
                 name: entry.name,
                 line: entry.line,
@@ -1118,12 +1142,12 @@ impl<'a> Recorder<'a> {
         holds.dedup();
         Symbols {
             declared,
-            on_load: on_load.into_iter().collect(),
+            on_load: on_load.into_vec(),
             exports: Vec::new(),
             heirs,
             overrides,
             holds,
-            reads: reads.into_iter().collect(),
+            reads: reads.into_vec(),
         }
     }
 }
@@ -1153,7 +1177,10 @@ impl<'a> Visitor<'a> for Recorder<'a> {
     fn visit_expr(&mut self, expr: &'a Expr) {
         match expr {
             Expr::Name(name) => match name.ctx {
-                ExprContext::Load => self.chain(name.id.as_str(), &[]),
+                ExprContext::Load => {
+                    self.at = u32::from(name.range().start());
+                    self.chain(name.id.as_str(), &[]);
+                }
                 // A comprehension binds its own variables, which the scope around never sees.
                 ExprContext::Store | ExprContext::Del
                     if self
@@ -1189,6 +1216,7 @@ impl<'a> Visitor<'a> for Recorder<'a> {
                 self.comprehension(&comp.generators, &elements);
             }
             Expr::StringLiteral(text) if self.annotation => {
+                self.at = u32::from(text.range().start());
                 self.string_annotation(text.value.to_str());
             }
             other => visitor::walk_expr(self, other),
@@ -1238,6 +1266,8 @@ fn is_main_guard(test: &Expr) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use proptest::prelude::*;
     use ruff_python_ast::PySourceType;
     use ruff_python_parser::parse_unchecked_source;
@@ -1286,6 +1316,10 @@ mod tests {
         items.windows(2).all(|pair| pair[0] < pair[1])
     }
 
+    fn names_of(uses: &[gsttt_core::fact::Use]) -> Vec<&str> {
+        uses.iter().map(|used| used.name.as_str()).collect()
+    }
+
     /// What the contract of `Symbols` promises: ordered, once each, within the file, never itself.
     fn check(text: &str, read: &Read, star: bool) {
         let lines = u32::try_from(text.split('\n').count()).unwrap_or(u32::MAX);
@@ -1309,18 +1343,30 @@ mod tests {
                 1 <= declared.line && declared.line <= declared.end && declared.end <= lines,
                 "{declared:?} in {lines} lines"
             );
-            assert!(strictly_increasing(&declared.uses), "{declared:?}");
+            let used = names_of(&declared.uses);
+            assert!(strictly_increasing(&used), "{declared:?}");
             assert!(
-                !declared.uses.contains(&declared.name) || star || table.imports(&declared.name),
+                !used.contains(&declared.name.as_str()) || star || table.imports(&declared.name),
                 "{declared:?}"
             );
         }
-        assert!(
-            strictly_increasing(&symbols.on_load),
-            "{:?}",
-            symbols.on_load
-        );
-        assert!(strictly_increasing(&symbols.reads), "{:?}", symbols.reads);
+        // A use is never given a line the file does not have.
+        for used in symbols
+            .declared
+            .iter()
+            .flat_map(|declared| &declared.uses)
+            .chain(&symbols.on_load)
+            .chain(&symbols.reads)
+        {
+            assert!(
+                1 <= used.line && used.line <= lines,
+                "{used:?} in {lines} lines"
+            );
+        }
+        let on_load = names_of(&symbols.on_load);
+        assert!(strictly_increasing(&on_load), "{on_load:?}");
+        let reads = names_of(&symbols.reads);
+        assert!(strictly_increasing(&reads), "{reads:?}");
         for pairs in [&symbols.heirs, &symbols.overrides, &symbols.holds] {
             let pairs: Vec<(&str, &str)> = pairs
                 .iter()

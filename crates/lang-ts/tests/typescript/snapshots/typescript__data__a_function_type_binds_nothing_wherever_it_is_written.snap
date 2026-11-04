@@ -54,7 +54,10 @@ expression: json
             "line": 3,
             "name": "make",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -68,7 +71,10 @@ expression: json
             "line": 8,
             "name": "Holder.handler",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 8,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -76,8 +82,14 @@ expression: json
             "line": 11,
             "name": "cast",
             "uses": [
-              "PrismaClient",
-              "make"
+              {
+                "line": 11,
+                "name": "PrismaClient"
+              },
+              {
+                "line": 11,
+                "name": "make"
+              }
             ]
           },
           {
@@ -95,13 +107,25 @@ expression: json
           }
         ],
         "on_load": [
-          "make"
+          {
+            "line": 11,
+            "name": "make"
+          }
         ],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant",
-          "tenant.findFirst"
+          {
+            "line": 14,
+            "name": "findFirst"
+          },
+          {
+            "line": 14,
+            "name": "tenant"
+          },
+          {
+            "line": 14,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,

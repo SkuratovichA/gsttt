@@ -138,8 +138,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a",
-          "b"
+          {
+            "line": 9,
+            "name": "a"
+          },
+          {
+            "line": 9,
+            "name": "b"
+          }
         ]
       },
       "tags": 0,

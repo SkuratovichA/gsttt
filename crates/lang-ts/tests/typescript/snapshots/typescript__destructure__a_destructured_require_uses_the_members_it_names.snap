@@ -95,19 +95,31 @@ expression: json
             "line": 3,
             "name": "take",
             "uses": [
-              "lib.a"
+              {
+                "line": 4,
+                "name": "lib.a"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "take"
+          {
+            "line": 8,
+            "name": "take"
+          }
         ],
         "overrides": [],
         "reads": [
-          "a",
-          "exports"
+          {
+            "line": 4,
+            "name": "a"
+          },
+          {
+            "line": 8,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,

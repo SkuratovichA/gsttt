@@ -10,6 +10,13 @@ pub struct LineIndex {
     starts: Vec<u32>,
 }
 
+impl Default for LineIndex {
+    /// The index of an empty text, in which every offset is on line 1.
+    fn default() -> Self {
+        Self::new("")
+    }
+}
+
 impl LineIndex {
     pub fn new(text: &str) -> Self {
         let mut starts = Vec::with_capacity(text.len() / 32 + 1);

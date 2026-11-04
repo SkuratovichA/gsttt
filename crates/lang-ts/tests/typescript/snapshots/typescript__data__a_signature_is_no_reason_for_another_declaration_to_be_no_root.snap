@@ -167,8 +167,14 @@ expression: json
             "line": 30,
             "name": "reads",
             "uses": [
-              "PrismaClient.",
-              "PrismaClient.tenant"
+              {
+                "line": 31,
+                "name": "PrismaClient."
+              },
+              {
+                "line": 42,
+                "name": "PrismaClient.tenant"
+              }
             ]
           }
         ],
@@ -177,8 +183,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 42,
+            "name": "findFirst"
+          },
+          {
+            "line": 42,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,

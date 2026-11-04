@@ -71,7 +71,10 @@ expression: json
             "line": 4,
             "name": "TenantService.prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 4,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -91,7 +94,10 @@ expression: json
             "line": 19,
             "name": "unrelated",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 19,
+                "name": "PrismaClient"
+              }
             ]
           }
         ],
@@ -106,20 +112,62 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "booking",
-          "booking.count",
-          "count",
-          "findMany",
-          "findUnique",
-          "invoice",
-          "invoice.findMany",
-          "map",
-          "prisma",
-          "prisma.booking",
-          "prisma.invoice",
-          "prisma.tenant",
-          "tenant",
-          "tenant.findUnique"
+          {
+            "line": 15,
+            "name": "booking"
+          },
+          {
+            "line": 15,
+            "name": "booking.count"
+          },
+          {
+            "line": 15,
+            "name": "count"
+          },
+          {
+            "line": 21,
+            "name": "findMany"
+          },
+          {
+            "line": 9,
+            "name": "findUnique"
+          },
+          {
+            "line": 21,
+            "name": "invoice"
+          },
+          {
+            "line": 21,
+            "name": "invoice.findMany"
+          },
+          {
+            "line": 8,
+            "name": "map"
+          },
+          {
+            "line": 9,
+            "name": "prisma"
+          },
+          {
+            "line": 15,
+            "name": "prisma.booking"
+          },
+          {
+            "line": 21,
+            "name": "prisma.invoice"
+          },
+          {
+            "line": 9,
+            "name": "prisma.tenant"
+          },
+          {
+            "line": 9,
+            "name": "tenant"
+          },
+          {
+            "line": 9,
+            "name": "tenant.findUnique"
+          }
         ]
       },
       "tags": 0,

@@ -101,15 +101,42 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "A",
-          "B",
-          "D",
-          "E",
-          "VITE_C",
-          "env",
-          "env.VITE_C",
-          "meta",
-          "meta.env"
+          {
+            "line": 1,
+            "name": "A"
+          },
+          {
+            "line": 2,
+            "name": "B"
+          },
+          {
+            "line": 4,
+            "name": "D"
+          },
+          {
+            "line": 4,
+            "name": "E"
+          },
+          {
+            "line": 3,
+            "name": "VITE_C"
+          },
+          {
+            "line": 3,
+            "name": "env"
+          },
+          {
+            "line": 3,
+            "name": "env.VITE_C"
+          },
+          {
+            "line": 3,
+            "name": "meta"
+          },
+          {
+            "line": 3,
+            "name": "meta.env"
+          }
         ]
       },
       "tags": 0,

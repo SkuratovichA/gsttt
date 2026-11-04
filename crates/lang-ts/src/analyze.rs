@@ -376,7 +376,8 @@ impl<'a> Analyzer<'_, 'a> {
             return;
         };
         let outer = self.symbols.enter_type();
-        for class in block.used() {
+        for (class, tag) in block.used() {
+            self.symbols.at(tag);
             self.symbols.reference(class);
         }
         self.symbols.leave_type(outer);
@@ -2073,6 +2074,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         }
         self.visit_binding_pattern(&it.id);
         if let Some(type_annotation) = &it.type_annotation {
+            self.symbols.at(type_annotation.span.start);
             match self.held_by_type(&it.id, type_annotation) {
                 Some(class) => self.symbols.through_class(&class, Some(TYPE_ONLY)),
                 None => self.visit_ts_type_annotation(type_annotation),
@@ -2162,6 +2164,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        self.symbols.at(it.span.start);
         self.exports_handed_to(it);
         let argument = it.arguments.first().and_then(Argument::as_expression);
         if is_require(it) {
@@ -2182,6 +2185,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
                     .and_then(Argument::as_expression)
                     .and_then(literal_text)
             {
+                self.symbols.at(it.span.start);
                 self.symbols.read(&name);
             }
             if let Some(callee) = dotted(&names) {
@@ -2228,6 +2232,12 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_member_expression(&mut self, it: &MemberExpression<'a>) {
+        // A use is written where its member is, which is on a later line than the start of the expression when the chain is broken across lines.
+        self.symbols.at(match it {
+            MemberExpression::StaticMemberExpression(member) => member.property.span.start,
+            MemberExpression::PrivateFieldExpression(member) => member.field.span.start,
+            MemberExpression::ComputedMemberExpression(member) => member.expression.span().start,
+        });
         let access = self.access.take().unwrap_or(Access::Read);
         let Some(names) = member_chain(it) else {
             match it {
@@ -2486,6 +2496,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     /// The name of a type reference, and of an `implements` or an interface `extends`, which are types and not values even where the walk meets them outside a `TSType`.
     fn visit_ts_type_name(&mut self, it: &TSTypeName<'a>) {
         let outer = self.symbols.enter_type();
+        self.symbols.at(it.span().start);
         // `lib.Foo` uses the name `lib.Foo` of a namespace, as the value `lib.Foo` does.
         match type_chain(it) {
             Some(names) if names.len() > 1 => self.symbols.chain(&names),
@@ -2496,6 +2507,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
 
     /// `<lib.Comp />` uses `lib.Comp`, as the value `lib.Comp` does.
     fn visit_jsx_member_expression(&mut self, it: &JSXMemberExpression<'a>) {
+        self.symbols.at(it.span.start);
         match jsx_chain(it) {
             Some(names) => {
                 self.symbols.chain(&names);
@@ -2508,6 +2520,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.symbols.at(it.span.start);
         // A value of a known class that goes somewhere else may meet any member of it.
         match self.constants.class_held(it.name.as_str(), it.span.start) {
             Some(class) => self.symbols.through_class(class, None),
@@ -2527,6 +2540,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         self.symbols.restore(outer);
         self.visit_binding_pattern(&it.pattern);
         if let Some(type_annotation) = &it.type_annotation {
+            self.symbols.at(type_annotation.span.start);
             match self.held_by_type(&it.pattern, type_annotation) {
                 Some(class) => self.symbols.through_class(&class, Some(TYPE_ONLY)),
                 None => self.visit_ts_type_annotation(type_annotation),
@@ -2550,6 +2564,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_new_expression(&mut self, it: &NewExpression<'a>) {
+        self.symbols.at(it.span.start);
         let outer = self.symbols.run();
         if self.held_new == Some(it.span.start)
             && let Some(class) = dotted_name(&it.callee)
@@ -2591,6 +2606,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         &mut self,
         it: &AssignmentTargetPropertyIdentifier<'a>,
     ) {
+        self.symbols.at(it.span.start);
         self.symbols.read(it.binding.name.as_str());
         self.symbols.write(it.binding.name.as_str());
         walk::walk_assignment_target_property_identifier(self, it);
@@ -2601,6 +2617,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
         it: &AssignmentTargetPropertyProperty<'a>,
     ) {
         if let Some(name) = property_str(&it.name) {
+            self.symbols.at(it.span.start);
             self.symbols.read(name);
         }
         walk::walk_assignment_target_property_property(self, it);
@@ -2609,6 +2626,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     /// `{ place }` and `{ place: renamed }` in a pattern read the member `place` of the value they take apart.
     fn visit_binding_property(&mut self, it: &BindingProperty<'a>) {
         if let Some(name) = property_str(&it.key) {
+            self.symbols.at(it.span.start);
             self.symbols.read(name);
         }
         walk::walk_binding_property(self, it);
@@ -2624,6 +2642,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
             && let Some(member) = member.value.as_str()
         {
             let outer = self.symbols.enter_type();
+            self.symbols.at(it.span.start);
             self.symbols.through_class(
                 &names.into_iter().flatten().collect::<Vec<_>>().join("."),
                 Some(member),
@@ -2650,6 +2669,7 @@ impl<'a> Visit<'a> for Analyzer<'_, 'a> {
     }
 
     fn visit_private_in_expression(&mut self, it: &PrivateInExpression<'a>) {
+        self.symbols.at(it.span.start);
         self.symbols.private(it.left.name.as_str(), None);
         walk::walk_private_in_expression(self, it);
     }

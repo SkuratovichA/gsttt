@@ -264,7 +264,7 @@ impl Tree {
             .unwrap_or_else(|| panic!("{path} does not declare {name}: {:?}", self.declared(path)))
             .uses
             .iter()
-            .map(String::as_str)
+            .map(|used| used.name.as_str())
             .collect()
     }
 
@@ -273,7 +273,7 @@ impl Tree {
         self.symbols(path)
             .reads
             .iter()
-            .map(String::as_str)
+            .map(|used| used.name.as_str())
             .collect()
     }
 
@@ -282,7 +282,7 @@ impl Tree {
         self.symbols(path)
             .on_load
             .iter()
-            .map(String::as_str)
+            .map(|used| used.name.as_str())
             .collect()
     }
 
@@ -4520,4 +4520,42 @@ fn a_syntax_error_gives_no_code() {
     assert_eq!(code_of("a.py", "def f(:\n    pass\n"), None);
     // A manifest is no Python source either.
     assert_eq!(code_of("setup.cfg", "[metadata]\nname = p\n"), None);
+}
+
+#[test]
+#[gsttt_scenario::scenario("python", "A use keeps the line it is written on")]
+fn a_use_keeps_the_line_it_is_written_on() {
+    let tree = module(
+        "from lib import first, second, Builder\n\n\ndef run():\n    first()\n    second()\n    Builder()\\\n        .add()\\\n        .build()\n\n\nfirst()\n",
+    );
+
+    let lines = |uses: &[gsttt_core::fact::Use]| -> Vec<(String, Line)> {
+        uses.iter()
+            .map(|used| (used.name.clone(), used.line))
+            .collect()
+    };
+    let symbols = tree.symbols(MODULE);
+    let run = symbols
+        .declared
+        .iter()
+        .find(|declared| declared.name == "run")
+        .expect("run is declared");
+    let found = lines(&run.uses);
+    let line_of = |name: &str| {
+        found
+            .iter()
+            .find(|(used, _)| used == name)
+            .map(|(_, line)| *line)
+    };
+    assert_eq!(line_of("first"), Some(5), "{found:?}");
+    assert_eq!(line_of("second"), Some(6), "{found:?}");
+    assert_eq!(line_of("Builder.__init__"), Some(7), "{found:?}");
+    // The chain starts on line 7 and its members stand on lines 8 and 9. `build` is read on what `add` gives, whose class is not known, so it is among the reads of the file.
+    assert_eq!(line_of("Builder.add"), Some(8), "{found:?}");
+    assert!(
+        lines(&symbols.reads).contains(&("build".to_owned(), 9)),
+        "{:?}",
+        symbols.reads
+    );
+    assert_eq!(lines(&symbols.on_load), [("first".to_owned(), 12)]);
 }

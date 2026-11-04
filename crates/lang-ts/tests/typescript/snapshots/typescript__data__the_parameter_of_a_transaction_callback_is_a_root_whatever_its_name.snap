@@ -58,7 +58,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -66,8 +69,14 @@ expression: json
             "line": 5,
             "name": "users",
             "uses": [
-              "prisma.$transaction",
-              "prisma.user"
+              {
+                "line": 6,
+                "name": "prisma.$transaction"
+              },
+              {
+                "line": 6,
+                "name": "prisma.user"
+              }
             ]
           }
         ],
@@ -79,14 +88,29 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "$transaction",
-          "findMany",
-          "user",
-          "user.findMany"
+          {
+            "line": 6,
+            "name": "$transaction"
+          },
+          {
+            "line": 6,
+            "name": "findMany"
+          },
+          {
+            "line": 6,
+            "name": "user"
+          },
+          {
+            "line": 6,
+            "name": "user.findMany"
+          }
         ]
       },
       "tags": 0,
@@ -127,7 +151,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -135,7 +162,10 @@ expression: json
             "line": 5,
             "name": "users",
             "uses": [
-              "prisma.$transaction"
+              {
+                "line": 6,
+                "name": "prisma.$transaction"
+              }
             ]
           }
         ],
@@ -147,13 +177,25 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "$transaction",
-          "findMany",
-          "user"
+          {
+            "line": 6,
+            "name": "$transaction"
+          },
+          {
+            "line": 6,
+            "name": "findMany"
+          },
+          {
+            "line": 6,
+            "name": "user"
+          }
         ]
       },
       "tags": 0,
@@ -210,10 +252,22 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "booking",
-          "booking.create",
-          "create",
-          "prisma.$transaction"
+          {
+            "line": 6,
+            "name": "booking"
+          },
+          {
+            "line": 6,
+            "name": "booking.create"
+          },
+          {
+            "line": 6,
+            "name": "create"
+          },
+          {
+            "line": 5,
+            "name": "prisma.$transaction"
+          }
         ]
       },
       "tags": 0,
@@ -241,14 +295,29 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "items"
+          {
+            "line": 3,
+            "name": "items"
+          }
         ],
         "overrides": [],
         "reads": [
-          "findMany",
-          "forEach",
-          "user",
-          "user.findMany"
+          {
+            "line": 3,
+            "name": "findMany"
+          },
+          {
+            "line": 3,
+            "name": "forEach"
+          },
+          {
+            "line": 3,
+            "name": "user"
+          },
+          {
+            "line": 3,
+            "name": "user.findMany"
+          }
         ]
       },
       "tags": 0,
@@ -289,7 +358,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -303,8 +375,14 @@ expression: json
             "line": 6,
             "name": "users",
             "uses": [
-              "client",
-              "prisma.$transaction"
+              {
+                "line": 8,
+                "name": "client"
+              },
+              {
+                "line": 7,
+                "name": "prisma.$transaction"
+              }
             ]
           }
         ],
@@ -316,14 +394,29 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "$transaction",
-          "findMany",
-          "user",
-          "user.findMany"
+          {
+            "line": 7,
+            "name": "$transaction"
+          },
+          {
+            "line": 8,
+            "name": "findMany"
+          },
+          {
+            "line": 8,
+            "name": "user"
+          },
+          {
+            "line": 8,
+            "name": "user.findMany"
+          }
         ]
       },
       "tags": 0,
@@ -371,7 +464,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -379,7 +475,10 @@ expression: json
             "line": 5,
             "name": "users",
             "uses": [
-              "prisma.$transaction"
+              {
+                "line": 6,
+                "name": "prisma.$transaction"
+              }
             ]
           }
         ],
@@ -391,14 +490,29 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "$transaction",
-          "findMany",
-          "user",
-          "user.findMany"
+          {
+            "line": 6,
+            "name": "$transaction"
+          },
+          {
+            "line": 7,
+            "name": "findMany"
+          },
+          {
+            "line": 7,
+            "name": "user"
+          },
+          {
+            "line": 7,
+            "name": "user.findMany"
+          }
         ]
       },
       "tags": 0,

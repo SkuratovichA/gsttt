@@ -76,7 +76,10 @@ expression: json
             "line": 4,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 4,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -88,13 +91,25 @@ expression: json
           }
         ],
         "on_load": [
-          "app.use",
-          "express",
-          "shared"
+          {
+            "line": 5,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "express"
+          },
+          {
+            "line": 5,
+            "name": "shared"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 5,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -160,7 +175,10 @@ expression: json
             "line": 4,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 4,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -172,13 +190,25 @@ expression: json
           }
         ],
         "on_load": [
-          "app.use",
-          "express",
-          "shared"
+          {
+            "line": 5,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "express"
+          },
+          {
+            "line": 5,
+            "name": "shared"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 5,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -231,7 +261,10 @@ expression: json
             "line": 3,
             "name": "shared",
             "uses": [
-              "Router"
+              {
+                "line": 3,
+                "name": "Router"
+              }
             ]
           }
         ],
@@ -243,13 +276,25 @@ expression: json
           }
         ],
         "on_load": [
-          "Router",
-          "shared.get"
+          {
+            "line": 3,
+            "name": "Router"
+          },
+          {
+            "line": 4,
+            "name": "shared.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "end",
-          "get"
+          {
+            "line": 4,
+            "name": "end"
+          },
+          {
+            "line": 4,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

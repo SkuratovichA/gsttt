@@ -58,7 +58,10 @@ expression: json
             "line": 3,
             "name": "Chain1",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -66,7 +69,10 @@ expression: json
             "line": 4,
             "name": "Chain2",
             "uses": [
-              "Chain1"
+              {
+                "line": 4,
+                "name": "Chain1"
+              }
             ]
           },
           {
@@ -74,7 +80,10 @@ expression: json
             "line": 5,
             "name": "Chain3",
             "uses": [
-              "Chain2"
+              {
+                "line": 5,
+                "name": "Chain2"
+              }
             ]
           },
           {
@@ -82,7 +91,10 @@ expression: json
             "line": 6,
             "name": "Chain4",
             "uses": [
-              "Chain3"
+              {
+                "line": 6,
+                "name": "Chain3"
+              }
             ]
           },
           {
@@ -90,7 +102,10 @@ expression: json
             "line": 7,
             "name": "Chain5",
             "uses": [
-              "Chain4"
+              {
+                "line": 7,
+                "name": "Chain4"
+              }
             ]
           },
           {
@@ -98,7 +113,10 @@ expression: json
             "line": 8,
             "name": "Chain6",
             "uses": [
-              "Chain5"
+              {
+                "line": 8,
+                "name": "Chain5"
+              }
             ]
           },
           {
@@ -106,7 +124,10 @@ expression: json
             "line": 9,
             "name": "Chain7",
             "uses": [
-              "Chain6"
+              {
+                "line": 9,
+                "name": "Chain6"
+              }
             ]
           },
           {
@@ -114,7 +135,10 @@ expression: json
             "line": 10,
             "name": "Chain8",
             "uses": [
-              "Chain7"
+              {
+                "line": 10,
+                "name": "Chain7"
+              }
             ]
           },
           {
@@ -122,7 +146,10 @@ expression: json
             "line": 11,
             "name": "Chain9",
             "uses": [
-              "Chain8"
+              {
+                "line": 11,
+                "name": "Chain8"
+              }
             ]
           },
           {
@@ -130,8 +157,14 @@ expression: json
             "line": 13,
             "name": "find",
             "uses": [
-              "Chain9.",
-              "Chain9.tenant"
+              {
+                "line": 13,
+                "name": "Chain9."
+              },
+              {
+                "line": 14,
+                "name": "Chain9.tenant"
+              }
             ]
           }
         ],
@@ -140,8 +173,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 14,
+            "name": "findFirst"
+          },
+          {
+            "line": 14,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,
@@ -190,7 +229,10 @@ expression: json
             "line": 3,
             "name": "Ping",
             "uses": [
-              "Pong"
+              {
+                "line": 3,
+                "name": "Pong"
+              }
             ]
           },
           {
@@ -198,7 +240,10 @@ expression: json
             "line": 4,
             "name": "Pong",
             "uses": [
-              "Ping"
+              {
+                "line": 4,
+                "name": "Ping"
+              }
             ]
           },
           {
@@ -206,8 +251,14 @@ expression: json
             "line": 5,
             "name": "Back",
             "uses": [
-              "Forth",
-              "PrismaClient"
+              {
+                "line": 5,
+                "name": "Forth"
+              },
+              {
+                "line": 5,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -215,7 +266,10 @@ expression: json
             "line": 6,
             "name": "Forth",
             "uses": [
-              "Back"
+              {
+                "line": 6,
+                "name": "Back"
+              }
             ]
           },
           {
@@ -223,8 +277,14 @@ expression: json
             "line": 8,
             "name": "loop",
             "uses": [
-              "Ping.",
-              "Ping.tenant"
+              {
+                "line": 8,
+                "name": "Ping."
+              },
+              {
+                "line": 9,
+                "name": "Ping.tenant"
+              }
             ]
           },
           {
@@ -232,8 +292,14 @@ expression: json
             "line": 12,
             "name": "escape",
             "uses": [
-              "Forth.",
-              "Forth.booking"
+              {
+                "line": 12,
+                "name": "Forth."
+              },
+              {
+                "line": 13,
+                "name": "Forth.booking"
+              }
             ]
           }
         ],
@@ -242,10 +308,22 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "booking.count",
-          "count",
-          "findMany",
-          "tenant.findMany"
+          {
+            "line": 13,
+            "name": "booking.count"
+          },
+          {
+            "line": 13,
+            "name": "count"
+          },
+          {
+            "line": 9,
+            "name": "findMany"
+          },
+          {
+            "line": 9,
+            "name": "tenant.findMany"
+          }
         ]
       },
       "tags": 0,
@@ -276,8 +354,14 @@ expression: json
             "line": 3,
             "name": "find",
             "uses": [
-              "Wide.",
-              "Wide.tenant"
+              {
+                "line": 3,
+                "name": "Wide."
+              },
+              {
+                "line": 4,
+                "name": "Wide.tenant"
+              }
             ]
           }
         ],
@@ -286,8 +370,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 4,
+            "name": "findFirst"
+          },
+          {
+            "line": 4,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,

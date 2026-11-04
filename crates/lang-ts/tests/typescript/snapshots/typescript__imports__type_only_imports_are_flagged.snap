@@ -72,9 +72,18 @@ expression: json
             "line": 4,
             "name": "Both",
             "uses": [
-              "A",
-              "B",
-              "C"
+              {
+                "line": 4,
+                "name": "A"
+              },
+              {
+                "line": 4,
+                "name": "B"
+              },
+              {
+                "line": 4,
+                "name": "C"
+              }
             ]
           }
         ],

@@ -105,9 +105,18 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "helper",
-          "other",
-          "then"
+          {
+            "line": 1,
+            "name": "helper"
+          },
+          {
+            "line": 2,
+            "name": "other"
+          },
+          {
+            "line": 3,
+            "name": "then"
+          }
         ]
       },
       "tags": 0,

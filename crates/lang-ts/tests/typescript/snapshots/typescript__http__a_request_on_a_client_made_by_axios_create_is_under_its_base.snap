@@ -58,7 +58,10 @@ expression: json
             "line": 3,
             "name": "api",
             "uses": [
-              "axios.create"
+              {
+                "line": 3,
+                "name": "axios.create"
+              }
             ]
           },
           {
@@ -66,19 +69,31 @@ expression: json
             "line": 4,
             "name": "drop",
             "uses": [
-              "api"
+              {
+                "line": 4,
+                "name": "api"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create"
+          {
+            "line": 3,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "request"
+          {
+            "line": 3,
+            "name": "create"
+          },
+          {
+            "line": 4,
+            "name": "request"
+          }
         ]
       },
       "tags": 0,

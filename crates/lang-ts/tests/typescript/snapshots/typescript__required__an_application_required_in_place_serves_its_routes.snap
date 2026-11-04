@@ -49,12 +49,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "app"
+          {
+            "line": 3,
+            "name": "app"
+          }
         ],
         "overrides": [],
         "reads": [
-          "end",
-          "get"
+          {
+            "line": 3,
+            "name": "end"
+          },
+          {
+            "line": 3,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

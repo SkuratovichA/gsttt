@@ -58,7 +58,10 @@ expression: json
             "line": 4,
             "name": "hit",
             "uses": [
-              "cache.get"
+              {
+                "line": 4,
+                "name": "cache.get"
+              }
             ]
           },
           {
@@ -66,7 +69,10 @@ expression: json
             "line": 6,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 6,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -82,8 +88,14 @@ expression: json
           }
         ],
         "on_load": [
-          "cache.get",
-          "express"
+          {
+            "line": 4,
+            "name": "cache.get"
+          },
+          {
+            "line": 6,
+            "name": "express"
+          }
         ],
         "overrides": [],
         "reads": []

@@ -77,7 +77,10 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "BASE"
+          {
+            "line": 3,
+            "name": "BASE"
+          }
         ],
         "overrides": [],
         "reads": []

@@ -65,7 +65,10 @@ expression: json
             "line": 3,
             "name": "book",
             "uses": [
-              "axios.request"
+              {
+                "line": 3,
+                "name": "axios.request"
+              }
             ]
           },
           {
@@ -73,7 +76,10 @@ expression: json
             "line": 4,
             "name": "all",
             "uses": [
-              "axios.request"
+              {
+                "line": 4,
+                "name": "axios.request"
+              }
             ]
           }
         ],
@@ -82,7 +88,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "request"
+          {
+            "line": 3,
+            "name": "request"
+          }
         ]
       },
       "tags": 0,

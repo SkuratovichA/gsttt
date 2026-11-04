@@ -78,16 +78,28 @@ expression: json
             "line": 4,
             "name": "AppModule",
             "uses": [
-              "ItemsModule",
-              "Module"
+              {
+                "line": 4,
+                "name": "ItemsModule"
+              },
+              {
+                "line": 4,
+                "name": "Module"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "ItemsModule",
-          "Module"
+          {
+            "line": 4,
+            "name": "ItemsModule"
+          },
+          {
+            "line": 4,
+            "name": "Module"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -143,21 +155,39 @@ expression: json
             "line": 4,
             "name": "bootstrap",
             "uses": [
-              "AppModule",
-              "NestFactory.create",
-              "NestFactory.listen",
-              "NestFactory.setGlobalPrefix"
+              {
+                "line": 5,
+                "name": "AppModule"
+              },
+              {
+                "line": 5,
+                "name": "NestFactory.create"
+              },
+              {
+                "line": 7,
+                "name": "NestFactory.listen"
+              },
+              {
+                "line": 6,
+                "name": "NestFactory.setGlobalPrefix"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "bootstrap"
+          {
+            "line": 10,
+            "name": "bootstrap"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create"
+          {
+            "line": 5,
+            "name": "create"
+          }
         ]
       },
       "tags": 0,
@@ -258,7 +288,10 @@ expression: json
             "line": 3,
             "name": "ItemsController",
             "uses": [
-              "Controller"
+              {
+                "line": 3,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -266,15 +299,24 @@ expression: json
             "line": 5,
             "name": "ItemsController.find",
             "uses": [
-              "Get"
+              {
+                "line": 5,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get"
+          {
+            "line": 3,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -332,16 +374,28 @@ expression: json
             "line": 4,
             "name": "ItemsModule",
             "uses": [
-              "ItemsController",
-              "Module"
+              {
+                "line": 4,
+                "name": "ItemsController"
+              },
+              {
+                "line": 4,
+                "name": "Module"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "ItemsController",
-          "Module"
+          {
+            "line": 4,
+            "name": "ItemsController"
+          },
+          {
+            "line": 4,
+            "name": "Module"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -393,7 +447,10 @@ expression: json
             "line": 3,
             "name": "LegacyController",
             "uses": [
-              "Controller"
+              {
+                "line": 3,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -401,15 +458,24 @@ expression: json
             "line": 5,
             "name": "LegacyController.find",
             "uses": [
-              "Get"
+              {
+                "line": 5,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get"
+          {
+            "line": 3,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []

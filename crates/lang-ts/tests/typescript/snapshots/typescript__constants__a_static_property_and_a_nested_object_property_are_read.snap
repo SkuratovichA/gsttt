@@ -113,7 +113,10 @@ expression: json
             "line": 4,
             "name": "UsersController",
             "uses": [
-              "Controller"
+              {
+                "line": 4,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -121,8 +124,14 @@ expression: json
             "line": 6,
             "name": "UsersController.login",
             "uses": [
-              "Get",
-              "Routes.LOGIN"
+              {
+                "line": 6,
+                "name": "Get"
+              },
+              {
+                "line": 6,
+                "name": "Routes.LOGIN"
+              }
             ]
           },
           {
@@ -130,25 +139,55 @@ expression: json
             "line": 9,
             "name": "UsersController.find",
             "uses": [
-              "Get",
-              "ROUTES.users"
+              {
+                "line": 9,
+                "name": "Get"
+              },
+              {
+                "line": 9,
+                "name": "ROUTES.users"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get",
-          "ROUTES.users",
-          "Routes.LOGIN"
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "Get"
+          },
+          {
+            "line": 9,
+            "name": "ROUTES.users"
+          },
+          {
+            "line": 6,
+            "name": "Routes.LOGIN"
+          }
         ],
         "overrides": [],
         "reads": [
-          "LOGIN",
-          "byId",
-          "users",
-          "users.byId"
+          {
+            "line": 6,
+            "name": "LOGIN"
+          },
+          {
+            "line": 9,
+            "name": "byId"
+          },
+          {
+            "line": 9,
+            "name": "users"
+          },
+          {
+            "line": 9,
+            "name": "users.byId"
+          }
         ]
       },
       "tags": 0,

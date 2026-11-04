@@ -90,13 +90,34 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a",
-          "b",
-          "c",
-          "c.d",
-          "d",
-          "e",
-          "f"
+          {
+            "line": 1,
+            "name": "a"
+          },
+          {
+            "line": 2,
+            "name": "b"
+          },
+          {
+            "line": 3,
+            "name": "c"
+          },
+          {
+            "line": 3,
+            "name": "c.d"
+          },
+          {
+            "line": 3,
+            "name": "d"
+          },
+          {
+            "line": 4,
+            "name": "e"
+          },
+          {
+            "line": 5,
+            "name": "f"
+          }
         ]
       },
       "tags": 0,

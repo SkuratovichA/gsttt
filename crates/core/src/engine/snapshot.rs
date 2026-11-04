@@ -22,7 +22,7 @@ use crate::{VERSION, atomic};
 
 const MAGIC: &[u8; 8] = b"GSTTSNAP";
 /// The layout of the file: the prefix, the header and the body. Bump it by hand whenever any of them changes shape, or the index in the body comes out of another rule, because a stored index answers as it is. [`VERSION`] cannot do that, because every development build has the same one, whatever commit of a branch it was built from.
-const LAYOUT: u32 = 14;
+const LAYOUT: u32 = 15;
 /// Magic, layout, header length and the hash of the body.
 const PREFIX: usize = 24;
 /// The body starts at a multiple of this, so the archived values in it sit where rkyv needs them.
@@ -448,6 +448,27 @@ mod tests {
         fs::write(&file, bytes).unwrap();
 
         assert!(Snapshot::open(&file).is_none());
+    }
+
+    #[gsttt_scenario::scenario(
+        "indexing",
+        "A snapshot of the layout before the lines of uses is not loaded"
+    )]
+    #[test]
+    fn a_snapshot_of_the_layout_before_the_lines_of_uses_counts_as_none() {
+        let (dir, snapshot) = stored_in(vec![entry("a.txt", None, FileFacts::default())]);
+        assert!(snapshot.stored().is_some());
+        let file = dir.path().join("snapshot.gsttt");
+        let mut bytes = fs::read(&file).unwrap();
+        // The layout number follows the magic, as a little-endian `u32`.
+        assert_eq!(bytes.get(8..12), Some(LAYOUT.to_le_bytes().as_slice()));
+        assert_eq!(LAYOUT, 15, "the layout that gives a use its line");
+        bytes[8..12].copy_from_slice(&14_u32.to_le_bytes());
+        fs::write(&file, bytes).unwrap();
+
+        assert!(Snapshot::open(&file).is_none());
+        // The layouts before it are rejected one by one, with the reason each was bumped.
+        assert_eq!(parse_prefix(&prefix(MAGIC, 14, 40, 7)), None);
     }
 
     #[test]

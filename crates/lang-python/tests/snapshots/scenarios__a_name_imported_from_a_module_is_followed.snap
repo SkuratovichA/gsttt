@@ -75,8 +75,14 @@ expression: "tree.file_json(\"requests_name.py\")"
         "line": 7,
         "end": 8,
         "uses": [
-          "BASE",
-          "get"
+          {
+            "name": "BASE",
+            "line": 8
+          },
+          {
+            "name": "get",
+            "line": 8
+          }
         ]
       },
       {
@@ -84,8 +90,14 @@ expression: "tree.file_json(\"requests_name.py\")"
         "line": 11,
         "end": 12,
         "uses": [
-          "BASE",
-          "send"
+          {
+            "name": "BASE",
+            "line": 12
+          },
+          {
+            "name": "send",
+            "line": 12
+          }
         ]
       }
     ],

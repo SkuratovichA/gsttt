@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 3,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -63,7 +66,10 @@ expression: json
           }
         ],
         "on_load": [
-          "express"
+          {
+            "line": 3,
+            "name": "express"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -117,12 +123,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "app.use",
-          "router"
+          {
+            "line": 4,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 4,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -163,21 +178,39 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "express.Router"
+              {
+                "line": 3,
+                "name": "express.Router"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "express.Router",
-          "router"
+          {
+            "line": 3,
+            "name": "express.Router"
+          },
+          {
+            "line": 5,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "Router",
-          "get",
-          "json"
+          {
+            "line": 3,
+            "name": "Router"
+          },
+          {
+            "line": 5,
+            "name": "get"
+          },
+          {
+            "line": 5,
+            "name": "json"
+          }
         ]
       },
       "tags": 0,

@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 3,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -63,7 +66,10 @@ expression: json
           }
         ],
         "on_load": [
-          "express"
+          {
+            "line": 3,
+            "name": "express"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -108,18 +114,27 @@ expression: json
             "line": 3,
             "name": "i18n",
             "uses": [
-              "i18next.createInstance"
+              {
+                "line": 3,
+                "name": "i18next.createInstance"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "i18next.createInstance"
+          {
+            "line": 3,
+            "name": "i18next.createInstance"
+          }
         ],
         "overrides": [],
         "reads": [
-          "createInstance"
+          {
+            "line": 3,
+            "name": "createInstance"
+          }
         ]
       },
       "tags": 0,
@@ -178,13 +193,25 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "app.use",
-          "router"
+          {
+            "line": 4,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "BASE",
-          "use"
+          {
+            "line": 4,
+            "name": "BASE"
+          },
+          {
+            "line": 4,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -225,21 +252,39 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "express.Router"
+              {
+                "line": 3,
+                "name": "express.Router"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "express.Router",
-          "router"
+          {
+            "line": 3,
+            "name": "express.Router"
+          },
+          {
+            "line": 5,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "Router",
-          "get",
-          "json"
+          {
+            "line": 3,
+            "name": "Router"
+          },
+          {
+            "line": 5,
+            "name": "get"
+          },
+          {
+            "line": 5,
+            "name": "json"
+          }
         ]
       },
       "tags": 0,
@@ -300,13 +345,25 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "i18n.use",
-          "initReactI18next"
+          {
+            "line": 4,
+            "name": "i18n.use"
+          },
+          {
+            "line": 4,
+            "name": "initReactI18next"
+          }
         ],
         "overrides": [],
         "reads": [
-          "BASE",
-          "use"
+          {
+            "line": 4,
+            "name": "BASE"
+          },
+          {
+            "line": 4,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,

@@ -40,8 +40,14 @@ expression: "json!({\n    \"file\": tree.file_json(\"lib/bookings/api.py\"), \"l
           "line": 3,
           "end": 3,
           "uses": [
-            "APIRouter",
-            "APIRouter.__init__"
+            {
+              "name": "APIRouter",
+              "line": 3
+            },
+            {
+              "name": "APIRouter.__init__",
+              "line": 3
+            }
           ]
         },
         {
@@ -49,14 +55,26 @@ expression: "json!({\n    \"file\": tree.file_json(\"lib/bookings/api.py\"), \"l
           "line": 6,
           "end": 8,
           "uses": [
-            "router.get"
+            {
+              "name": "router.get",
+              "line": 6
+            }
           ]
         }
       ],
       "on_load": [
-        "APIRouter",
-        "APIRouter.__init__",
-        "router.get"
+        {
+          "name": "APIRouter",
+          "line": 3
+        },
+        {
+          "name": "APIRouter.__init__",
+          "line": 3
+        },
+        {
+          "name": "router.get",
+          "line": 6
+        }
       ],
       "exports": [],
       "heirs": [

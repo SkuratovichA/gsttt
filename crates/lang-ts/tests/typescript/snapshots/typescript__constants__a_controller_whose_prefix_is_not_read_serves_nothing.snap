@@ -70,8 +70,14 @@ expression: json
             "line": 4,
             "name": "AuthController",
             "uses": [
-              "Controller",
-              "PREFIX"
+              {
+                "line": 4,
+                "name": "Controller"
+              },
+              {
+                "line": 4,
+                "name": "PREFIX"
+              }
             ]
           },
           {
@@ -79,7 +85,10 @@ expression: json
             "line": 6,
             "name": "AuthController.login",
             "uses": [
-              "Get"
+              {
+                "line": 6,
+                "name": "Get"
+              }
             ]
           },
           {
@@ -87,18 +96,36 @@ expression: json
             "line": 9,
             "name": "AuthController.again",
             "uses": [
-              "Get",
-              "LOGIN"
+              {
+                "line": 9,
+                "name": "Get"
+              },
+              {
+                "line": 9,
+                "name": "LOGIN"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get",
-          "LOGIN",
-          "PREFIX"
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "Get"
+          },
+          {
+            "line": 9,
+            "name": "LOGIN"
+          },
+          {
+            "line": 4,
+            "name": "PREFIX"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -150,7 +177,10 @@ expression: json
             "line": 3,
             "name": "HealthController",
             "uses": [
-              "Controller"
+              {
+                "line": 3,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -158,15 +188,24 @@ expression: json
             "line": 5,
             "name": "HealthController.check",
             "uses": [
-              "Get"
+              {
+                "line": 5,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get"
+          {
+            "line": 3,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -259,14 +298,20 @@ expression: json
             "line": 4,
             "name": "UserControllerBase.find",
             "uses": [
-              "Get"
+              {
+                "line": 4,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Get"
+          {
+            "line": 4,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -339,9 +384,18 @@ expression: json
             "line": 5,
             "name": "UserController",
             "uses": [
-              "Controller",
-              "UserControllerBase",
-              "prefix"
+              {
+                "line": 5,
+                "name": "Controller"
+              },
+              {
+                "line": 6,
+                "name": "UserControllerBase"
+              },
+              {
+                "line": 5,
+                "name": "prefix"
+              }
             ]
           }
         ],
@@ -353,8 +407,14 @@ expression: json
           }
         ],
         "on_load": [
-          "Controller",
-          "prefix"
+          {
+            "line": 5,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "prefix"
+          }
         ],
         "overrides": [
           {

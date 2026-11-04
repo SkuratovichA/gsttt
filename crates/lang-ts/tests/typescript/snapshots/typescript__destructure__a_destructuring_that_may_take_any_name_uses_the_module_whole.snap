@@ -96,7 +96,10 @@ expression: json
             "line": 3,
             "name": "takeRest",
             "uses": [
-              "lib"
+              {
+                "line": 4,
+                "name": "lib"
+              }
             ]
           },
           {
@@ -104,7 +107,10 @@ expression: json
             "line": 8,
             "name": "takeComputed",
             "uses": [
-              "lib"
+              {
+                "line": 9,
+                "name": "lib"
+              }
             ]
           }
         ],
@@ -113,7 +119,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a"
+          {
+            "line": 4,
+            "name": "a"
+          }
         ]
       },
       "tags": 0,

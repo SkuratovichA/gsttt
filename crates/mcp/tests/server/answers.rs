@@ -882,3 +882,87 @@ async fn a_chain_that_does_not_exist_between_files_the_index_holds_is_an_answer(
     assert_eq!(reply.text, printed.text(Entries::Capped));
     assert!(reply.text.starts_with("no chain from"), "{}", reply.text);
 }
+
+/// `a.ts` declares `foo`, `b.ts` calls it on line 3 in `run`, and `api.generated.ts` imports `a.ts` as well.
+fn called_from_a_file_and_a_generated_one() -> Fake {
+    Fake::over(
+        Tree::new()
+            .symbols("a.ts", Code::new().declaration("foo", (1, 2), &[]))
+            .exports("a.ts", &["foo"])
+            .imports_names("b.ts", "a.ts", &["foo"])
+            .symbols(
+                "b.ts",
+                Code::new().declaration_at("run", (2, 4), &[("foo", 3)]),
+            )
+            .exports("b.ts", &[])
+            .imports("api.generated.ts", "a.ts")
+            .tag("api.generated.ts", FileTags::GENERATED)
+            .build(),
+    )
+}
+
+#[scenario("mcp", "impact counts the generated files unless asked")]
+#[tokio::test]
+async fn impact_counts_the_generated_files_unless_asked() {
+    let source = called_from_a_file_and_a_generated_one();
+    let session = Session::start(source.clone()).await;
+
+    let counted = session
+        .call("impact", json!({ "paths": ["a.ts"] }))
+        .await
+        .text;
+
+    let request = ImpactRequest {
+        files: vec!["a.ts".to_owned()],
+        no_tests: true,
+        tests_hint: Some("ask with tests=true"),
+        no_generated: true,
+        generated_hint: Some("ask with generated=true"),
+        ..ImpactRequest::default()
+    };
+    assert_eq!(counted, impact_text(&source, &request, Entries::Capped));
+    assert!(counted.contains("b.ts  distance 1"), "{counted}");
+    assert!(
+        counted.contains("\ngenerated: 1 file (ask with generated=true)\n"),
+        "{counted}"
+    );
+    assert!(!counted.contains("api.generated.ts"), "{counted}");
+
+    let listed = session
+        .call("impact", json!({ "paths": ["a.ts"], "generated": true }))
+        .await
+        .text;
+
+    assert!(
+        listed.contains("\ngenerated files (1):\napi.generated.ts  distance 1  imports a.ts\n"),
+        "{listed}"
+    );
+    assert!(!listed.contains("generated: "), "{listed}");
+}
+
+#[scenario(
+    "mcp",
+    "A source with a reader shows the line, and one without shows none"
+)]
+#[tokio::test]
+async fn a_source_with_a_reader_shows_the_line_and_one_without_shows_none() {
+    let b = "import { foo } from './a';\nexport function run() {\n  return foo();\n}\n";
+    let asked = json!({ "paths": ["a.ts"], "names": ["foo"] });
+
+    let with = Session::start(called_from_a_file_and_a_generated_one().readable("b.ts", b)).await;
+    let shown = with.call("impact", asked.clone()).await.text;
+    let without = Session::start(called_from_a_file_and_a_generated_one()).await;
+    let bare = without.call("impact", asked).await.text;
+
+    assert!(
+        shown.contains(
+            "\nb.ts:3  distance 1  imports foo from a.ts; in run (line 2)\n> return foo();\n"
+        ),
+        "{shown}"
+    );
+    assert!(
+        bare.contains("\nb.ts  distance 1  imports foo from a.ts; in run (line 2)\n"),
+        "{bare}"
+    );
+    assert!(!bare.contains("> "), "{bare}");
+}

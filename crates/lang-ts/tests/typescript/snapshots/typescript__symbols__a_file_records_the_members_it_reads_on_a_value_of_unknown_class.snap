@@ -84,7 +84,10 @@ expression: json
             "line": 8,
             "name": "Holder",
             "uses": [
-              "Base"
+              {
+                "line": 8,
+                "name": "Base"
+              }
             ]
           },
           {
@@ -92,8 +95,14 @@ expression: json
             "line": 9,
             "name": "Holder.constructor",
             "uses": [
-              "Base.constructor",
-              "Repo."
+              {
+                "line": 10,
+                "name": "Base.constructor"
+              },
+              {
+                "line": 9,
+                "name": "Repo."
+              }
             ]
           },
           {
@@ -107,12 +116,30 @@ expression: json
             "line": 15,
             "name": "Holder.run",
             "uses": [
-              "Base.repo",
-              "Base.up",
-              "Holder.own",
-              "Repo.save",
-              "Service.constructor",
-              "Service.known"
+              {
+                "line": 18,
+                "name": "Base.repo"
+              },
+              {
+                "line": 17,
+                "name": "Base.up"
+              },
+              {
+                "line": 16,
+                "name": "Holder.own"
+              },
+              {
+                "line": 18,
+                "name": "Repo.save"
+              },
+              {
+                "line": 19,
+                "name": "Service.constructor"
+              },
+              {
+                "line": 20,
+                "name": "Service.known"
+              }
             ]
           },
           {
@@ -120,7 +147,10 @@ expression: json
             "line": 28,
             "name": "P",
             "uses": [
-              "Service.place"
+              {
+                "line": 28,
+                "name": "Service.place"
+              }
             ]
           }
         ],
@@ -145,7 +175,10 @@ expression: json
           }
         ],
         "reads": [
-          "repo.save"
+          {
+            "line": 18,
+            "name": "repo.save"
+          }
         ]
       },
       "tags": 0,
@@ -190,9 +223,18 @@ expression: json
             "line": 5,
             "name": "reads",
             "uses": [
-              "a",
-              "jest",
-              "x"
+              {
+                "line": 13,
+                "name": "a"
+              },
+              {
+                "line": 12,
+                "name": "jest"
+              },
+              {
+                "line": 6,
+                "name": "x"
+              }
             ]
           },
           {
@@ -206,7 +248,10 @@ expression: json
             "line": 20,
             "name": "view",
             "uses": [
-              "x"
+              {
+                "line": 20,
+                "name": "x"
+              }
             ]
           }
         ],
@@ -215,18 +260,54 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a",
-          "b",
-          "c",
-          "d",
-          "e",
-          "g",
-          "h",
-          "i",
-          "j",
-          "j.k",
-          "k",
-          "spyOn"
+          {
+            "line": 6,
+            "name": "a"
+          },
+          {
+            "line": 7,
+            "name": "b"
+          },
+          {
+            "line": 8,
+            "name": "c"
+          },
+          {
+            "line": 9,
+            "name": "d"
+          },
+          {
+            "line": 11,
+            "name": "e"
+          },
+          {
+            "line": 16,
+            "name": "g"
+          },
+          {
+            "line": 12,
+            "name": "h"
+          },
+          {
+            "line": 20,
+            "name": "i"
+          },
+          {
+            "line": 13,
+            "name": "j"
+          },
+          {
+            "line": 13,
+            "name": "j.k"
+          },
+          {
+            "line": 13,
+            "name": "k"
+          },
+          {
+            "line": 12,
+            "name": "spyOn"
+          }
         ]
       },
       "tags": 0,

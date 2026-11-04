@@ -95,8 +95,14 @@ expression: json
             "line": 3,
             "name": "take",
             "uses": [
-              "lib.a",
-              "lib.b"
+              {
+                "line": 4,
+                "name": "lib.a"
+              },
+              {
+                "line": 4,
+                "name": "lib.b"
+              }
             ]
           }
         ],
@@ -105,8 +111,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a",
-          "b"
+          {
+            "line": 4,
+            "name": "a"
+          },
+          {
+            "line": 4,
+            "name": "b"
+          }
         ]
       },
       "tags": 0,

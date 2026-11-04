@@ -58,7 +58,10 @@ expression: json
             "line": 4,
             "name": "hit",
             "uses": [
-              "cache"
+              {
+                "line": 4,
+                "name": "cache"
+              }
             ]
           },
           {
@@ -66,18 +69,27 @@ expression: json
             "line": 5,
             "name": "client",
             "uses": [
-              "axios"
+              {
+                "line": 5,
+                "name": "axios"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "cache"
+          {
+            "line": 4,
+            "name": "cache"
+          }
         ],
         "overrides": [],
         "reads": [
-          "url"
+          {
+            "line": 3,
+            "name": "url"
+          }
         ]
       },
       "tags": 0,

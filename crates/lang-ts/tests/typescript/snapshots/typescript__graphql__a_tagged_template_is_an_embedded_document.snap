@@ -67,14 +67,20 @@ expression: json
             "line": 5,
             "name": "Q",
             "uses": [
-              "gql"
+              {
+                "line": 5,
+                "name": "gql"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "gql"
+          {
+            "line": 5,
+            "name": "gql"
+          }
         ],
         "overrides": [],
         "reads": []

@@ -59,8 +59,14 @@ expression: "tree.file_json(\"httpx_module.py\")"
         "line": 6,
         "end": 7,
         "uses": [
-          "BASE",
-          "hx.get"
+          {
+            "name": "BASE",
+            "line": 7
+          },
+          {
+            "name": "hx.get",
+            "line": 7
+          }
         ]
       },
       {
@@ -68,9 +74,18 @@ expression: "tree.file_json(\"httpx_module.py\")"
         "line": 10,
         "end": 12,
         "uses": [
-          "hx.Client",
-          "hx.Client.__init__",
-          "hx.Client.get"
+          {
+            "name": "hx.Client",
+            "line": 11
+          },
+          {
+            "name": "hx.Client.__init__",
+            "line": 11
+          },
+          {
+            "name": "hx.Client.get",
+            "line": 12
+          }
         ]
       }
     ],

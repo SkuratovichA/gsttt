@@ -1,5 +1,6 @@
 //! Facts: what a connector reads out of one file, before anything is resolved.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::BitOr;
 
@@ -345,8 +346,8 @@ pub struct FileFacts {
 pub struct Symbols {
     /// The declarations of the file, by the line they start on and then by name, each name once.
     pub declared: Vec<Declared>,
-    /// What the file's code refers to as the file loads, sorted, once each: everything in a top-level statement that is not a declaration, callbacks included, and what a declaration calls while it is evaluated, such as `f` in `const x = f()`. A change to one of them can fail the file as it loads, and so every file that loads it.
-    pub on_load: Vec<String>,
+    /// What the file's code refers to as the file loads, sorted by name, once each, each with the line of its first use: everything in a top-level statement that is not a declaration, callbacks included, and what a declaration calls while it is evaluated, such as `f` in `const x = f()`. A change to one of them can fail the file as it loads, and so every file that loads it.
+    pub on_load: Vec<Use>,
     /// Each name the file exports from a local of another name, by the name it is exported as: `b` from `a` for `export { a as b }`, `default` from `f` for `export default f`. A name exported under its own local name is not listed, and neither is a re-export, which its import describes.
     pub exports: Vec<LocalExport>,
     /// Each name that takes the members of another: a class and what it extends, an interface and what it extends, a top-level value and the class it holds, sorted by name and then by what it takes from, each pair once.
@@ -356,8 +357,8 @@ pub struct Symbols {
     /// Each member of a class that holds a value of another class, written as the name of the member and the class it holds: `Poetry.file` holding `TOMLFile`. Sorted by name and then by class, each pair once. It is kept apart from `heirs` because a walk reads through it only where a file reads the whole chain.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub holds: Vec<Heir>,
-    /// The member names the file reads on a receiver whose class the connector does not know, such as `place` for `x.place()` or `const { place } = x`, and on a class that a name below the top level holds, sorted, once each. A member read right on another is listed as `on.member` beside the read of each name, `file.read` for `self.poetry.file.read()`. A read on a builtin, such as `Object.entries(x)` or `path.normalize(p)`, is no read of a member of the repository and is not listed. A file that holds a class and never reads the name of one of its members cannot call that member.
-    pub reads: Vec<String>,
+    /// The member names the file reads on a receiver whose class the connector does not know, such as `place` for `x.place()` or `const { place } = x`, and on a class that a name below the top level holds, sorted, once each. A member read right on another is listed as `on.member` beside the read of each name, `file.read` for `self.poetry.file.read()`. A read on a builtin, such as `Object.entries(x)` or `path.normalize(p)`, is no read of a member of the repository and is not listed. A file that holds a class and never reads the name of one of its members cannot call that member. Each name comes with the line of its first read.
+    pub reads: Vec<Use>,
 }
 
 /// What joins a class and a member of it in the name of a declaration: `Runner.start`, and `Runner.#start` for a private member. A connector writes member names with it and a walk by name splits them on it.
@@ -398,8 +399,121 @@ pub struct Declared {
     pub line: Line,
     /// The line it ends on, from 1.
     pub end: Line,
-    /// The names it refers to, sorted, once each, never its own unless the declaration binds a name an import binds too, as Python's `X = wrap(X)` after `from m import X` does, or the first binding of a name in a file with a star import, as `X = X + [1]` after `from m import *` does: other declarations of the file, `Class.member` for `this.member` inside the class, the names at the head of the type of `this.field` and, for `this.field.member`, `Type.member` of each, spelled as the type writes it, and the local names the file's imports bind. A top-level variable also lists the declarations that write it. A member read on a value of a class the connector does not know, `x.m()` or `x.f`, is listed as `.m`, the separator and the member, which a walk by name reads as a use of a member `m` of any class the file holds the name of.
-    pub uses: Vec<String>,
+    /// The names it refers to, sorted by name, once each, each with the line of its first use, never its own unless the declaration binds a name an import binds too, as Python's `X = wrap(X)` after `from m import X` does, or the first binding of a name in a file with a star import, as `X = X + [1]` after `from m import *` does: other declarations of the file, `Class.member` for `this.member` inside the class, the names at the head of the type of `this.field` and, for `this.field.member`, `Type.member` of each, spelled as the type writes it, and the local names the file's imports bind. A top-level variable also lists the declarations that write it. A member read on a value of a class the connector does not know, `x.m()` or `x.f`, is listed as `.m`, the separator and the member, which a walk by name reads as a use of a member `m` of any class the file holds the name of.
+    pub uses: Vec<Use>,
+}
+
+/// A name some code refers to, with the line where it first does.
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct Use {
+    /// The name, as [`Declared::uses`] spells it.
+    pub name: String,
+    /// The line of the first place the code names it, from 1, or [`NO_LINE`] when the connector cannot tell where a use that it derived stands. A use the source writes is never without one.
+    pub line: Line,
+}
+
+/// The line of a [`Use`] whose place the connector does not know. Lines start at 1, so no real line is 0.
+pub const NO_LINE: Line = 0;
+
+/// The names a piece of code uses, each with the line of its first use, which is how every connector collects what a declaration refers to. A name used again keeps the earlier line.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Uses(BTreeMap<String, Line>);
+
+impl Uses {
+    /// Notes that `name` is used at `line`. Says whether the name is new.
+    pub fn insert(&mut self, name: &str, line: Line) -> bool {
+        if let Some(held) = self.0.get_mut(name) {
+            *held = first_line(*held, line);
+            return false;
+        }
+        self.0.insert(name.to_owned(), line);
+        true
+    }
+
+    /// Notes that `name` is used at `line`, for a name the caller already owns.
+    pub fn insert_owned(&mut self, name: String, line: Line) {
+        let held = self.0.entry(name).or_insert(line);
+        *held = first_line(*held, line);
+    }
+
+    /// Whether `name` is among the names.
+    pub fn contains(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
+    /// The line `name` was first used at.
+    pub fn line_of(&self, name: &str) -> Option<Line> {
+        self.0.get(name).copied()
+    }
+
+    /// Takes `name` out, and gives the line it had.
+    pub fn remove(&mut self, name: &str) -> Option<Line> {
+        self.0.remove(name)
+    }
+
+    /// Whether no name is used.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// How many names are used.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// The names, in byte order.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(String::as_str)
+    }
+
+    /// Each name with its line, in byte order of the name.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, Line)> {
+        self.0.iter().map(|(name, &line)| (name.as_str(), line))
+    }
+
+    /// Adds every use of `other`, keeping the earlier line of a name both hold.
+    pub fn merge(&mut self, other: &Self) {
+        for (name, line) in other.iter() {
+            self.insert(name, line);
+        }
+    }
+
+    /// Adds every use of `other`, keeping the earlier line of a name both hold.
+    pub fn absorb(&mut self, other: Self) {
+        for (name, line) in other.0 {
+            self.insert_owned(name, line);
+        }
+    }
+
+    /// The uses as facts: sorted by name, each name once.
+    pub fn into_vec(self) -> Vec<Use> {
+        self.0
+            .into_iter()
+            .map(|(name, line)| Use { name, line })
+            .collect()
+    }
+}
+
+/// The earlier of two lines of one name, where [`NO_LINE`] gives way to a line that is known.
+const fn first_line(held: Line, line: Line) -> Line {
+    if held == NO_LINE {
+        line
+    } else if line == NO_LINE || held < line {
+        held
+    } else {
+        line
+    }
 }
 
 /// A name a file exports from a local of another name.

@@ -66,7 +66,10 @@ expression: json
             "line": 4,
             "name": "Field.logger",
             "uses": [
-              "Logger"
+              {
+                "line": 4,
+                "name": "Logger"
+              }
             ]
           },
           {
@@ -74,7 +77,10 @@ expression: json
             "line": 5,
             "name": "Field.built",
             "uses": [
-              "Store"
+              {
+                "line": 5,
+                "name": "Store"
+              }
             ]
           },
           {
@@ -82,7 +88,10 @@ expression: json
             "line": 6,
             "name": "Field.maybe",
             "uses": [
-              "Logger"
+              {
+                "line": 6,
+                "name": "Logger"
+              }
             ]
           },
           {
@@ -90,7 +99,10 @@ expression: json
             "line": 7,
             "name": "Field.#secret",
             "uses": [
-              "Logger"
+              {
+                "line": 7,
+                "name": "Logger"
+              }
             ]
           },
           {
@@ -104,8 +116,14 @@ expression: json
             "line": 9,
             "name": "Field.unionOf",
             "uses": [
-              "Logger",
-              "Other"
+              {
+                "line": 9,
+                "name": "Logger"
+              },
+              {
+                "line": 9,
+                "name": "Other"
+              }
             ]
           },
           {
@@ -119,7 +137,10 @@ expression: json
             "line": 11,
             "name": "Field.own",
             "uses": [
-              "Field"
+              {
+                "line": 11,
+                "name": "Field"
+              }
             ]
           },
           {
@@ -133,7 +154,10 @@ expression: json
             "line": 13,
             "name": "Field.list",
             "uses": [
-              "Logger"
+              {
+                "line": 13,
+                "name": "Logger"
+              }
             ]
           },
           {
@@ -141,9 +165,18 @@ expression: json
             "line": 15,
             "name": "Field.constructor",
             "uses": [
-              "Logger.",
-              "Other.",
-              "Store."
+              {
+                "line": 16,
+                "name": "Logger."
+              },
+              {
+                "line": 17,
+                "name": "Other."
+              },
+              {
+                "line": 18,
+                "name": "Store."
+              }
             ]
           },
           {
@@ -151,8 +184,14 @@ expression: json
             "line": 21,
             "name": "Field.current",
             "uses": [
-              "Field.logger",
-              "Logger"
+              {
+                "line": 22,
+                "name": "Field.logger"
+              },
+              {
+                "line": 21,
+                "name": "Logger"
+              }
             ]
           },
           {
@@ -160,7 +199,10 @@ expression: json
             "line": 25,
             "name": "Field.fetch",
             "uses": [
-              "Store"
+              {
+                "line": 25,
+                "name": "Store"
+              }
             ]
           },
           {
@@ -168,9 +210,18 @@ expression: json
             "line": 29,
             "name": "Field.either",
             "uses": [
-              "Field.logger",
-              "Logger",
-              "Other"
+              {
+                "line": 30,
+                "name": "Field.logger"
+              },
+              {
+                "line": 29,
+                "name": "Logger"
+              },
+              {
+                "line": 29,
+                "name": "Other"
+              }
             ]
           },
           {
@@ -184,8 +235,14 @@ expression: json
             "line": 37,
             "name": "Field.unknown",
             "uses": [
-              "Field.logger",
-              "Logger"
+              {
+                "line": 38,
+                "name": "Field.logger"
+              },
+              {
+                "line": 38,
+                "name": "Logger"
+              }
             ]
           },
           {
@@ -193,9 +250,18 @@ expression: json
             "line": 42,
             "name": "Shape",
             "uses": [
-              "Logger",
-              "Other",
-              "Store"
+              {
+                "line": 43,
+                "name": "Logger"
+              },
+              {
+                "line": 45,
+                "name": "Other"
+              },
+              {
+                "line": 44,
+                "name": "Store"
+              }
             ]
           },
           {
@@ -245,7 +311,10 @@ expression: json
             "line": 52,
             "name": "Literal",
             "uses": [
-              "Logger"
+              {
+                "line": 53,
+                "name": "Logger"
+              }
             ]
           },
           {
@@ -253,7 +322,10 @@ expression: json
             "line": 57,
             "name": "Alias",
             "uses": [
-              "Logger"
+              {
+                "line": 57,
+                "name": "Logger"
+              }
             ]
           }
         ],

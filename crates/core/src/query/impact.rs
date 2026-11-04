@@ -7,7 +7,7 @@ use serde::{Serialize, Serializer};
 
 use crate::contract::Role;
 use crate::engine::changes::{Change, ChangeKind};
-use crate::fact::{FileTags, member_in};
+use crate::fact::{FileTags, Line, member_in};
 use crate::graph::Graph;
 use crate::ids::{FileId, IdSet, NameId};
 use crate::index::{Freshness, Index};
@@ -17,7 +17,7 @@ use crate::text::{noun, summary, thousands};
 use super::cross::Crossing;
 use super::lookup::{Miss, find, possible_misses};
 use super::render::{
-    Answer, Entries, Footer, Searched, display_as_text, list, name_list, name_sentence,
+    Answer, Entries, Footer, LIST_CAP, Searched, display_as_text, list, name_list, name_sentence,
 };
 use super::replaced::Cut;
 use super::walk::{self, Cause, Changed, Hit, Walked, reach, reach_changed, reach_names};
@@ -40,6 +40,10 @@ pub struct ImpactRequest {
     pub no_tests: bool,
     /// What a caller of the library says to get the tests listed, such as `ask with tests=true`. The line that counts the tests left out carries it in brackets. Nothing is added when this is `None`.
     pub tests_hint: Option<&'static str>,
+    /// Leave the files tagged as generated out of the answer, and count them instead. They are listed in a group of their own when this is false. A file that is both a test and generated is a test. The walk is the same either way.
+    pub no_generated: bool,
+    /// What a caller of the library says to get the generated files listed, such as `ask with generated=true`. The line that counts them carries it in brackets. Nothing is added when this is `None`.
+    pub generated_hint: Option<&'static str>,
     /// Files of `files` of which only these declarations changed. The walk starts from them and from the declarations of the file that use them, and a file with an entry that names nothing is not walked. A file without an entry is walked whole, and so is every file when `names` is given.
     pub parts: Vec<ChangedPart>,
 }
@@ -112,6 +116,15 @@ pub struct Impact {
     /// What the request said to get the tests listed, shown beside the count of those left out. Not part of the JSON, which holds the count alone.
     #[serde(skip)]
     tests_hint: Option<&'static str>,
+    /// The files tagged as generated that the change reaches within the depth, nearest first and then by path, without those that are tests. Empty when the request left them out. Left out of the JSON when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub generated: Vec<Affected>,
+    /// How many files tagged as generated the change reaches within the depth that the request left out. Left out when there are none.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub generated_left_out: u32,
+    /// What the request said to get the generated files listed, shown beside the count of those left out. Not part of the JSON, which holds the count alone.
+    #[serde(skip)]
+    generated_hint: Option<&'static str>,
     /// The paths reported deleted that the index no longer holds.
     pub deleted: Vec<Deleted>,
     /// The paths the index does not hold that nobody reported deleted.
@@ -140,6 +153,29 @@ pub struct Affected {
     /// A walk by name: the code that runs as the file loads, when the walk reached it. Left out when it did not.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub load: Option<Load>,
+    /// The line of the call or of the import that made the walk reach the file, for a file at distance 1 whose line [`Impact::show_source`] checked against the text of the file. Left out for every other file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<Line>,
+    /// The text of that line, trimmed to one line of at most [`SNIPPET_WIDTH`] characters. Left out whenever `at` is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
+    /// Where the index says the file refers to what the walk came from, which `show_source` checks before it shows it. Not part of the answer.
+    #[serde(skip)]
+    spot: Option<Spot>,
+}
+
+/// The characters of a line of source the answer shows beside a nearest file, at most.
+pub const SNIPPET_WIDTH: usize = 160;
+
+/// Where a file at distance 1 refers to what the walk came from, as the index records it.
+///
+/// A spot is only what `show_source` checks before it sets `at` and `snippet`, and it is no part of the answer, so two spots always compare equal: two answers are equal when everything they say is, however the walk that made them came by the line.
+#[derive(Clone, Debug)]
+struct Spot {
+    /// The line the index records.
+    line: Line,
+    /// Texts of which the line must hold one to be shown: the last identifier of the name used, or the specifier of the import and the names it takes.
+    needles: Vec<String>,
 }
 
 /// A declaration the walk by name reached.
@@ -159,6 +195,14 @@ pub struct Load {
     /// Hops from the nearest declaration asked about. The file is listed at this distance or at a nearer one.
     pub distance: u32,
 }
+
+impl PartialEq for Spot {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Spot {}
 
 impl Affected {
     /// `; in run (line 3), stop (line 7)` for the callers of an entry the walk by name reached, then `; at load` when its load was reached. A caller or a load farther from the declarations asked about than the entry says so: `outer (line 5, distance 2)`, `; at load (distance 2)`. Callers are cut after three, as every list of names in an answer is, unless `entries` asks for all of them.
@@ -187,6 +231,60 @@ impl Affected {
     fn further(&self, distance: u32) -> Option<String> {
         (distance != self.distance).then(|| format!("distance {distance}"))
     }
+
+    /// Sets `at` and `snippet` when `text`, the file as it is on disk, holds a needle of the spot on the line the index records, and leaves both unset otherwise, so that a line the file has moved away from is never shown.
+    fn show(&mut self, text: &str) {
+        let Some(spot) = self.spot.take() else {
+            return;
+        };
+        let Some(row) = spot
+            .line
+            .checked_sub(1)
+            .and_then(|row| usize::try_from(row).ok())
+        else {
+            return;
+        };
+        let Some(line) = text.lines().nth(row) else {
+            return;
+        };
+        let Some(needle) = spot
+            .needles
+            .iter()
+            .find(|needle| line.contains(needle.as_str()))
+        else {
+            return;
+        };
+        self.at = Some(spot.line);
+        self.snippet = Some(excerpt(line, needle));
+    }
+}
+
+/// `line` trimmed, and cut to [`SNIPPET_WIDTH`] characters around the first place `needle` stands when it is longer, with `…` where the cut is.
+fn excerpt(line: &str, needle: &str) -> String {
+    let line = line.trim();
+    let total = line.chars().count();
+    if total <= SNIPPET_WIDTH {
+        return line.to_owned();
+    }
+    let before = line.find(needle).map_or(0, |byte| {
+        line.char_indices().take_while(|&(at, _)| at < byte).count()
+    });
+    // The name keeps a margin of context to its left, and the window never runs past the end.
+    let start = before
+        .saturating_sub(SNIPPET_WIDTH / 4)
+        .min(total.saturating_sub(SNIPPET_WIDTH));
+    let mut cut: Vec<char> = line.chars().skip(start).take(SNIPPET_WIDTH).collect();
+    if start > 0
+        && let Some(first) = cut.first_mut()
+    {
+        *first = '…';
+    }
+    if start + SNIPPET_WIDTH < total
+        && let Some(last) = cut.last_mut()
+    {
+        *last = '…';
+    }
+    cut.into_iter().collect()
 }
 
 /// Why the walk reached a file.
@@ -389,12 +487,29 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
     // The walk with no depth exists only to count what the depth leaves behind and to give each listed test the distance, the reason and the load it has at the end.
     let to_the_end = reach_asked(index, &crossing, &changed, &names, &by_part, None);
     let is_test = |hit: &Hit| graph.tags(hit.file).contains(FileTags::TEST);
+    // A generated test is still a test to run, so the tests keep it.
+    let is_generated = |hit: &Hit| {
+        let tags = graph.tags(hit.file);
+        tags.contains(FileTags::GENERATED) && !tags.contains(FileTags::TEST)
+    };
     let affected = walked
         .hits
         .iter()
-        .filter(|hit| !is_test(hit))
-        .filter_map(|hit| entry(graph, hit))
+        .filter(|hit| !is_test(hit) && !is_generated(hit))
+        .filter_map(|hit| entry(index, hit))
         .collect();
+    let mut generated = Vec::new();
+    let mut generated_left_out = 0;
+    for hit in walked.hits.iter().filter(|hit| is_generated(hit)) {
+        let Some(file) = entry(index, hit) else {
+            continue;
+        };
+        if request.no_generated {
+            generated_left_out += 1;
+        } else {
+            generated.push(file);
+        }
+    }
     let mut tests = Vec::new();
     let mut tests_left_out = 0;
     // A test that swaps a module for a factory mock runs none of its code, so it is listed only where it still reaches the change without that module.
@@ -405,7 +520,7 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         if !cut.keeps(hit.file) {
             continue;
         }
-        let Some(test) = entry(graph, hit) else {
+        let Some(test) = entry(index, hit) else {
             continue;
         };
         if request.no_tests || !within.contains(hit.file) {
@@ -471,6 +586,9 @@ pub fn impact(index: &Index, freshness: Freshness, request: &ImpactRequest) -> I
         tests,
         tests_left_out,
         tests_hint: request.tests_hint,
+        generated,
+        generated_left_out,
+        generated_hint: request.generated_hint,
         deleted,
         unknown,
         notes,
@@ -532,7 +650,8 @@ fn parts_of(
 }
 
 /// The entry of the answer for a file the walk reached. A file without a path cannot be named in the answer, so it is the only one the walk reaches and the answer leaves out.
-fn entry(graph: &Graph, hit: &Hit) -> Option<Affected> {
+fn entry(index: &Index, hit: &Hit) -> Option<Affected> {
+    let graph = &index.graph;
     let path = graph.path(hit.file)?;
     Some(Affected {
         path: path.to_string(),
@@ -540,7 +659,86 @@ fn entry(graph: &Graph, hit: &Hit) -> Option<Affected> {
         reason: reason(graph, &hit.cause),
         callers: callers(graph, hit),
         load: hit.load.map(|distance| Load { distance }),
+        at: None,
+        snippet: None,
+        spot: spot(index, hit),
     })
+}
+
+/// Where a file at distance 1 refers to what the walk came from: the earliest use of a declaration or of its load that the walk followed, and failing that the line of the import the walk came by. Nothing for a file farther away, where the line says nothing about the change.
+fn spot(index: &Index, hit: &Hit) -> Option<Spot> {
+    if hit.distance != 1 {
+        return None;
+    }
+    used_at(&index.graph, hit).or_else(|| imported_at(index, hit))
+}
+
+/// The use, among those of the declarations and of the load at distance 1, on the earliest line, with the last identifier of its name as the needle.
+fn used_at(graph: &Graph, hit: &Hit) -> Option<Spot> {
+    let symbols = graph.symbols(hit.file)?;
+    let from_declarations = hit
+        .callers
+        .iter()
+        .filter(|caller| caller.distance == 1)
+        .filter_map(|caller| {
+            let mention = caller.mention?;
+            let (name, line) = symbols
+                .declaration(caller.index)?
+                .uses_at()
+                .nth(mention.ordinal)?;
+            Some((line, name))
+        });
+    let from_load = hit
+        .load
+        .filter(|&distance| distance == 1)
+        .and(hit.load_mention)
+        .and_then(|mention| symbols.on_load_at().nth(mention.ordinal))
+        .map(|(name, line)| (line, name));
+    let (line, name) = from_declarations
+        .chain(from_load)
+        .min_by_key(|&(line, _)| line)?;
+    let needle = last_identifier(name)?;
+    Some(Spot {
+        line,
+        needles: vec![needle.to_owned()],
+    })
+}
+
+/// The import of the file the walk came from, in the file it reached, which the line of the import says where to read.
+fn imported_at(index: &Index, hit: &Hit) -> Option<Spot> {
+    let (Cause::Imports { file, .. } | Cause::ReExports { file, .. }) = &hit.cause else {
+        return None;
+    };
+    let import = &index
+        .record(hit.file)?
+        .imports
+        .iter()
+        .filter(|resolved| resolved.to.files().contains(file))
+        .min_by_key(|resolved| resolved.import.line)?
+        .import;
+    // A grouped `use a::b::{c, d}` is one import per leaf with the whole path as its specifier, which the line does not spell out, so the last segment and the names it takes stand beside the specifier.
+    let mut needles = vec![import.spec.clone()];
+    if let Some((_, leaf)) = import.spec.rsplit_once("::") {
+        needles.push(leaf.to_owned());
+    }
+    needles.extend(
+        import
+            .names
+            .iter()
+            .filter(|name| !matches!(name.as_str(), "*" | "default" | ""))
+            .cloned(),
+    );
+    Some(Spot {
+        line: import.line,
+        needles,
+    })
+}
+
+/// The last identifier of a name a file uses: `deleteResource` of `ResourceService.deleteResource`, `pool` of `crate::db::pool`. A connector writes a call that constructs a class as the name of the class and its constructor, `OrderService.constructor` or `FastAPI.__init__`, which no line of source holds, so the identifier before it is the one. `None` when the name holds no other identifier.
+fn last_identifier(name: &str) -> Option<&str> {
+    name.rsplit(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
+        .filter(|part| !part.is_empty())
+        .find(|part| !matches!(*part, "constructor" | "__init__"))
 }
 
 /// The absent paths with whether each was reported deleted, in the order they were first asked. The map holds them by path, which is the order of nothing a person typed.
@@ -563,12 +761,12 @@ fn callers(graph: &Graph, hit: &Hit) -> Vec<Caller> {
     };
     hit.callers
         .iter()
-        .filter_map(|&(index, distance)| {
-            let declaration = symbols.declaration(index)?;
+        .filter_map(|caller| {
+            let declaration = symbols.declaration(caller.index)?;
             Some(Caller {
                 name: declaration.name().to_owned(),
                 line: declaration.line(),
-                distance,
+                distance: caller.distance,
             })
         })
         .collect()
@@ -705,6 +903,25 @@ impl Impact {
     }
 }
 
+impl Impact {
+    /// Shows the line of the call or the import beside each file at distance 1 among the first [`LIST_CAP`] of the files and of the tests, with the text of the line, when `read` gives the text of the file as it is on disk and the line still holds what the index recorded there. An entry whose line does not is kept without them, and none is shown when the index was not fresh for the answer: it counts the files that differ and not which, so no line of it can be trusted. `read` gets the path as the answer prints it.
+    pub fn show_source(&mut self, mut read: impl FnMut(&str) -> Option<String>) {
+        if self.footer.freshness != Freshness::Fresh {
+            return;
+        }
+        for list in [&mut self.affected, &mut self.tests, &mut self.generated] {
+            for affected in list.iter_mut().take(LIST_CAP) {
+                if affected.spot.is_none() {
+                    continue;
+                }
+                if let Some(text) = read(&affected.path) {
+                    affected.show(&text);
+                }
+            }
+        }
+    }
+}
+
 impl Answer for Impact {
     fn write_text(&self, f: &mut fmt::Formatter<'_>, entries: Entries) -> fmt::Result {
         let mut asked = self.changed.clone();
@@ -726,15 +943,37 @@ impl Answer for Impact {
         f.write_str("\n")?;
 
         let affected_line = |f: &mut fmt::Formatter<'_>, affected: &Affected| {
-            write!(f, "{}  distance {}  ", affected.path, affected.distance)?;
+            write!(f, "{}", affected.path)?;
+            if let (Some(line), Some(_)) = (affected.at, &affected.snippet) {
+                write!(f, ":{line}")?;
+            }
+            write!(f, "  distance {}  ", affected.distance)?;
             affected.reason.write(f, entries)?;
-            affected.write_callers(f, entries)
+            affected.write_callers(f, entries)?;
+            if let Some(snippet) = &affected.snippet {
+                write!(f, "\n> {snippet}")?;
+            }
+            Ok(())
         };
         list(f, "affected files", &self.affected, entries, affected_line)?;
         list(f, "tests", &self.tests, entries, affected_line)?;
         if self.tests_left_out > 0 {
             write!(f, "{} left out", noun(self.tests_left_out, "test file"))?;
             if let Some(hint) = self.tests_hint {
+                write!(f, " ({hint})")?;
+            }
+            f.write_str("\n")?;
+        }
+        list(
+            f,
+            "generated files",
+            &self.generated,
+            entries,
+            affected_line,
+        )?;
+        if self.generated_left_out > 0 {
+            write!(f, "generated: {}", noun(self.generated_left_out, "file"))?;
+            if let Some(hint) = self.generated_hint {
                 write!(f, " ({hint})")?;
             }
             f.write_str("\n")?;
@@ -765,6 +1004,8 @@ impl Answer for Impact {
             && self.affected.is_empty()
             && self.tests.is_empty()
             && self.tests_left_out == 0
+            && self.generated.is_empty()
+            && self.generated_left_out == 0
         {
             let subject = if self.names.is_empty() {
                 summary(&self.changed)

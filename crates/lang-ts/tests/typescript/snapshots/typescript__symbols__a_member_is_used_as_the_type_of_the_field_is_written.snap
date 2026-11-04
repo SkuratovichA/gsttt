@@ -94,10 +94,22 @@ expression: json
             "line": 10,
             "name": "Notifier.constructor",
             "uses": [
-              "JobQueue",
-              "Local.",
-              "MailQueue",
-              "services.MailQueue"
+              {
+                "line": 12,
+                "name": "JobQueue"
+              },
+              {
+                "line": 13,
+                "name": "Local."
+              },
+              {
+                "line": 12,
+                "name": "MailQueue"
+              },
+              {
+                "line": 11,
+                "name": "services.MailQueue"
+              }
             ]
           },
           {
@@ -105,7 +117,10 @@ expression: json
             "line": 15,
             "name": "Notifier.qualified",
             "uses": [
-              "services.MailQueue.push"
+              {
+                "line": 16,
+                "name": "services.MailQueue.push"
+              }
             ]
           },
           {
@@ -113,8 +128,14 @@ expression: json
             "line": 18,
             "name": "Notifier.union",
             "uses": [
-              "JobQueue.send",
-              "MailQueue.send"
+              {
+                "line": 19,
+                "name": "JobQueue.send"
+              },
+              {
+                "line": 19,
+                "name": "MailQueue.send"
+              }
             ]
           },
           {
@@ -122,7 +143,10 @@ expression: json
             "line": 21,
             "name": "Notifier.declared",
             "uses": [
-              "Local.run"
+              {
+                "line": 22,
+                "name": "Local.run"
+              }
             ]
           },
           {
@@ -130,7 +154,10 @@ expression: json
             "line": 24,
             "name": "Notifier.undeclared",
             "uses": [
-              "Local.start"
+              {
+                "line": 25,
+                "name": "Local.start"
+              }
             ]
           },
           {
@@ -138,7 +165,10 @@ expression: json
             "line": 27,
             "name": "Notifier.nested",
             "uses": [
-              "services.MailQueue.items"
+              {
+                "line": 28,
+                "name": "services.MailQueue.items"
+              }
             ]
           },
           {
@@ -146,7 +176,10 @@ expression: json
             "line": 30,
             "name": "Notifier.indexed",
             "uses": [
-              "services.MailQueue"
+              {
+                "line": 31,
+                "name": "services.MailQueue"
+              }
             ]
           }
         ],
@@ -165,13 +198,34 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "either.send",
-          "items.push",
-          "local.run",
-          "local.start",
-          "mail.items",
-          "mail.push",
-          "push"
+          {
+            "line": 19,
+            "name": "either.send"
+          },
+          {
+            "line": 28,
+            "name": "items.push"
+          },
+          {
+            "line": 22,
+            "name": "local.run"
+          },
+          {
+            "line": 25,
+            "name": "local.start"
+          },
+          {
+            "line": 28,
+            "name": "mail.items"
+          },
+          {
+            "line": 16,
+            "name": "mail.push"
+          },
+          {
+            "line": 28,
+            "name": "push"
+          }
         ]
       },
       "tags": 0,

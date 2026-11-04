@@ -35,7 +35,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -60,7 +63,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -85,7 +91,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -110,7 +119,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -145,11 +157,17 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "make"
+          {
+            "line": 2,
+            "name": "make"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 2,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -184,11 +202,17 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "Foo"
+          {
+            "line": 2,
+            "name": "Foo"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 2,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -223,11 +247,17 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "run"
+          {
+            "line": 2,
+            "name": "run"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 2,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,

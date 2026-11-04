@@ -92,7 +92,10 @@ expression: json
             "line": 5,
             "name": "InvoiceRepo.client",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 5,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -100,10 +103,22 @@ expression: json
             "line": 7,
             "name": "InvoiceRepo.constructor",
             "uses": [
-              "InvoiceRepo.client",
-              "PrismaClient",
-              "PrismaService",
-              "PrismaService."
+              {
+                "line": 8,
+                "name": "InvoiceRepo.client"
+              },
+              {
+                "line": 8,
+                "name": "PrismaClient"
+              },
+              {
+                "line": 8,
+                "name": "PrismaService"
+              },
+              {
+                "line": 7,
+                "name": "PrismaService."
+              }
             ]
           },
           {
@@ -111,7 +126,10 @@ expression: json
             "line": 11,
             "name": "InvoiceRepo.all",
             "uses": [
-              "PrismaService.invoice"
+              {
+                "line": 12,
+                "name": "PrismaService.invoice"
+              }
             ]
           },
           {
@@ -119,8 +137,14 @@ expression: json
             "line": 15,
             "name": "InvoiceRepo.one",
             "uses": [
-              "InvoiceRepo.client",
-              "PrismaClient.payment"
+              {
+                "line": 16,
+                "name": "InvoiceRepo.client"
+              },
+              {
+                "line": 16,
+                "name": "PrismaClient.payment"
+              }
             ]
           },
           {
@@ -134,7 +158,10 @@ expression: json
             "line": 24,
             "name": "count",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 24,
+                "name": "PrismaClient"
+              }
             ]
           }
         ],
@@ -153,18 +180,54 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "booking",
-          "booking.count",
-          "client.payment",
-          "count",
-          "findMany",
-          "findUnique",
-          "invoice.findMany",
-          "payment.findUnique",
-          "plain.refund",
-          "refund",
-          "refund.findMany",
-          "store.invoice"
+          {
+            "line": 25,
+            "name": "booking"
+          },
+          {
+            "line": 25,
+            "name": "booking.count"
+          },
+          {
+            "line": 16,
+            "name": "client.payment"
+          },
+          {
+            "line": 25,
+            "name": "count"
+          },
+          {
+            "line": 12,
+            "name": "findMany"
+          },
+          {
+            "line": 16,
+            "name": "findUnique"
+          },
+          {
+            "line": 12,
+            "name": "invoice.findMany"
+          },
+          {
+            "line": 16,
+            "name": "payment.findUnique"
+          },
+          {
+            "line": 20,
+            "name": "plain.refund"
+          },
+          {
+            "line": 20,
+            "name": "refund"
+          },
+          {
+            "line": 20,
+            "name": "refund.findMany"
+          },
+          {
+            "line": 12,
+            "name": "store.invoice"
+          }
         ]
       },
       "tags": 0,
@@ -205,7 +268,10 @@ expression: json
             "line": 3,
             "name": "PrismaService",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           }
         ],

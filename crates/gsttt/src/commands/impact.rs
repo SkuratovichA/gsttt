@@ -8,6 +8,9 @@ use crate::cli::ImpactArgs;
 use crate::error::CliError;
 use crate::streams::{Io, Outcome};
 
+/// What the line that counts the generated files left out says to get them listed.
+const GENERATED_HINT: &str = "ask with --generated";
+
 /// `gsttt impact <path>...` and `gsttt impact --changed`.
 pub(super) fn impact(
     session: &Session<'_>,
@@ -17,11 +20,9 @@ pub(super) fn impact(
     // Reading the request tells every usage error before the index is read, so a bad command line fails the same way whatever the index holds.
     let request = request(session, args)?;
     let Loaded { index, freshness } = session.loaded()?;
-    print::answer(
-        &query::impact(&index, freshness, &request),
-        session.flags,
-        io,
-    )
+    let mut answer = query::impact(&index, freshness, &request);
+    answer.show_source(session.repository.reader());
+    print::answer(&answer, session.flags, io)
 }
 
 /// What to ask: the named files, with those that are not on disk passed as deleted, and the names to ask about in them, or the files git lists as changed, where a deleted file is passed as deleted.
@@ -30,6 +31,8 @@ fn request(session: &Session<'_>, args: &ImpactArgs) -> Result<ImpactRequest, Cl
         depth: args.depth,
         names: args.names.clone(),
         no_tests: args.no_tests,
+        no_generated: !args.generated,
+        generated_hint: Some(GENERATED_HINT),
         ..ImpactRequest::default()
     };
     if args.changed {

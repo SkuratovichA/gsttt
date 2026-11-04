@@ -64,7 +64,10 @@ expression: json
             "line": 3,
             "name": "cancel",
             "uses": [
-              "axios.post"
+              {
+                "line": 5,
+                "name": "axios.post"
+              }
             ]
           }
         ],
@@ -73,7 +76,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "post"
+          {
+            "line": 5,
+            "name": "post"
+          }
         ]
       },
       "tags": 0,

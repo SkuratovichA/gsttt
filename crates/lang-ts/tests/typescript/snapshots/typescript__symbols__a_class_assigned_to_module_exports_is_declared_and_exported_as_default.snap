@@ -40,11 +40,17 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "dep"
+          {
+            "line": 4,
+            "name": "dep"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 3,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -81,7 +87,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -118,7 +127,10 @@ expression: json
             "line": 4,
             "name": "Foo.run",
             "uses": [
-              "dep"
+              {
+                "line": 5,
+                "name": "dep"
+              }
             ]
           }
         ],
@@ -127,7 +139,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "Foo"
+          {
+            "line": 3,
+            "name": "Foo"
+          }
         ]
       },
       "tags": 0,
@@ -164,7 +179,10 @@ expression: json
             "line": 4,
             "name": "Foo.go",
             "uses": [
-              "dep"
+              {
+                "line": 5,
+                "name": "dep"
+              }
             ]
           }
         ],
@@ -178,7 +196,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 3,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,

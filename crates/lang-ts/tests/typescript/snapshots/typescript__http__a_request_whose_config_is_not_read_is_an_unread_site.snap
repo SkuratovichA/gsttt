@@ -71,8 +71,14 @@ expression: json
             "line": 6,
             "name": "dynamic",
             "uses": [
-              "axios.request",
-              "config"
+              {
+                "line": 6,
+                "name": "axios.request"
+              },
+              {
+                "line": 6,
+                "name": "config"
+              }
             ]
           },
           {
@@ -80,8 +86,14 @@ expression: json
             "line": 7,
             "name": "templated",
             "uses": [
-              "axios.request",
-              "id"
+              {
+                "line": 7,
+                "name": "axios.request"
+              },
+              {
+                "line": 7,
+                "name": "id"
+              }
             ]
           }
         ],
@@ -90,7 +102,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "request"
+          {
+            "line": 6,
+            "name": "request"
+          }
         ]
       },
       "tags": 0,

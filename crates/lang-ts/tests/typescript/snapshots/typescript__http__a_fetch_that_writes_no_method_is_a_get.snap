@@ -81,7 +81,10 @@ expression: json
             "line": 5,
             "name": "withHeaders",
             "uses": [
-              "headers"
+              {
+                "line": 5,
+                "name": "headers"
+              }
             ]
           },
           {

@@ -6,7 +6,7 @@ use gsttt_scenario::scenario;
 
 use crate::support::{
     NOTHING, declared, edges, heirs, holds, import_line, imports, local_exports, local_names,
-    on_load, overrides, pairs, reads, run, status, uses,
+    on_load, overrides, pairs, reads, run, status, use_lines, uses,
 };
 
 #[test]
@@ -1664,5 +1664,26 @@ fn a_member_read_on_what_a_call_gives_is_read_on_the_method() -> Result<(), Box<
             .any(|read| read == "keys.length" || read == "parse.a" || read == "env.HOME"),
         "what is read on a builtin makes no pair: {all:?}"
     );
+    Ok(())
+}
+
+#[test]
+#[scenario("typescript", "A use keeps the line it is written on")]
+fn a_use_keeps_the_line_it_is_written_on() -> Result<(), Box<dyn Error>> {
+    let json = run("use-lines")?;
+
+    let lines = use_lines(&json, "src/uses.ts", "run").unwrap();
+    let line_of = |name: &str| {
+        lines
+            .iter()
+            .find(|(used, _)| *used == name)
+            .map(|(_, line)| *line)
+    };
+    assert_eq!(line_of("first"), Some(4), "{lines:?}");
+    assert_eq!(line_of("second"), Some(5), "{lines:?}");
+    // The chain starts on line 6 and its members stand on lines 7 and 8.
+    assert_eq!(line_of("Builder.constructor"), Some(6), "{lines:?}");
+    assert_eq!(line_of("Builder.add"), Some(7), "{lines:?}");
+    assert_eq!(line_of("Builder.build"), Some(8), "{lines:?}");
     Ok(())
 }

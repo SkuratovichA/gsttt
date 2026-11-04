@@ -137,7 +137,10 @@ expression: json
             "line": 4,
             "name": "b",
             "uses": [
-              "obj"
+              {
+                "line": 4,
+                "name": "obj"
+              }
             ]
           },
           {
@@ -145,7 +148,10 @@ expression: json
             "line": 4,
             "name": "d",
             "uses": [
-              "obj"
+              {
+                "line": 4,
+                "name": "obj"
+              }
             ]
           },
           {
@@ -207,8 +213,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "b",
-          "c"
+          {
+            "line": 4,
+            "name": "b"
+          },
+          {
+            "line": 4,
+            "name": "c"
+          }
         ]
       },
       "tags": 0,

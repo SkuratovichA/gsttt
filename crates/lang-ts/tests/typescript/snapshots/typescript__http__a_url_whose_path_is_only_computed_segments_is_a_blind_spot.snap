@@ -56,7 +56,10 @@ expression: json
             "line": 4,
             "name": "one",
             "uses": [
-              "API_URL"
+              {
+                "line": 4,
+                "name": "API_URL"
+              }
             ]
           },
           {
@@ -64,7 +67,10 @@ expression: json
             "line": 6,
             "name": "two",
             "uses": [
-              "base"
+              {
+                "line": 6,
+                "name": "base"
+              }
             ]
           },
           {
@@ -72,7 +78,10 @@ expression: json
             "line": 8,
             "name": "three",
             "uses": [
-              "API_URL"
+              {
+                "line": 8,
+                "name": "API_URL"
+              }
             ]
           }
         ],

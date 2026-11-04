@@ -64,7 +64,10 @@ expression: json
             "line": 3,
             "name": "UsersController",
             "uses": [
-              "common.Controller"
+              {
+                "line": 3,
+                "name": "common.Controller"
+              }
             ]
           },
           {
@@ -72,7 +75,10 @@ expression: json
             "line": 5,
             "name": "UsersController.find",
             "uses": [
-              "common.Get"
+              {
+                "line": 5,
+                "name": "common.Get"
+              }
             ]
           },
           {
@@ -80,22 +86,43 @@ expression: json
             "line": 8,
             "name": "UsersController.create",
             "uses": [
-              "common.Post"
+              {
+                "line": 8,
+                "name": "common.Post"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "common.Controller",
-          "common.Get",
-          "common.Post"
+          {
+            "line": 3,
+            "name": "common.Controller"
+          },
+          {
+            "line": 5,
+            "name": "common.Get"
+          },
+          {
+            "line": 8,
+            "name": "common.Post"
+          }
         ],
         "overrides": [],
         "reads": [
-          "Controller",
-          "Get",
-          "Post"
+          {
+            "line": 3,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "Get"
+          },
+          {
+            "line": 8,
+            "name": "Post"
+          }
         ]
       },
       "tags": 0,

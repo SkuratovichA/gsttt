@@ -75,8 +75,14 @@ expression: json
             "line": 4,
             "name": "ItemsController",
             "uses": [
-              "Controller",
-              "prefix"
+              {
+                "line": 4,
+                "name": "Controller"
+              },
+              {
+                "line": 4,
+                "name": "prefix"
+              }
             ]
           },
           {
@@ -84,16 +90,28 @@ expression: json
             "line": 6,
             "name": "ItemsController.one",
             "uses": [
-              "Get"
+              {
+                "line": 6,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get",
-          "prefix"
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "Get"
+          },
+          {
+            "line": 4,
+            "name": "prefix"
+          }
         ],
         "overrides": [],
         "reads": []

@@ -3,10 +3,12 @@
 //! A table of the top-level bindings is made before the visit, so that the visit only has to know where it is: the group of the declaration whose code it walks, and how far that code runs as the file loads. A reference to a binding of the table goes into that group and, when the code runs at load, into the list of the file. Both hold indices, and the names are made once, in [`Recorder::finish`].
 
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
-use gsttt_core::fact::{Declared, Heir, ImportKind, Line, LocalExport, MEMBER_SEPARATOR, Symbols};
+use gsttt_core::fact::{
+    Declared, Heir, ImportKind, Line, LocalExport, MEMBER_SEPARATOR, Symbols, Use,
+};
 use gsttt_core::text::LineIndex;
 use oxc_ast::ast::{
     AssignmentOperator, AssignmentTarget, BindingPattern, ChainElement, Class, ClassElement,
@@ -82,8 +84,8 @@ struct Entry<'a> {
     kind: Kind,
     /// The lines it spans, from the first of its declarations to the end of the last. `None` for an import.
     lines: Option<(Line, Line)>,
-    /// The entries it uses: the declarations that write it at first, and the uses of its groups once the walk is done.
-    uses: Vec<usize>,
+    /// The entries it uses, each with the line of the use: the declarations that write it at first, and the uses of its groups once the walk is done.
+    uses: Vec<(usize, Line)>,
     /// Whether the entry is a class with members of a name, so that `C.s` is looked up for the classes that have some.
     has_members: bool,
     /// Whether code outside every type position refers to the entry, which is what makes an imported name a value of the file.
@@ -96,7 +98,8 @@ struct Group {
     /// The entries it declares, as a range of `group_members`.
     start: usize,
     end: usize,
-    uses: Vec<usize>,
+    /// What the code uses, each with the line it is used on.
+    uses: Vec<(usize, Line)>,
 }
 
 /// What the walk does with a top-level statement.
@@ -191,10 +194,14 @@ pub(super) struct Recorder<'a> {
     objects: HashMap<&'a str, Vec<String>>,
     /// The heads a value of a class may run the members of, in the order met.
     overrides: Vec<Heir>,
-    /// The member names the file reads on a value of a class it does not know, sorted by the set.
-    reads: BTreeSet<String>,
-    /// What the file refers to as it loads, in the order met.
-    on_load: Vec<usize>,
+    /// The member names the file reads on a value of a class it does not know, each with the line it is first read on, sorted by the set.
+    reads: BTreeMap<String, Line>,
+    /// What the file refers to as it loads, in the order met, each with the line it is met on.
+    on_load: Vec<(usize, Line)>,
+    /// The lines of the file, to turn the offset the walk is at into the line of a use.
+    lines: LineIndex,
+    /// The byte offset of the code the walk is reading, which is where a use it finds is written. The visitor sets it before it records what a node uses.
+    at: u32,
     place: Place,
     /// Whether the walk is inside a type, where a name is no use of its value.
     in_type: bool,
@@ -211,6 +218,7 @@ impl<'a> Recorder<'a> {
     ) -> Self {
         let mut recorder = Self {
             heads: class_heads(program),
+            lines: index.clone(),
             ..Self::default()
         };
         for statement in &program.body {
@@ -1151,26 +1159,36 @@ impl<'a> Recorder<'a> {
         }
     }
 
+    /// Says the code being read is at the byte `offset`, so that the uses it records get that line.
+    pub(super) fn at(&mut self, offset: u32) {
+        self.at = offset;
+    }
+
     fn note(&mut self, binding: usize) {
+        let line = self.lines.line(self.at);
         if matches!(self.place.load, Load::Called | Load::Always)
-            && self.on_load.last() != Some(&binding)
+            && self.on_load.last().map(|&(last, _)| last) != Some(binding)
         {
-            self.on_load.push(binding);
+            self.on_load.push((binding, line));
         }
         if let Some(group) = self
             .place
             .group
             .and_then(|group| self.groups.get_mut(group))
-            && group.uses.last() != Some(&binding)
+            && group.uses.last().map(|&(last, _)| last) != Some(binding)
         {
-            group.uses.push(binding);
+            group.uses.push((binding, line));
         }
     }
 
     /// Records that the file reads the member `name` on a value of a class it does not know. A name met before costs no allocation.
     pub(super) fn read(&mut self, name: &str) {
-        if !self.reads.contains(name) {
-            self.reads.insert(name.to_owned());
+        let line = self.lines.line(self.at);
+        match self.reads.get_mut(name) {
+            Some(first) => *first = (*first).min(line),
+            None => {
+                self.reads.insert(name.to_owned(), line);
+            }
         }
     }
 
@@ -1400,10 +1418,15 @@ impl<'a> Recorder<'a> {
         let writers = group.start..group.end;
         for position in writers {
             if let Some(&writer) = self.group_members.get(position)
+                && let Some(line) = self
+                    .entries
+                    .get(writer)
+                    .and_then(|writer| writer.lines)
+                    .map(|(line, _)| line)
                 && let Some(entry) = self.entries.get_mut(binding)
-                && entry.uses.last() != Some(&writer)
+                && entry.uses.last().map(|&(last, _)| last) != Some(writer)
             {
-                entry.uses.push(writer);
+                entry.uses.push((writer, line));
             }
         }
     }
@@ -1442,7 +1465,11 @@ impl<'a> Recorder<'a> {
             .enumerate()
             .filter_map(|(position, entry)| {
                 let (line, end) = entry.lines?;
-                let used = entry.uses.iter().copied().filter(|&used| used != position);
+                let used = entry
+                    .uses
+                    .iter()
+                    .copied()
+                    .filter(|&(used, _)| used != position);
                 Some(Declared {
                     name: entry.name.as_ref().to_owned(),
                     line,
@@ -1472,7 +1499,10 @@ impl<'a> Recorder<'a> {
             heirs,
             overrides,
             holds,
-            reads: std::mem::take(&mut self.reads).into_iter().collect(),
+            reads: std::mem::take(&mut self.reads)
+                .into_iter()
+                .map(|(name, line)| Use { name, line })
+                .collect(),
         }
     }
 
@@ -1482,22 +1512,25 @@ impl<'a> Recorder<'a> {
             .map_or("", |entry| entry.name.as_ref())
     }
 
-    /// The names of `entries`, sorted, once each. `ranks` gives the place of each entry in the order of the names, and `order` the entry at each place.
+    /// The names of `entries`, sorted, once each, with the earliest line a name is used on. `ranks` gives the place of each entry in the order of the names, and `order` the entry at each place.
     fn names_of(
         &self,
-        entries: impl Iterator<Item = usize>,
+        entries: impl Iterator<Item = (usize, Line)>,
         ranks: &[usize],
         order: &[usize],
-    ) -> Vec<String> {
-        let mut places: Vec<usize> = entries
-            .filter_map(|entry| ranks.get(entry).copied())
+    ) -> Vec<Use> {
+        let mut places: Vec<(usize, Line)> = entries
+            .filter_map(|(entry, line)| Some((ranks.get(entry).copied()?, line)))
             .collect();
         places.sort_unstable();
-        places.dedup();
+        places.dedup_by_key(|&mut (place, _)| place);
         places
             .into_iter()
-            .filter_map(|place| order.get(place))
-            .map(|&entry| self.name(entry).to_owned())
+            .filter_map(|(place, line)| Some((order.get(place)?, line)))
+            .map(|(&entry, line)| Use {
+                name: self.name(entry).to_owned(),
+                line,
+            })
             .collect()
     }
 }

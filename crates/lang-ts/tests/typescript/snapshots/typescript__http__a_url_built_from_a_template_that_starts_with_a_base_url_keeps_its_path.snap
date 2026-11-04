@@ -62,9 +62,18 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "location",
-          "location.origin",
-          "origin"
+          {
+            "line": 2,
+            "name": "location"
+          },
+          {
+            "line": 2,
+            "name": "location.origin"
+          },
+          {
+            "line": 2,
+            "name": "origin"
+          }
         ]
       },
       "tags": 0,

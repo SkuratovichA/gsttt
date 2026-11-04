@@ -60,7 +60,10 @@ expression: json
             "line": 3,
             "name": "StatusController",
             "uses": [
-              "Controller"
+              {
+                "line": 3,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -68,15 +71,24 @@ expression: json
             "line": 5,
             "name": "StatusController.live",
             "uses": [
-              "Get"
+              {
+                "line": 5,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get"
+          {
+            "line": 3,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -135,7 +147,10 @@ expression: json
             "line": 3,
             "name": "StatusController",
             "uses": [
-              "Controller"
+              {
+                "line": 3,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -143,15 +158,24 @@ expression: json
             "line": 5,
             "name": "StatusController.live",
             "uses": [
-              "Get"
+              {
+                "line": 5,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get"
+          {
+            "line": 3,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []

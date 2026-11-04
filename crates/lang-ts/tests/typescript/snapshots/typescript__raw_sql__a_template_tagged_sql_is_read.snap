@@ -65,7 +65,10 @@ expression: json
             "line": 4,
             "name": "users",
             "uses": [
-              "sql"
+              {
+                "line": 4,
+                "name": "sql"
+              }
             ]
           },
           {
@@ -73,7 +76,10 @@ expression: json
             "line": 6,
             "name": "posts",
             "uses": [
-              "db"
+              {
+                "line": 6,
+                "name": "db"
+              }
             ]
           }
         ],
@@ -82,7 +88,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "sql"
+          {
+            "line": 6,
+            "name": "sql"
+          }
         ]
       },
       "tags": 0,

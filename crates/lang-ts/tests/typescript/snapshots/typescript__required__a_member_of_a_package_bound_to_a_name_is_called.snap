@@ -54,11 +54,17 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "get"
+          {
+            "line": 3,
+            "name": "get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get"
+          {
+            "line": 1,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

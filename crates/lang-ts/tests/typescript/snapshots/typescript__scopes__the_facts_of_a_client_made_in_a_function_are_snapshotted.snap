@@ -71,8 +71,14 @@ expression: "run(\"scopes-client\")?"
             "line": 5,
             "name": "users",
             "uses": [
-              "BASE",
-              "axios.create"
+              {
+                "line": 6,
+                "name": "BASE"
+              },
+              {
+                "line": 7,
+                "name": "axios.create"
+              }
             ]
           },
           {
@@ -80,8 +86,14 @@ expression: "run(\"scopes-client\")?"
             "line": 11,
             "name": "make",
             "uses": [
-              "BASE",
-              "axios.create"
+              {
+                "line": 12,
+                "name": "BASE"
+              },
+              {
+                "line": 12,
+                "name": "axios.create"
+              }
             ]
           }
         ],
@@ -90,8 +102,14 @@ expression: "run(\"scopes-client\")?"
         "on_load": [],
         "overrides": [],
         "reads": [
-          "create",
-          "get"
+          {
+            "line": 7,
+            "name": "create"
+          },
+          {
+            "line": 8,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

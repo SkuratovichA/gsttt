@@ -66,16 +66,28 @@ expression: json
             "line": 4,
             "name": "AppModule",
             "uses": [
-              "Module",
-              "UsersController"
+              {
+                "line": 4,
+                "name": "Module"
+              },
+              {
+                "line": 4,
+                "name": "UsersController"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Module",
-          "UsersController"
+          {
+            "line": 4,
+            "name": "Module"
+          },
+          {
+            "line": 4,
+            "name": "UsersController"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -129,22 +141,43 @@ expression: json
             "line": 4,
             "name": "http",
             "uses": [
-              "API",
-              "axios.create"
+              {
+                "line": 4,
+                "name": "API"
+              },
+              {
+                "line": 4,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "API",
-          "axios.create",
-          "http"
+          {
+            "line": 4,
+            "name": "API"
+          },
+          {
+            "line": 4,
+            "name": "axios.create"
+          },
+          {
+            "line": 6,
+            "name": "http"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "get"
+          {
+            "line": 4,
+            "name": "create"
+          },
+          {
+            "line": 6,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,
@@ -204,22 +237,43 @@ expression: json
             "line": 6,
             "name": "bootstrap",
             "uses": [
-              "AppModule",
-              "NestFactory.create",
-              "NestFactory.listen",
-              "NestFactory.setGlobalPrefix",
-              "P"
+              {
+                "line": 7,
+                "name": "AppModule"
+              },
+              {
+                "line": 7,
+                "name": "NestFactory.create"
+              },
+              {
+                "line": 9,
+                "name": "NestFactory.listen"
+              },
+              {
+                "line": 8,
+                "name": "NestFactory.setGlobalPrefix"
+              },
+              {
+                "line": 8,
+                "name": "P"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "bootstrap"
+          {
+            "line": 12,
+            "name": "bootstrap"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create"
+          {
+            "line": 7,
+            "name": "create"
+          }
         ]
       },
       "tags": 0,
@@ -264,7 +318,10 @@ expression: json
             "line": 5,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 5,
+                "name": "express"
+              }
             ]
           },
           {
@@ -272,7 +329,10 @@ expression: json
             "line": 6,
             "name": "router",
             "uses": [
-              "express.Router"
+              {
+                "line": 6,
+                "name": "express.Router"
+              }
             ]
           }
         ],
@@ -284,18 +344,45 @@ expression: json
           }
         ],
         "on_load": [
-          "MOUNT",
-          "app.use",
-          "express",
-          "express.Router",
-          "router"
+          {
+            "line": 9,
+            "name": "MOUNT"
+          },
+          {
+            "line": 9,
+            "name": "app.use"
+          },
+          {
+            "line": 5,
+            "name": "express"
+          },
+          {
+            "line": 6,
+            "name": "express.Router"
+          },
+          {
+            "line": 8,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "Router",
-          "get",
-          "json",
-          "use"
+          {
+            "line": 6,
+            "name": "Router"
+          },
+          {
+            "line": 8,
+            "name": "get"
+          },
+          {
+            "line": 8,
+            "name": "json"
+          },
+          {
+            "line": 9,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -351,8 +438,14 @@ expression: json
             "line": 5,
             "name": "UsersController",
             "uses": [
-              "BASE",
-              "Controller"
+              {
+                "line": 5,
+                "name": "BASE"
+              },
+              {
+                "line": 5,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -360,16 +453,28 @@ expression: json
             "line": 7,
             "name": "UsersController.find",
             "uses": [
-              "Get"
+              {
+                "line": 7,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "BASE",
-          "Controller",
-          "Get"
+          {
+            "line": 5,
+            "name": "BASE"
+          },
+          {
+            "line": 5,
+            "name": "Controller"
+          },
+          {
+            "line": 7,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []

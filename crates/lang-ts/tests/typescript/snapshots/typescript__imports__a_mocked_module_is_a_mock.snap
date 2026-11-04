@@ -174,13 +174,34 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "doMock",
-          "doUnmock",
-          "dontMock",
-          "importMock",
-          "mock",
-          "requireMock",
-          "unmock"
+          {
+            "line": 2,
+            "name": "doMock"
+          },
+          {
+            "line": 4,
+            "name": "doUnmock"
+          },
+          {
+            "line": 9,
+            "name": "dontMock"
+          },
+          {
+            "line": 5,
+            "name": "importMock"
+          },
+          {
+            "line": 1,
+            "name": "mock"
+          },
+          {
+            "line": 10,
+            "name": "requireMock"
+          },
+          {
+            "line": 3,
+            "name": "unmock"
+          }
         ]
       },
       "tags": 1,

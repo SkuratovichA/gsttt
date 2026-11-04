@@ -62,9 +62,31 @@ pub(in crate::query) struct Hit {
     /// The first way the walk found, chosen as in the walk over files: of the equally near ways the one from the file with the smallest path, and from that file an import before a contract.
     pub(in crate::query) cause: Cause,
     /// The declarations of the file the walk reached, each as its index among those of the symbols of the file and its hops from the nearest declaration asked about, in byte order of their names. The declarations asked about are not among them.
-    pub(in crate::query) callers: Vec<(usize, u32)>,
+    pub(in crate::query) callers: Vec<HitCaller>,
     /// The hops from the nearest declaration asked about to the code that runs as the file loads, `None` when the walk did not reach it.
     pub(in crate::query) load: Option<u32>,
+    /// The use that made the code that runs as the file loads refer to what the walk reached, `None` when the walk did not reach it by a use of that code.
+    pub(in crate::query) load_mention: Option<Mention>,
+}
+
+/// A declaration of a file the walk reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::query) struct HitCaller {
+    /// Its index among the declarations of the symbols of the file.
+    pub(in crate::query) index: usize,
+    /// Its hops from the nearest declaration asked about.
+    pub(in crate::query) distance: u32,
+    /// The use that made it refer to what the walk reached, `None` when the walk reached it another way: by the import its lines hold, or as the declaration a member overrides.
+    pub(in crate::query) mention: Option<Mention>,
+}
+
+/// One use of a declaration, or of the code that runs as a file loads, that refers to what the walk reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::query) struct Mention {
+    /// The line of the use.
+    pub(in crate::query) line: Line,
+    /// Its place among the uses of the declaration, or among the uses of the load, as [`Declaration::uses_at`](crate::graph::Declaration::uses_at) lists them.
+    pub(in crate::query) ordinal: usize,
 }
 
 impl From<Reached> for Hit {
@@ -76,6 +98,7 @@ impl From<Reached> for Hit {
             cause: reached.cause,
             callers: Vec::new(),
             load: None,
+            load_mention: None,
         }
     }
 }
@@ -461,8 +484,12 @@ struct Touch {
     listed: Option<(u32, Cause)>,
     /// The declarations reached, as indices among those of the file, each with its hops. Those asked about are at distance 0.
     decls: BTreeMap<usize, Hops>,
+    /// The use that reached each declaration, by its index, for those a use reached.
+    mentions: BTreeMap<usize, Mention>,
     /// The hops to the code that runs as the file loads, once the walk reaches it.
     load: Option<Hops>,
+    /// The use that reached the code that runs as the file loads.
+    load_mention: Option<Mention>,
     /// The hops to the file as a whole, once the walk reaches it.
     whole: Option<Hops>,
 }
@@ -491,6 +518,8 @@ struct Candidate {
 struct Layer {
     /// Each part with the fewest hops through code of the ways the layer found it by.
     units: BTreeMap<Unit, u32>,
+    /// The earliest use that reached each part the layer reached by a use.
+    mentions: BTreeMap<Unit, Mention>,
     candidates: Vec<Candidate>,
     /// The files the layer met across a contract.
     across: Vec<FileId>,
@@ -757,10 +786,21 @@ impl Walk<'_> {
             let hops = Hops { distance, code };
             match unit.part {
                 Part::Decl(index) => {
-                    touch.decls.entry(index).or_insert(hops);
+                    // The use that goes with a part is the one of the layer that reached it first.
+                    if let std::collections::btree_map::Entry::Vacant(slot) =
+                        touch.decls.entry(index)
+                    {
+                        slot.insert(hops);
+                        if let Some(&mention) = layer.mentions.get(unit) {
+                            touch.mentions.insert(index, mention);
+                        }
+                    }
                 }
                 Part::Load => {
-                    touch.load.get_or_insert(hops);
+                    if touch.load.is_none() {
+                        touch.load = Some(hops);
+                        touch.load_mention = layer.mentions.get(unit).copied();
+                    }
                 }
                 Part::Whole => {
                     touch.whole.get_or_insert(hops);
@@ -789,19 +829,24 @@ impl Walk<'_> {
                         .and_then(|symbols| symbols.declaration(index))
                         .map(Declaration::name)
                 };
-                let mut callers: Vec<(usize, u32)> = touch
+                let mut callers: Vec<HitCaller> = touch
                     .decls
                     .iter()
                     .filter(|&(_, hops)| hops.distance > 0)
-                    .map(|(&index, hops)| (index, hops.distance))
+                    .map(|(&index, hops)| HitCaller {
+                        index,
+                        distance: hops.distance,
+                        mention: touch.mentions.get(&index).copied(),
+                    })
                     .collect();
-                callers.sort_by(|&(left, _), &(right, _)| name(left).cmp(&name(right)));
+                callers.sort_by(|left, right| name(left.index).cmp(&name(right.index)));
                 Some(Hit {
                     file,
                     distance,
                     cause,
                     callers,
                     load: touch.load.map(|hops| hops.distance),
+                    load_mention: touch.load_mention,
                 })
             })
             .collect();
@@ -1197,6 +1242,19 @@ impl<'w, 'a> Step<'w, 'a> {
         true
     }
 
+    /// Notes the use that reached a part, keeping the earliest line when the layer reaches the part by several.
+    fn mention(&mut self, file: FileId, part: Part, mention: Mention) {
+        self.layer
+            .mentions
+            .entry(Unit { file, part })
+            .and_modify(|held| {
+                if mention.line < held.line {
+                    *held = mention;
+                }
+            })
+            .or_insert(mention);
+    }
+
     /// Records a way into `file` from `from`.
     fn list(&mut self, file: FileId, from: FileId, cause: Cause) {
         self.layer.candidates.push(Candidate { file, from, cause });
@@ -1275,13 +1333,23 @@ impl<'w, 'a> Step<'w, 'a> {
         let mut held = false;
         for index in 0..symbols.len() {
             match reach.uses(index) {
-                Refers::Yes => found |= self.unit(file, Part::Decl(index)),
+                Refers::Yes => {
+                    found |= self.unit(file, Part::Decl(index));
+                    if let Some(mention) = reach.mention(index) {
+                        self.mention(file, Part::Decl(index), mention);
+                    }
+                }
                 Refers::Held => held = true,
                 Refers::No => {}
             }
         }
         match reach.loads() {
-            Refers::Yes => found |= self.unit(file, Part::Load),
+            Refers::Yes => {
+                found |= self.unit(file, Part::Load);
+                if let Some(mention) = reach.load_mention() {
+                    self.mention(file, Part::Load, mention);
+                }
+            }
             Refers::Held => held = true,
             Refers::No => {}
         }
@@ -1966,13 +2034,25 @@ impl<'w, 'a> Step<'w, 'a> {
         let mut held = false;
         for (index, decl) in symbols.declarations().enumerate() {
             match refers_decl(locals, symbols, Some(decl.name()), decl.uses()) {
-                Refers::Yes => found |= self.unit(importer, Part::Decl(index)),
+                Refers::Yes => {
+                    found |= self.unit(importer, Part::Decl(index));
+                    if let Some(mention) =
+                        mention_decl(locals, symbols, Some(decl.name()), decl.uses_at())
+                    {
+                        self.mention(importer, Part::Decl(index), mention);
+                    }
+                }
                 Refers::Held => held = true,
                 Refers::No => {}
             }
         }
         match refers_decl(locals, symbols, None, symbols.on_load()) {
-            Refers::Yes => found |= self.unit(importer, Part::Load),
+            Refers::Yes => {
+                found |= self.unit(importer, Part::Load);
+                if let Some(mention) = mention_decl(locals, symbols, None, symbols.on_load_at()) {
+                    self.mention(importer, Part::Load, mention);
+                }
+            }
             Refers::Held => held = true,
             Refers::No => {}
         }
@@ -2153,19 +2233,49 @@ fn refers_decl<'u>(
 ) -> Refers {
     let mut best = Refers::No;
     for used in uses {
-        for local in locals {
-            let refers = local.refers(symbols, used);
-            let capped = refers == Refers::Yes
-                && local.member.is_some()
-                && (takes_members(symbols, owner, used)
-                    || (used == local.name && is_heir(symbols, used)));
-            best = best.max(if capped { Refers::Held } else { refers });
-        }
+        best = best.max(refers_use(locals, symbols, owner, used));
         if best == Refers::Yes {
             break;
         }
     }
     best
+}
+
+/// Whether one use of the code of `owner` refers to one of `locals`, as [`refers_decl`] reads each of its uses.
+fn refers_use(
+    locals: &[Local<'_>],
+    symbols: FileSymbols<'_>,
+    owner: Option<&str>,
+    used: &str,
+) -> Refers {
+    let mut best = Refers::No;
+    for local in locals {
+        let refers = local.refers(symbols, used);
+        let capped = refers == Refers::Yes
+            && local.member.is_some()
+            && (takes_members(symbols, owner, used)
+                || (used == local.name && is_heir(symbols, used)));
+        best = best.max(if capped { Refers::Held } else { refers });
+    }
+    best
+}
+
+/// The earliest use among `uses` that makes the code of `owner` refer to one of `locals`, which is where a reader finds the call.
+fn mention_decl<'u>(
+    locals: &[Local<'_>],
+    symbols: FileSymbols<'_>,
+    owner: Option<&str>,
+    uses: impl Iterator<Item = (&'u str, Line)>,
+) -> Option<Mention> {
+    earliest(uses.enumerate().filter_map(|(ordinal, (used, line))| {
+        (refers_use(locals, symbols, owner, used) == Refers::Yes)
+            .then_some(Mention { line, ordinal })
+    }))
+}
+
+/// The mention on the earliest line, and of those on one line the first.
+fn earliest(mentions: impl Iterator<Item = Mention>) -> Option<Mention> {
+    mentions.min_by_key(|mention| (mention.line, mention.ordinal))
 }
 
 /// Whether `path` is the module a package hands out as `taken`: a file of that name, or the `__init__` of a directory of that name. Python is the connector that sets [`ImportFlags::MODULES`].
@@ -2266,6 +2376,28 @@ impl Reach<'_, '_> {
     /// Whether the code that runs as the file loads refers to what was reached.
     fn loads(&self) -> Refers {
         self.best(self.symbols.on_load(), None)
+    }
+
+    /// The earliest use of the declaration at `index` that refers to what was reached.
+    fn mention(&self, index: usize) -> Option<Mention> {
+        let decl = self.symbols.declaration(index)?;
+        earliest(
+            decl.uses_at()
+                .enumerate()
+                .filter(|&(_, (used, _))| self.refers(Some(decl.name()), used) == Refers::Yes)
+                .map(|(ordinal, (_, line))| Mention { line, ordinal }),
+        )
+    }
+
+    /// The earliest use in the code that runs as the file loads that refers to what was reached.
+    fn load_mention(&self) -> Option<Mention> {
+        earliest(
+            self.symbols
+                .on_load_at()
+                .enumerate()
+                .filter(|&(_, (used, _))| self.refers(None, used) == Refers::Yes)
+                .map(|(ordinal, (_, line))| Mention { line, ordinal }),
+        )
     }
 
     fn best<'u>(&self, uses: impl Iterator<Item = &'u str>, owner: Option<&str>) -> Refers {

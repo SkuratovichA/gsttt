@@ -130,8 +130,14 @@ expression: json
             "line": 4,
             "name": "byTemplate",
             "uses": [
-              "API_PREFIX",
-              "axios.get"
+              {
+                "line": 4,
+                "name": "API_PREFIX"
+              },
+              {
+                "line": 4,
+                "name": "axios.get"
+              }
             ]
           },
           {
@@ -139,9 +145,18 @@ expression: json
             "line": 5,
             "name": "byConcatenation",
             "uses": [
-              "API_PREFIX",
-              "USERS",
-              "axios.get"
+              {
+                "line": 5,
+                "name": "API_PREFIX"
+              },
+              {
+                "line": 5,
+                "name": "USERS"
+              },
+              {
+                "line": 5,
+                "name": "axios.get"
+              }
             ]
           }
         ],
@@ -150,7 +165,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "get"
+          {
+            "line": 4,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,
