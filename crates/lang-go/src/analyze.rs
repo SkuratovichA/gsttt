@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use gsttt_core::fact::{
     ContractFact, Declared, Embedded, Heir, Import, ImportFlags, ImportKind, Line,
-    MEMBER_SEPARATOR, UnresolvedSite,
+    MEMBER_SEPARATOR, UnresolvedSite, Use, Uses,
 };
 use tree_sitter::Node;
 
@@ -19,9 +19,9 @@ use crate::walk::{Walk, first_result};
 #[derive(Debug, Default)]
 pub(crate) struct Analysis {
     pub(crate) declared: Vec<Declared>,
-    pub(crate) on_load: Vec<String>,
-    /// The member names the file reads on a value of unknown type, sorted.
-    pub(crate) reads: Vec<String>,
+    pub(crate) on_load: Vec<Use>,
+    /// The member names the file reads on a value of unknown type, each with the line of its first read, sorted.
+    pub(crate) reads: Vec<Use>,
     pub(crate) exports: Vec<String>,
     /// The name in the package clause, or [`NO_PACKAGE`] for a file that `//go:build ignore` leaves out of every build.
     pub(crate) package: String,
@@ -41,7 +41,7 @@ pub(crate) struct Analysis {
 struct Span {
     line: Line,
     end: Line,
-    uses: BTreeSet<String>,
+    uses: Uses,
 }
 
 /// Collects the declarations of a file; a name declared twice, as functions behind different build tags are, is one declaration.
@@ -50,13 +50,13 @@ struct Declarations {
 }
 
 impl Declarations {
-    fn add(&mut self, name: String, line: Line, end: Line, mut uses: BTreeSet<String>) {
+    fn add(&mut self, name: String, line: Line, end: Line, mut uses: Uses) {
         uses.remove(&name);
         match self.spans.get_mut(&name) {
             Some(span) => {
                 span.line = span.line.min(line);
                 span.end = span.end.max(end);
-                span.uses.append(&mut uses);
+                span.uses.absorb(uses);
             }
             None => {
                 self.spans.insert(name, Span { line, end, uses });
@@ -72,7 +72,7 @@ impl Declarations {
                 name,
                 line: span.line,
                 end: span.end,
-                uses: span.uses.into_iter().collect(),
+                uses: span.uses.into_vec(),
             })
             .collect();
         declared.sort_by(|a, b| (a.line, &a.name).cmp(&(b.line, &b.name)));
@@ -128,8 +128,8 @@ pub(crate) fn analyze<'a>(cx: &FileCx<'a>, root: Node<'a>) -> Analysis {
     let imports = imports_of(cx, &walk, package_line);
     Analysis {
         declared: declarations.finish(),
-        on_load: walk.on_load.into_iter().collect(),
-        reads: walk.reads.into_iter().collect(),
+        on_load: walk.on_load.into_vec(),
+        reads: walk.reads.into_vec(),
         exports: cx
             .top
             .iter()
@@ -174,7 +174,7 @@ fn function<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, node: 
     walk.scopes.pop_scope();
     let uses = walk.take_uses();
     if name == "init" {
-        walk.on_load.extend(uses);
+        walk.on_load.absorb(uses);
         return;
     }
     declarations.add(name.to_owned(), line_of(node), end_line_of(node), uses);
@@ -412,7 +412,7 @@ fn value_spec<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, spec
         .unwrap_or_default();
     let (line, end) = (line_of(spec), end_line_of(spec));
     let paired = names.len() == values.len();
-    let mut shared = BTreeSet::new();
+    let mut shared = Uses::default();
     if !paired {
         walk.begin();
         read_value(walk, ty, &values);
@@ -435,7 +435,7 @@ fn value_spec<'a>(walk: &mut Walk<'_, 'a>, declarations: &mut Declarations, spec
             shared.clone()
         };
         if text == "_" {
-            walk.on_load.extend(uses);
+            walk.on_load.absorb(uses);
             continue;
         }
         if spec.kind() == "var_spec" {

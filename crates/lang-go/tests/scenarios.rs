@@ -7,7 +7,7 @@
 use gsttt_config::pack::builtin_packs;
 use gsttt_core::connector::{DynConnector, SourceFile};
 use gsttt_core::engine::pipeline::{self, FileRun, Module, Output};
-use gsttt_core::fact::{FileTags, Line, ParseStatus, Resolution};
+use gsttt_core::fact::{FileTags, Line, ParseStatus, Resolution, Use};
 use gsttt_core::ids::FileId;
 use gsttt_core::path::RepoPath;
 use gsttt_core::repo::RepoView;
@@ -114,7 +114,7 @@ impl Tree {
         symbols
             .declared
             .iter()
-            .map(|d| format!("{} L{}-{}: {}", d.name, d.line, d.end, d.uses.join(" ")))
+            .map(|d| format!("{} L{}-{}: {}", d.name, d.line, d.end, joined(&d.uses)))
             .collect()
     }
 
@@ -132,13 +132,16 @@ impl Tree {
                 )
             })
             .uses
+            .iter()
+            .map(|used| used.name.as_str())
+            .collect::<Vec<_>>()
             .join(" ")
     }
 
     /// The member names a file reads on a value of unknown type.
     fn reads(&self, path: &str) -> Vec<String> {
         let symbols = self.file(path).facts.symbols.as_ref().expect("symbols");
-        symbols.reads.clone()
+        symbols.reads.iter().map(|read| read.name.clone()).collect()
     }
 
     /// The heirs of a file as `name of`.
@@ -153,7 +156,7 @@ impl Tree {
 
     fn on_load(&self, path: &str) -> String {
         let symbols = self.file(path).facts.symbols.as_ref().expect("symbols");
-        symbols.on_load.join(" ")
+        joined(&symbols.on_load)
     }
 
     /// The names a file exports, without the entry that records its package.
@@ -227,6 +230,14 @@ impl Tree {
 }
 
 /// The status of a file's parse.
+/// The names of `uses`, joined by a space.
+fn joined(uses: &[Use]) -> String {
+    uses.iter()
+        .map(|used| used.name.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn status(tree: &Tree, path: &str) -> ParseStatus {
     tree.file(path).facts.status.clone()
 }
@@ -2459,4 +2470,37 @@ fn the_service_fixture_facts() {
     .collect();
     assert!(!t.claims("vendor/x/x.go") && !t.claims("testdata/t.go"));
     insta::assert_json_snapshot!("the_service_fixture_facts", files);
+}
+
+// Positions.
+
+#[gsttt_scenario::scenario("go", "A use keeps the line it is written on")]
+#[test]
+fn a_use_keeps_the_line_it_is_written_on() {
+    let t = module(&[(
+        "u.go",
+        "package m\n\nfunc Run(s Store) {\n\tHelper()\n\ts.\n\t\tSave()\n}\n\nvar loaded = Prepare()\n",
+    )]);
+    let symbols = t.file("u.go").facts.symbols.as_ref().expect("symbols");
+    let lines = |uses: &[Use]| -> Vec<(String, Line)> {
+        uses.iter()
+            .map(|used| (used.name.clone(), used.line))
+            .collect()
+    };
+    let run = symbols
+        .declared
+        .iter()
+        .find(|declared| declared.name == "Run")
+        .expect("Run is declared");
+    let found = lines(&run.uses);
+    let line_of = |name: &str| {
+        found
+            .iter()
+            .find(|(used, _)| used == name)
+            .map(|(_, line)| *line)
+    };
+    assert_eq!(line_of("Helper"), Some(4), "{found:?}");
+    // The receiver stands on line 5 and the method it calls on line 6.
+    assert_eq!(line_of("Store.Save"), Some(6), "{found:?}");
+    assert_eq!(lines(&symbols.on_load), [("Prepare".to_owned(), 9)]);
 }

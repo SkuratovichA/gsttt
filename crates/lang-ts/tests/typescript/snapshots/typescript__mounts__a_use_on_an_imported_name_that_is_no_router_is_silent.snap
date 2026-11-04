@@ -53,18 +53,27 @@ expression: json
             "line": 3,
             "name": "i18n",
             "uses": [
-              "i18next.createInstance"
+              {
+                "line": 3,
+                "name": "i18next.createInstance"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "i18next.createInstance"
+          {
+            "line": 3,
+            "name": "i18next.createInstance"
+          }
         ],
         "overrides": [],
         "reads": [
-          "createInstance"
+          {
+            "line": 3,
+            "name": "createInstance"
+          }
         ]
       },
       "tags": 0,
@@ -118,12 +127,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "i18n.use",
-          "initReactI18next"
+          {
+            "line": 4,
+            "name": "i18n.use"
+          },
+          {
+            "line": 4,
+            "name": "initReactI18next"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 4,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,

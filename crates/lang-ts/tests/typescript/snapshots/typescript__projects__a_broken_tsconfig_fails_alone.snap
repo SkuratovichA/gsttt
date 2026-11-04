@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "page",
             "uses": [
-              "util"
+              {
+                "line": 3,
+                "name": "util"
+              }
             ]
           }
         ],

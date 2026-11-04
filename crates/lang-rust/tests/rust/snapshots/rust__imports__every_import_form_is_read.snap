@@ -212,9 +212,18 @@ expression: file
         "line": 9,
         "name": "call",
         "uses": [
-          "go",
-          "helper",
-          "u32"
+          {
+            "line": 10,
+            "name": "go"
+          },
+          {
+            "line": 10,
+            "name": "helper"
+          },
+          {
+            "line": 9,
+            "name": "u32"
+          }
         ]
       },
       {
@@ -222,8 +231,14 @@ expression: file
         "line": 13,
         "name": "DATA",
         "uses": [
-          "include_str",
-          "str"
+          {
+            "line": 13,
+            "name": "include_str"
+          },
+          {
+            "line": 13,
+            "name": "str"
+          }
         ]
       },
       {
@@ -231,17 +246,32 @@ expression: file
         "line": 14,
         "name": "BYTES",
         "uses": [
-          "include_bytes",
-          "u8"
+          {
+            "line": 14,
+            "name": "include_bytes"
+          },
+          {
+            "line": 14,
+            "name": "u8"
+          }
         ]
       }
     ],
     "exports": [],
     "heirs": [],
     "on_load": [
-      "Renamed",
-      "a",
-      "sd"
+      {
+        "line": 2,
+        "name": "Renamed"
+      },
+      {
+        "line": 2,
+        "name": "a"
+      },
+      {
+        "line": 6,
+        "name": "sd"
+      }
     ],
     "overrides": [],
     "reads": []

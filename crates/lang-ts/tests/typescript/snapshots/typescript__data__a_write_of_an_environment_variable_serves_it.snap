@@ -49,9 +49,18 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "TARGET",
-          "env",
-          "env.TARGET"
+          {
+            "line": 1,
+            "name": "TARGET"
+          },
+          {
+            "line": 1,
+            "name": "env"
+          },
+          {
+            "line": 1,
+            "name": "env.TARGET"
+          }
         ]
       },
       "tags": 0,
@@ -275,44 +284,158 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "A",
-          "B",
-          "C",
-          "D",
-          "E",
-          "F",
-          "G",
-          "H",
-          "I",
-          "K",
-          "L",
-          "M",
-          "N",
-          "O",
-          "P",
-          "Q",
-          "R",
-          "S",
-          "env",
-          "env.A",
-          "env.B",
-          "env.C",
-          "env.D",
-          "env.E",
-          "env.F",
-          "env.G",
-          "env.H",
-          "env.I",
-          "env.K",
-          "env.L",
-          "env.M",
-          "env.N",
-          "env.O",
-          "env.P",
-          "env.Q",
-          "env.R",
-          "env.S",
-          "map"
+          {
+            "line": 1,
+            "name": "A"
+          },
+          {
+            "line": 2,
+            "name": "B"
+          },
+          {
+            "line": 3,
+            "name": "C"
+          },
+          {
+            "line": 4,
+            "name": "D"
+          },
+          {
+            "line": 5,
+            "name": "E"
+          },
+          {
+            "line": 6,
+            "name": "F"
+          },
+          {
+            "line": 6,
+            "name": "G"
+          },
+          {
+            "line": 7,
+            "name": "H"
+          },
+          {
+            "line": 8,
+            "name": "I"
+          },
+          {
+            "line": 10,
+            "name": "K"
+          },
+          {
+            "line": 11,
+            "name": "L"
+          },
+          {
+            "line": 12,
+            "name": "M"
+          },
+          {
+            "line": 13,
+            "name": "N"
+          },
+          {
+            "line": 14,
+            "name": "O"
+          },
+          {
+            "line": 15,
+            "name": "P"
+          },
+          {
+            "line": 15,
+            "name": "Q"
+          },
+          {
+            "line": 16,
+            "name": "R"
+          },
+          {
+            "line": 9,
+            "name": "S"
+          },
+          {
+            "line": 1,
+            "name": "env"
+          },
+          {
+            "line": 1,
+            "name": "env.A"
+          },
+          {
+            "line": 2,
+            "name": "env.B"
+          },
+          {
+            "line": 3,
+            "name": "env.C"
+          },
+          {
+            "line": 4,
+            "name": "env.D"
+          },
+          {
+            "line": 5,
+            "name": "env.E"
+          },
+          {
+            "line": 6,
+            "name": "env.F"
+          },
+          {
+            "line": 6,
+            "name": "env.G"
+          },
+          {
+            "line": 7,
+            "name": "env.H"
+          },
+          {
+            "line": 8,
+            "name": "env.I"
+          },
+          {
+            "line": 10,
+            "name": "env.K"
+          },
+          {
+            "line": 11,
+            "name": "env.L"
+          },
+          {
+            "line": 12,
+            "name": "env.M"
+          },
+          {
+            "line": 13,
+            "name": "env.N"
+          },
+          {
+            "line": 14,
+            "name": "env.O"
+          },
+          {
+            "line": 15,
+            "name": "env.P"
+          },
+          {
+            "line": 15,
+            "name": "env.Q"
+          },
+          {
+            "line": 16,
+            "name": "env.R"
+          },
+          {
+            "line": 9,
+            "name": "env.S"
+          },
+          {
+            "line": 13,
+            "name": "map"
+          }
         ]
       },
       "tags": 0,
@@ -372,19 +495,58 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "G",
-          "H",
-          "I",
-          "J",
-          "K",
-          "L",
-          "env",
-          "env.G",
-          "env.H",
-          "env.I",
-          "env.J",
-          "env.K",
-          "env.L"
+          {
+            "line": 1,
+            "name": "G"
+          },
+          {
+            "line": 2,
+            "name": "H"
+          },
+          {
+            "line": 3,
+            "name": "I"
+          },
+          {
+            "line": 4,
+            "name": "J"
+          },
+          {
+            "line": 5,
+            "name": "K"
+          },
+          {
+            "line": 6,
+            "name": "L"
+          },
+          {
+            "line": 1,
+            "name": "env"
+          },
+          {
+            "line": 1,
+            "name": "env.G"
+          },
+          {
+            "line": 2,
+            "name": "env.H"
+          },
+          {
+            "line": 3,
+            "name": "env.I"
+          },
+          {
+            "line": 4,
+            "name": "env.J"
+          },
+          {
+            "line": 5,
+            "name": "env.K"
+          },
+          {
+            "line": 6,
+            "name": "env.L"
+          }
         ]
       },
       "tags": 0,
@@ -414,11 +576,26 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "J",
-          "J.foo",
-          "env",
-          "env.J",
-          "foo"
+          {
+            "line": 1,
+            "name": "J"
+          },
+          {
+            "line": 1,
+            "name": "J.foo"
+          },
+          {
+            "line": 1,
+            "name": "env"
+          },
+          {
+            "line": 1,
+            "name": "env.J"
+          },
+          {
+            "line": 1,
+            "name": "foo"
+          }
         ]
       },
       "tags": 0,
@@ -501,13 +678,34 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "API_URL",
-          "COUNT",
-          "RETRIES",
-          "env",
-          "env.API_URL",
-          "env.COUNT",
-          "env.RETRIES"
+          {
+            "line": 1,
+            "name": "API_URL"
+          },
+          {
+            "line": 3,
+            "name": "COUNT"
+          },
+          {
+            "line": 2,
+            "name": "RETRIES"
+          },
+          {
+            "line": 1,
+            "name": "env"
+          },
+          {
+            "line": 1,
+            "name": "env.API_URL"
+          },
+          {
+            "line": 3,
+            "name": "env.COUNT"
+          },
+          {
+            "line": 2,
+            "name": "env.RETRIES"
+          }
         ]
       },
       "tags": 0,
@@ -561,17 +759,50 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "A",
-          "B",
-          "C",
-          "E",
-          "F",
-          "env",
-          "env.A",
-          "env.B",
-          "env.C",
-          "env.F",
-          "stubEnv"
+          {
+            "line": 1,
+            "name": "A"
+          },
+          {
+            "line": 2,
+            "name": "B"
+          },
+          {
+            "line": 3,
+            "name": "C"
+          },
+          {
+            "line": 5,
+            "name": "E"
+          },
+          {
+            "line": 5,
+            "name": "F"
+          },
+          {
+            "line": 1,
+            "name": "env"
+          },
+          {
+            "line": 1,
+            "name": "env.A"
+          },
+          {
+            "line": 2,
+            "name": "env.B"
+          },
+          {
+            "line": 3,
+            "name": "env.C"
+          },
+          {
+            "line": 5,
+            "name": "env.F"
+          },
+          {
+            "line": 4,
+            "name": "stubEnv"
+          }
         ]
       },
       "tags": 0,

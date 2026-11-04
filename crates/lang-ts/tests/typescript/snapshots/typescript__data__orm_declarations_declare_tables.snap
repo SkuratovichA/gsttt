@@ -58,14 +58,20 @@ expression: json
             "line": 3,
             "name": "Booking",
             "uses": [
-              "Entity"
+              {
+                "line": 3,
+                "name": "Entity"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Entity"
+          {
+            "line": 3,
+            "name": "Entity"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -115,14 +121,20 @@ expression: json
             "line": 3,
             "name": "Room",
             "uses": [
-              "Entity"
+              {
+                "line": 3,
+                "name": "Entity"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Entity"
+          {
+            "line": 3,
+            "name": "Entity"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -174,8 +186,14 @@ expression: json
             "line": 3,
             "name": "items",
             "uses": [
-              "pgTable",
-              "serial"
+              {
+                "line": 3,
+                "name": "pgTable"
+              },
+              {
+                "line": 4,
+                "name": "serial"
+              }
             ]
           }
         ],
@@ -187,12 +205,21 @@ expression: json
           }
         ],
         "on_load": [
-          "pgTable",
-          "serial"
+          {
+            "line": 3,
+            "name": "pgTable"
+          },
+          {
+            "line": 4,
+            "name": "serial"
+          }
         ],
         "overrides": [],
         "reads": [
-          "primaryKey"
+          {
+            "line": 4,
+            "name": "primaryKey"
+          }
         ]
       },
       "tags": 0,

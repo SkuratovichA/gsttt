@@ -61,7 +61,10 @@ expression: json
             "line": 4,
             "name": "InvoiceResolver.mail",
             "uses": [
-              "MailQueue"
+              {
+                "line": 4,
+                "name": "MailQueue"
+              }
             ]
           },
           {
@@ -69,7 +72,10 @@ expression: json
             "line": 5,
             "name": "InvoiceResolver.jobs",
             "uses": [
-              "JobQueue"
+              {
+                "line": 5,
+                "name": "JobQueue"
+              }
             ]
           },
           {
@@ -77,7 +83,10 @@ expression: json
             "line": 6,
             "name": "InvoiceResolver.constructor",
             "uses": [
-              "InvoiceService."
+              {
+                "line": 7,
+                "name": "InvoiceService."
+              }
             ]
           },
           {
@@ -85,11 +94,26 @@ expression: json
             "line": 10,
             "name": "InvoiceResolver.issue",
             "uses": [
-              "InvoiceResolver.jobs",
-              "InvoiceResolver.mail",
-              "InvoiceService.issue",
-              "JobQueue.add",
-              "MailQueue.push"
+              {
+                "line": 13,
+                "name": "InvoiceResolver.jobs"
+              },
+              {
+                "line": 12,
+                "name": "InvoiceResolver.mail"
+              },
+              {
+                "line": 11,
+                "name": "InvoiceService.issue"
+              },
+              {
+                "line": 13,
+                "name": "JobQueue.add"
+              },
+              {
+                "line": 12,
+                "name": "MailQueue.push"
+              }
             ]
           },
           {
@@ -103,7 +127,10 @@ expression: json
             "line": 18,
             "name": "InvoiceResolver.all",
             "uses": [
-              "InvoiceService"
+              {
+                "line": 19,
+                "name": "InvoiceService"
+              }
             ]
           }
         ],
@@ -126,9 +153,18 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "invoices.issue",
-          "jobs.add",
-          "mail.push"
+          {
+            "line": 11,
+            "name": "invoices.issue"
+          },
+          {
+            "line": 13,
+            "name": "jobs.add"
+          },
+          {
+            "line": 12,
+            "name": "mail.push"
+          }
         ]
       },
       "tags": 0,

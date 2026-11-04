@@ -5,9 +5,9 @@
 mod receivers;
 mod table;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use gsttt_core::fact::{Declared, Heir, Import, ImportKind, Line, MEMBER_SEPARATOR, Symbols};
+use gsttt_core::fact::{Declared, Heir, Import, ImportKind, Line, MEMBER_SEPARATOR, Symbols, Uses};
 use gsttt_core::text::LineIndex;
 use ra_ap_syntax::ast::{self, HasName, HasTypeBounds};
 use ra_ap_syntax::{AstNode, SyntaxNode};
@@ -29,26 +29,21 @@ pub(crate) struct Read {
 }
 
 /// The names that a `use` binds and nothing in the file names, of no crate of the standard library. The compiler warns about an import nothing needs, so such an import is there for what it brings without its name: a trait whose methods the file calls, `as _` among them, or a macro.
-fn unnamed_imports(
-    imports: &[Import],
-    entries: &[Entry],
-    on_load: &BTreeSet<String>,
-) -> Vec<String> {
+fn unnamed_imports(imports: &[Import], entries: &[Entry], on_load: &Uses) -> Vec<(String, Line)> {
     let named: BTreeSet<&str> = entries
         .iter()
-        .flat_map(|entry| entry.uses.iter())
-        .chain(on_load)
-        .map(String::as_str)
+        .flat_map(|entry| entry.uses.names())
+        .chain(on_load.names())
         .collect();
     imports
         .iter()
         .filter(|import| import.kind == ImportKind::Static && !of_std(import))
         .filter_map(|import| match import.names.as_slice() {
-            [taken] => Some(import.exported.first().unwrap_or(taken)),
+            [taken] => Some((import.exported.first().unwrap_or(taken), import.line)),
             _ => None,
         })
-        .filter(|bound| *bound != "*" && !named.contains(bound.as_str()))
-        .cloned()
+        .filter(|(bound, _)| *bound != "*" && !named.contains(bound.as_str()))
+        .map(|(bound, line)| (bound.clone(), line))
         .collect()
 }
 
@@ -69,7 +64,7 @@ pub(crate) struct Entry {
     name: String,
     line: Line,
     end: Line,
-    pub(crate) uses: BTreeSet<String>,
+    pub(crate) uses: Uses,
 }
 
 pub(crate) struct Recorder<'a> {
@@ -77,10 +72,10 @@ pub(crate) struct Recorder<'a> {
     lines: &'a LineIndex,
     pub(crate) entries: Vec<Entry>,
     index: HashMap<String, usize>,
-    on_load: BTreeSet<String>,
-    pub(crate) reads: BTreeSet<String>,
-    /// The members read on a value of a written type that the file does not declare for that type, with the declaration that reads them.
-    pub(crate) written: BTreeSet<(usize, String)>,
+    on_load: Uses,
+    pub(crate) reads: Uses,
+    /// The members read on a value of a written type that the file does not declare for that type, with the declaration that reads them and the line of the first read.
+    pub(crate) written: BTreeMap<(usize, String), Line>,
     heirs: Vec<Heir>,
     overrides: Vec<Heir>,
 }
@@ -92,9 +87,9 @@ impl<'a> Recorder<'a> {
             lines,
             entries: Vec::new(),
             index: HashMap::new(),
-            on_load: BTreeSet::new(),
-            reads: BTreeSet::new(),
-            written: BTreeSet::new(),
+            on_load: Uses::default(),
+            reads: Uses::default(),
+            written: BTreeMap::new(),
             heirs: Vec::new(),
             overrides: Vec::new(),
         }
@@ -119,7 +114,7 @@ impl<'a> Recorder<'a> {
             name,
             line,
             end,
-            uses: BTreeSet::new(),
+            uses: Uses::default(),
         });
         position
     }
@@ -240,7 +235,7 @@ impl<'a> Recorder<'a> {
                 self.scan(owner, node, None, &none, None);
                 if let Some(entry) = self.entries.get_mut(owner) {
                     let uses = std::mem::take(&mut entry.uses);
-                    self.on_load.extend(uses);
+                    self.on_load.absorb(uses);
                 }
             }
         }
@@ -347,13 +342,20 @@ impl<'a> Recorder<'a> {
         } else {
             self.scan(first, item.syntax(), Some(&target), &generics, None);
         }
-        let header: Vec<String> = match (self.entries.get(first), before) {
-            (Some(entry), Some(before)) => entry.uses.difference(&before).cloned().collect(),
+        let header: Vec<(String, Line)> = match (self.entries.get(first), before) {
+            (Some(entry), Some(before)) => entry
+                .uses
+                .iter()
+                .filter(|(name, _)| !before.contains(name))
+                .map(|(name, line)| (name.to_owned(), line))
+                .collect(),
             _ => Vec::new(),
         };
         for &owner in owners.iter().skip(1) {
             if let Some(entry) = self.entries.get_mut(owner) {
-                entry.uses.extend(header.iter().cloned());
+                for (name, line) in &header {
+                    entry.uses.insert(name, *line);
+                }
             }
         }
     }
@@ -369,7 +371,7 @@ impl<'a> Recorder<'a> {
             };
             let leaf = import.spec.rsplit("::").next().unwrap_or_default();
             if bound != taken && leaf != taken && leaf != "*" {
-                self.reads.insert(leaf.to_owned());
+                self.reads.insert(leaf, import.line);
             }
         }
     }
@@ -395,14 +397,18 @@ impl<'a> Recorder<'a> {
         let unnamed = unnamed_imports(imports, &entries, &on_load);
         // The file holds such an import for its methods, so a member a value of a written type does not declare here may be one of them.
         if !unnamed.is_empty() {
-            for (owner, member) in written {
+            for ((owner, member), line) in written {
                 if let Some(entry) = entries.get_mut(owner) {
-                    entry.uses.insert(format!("{MEMBER_SEPARATOR}{member}"));
+                    entry
+                        .uses
+                        .insert(&format!("{MEMBER_SEPARATOR}{member}"), line);
                 }
-                reads.insert(member);
+                reads.insert(&member, line);
             }
         }
-        on_load.extend(unnamed);
+        for (name, line) in unnamed {
+            on_load.insert_owned(name, line);
+        }
         let mut exports: BTreeSet<String> = entries
             .iter()
             .filter(|entry| !entry.name.contains(MEMBER_SEPARATOR) && entry.name != "_")
@@ -421,8 +427,9 @@ impl<'a> Recorder<'a> {
             .map(|entry| Declared {
                 uses: entry
                     .uses
+                    .into_vec()
                     .into_iter()
-                    .filter(|used| *used != entry.name)
+                    .filter(|used| used.name != entry.name)
                     .collect(),
                 name: entry.name,
                 line: entry.line,
@@ -439,12 +446,12 @@ impl<'a> Recorder<'a> {
         Read {
             symbols: Symbols {
                 declared,
-                on_load: on_load.into_iter().collect(),
+                on_load: on_load.into_vec(),
                 exports: Vec::new(),
                 heirs,
                 overrides,
                 holds,
-                reads: reads.into_iter().collect(),
+                reads: reads.into_vec(),
             },
             exports: exports.into_iter().collect(),
         }
@@ -473,12 +480,25 @@ pub(crate) fn assoc_name(item: &ast::AssocItem) -> Option<String> {
 
 /// The last segment of each trait a `#[derive(..)]` names.
 pub(crate) fn derive_names(attr: &ast::Attr) -> Vec<String> {
+    derive_uses(attr)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+/// The last segment of each trait a `#[derive(..)]` names, with the offset of the token its path starts at, which is on the line of the trait when the attribute is written over several.
+pub(crate) fn derive_uses(attr: &ast::Attr) -> Vec<(String, u32)> {
     if attr.simple_name().as_deref() != Some("derive") {
         return Vec::new();
     }
-    chains(&significant_tokens(attr.syntax()))
+    let tokens = significant_tokens(attr.syntax());
+    chains(&tokens)
         .into_iter()
-        .filter_map(|chain| chain.names.last().cloned())
-        .filter(|name| name != "derive")
+        .filter_map(|chain| {
+            let name = chain.names.last().cloned()?;
+            let at = tokens.get(chain.start)?.text_range().start();
+            Some((name, u32::from(at)))
+        })
+        .filter(|(name, _)| name != "derive")
         .collect()
 }

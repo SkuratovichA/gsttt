@@ -68,7 +68,10 @@ expression: json
             "line": 4,
             "name": "shared",
             "uses": [
-              "options"
+              {
+                "line": 4,
+                "name": "options"
+              }
             ]
           },
           {
@@ -76,7 +79,10 @@ expression: json
             "line": 5,
             "name": "named",
             "uses": [
-              "verb"
+              {
+                "line": 5,
+                "name": "verb"
+              }
             ]
           },
           {
@@ -84,7 +90,10 @@ expression: json
             "line": 6,
             "name": "spread",
             "uses": [
-              "options"
+              {
+                "line": 6,
+                "name": "options"
+              }
             ]
           }
         ],

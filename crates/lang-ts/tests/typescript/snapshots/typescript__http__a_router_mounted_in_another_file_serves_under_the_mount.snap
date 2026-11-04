@@ -66,7 +66,10 @@ expression: json
             "line": 4,
             "name": "api",
             "uses": [
-              "Router"
+              {
+                "line": 4,
+                "name": "Router"
+              }
             ]
           }
         ],
@@ -83,13 +86,25 @@ expression: json
           }
         ],
         "on_load": [
-          "Router",
-          "api.use",
-          "bookings"
+          {
+            "line": 4,
+            "name": "Router"
+          },
+          {
+            "line": 5,
+            "name": "api.use"
+          },
+          {
+            "line": 5,
+            "name": "bookings"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 5,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -145,7 +160,10 @@ expression: json
             "line": 4,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 4,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -162,13 +180,25 @@ expression: json
           }
         ],
         "on_load": [
-          "api",
-          "app.use",
-          "express"
+          {
+            "line": 5,
+            "name": "api"
+          },
+          {
+            "line": 5,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "express"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 5,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -209,7 +239,10 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "Router"
+              {
+                "line": 3,
+                "name": "Router"
+              }
             ]
           }
         ],
@@ -226,13 +259,25 @@ expression: json
           }
         ],
         "on_load": [
-          "Router",
-          "router.get"
+          {
+            "line": 3,
+            "name": "Router"
+          },
+          {
+            "line": 4,
+            "name": "router.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get",
-          "json"
+          {
+            "line": 4,
+            "name": "get"
+          },
+          {
+            "line": 4,
+            "name": "json"
+          }
         ]
       },
       "tags": 0,

@@ -75,7 +75,10 @@ expression: json
             "line": 4,
             "name": "HooksController",
             "uses": [
-              "Controller"
+              {
+                "line": 4,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -83,17 +86,32 @@ expression: json
             "line": 6,
             "name": "HooksController.receive",
             "uses": [
-              "LEGACY",
-              "Post"
+              {
+                "line": 6,
+                "name": "LEGACY"
+              },
+              {
+                "line": 6,
+                "name": "Post"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "LEGACY",
-          "Post"
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "LEGACY"
+          },
+          {
+            "line": 6,
+            "name": "Post"
+          }
         ],
         "overrides": [],
         "reads": []

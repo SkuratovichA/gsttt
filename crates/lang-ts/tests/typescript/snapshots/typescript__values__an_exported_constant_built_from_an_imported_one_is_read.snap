@@ -51,13 +51,25 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "ORDERS",
-          "PATHS.items",
-          "USERS"
+          {
+            "line": 4,
+            "name": "ORDERS"
+          },
+          {
+            "line": 5,
+            "name": "PATHS.items"
+          },
+          {
+            "line": 3,
+            "name": "USERS"
+          }
         ],
         "overrides": [],
         "reads": [
-          "items"
+          {
+            "line": 5,
+            "name": "items"
+          }
         ]
       },
       "tags": 0,
@@ -130,7 +142,10 @@ expression: json
             "line": 3,
             "name": "USERS",
             "uses": [
-              "BASE"
+              {
+                "line": 3,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -138,7 +153,10 @@ expression: json
             "line": 4,
             "name": "ORDERS",
             "uses": [
-              "BASE"
+              {
+                "line": 4,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -146,7 +164,10 @@ expression: json
             "line": 5,
             "name": "PATHS",
             "uses": [
-              "BASE"
+              {
+                "line": 5,
+                "name": "BASE"
+              }
             ]
           }
         ],

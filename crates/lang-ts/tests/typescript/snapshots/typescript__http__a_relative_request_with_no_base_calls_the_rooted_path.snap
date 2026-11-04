@@ -110,7 +110,10 @@ expression: json
             "line": 5,
             "name": "bare",
             "uses": [
-              "axios.create"
+              {
+                "line": 5,
+                "name": "axios.create"
+              }
             ]
           },
           {
@@ -124,7 +127,10 @@ expression: json
             "line": 7,
             "name": "plain",
             "uses": [
-              "axios.get"
+              {
+                "line": 7,
+                "name": "axios.get"
+              }
             ]
           },
           {
@@ -132,7 +138,10 @@ expression: json
             "line": 8,
             "name": "made",
             "uses": [
-              "bare"
+              {
+                "line": 8,
+                "name": "bare"
+              }
             ]
           },
           {
@@ -140,7 +149,10 @@ expression: json
             "line": 9,
             "name": "template",
             "uses": [
-              "id"
+              {
+                "line": 9,
+                "name": "id"
+              }
             ]
           },
           {
@@ -172,7 +184,10 @@ expression: json
             "line": 14,
             "name": "dotted",
             "uses": [
-              "id"
+              {
+                "line": 14,
+                "name": "id"
+              }
             ]
           },
           {
@@ -180,7 +195,10 @@ expression: json
             "line": 15,
             "name": "nested",
             "uses": [
-              "id"
+              {
+                "line": 15,
+                "name": "id"
+              }
             ]
           },
           {
@@ -188,8 +206,14 @@ expression: json
             "line": 16,
             "name": "unread",
             "uses": [
-              "BASE",
-              "axios.create"
+              {
+                "line": 16,
+                "name": "BASE"
+              },
+              {
+                "line": 16,
+                "name": "axios.create"
+              }
             ]
           },
           {
@@ -197,20 +221,35 @@ expression: json
             "line": 17,
             "name": "behind",
             "uses": [
-              "unread"
+              {
+                "line": 17,
+                "name": "unread"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "BASE",
-          "axios.create"
+          {
+            "line": 16,
+            "name": "BASE"
+          },
+          {
+            "line": 5,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "get"
+          {
+            "line": 5,
+            "name": "create"
+          },
+          {
+            "line": 7,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

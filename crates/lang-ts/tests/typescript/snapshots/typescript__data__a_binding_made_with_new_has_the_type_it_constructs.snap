@@ -58,7 +58,10 @@ expression: json
             "line": 3,
             "name": "client",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -66,7 +69,10 @@ expression: json
             "line": 5,
             "name": "count",
             "uses": [
-              "client.booking"
+              {
+                "line": 6,
+                "name": "client.booking"
+              }
             ]
           }
         ],
@@ -78,13 +84,25 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "booking",
-          "booking.count",
-          "count"
+          {
+            "line": 6,
+            "name": "booking"
+          },
+          {
+            "line": 6,
+            "name": "booking.count"
+          },
+          {
+            "line": 6,
+            "name": "count"
+          }
         ]
       },
       "tags": 0,
@@ -145,7 +163,10 @@ expression: json
             "line": 4,
             "name": "Repository.store",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 4,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -153,8 +174,14 @@ expression: json
             "line": 6,
             "name": "Repository.find",
             "uses": [
-              "PrismaClient.invoice",
-              "Repository.store"
+              {
+                "line": 7,
+                "name": "PrismaClient.invoice"
+              },
+              {
+                "line": 7,
+                "name": "Repository.store"
+              }
             ]
           },
           {
@@ -162,7 +189,10 @@ expression: json
             "line": 11,
             "name": "total",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 11,
+                "name": "PrismaClient"
+              }
             ]
           }
         ],
@@ -177,12 +207,30 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "count",
-          "findFirst",
-          "invoice.findFirst",
-          "payment",
-          "payment.count",
-          "store.invoice"
+          {
+            "line": 12,
+            "name": "count"
+          },
+          {
+            "line": 7,
+            "name": "findFirst"
+          },
+          {
+            "line": 7,
+            "name": "invoice.findFirst"
+          },
+          {
+            "line": 12,
+            "name": "payment"
+          },
+          {
+            "line": 12,
+            "name": "payment.count"
+          },
+          {
+            "line": 7,
+            "name": "store.invoice"
+          }
         ]
       },
       "tags": 0,
@@ -229,8 +277,14 @@ expression: json
             "line": 5,
             "name": "find",
             "uses": [
-              "PrismaClient.",
-              "PrismaClient.tenant"
+              {
+                "line": 5,
+                "name": "PrismaClient."
+              },
+              {
+                "line": 6,
+                "name": "PrismaClient.tenant"
+              }
             ]
           }
         ],
@@ -244,8 +298,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 6,
+            "name": "findFirst"
+          },
+          {
+            "line": 6,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,
@@ -293,7 +353,10 @@ expression: json
             "line": 3,
             "name": "client",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -301,8 +364,14 @@ expression: json
             "line": 5,
             "name": "seed",
             "uses": [
-              "PrismaClient.",
-              "PrismaClient.tenant"
+              {
+                "line": 5,
+                "name": "PrismaClient."
+              },
+              {
+                "line": 6,
+                "name": "PrismaClient.tenant"
+              }
             ]
           }
         ],
@@ -314,12 +383,21 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "createMany",
-          "tenant.createMany"
+          {
+            "line": 6,
+            "name": "createMany"
+          },
+          {
+            "line": 6,
+            "name": "tenant.createMany"
+          }
         ]
       },
       "tags": 0,

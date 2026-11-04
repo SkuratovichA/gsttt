@@ -39,7 +39,10 @@ expression: json
             "line": 2,
             "name": "copy",
             "uses": [
-              "text"
+              {
+                "line": 2,
+                "name": "text"
+              }
             ]
           },
           {
@@ -47,7 +50,10 @@ expression: json
             "line": 3,
             "name": "text",
             "uses": [
-              "copy"
+              {
+                "line": 3,
+                "name": "copy"
+              }
             ]
           },
           {
@@ -65,10 +71,22 @@ expression: json
           }
         ],
         "on_load": [
-          "copy",
-          "pairs",
-          "store.get",
-          "text"
+          {
+            "line": 3,
+            "name": "copy"
+          },
+          {
+            "line": 5,
+            "name": "pairs"
+          },
+          {
+            "line": 5,
+            "name": "store.get"
+          },
+          {
+            "line": 2,
+            "name": "text"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -148,7 +166,10 @@ expression: json
             "line": 4,
             "name": "server",
             "uses": [
-              "http.createServer"
+              {
+                "line": 4,
+                "name": "http.createServer"
+              }
             ]
           },
           {
@@ -156,7 +177,10 @@ expression: json
             "line": 5,
             "name": "second",
             "uses": [
-              "createServer"
+              {
+                "line": 5,
+                "name": "createServer"
+              }
             ]
           },
           {
@@ -164,7 +188,10 @@ expression: json
             "line": 6,
             "name": "late",
             "uses": [
-              "run"
+              {
+                "line": 13,
+                "name": "run"
+              }
             ]
           },
           {
@@ -184,13 +211,34 @@ expression: json
             "line": 13,
             "name": "run",
             "uses": [
-              "late",
-              "made",
-              "mixed",
-              "path.normalize",
-              "path2.notNode",
-              "second.listen",
-              "server"
+              {
+                "line": 17,
+                "name": "late"
+              },
+              {
+                "line": 19,
+                "name": "made"
+              },
+              {
+                "line": 18,
+                "name": "mixed"
+              },
+              {
+                "line": 14,
+                "name": "path.normalize"
+              },
+              {
+                "line": 20,
+                "name": "path2.notNode"
+              },
+              {
+                "line": 16,
+                "name": "second.listen"
+              },
+              {
+                "line": 15,
+                "name": "server"
+              }
             ]
           }
         ],
@@ -202,18 +250,45 @@ expression: json
           }
         ],
         "on_load": [
-          "createServer",
-          "http.createServer",
-          "late",
-          "mixed"
+          {
+            "line": 5,
+            "name": "createServer"
+          },
+          {
+            "line": 4,
+            "name": "http.createServer"
+          },
+          {
+            "line": 7,
+            "name": "late"
+          },
+          {
+            "line": 9,
+            "name": "mixed"
+          }
         ],
         "overrides": [],
         "reads": [
-          "createServer",
-          "madeRead",
-          "mixedRead",
-          "notNode",
-          "parameterRead"
+          {
+            "line": 3,
+            "name": "createServer"
+          },
+          {
+            "line": 19,
+            "name": "madeRead"
+          },
+          {
+            "line": 18,
+            "name": "mixedRead"
+          },
+          {
+            "line": 20,
+            "name": "notNode"
+          },
+          {
+            "line": 21,
+            "name": "parameterRead"
+          }
         ]
       },
       "tags": 0,
@@ -236,7 +311,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -259,7 +337,10 @@ expression: json
             "line": 1,
             "name": "wrapped",
             "uses": [
-              "load"
+              {
+                "line": 1,
+                "name": "load"
+              }
             ]
           },
           {
@@ -267,7 +348,10 @@ expression: json
             "line": 3,
             "name": "call",
             "uses": [
-              "wrapped.proxied"
+              {
+                "line": 4,
+                "name": "wrapped.proxied"
+              }
             ]
           },
           {
@@ -285,14 +369,29 @@ expression: json
           }
         ],
         "on_load": [
-          "load"
+          {
+            "line": 1,
+            "name": "load"
+          }
         ],
         "overrides": [],
         "reads": [
-          "held",
-          "held.hung",
-          "hung",
-          "proxied"
+          {
+            "line": 5,
+            "name": "held"
+          },
+          {
+            "line": 5,
+            "name": "held.hung"
+          },
+          {
+            "line": 5,
+            "name": "hung"
+          },
+          {
+            "line": 4,
+            "name": "proxied"
+          }
         ]
       },
       "tags": 0,
@@ -326,12 +425,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Buffer"
+          {
+            "line": 5,
+            "name": "Buffer"
+          }
         ],
         "overrides": [],
         "reads": [
-          "entries",
-          "from"
+          {
+            "line": 2,
+            "name": "entries"
+          },
+          {
+            "line": 5,
+            "name": "from"
+          }
         ]
       },
       "tags": 0,

@@ -90,7 +90,10 @@ expression: json
             "line": 3,
             "name": "ItemsController",
             "uses": [
-              "Controller"
+              {
+                "line": 3,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -98,7 +101,10 @@ expression: json
             "line": 5,
             "name": "ItemsController.one",
             "uses": [
-              "Get"
+              {
+                "line": 5,
+                "name": "Get"
+              }
             ]
           },
           {
@@ -106,15 +112,24 @@ expression: json
             "line": 8,
             "name": "ItemsController.two",
             "uses": [
-              "Get"
+              {
+                "line": 8,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get"
+          {
+            "line": 3,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []

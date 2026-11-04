@@ -94,23 +94,47 @@ expression: json
             "line": 4,
             "name": "api",
             "uses": [
-              "API_URL",
-              "axios.create"
+              {
+                "line": 4,
+                "name": "API_URL"
+              },
+              {
+                "line": 4,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "API_URL",
-          "api",
-          "axios.create"
+          {
+            "line": 4,
+            "name": "API_URL"
+          },
+          {
+            "line": 6,
+            "name": "api"
+          },
+          {
+            "line": 4,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "get",
-          "post"
+          {
+            "line": 4,
+            "name": "create"
+          },
+          {
+            "line": 6,
+            "name": "get"
+          },
+          {
+            "line": 7,
+            "name": "post"
+          }
         ]
       },
       "tags": 0,

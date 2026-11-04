@@ -79,7 +79,10 @@ expression: json
             "line": 4,
             "name": "AppService",
             "uses": [
-              "Injectable"
+              {
+                "line": 4,
+                "name": "Injectable"
+              }
             ]
           },
           {
@@ -87,7 +90,10 @@ expression: json
             "line": 6,
             "name": "AppService.constructor",
             "uses": [
-              "ConfigService."
+              {
+                "line": 6,
+                "name": "ConfigService."
+              }
             ]
           },
           {
@@ -95,9 +101,18 @@ expression: json
             "line": 8,
             "name": "AppService.load",
             "uses": [
-              "ConfigService.",
-              "ConfigService.get",
-              "ConfigService.getOrThrow"
+              {
+                "line": 8,
+                "name": "ConfigService."
+              },
+              {
+                "line": 9,
+                "name": "ConfigService.get"
+              },
+              {
+                "line": 10,
+                "name": "ConfigService.getOrThrow"
+              }
             ]
           }
         ],
@@ -110,11 +125,17 @@ expression: json
           }
         ],
         "on_load": [
-          "Injectable"
+          {
+            "line": 4,
+            "name": "Injectable"
+          }
         ],
         "overrides": [],
         "reads": [
-          "configService.get"
+          {
+            "line": 9,
+            "name": "configService.get"
+          }
         ]
       },
       "tags": 0,

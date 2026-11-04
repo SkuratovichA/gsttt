@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use xxhash_rust::xxh3::{Xxh3, xxh3_64};
 
 use crate::fact::{
-    FileFacts, Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR, ParseStatus, Symbols,
+    FileFacts, Import, ImportFlags, ImportKind, Line, MEMBER_SEPARATOR, ParseStatus, Symbols, Use,
     belongs_to,
 };
 
@@ -48,7 +48,7 @@ pub(super) fn changed_declarations(old: Version<'_>, new: Version<'_>) -> Option
     }
     let locals = changed_locals(old.facts, new.facts);
     if !locals.is_empty() {
-        let uses_local = |used: &String| locals.iter().any(|local| belongs_to(used, local));
+        let uses_local = |used: &Use| locals.iter().any(|local| belongs_to(&used.name, local));
         if new_symbols.on_load.iter().any(uses_local) {
             return None;
         }
@@ -293,7 +293,13 @@ mod tests {
             name: name.to_owned(),
             line,
             end,
-            uses: uses.iter().map(|used| (*used).to_owned()).collect(),
+            uses: uses
+                .iter()
+                .map(|used| Use {
+                    name: (*used).to_owned(),
+                    line,
+                })
+                .collect(),
         }
     }
 
@@ -640,7 +646,10 @@ mod tests {
     #[test]
     fn a_re_pointed_import_used_as_the_file_loads_changes_the_file_whole() {
         let mut old = facts(vec![declared("a", 2, 2, &[])]);
-        old.symbols.as_mut().unwrap().on_load = vec!["clock".to_owned()];
+        old.symbols.as_mut().unwrap().on_load = vec![Use {
+            name: "clock".to_owned(),
+            line: 1,
+        }];
         old.imports.push(import("./a", &[("clock", "clock")]));
         let mut new = old.clone();
         new.imports = vec![import("./b", &[("clock", "clock")])];

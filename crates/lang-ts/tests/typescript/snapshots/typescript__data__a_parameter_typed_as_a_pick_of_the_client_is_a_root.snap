@@ -38,11 +38,17 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "mockPrisma"
+          {
+            "line": 3,
+            "name": "mockPrisma"
+          }
         ],
         "overrides": [],
         "reads": [
-          "fn"
+          {
+            "line": 1,
+            "name": "fn"
+          }
         ]
       },
       "tags": 1,
@@ -97,7 +103,10 @@ expression: json
             "line": 3,
             "name": "load",
             "uses": [
-              "Prisma.TransactionClient"
+              {
+                "line": 3,
+                "name": "Prisma.TransactionClient"
+              }
             ]
           },
           {
@@ -112,14 +121,38 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "findMany",
-          "findUnique",
-          "tenant",
-          "tenant.findFirst",
-          "tenant.findUnique",
-          "tenantBranch",
-          "tenantBranch.findMany"
+          {
+            "line": 10,
+            "name": "findFirst"
+          },
+          {
+            "line": 5,
+            "name": "findMany"
+          },
+          {
+            "line": 4,
+            "name": "findUnique"
+          },
+          {
+            "line": 4,
+            "name": "tenant"
+          },
+          {
+            "line": 10,
+            "name": "tenant.findFirst"
+          },
+          {
+            "line": 4,
+            "name": "tenant.findUnique"
+          },
+          {
+            "line": 5,
+            "name": "tenantBranch"
+          },
+          {
+            "line": 5,
+            "name": "tenantBranch.findMany"
+          }
         ]
       },
       "tags": 0,

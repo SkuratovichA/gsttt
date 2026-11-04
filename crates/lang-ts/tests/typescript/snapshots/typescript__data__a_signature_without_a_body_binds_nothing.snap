@@ -56,7 +56,10 @@ expression: json
             "line": 3,
             "name": "Deps",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 4,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -70,7 +73,10 @@ expression: json
             "line": 9,
             "name": "Runner",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 9,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -78,7 +84,10 @@ expression: json
             "line": 11,
             "name": "declared",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 11,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -86,7 +95,10 @@ expression: json
             "line": 13,
             "name": "overloaded",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 13,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -100,7 +112,10 @@ expression: json
             "line": 19,
             "name": "Base.run",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 19,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -115,9 +130,18 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant",
-          "tenant.findFirst"
+          {
+            "line": 23,
+            "name": "findFirst"
+          },
+          {
+            "line": 23,
+            "name": "tenant"
+          },
+          {
+            "line": 23,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,

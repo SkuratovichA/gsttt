@@ -76,7 +76,10 @@ expression: json
             "line": 4,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 4,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -88,13 +91,25 @@ expression: json
           }
         ],
         "on_load": [
-          "app.use",
-          "express",
-          "outer"
+          {
+            "line": 5,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "express"
+          },
+          {
+            "line": 5,
+            "name": "outer"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 5,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -162,7 +177,10 @@ expression: json
             "line": 4,
             "name": "outer",
             "uses": [
-              "Router"
+              {
+                "line": 4,
+                "name": "Router"
+              }
             ]
           }
         ],
@@ -174,13 +192,25 @@ expression: json
           }
         ],
         "on_load": [
-          "Router",
-          "inner",
-          "outer.use"
+          {
+            "line": 4,
+            "name": "Router"
+          },
+          {
+            "line": 5,
+            "name": "inner"
+          },
+          {
+            "line": 5,
+            "name": "outer.use"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 5,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -221,7 +251,10 @@ expression: json
             "line": 3,
             "name": "inner",
             "uses": [
-              "Router"
+              {
+                "line": 3,
+                "name": "Router"
+              }
             ]
           }
         ],
@@ -233,13 +266,25 @@ expression: json
           }
         ],
         "on_load": [
-          "Router",
-          "inner.get"
+          {
+            "line": 3,
+            "name": "Router"
+          },
+          {
+            "line": 4,
+            "name": "inner.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "end",
-          "get"
+          {
+            "line": 4,
+            "name": "end"
+          },
+          {
+            "line": 4,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

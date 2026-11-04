@@ -680,3 +680,37 @@ fn a_field_and_a_method_of_one_name_are_one_declaration() {
     );
     assert_eq!(tree.uses("src/a.rs", "Job.rename"), ["Job", "Job.name"]);
 }
+
+#[scenario("rust", "A use keeps the line it is written on")]
+#[test]
+fn a_use_keeps_the_line_it_is_written_on() {
+    let tree = crate_of(
+        &["a", "b"],
+        &[
+            (
+                "src/a.rs",
+                "pub struct Foo;\n\nimpl Foo {\n    pub fn bar() {}\n}\n\npub fn helper() {}\n",
+            ),
+            (
+                "src/b.rs",
+                "use crate::a::{helper, Foo};\n\npub fn run<T>(value: T) {\n    helper();\n    Foo::bar();\n    value\n        .start();\n}\n",
+            ),
+        ],
+    );
+
+    let lines = tree.use_lines("src/b.rs", "run");
+    let line_of = |name: &str| {
+        lines
+            .iter()
+            .find(|(used, _)| used == name)
+            .map(|(_, line)| *line)
+    };
+    assert_eq!(line_of("helper"), Some(4), "{lines:?}");
+    assert_eq!(line_of("Foo.bar"), Some(5), "{lines:?}");
+    // The receiver stands on line 6 and the member it reads on line 7.
+    assert_eq!(
+        tree.read_lines("src/b.rs"),
+        [("start".to_owned(), 7)],
+        "{lines:?}"
+    );
+}

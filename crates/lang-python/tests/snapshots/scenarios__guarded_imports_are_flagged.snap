@@ -74,7 +74,10 @@ expression: "tree.file_json(\"guarded.py\")"
       }
     ],
     "on_load": [
-      "TYPE_CHECKING"
+      {
+        "name": "TYPE_CHECKING",
+        "line": 3
+      }
     ],
     "exports": [],
     "heirs": [],

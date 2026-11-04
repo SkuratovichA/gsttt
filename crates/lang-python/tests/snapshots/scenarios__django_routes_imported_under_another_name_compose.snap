@@ -65,14 +65,26 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
           "line": 4,
           "end": 6,
           "uses": [
-            "inc",
-            "p"
+            {
+              "name": "inc",
+              "line": 5
+            },
+            {
+              "name": "p",
+              "line": 5
+            }
           ]
         }
       ],
       "on_load": [
-        "inc",
-        "p"
+        {
+          "name": "inc",
+          "line": 5
+        },
+        {
+          "name": "p",
+          "line": 5
+        }
       ],
       "exports": [],
       "heirs": [],
@@ -134,14 +146,26 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
           "line": 5,
           "end": 7,
           "uses": [
-            "p",
-            "views.detail"
+            {
+              "name": "p",
+              "line": 6
+            },
+            {
+              "name": "views.detail",
+              "line": 6
+            }
           ]
         }
       ],
       "on_load": [
-        "p",
-        "views.detail"
+        {
+          "name": "p",
+          "line": 6
+        },
+        {
+          "name": "views.detail",
+          "line": 6
+        }
       ],
       "exports": [],
       "heirs": [],

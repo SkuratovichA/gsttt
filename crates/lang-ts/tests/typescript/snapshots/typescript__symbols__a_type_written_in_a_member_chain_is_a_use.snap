@@ -162,7 +162,10 @@ expression: json
             "line": 14,
             "name": "viaAs",
             "uses": [
-              "AsType"
+              {
+                "line": 15,
+                "name": "AsType"
+              }
             ]
           },
           {
@@ -170,7 +173,10 @@ expression: json
             "line": 18,
             "name": "viaSatisfies",
             "uses": [
-              "SatisfiesType"
+              {
+                "line": 19,
+                "name": "SatisfiesType"
+              }
             ]
           },
           {
@@ -178,7 +184,10 @@ expression: json
             "line": 22,
             "name": "viaAssertion",
             "uses": [
-              "AssertionType"
+              {
+                "line": 23,
+                "name": "AssertionType"
+              }
             ]
           },
           {
@@ -186,8 +195,14 @@ expression: json
             "line": 26,
             "name": "viaInstantiation",
             "uses": [
-              "InstantiatedType",
-              "make"
+              {
+                "line": 27,
+                "name": "InstantiatedType"
+              },
+              {
+                "line": 27,
+                "name": "make"
+              }
             ]
           },
           {
@@ -195,8 +210,14 @@ expression: json
             "line": 30,
             "name": "viaBoth",
             "uses": [
-              "InnerType",
-              "OuterType"
+              {
+                "line": 31,
+                "name": "InnerType"
+              },
+              {
+                "line": 31,
+                "name": "OuterType"
+              }
             ]
           },
           {
@@ -204,7 +225,10 @@ expression: json
             "line": 34,
             "name": "viaNonNull",
             "uses": [
-              "NonNullType"
+              {
+                "line": 35,
+                "name": "NonNullType"
+              }
             ]
           },
           {
@@ -212,7 +236,10 @@ expression: json
             "line": 38,
             "name": "viaLongChain",
             "uses": [
-              "DeepType"
+              {
+                "line": 39,
+                "name": "DeepType"
+              }
             ]
           },
           {
@@ -220,8 +247,14 @@ expression: json
             "line": 42,
             "name": "viaRoot",
             "uses": [
-              "RootType",
-              "root"
+              {
+                "line": 43,
+                "name": "RootType"
+              },
+              {
+                "line": 43,
+                "name": "root"
+              }
             ]
           }
         ],
@@ -230,13 +263,34 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a",
-          "a.b",
-          "b",
-          "b.c",
-          "c",
-          "depth",
-          "name"
+          {
+            "line": 39,
+            "name": "a"
+          },
+          {
+            "line": 39,
+            "name": "a.b"
+          },
+          {
+            "line": 39,
+            "name": "b"
+          },
+          {
+            "line": 39,
+            "name": "b.c"
+          },
+          {
+            "line": 39,
+            "name": "c"
+          },
+          {
+            "line": 15,
+            "name": "depth"
+          },
+          {
+            "line": 27,
+            "name": "name"
+          }
         ]
       },
       "tags": 0,

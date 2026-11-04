@@ -66,8 +66,14 @@ expression: "tree.file_json(\"app.py\")"
         "line": 4,
         "end": 4,
         "uses": [
-          "Flask",
-          "Flask.__init__"
+          {
+            "name": "Flask",
+            "line": 4
+          },
+          {
+            "name": "Flask.__init__",
+            "line": 4
+          }
         ]
       },
       {
@@ -75,8 +81,14 @@ expression: "tree.file_json(\"app.py\")"
         "line": 5,
         "end": 5,
         "uses": [
-          "APIRouter",
-          "APIRouter.__init__"
+          {
+            "name": "APIRouter",
+            "line": 5
+          },
+          {
+            "name": "APIRouter.__init__",
+            "line": 5
+          }
         ]
       },
       {
@@ -84,7 +96,10 @@ expression: "tree.file_json(\"app.py\")"
         "line": 8,
         "end": 10,
         "uses": [
-          "app.route"
+          {
+            "name": "app.route",
+            "line": 8
+          }
         ]
       },
       {
@@ -92,17 +107,38 @@ expression: "tree.file_json(\"app.py\")"
         "line": 13,
         "end": 15,
         "uses": [
-          "router.get"
+          {
+            "name": "router.get",
+            "line": 13
+          }
         ]
       }
     ],
     "on_load": [
-      "APIRouter",
-      "APIRouter.__init__",
-      "Flask",
-      "Flask.__init__",
-      "app.route",
-      "router.get"
+      {
+        "name": "APIRouter",
+        "line": 5
+      },
+      {
+        "name": "APIRouter.__init__",
+        "line": 5
+      },
+      {
+        "name": "Flask",
+        "line": 4
+      },
+      {
+        "name": "Flask.__init__",
+        "line": 4
+      },
+      {
+        "name": "app.route",
+        "line": 8
+      },
+      {
+        "name": "router.get",
+        "line": 13
+      }
     ],
     "exports": [],
     "heirs": [

@@ -94,8 +94,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "lib",
-          "mock"
+          {
+            "line": 3,
+            "name": "lib"
+          },
+          {
+            "line": 1,
+            "name": "mock"
+          }
         ]
       },
       "tags": 1,

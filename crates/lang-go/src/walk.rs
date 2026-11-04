@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use gsttt_core::fact::{ContractFact, Embedded, MEMBER_SEPARATOR, UnresolvedSite};
+use gsttt_core::fact::{ContractFact, Embedded, Line, MEMBER_SEPARATOR, UnresolvedSite, Uses};
 use gsttt_core::rules::Outcome;
 use tree_sitter::Node;
 
@@ -11,7 +11,7 @@ use crate::names::{is_predeclared, is_predeclared_function};
 use crate::routers::Router;
 use crate::scope::{Head, Scopes};
 use crate::site::{Callee, read_calls};
-use crate::syntax::{MAX_DEPTH, field_text, fields, named_children, text_of};
+use crate::syntax::{MAX_DEPTH, field_text, fields, line_of, named_children, text_of};
 use crate::value::Reader;
 
 /// The state of one walk over a file. The names it finds are kept per declaration: [`Walk::begin`] starts a declaration and [`Walk::take_uses`] ends it.
@@ -19,13 +19,13 @@ use crate::value::Reader;
 pub(crate) struct Walk<'r, 'a> {
     pub(crate) cx: &'r FileCx<'a>,
     pub(crate) scopes: Scopes<'a>,
-    uses: BTreeSet<String>,
+    uses: Uses,
     /// What the code that runs as the package loads uses.
-    pub(crate) on_load: BTreeSet<String>,
+    pub(crate) on_load: Uses,
     /// The free names of the file: read, and bound by no scope, no import and no declaration of the file.
     pub(crate) free: BTreeSet<String>,
     /// The member names the file reads on a value whose type it does not know: `x.M` for a local of unknown type, `f().M`, `items[0].M` and `pkgVar.M`. A package name, a value of a type the file knows and a struct literal key read none.
-    pub(crate) reads: BTreeSet<String>,
+    pub(crate) reads: Uses,
     /// The names read from each import, by its index in `cx.imports`.
     pub(crate) import_names: Vec<BTreeSet<String>>,
     pub(crate) contracts: Vec<ContractFact>,
@@ -34,6 +34,8 @@ pub(crate) struct Walk<'r, 'a> {
     pub(crate) heirs: BTreeSet<(String, String)>,
     pub(crate) unresolved: Vec<UnresolvedSite>,
     depth: usize,
+    /// The line of the code being read, where a use it finds is written.
+    line: Line,
     /// Whether the code walked is a package-level initialiser, whose calls run as the package loads.
     load: bool,
     /// Whether some part of the tree nested past [`MAX_DEPTH`] and was left unread.
@@ -47,16 +49,17 @@ impl<'r, 'a> Walk<'r, 'a> {
         Self {
             cx,
             scopes: Scopes::default(),
-            uses: BTreeSet::new(),
-            on_load: BTreeSet::new(),
+            uses: Uses::default(),
+            on_load: Uses::default(),
             free: BTreeSet::new(),
-            reads: BTreeSet::new(),
+            reads: Uses::default(),
             import_names: vec![BTreeSet::new(); cx.imports.len()],
             contracts: Vec::new(),
             embedded: Vec::new(),
             heirs: BTreeSet::new(),
             unresolved: Vec::new(),
             depth: 0,
+            line: 1,
             load: false,
             cut: false,
             pending_router: None,
@@ -65,16 +68,16 @@ impl<'r, 'a> Walk<'r, 'a> {
 
     /// Starts the uses of a new declaration.
     pub(crate) fn begin(&mut self) {
-        self.uses.clear();
+        self.uses = Uses::default();
     }
 
     /// Adds names to the uses of the declaration in hand.
-    pub(crate) fn uses_extend(&mut self, names: BTreeSet<String>) {
-        self.uses.extend(names);
+    pub(crate) fn uses_extend(&mut self, names: Uses) {
+        self.uses.absorb(names);
     }
 
     /// The uses of the declaration since [`Walk::begin`].
-    pub(crate) fn take_uses(&mut self) -> BTreeSet<String> {
+    pub(crate) fn take_uses(&mut self) -> Uses {
         std::mem::take(&mut self.uses)
     }
 
@@ -91,7 +94,9 @@ impl<'r, 'a> Walk<'r, 'a> {
         if self.depth > MAX_DEPTH {
             self.cut = true;
         } else {
+            let outer = std::mem::replace(&mut self.line, line_of(node));
             self.dispatch(node);
+            self.line = outer;
         }
         self.depth -= 1;
     }
@@ -173,7 +178,7 @@ impl<'r, 'a> Walk<'r, 'a> {
         {
             return;
         }
-        self.uses.insert(name.to_owned());
+        self.uses.insert(name, self.line);
         self.note_package_name(name);
     }
 
@@ -210,7 +215,7 @@ impl<'r, 'a> Walk<'r, 'a> {
     /// The use of a type, by its bare name: a file that names the type and reads a member reaches the type's callers through it.
     fn use_type(&mut self, head: &Head) {
         let spelled = self.cx.spell(head);
-        self.uses.insert(spelled);
+        self.uses.insert_owned(spelled, self.line);
         self.note_head(head);
     }
 
@@ -250,8 +255,10 @@ impl<'r, 'a> Walk<'r, 'a> {
 
     /// The use of a member of a type: `Type.member`.
     fn use_member(&mut self, head: &Head, member: &str) {
-        self.uses
-            .insert(format!("{}{MEMBER_SEPARATOR}{member}", self.cx.spell(head)));
+        self.uses.insert_owned(
+            format!("{}{MEMBER_SEPARATOR}{member}", self.cx.spell(head)),
+            self.line,
+        );
         self.note_head(head);
         // The file that declares the type does not declare every member: a sibling may hold the method, so the file reaches it.
         if head.import.is_none()
@@ -268,7 +275,9 @@ impl<'r, 'a> Walk<'r, 'a> {
         if self.depth > MAX_DEPTH {
             self.cut = true;
         } else {
+            let outer = std::mem::replace(&mut self.line, line_of(node));
             self.type_node(node);
+            self.line = outer;
         }
         self.depth -= 1;
     }
@@ -326,6 +335,10 @@ impl<'r, 'a> Walk<'r, 'a> {
             self.visit_children(node);
             return;
         };
+        // A use is written where its member is, which is on a later line than the operand of a chain broken across lines.
+        if let Some(member) = node.child_by_field_name("field") {
+            self.line = line_of(member);
+        }
         match operand.kind() {
             "identifier" => {
                 let name = text_of(operand, self.cx.source);
@@ -470,17 +483,17 @@ impl<'r, 'a> Walk<'r, 'a> {
 
     /// Records `member` as read on a value of unknown type. A name already seen allocates nothing.
     fn read(&mut self, member: &str) {
-        if !self.reads.contains(member) {
-            self.reads.insert(member.to_owned());
-        }
+        self.reads.insert(member, self.line);
     }
 
     fn use_qualified(&mut self, index: usize, name: &str) {
         let Some(import) = self.cx.imports.get(index) else {
             return;
         };
-        self.uses
-            .insert(format!("{}{MEMBER_SEPARATOR}{name}", import.qualifier));
+        self.uses.insert_owned(
+            format!("{}{MEMBER_SEPARATOR}{name}", import.qualifier),
+            self.line,
+        );
         if let Some(names) = self.import_names.get_mut(index) {
             names.insert(name.to_owned());
         }
@@ -548,7 +561,7 @@ impl<'r, 'a> Walk<'r, 'a> {
                     && !is_predeclared(name)
                     && !is_predeclared_function(name)
                 {
-                    self.on_load.insert(name.to_owned());
+                    self.on_load.insert(name, self.line);
                 }
             }
             "selector_expression" => {
@@ -563,8 +576,10 @@ impl<'r, 'a> Walk<'r, 'a> {
                         && let Some(import) = self.cx.imports.get(index)
                         && import.local
                     {
-                        self.on_load
-                            .insert(format!("{}{MEMBER_SEPARATOR}{field}", import.qualifier));
+                        self.on_load.insert_owned(
+                            format!("{}{MEMBER_SEPARATOR}{field}", import.qualifier),
+                            self.line,
+                        );
                     }
                 }
             }

@@ -33,7 +33,10 @@ expression: json
             "line": 1,
             "name": "cache",
             "uses": [
-              "fill"
+              {
+                "line": 3,
+                "name": "fill"
+              }
             ]
           },
           {
@@ -41,7 +44,10 @@ expression: json
             "line": 3,
             "name": "fill",
             "uses": [
-              "cache.set"
+              {
+                "line": 4,
+                "name": "cache.set"
+              }
             ]
           },
           {
@@ -49,7 +55,10 @@ expression: json
             "line": 7,
             "name": "read",
             "uses": [
-              "cache.get"
+              {
+                "line": 8,
+                "name": "cache.get"
+              }
             ]
           },
           {
@@ -57,7 +66,10 @@ expression: json
             "line": 11,
             "name": "count",
             "uses": [
-              "bump"
+              {
+                "line": 13,
+                "name": "bump"
+              }
             ]
           },
           {
@@ -65,7 +77,10 @@ expression: json
             "line": 13,
             "name": "bump",
             "uses": [
-              "count"
+              {
+                "line": 14,
+                "name": "count"
+              }
             ]
           }
         ],

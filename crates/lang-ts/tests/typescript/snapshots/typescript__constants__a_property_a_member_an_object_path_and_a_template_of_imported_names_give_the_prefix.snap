@@ -77,8 +77,14 @@ expression: json
             "line": 4,
             "name": "OrdersController",
             "uses": [
-              "Controller",
-              "ROUTES.orders"
+              {
+                "line": 4,
+                "name": "Controller"
+              },
+              {
+                "line": 4,
+                "name": "ROUTES.orders"
+              }
             ]
           },
           {
@@ -86,7 +92,10 @@ expression: json
             "line": 6,
             "name": "OrdersController.a",
             "uses": [
-              "Get"
+              {
+                "line": 6,
+                "name": "Get"
+              }
             ]
           },
           {
@@ -94,8 +103,14 @@ expression: json
             "line": 10,
             "name": "ItemsController",
             "uses": [
-              "Controller",
-              "Paths.ITEMS"
+              {
+                "line": 10,
+                "name": "Controller"
+              },
+              {
+                "line": 10,
+                "name": "Paths.ITEMS"
+              }
             ]
           },
           {
@@ -103,7 +118,10 @@ expression: json
             "line": 12,
             "name": "ItemsController.b",
             "uses": [
-              "Get"
+              {
+                "line": 12,
+                "name": "Get"
+              }
             ]
           },
           {
@@ -111,8 +129,14 @@ expression: json
             "line": 16,
             "name": "UsersController",
             "uses": [
-              "Controller",
-              "USERS"
+              {
+                "line": 16,
+                "name": "Controller"
+              },
+              {
+                "line": 16,
+                "name": "USERS"
+              }
             ]
           },
           {
@@ -120,7 +144,10 @@ expression: json
             "line": 18,
             "name": "UsersController.c",
             "uses": [
-              "Get"
+              {
+                "line": 18,
+                "name": "Get"
+              }
             ]
           },
           {
@@ -128,8 +155,14 @@ expression: json
             "line": 22,
             "name": "VersionedController",
             "uses": [
-              "BASE",
-              "Controller"
+              {
+                "line": 22,
+                "name": "BASE"
+              },
+              {
+                "line": 22,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -137,24 +170,51 @@ expression: json
             "line": 24,
             "name": "VersionedController.d",
             "uses": [
-              "Get"
+              {
+                "line": 24,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "BASE",
-          "Controller",
-          "Get",
-          "Paths.ITEMS",
-          "ROUTES.orders",
-          "USERS"
+          {
+            "line": 22,
+            "name": "BASE"
+          },
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "Get"
+          },
+          {
+            "line": 10,
+            "name": "Paths.ITEMS"
+          },
+          {
+            "line": 4,
+            "name": "ROUTES.orders"
+          },
+          {
+            "line": 16,
+            "name": "USERS"
+          }
         ],
         "overrides": [],
         "reads": [
-          "ITEMS",
-          "orders"
+          {
+            "line": 10,
+            "name": "ITEMS"
+          },
+          {
+            "line": 4,
+            "name": "orders"
+          }
         ]
       },
       "tags": 0,

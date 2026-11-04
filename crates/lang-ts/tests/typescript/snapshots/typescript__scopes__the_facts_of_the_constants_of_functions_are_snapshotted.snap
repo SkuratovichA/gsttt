@@ -101,7 +101,10 @@ expression: "run(\"scopes-locals\")?"
             "line": 8,
             "name": "built",
             "uses": [
-              "BASE"
+              {
+                "line": 9,
+                "name": "BASE"
+              }
             ]
           },
           {

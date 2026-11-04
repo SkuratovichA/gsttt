@@ -59,7 +59,10 @@ expression: json
             "line": 4,
             "name": "Mailer.#queue",
             "uses": [
-              "MailQueue"
+              {
+                "line": 4,
+                "name": "MailQueue"
+              }
             ]
           },
           {
@@ -67,7 +70,10 @@ expression: json
             "line": 5,
             "name": "Mailer.#jobs",
             "uses": [
-              "JobQueue"
+              {
+                "line": 5,
+                "name": "JobQueue"
+              }
             ]
           },
           {
@@ -81,8 +87,14 @@ expression: json
             "line": 7,
             "name": "Mailer.send",
             "uses": [
-              "MailQueue.push",
-              "Mailer.#queue"
+              {
+                "line": 8,
+                "name": "MailQueue.push"
+              },
+              {
+                "line": 8,
+                "name": "Mailer.#queue"
+              }
             ]
           },
           {
@@ -90,8 +102,14 @@ expression: json
             "line": 10,
             "name": "Mailer.later",
             "uses": [
-              "JobQueue.add",
-              "Mailer.#jobs"
+              {
+                "line": 11,
+                "name": "JobQueue.add"
+              },
+              {
+                "line": 11,
+                "name": "Mailer.#jobs"
+              }
             ]
           },
           {
@@ -99,7 +117,10 @@ expression: json
             "line": 13,
             "name": "Mailer.count",
             "uses": [
-              "Mailer.queue"
+              {
+                "line": 14,
+                "name": "Mailer.queue"
+              }
             ]
           }
         ],
@@ -118,8 +139,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "#jobs.add",
-          "#queue.push"
+          {
+            "line": 11,
+            "name": "#jobs.add"
+          },
+          {
+            "line": 8,
+            "name": "#queue.push"
+          }
         ]
       },
       "tags": 0,

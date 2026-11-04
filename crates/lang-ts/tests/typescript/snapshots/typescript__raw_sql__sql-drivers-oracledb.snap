@@ -50,7 +50,10 @@ expression: json
             "line": 3,
             "name": "employee",
             "uses": [
-              "connection"
+              {
+                "line": 3,
+                "name": "connection"
+              }
             ]
           }
         ],
@@ -59,7 +62,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "execute"
+          {
+            "line": 3,
+            "name": "execute"
+          }
         ]
       },
       "tags": 0,

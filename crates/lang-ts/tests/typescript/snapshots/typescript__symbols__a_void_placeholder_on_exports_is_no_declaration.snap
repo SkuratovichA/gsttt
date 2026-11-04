@@ -40,11 +40,17 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "a"
+          {
+            "line": 1,
+            "name": "a"
+          }
         ],
         "overrides": [],
         "reads": [
-          "a"
+          {
+            "line": 1,
+            "name": "a"
+          }
         ]
       },
       "tags": 0,

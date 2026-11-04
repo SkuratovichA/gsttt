@@ -102,7 +102,10 @@ expression: json
             "line": 8,
             "name": "run",
             "uses": [
-              "dep"
+              {
+                "line": 9,
+                "name": "dep"
+              }
             ]
           },
           {
@@ -110,7 +113,10 @@ expression: json
             "line": 11,
             "name": "stop",
             "uses": [
-              "other"
+              {
+                "line": 12,
+                "name": "other"
+              }
             ]
           },
           {
@@ -130,7 +136,10 @@ expression: json
             "line": 16,
             "name": "Bar.go",
             "uses": [
-              "dep"
+              {
+                "line": 17,
+                "name": "dep"
+              }
             ]
           }
         ],
@@ -142,15 +151,33 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "a",
-          "c",
-          "dep",
-          "local"
+          {
+            "line": 20,
+            "name": "a"
+          },
+          {
+            "line": 22,
+            "name": "c"
+          },
+          {
+            "line": 25,
+            "name": "dep"
+          },
+          {
+            "line": 21,
+            "name": "local"
+          }
         ],
         "overrides": [],
         "reads": [
-          "c",
-          "exports"
+          {
+            "line": 2,
+            "name": "c"
+          },
+          {
+            "line": 7,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,

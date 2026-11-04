@@ -96,7 +96,10 @@ expression: json
             "line": 3,
             "name": "first",
             "uses": [
-              "lib.a"
+              {
+                "line": 4,
+                "name": "lib.a"
+              }
             ]
           },
           {
@@ -111,7 +114,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a"
+          {
+            "line": 4,
+            "name": "a"
+          }
         ]
       },
       "tags": 0,

@@ -50,7 +50,10 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 4,
         "end": 7,
         "uses": [
-          "BaseSettings"
+          {
+            "name": "BaseSettings",
+            "line": 4
+          }
         ]
       },
       {
@@ -58,8 +61,14 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 5,
         "end": 5,
         "uses": [
-          "SettingsConfigDict",
-          "SettingsConfigDict.__init__"
+          {
+            "name": "SettingsConfigDict",
+            "line": 5
+          },
+          {
+            "name": "SettingsConfigDict.__init__",
+            "line": 5
+          }
         ]
       },
       {
@@ -70,8 +79,14 @@ expression: "tree.file_json(\"settings.py\")"
       }
     ],
     "on_load": [
-      "SettingsConfigDict",
-      "SettingsConfigDict.__init__"
+      {
+        "name": "SettingsConfigDict",
+        "line": 5
+      },
+      {
+        "name": "SettingsConfigDict.__init__",
+        "line": 5
+      }
     ],
     "exports": [],
     "heirs": [

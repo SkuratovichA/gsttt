@@ -75,7 +75,10 @@ expression: json
             "line": 4,
             "name": "AuthController",
             "uses": [
-              "Controller"
+              {
+                "line": 4,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -83,8 +86,14 @@ expression: json
             "line": 6,
             "name": "AuthController.login",
             "uses": [
-              "Get",
-              "paths.login"
+              {
+                "line": 6,
+                "name": "Get"
+              },
+              {
+                "line": 6,
+                "name": "paths.login"
+              }
             ]
           },
           {
@@ -92,20 +101,35 @@ expression: json
             "line": 9,
             "name": "AuthController.home",
             "uses": [
-              "Get"
+              {
+                "line": 9,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get",
-          "paths.login"
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "Get"
+          },
+          {
+            "line": 6,
+            "name": "paths.login"
+          }
         ],
         "overrides": [],
         "reads": [
-          "login"
+          {
+            "line": 6,
+            "name": "login"
+          }
         ]
       },
       "tags": 0,

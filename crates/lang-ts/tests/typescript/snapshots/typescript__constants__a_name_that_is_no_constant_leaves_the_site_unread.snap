@@ -56,8 +56,14 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "LOGIN_URL",
-          "PATH"
+          {
+            "line": 6,
+            "name": "LOGIN_URL"
+          },
+          {
+            "line": 5,
+            "name": "PATH"
+          }
         ],
         "overrides": [],
         "reads": []

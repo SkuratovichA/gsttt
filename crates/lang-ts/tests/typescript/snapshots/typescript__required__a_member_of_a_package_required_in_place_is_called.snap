@@ -60,12 +60,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "load"
+          {
+            "line": 5,
+            "name": "load"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports",
-          "get"
+          {
+            "line": 5,
+            "name": "exports"
+          },
+          {
+            "line": 2,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

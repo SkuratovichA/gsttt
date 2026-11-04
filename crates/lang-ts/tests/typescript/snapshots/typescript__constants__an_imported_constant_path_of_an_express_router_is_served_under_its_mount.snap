@@ -66,7 +66,10 @@ expression: json
             "line": 4,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 4,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -83,13 +86,25 @@ expression: json
           }
         ],
         "on_load": [
-          "app.use",
-          "express",
-          "router"
+          {
+            "line": 5,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "express"
+          },
+          {
+            "line": 5,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 5,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -175,7 +190,10 @@ expression: json
             "line": 4,
             "name": "router",
             "uses": [
-              "Router"
+              {
+                "line": 4,
+                "name": "Router"
+              }
             ]
           }
         ],
@@ -192,15 +210,33 @@ expression: json
           }
         ],
         "on_load": [
-          "PATHS.USERS",
-          "Router",
-          "router.get"
+          {
+            "line": 5,
+            "name": "PATHS.USERS"
+          },
+          {
+            "line": 4,
+            "name": "Router"
+          },
+          {
+            "line": 5,
+            "name": "router.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "USERS",
-          "get",
-          "json"
+          {
+            "line": 5,
+            "name": "USERS"
+          },
+          {
+            "line": 5,
+            "name": "get"
+          },
+          {
+            "line": 5,
+            "name": "json"
+          }
         ]
       },
       "tags": 0,

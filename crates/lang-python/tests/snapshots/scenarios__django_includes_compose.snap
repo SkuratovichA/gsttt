@@ -52,14 +52,26 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
           "line": 3,
           "end": 5,
           "uses": [
-            "include",
-            "path"
+            {
+              "name": "include",
+              "line": 4
+            },
+            {
+              "name": "path",
+              "line": 4
+            }
           ]
         }
       ],
       "on_load": [
-        "include",
-        "path"
+        {
+          "name": "include",
+          "line": 4
+        },
+        {
+          "name": "path",
+          "line": 4
+        }
       ],
       "exports": [],
       "heirs": [],
@@ -121,14 +133,26 @@ expression: "json!({\n    \"project\": tree.file_json(\"project/urls.py\"), \"bo
           "line": 5,
           "end": 7,
           "uses": [
-            "path",
-            "views.detail"
+            {
+              "name": "path",
+              "line": 6
+            },
+            {
+              "name": "views.detail",
+              "line": 6
+            }
           ]
         }
       ],
       "on_load": [
-        "path",
-        "views.detail"
+        {
+          "name": "path",
+          "line": 6
+        },
+        {
+          "name": "views.detail",
+          "line": 6
+        }
       ],
       "exports": [],
       "heirs": [],

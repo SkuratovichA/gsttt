@@ -47,7 +47,10 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
           "line": 4,
           "end": 5,
           "uses": [
-            "DeclarativeBase"
+            {
+              "name": "DeclarativeBase",
+              "line": 4
+            }
           ]
         },
         {
@@ -55,7 +58,10 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
           "line": 8,
           "end": 9,
           "uses": [
-            "Base"
+            {
+              "name": "Base",
+              "line": 8
+            }
           ]
         },
         {
@@ -135,7 +141,10 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
           "line": 4,
           "end": 8,
           "uses": [
-            "models.Model"
+            {
+              "name": "models.Model",
+              "line": 4
+            }
           ]
         },
         {
@@ -143,8 +152,14 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
           "line": 5,
           "end": 5,
           "uses": [
-            "models.TextField",
-            "models.TextField.__init__"
+            {
+              "name": "models.TextField",
+              "line": 5
+            },
+            {
+              "name": "models.TextField.__init__",
+              "line": 5
+            }
           ]
         },
         {
@@ -161,8 +176,14 @@ expression: "json!({\n    \"sqlalchemy\": tree.file_json(\"models.py\"), \"djang
         }
       ],
       "on_load": [
-        "models.TextField",
-        "models.TextField.__init__"
+        {
+          "name": "models.TextField",
+          "line": 5
+        },
+        {
+          "name": "models.TextField.__init__",
+          "line": 5
+        }
       ],
       "exports": [],
       "heirs": [

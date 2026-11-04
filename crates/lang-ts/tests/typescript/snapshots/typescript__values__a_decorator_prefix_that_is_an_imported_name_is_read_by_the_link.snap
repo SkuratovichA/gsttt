@@ -87,14 +87,20 @@ expression: json
             "line": 4,
             "name": "Orders.list",
             "uses": [
-              "BASE"
+              {
+                "line": 4,
+                "name": "BASE"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "BASE"
+          {
+            "line": 4,
+            "name": "BASE"
+          }
         ],
         "overrides": [],
         "reads": []

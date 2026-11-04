@@ -85,7 +85,10 @@ expression: json
             "line": 7,
             "name": "api",
             "uses": [
-              "axios.create"
+              {
+                "line": 7,
+                "name": "axios.create"
+              }
             ]
           },
           {
@@ -93,9 +96,18 @@ expression: json
             "line": 8,
             "name": "dynamic",
             "uses": [
-              "api",
-              "base",
-              "path"
+              {
+                "line": 8,
+                "name": "api"
+              },
+              {
+                "line": 8,
+                "name": "base"
+              },
+              {
+                "line": 8,
+                "name": "path"
+              }
             ]
           },
           {
@@ -103,7 +115,10 @@ expression: json
             "line": 9,
             "name": "users",
             "uses": [
-              "api"
+              {
+                "line": 9,
+                "name": "api"
+              }
             ]
           },
           {
@@ -111,8 +126,14 @@ expression: json
             "line": 11,
             "name": "edge",
             "uses": [
-              "axios.create",
-              "host"
+              {
+                "line": 11,
+                "name": "axios.create"
+              },
+              {
+                "line": 11,
+                "name": "host"
+              }
             ]
           },
           {
@@ -120,8 +141,14 @@ expression: json
             "line": 12,
             "name": "reach",
             "uses": [
-              "edge",
-              "path"
+              {
+                "line": 12,
+                "name": "edge"
+              },
+              {
+                "line": 12,
+                "name": "path"
+              }
             ]
           },
           {
@@ -129,7 +156,10 @@ expression: json
             "line": 14,
             "name": "v1",
             "uses": [
-              "axios.create"
+              {
+                "line": 14,
+                "name": "axios.create"
+              }
             ]
           },
           {
@@ -137,20 +167,35 @@ expression: json
             "line": 15,
             "name": "bookings",
             "uses": [
-              "v1"
+              {
+                "line": 15,
+                "name": "v1"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create",
-          "host"
+          {
+            "line": 7,
+            "name": "axios.create"
+          },
+          {
+            "line": 11,
+            "name": "host"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "get"
+          {
+            "line": 7,
+            "name": "create"
+          },
+          {
+            "line": 8,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

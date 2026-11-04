@@ -36,7 +36,10 @@ expression: tree.file_json(MODULE)
         "line": 4,
         "end": 5,
         "uses": [
-          "X"
+          {
+            "name": "X",
+            "line": 5
+          }
         ]
       },
       {

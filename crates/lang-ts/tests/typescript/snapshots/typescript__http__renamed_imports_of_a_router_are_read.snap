@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "app",
             "uses": [
-              "ex"
+              {
+                "line": 3,
+                "name": "ex"
+              }
             ]
           },
           {
@@ -59,7 +62,10 @@ expression: json
             "line": 5,
             "name": "router",
             "uses": [
-              "R"
+              {
+                "line": 5,
+                "name": "R"
+              }
             ]
           }
         ],
@@ -75,15 +81,33 @@ expression: json
           }
         ],
         "on_load": [
-          "R",
-          "app.get",
-          "ex",
-          "router.get"
+          {
+            "line": 5,
+            "name": "R"
+          },
+          {
+            "line": 4,
+            "name": "app.get"
+          },
+          {
+            "line": 3,
+            "name": "ex"
+          },
+          {
+            "line": 6,
+            "name": "router.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get",
-          "send"
+          {
+            "line": 4,
+            "name": "get"
+          },
+          {
+            "line": 4,
+            "name": "send"
+          }
         ]
       },
       "tags": 0,

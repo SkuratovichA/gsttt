@@ -74,7 +74,10 @@ expression: json
             "line": 5,
             "name": "BookingsResolver",
             "uses": [
-              "Resolver"
+              {
+                "line": 5,
+                "name": "Resolver"
+              }
             ]
           },
           {
@@ -82,8 +85,14 @@ expression: json
             "line": 7,
             "name": "BookingsResolver.bookings",
             "uses": [
-              "Booking",
-              "Query"
+              {
+                "line": 7,
+                "name": "Booking"
+              },
+              {
+                "line": 7,
+                "name": "Query"
+              }
             ]
           },
           {
@@ -91,17 +100,32 @@ expression: json
             "line": 10,
             "name": "BookingsResolver.cancel",
             "uses": [
-              "Booking",
-              "Mutation"
+              {
+                "line": 10,
+                "name": "Booking"
+              },
+              {
+                "line": 10,
+                "name": "Mutation"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Mutation",
-          "Query",
-          "Resolver"
+          {
+            "line": 10,
+            "name": "Mutation"
+          },
+          {
+            "line": 7,
+            "name": "Query"
+          },
+          {
+            "line": 5,
+            "name": "Resolver"
+          }
         ],
         "overrides": [],
         "reads": []

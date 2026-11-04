@@ -51,21 +51,39 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "express.Router"
+              {
+                "line": 3,
+                "name": "express.Router"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "express.Router",
-          "router"
+          {
+            "line": 3,
+            "name": "express.Router"
+          },
+          {
+            "line": 5,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "Router",
-          "get",
-          "json"
+          {
+            "line": 3,
+            "name": "Router"
+          },
+          {
+            "line": 5,
+            "name": "get"
+          },
+          {
+            "line": 5,
+            "name": "json"
+          }
         ]
       },
       "tags": 0,
@@ -106,14 +124,20 @@ expression: json
             "line": 3,
             "name": "server",
             "uses": [
-              "express"
+              {
+                "line": 3,
+                "name": "express"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "express"
+          {
+            "line": 3,
+            "name": "express"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -167,14 +191,29 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "router",
-          "server.app"
+          {
+            "line": 4,
+            "name": "router"
+          },
+          {
+            "line": 4,
+            "name": "server.app"
+          }
         ],
         "overrides": [],
         "reads": [
-          "app",
-          "app.use",
-          "use"
+          {
+            "line": 4,
+            "name": "app"
+          },
+          {
+            "line": 4,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,

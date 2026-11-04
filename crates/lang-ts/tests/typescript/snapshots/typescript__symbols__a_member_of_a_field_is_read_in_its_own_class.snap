@@ -59,7 +59,10 @@ expression: json
             "line": 4,
             "name": "Billing.constructor",
             "uses": [
-              "InvoiceService."
+              {
+                "line": 4,
+                "name": "InvoiceService."
+              }
             ]
           },
           {
@@ -73,7 +76,10 @@ expression: json
             "line": 8,
             "name": "Mailer.constructor",
             "uses": [
-              "MailQueue."
+              {
+                "line": 8,
+                "name": "MailQueue."
+              }
             ]
           },
           {
@@ -81,7 +87,10 @@ expression: json
             "line": 9,
             "name": "Mailer.send",
             "uses": [
-              "MailQueue.push"
+              {
+                "line": 10,
+                "name": "MailQueue.push"
+              }
             ]
           }
         ],
@@ -100,7 +109,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "svc.push"
+          {
+            "line": 10,
+            "name": "svc.push"
+          }
         ]
       },
       "tags": 0,

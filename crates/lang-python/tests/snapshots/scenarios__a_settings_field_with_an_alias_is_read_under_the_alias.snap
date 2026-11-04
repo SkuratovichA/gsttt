@@ -117,7 +117,10 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 7,
         "end": 16,
         "uses": [
-          "BaseSettings"
+          {
+            "name": "BaseSettings",
+            "line": 7
+          }
         ]
       },
       {
@@ -125,8 +128,14 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 8,
         "end": 8,
         "uses": [
-          "SettingsConfigDict",
-          "SettingsConfigDict.__init__"
+          {
+            "name": "SettingsConfigDict",
+            "line": 8
+          },
+          {
+            "name": "SettingsConfigDict.__init__",
+            "line": 8
+          }
         ]
       },
       {
@@ -134,8 +143,14 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 10,
         "end": 10,
         "uses": [
-          "Field",
-          "Field.__init__"
+          {
+            "name": "Field",
+            "line": 10
+          },
+          {
+            "name": "Field.__init__",
+            "line": 10
+          }
         ]
       },
       {
@@ -143,8 +158,14 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 11,
         "end": 11,
         "uses": [
-          "Field",
-          "Field.__init__"
+          {
+            "name": "Field",
+            "line": 11
+          },
+          {
+            "name": "Field.__init__",
+            "line": 11
+          }
         ]
       },
       {
@@ -152,8 +173,14 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 12,
         "end": 12,
         "uses": [
-          "Field",
-          "Field.__init__"
+          {
+            "name": "Field",
+            "line": 12
+          },
+          {
+            "name": "Field.__init__",
+            "line": 12
+          }
         ]
       },
       {
@@ -161,10 +188,22 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 13,
         "end": 13,
         "uses": [
-          "AliasChoices",
-          "AliasChoices.__init__",
-          "Field",
-          "Field.__init__"
+          {
+            "name": "AliasChoices",
+            "line": 13
+          },
+          {
+            "name": "AliasChoices.__init__",
+            "line": 13
+          },
+          {
+            "name": "Field",
+            "line": 13
+          },
+          {
+            "name": "Field.__init__",
+            "line": 13
+          }
         ]
       },
       {
@@ -172,9 +211,18 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 14,
         "end": 14,
         "uses": [
-          "Field",
-          "Field.__init__",
-          "TOKEN_NAME"
+          {
+            "name": "Field",
+            "line": 14
+          },
+          {
+            "name": "Field.__init__",
+            "line": 14
+          },
+          {
+            "name": "TOKEN_NAME",
+            "line": 14
+          }
         ]
       },
       {
@@ -182,8 +230,14 @@ expression: "tree.file_json(\"settings.py\")"
         "line": 15,
         "end": 15,
         "uses": [
-          "Field",
-          "Field.__init__"
+          {
+            "name": "Field",
+            "line": 15
+          },
+          {
+            "name": "Field.__init__",
+            "line": 15
+          }
         ]
       },
       {
@@ -194,13 +248,34 @@ expression: "tree.file_json(\"settings.py\")"
       }
     ],
     "on_load": [
-      "AliasChoices",
-      "AliasChoices.__init__",
-      "Field",
-      "Field.__init__",
-      "SettingsConfigDict",
-      "SettingsConfigDict.__init__",
-      "TOKEN_NAME"
+      {
+        "name": "AliasChoices",
+        "line": 13
+      },
+      {
+        "name": "AliasChoices.__init__",
+        "line": 13
+      },
+      {
+        "name": "Field",
+        "line": 10
+      },
+      {
+        "name": "Field.__init__",
+        "line": 10
+      },
+      {
+        "name": "SettingsConfigDict",
+        "line": 8
+      },
+      {
+        "name": "SettingsConfigDict.__init__",
+        "line": 8
+      },
+      {
+        "name": "TOKEN_NAME",
+        "line": 14
+      }
     ],
     "exports": [],
     "heirs": [

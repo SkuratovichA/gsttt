@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "f",
             "uses": [
-              "http.get"
+              {
+                "line": 4,
+                "name": "http.get"
+              }
             ]
           }
         ],
@@ -60,7 +63,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "get"
+          {
+            "line": 4,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

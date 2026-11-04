@@ -60,7 +60,10 @@ expression: json
             "line": 3,
             "name": "Client",
             "uses": [
-              "Prisma.TransactionClient"
+              {
+                "line": 3,
+                "name": "Prisma.TransactionClient"
+              }
             ]
           },
           {
@@ -68,7 +71,10 @@ expression: json
             "line": 4,
             "name": "Reader",
             "uses": [
-              "Client"
+              {
+                "line": 4,
+                "name": "Client"
+              }
             ]
           },
           {
@@ -82,7 +88,10 @@ expression: json
             "line": 6,
             "name": "Loop",
             "uses": [
-              "Again"
+              {
+                "line": 6,
+                "name": "Again"
+              }
             ]
           },
           {
@@ -90,7 +99,10 @@ expression: json
             "line": 7,
             "name": "Again",
             "uses": [
-              "Loop"
+              {
+                "line": 7,
+                "name": "Loop"
+              }
             ]
           },
           {
@@ -98,8 +110,14 @@ expression: json
             "line": 9,
             "name": "load",
             "uses": [
-              "Reader.",
-              "Reader.tenant"
+              {
+                "line": 9,
+                "name": "Reader."
+              },
+              {
+                "line": 10,
+                "name": "Reader.tenant"
+              }
             ]
           },
           {
@@ -107,8 +125,14 @@ expression: json
             "line": 13,
             "name": "pick",
             "uses": [
-              "Options.",
-              "Options.tenant"
+              {
+                "line": 13,
+                "name": "Options."
+              },
+              {
+                "line": 14,
+                "name": "Options.tenant"
+              }
             ]
           },
           {
@@ -116,8 +140,14 @@ expression: json
             "line": 17,
             "name": "spin",
             "uses": [
-              "Loop.",
-              "Loop.tenant"
+              {
+                "line": 17,
+                "name": "Loop."
+              },
+              {
+                "line": 18,
+                "name": "Loop.tenant"
+              }
             ]
           }
         ],
@@ -126,12 +156,30 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "findMany",
-          "findUnique",
-          "tenant.findFirst",
-          "tenant.findMany",
-          "tenant.findUnique"
+          {
+            "line": 14,
+            "name": "findFirst"
+          },
+          {
+            "line": 18,
+            "name": "findMany"
+          },
+          {
+            "line": 10,
+            "name": "findUnique"
+          },
+          {
+            "line": 14,
+            "name": "tenant.findFirst"
+          },
+          {
+            "line": 18,
+            "name": "tenant.findMany"
+          },
+          {
+            "line": 10,
+            "name": "tenant.findUnique"
+          }
         ]
       },
       "tags": 0,

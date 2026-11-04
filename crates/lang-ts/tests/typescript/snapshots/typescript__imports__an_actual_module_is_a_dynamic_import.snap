@@ -54,8 +54,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "importActual",
-          "requireActual"
+          {
+            "line": 1,
+            "name": "importActual"
+          },
+          {
+            "line": 2,
+            "name": "requireActual"
+          }
         ]
       },
       "tags": 1,

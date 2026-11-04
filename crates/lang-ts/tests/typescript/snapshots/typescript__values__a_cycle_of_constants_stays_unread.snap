@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "A",
             "uses": [
-              "B"
+              {
+                "line": 3,
+                "name": "B"
+              }
             ]
           }
         ],
@@ -99,7 +102,10 @@ expression: json
             "line": 3,
             "name": "B",
             "uses": [
-              "A"
+              {
+                "line": 3,
+                "name": "A"
+              }
             ]
           }
         ],
@@ -143,7 +149,10 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "A"
+          {
+            "line": 3,
+            "name": "A"
+          }
         ],
         "overrides": [],
         "reads": []

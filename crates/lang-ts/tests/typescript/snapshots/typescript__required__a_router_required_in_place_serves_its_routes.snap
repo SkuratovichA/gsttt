@@ -55,15 +55,33 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "router"
+          {
+            "line": 3,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "Router",
-          "end",
-          "exports",
-          "get",
-          "post"
+          {
+            "line": 1,
+            "name": "Router"
+          },
+          {
+            "line": 3,
+            "name": "end"
+          },
+          {
+            "line": 6,
+            "name": "exports"
+          },
+          {
+            "line": 3,
+            "name": "get"
+          },
+          {
+            "line": 4,
+            "name": "post"
+          }
         ]
       },
       "tags": 0,

@@ -58,8 +58,14 @@ expression: json
             "line": 3,
             "name": "listen",
             "uses": [
-              "Consumer.",
-              "Consumer.subscribe"
+              {
+                "line": 3,
+                "name": "Consumer."
+              },
+              {
+                "line": 3,
+                "name": "Consumer.subscribe"
+              }
             ]
           }
         ],
@@ -128,7 +134,10 @@ expression: json
             "line": 4,
             "name": "Users.created",
             "uses": [
-              "EventPattern"
+              {
+                "line": 4,
+                "name": "EventPattern"
+              }
             ]
           },
           {
@@ -136,15 +145,24 @@ expression: json
             "line": 7,
             "name": "Users.get",
             "uses": [
-              "MessagePattern"
+              {
+                "line": 7,
+                "name": "MessagePattern"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "EventPattern",
-          "MessagePattern"
+          {
+            "line": 4,
+            "name": "EventPattern"
+          },
+          {
+            "line": 7,
+            "name": "MessagePattern"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -195,7 +213,10 @@ expression: json
             "line": 4,
             "name": "Notifier.constructor",
             "uses": [
-              "EventEmitter2."
+              {
+                "line": 4,
+                "name": "EventEmitter2."
+              }
             ]
           },
           {
@@ -203,7 +224,10 @@ expression: json
             "line": 6,
             "name": "Notifier.notify",
             "uses": [
-              "EventEmitter2.emit"
+              {
+                "line": 7,
+                "name": "EventEmitter2.emit"
+              }
             ]
           }
         ],
@@ -218,7 +242,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "emitter.emit"
+          {
+            "line": 7,
+            "name": "emitter.emit"
+          }
         ]
       },
       "tags": 0,
@@ -287,8 +314,14 @@ expression: json
             "line": 5,
             "name": "Events.kafka",
             "uses": [
-              "ClientKafka",
-              "Inject"
+              {
+                "line": 5,
+                "name": "ClientKafka"
+              },
+              {
+                "line": 5,
+                "name": "Inject"
+              }
             ]
           },
           {
@@ -296,8 +329,14 @@ expression: json
             "line": 7,
             "name": "Events.publish",
             "uses": [
-              "ClientKafka.emit",
-              "Events.kafka"
+              {
+                "line": 8,
+                "name": "ClientKafka.emit"
+              },
+              {
+                "line": 8,
+                "name": "Events.kafka"
+              }
             ]
           }
         ],
@@ -310,11 +349,17 @@ expression: json
           }
         ],
         "on_load": [
-          "Inject"
+          {
+            "line": 5,
+            "name": "Inject"
+          }
         ],
         "overrides": [],
         "reads": [
-          "kafka.emit"
+          {
+            "line": 8,
+            "name": "kafka.emit"
+          }
         ]
       },
       "tags": 0,
@@ -362,8 +407,14 @@ expression: json
             "line": 3,
             "name": "write",
             "uses": [
-              "Producer.",
-              "Producer.send"
+              {
+                "line": 3,
+                "name": "Producer."
+              },
+              {
+                "line": 4,
+                "name": "Producer.send"
+              }
             ]
           }
         ],
@@ -424,7 +475,10 @@ expression: json
             "line": 4,
             "name": "Publisher.constructor",
             "uses": [
-              "ClientKafka."
+              {
+                "line": 4,
+                "name": "ClientKafka."
+              }
             ]
           },
           {
@@ -432,7 +486,10 @@ expression: json
             "line": 6,
             "name": "Publisher.publish",
             "uses": [
-              "ClientKafka.emit"
+              {
+                "line": 7,
+                "name": "ClientKafka.emit"
+              }
             ]
           }
         ],
@@ -447,7 +504,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "kafka.emit"
+          {
+            "line": 7,
+            "name": "kafka.emit"
+          }
         ]
       },
       "tags": 0,
@@ -504,7 +564,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "kafkaProducerService.emitMessage"
+          {
+            "line": 5,
+            "name": "kafkaProducerService.emitMessage"
+          }
         ]
       },
       "tags": 0,
@@ -569,7 +632,10 @@ expression: json
             "line": 5,
             "name": "KafkaSender.constructor",
             "uses": [
-              "ClientKafka."
+              {
+                "line": 5,
+                "name": "ClientKafka."
+              }
             ]
           },
           {
@@ -577,7 +643,10 @@ expression: json
             "line": 7,
             "name": "KafkaSender.publish",
             "uses": [
-              "ClientKafka.emit"
+              {
+                "line": 8,
+                "name": "ClientKafka.emit"
+              }
             ]
           },
           {
@@ -591,7 +660,10 @@ expression: json
             "line": 13,
             "name": "LocalSender.constructor",
             "uses": [
-              "EventEmitter2."
+              {
+                "line": 13,
+                "name": "EventEmitter2."
+              }
             ]
           },
           {
@@ -599,7 +671,10 @@ expression: json
             "line": 15,
             "name": "LocalSender.publish",
             "uses": [
-              "EventEmitter2.emit"
+              {
+                "line": 16,
+                "name": "EventEmitter2.emit"
+              }
             ]
           }
         ],
@@ -618,7 +693,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "sender.emit"
+          {
+            "line": 8,
+            "name": "sender.emit"
+          }
         ]
       },
       "tags": 0,
@@ -677,8 +755,14 @@ expression: json
             "line": 4,
             "name": "kafka",
             "uses": [
-              "Producer.",
-              "Producer.send"
+              {
+                "line": 4,
+                "name": "Producer."
+              },
+              {
+                "line": 5,
+                "name": "Producer.send"
+              }
             ]
           },
           {
@@ -686,8 +770,14 @@ expression: json
             "line": 8,
             "name": "local",
             "uses": [
-              "EventEmitter2.",
-              "EventEmitter2.emit"
+              {
+                "line": 8,
+                "name": "EventEmitter2."
+              },
+              {
+                "line": 9,
+                "name": "EventEmitter2.emit"
+              }
             ]
           }
         ],
@@ -735,7 +825,10 @@ expression: json
             "line": 3,
             "name": "kafka",
             "uses": [
-              "Kafka"
+              {
+                "line": 3,
+                "name": "Kafka"
+              }
             ]
           },
           {
@@ -743,7 +836,10 @@ expression: json
             "line": 4,
             "name": "producer",
             "uses": [
-              "kafka.producer"
+              {
+                "line": 4,
+                "name": "kafka.producer"
+              }
             ]
           },
           {
@@ -751,7 +847,10 @@ expression: json
             "line": 6,
             "name": "write",
             "uses": [
-              "producer"
+              {
+                "line": 6,
+                "name": "producer"
+              }
             ]
           }
         ],
@@ -763,13 +862,25 @@ expression: json
           }
         ],
         "on_load": [
-          "Kafka",
-          "kafka.producer"
+          {
+            "line": 3,
+            "name": "Kafka"
+          },
+          {
+            "line": 4,
+            "name": "kafka.producer"
+          }
         ],
         "overrides": [],
         "reads": [
-          "producer",
-          "send"
+          {
+            "line": 4,
+            "name": "producer"
+          },
+          {
+            "line": 6,
+            "name": "send"
+          }
         ]
       },
       "tags": 0,

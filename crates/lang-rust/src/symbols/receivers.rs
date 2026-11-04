@@ -2,12 +2,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use gsttt_core::fact::MEMBER_SEPARATOR;
+use gsttt_core::fact::{Line, MEMBER_SEPARATOR};
 use ra_ap_syntax::ast::{self, HasName, PathSegmentKind};
 use ra_ap_syntax::{AstNode, NodeOrToken, SyntaxKind, SyntaxNode, SyntaxToken, WalkEvent};
 
 use super::table::Generics;
-use super::{Recorder, derive_names};
+use super::{Recorder, derive_uses};
 use crate::imports::{chains, significant_tokens};
 use crate::syntax::text;
 
@@ -23,6 +23,8 @@ pub(super) struct Scan<'r, 'a> {
     generics: Generics,
     /// The class of each local bound with a type written down, `None` when it is bound twice to different ones or to none.
     classes: HashMap<String, Option<String>>,
+    /// The byte offset of the code being read, where a use it finds is written.
+    at: u32,
 }
 
 impl<'r, 'a> Scan<'r, 'a> {
@@ -39,6 +41,7 @@ impl<'r, 'a> Scan<'r, 'a> {
             locals: HashSet::new(),
             generics: outer.clone(),
             classes: HashMap::new(),
+            at: 0,
         }
     }
 
@@ -53,11 +56,13 @@ impl<'r, 'a> Scan<'r, 'a> {
                 events.skip_subtree();
                 continue;
             }
+            self.at = u32::from(inner.text_range().start());
             match inner.kind() {
                 SyntaxKind::USE => events.skip_subtree(),
                 SyntaxKind::ATTR => {
                     if let Some(attr) = ast::Attr::cast(inner) {
-                        for name in derive_names(&attr) {
+                        for (name, at) in derive_uses(&attr) {
+                            self.at = at;
                             self.note(&name);
                         }
                     }
@@ -77,11 +82,18 @@ impl<'r, 'a> Scan<'r, 'a> {
                 }
                 SyntaxKind::METHOD_CALL_EXPR => {
                     if let Some(call) = ast::MethodCallExpr::cast(inner) {
+                        // A use is written where its member is, which is on a later line than the receiver of a call chain broken across lines.
+                        self.at = call.name_ref().map_or(self.at, |name| {
+                            u32::from(name.syntax().text_range().start())
+                        });
                         self.member(call.receiver().as_ref(), call.name_ref());
                     }
                 }
                 SyntaxKind::FIELD_EXPR => {
                     if let Some(field) = ast::FieldExpr::cast(inner) {
+                        self.at = field.name_ref().map_or(self.at, |name| {
+                            u32::from(name.syntax().text_range().start())
+                        });
                         self.member(field.expr().as_ref(), field.name_ref());
                     }
                 }
@@ -104,20 +116,23 @@ impl<'r, 'a> Scan<'r, 'a> {
         }
     }
 
+    /// The line of the code being read.
+    fn line(&self) -> Line {
+        self.rec.lines.line(self.at)
+    }
+
     fn note(&mut self, used: &str) {
-        if let Some(entry) = self.rec.entries.get_mut(self.owner)
-            && !entry.uses.contains(used)
-        {
-            entry.uses.insert(used.to_owned());
+        let line = self.line();
+        if let Some(entry) = self.rec.entries.get_mut(self.owner) {
+            entry.uses.insert(used, line);
         }
     }
 
     /// Notes that the declaration reads a member `member` of a value whose class is not known: no class is named, and a file that holds a class with that member, or the trait, may be the one the call reaches.
     fn unknown(&mut self, member: &str) {
         self.note(&format!("{MEMBER_SEPARATOR}{member}"));
-        if !self.rec.reads.contains(member) {
-            self.rec.reads.insert(member.to_owned());
-        }
+        let line = self.line();
+        self.rec.reads.insert(member, line);
     }
 
     /// Notes that the declaration uses `member` of `class`. A method or a field the file does not declare for the class may come from a trait in scope, which a call written with the class does not name: the recorder decides at the end of the file, when it knows whether one is.
@@ -127,7 +142,13 @@ impl<'r, 'a> Scan<'r, 'a> {
             && !self.rec.table.is_std(class)
             && member.starts_with(char::is_lowercase);
         if elsewhere {
-            self.rec.written.insert((self.owner, member.to_owned()));
+            let line = self.line();
+            let first = self
+                .rec
+                .written
+                .entry((self.owner, member.to_owned()))
+                .or_insert(line);
+            *first = (*first).min(line);
         }
     }
 
@@ -228,9 +249,10 @@ impl<'r, 'a> Scan<'r, 'a> {
         }
         // Recorded for a known class and an unknown one alike: the pair is about the names, and no use of a class.
         if let Some(on) = receiver.and_then(read_before) {
+            let line = self.line();
             self.rec
                 .reads
-                .insert(format!("{on}{MEMBER_SEPARATOR}{member}"));
+                .insert(&format!("{on}{MEMBER_SEPARATOR}{member}"), line);
         }
         match receiver.and_then(|receiver| self.class_of(receiver)) {
             Some(class) => self.class_member(&class, &member),
@@ -341,12 +363,17 @@ impl<'r, 'a> Scan<'r, 'a> {
         let tokens = significant_tokens(tree);
         for token in &tokens {
             if token.kind() == SyntaxKind::STRING {
+                self.at = u32::from(token.text_range().start());
                 for captured in captures(token.text()) {
                     self.named(&[captured], false);
                 }
             }
         }
         for chain in chains(&tokens) {
+            // A macro's arguments span lines, so each chain is written where its first token is.
+            if let Some(first) = tokens.get(chain.start) {
+                self.at = u32::from(first.text_range().start());
+            }
             let before = chain
                 .start
                 .checked_sub(1)

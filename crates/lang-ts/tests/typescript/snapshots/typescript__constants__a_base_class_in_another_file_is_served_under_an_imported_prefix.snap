@@ -87,14 +87,20 @@ expression: json
             "line": 4,
             "name": "UserControllerBase.find",
             "uses": [
-              "Get"
+              {
+                "line": 4,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Get"
+          {
+            "line": 4,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -167,9 +173,18 @@ expression: json
             "line": 5,
             "name": "UserController",
             "uses": [
-              "Controller",
-              "USERS",
-              "UserControllerBase"
+              {
+                "line": 5,
+                "name": "Controller"
+              },
+              {
+                "line": 5,
+                "name": "USERS"
+              },
+              {
+                "line": 6,
+                "name": "UserControllerBase"
+              }
             ]
           }
         ],
@@ -181,8 +196,14 @@ expression: json
           }
         ],
         "on_load": [
-          "Controller",
-          "USERS"
+          {
+            "line": 5,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "USERS"
+          }
         ],
         "overrides": [
           {

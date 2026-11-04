@@ -48,10 +48,22 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "d",
-          "e",
-          "exports",
-          "exports.e"
+          {
+            "line": 1,
+            "name": "d"
+          },
+          {
+            "line": 2,
+            "name": "e"
+          },
+          {
+            "line": 2,
+            "name": "exports"
+          },
+          {
+            "line": 2,
+            "name": "exports.e"
+          }
         ]
       },
       "tags": 0,
@@ -83,10 +95,22 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a",
-          "a.b",
-          "b",
-          "deep"
+          {
+            "line": 2,
+            "name": "a"
+          },
+          {
+            "line": 2,
+            "name": "a.b"
+          },
+          {
+            "line": 2,
+            "name": "b"
+          },
+          {
+            "line": 1,
+            "name": "deep"
+          }
         ]
       },
       "tags": 0,
@@ -129,11 +153,17 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "x"
+          {
+            "line": 2,
+            "name": "x"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 2,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,

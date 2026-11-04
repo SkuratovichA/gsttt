@@ -77,15 +77,33 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "api.get",
-          "cache.get",
-          "store.cache"
+          {
+            "line": 7,
+            "name": "api.get"
+          },
+          {
+            "line": 5,
+            "name": "cache.get"
+          },
+          {
+            "line": 6,
+            "name": "store.cache"
+          }
         ],
         "overrides": [],
         "reads": [
-          "cache",
-          "cache.get",
-          "get"
+          {
+            "line": 6,
+            "name": "cache"
+          },
+          {
+            "line": 6,
+            "name": "cache.get"
+          },
+          {
+            "line": 5,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,
@@ -126,18 +144,27 @@ expression: json
             "line": 3,
             "name": "api",
             "uses": [
-              "axios.create"
+              {
+                "line": 3,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create"
+          {
+            "line": 3,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create"
+          {
+            "line": 3,
+            "name": "create"
+          }
         ]
       },
       "tags": 0,
