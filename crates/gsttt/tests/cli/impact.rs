@@ -251,7 +251,7 @@ fn name_asks_about_a_name() {
     );
     assert!(
         text.stdout
-            .contains("\nsrc/b.ts  distance 1  imports foo from src/a.ts; in run (line 2)\n"),
+            .contains("\nsrc/b.ts:3  distance 1  imports foo from src/a.ts; in run (line 2)\n> return foo();\n"),
         "{text:?}"
     );
 
@@ -556,8 +556,9 @@ fn no_tests_leaves_the_tests_out_and_counts_them() {
     let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--no-tests"]);
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
-        text.stdout
-            .contains("\nsrc/b.ts  distance 1  imports a from src/a.ts\n"),
+        text.stdout.contains(
+            "\nsrc/b.ts:1  distance 1  imports a from src/a.ts\n> import { a } from './a';\n"
+        ),
         "{text:?}"
     );
     assert!(
@@ -639,13 +640,13 @@ fn name_asks_about_a_member_of_a_class() {
     );
     assert!(
         text.stdout.contains(
-            "\nsrc/app.ts  distance 1  imports Runner from src/runner.ts; in main (line 2)\n"
+            "\nsrc/app.ts:3  distance 1  imports Runner from src/runner.ts; in main (line 2)\n> new Runner().start();\n"
         ),
         "{text:?}"
     );
     assert!(
         text.stdout.contains(
-            "\nsrc/runner.ts  distance 1  declares Runner.start; in Runner.stop (line 3)\n"
+            "\nsrc/runner.ts:4  distance 1  declares Runner.start; in Runner.stop (line 3)\n> this.start();\n"
         ),
         "{text:?}"
     );

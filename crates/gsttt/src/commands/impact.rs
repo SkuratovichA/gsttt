@@ -17,11 +17,9 @@ pub(super) fn impact(
     // Reading the request tells every usage error before the index is read, so a bad command line fails the same way whatever the index holds.
     let request = request(session, args)?;
     let Loaded { index, freshness } = session.loaded()?;
-    print::answer(
-        &query::impact(&index, freshness, &request),
-        session.flags,
-        io,
-    )
+    let mut answer = query::impact(&index, freshness, &request);
+    answer.show_source(session.repository.reader());
+    print::answer(&answer, session.flags, io)
 }
 
 /// What to ask: the named files, with those that are not on disk passed as deleted, and the names to ask about in them, or the files git lists as changed, where a deleted file is passed as deleted.

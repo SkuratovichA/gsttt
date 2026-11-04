@@ -152,10 +152,11 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
         }
     }
     let Loaded { index, freshness } = source.refreshed()?;
-    Ok(within_budget(
-        &query::impact(&index, freshness, &request),
-        Entries::from_flag(all),
-    ))
+    let mut answer = query::impact(&index, freshness, &request);
+    if let Some(read) = source.reader() {
+        answer.show_source(read);
+    }
+    Ok(within_budget(&answer, Entries::from_flag(all)))
 }
 
 /// How the stored index was built and how it stands against the tree. This is the one tool that does not refresh.
