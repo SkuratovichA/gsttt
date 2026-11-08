@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "run",
             "uses": [
-              "x.foo"
+              {
+                "line": 4,
+                "name": "x.foo"
+              }
             ]
           }
         ],
@@ -60,7 +63,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "foo"
+          {
+            "line": 4,
+            "name": "foo"
+          }
         ]
       },
       "tags": 0,
@@ -104,7 +110,10 @@ expression: json
             "line": 3,
             "name": "run",
             "uses": [
-              "x"
+              {
+                "line": 4,
+                "name": "x"
+              }
             ]
           }
         ],
@@ -113,7 +122,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "foo"
+          {
+            "line": 4,
+            "name": "foo"
+          }
         ]
       },
       "tags": 0,

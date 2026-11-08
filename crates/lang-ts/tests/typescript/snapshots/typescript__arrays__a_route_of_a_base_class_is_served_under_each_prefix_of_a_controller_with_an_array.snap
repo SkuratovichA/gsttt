@@ -57,14 +57,20 @@ expression: json
             "line": 4,
             "name": "ItemsControllerBase.find",
             "uses": [
-              "Get"
+              {
+                "line": 4,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Get"
+          {
+            "line": 4,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -122,8 +128,14 @@ expression: json
             "line": 4,
             "name": "ItemsController",
             "uses": [
-              "Controller",
-              "ItemsControllerBase"
+              {
+                "line": 4,
+                "name": "Controller"
+              },
+              {
+                "line": 5,
+                "name": "ItemsControllerBase"
+              }
             ]
           }
         ],
@@ -135,7 +147,10 @@ expression: json
           }
         ],
         "on_load": [
-          "Controller"
+          {
+            "line": 4,
+            "name": "Controller"
+          }
         ],
         "overrides": [
           {

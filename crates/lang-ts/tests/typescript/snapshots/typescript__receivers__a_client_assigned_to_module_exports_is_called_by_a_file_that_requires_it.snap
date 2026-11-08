@@ -49,12 +49,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create"
+          {
+            "line": 3,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "exports"
+          {
+            "line": 3,
+            "name": "create"
+          },
+          {
+            "line": 3,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -95,18 +104,27 @@ expression: json
             "line": 3,
             "name": "default",
             "uses": [
-              "axios.create"
+              {
+                "line": 3,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create"
+          {
+            "line": 3,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create"
+          {
+            "line": 3,
+            "name": "create"
+          }
         ]
       },
       "tags": 0,
@@ -143,11 +161,17 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "client.get"
+          {
+            "line": 3,
+            "name": "client.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get"
+          {
+            "line": 3,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,
@@ -184,11 +208,17 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "client.get"
+          {
+            "line": 3,
+            "name": "client.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get"
+          {
+            "line": 3,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

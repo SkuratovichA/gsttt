@@ -103,7 +103,10 @@ expression: "tree.file_json(\"client.py\")"
         "line": 7,
         "end": 8,
         "uses": [
-          "requests.get"
+          {
+            "name": "requests.get",
+            "line": 8
+          }
         ]
       },
       {
@@ -111,9 +114,18 @@ expression: "tree.file_json(\"client.py\")"
         "line": 11,
         "end": 12,
         "uses": [
-          "requests.Session",
-          "requests.Session.__init__",
-          "requests.Session.get"
+          {
+            "name": "requests.Session",
+            "line": 12
+          },
+          {
+            "name": "requests.Session.__init__",
+            "line": 12
+          },
+          {
+            "name": "requests.Session.get",
+            "line": 12
+          }
         ]
       },
       {
@@ -121,9 +133,18 @@ expression: "tree.file_json(\"client.py\")"
         "line": 15,
         "end": 16,
         "uses": [
-          "httpx.Client",
-          "httpx.Client.__init__",
-          "httpx.Client.get"
+          {
+            "name": "httpx.Client",
+            "line": 16
+          },
+          {
+            "name": "httpx.Client.__init__",
+            "line": 16
+          },
+          {
+            "name": "httpx.Client.get",
+            "line": 16
+          }
         ]
       },
       {
@@ -131,10 +152,22 @@ expression: "tree.file_json(\"client.py\")"
         "line": 19,
         "end": 20,
         "uses": [
-          "BASE",
-          "httpx.Client",
-          "httpx.Client.__init__",
-          "httpx.Client.get"
+          {
+            "name": "BASE",
+            "line": 20
+          },
+          {
+            "name": "httpx.Client",
+            "line": 20
+          },
+          {
+            "name": "httpx.Client.__init__",
+            "line": 20
+          },
+          {
+            "name": "httpx.Client.get",
+            "line": 20
+          }
         ]
       },
       {
@@ -142,7 +175,10 @@ expression: "tree.file_json(\"client.py\")"
         "line": 23,
         "end": 24,
         "uses": [
-          "requests.get"
+          {
+            "name": "requests.get",
+            "line": 24
+          }
         ]
       }
     ],
@@ -151,7 +187,10 @@ expression: "tree.file_json(\"client.py\")"
     "heirs": [],
     "overrides": [],
     "reads": [
-      "API"
+      {
+        "name": "API",
+        "line": 4
+      }
     ]
   },
   "path": "client.py",

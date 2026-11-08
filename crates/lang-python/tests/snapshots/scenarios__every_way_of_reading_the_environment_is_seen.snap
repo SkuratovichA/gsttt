@@ -82,7 +82,10 @@ expression: "tree.file_json(\"config.py\")"
         "line": 5,
         "end": 5,
         "uses": [
-          "os.environ"
+          {
+            "name": "os.environ",
+            "line": 5
+          }
         ]
       },
       {
@@ -90,7 +93,10 @@ expression: "tree.file_json(\"config.py\")"
         "line": 6,
         "end": 6,
         "uses": [
-          "os.environ.get"
+          {
+            "name": "os.environ.get",
+            "line": 6
+          }
         ]
       },
       {
@@ -98,7 +104,10 @@ expression: "tree.file_json(\"config.py\")"
         "line": 7,
         "end": 7,
         "uses": [
-          "os.getenv"
+          {
+            "name": "os.getenv",
+            "line": 7
+          }
         ]
       },
       {
@@ -106,7 +115,10 @@ expression: "tree.file_json(\"config.py\")"
         "line": 10,
         "end": 11,
         "uses": [
-          "BaseSettings"
+          {
+            "name": "BaseSettings",
+            "line": 10
+          }
         ]
       },
       {
@@ -117,8 +129,14 @@ expression: "tree.file_json(\"config.py\")"
       }
     ],
     "on_load": [
-      "os.environ.get",
-      "os.getenv"
+      {
+        "name": "os.environ.get",
+        "line": 6
+      },
+      {
+        "name": "os.getenv",
+        "line": 7
+      }
     ],
     "exports": [],
     "heirs": [
@@ -134,7 +152,10 @@ expression: "tree.file_json(\"config.py\")"
       }
     ],
     "reads": [
-      "environ.get"
+      {
+        "name": "environ.get",
+        "line": 6
+      }
     ]
   },
   "path": "config.py",

@@ -52,8 +52,14 @@ expression: "tree.file_json(\"requests_module.py\")"
         "line": 6,
         "end": 7,
         "uses": [
-          "BASE",
-          "r.post"
+          {
+            "name": "BASE",
+            "line": 7
+          },
+          {
+            "name": "r.post",
+            "line": 7
+          }
         ]
       }
     ],

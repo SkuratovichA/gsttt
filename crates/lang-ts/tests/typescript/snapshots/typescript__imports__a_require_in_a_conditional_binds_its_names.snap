@@ -42,7 +42,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "x"
+          {
+            "line": 1,
+            "name": "x"
+          }
         ]
       },
       "tags": 0,
@@ -74,7 +77,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "x"
+          {
+            "line": 1,
+            "name": "x"
+          }
         ]
       },
       "tags": 0,
@@ -106,7 +112,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "x"
+          {
+            "line": 1,
+            "name": "x"
+          }
         ]
       },
       "tags": 0,
@@ -138,7 +147,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "x"
+          {
+            "line": 1,
+            "name": "x"
+          }
         ]
       },
       "tags": 0,
@@ -170,7 +182,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "x"
+          {
+            "line": 1,
+            "name": "x"
+          }
         ]
       },
       "tags": 0,
@@ -202,7 +217,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "x"
+          {
+            "line": 1,
+            "name": "x"
+          }
         ]
       },
       "tags": 0,
@@ -234,7 +252,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "x"
+          {
+            "line": 1,
+            "name": "x"
+          }
         ]
       },
       "tags": 0,
@@ -359,7 +380,10 @@ expression: json
             "line": 3,
             "name": "Linter",
             "uses": [
-              "load"
+              {
+                "line": 5,
+                "name": "load"
+              }
             ]
           },
           {
@@ -367,7 +391,10 @@ expression: json
             "line": 4,
             "name": "ns",
             "uses": [
-              "load"
+              {
+                "line": 5,
+                "name": "load"
+              }
             ]
           },
           {
@@ -375,8 +402,14 @@ expression: json
             "line": 5,
             "name": "load",
             "uses": [
-              "Linter",
-              "ns"
+              {
+                "line": 6,
+                "name": "Linter"
+              },
+              {
+                "line": 7,
+                "name": "ns"
+              }
             ]
           }
         ],
@@ -385,9 +418,18 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "A",
-          "B",
-          "Linter"
+          {
+            "line": 1,
+            "name": "A"
+          },
+          {
+            "line": 1,
+            "name": "B"
+          },
+          {
+            "line": 6,
+            "name": "Linter"
+          }
         ]
       },
       "tags": 0,

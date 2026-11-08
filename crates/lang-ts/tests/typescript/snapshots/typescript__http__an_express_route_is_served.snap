@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 3,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -68,13 +71,25 @@ expression: json
           }
         ],
         "on_load": [
-          "app.get",
-          "express"
+          {
+            "line": 4,
+            "name": "app.get"
+          },
+          {
+            "line": 3,
+            "name": "express"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get",
-          "send"
+          {
+            "line": 4,
+            "name": "get"
+          },
+          {
+            "line": 4,
+            "name": "send"
+          }
         ]
       },
       "tags": 0,

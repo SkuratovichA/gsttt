@@ -52,7 +52,10 @@ expression: json
             "line": 3,
             "name": "router",
             "uses": [
-              "express.Router"
+              {
+                "line": 3,
+                "name": "express.Router"
+              }
             ]
           },
           {
@@ -60,7 +63,10 @@ expression: json
             "line": 5,
             "name": "register",
             "uses": [
-              "router"
+              {
+                "line": 7,
+                "name": "router"
+              }
             ]
           }
         ],
@@ -72,13 +78,25 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "express.Router"
+          {
+            "line": 3,
+            "name": "express.Router"
+          }
         ],
         "overrides": [],
         "reads": [
-          "Router",
-          "get",
-          "send"
+          {
+            "line": 3,
+            "name": "Router"
+          },
+          {
+            "line": 7,
+            "name": "get"
+          },
+          {
+            "line": 7,
+            "name": "send"
+          }
         ]
       },
       "tags": 0,

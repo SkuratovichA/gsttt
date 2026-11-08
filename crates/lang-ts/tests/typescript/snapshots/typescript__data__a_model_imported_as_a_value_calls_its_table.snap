@@ -58,7 +58,10 @@ expression: json
             "line": 3,
             "name": "confirmed",
             "uses": [
-              "BookingStatus.CONFIRMED"
+              {
+                "line": 3,
+                "name": "BookingStatus.CONFIRMED"
+              }
             ]
           }
         ],
@@ -67,7 +70,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "CONFIRMED"
+          {
+            "line": 3,
+            "name": "CONFIRMED"
+          }
         ]
       },
       "tags": 0,
@@ -115,7 +121,10 @@ expression: json
             "line": 3,
             "name": "confirmed",
             "uses": [
-              "Status.CONFIRMED"
+              {
+                "line": 3,
+                "name": "Status.CONFIRMED"
+              }
             ]
           }
         ],
@@ -124,7 +133,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "CONFIRMED"
+          {
+            "line": 3,
+            "name": "CONFIRMED"
+          }
         ]
       },
       "tags": 0,

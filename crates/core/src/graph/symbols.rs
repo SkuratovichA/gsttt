@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::connector::LinkedOverride;
-use crate::fact::{Line, MEMBER_SEPARATOR, Symbols};
+use crate::fact::{Line, MEMBER_SEPARATOR, NO_LINE, Symbols, Use};
 use crate::ids::{FileId, Id};
 
 use super::len_u32;
@@ -32,6 +32,8 @@ pub(super) struct Table {
     /// `ends[n]` is where string `n` stops in `text`; it starts where string `n - 1` stopped.
     ends: Vec<u32>,
     decls: Vec<Decl>,
+    /// The line of each use of every file, in the order the uses were copied: those of a declaration, then the file's loads, then its reads. A declaration, and a file for its loads and its reads, knows where its run starts.
+    lines: Vec<Line>,
     /// The position in `spans` of the symbols of each file, [`NONE`] for a file whose connector records none.
     slots: Vec<u32>,
     spans: Vec<Span>,
@@ -76,6 +78,8 @@ struct Decl {
     name: u32,
     /// How many strings follow the name.
     uses: u32,
+    /// Where the lines of its uses start in [`Table::lines`].
+    use_lines: u32,
     line: Line,
     end: Line,
 }
@@ -98,6 +102,7 @@ struct Span {
     decl_count: u32,
     on_load: u32,
     on_load_count: u32,
+    on_load_lines: u32,
     exports: u32,
     export_count: u32,
     heirs: u32,
@@ -108,6 +113,7 @@ struct Span {
     hold_count: u32,
     reads: u32,
     read_count: u32,
+    read_lines: u32,
     linked: u32,
     linked_count: u32,
 }
@@ -144,20 +150,19 @@ impl Table {
         let decls = len_u32(self.decls.len());
         for declared in &symbols.declared {
             let name = self.push(&declared.name);
-            for used in &declared.uses {
-                self.push(used);
-            }
+            let use_lines = len_u32(self.lines.len());
+            self.push_uses(&declared.uses);
             self.decls.push(Decl {
                 name,
                 uses: len_u32(declared.uses.len()),
+                use_lines,
                 line: declared.line,
                 end: declared.end,
             });
         }
         let on_load = len_u32(self.ends.len());
-        for name in &symbols.on_load {
-            self.push(name);
-        }
+        let on_load_lines = len_u32(self.lines.len());
+        self.push_uses(&symbols.on_load);
         let exports = len_u32(self.ends.len());
         for export in &symbols.exports {
             self.push(&export.name);
@@ -179,14 +184,14 @@ impl Table {
             self.push(&heir.of);
         }
         let reads = len_u32(self.ends.len());
-        for name in &symbols.reads {
-            self.push(name);
-        }
+        let read_lines = len_u32(self.lines.len());
+        self.push_uses(&symbols.reads);
         Span {
             decls,
             decl_count: len_u32(symbols.declared.len()),
             on_load,
             on_load_count: len_u32(symbols.on_load.len()),
+            on_load_lines,
             exports,
             export_count: len_u32(symbols.exports.len()),
             heirs,
@@ -197,6 +202,7 @@ impl Table {
             hold_count: len_u32(symbols.holds.len()),
             reads,
             read_count: len_u32(symbols.reads.len()),
+            read_lines,
             linked: 0,
             linked_count: 0,
         }
@@ -224,6 +230,22 @@ impl Table {
             span.linked = first;
             span.linked_count = len_u32(found.len());
         }
+    }
+
+    /// Appends the name of each use as a string, and its line to `lines`.
+    fn push_uses(&mut self, uses: &[Use]) {
+        for used in uses {
+            self.push(&used.name);
+            self.lines.push(used.line);
+        }
+    }
+
+    /// The line of the use at `offset` of the run of lines that starts at `first`; [`NO_LINE`] for one the table does not hold.
+    fn line_at(&self, first: u32, offset: u32) -> Line {
+        self.lines
+            .get(first.saturating_add(offset) as usize)
+            .copied()
+            .unwrap_or(NO_LINE)
     }
 
     /// Appends one string and gives its number.
@@ -301,6 +323,30 @@ impl<'g> FileSymbols<'g> {
         let table = self.table;
         let first = self.span.on_load;
         (0..self.span.on_load_count).map(move |offset| table.text(first.saturating_add(offset)))
+    }
+
+    /// What the code of the file refers to as the file loads, each with the line of its first use.
+    pub fn on_load_at(self) -> impl ExactSizeIterator<Item = (&'g str, Line)> + 'g {
+        let table = self.table;
+        let (first, lines) = (self.span.on_load, self.span.on_load_lines);
+        (0..self.span.on_load_count).map(move |offset| {
+            (
+                table.text(first.saturating_add(offset)),
+                table.line_at(lines, offset),
+            )
+        })
+    }
+
+    /// The member names the file reads on a receiver whose class the connector did not know, each with the line of its first read, in byte order.
+    pub fn reads(self) -> impl ExactSizeIterator<Item = (&'g str, Line)> + 'g {
+        let table = self.table;
+        let (first, lines) = (self.span.reads, self.span.read_lines);
+        (0..self.span.read_count).map(move |offset| {
+            (
+                table.text(first.saturating_add(offset)),
+                table.line_at(lines, offset),
+            )
+        })
     }
 
     /// Each name the file exports from a local of another name, as the name it is exported as and the local behind it.
@@ -422,31 +468,44 @@ impl<'g> Declaration<'g> {
         let first = self.decl.name.saturating_add(1);
         (0..self.decl.uses).map(move |offset| table.text(first.saturating_add(offset)))
     }
+
+    /// The names it refers to with the line of the first use of each, in the order of [`Declaration::uses`].
+    pub fn uses_at(self) -> impl ExactSizeIterator<Item = (&'g str, Line)> + 'g {
+        let table = self.table;
+        let first = self.decl.name.saturating_add(1);
+        let lines = self.decl.use_lines;
+        (0..self.decl.uses).map(move |offset| {
+            (
+                table.text(first.saturating_add(offset)),
+                table.line_at(lines, offset),
+            )
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::fact::{Declared, Heir, LocalExport};
-    use crate::testing::owned;
+    use crate::testing::used;
 
     use super::*;
 
-    fn declared(name: &str, line: Line, end: Line, uses: &[&str]) -> Declared {
+    fn declared(name: &str, line: Line, end: Line, uses: &[(&str, Line)]) -> Declared {
         Declared {
             name: name.to_owned(),
             line,
             end,
-            uses: owned(uses),
+            uses: used(uses),
         }
     }
 
     fn symbols() -> Symbols {
         Symbols {
             declared: vec![
-                declared("run", 3, 5, &["foo", "stop"]),
+                declared("run", 3, 5, &[("foo", 4), ("stop", 5)]),
                 declared("stop", 7, 9, &[]),
             ],
-            on_load: owned(&["setup"]),
+            on_load: used(&[("setup", 12)]),
             exports: vec![LocalExport {
                 name: "default".to_owned(),
                 local: "run".to_owned(),
@@ -463,7 +522,7 @@ mod tests {
                 name: "Poetry.file".to_owned(),
                 of: "TOMLFile".to_owned(),
             }],
-            reads: owned(&["alpha", "omega"]),
+            reads: used(&[("alpha", 4), ("omega", 8)]),
         }
     }
 
@@ -496,6 +555,13 @@ mod tests {
             ]
         );
         assert_eq!(read.on_load().collect::<Vec<_>>(), ["setup"]);
+        assert_eq!(read.on_load_at().collect::<Vec<_>>(), [("setup", 12)]);
+        assert_eq!(
+            read.reads().collect::<Vec<_>>(),
+            [("alpha", 4), ("omega", 8)]
+        );
+        let run = read.declaration(0).unwrap();
+        assert_eq!(run.uses_at().collect::<Vec<_>>(), [("foo", 4), ("stop", 5)]);
         assert_eq!(read.exports().collect::<Vec<_>>(), [("default", "run")]);
         assert_eq!(read.heirs().collect::<Vec<_>>(), [("Sub", "Base")]);
         assert_eq!(
@@ -514,6 +580,68 @@ mod tests {
     }
 
     #[test]
+    fn the_line_of_a_use_stays_with_the_file_that_holds_it() {
+        let mut table = Table::new(2);
+        let other = Symbols {
+            declared: vec![declared("other", 1, 9, &[("run", 6), ("zed", 2)])],
+            reads: used(&[("beta", 3)]),
+            ..Symbols::default()
+        };
+        table.insert(file(0), Some(&symbols()));
+        table.insert(file(1), Some(&other));
+
+        let uses = |id: u32, index: usize| -> Vec<(&str, Line)> {
+            table
+                .of(file(id))
+                .unwrap()
+                .declaration(index)
+                .unwrap()
+                .uses_at()
+                .collect()
+        };
+        assert_eq!(uses(0, 0), [("foo", 4), ("stop", 5)]);
+        assert_eq!(uses(0, 1), []);
+        assert_eq!(uses(1, 0), [("run", 6), ("zed", 2)]);
+        let reads =
+            |id: u32| -> Vec<(&str, Line)> { table.of(file(id)).unwrap().reads().collect() };
+        assert_eq!(reads(0), [("alpha", 4), ("omega", 8)]);
+        assert_eq!(reads(1), [("beta", 3)]);
+        // A file without loads holds none, and not those of the file before it.
+        assert_eq!(table.of(file(1)).unwrap().on_load_at().count(), 0);
+    }
+
+    #[gsttt_scenario::scenario("indexing", "A use keeps the line of the file that holds it")]
+    #[test]
+    fn a_use_keeps_the_line_of_the_file_that_holds_it() {
+        let a = Symbols {
+            declared: vec![declared("run", 1, 5, &[("foo", 3)])],
+            ..Symbols::default()
+        };
+        let b = Symbols {
+            declared: vec![declared("go", 8, 10, &[("foo", 9)])],
+            on_load: used(&[("bar", 12)]),
+            ..Symbols::default()
+        };
+        let mut table = Table::new(2);
+        table.insert(file(0), Some(&a));
+        table.insert(file(1), Some(&b));
+
+        let first = |id: u32| -> Vec<(&str, Line)> {
+            table
+                .of(file(id))
+                .unwrap()
+                .declaration(0)
+                .unwrap()
+                .uses_at()
+                .collect()
+        };
+        assert_eq!(first(0), [("foo", 3)]);
+        assert_eq!(first(1), [("foo", 9)]);
+        let load: Vec<(&str, Line)> = table.of(file(1)).unwrap().on_load_at().collect();
+        assert_eq!(load, [("bar", 12)]);
+    }
+
+    #[test]
     fn a_file_without_symbols_is_not_a_file_with_none() {
         let mut table = Table::new(3);
         table.insert(file(0), None);
@@ -529,7 +657,7 @@ mod tests {
     fn files_given_in_any_order_keep_their_own_declarations() {
         let mut table = Table::new(3);
         let other = Symbols {
-            declared: vec![declared("other", 1, 1, &["run"])],
+            declared: vec![declared("other", 1, 1, &[("run", 1)])],
             ..Symbols::default()
         };
         table.insert(file(2), Some(&symbols()));

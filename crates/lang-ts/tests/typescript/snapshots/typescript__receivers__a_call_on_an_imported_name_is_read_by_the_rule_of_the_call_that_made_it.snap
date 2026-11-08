@@ -69,13 +69,25 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "api.get",
-          "app.get",
-          "params"
+          {
+            "line": 7,
+            "name": "api.get"
+          },
+          {
+            "line": 5,
+            "name": "app.get"
+          },
+          {
+            "line": 7,
+            "name": "params"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get"
+          {
+            "line": 5,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,
@@ -116,7 +128,10 @@ expression: json
             "line": 3,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 3,
+                "name": "express"
+              }
             ]
           }
         ],
@@ -128,7 +143,10 @@ expression: json
           }
         ],
         "on_load": [
-          "express"
+          {
+            "line": 3,
+            "name": "express"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -171,18 +189,27 @@ expression: json
             "line": 3,
             "name": "api",
             "uses": [
-              "axios.create"
+              {
+                "line": 3,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create"
+          {
+            "line": 3,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create"
+          {
+            "line": 3,
+            "name": "create"
+          }
         ]
       },
       "tags": 0,

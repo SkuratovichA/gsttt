@@ -57,7 +57,10 @@ expression: "tree.file_json(\"environment.py\")"
         "line": 3,
         "end": 3,
         "uses": [
-          "_os.getenv"
+          {
+            "name": "_os.getenv",
+            "line": 3
+          }
         ]
       },
       {
@@ -65,7 +68,10 @@ expression: "tree.file_json(\"environment.py\")"
         "line": 4,
         "end": 4,
         "uses": [
-          "_os.environ"
+          {
+            "name": "_os.environ",
+            "line": 4
+          }
         ]
       },
       {
@@ -73,19 +79,31 @@ expression: "tree.file_json(\"environment.py\")"
         "line": 5,
         "end": 5,
         "uses": [
-          "_os.environ.get"
+          {
+            "name": "_os.environ.get",
+            "line": 5
+          }
         ]
       }
     ],
     "on_load": [
-      "_os.environ.get",
-      "_os.getenv"
+      {
+        "name": "_os.environ.get",
+        "line": 5
+      },
+      {
+        "name": "_os.getenv",
+        "line": 3
+      }
     ],
     "exports": [],
     "heirs": [],
     "overrides": [],
     "reads": [
-      "environ.get"
+      {
+        "name": "environ.get",
+        "line": 5
+      }
     ]
   },
   "path": "environment.py",

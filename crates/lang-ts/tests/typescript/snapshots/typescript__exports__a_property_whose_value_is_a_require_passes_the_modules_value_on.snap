@@ -43,7 +43,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -84,7 +87,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "one"
+          {
+            "line": 1,
+            "name": "one"
+          }
         ]
       },
       "tags": 0,
@@ -125,19 +131,31 @@ expression: json
             "line": 2,
             "name": "e",
             "uses": [
-              "check"
+              {
+                "line": 3,
+                "name": "check"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "e"
+          {
+            "line": 5,
+            "name": "e"
+          }
         ],
         "overrides": [],
         "reads": [
-          "check",
-          "exports"
+          {
+            "line": 1,
+            "name": "check"
+          },
+          {
+            "line": 5,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -178,19 +196,31 @@ expression: json
             "line": 2,
             "name": "runAssigned",
             "uses": [
-              "one"
+              {
+                "line": 3,
+                "name": "one"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "runAssigned"
+          {
+            "line": 5,
+            "name": "runAssigned"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports",
-          "one"
+          {
+            "line": 5,
+            "name": "exports"
+          },
+          {
+            "line": 1,
+            "name": "one"
+          }
         ]
       },
       "tags": 0,
@@ -234,7 +264,10 @@ expression: json
             "line": 2,
             "name": "a",
             "uses": [
-              "check"
+              {
+                "line": 3,
+                "name": "check"
+              }
             ]
           },
           {
@@ -242,21 +275,39 @@ expression: json
             "line": 5,
             "name": "b",
             "uses": [
-              "helper"
+              {
+                "line": 6,
+                "name": "helper"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "a",
-          "b"
+          {
+            "line": 8,
+            "name": "a"
+          },
+          {
+            "line": 8,
+            "name": "b"
+          }
         ],
         "overrides": [],
         "reads": [
-          "check",
-          "exports",
-          "helper"
+          {
+            "line": 1,
+            "name": "check"
+          },
+          {
+            "line": 8,
+            "name": "exports"
+          },
+          {
+            "line": 1,
+            "name": "helper"
+          }
         ]
       },
       "tags": 0,
@@ -297,19 +348,31 @@ expression: json
             "line": 2,
             "name": "runOne",
             "uses": [
-              "one"
+              {
+                "line": 3,
+                "name": "one"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "runOne"
+          {
+            "line": 5,
+            "name": "runOne"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports",
-          "one"
+          {
+            "line": 5,
+            "name": "exports"
+          },
+          {
+            "line": 1,
+            "name": "one"
+          }
         ]
       },
       "tags": 0,
@@ -350,19 +413,31 @@ expression: json
             "line": 2,
             "name": "d",
             "uses": [
-              "helper"
+              {
+                "line": 3,
+                "name": "helper"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "d"
+          {
+            "line": 5,
+            "name": "d"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports",
-          "helper"
+          {
+            "line": 5,
+            "name": "exports"
+          },
+          {
+            "line": 1,
+            "name": "helper"
+          }
         ]
       },
       "tags": 0,
@@ -403,19 +478,31 @@ expression: json
             "line": 2,
             "name": "c",
             "uses": [
-              "helper"
+              {
+                "line": 3,
+                "name": "helper"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "c"
+          {
+            "line": 5,
+            "name": "c"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports",
-          "helper"
+          {
+            "line": 5,
+            "name": "exports"
+          },
+          {
+            "line": 1,
+            "name": "helper"
+          }
         ]
       },
       "tags": 0,
@@ -452,12 +539,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "helper",
-          "other"
+          {
+            "line": 3,
+            "name": "helper"
+          },
+          {
+            "line": 3,
+            "name": "other"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 3,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -492,11 +588,17 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "one"
+          {
+            "line": 4,
+            "name": "one"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 4,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -533,13 +635,25 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "check",
-          "skip"
+          {
+            "line": 3,
+            "name": "check"
+          },
+          {
+            "line": 4,
+            "name": "skip"
+          }
         ],
         "overrides": [],
         "reads": [
-          "check",
-          "skip"
+          {
+            "line": 3,
+            "name": "check"
+          },
+          {
+            "line": 4,
+            "name": "skip"
+          }
         ]
       },
       "tags": 0,
@@ -611,7 +725,10 @@ expression: json
             "line": 2,
             "name": "check",
             "uses": [
-              "validate.check"
+              {
+                "line": 2,
+                "name": "validate.check"
+              }
             ]
           },
           {
@@ -626,8 +743,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "check",
-          "helper"
+          {
+            "line": 2,
+            "name": "check"
+          },
+          {
+            "line": 3,
+            "name": "helper"
+          }
         ]
       },
       "tags": 0,
@@ -684,7 +807,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -724,7 +850,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -772,7 +901,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 1,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,

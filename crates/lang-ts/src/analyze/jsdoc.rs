@@ -45,8 +45,8 @@ pub(super) struct Block {
     attached: u32,
     params: Vec<Param>,
     declared: Option<Box<str>>,
-    /// The classes the tags `@param`, `@type`, `@returns`, `@return` and `@this` name: the declaration under the comment uses them.
-    used: Vec<Box<str>>,
+    /// The classes the tags `@param`, `@type`, `@returns`, `@return` and `@this` name, each with the offset of its tag: the declaration under the comment uses them.
+    used: Vec<(Box<str>, u32)>,
 }
 
 /// One `@param {T} name`, with the class of `T`.
@@ -123,9 +123,9 @@ impl Block {
             .map(|param| &*param.class)
     }
 
-    /// The classes that the types of the comment name.
-    pub(super) fn used(&self) -> impl Iterator<Item = &str> {
-        self.used.iter().map(|class| &**class)
+    /// The classes that the types of the comment name, each with the offset of the tag that names it.
+    pub(super) fn used(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.used.iter().map(|(class, at)| (&**class, *at))
     }
 
     /// The class of the first `@type` of the comment.
@@ -265,7 +265,7 @@ impl Reader {
         };
         match tag.name {
             "param" | "arg" | "argument" => {
-                block.used.push(class.into());
+                block.used.push((class.into(), tag.at));
                 if let Some(documented) = param_name(after) {
                     let (name, dotted) = match documented.rsplit_once('.') {
                         Some((_, last)) => (last, true),
@@ -279,12 +279,12 @@ impl Reader {
                 }
             }
             "type" => {
-                block.used.push(class.into());
+                block.used.push((class.into(), tag.at));
                 if block.declared.is_none() {
                     block.declared = Some(class.into());
                 }
             }
-            "returns" | "return" | "this" => block.used.push(class.into()),
+            "returns" | "return" | "this" => block.used.push((class.into(), tag.at)),
             _ => {}
         }
     }

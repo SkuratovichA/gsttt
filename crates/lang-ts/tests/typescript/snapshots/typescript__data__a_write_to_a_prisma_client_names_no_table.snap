@@ -58,7 +58,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -66,7 +69,10 @@ expression: json
             "line": 7,
             "name": "all",
             "uses": [
-              "prisma.booking"
+              {
+                "line": 7,
+                "name": "prisma.booking"
+              }
             ]
           }
         ],
@@ -78,18 +84,45 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient",
-          "prisma.tenant"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          },
+          {
+            "line": 5,
+            "name": "prisma.tenant"
+          }
         ],
         "overrides": [],
         "reads": [
-          "booking",
-          "booking.findMany",
-          "findFirst",
-          "findMany",
-          "fn",
-          "tenant",
-          "tenant.findFirst"
+          {
+            "line": 7,
+            "name": "booking"
+          },
+          {
+            "line": 7,
+            "name": "booking.findMany"
+          },
+          {
+            "line": 5,
+            "name": "findFirst"
+          },
+          {
+            "line": 7,
+            "name": "findMany"
+          },
+          {
+            "line": 5,
+            "name": "fn"
+          },
+          {
+            "line": 5,
+            "name": "tenant"
+          },
+          {
+            "line": 5,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,

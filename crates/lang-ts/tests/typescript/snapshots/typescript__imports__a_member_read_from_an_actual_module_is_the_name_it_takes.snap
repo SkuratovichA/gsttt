@@ -124,16 +124,46 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "helper",
-          "importActual",
-          "importActual.helper",
-          "importActual.then",
-          "other",
-          "requireActual",
-          "requireActual.helper",
-          "requireActual.other",
-          "then",
-          "third"
+          {
+            "line": 1,
+            "name": "helper"
+          },
+          {
+            "line": 1,
+            "name": "importActual"
+          },
+          {
+            "line": 1,
+            "name": "importActual.helper"
+          },
+          {
+            "line": 4,
+            "name": "importActual.then"
+          },
+          {
+            "line": 2,
+            "name": "other"
+          },
+          {
+            "line": 2,
+            "name": "requireActual"
+          },
+          {
+            "line": 5,
+            "name": "requireActual.helper"
+          },
+          {
+            "line": 2,
+            "name": "requireActual.other"
+          },
+          {
+            "line": 4,
+            "name": "then"
+          },
+          {
+            "line": 3,
+            "name": "third"
+          }
         ]
       },
       "tags": 1,

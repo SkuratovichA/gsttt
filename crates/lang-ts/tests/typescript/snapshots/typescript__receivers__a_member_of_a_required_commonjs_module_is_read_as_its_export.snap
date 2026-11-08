@@ -52,7 +52,10 @@ expression: json
             "line": 3,
             "name": "default",
             "uses": [
-              "axios.create"
+              {
+                "line": 3,
+                "name": "axios.create"
+              }
             ]
           },
           {
@@ -60,18 +63,27 @@ expression: json
             "line": 4,
             "name": "get",
             "uses": [
-              "axios.create"
+              {
+                "line": 4,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create"
+          {
+            "line": 3,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create"
+          {
+            "line": 3,
+            "name": "create"
+          }
         ]
       },
       "tags": 0,
@@ -108,11 +120,17 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "client.get"
+          {
+            "line": 3,
+            "name": "client.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get"
+          {
+            "line": 3,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,
@@ -153,20 +171,35 @@ expression: json
             "line": 3,
             "name": "httpClient",
             "uses": [
-              "axios.create"
+              {
+                "line": 3,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create",
-          "httpClient"
+          {
+            "line": 3,
+            "name": "axios.create"
+          },
+          {
+            "line": 5,
+            "name": "httpClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "exports"
+          {
+            "line": 3,
+            "name": "create"
+          },
+          {
+            "line": 5,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -203,13 +236,25 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "clients.httpClient"
+          {
+            "line": 3,
+            "name": "clients.httpClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get",
-          "httpClient",
-          "httpClient.get"
+          {
+            "line": 3,
+            "name": "get"
+          },
+          {
+            "line": 3,
+            "name": "httpClient"
+          },
+          {
+            "line": 3,
+            "name": "httpClient.get"
+          }
         ]
       },
       "tags": 0,
@@ -246,13 +291,25 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "clients.httpClient"
+          {
+            "line": 3,
+            "name": "clients.httpClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "get",
-          "httpClient",
-          "httpClient.get"
+          {
+            "line": 3,
+            "name": "get"
+          },
+          {
+            "line": 3,
+            "name": "httpClient"
+          },
+          {
+            "line": 3,
+            "name": "httpClient.get"
+          }
         ]
       },
       "tags": 0,

@@ -77,8 +77,14 @@ expression: "tree.file_json(\"client.py\")"
         "line": 7,
         "end": 8,
         "uses": [
-          "BASE",
-          "requests.post"
+          {
+            "name": "BASE",
+            "line": 8
+          },
+          {
+            "name": "requests.post",
+            "line": 8
+          }
         ]
       },
       {
@@ -86,7 +92,10 @@ expression: "tree.file_json(\"client.py\")"
         "line": 11,
         "end": 12,
         "uses": [
-          "httpx.get"
+          {
+            "name": "httpx.get",
+            "line": 12
+          }
         ]
       }
     ],

@@ -60,8 +60,14 @@ expression: json
             "line": 4,
             "name": "resolvers",
             "uses": [
-              "cancel",
-              "list"
+              {
+                "line": 9,
+                "name": "cancel"
+              },
+              {
+                "line": 6,
+                "name": "list"
+              }
             ]
           }
         ],

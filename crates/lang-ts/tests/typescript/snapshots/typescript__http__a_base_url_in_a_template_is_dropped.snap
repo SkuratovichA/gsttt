@@ -48,7 +48,10 @@ expression: json
             "line": 3,
             "name": "list",
             "uses": [
-              "API_URL"
+              {
+                "line": 3,
+                "name": "API_URL"
+              }
             ]
           }
         ],

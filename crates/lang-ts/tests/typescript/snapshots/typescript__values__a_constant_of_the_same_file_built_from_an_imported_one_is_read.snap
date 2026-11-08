@@ -79,7 +79,10 @@ expression: json
             "line": 3,
             "name": "USERS",
             "uses": [
-              "BASE"
+              {
+                "line": 3,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -87,7 +90,10 @@ expression: json
             "line": 4,
             "name": "ORDERS",
             "uses": [
-              "BASE"
+              {
+                "line": 4,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -95,16 +101,28 @@ expression: json
             "line": 5,
             "name": "ALIAS",
             "uses": [
-              "BASE"
+              {
+                "line": 5,
+                "name": "BASE"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "ALIAS",
-          "ORDERS",
-          "USERS"
+          {
+            "line": 10,
+            "name": "ALIAS"
+          },
+          {
+            "line": 8,
+            "name": "ORDERS"
+          },
+          {
+            "line": 7,
+            "name": "USERS"
+          }
         ],
         "overrides": [],
         "reads": []

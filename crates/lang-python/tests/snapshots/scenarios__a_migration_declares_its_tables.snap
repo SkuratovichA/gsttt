@@ -67,12 +67,30 @@ expression: tree.file_json(path)
         "line": 5,
         "end": 7,
         "uses": [
-          "op.add_column",
-          "op.create_table",
-          "sa.Column",
-          "sa.Column.__init__",
-          "sa.Integer",
-          "sa.Text"
+          {
+            "name": "op.add_column",
+            "line": 7
+          },
+          {
+            "name": "op.create_table",
+            "line": 6
+          },
+          {
+            "name": "sa.Column",
+            "line": 6
+          },
+          {
+            "name": "sa.Column.__init__",
+            "line": 6
+          },
+          {
+            "name": "sa.Integer",
+            "line": 6
+          },
+          {
+            "name": "sa.Text",
+            "line": 7
+          }
         ]
       }
     ],

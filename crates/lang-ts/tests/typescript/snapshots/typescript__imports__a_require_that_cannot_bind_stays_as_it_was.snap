@@ -42,7 +42,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a"
+          {
+            "line": 1,
+            "name": "a"
+          }
         ]
       },
       "tags": 0,
@@ -146,8 +149,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a",
-          "b"
+          {
+            "line": 1,
+            "name": "a"
+          },
+          {
+            "line": 3,
+            "name": "b"
+          }
         ]
       },
       "tags": 0,

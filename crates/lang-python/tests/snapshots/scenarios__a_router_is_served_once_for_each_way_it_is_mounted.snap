@@ -69,8 +69,14 @@ expression: "json!({\n    \"main\": tree.file_json(\"app/main.py\"), \"linked\":
           "line": 5,
           "end": 5,
           "uses": [
-            "FastAPI",
-            "FastAPI.__init__"
+            {
+              "name": "FastAPI",
+              "line": 5
+            },
+            {
+              "name": "FastAPI.__init__",
+              "line": 5
+            }
           ]
         },
         {
@@ -78,17 +84,38 @@ expression: "json!({\n    \"main\": tree.file_json(\"app/main.py\"), \"linked\":
           "line": 11,
           "end": 13,
           "uses": [
-            "app.get"
+            {
+              "name": "app.get",
+              "line": 11
+            }
           ]
         }
       ],
       "on_load": [
-        "FastAPI",
-        "FastAPI.__init__",
-        "app.get",
-        "app.include_router",
-        "health.router",
-        "items.router"
+        {
+          "name": "FastAPI",
+          "line": 5
+        },
+        {
+          "name": "FastAPI.__init__",
+          "line": 5
+        },
+        {
+          "name": "app.get",
+          "line": 11
+        },
+        {
+          "name": "app.include_router",
+          "line": 6
+        },
+        {
+          "name": "health.router",
+          "line": 6
+        },
+        {
+          "name": "items.router",
+          "line": 7
+        }
       ],
       "exports": [],
       "heirs": [

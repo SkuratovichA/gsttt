@@ -81,7 +81,10 @@ expression: "tree.file_json(\"db.py\")"
         "line": 4,
         "end": 8,
         "uses": [
-          "sqlite3.connect"
+          {
+            "name": "sqlite3.connect",
+            "line": 5
+          }
         ]
       },
       {
@@ -89,7 +92,10 @@ expression: "tree.file_json(\"db.py\")"
         "line": 11,
         "end": 21,
         "uses": [
-          "sqlite3.connect"
+          {
+            "name": "sqlite3.connect",
+            "line": 12
+          }
         ]
       },
       {
@@ -97,7 +103,10 @@ expression: "tree.file_json(\"db.py\")"
         "line": 24,
         "end": 32,
         "uses": [
-          "sqlite3.connect"
+          {
+            "name": "sqlite3.connect",
+            "line": 25
+          }
         ]
       },
       {
@@ -105,7 +114,10 @@ expression: "tree.file_json(\"db.py\")"
         "line": 35,
         "end": 43,
         "uses": [
-          "sqlite3.connect"
+          {
+            "name": "sqlite3.connect",
+            "line": 36
+          }
         ]
       },
       {
@@ -113,7 +125,10 @@ expression: "tree.file_json(\"db.py\")"
         "line": 46,
         "end": 49,
         "uses": [
-          "sqlite3.connect"
+          {
+            "name": "sqlite3.connect",
+            "line": 47
+          }
         ]
       }
     ],
@@ -122,11 +137,26 @@ expression: "tree.file_json(\"db.py\")"
     "heirs": [],
     "overrides": [],
     "reads": [
-      "connect.cursor",
-      "cursor",
-      "execute",
-      "fetchall",
-      "fetchone"
+      {
+        "name": "connect.cursor",
+        "line": 12
+      },
+      {
+        "name": "cursor",
+        "line": 6
+      },
+      {
+        "name": "execute",
+        "line": 7
+      },
+      {
+        "name": "fetchall",
+        "line": 21
+      },
+      {
+        "name": "fetchone",
+        "line": 8
+      }
     ]
   },
   "path": "db.py",

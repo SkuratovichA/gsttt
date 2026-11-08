@@ -71,7 +71,10 @@ expression: json
             "line": 9,
             "name": "Holder.hidden",
             "uses": [
-              "Holder.#cache"
+              {
+                "line": 10,
+                "name": "Holder.#cache"
+              }
             ]
           },
           {
@@ -110,35 +113,122 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "#cache.size",
-          "HOME",
-          "a",
-          "a.b",
-          "b",
-          "c",
-          "c.d",
-          "ctx.logger",
-          "d",
-          "e",
-          "e.f",
-          "error",
-          "f",
-          "f.g",
-          "g",
-          "get",
-          "get.name",
-          "get.other",
-          "length",
-          "load",
-          "load.title",
-          "logger",
-          "logger.error",
-          "name",
-          "other",
-          "size",
-          "size.valueOf",
-          "title",
-          "valueOf"
+          {
+            "line": 10,
+            "name": "#cache.size"
+          },
+          {
+            "line": 38,
+            "name": "HOME"
+          },
+          {
+            "line": 19,
+            "name": "a"
+          },
+          {
+            "line": 19,
+            "name": "a.b"
+          },
+          {
+            "line": 19,
+            "name": "b"
+          },
+          {
+            "line": 20,
+            "name": "c"
+          },
+          {
+            "line": 20,
+            "name": "c.d"
+          },
+          {
+            "line": 6,
+            "name": "ctx.logger"
+          },
+          {
+            "line": 20,
+            "name": "d"
+          },
+          {
+            "line": 21,
+            "name": "e"
+          },
+          {
+            "line": 21,
+            "name": "e.f"
+          },
+          {
+            "line": 6,
+            "name": "error"
+          },
+          {
+            "line": 21,
+            "name": "f"
+          },
+          {
+            "line": 21,
+            "name": "f.g"
+          },
+          {
+            "line": 21,
+            "name": "g"
+          },
+          {
+            "line": 25,
+            "name": "get"
+          },
+          {
+            "line": 25,
+            "name": "get.name"
+          },
+          {
+            "line": 26,
+            "name": "get.other"
+          },
+          {
+            "line": 36,
+            "name": "length"
+          },
+          {
+            "line": 31,
+            "name": "load"
+          },
+          {
+            "line": 31,
+            "name": "load.title"
+          },
+          {
+            "line": 6,
+            "name": "logger"
+          },
+          {
+            "line": 6,
+            "name": "logger.error"
+          },
+          {
+            "line": 25,
+            "name": "name"
+          },
+          {
+            "line": 26,
+            "name": "other"
+          },
+          {
+            "line": 10,
+            "name": "size"
+          },
+          {
+            "line": 10,
+            "name": "size.valueOf"
+          },
+          {
+            "line": 31,
+            "name": "title"
+          },
+          {
+            "line": 10,
+            "name": "valueOf"
+          }
         ]
       },
       "tags": 0,

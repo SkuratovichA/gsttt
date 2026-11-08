@@ -5,6 +5,9 @@
 use gsttt_core::engine::changes::Change;
 use gsttt_core::{Loaded, Target};
 
+/// Reads the text of a file of the repository, by its path from the root, as it is on disk now.
+pub type TextReader = Box<dyn Fn(&str) -> Option<String> + Send>;
+
 /// Why the source could not answer, as a sentence the model can act on.
 ///
 /// The server hands the message to the model as it is, so it names what failed and says what to do about it.
@@ -39,4 +42,9 @@ pub trait IndexSource: Send + Sync + 'static {
 
     /// The files that differ from `HEAD`, or from the best common ancestor of `HEAD` and `base`.
     fn changed(&self, base: Option<&str>) -> Result<Vec<Change>, SourceError>;
+
+    /// A reader of the files as they are on disk now, which an answer uses to show the line of a call beside the files it reaches. A source that has no disk to read, or cannot open it, gives none, and the answer is the same without those lines.
+    fn reader(&self) -> Option<TextReader> {
+        None
+    }
 }

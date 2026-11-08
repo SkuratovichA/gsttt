@@ -13,8 +13,8 @@ use crate::connector::LinkedOverride;
 use crate::contract::{ContractKey, Role};
 use crate::coverage::{ConnectorCoverage, Coverage, FailedFile};
 use crate::fact::{
-    Declared, FileTags, Heir, Import, ImportFlags, ImportKind, LocalExport, ParseFailure,
-    ParseStatus, Resolution, ResolvedImport, Symbols, UnresolvedReason, UnresolvedSite,
+    Declared, FileTags, Heir, Import, ImportFlags, ImportKind, Line, LocalExport, ParseFailure,
+    ParseStatus, Resolution, ResolvedImport, Symbols, UnresolvedReason, UnresolvedSite, Use,
 };
 use crate::graph::{ContractSite, GraphBuilder};
 use crate::index::{FileRecord, Index, IndexInfo, ProjectInfo};
@@ -114,20 +114,35 @@ impl Code {
         Self::default()
     }
 
-    /// A declaration of `name` on lines `from` to `to` that refers to `uses`. The class of a member is declared too, as `Class`, and the member as `Class.member`.
-    pub fn declaration(mut self, name: &str, lines: (u32, u32), uses: &[&str]) -> Self {
+    /// A declaration of `name` on lines `from` to `to` that refers to `uses`, each used on the line the declaration starts on. The class of a member is declared too, as `Class`, and the member as `Class.member`.
+    pub fn declaration(self, name: &str, lines: (u32, u32), uses: &[&str]) -> Self {
+        let at: Vec<(&str, Line)> = uses.iter().map(|&used| (used, lines.0)).collect();
+        self.declaration_at(name, lines, &at)
+    }
+
+    /// Like [`Code::declaration`], with the line each of `uses` is used on.
+    pub fn declaration_at(mut self, name: &str, lines: (u32, u32), uses: &[(&str, Line)]) -> Self {
         self.symbols.declared.push(Declared {
             name: name.to_owned(),
             line: lines.0,
             end: lines.1,
-            uses: owned(uses),
+            uses: used(uses),
         });
         self
     }
 
-    /// What the code of the file refers to as the file loads.
+    /// What the code of the file refers to as the file loads, each used on line 1.
     pub fn on_load(mut self, uses: &[&str]) -> Self {
-        self.symbols.on_load.extend(owned(uses));
+        self.symbols.on_load.extend(uses.iter().map(|&name| Use {
+            name: name.to_owned(),
+            line: 1,
+        }));
+        self
+    }
+
+    /// What the code of the file refers to as the file loads, with the line each is used on.
+    pub fn on_load_at(mut self, uses: &[(&str, Line)]) -> Self {
+        self.symbols.on_load.extend(used(uses));
         self
     }
 
@@ -174,9 +189,12 @@ impl Code {
         self
     }
 
-    /// The file reads a member called `name` on a value of a class it does not know, as `x.name()` does.
+    /// The file reads a member called `name` on a value of a class it does not know, as `x.name()` does, on line 1.
     pub fn reads(mut self, name: &str) -> Self {
-        self.symbols.reads.push(name.to_owned());
+        self.symbols.reads.push(Use {
+            name: name.to_owned(),
+            line: 1,
+        });
         self
     }
 
@@ -187,11 +205,9 @@ impl Code {
             .declared
             .sort_by(|left, right| (left.line, &left.name).cmp(&(right.line, &right.name)));
         for declared in &mut symbols.declared {
-            declared.uses.sort_unstable();
-            declared.uses.dedup();
+            first_use_of_each(&mut declared.uses);
         }
-        symbols.on_load.sort_unstable();
-        symbols.on_load.dedup();
+        first_use_of_each(&mut symbols.on_load);
         symbols
             .exports
             .sort_by(|left, right| left.name.cmp(&right.name));
@@ -207,10 +223,15 @@ impl Code {
             .holds
             .sort_by(|left, right| (&left.name, &left.of).cmp(&(&right.name, &right.of)));
         symbols.holds.dedup();
-        symbols.reads.sort_unstable();
-        symbols.reads.dedup();
+        first_use_of_each(&mut symbols.reads);
         symbols
     }
+}
+
+/// `uses` sorted by name, each name once with its earliest line.
+fn first_use_of_each(uses: &mut Vec<Use>) {
+    uses.sort_by(|left, right| (&left.name, left.line).cmp(&(&right.name, right.line)));
+    uses.dedup_by(|later, earlier| later.name == earlier.name);
 }
 
 /// An import of a file and what it resolves to.
@@ -257,6 +278,16 @@ impl Entry {
 /// Names as a connector records them. The unit tests of the graph build facts by hand and take them from here.
 pub(crate) fn owned(names: &[&str]) -> Vec<String> {
     names.iter().map(|&name| name.to_owned()).collect()
+}
+
+/// Uses as a connector records them, each with the line it is used on.
+pub(crate) fn used(uses: &[(&str, Line)]) -> Vec<Use> {
+    uses.iter()
+        .map(|&(name, line)| Use {
+            name: name.to_owned(),
+            line,
+        })
+        .collect()
 }
 
 /// `written` as a connector records it for a file that does or does not have symbols: a static import that names what it takes binds each name under itself unless the test said otherwise.

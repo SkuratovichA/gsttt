@@ -60,7 +60,10 @@ expression: json
             "line": 3,
             "name": "Bookings",
             "uses": [
-              "api.booking"
+              {
+                "line": 4,
+                "name": "api.booking"
+              }
             ]
           }
         ],
@@ -69,14 +72,38 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "booking",
-          "booking.get",
-          "data",
-          "data.id",
-          "get",
-          "get.useQuery",
-          "id",
-          "useQuery"
+          {
+            "line": 4,
+            "name": "booking"
+          },
+          {
+            "line": 4,
+            "name": "booking.get"
+          },
+          {
+            "line": 5,
+            "name": "data"
+          },
+          {
+            "line": 5,
+            "name": "data.id"
+          },
+          {
+            "line": 4,
+            "name": "get"
+          },
+          {
+            "line": 4,
+            "name": "get.useQuery"
+          },
+          {
+            "line": 3,
+            "name": "id"
+          },
+          {
+            "line": 4,
+            "name": "useQuery"
+          }
         ]
       },
       "tags": 0,

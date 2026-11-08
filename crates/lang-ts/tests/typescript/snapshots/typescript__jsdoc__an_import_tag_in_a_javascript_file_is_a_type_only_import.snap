@@ -197,10 +197,22 @@ expression: json
             "line": 10,
             "name": "run",
             "uses": [
-              "ConfigLoader",
-              "ConfigLoader.loadConfigArrayForDirectory",
-              "Linter",
-              "Linter.verifyAndFix"
+              {
+                "line": 8,
+                "name": "ConfigLoader"
+              },
+              {
+                "line": 12,
+                "name": "ConfigLoader.loadConfigArrayForDirectory"
+              },
+              {
+                "line": 7,
+                "name": "Linter"
+              },
+              {
+                "line": 11,
+                "name": "Linter.verifyAndFix"
+              }
             ]
           },
           {
@@ -208,7 +220,10 @@ expression: json
             "line": 18,
             "name": "chained",
             "uses": [
-              "Linter"
+              {
+                "line": 16,
+                "name": "Linter"
+              }
             ]
           }
         ],
@@ -217,11 +232,26 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "configLoader",
-          "getFixPassCount",
-          "linter",
-          "linter.getFixPassCount",
-          "text"
+          {
+            "line": 10,
+            "name": "configLoader"
+          },
+          {
+            "line": 19,
+            "name": "getFixPassCount"
+          },
+          {
+            "line": 10,
+            "name": "linter"
+          },
+          {
+            "line": 19,
+            "name": "linter.getFixPassCount"
+          },
+          {
+            "line": 10,
+            "name": "text"
+          }
         ]
       },
       "tags": 0,
@@ -383,7 +413,10 @@ expression: json
             "line": 14,
             "name": "f",
             "uses": [
-              "Thing"
+              {
+                "line": 10,
+                "name": "Thing"
+              }
             ]
           }
         ],
@@ -493,8 +526,14 @@ expression: json
             "line": 9,
             "name": "Traverser.run",
             "uses": [
-              "Visitor",
-              "Visitor.callSync"
+              {
+                "line": 7,
+                "name": "Visitor"
+              },
+              {
+                "line": 10,
+                "name": "Visitor.callSync"
+              }
             ]
           },
           {
@@ -502,8 +541,14 @@ expression: json
             "line": 14,
             "name": "Traverser.each",
             "uses": [
-              "Visitor",
-              "Visitor.callSync"
+              {
+                "line": 13,
+                "name": "Visitor"
+              },
+              {
+                "line": 15,
+                "name": "Visitor.callSync"
+              }
             ]
           },
           {
@@ -517,20 +562,35 @@ expression: json
             "line": 23,
             "name": "table",
             "uses": [
-              "Visitor.callSync"
+              {
+                "line": 26,
+                "name": "Visitor.callSync"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Traverser",
-          "table"
+          {
+            "line": 30,
+            "name": "Traverser"
+          },
+          {
+            "line": 30,
+            "name": "table"
+          }
         ],
         "overrides": [],
         "reads": [
-          "callSync",
-          "exports"
+          {
+            "line": 19,
+            "name": "callSync"
+          },
+          {
+            "line": 30,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -578,12 +638,30 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "five",
-          "four",
-          "one",
-          "six",
-          "three",
-          "two"
+          {
+            "line": 15,
+            "name": "five"
+          },
+          {
+            "line": 14,
+            "name": "four"
+          },
+          {
+            "line": 11,
+            "name": "one"
+          },
+          {
+            "line": 16,
+            "name": "six"
+          },
+          {
+            "line": 13,
+            "name": "three"
+          },
+          {
+            "line": 12,
+            "name": "two"
+          }
         ]
       },
       "tags": 0,
@@ -685,8 +763,14 @@ expression: json
             "line": 9,
             "name": "compareSpecificity",
             "uses": [
-              "Sel",
-              "Sel.compare"
+              {
+                "line": 6,
+                "name": "Sel"
+              },
+              {
+                "line": 10,
+                "name": "Sel.compare"
+              }
             ]
           },
           {
@@ -694,8 +778,14 @@ expression: json
             "line": 14,
             "name": "optional",
             "uses": [
-              "Sel",
-              "Sel.compare"
+              {
+                "line": 13,
+                "name": "Sel"
+              },
+              {
+                "line": 15,
+                "name": "Sel.compare"
+              }
             ]
           },
           {
@@ -703,8 +793,14 @@ expression: json
             "line": 19,
             "name": "arrow",
             "uses": [
-              "Sel",
-              "Sel.compare"
+              {
+                "line": 18,
+                "name": "Sel"
+              },
+              {
+                "line": 19,
+                "name": "Sel.compare"
+              }
             ]
           },
           {
@@ -712,8 +808,14 @@ expression: json
             "line": 22,
             "name": "assigned",
             "uses": [
-              "Sel",
-              "Sel.compare"
+              {
+                "line": 21,
+                "name": "Sel"
+              },
+              {
+                "line": 23,
+                "name": "Sel.compare"
+              }
             ]
           },
           {
@@ -727,7 +829,10 @@ expression: json
             "line": 33,
             "name": "shadowed",
             "uses": [
-              "Sel"
+              {
+                "line": 31,
+                "name": "Sel"
+              }
             ]
           },
           {
@@ -735,7 +840,10 @@ expression: json
             "line": 41,
             "name": "defaulted",
             "uses": [
-              "Sel"
+              {
+                "line": 39,
+                "name": "Sel"
+              }
             ]
           }
         ],
@@ -744,8 +852,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "assigned",
-          "compare"
+          {
+            "line": 22,
+            "name": "assigned"
+          },
+          {
+            "line": 27,
+            "name": "compare"
+          }
         ]
       },
       "tags": 0,
@@ -868,7 +982,10 @@ expression: json
             "line": 4,
             "name": "first",
             "uses": [
-              "Thing"
+              {
+                "line": 3,
+                "name": "Thing"
+              }
             ]
           },
           {
@@ -876,7 +993,10 @@ expression: json
             "line": 7,
             "name": "second",
             "uses": [
-              "Thing"
+              {
+                "line": 6,
+                "name": "Thing"
+              }
             ]
           },
           {
@@ -934,7 +1054,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "compare"
+          {
+            "line": 6,
+            "name": "compare"
+          }
         ]
       },
       "tags": 0,

@@ -80,7 +80,10 @@ expression: json
             "line": 4,
             "name": "a",
             "uses": [
-              "f"
+              {
+                "line": 4,
+                "name": "f"
+              }
             ]
           },
           {
@@ -88,7 +91,10 @@ expression: json
             "line": 5,
             "name": "b",
             "uses": [
-              "g"
+              {
+                "line": 5,
+                "name": "g"
+              }
             ]
           },
           {
@@ -96,8 +102,14 @@ expression: json
             "line": 9,
             "name": "C",
             "uses": [
-              "D",
-              "mixin"
+              {
+                "line": 9,
+                "name": "D"
+              },
+              {
+                "line": 9,
+                "name": "mixin"
+              }
             ]
           },
           {
@@ -105,7 +117,10 @@ expression: json
             "line": 10,
             "name": "C.s",
             "uses": [
-              "k"
+              {
+                "line": 10,
+                "name": "k"
+              }
             ]
           },
           {
@@ -113,7 +128,10 @@ expression: json
             "line": 11,
             "name": "C.m",
             "uses": [
-              "n"
+              {
+                "line": 12,
+                "name": "n"
+              }
             ]
           }
         ],
@@ -125,12 +143,30 @@ expression: json
           }
         ],
         "on_load": [
-          "D",
-          "f",
-          "h",
-          "k",
-          "mixin",
-          "test"
+          {
+            "line": 9,
+            "name": "D"
+          },
+          {
+            "line": 4,
+            "name": "f"
+          },
+          {
+            "line": 7,
+            "name": "h"
+          },
+          {
+            "line": 10,
+            "name": "k"
+          },
+          {
+            "line": 9,
+            "name": "mixin"
+          },
+          {
+            "line": 7,
+            "name": "test"
+          }
         ],
         "overrides": [],
         "reads": []

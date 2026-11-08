@@ -13,4 +13,4 @@ mod tools;
 
 pub use ask::BUDGET;
 pub use serve::{ServeError, serve, serve_on};
-pub use source::{IndexSource, SourceError};
+pub use source::{IndexSource, SourceError, TextReader};

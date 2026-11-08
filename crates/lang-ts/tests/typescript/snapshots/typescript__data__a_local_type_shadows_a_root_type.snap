@@ -58,7 +58,10 @@ expression: json
             "line": 3,
             "name": "PrismaClient",
             "uses": [
-              "Prisma.TransactionClient"
+              {
+                "line": 3,
+                "name": "Prisma.TransactionClient"
+              }
             ]
           },
           {
@@ -66,8 +69,14 @@ expression: json
             "line": 5,
             "name": "find",
             "uses": [
-              "PrismaClient.",
-              "PrismaClient.tenant"
+              {
+                "line": 5,
+                "name": "PrismaClient."
+              },
+              {
+                "line": 6,
+                "name": "PrismaClient.tenant"
+              }
             ]
           }
         ],
@@ -76,8 +85,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 6,
+            "name": "findFirst"
+          },
+          {
+            "line": 6,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,
@@ -108,8 +123,14 @@ expression: json
             "line": 3,
             "name": "find",
             "uses": [
-              "PrismaClient.",
-              "PrismaClient.tenant"
+              {
+                "line": 3,
+                "name": "PrismaClient."
+              },
+              {
+                "line": 4,
+                "name": "PrismaClient.tenant"
+              }
             ]
           }
         ],
@@ -118,8 +139,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 4,
+            "name": "findFirst"
+          },
+          {
+            "line": 4,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,
@@ -156,8 +183,14 @@ expression: json
             "line": 5,
             "name": "find",
             "uses": [
-              "PrismaService.",
-              "PrismaService.tenant"
+              {
+                "line": 5,
+                "name": "PrismaService."
+              },
+              {
+                "line": 6,
+                "name": "PrismaService.tenant"
+              }
             ]
           }
         ],
@@ -166,8 +199,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 6,
+            "name": "findFirst"
+          },
+          {
+            "line": 6,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,
@@ -198,8 +237,14 @@ expression: json
             "line": 5,
             "name": "find",
             "uses": [
-              "PrismaClient.",
-              "PrismaClient.tenant"
+              {
+                "line": 5,
+                "name": "PrismaClient."
+              },
+              {
+                "line": 6,
+                "name": "PrismaClient.tenant"
+              }
             ]
           }
         ],
@@ -208,8 +253,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 6,
+            "name": "findFirst"
+          },
+          {
+            "line": 6,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,
@@ -246,8 +297,14 @@ expression: json
             "line": 5,
             "name": "find",
             "uses": [
-              "PrismaClient.",
-              "PrismaClient.tenant"
+              {
+                "line": 5,
+                "name": "PrismaClient."
+              },
+              {
+                "line": 6,
+                "name": "PrismaClient.tenant"
+              }
             ]
           }
         ],
@@ -256,8 +313,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 6,
+            "name": "findFirst"
+          },
+          {
+            "line": 6,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,

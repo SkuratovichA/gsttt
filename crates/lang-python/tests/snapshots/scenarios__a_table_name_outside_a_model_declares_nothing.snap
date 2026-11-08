@@ -111,7 +111,10 @@ expression: "tree.file_json(\"models.py\")"
         "line": 8,
         "end": 9,
         "uses": [
-          "DeclarativeBase"
+          {
+            "name": "DeclarativeBase",
+            "line": 8
+          }
         ]
       },
       {
@@ -119,7 +122,10 @@ expression: "tree.file_json(\"models.py\")"
         "line": 12,
         "end": 17,
         "uses": [
-          "Base"
+          {
+            "name": "Base",
+            "line": 12
+          }
         ]
       },
       {
@@ -145,7 +151,10 @@ expression: "tree.file_json(\"models.py\")"
         "line": 21,
         "end": 22,
         "uses": [
-          "Base"
+          {
+            "name": "Base",
+            "line": 21
+          }
         ]
       },
       {
@@ -159,7 +168,10 @@ expression: "tree.file_json(\"models.py\")"
         "line": 24,
         "end": 26,
         "uses": [
-          "models.Model"
+          {
+            "name": "models.Model",
+            "line": 24
+          }
         ]
       },
       {
@@ -179,7 +191,10 @@ expression: "tree.file_json(\"models.py\")"
         "line": 29,
         "end": 31,
         "uses": [
-          "models.Model"
+          {
+            "name": "models.Model",
+            "line": 29
+          }
         ]
       },
       {
@@ -211,7 +226,10 @@ expression: "tree.file_json(\"models.py\")"
         "line": 38,
         "end": 43,
         "uses": [
-          "models.Model"
+          {
+            "name": "models.Model",
+            "line": 38
+          }
         ]
       },
       {
@@ -231,7 +249,10 @@ expression: "tree.file_json(\"models.py\")"
         "line": 42,
         "end": 43,
         "uses": [
-          "Base"
+          {
+            "name": "Base",
+            "line": 42
+          }
         ]
       },
       {
@@ -245,7 +266,10 @@ expression: "tree.file_json(\"models.py\")"
         "line": 46,
         "end": 51,
         "uses": [
-          "models.Model"
+          {
+            "name": "models.Model",
+            "line": 47
+          }
         ]
       }
     ],

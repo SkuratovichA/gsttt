@@ -117,7 +117,10 @@ expression: json
             "line": 3,
             "name": "prisma",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -125,7 +128,10 @@ expression: json
             "line": 5,
             "name": "one",
             "uses": [
-              "prisma.$queryRaw"
+              {
+                "line": 5,
+                "name": "prisma.$queryRaw"
+              }
             ]
           },
           {
@@ -133,7 +139,10 @@ expression: json
             "line": 7,
             "name": "many",
             "uses": [
-              "prisma.$queryRaw"
+              {
+                "line": 8,
+                "name": "prisma.$queryRaw"
+              }
             ]
           },
           {
@@ -141,7 +150,10 @@ expression: json
             "line": 10,
             "name": "typed",
             "uses": [
-              "prisma.$queryRaw"
+              {
+                "line": 11,
+                "name": "prisma.$queryRaw"
+              }
             ]
           },
           {
@@ -149,7 +161,10 @@ expression: json
             "line": 13,
             "name": "purge",
             "uses": [
-              "prisma.$executeRaw"
+              {
+                "line": 13,
+                "name": "prisma.$executeRaw"
+              }
             ]
           }
         ],
@@ -161,12 +176,21 @@ expression: json
           }
         ],
         "on_load": [
-          "PrismaClient"
+          {
+            "line": 3,
+            "name": "PrismaClient"
+          }
         ],
         "overrides": [],
         "reads": [
-          "$executeRaw",
-          "$queryRaw"
+          {
+            "line": 13,
+            "name": "$executeRaw"
+          },
+          {
+            "line": 5,
+            "name": "$queryRaw"
+          }
         ]
       },
       "tags": 0,
@@ -230,8 +254,14 @@ expression: json
             "line": 4,
             "name": "Reports.constructor",
             "uses": [
-              "PrismaService",
-              "PrismaService."
+              {
+                "line": 4,
+                "name": "PrismaService"
+              },
+              {
+                "line": 4,
+                "name": "PrismaService."
+              }
             ]
           },
           {
@@ -239,7 +269,10 @@ expression: json
             "line": 6,
             "name": "Reports.recent",
             "uses": [
-              "PrismaService.$queryRaw"
+              {
+                "line": 7,
+                "name": "PrismaService.$queryRaw"
+              }
             ]
           },
           {
@@ -260,11 +293,26 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "$queryRaw",
-          "client",
-          "client.$queryRaw",
-          "db.client",
-          "prisma.$queryRaw"
+          {
+            "line": 11,
+            "name": "$queryRaw"
+          },
+          {
+            "line": 11,
+            "name": "client"
+          },
+          {
+            "line": 11,
+            "name": "client.$queryRaw"
+          },
+          {
+            "line": 11,
+            "name": "db.client"
+          },
+          {
+            "line": 7,
+            "name": "prisma.$queryRaw"
+          }
         ]
       },
       "tags": 0,

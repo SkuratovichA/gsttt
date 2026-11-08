@@ -42,7 +42,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "go"
+          {
+            "line": 1,
+            "name": "go"
+          }
         ]
       },
       "tags": 0,
@@ -114,8 +117,14 @@ expression: json
             "line": 4,
             "name": "run",
             "uses": [
-              "dep",
-              "helper.go"
+              {
+                "line": 5,
+                "name": "dep"
+              },
+              {
+                "line": 5,
+                "name": "helper.go"
+              }
             ]
           },
           {
@@ -123,7 +132,10 @@ expression: json
             "line": 8,
             "name": "stop",
             "uses": [
-              "dep"
+              {
+                "line": 9,
+                "name": "dep"
+              }
             ]
           },
           {
@@ -131,7 +143,10 @@ expression: json
             "line": 12,
             "name": "a",
             "uses": [
-              "dep"
+              {
+                "line": 13,
+                "name": "dep"
+              }
             ]
           },
           {
@@ -139,7 +154,10 @@ expression: json
             "line": 12,
             "name": "b",
             "uses": [
-              "dep"
+              {
+                "line": 13,
+                "name": "dep"
+              }
             ]
           },
           {
@@ -153,8 +171,14 @@ expression: json
             "line": 18,
             "name": "label",
             "uses": [
-              "compute",
-              "dep"
+              {
+                "line": 18,
+                "name": "compute"
+              },
+              {
+                "line": 18,
+                "name": "dep"
+              }
             ]
           },
           {
@@ -168,7 +192,10 @@ expression: json
             "line": 27,
             "name": "again",
             "uses": [
-              "run"
+              {
+                "line": 28,
+                "name": "run"
+              }
             ]
           }
         ],
@@ -180,23 +207,65 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "compute",
-          "dep"
+          {
+            "line": 18,
+            "name": "compute"
+          },
+          {
+            "line": 20,
+            "name": "dep"
+          }
         ],
         "overrides": [],
         "reads": [
-          "a",
-          "again",
-          "b",
-          "exports",
-          "exports.limit",
-          "go",
-          "label",
-          "limit",
-          "loaded",
-          "local",
-          "run",
-          "stop"
+          {
+            "line": 12,
+            "name": "a"
+          },
+          {
+            "line": 27,
+            "name": "again"
+          },
+          {
+            "line": 12,
+            "name": "b"
+          },
+          {
+            "line": 16,
+            "name": "exports"
+          },
+          {
+            "line": 16,
+            "name": "exports.limit"
+          },
+          {
+            "line": 5,
+            "name": "go"
+          },
+          {
+            "line": 18,
+            "name": "label"
+          },
+          {
+            "line": 16,
+            "name": "limit"
+          },
+          {
+            "line": 21,
+            "name": "loaded"
+          },
+          {
+            "line": 20,
+            "name": "local"
+          },
+          {
+            "line": 4,
+            "name": "run"
+          },
+          {
+            "line": 8,
+            "name": "stop"
+          }
         ]
       },
       "tags": 0,

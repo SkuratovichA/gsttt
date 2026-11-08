@@ -86,7 +86,10 @@ expression: json
             "line": 3,
             "name": "Audited",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -94,7 +97,10 @@ expression: json
             "line": 5,
             "name": "Logged",
             "uses": [
-              "Audited"
+              {
+                "line": 5,
+                "name": "Audited"
+              }
             ]
           },
           {
@@ -102,7 +108,10 @@ expression: json
             "line": 7,
             "name": "Narrow",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 7,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -110,7 +119,10 @@ expression: json
             "line": 9,
             "name": "Wide",
             "uses": [
-              "Narrow"
+              {
+                "line": 9,
+                "name": "Narrow"
+              }
             ]
           },
           {
@@ -118,8 +130,14 @@ expression: json
             "line": 11,
             "name": "audited",
             "uses": [
-              "Audited.",
-              "Audited.tenant"
+              {
+                "line": 11,
+                "name": "Audited."
+              },
+              {
+                "line": 12,
+                "name": "Audited.tenant"
+              }
             ]
           },
           {
@@ -127,8 +145,14 @@ expression: json
             "line": 15,
             "name": "logged",
             "uses": [
-              "Logged.",
-              "Logged.tenant"
+              {
+                "line": 15,
+                "name": "Logged."
+              },
+              {
+                "line": 16,
+                "name": "Logged.tenant"
+              }
             ]
           },
           {
@@ -136,8 +160,14 @@ expression: json
             "line": 19,
             "name": "narrow",
             "uses": [
-              "Narrow.",
-              "Narrow.tenant"
+              {
+                "line": 19,
+                "name": "Narrow."
+              },
+              {
+                "line": 20,
+                "name": "Narrow.tenant"
+              }
             ]
           },
           {
@@ -145,8 +175,14 @@ expression: json
             "line": 23,
             "name": "wide",
             "uses": [
-              "Wide.",
-              "Wide.tenant"
+              {
+                "line": 23,
+                "name": "Wide."
+              },
+              {
+                "line": 24,
+                "name": "Wide.tenant"
+              }
             ]
           },
           {
@@ -154,7 +190,10 @@ expression: json
             "line": 27,
             "name": "made",
             "uses": [
-              "Logged"
+              {
+                "line": 27,
+                "name": "Logged"
+              }
             ]
           },
           {
@@ -162,7 +201,10 @@ expression: json
             "line": 29,
             "name": "count",
             "uses": [
-              "made.tenant"
+              {
+                "line": 30,
+                "name": "made.tenant"
+              }
             ]
           }
         ],
@@ -190,7 +232,10 @@ expression: json
           }
         ],
         "on_load": [
-          "Logged"
+          {
+            "line": 27,
+            "name": "Logged"
+          }
         ],
         "overrides": [
           {
@@ -203,11 +248,26 @@ expression: json
           }
         ],
         "reads": [
-          "count",
-          "findFirst",
-          "tenant",
-          "tenant.count",
-          "tenant.findFirst"
+          {
+            "line": 30,
+            "name": "count"
+          },
+          {
+            "line": 12,
+            "name": "findFirst"
+          },
+          {
+            "line": 30,
+            "name": "tenant"
+          },
+          {
+            "line": 30,
+            "name": "tenant.count"
+          },
+          {
+            "line": 12,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,
@@ -256,7 +316,10 @@ expression: json
             "line": 3,
             "name": "PrismaService",
             "uses": [
-              "PrismaClient"
+              {
+                "line": 3,
+                "name": "PrismaClient"
+              }
             ]
           },
           {
@@ -264,7 +327,10 @@ expression: json
             "line": 4,
             "name": "PrismaService.onModuleInit",
             "uses": [
-              "PrismaClient.$connect"
+              {
+                "line": 5,
+                "name": "PrismaClient.$connect"
+              }
             ]
           },
           {
@@ -278,7 +344,10 @@ expression: json
             "line": 10,
             "name": "TenantRepository.constructor",
             "uses": [
-              "PrismaService."
+              {
+                "line": 10,
+                "name": "PrismaService."
+              }
             ]
           },
           {
@@ -286,7 +355,10 @@ expression: json
             "line": 12,
             "name": "TenantRepository.find",
             "uses": [
-              "PrismaService.tenant"
+              {
+                "line": 13,
+                "name": "PrismaService.tenant"
+              }
             ]
           }
         ],
@@ -311,9 +383,18 @@ expression: json
           }
         ],
         "reads": [
-          "findFirst",
-          "store.tenant",
-          "tenant.findFirst"
+          {
+            "line": 13,
+            "name": "findFirst"
+          },
+          {
+            "line": 13,
+            "name": "store.tenant"
+          },
+          {
+            "line": 13,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,
@@ -357,7 +438,10 @@ expression: json
             "line": 7,
             "name": "Shape",
             "uses": [
-              "Base"
+              {
+                "line": 7,
+                "name": "Base"
+              }
             ]
           },
           {
@@ -365,8 +449,14 @@ expression: json
             "line": 9,
             "name": "cached",
             "uses": [
-              "Cache.",
-              "Cache.tenant"
+              {
+                "line": 9,
+                "name": "Cache."
+              },
+              {
+                "line": 10,
+                "name": "Cache.tenant"
+              }
             ]
           },
           {
@@ -374,8 +464,14 @@ expression: json
             "line": 13,
             "name": "shaped",
             "uses": [
-              "Shape.",
-              "Shape.tenant"
+              {
+                "line": 13,
+                "name": "Shape."
+              },
+              {
+                "line": 14,
+                "name": "Shape.tenant"
+              }
             ]
           }
         ],
@@ -398,8 +494,14 @@ expression: json
           }
         ],
         "reads": [
-          "findFirst",
-          "tenant.findFirst"
+          {
+            "line": 10,
+            "name": "findFirst"
+          },
+          {
+            "line": 10,
+            "name": "tenant.findFirst"
+          }
         ]
       },
       "tags": 0,

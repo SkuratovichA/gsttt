@@ -20,6 +20,25 @@ use crate::registry::Registry;
 use crate::root::{self, RootError};
 use crate::trust::{self, Declared, Store};
 
+/// The most a file may hold for a line of it to be read for an answer. A bundle or a data file above it is not read, because an answer shows 160 characters of one line.
+const TEXT_LIMIT: u64 = 4 * 1024 * 1024;
+
+/// The text of the file at `path`, a path from `root` as the index holds it. `None` for a path that leaves the root, a file that is missing, larger than [`TEXT_LIMIT`] or not text.
+pub fn read_text(root: &Utf8Path, path: &str) -> Option<String> {
+    let path = Utf8Path::new(path);
+    if !path
+        .components()
+        .all(|part| matches!(part, camino::Utf8Component::Normal(_)))
+    {
+        return None;
+    }
+    let full = root.join(path);
+    if std::fs::metadata(&full).ok()?.len() > TEXT_LIMIT {
+        return None;
+    }
+    std::fs::read_to_string(full).ok()
+}
+
 /// Why a repository cannot be opened or read.
 ///
 /// The message names what failed and, where the caller can do something about it, what to do, so that a caller without a terminal can pass it on as it is.
@@ -167,6 +186,12 @@ impl Repository {
     /// The top directory of the work tree, by its canonical path.
     pub fn root(&self) -> &Utf8Path {
         self.workspace.root()
+    }
+
+    /// A reader of the files of the tree as they are on disk now, by path from the root, which an answer uses to show the line a file refers to what the question is about.
+    pub fn reader(&self) -> impl Fn(&str) -> Option<String> + Send + use<> {
+        let root = self.root().to_owned();
+        move |path| read_text(&root, path)
     }
 
     /// Brings the stored index up to date with the tree and returns it. This is the call that can take minutes on the first index of a large repository.

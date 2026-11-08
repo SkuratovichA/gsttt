@@ -54,7 +54,14 @@ expression: tools
           "default": false
         },
         "tests": {
-          "description": "Whether to list the files tagged as tests. Left out, it is true with `changed`, at the end of a task, when the tests are what to run, and false otherwise, while you are still working out what to edit: the answer then counts the test files and says how to ask for them. False with `changed` leaves them out there too; the walk is the same.",
+          "description": "Whether to list the files tagged as tests. Left out, it is true with `changed`, when the tests are what to run, and false otherwise: the answer then counts the test files and says how to ask for them. False with `changed` leaves them out there too; the walk is the same.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "generated": {
+          "description": "Whether to list the files tagged as generated, which a tool wrote: a header that says so, a `linguist-generated` attribute, or a name such as `*.pb.go` or `__generated__`. Left out, it is false: the answer counts them and says how to ask for them. The walk is the same either way.",
           "type": [
             "boolean",
             "null"

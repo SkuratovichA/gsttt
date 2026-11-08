@@ -77,8 +77,14 @@ expression: "tree.file_json(\"built.py\")"
     "heirs": [],
     "overrides": [],
     "reads": [
-      "execute",
-      "format"
+      {
+        "name": "execute",
+        "line": 2
+      },
+      {
+        "name": "format",
+        "line": 5
+      }
     ]
   },
   "path": "built.py",

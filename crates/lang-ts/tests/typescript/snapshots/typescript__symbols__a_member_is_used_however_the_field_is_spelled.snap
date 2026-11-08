@@ -63,7 +63,10 @@ expression: json
             "line": 4,
             "name": "Spellings.#queue",
             "uses": [
-              "MailQueue"
+              {
+                "line": 4,
+                "name": "MailQueue"
+              }
             ]
           },
           {
@@ -71,9 +74,18 @@ expression: json
             "line": 5,
             "name": "Spellings.constructor",
             "uses": [
-              "Left",
-              "MailQueue.",
-              "Right"
+              {
+                "line": 7,
+                "name": "Left"
+              },
+              {
+                "line": 6,
+                "name": "MailQueue."
+              },
+              {
+                "line": 7,
+                "name": "Right"
+              }
             ]
           },
           {
@@ -81,7 +93,10 @@ expression: json
             "line": 9,
             "name": "Spellings.optional",
             "uses": [
-              "MailQueue.push"
+              {
+                "line": 10,
+                "name": "MailQueue.push"
+              }
             ]
           },
           {
@@ -89,7 +104,10 @@ expression: json
             "line": 12,
             "name": "Spellings.nonNull",
             "uses": [
-              "MailQueue.push"
+              {
+                "line": 13,
+                "name": "MailQueue.push"
+              }
             ]
           },
           {
@@ -97,8 +115,14 @@ expression: json
             "line": 15,
             "name": "Spellings.cast",
             "uses": [
-              "MailQueue.push",
-              "Special"
+              {
+                "line": 16,
+                "name": "MailQueue.push"
+              },
+              {
+                "line": 16,
+                "name": "Special"
+              }
             ]
           },
           {
@@ -106,7 +130,10 @@ expression: json
             "line": 18,
             "name": "Spellings.quoted",
             "uses": [
-              "MailQueue.push"
+              {
+                "line": 19,
+                "name": "MailQueue.push"
+              }
             ]
           },
           {
@@ -114,7 +141,10 @@ expression: json
             "line": 21,
             "name": "Spellings.bound",
             "uses": [
-              "MailQueue.push"
+              {
+                "line": 22,
+                "name": "MailQueue.push"
+              }
             ]
           },
           {
@@ -122,7 +152,10 @@ expression: json
             "line": 24,
             "name": "Spellings.destructured",
             "uses": [
-              "MailQueue"
+              {
+                "line": 25,
+                "name": "MailQueue"
+              }
             ]
           },
           {
@@ -130,7 +163,10 @@ expression: json
             "line": 28,
             "name": "Spellings.alias",
             "uses": [
-              "MailQueue"
+              {
+                "line": 29,
+                "name": "MailQueue"
+              }
             ]
           },
           {
@@ -138,8 +174,14 @@ expression: json
             "line": 32,
             "name": "Spellings.intersection",
             "uses": [
-              "Left.send",
-              "Right.send"
+              {
+                "line": 33,
+                "name": "Left.send"
+              },
+              {
+                "line": 33,
+                "name": "Right.send"
+              }
             ]
           },
           {
@@ -147,9 +189,18 @@ expression: json
             "line": 35,
             "name": "Spellings.privateCast",
             "uses": [
-              "MailQueue.push",
-              "Special",
-              "Spellings.#queue"
+              {
+                "line": 36,
+                "name": "MailQueue.push"
+              },
+              {
+                "line": 36,
+                "name": "Special"
+              },
+              {
+                "line": 36,
+                "name": "Spellings.#queue"
+              }
             ]
           },
           {
@@ -157,8 +208,14 @@ expression: json
             "line": 38,
             "name": "Spellings.privateNonNull",
             "uses": [
-              "MailQueue.push",
-              "Spellings.#queue"
+              {
+                "line": 39,
+                "name": "MailQueue.push"
+              },
+              {
+                "line": 39,
+                "name": "Spellings.#queue"
+              }
             ]
           }
         ],
@@ -177,12 +234,30 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "#queue.push",
-          "bind",
-          "both.send",
-          "mail.push",
-          "push",
-          "push.bind"
+          {
+            "line": 36,
+            "name": "#queue.push"
+          },
+          {
+            "line": 22,
+            "name": "bind"
+          },
+          {
+            "line": 33,
+            "name": "both.send"
+          },
+          {
+            "line": 10,
+            "name": "mail.push"
+          },
+          {
+            "line": 25,
+            "name": "push"
+          },
+          {
+            "line": 22,
+            "name": "push.bind"
+          }
         ]
       },
       "tags": 0,

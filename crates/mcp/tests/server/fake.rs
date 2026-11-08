@@ -7,7 +7,7 @@ use gsttt_core::engine::changes::{Change, ChangeKind};
 use gsttt_core::path::PathError;
 use gsttt_core::testing::Tree;
 use gsttt_core::{Freshness, Index, Loaded, RepoPath, Target};
-use gsttt_mcp::{IndexSource, SourceError};
+use gsttt_mcp::{IndexSource, SourceError, TextReader};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 /// How many times a slow refresh gives up its turn on the processor while it waits for another call to arrive. It is the most a passing test waits, and it is long enough for calls sent together to be inside the source together.
@@ -25,6 +25,8 @@ struct Inner {
     stored: Option<Loaded>,
     /// Paths with no file on disk.
     missing: Vec<String>,
+    /// The text of the files the source can read, by path. A source with none gives no reader.
+    texts: Vec<(String, String)>,
     /// The files that differ from `HEAD`, whatever the base.
     changes: Vec<Change>,
     /// The failure every call ends in, when the source is down.
@@ -68,6 +70,7 @@ impl Fake {
             stored: Some(loaded.clone()),
             loaded,
             missing: Vec::new(),
+            texts: Vec::new(),
             changes: Vec::new(),
             failure: None,
             slow_refresh: false,
@@ -104,6 +107,12 @@ impl Fake {
                 changed,
             };
         }
+        self
+    }
+
+    /// A source that can read `path` and finds `text` in it.
+    pub(crate) fn readable(mut self, path: &str, text: &str) -> Self {
+        self.inner().texts.push((path.to_owned(), text.to_owned()));
         self
     }
 
@@ -343,5 +352,18 @@ impl IndexSource for Fake {
             .unwrap_or_else(PoisonError::into_inner)
             .push(base.map(str::to_owned));
         Ok(self.0.changes.clone())
+    }
+
+    fn reader(&self) -> Option<TextReader> {
+        if self.0.texts.is_empty() {
+            return None;
+        }
+        let texts = self.0.texts.clone();
+        Some(Box::new(move |path| {
+            texts
+                .iter()
+                .find(|(held, _)| held == path)
+                .map(|(_, text)| text.clone())
+        }))
     }
 }

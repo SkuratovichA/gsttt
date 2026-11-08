@@ -52,8 +52,14 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
           "line": 3,
           "end": 3,
           "uses": [
-            "APIRouter",
-            "APIRouter.__init__"
+            {
+              "name": "APIRouter",
+              "line": 3
+            },
+            {
+              "name": "APIRouter.__init__",
+              "line": 3
+            }
           ]
         },
         {
@@ -61,8 +67,14 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
           "line": 4,
           "end": 4,
           "uses": [
-            "FastAPI",
-            "FastAPI.__init__"
+            {
+              "name": "FastAPI",
+              "line": 4
+            },
+            {
+              "name": "FastAPI.__init__",
+              "line": 4
+            }
           ]
         },
         {
@@ -70,7 +82,10 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
           "line": 7,
           "end": 9,
           "uses": [
-            "router.trace"
+            {
+              "name": "router.trace",
+              "line": 7
+            }
           ]
         },
         {
@@ -78,17 +93,38 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
           "line": 12,
           "end": 14,
           "uses": [
-            "app.trace"
+            {
+              "name": "app.trace",
+              "line": 12
+            }
           ]
         }
       ],
       "on_load": [
-        "APIRouter",
-        "APIRouter.__init__",
-        "FastAPI",
-        "FastAPI.__init__",
-        "app.trace",
-        "router.trace"
+        {
+          "name": "APIRouter",
+          "line": 3
+        },
+        {
+          "name": "APIRouter.__init__",
+          "line": 3
+        },
+        {
+          "name": "FastAPI",
+          "line": 4
+        },
+        {
+          "name": "FastAPI.__init__",
+          "line": 4
+        },
+        {
+          "name": "app.trace",
+          "line": 12
+        },
+        {
+          "name": "router.trace",
+          "line": 7
+        }
       ],
       "exports": [],
       "heirs": [

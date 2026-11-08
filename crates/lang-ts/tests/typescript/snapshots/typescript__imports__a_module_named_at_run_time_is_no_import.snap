@@ -38,12 +38,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "path"
+          {
+            "line": 2,
+            "name": "path"
+          }
         ],
         "overrides": [],
         "reads": [
-          "importActual",
-          "mock"
+          {
+            "line": 4,
+            "name": "importActual"
+          },
+          {
+            "line": 2,
+            "name": "mock"
+          }
         ]
       },
       "tags": 1,

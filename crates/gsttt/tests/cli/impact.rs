@@ -251,7 +251,7 @@ fn name_asks_about_a_name() {
     );
     assert!(
         text.stdout
-            .contains("\nsrc/b.ts  distance 1  imports foo from src/a.ts; in run (line 2)\n"),
+            .contains("\nsrc/b.ts:3  distance 1  imports foo from src/a.ts; in run (line 2)\n> return foo();\n"),
         "{text:?}"
     );
 
@@ -556,8 +556,9 @@ fn no_tests_leaves_the_tests_out_and_counts_them() {
     let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--no-tests"]);
     assert_eq!(text.code, Some(0), "{text:?}");
     assert!(
-        text.stdout
-            .contains("\nsrc/b.ts  distance 1  imports a from src/a.ts\n"),
+        text.stdout.contains(
+            "\nsrc/b.ts:1  distance 1  imports a from src/a.ts\n> import { a } from './a';\n"
+        ),
         "{text:?}"
     );
     assert!(
@@ -639,13 +640,13 @@ fn name_asks_about_a_member_of_a_class() {
     );
     assert!(
         text.stdout.contains(
-            "\nsrc/app.ts  distance 1  imports Runner from src/runner.ts; in main (line 2)\n"
+            "\nsrc/app.ts:3  distance 1  imports Runner from src/runner.ts; in main (line 2)\n> new Runner().start();\n"
         ),
         "{text:?}"
     );
     assert!(
         text.stdout.contains(
-            "\nsrc/runner.ts  distance 1  declares Runner.start; in Runner.stop (line 3)\n"
+            "\nsrc/runner.ts:4  distance 1  declares Runner.start; in Runner.stop (line 3)\n> this.start();\n"
         ),
         "{text:?}"
     );
@@ -3328,4 +3329,106 @@ fn a_gin_route_under_a_group_is_reached_from_the_client_that_fetches_it() {
         value!({ "via": "contract", "role": "calls", "key": "http GET /v1/users/1" }),
         "{answer}"
     );
+}
+
+/// `src/a.ts` declares `foo`, and `src/b.ts` calls it in `run` on line 3.
+fn foo_called_in_b(sandbox: &Sandbox) -> PathBuf {
+    let repo = sandbox.repository();
+    write(
+        &repo,
+        "src/a.ts",
+        "export function foo() {\n  return 1;\n}\n",
+    );
+    write(
+        &repo,
+        "src/b.ts",
+        "import { foo } from './a';\nexport function run() {\n  return foo();\n}\n",
+    );
+    repo
+}
+
+#[scenario("cli", "Impact prints the line of a call")]
+#[test]
+fn impact_prints_the_line_of_a_call() {
+    let sandbox = Sandbox::new();
+    let repo = foo_called_in_b(&sandbox);
+
+    let text = sandbox.run_in(&repo, &["impact", "src/a.ts", "--name", "foo"]);
+    assert_eq!(text.code, Some(0), "{text:?}");
+    assert!(
+        text.stdout.contains(
+            "\nsrc/b.ts:3  distance 1  imports foo from src/a.ts; in run (line 2)\n> return foo();\n"
+        ),
+        "{text:?}"
+    );
+    let answer = json(&sandbox.run_in(&repo, &["--json", "impact", "src/a.ts", "--name", "foo"]));
+    assert_eq!(answer["affected"][0]["at"], value!(3));
+    assert_eq!(answer["affected"][0]["snippet"], value!("return foo();"));
+}
+
+#[scenario("cli", "A stale index prints no line")]
+#[test]
+fn a_stale_index_prints_no_line() {
+    let sandbox = Sandbox::new();
+    let repo = foo_called_in_b(&sandbox);
+    // Stores the index, then moves the tree away from it.
+    sandbox.run_in(&repo, &["index"]);
+    write(
+        &repo,
+        "src/b.ts",
+        "import { foo } from './a';\n\nexport function run() {\n  return foo();\n}\n",
+    );
+
+    let text = sandbox.run_in(
+        &repo,
+        &["--no-refresh", "impact", "src/a.ts", "--name", "foo"],
+    );
+    assert_eq!(text.code, Some(0), "{text:?}");
+    assert!(
+        text.stdout
+            .contains("\nsrc/b.ts  distance 1  imports foo from src/a.ts; in run (line 2)\n"),
+        "{text:?}"
+    );
+    assert!(!text.stdout.contains("> "), "{text:?}");
+    assert!(text.stdout.contains("stale:"), "{text:?}");
+}
+
+#[scenario("cli", "Generated files are counted unless asked for")]
+#[test]
+fn generated_files_are_counted_unless_asked_for() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repository();
+    write(&repo, "src/a.ts", "export const a = 1;\n");
+    for name in ["b", "api.generated"] {
+        write(
+            &repo,
+            &format!("src/{name}.ts"),
+            "import { a } from './a';\nexport const b = a;\n",
+        );
+    }
+
+    let counted = sandbox.run_in(&repo, &["impact", "src/a.ts"]);
+    assert_eq!(counted.code, Some(0), "{counted:?}");
+    assert!(
+        counted
+            .stdout
+            .contains("\nsrc/b.ts:1  distance 1  imports a from src/a.ts\n"),
+        "{counted:?}"
+    );
+    assert!(
+        counted
+            .stdout
+            .contains("\ngenerated: 1 file (ask with --generated)\n"),
+        "{counted:?}"
+    );
+    assert!(!counted.stdout.contains("api.generated.ts"), "{counted:?}");
+
+    let listed = sandbox.run_in(&repo, &["impact", "src/a.ts", "--generated"]);
+    assert!(
+        listed.stdout.contains(
+            "\ngenerated files (1):\nsrc/api.generated.ts:1  distance 1  imports a from src/a.ts\n"
+        ),
+        "{listed:?}"
+    );
+    assert!(!listed.stdout.contains("generated: "), "{listed:?}");
 }

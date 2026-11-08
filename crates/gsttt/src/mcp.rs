@@ -6,7 +6,7 @@ use camino::Utf8PathBuf;
 use gsttt_core::engine::changes::{Change, ChangesError};
 use gsttt_core::engine::refresh::IndexError;
 use gsttt_core::{Loaded, Target};
-use gsttt_mcp::{IndexSource, ServeError, SourceError};
+use gsttt_mcp::{IndexSource, ServeError, SourceError, TextReader};
 
 use crate::cli::Flags;
 use crate::error::CliError;
@@ -57,6 +57,11 @@ impl IndexSource for Source {
 
     fn changed(&self, base: Option<&str>) -> Result<Vec<Change>, SourceError> {
         Ok(Repository::open(&self.start)?.changed(base)?)
+    }
+
+    fn reader(&self) -> Option<TextReader> {
+        let repository = Repository::open(&self.start).ok()?;
+        Some(Box::new(repository.reader()))
     }
 }
 

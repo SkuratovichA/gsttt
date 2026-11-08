@@ -51,7 +51,10 @@ expression: json
             "line": 3,
             "name": "PATH",
             "uses": [
-              "BASE"
+              {
+                "line": 3,
+                "name": "BASE"
+              }
             ]
           }
         ],
@@ -97,7 +100,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "API_URL"
+          {
+            "line": 1,
+            "name": "API_URL"
+          }
         ]
       },
       "tags": 0,
@@ -166,23 +172,47 @@ expression: json
             "line": 9,
             "name": "api",
             "uses": [
-              "BASE",
-              "axios.create"
+              {
+                "line": 9,
+                "name": "BASE"
+              },
+              {
+                "line": 9,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "BASE",
-          "PATH",
-          "api",
-          "axios.create"
+          {
+            "line": 5,
+            "name": "BASE"
+          },
+          {
+            "line": 7,
+            "name": "PATH"
+          },
+          {
+            "line": 10,
+            "name": "api"
+          },
+          {
+            "line": 9,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "get"
+          {
+            "line": 9,
+            "name": "create"
+          },
+          {
+            "line": 10,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

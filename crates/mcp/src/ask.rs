@@ -19,6 +19,9 @@ pub const BUDGET: usize = 25_000;
 /// What the line that counts the tests left out tells a model to do to have them listed.
 const TESTS_HINT: &str = "ask with tests=true";
 
+/// What the line that counts the generated files left out says to get them listed.
+const GENERATED_HINT: &str = "ask with generated=true";
+
 /// What `index_status` says before the first index. It points at the questions that build one, because the tool does not.
 const NO_INDEX: &str = "There is no index yet: the first question builds one. Ask `impact`, `dependents` or \
                         `dependencies` about a file to build it, which can take a while on a large repository.";
@@ -127,11 +130,14 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
         depth,
         all,
         tests,
+        generated,
     } = call;
     let mut request = ImpactRequest {
         depth,
         no_tests: !tests,
         tests_hint: Some(TESTS_HINT),
+        no_generated: !generated,
+        generated_hint: Some(GENERATED_HINT),
         ..ImpactRequest::default()
     };
     match subject {
@@ -152,10 +158,11 @@ fn impact<S: IndexSource>(source: &S, call: ImpactCall) -> Result<String, ToolEr
         }
     }
     let Loaded { index, freshness } = source.refreshed()?;
-    Ok(within_budget(
-        &query::impact(&index, freshness, &request),
-        Entries::from_flag(all),
-    ))
+    let mut answer = query::impact(&index, freshness, &request);
+    if let Some(read) = source.reader() {
+        answer.show_source(read);
+    }
+    Ok(within_budget(&answer, Entries::from_flag(all)))
 }
 
 /// How the stored index was built and how it stands against the tree. This is the one tool that does not refresh.

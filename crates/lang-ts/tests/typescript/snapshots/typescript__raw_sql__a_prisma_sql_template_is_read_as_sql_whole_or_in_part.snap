@@ -69,7 +69,10 @@ expression: json
             "line": 3,
             "name": "whole",
             "uses": [
-              "Prisma.sql"
+              {
+                "line": 3,
+                "name": "Prisma.sql"
+              }
             ]
           },
           {
@@ -77,7 +80,10 @@ expression: json
             "line": 5,
             "name": "partial",
             "uses": [
-              "Prisma.sql"
+              {
+                "line": 5,
+                "name": "Prisma.sql"
+              }
             ]
           }
         ],
@@ -86,7 +92,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "sql"
+          {
+            "line": 3,
+            "name": "sql"
+          }
         ]
       },
       "tags": 0,

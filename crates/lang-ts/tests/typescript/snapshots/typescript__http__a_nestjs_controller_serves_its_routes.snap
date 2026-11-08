@@ -60,7 +60,10 @@ expression: json
             "line": 3,
             "name": "BookingsController",
             "uses": [
-              "Controller"
+              {
+                "line": 3,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -68,15 +71,24 @@ expression: json
             "line": 5,
             "name": "BookingsController.find",
             "uses": [
-              "Get"
+              {
+                "line": 5,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get"
+          {
+            "line": 3,
+            "name": "Controller"
+          },
+          {
+            "line": 5,
+            "name": "Get"
+          }
         ],
         "overrides": [],
         "reads": []

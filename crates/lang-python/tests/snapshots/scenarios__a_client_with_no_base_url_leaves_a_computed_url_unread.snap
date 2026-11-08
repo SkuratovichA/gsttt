@@ -85,9 +85,18 @@ expression: "tree.file_json(\"client.py\")"
         "line": 5,
         "end": 7,
         "uses": [
-          "requests.Session",
-          "requests.Session.__init__",
-          "requests.Session.get"
+          {
+            "name": "requests.Session",
+            "line": 6
+          },
+          {
+            "name": "requests.Session.__init__",
+            "line": 6
+          },
+          {
+            "name": "requests.Session.get",
+            "line": 7
+          }
         ]
       },
       {
@@ -95,9 +104,18 @@ expression: "tree.file_json(\"client.py\")"
         "line": 10,
         "end": 11,
         "uses": [
-          "httpx.Client",
-          "httpx.Client.__init__",
-          "httpx.Client.get"
+          {
+            "name": "httpx.Client",
+            "line": 11
+          },
+          {
+            "name": "httpx.Client.__init__",
+            "line": 11
+          },
+          {
+            "name": "httpx.Client.get",
+            "line": 11
+          }
         ]
       },
       {
@@ -105,9 +123,18 @@ expression: "tree.file_json(\"client.py\")"
         "line": 14,
         "end": 16,
         "uses": [
-          "httpx.Client",
-          "httpx.Client.__init__",
-          "httpx.Client.get"
+          {
+            "name": "httpx.Client",
+            "line": 15
+          },
+          {
+            "name": "httpx.Client.__init__",
+            "line": 15
+          },
+          {
+            "name": "httpx.Client.get",
+            "line": 16
+          }
         ]
       },
       {
@@ -115,9 +142,18 @@ expression: "tree.file_json(\"client.py\")"
         "line": 19,
         "end": 21,
         "uses": [
-          "requests.Session",
-          "requests.Session.__init__",
-          "requests.Session.get"
+          {
+            "name": "requests.Session",
+            "line": 20
+          },
+          {
+            "name": "requests.Session.__init__",
+            "line": 20
+          },
+          {
+            "name": "requests.Session.get",
+            "line": 21
+          }
         ]
       }
     ],

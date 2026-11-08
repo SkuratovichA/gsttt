@@ -80,7 +80,10 @@ expression: json
             "line": 4,
             "name": "app",
             "uses": [
-              "express"
+              {
+                "line": 4,
+                "name": "express"
+              }
             ]
           },
           {
@@ -88,7 +91,10 @@ expression: json
             "line": 5,
             "name": "w",
             "uses": [
-              "Router"
+              {
+                "line": 5,
+                "name": "Router"
+              }
             ]
           }
         ],
@@ -104,17 +110,41 @@ expression: json
           }
         ],
         "on_load": [
-          "Router",
-          "app.use",
-          "express",
-          "ra",
-          "rb",
-          "w",
-          "w.use"
+          {
+            "line": 5,
+            "name": "Router"
+          },
+          {
+            "line": 7,
+            "name": "app.use"
+          },
+          {
+            "line": 4,
+            "name": "express"
+          },
+          {
+            "line": 6,
+            "name": "ra"
+          },
+          {
+            "line": 6,
+            "name": "rb"
+          },
+          {
+            "line": 7,
+            "name": "w"
+          },
+          {
+            "line": 6,
+            "name": "w.use"
+          }
         ],
         "overrides": [],
         "reads": [
-          "use"
+          {
+            "line": 6,
+            "name": "use"
+          }
         ]
       },
       "tags": 0,
@@ -156,7 +186,10 @@ expression: json
             "line": 3,
             "name": "ra",
             "uses": [
-              "Router"
+              {
+                "line": 3,
+                "name": "Router"
+              }
             ]
           },
           {
@@ -164,7 +197,10 @@ expression: json
             "line": 6,
             "name": "rb",
             "uses": [
-              "Router"
+              {
+                "line": 6,
+                "name": "Router"
+              }
             ]
           }
         ],
@@ -180,14 +216,29 @@ expression: json
           }
         ],
         "on_load": [
-          "Router",
-          "ra.get",
-          "rb.get"
+          {
+            "line": 3,
+            "name": "Router"
+          },
+          {
+            "line": 4,
+            "name": "ra.get"
+          },
+          {
+            "line": 7,
+            "name": "rb.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "end",
-          "get"
+          {
+            "line": 4,
+            "name": "end"
+          },
+          {
+            "line": 4,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

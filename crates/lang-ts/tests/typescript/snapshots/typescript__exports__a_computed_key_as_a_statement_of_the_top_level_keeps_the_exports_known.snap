@@ -61,11 +61,17 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "internals"
+          {
+            "line": 2,
+            "name": "internals"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports"
+          {
+            "line": 2,
+            "name": "exports"
+          }
         ]
       },
       "tags": 0,
@@ -101,14 +107,29 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "x"
+          {
+            "line": 2,
+            "name": "x"
+          }
         ],
         "overrides": [],
         "reads": [
-          "a",
-          "b",
-          "exports",
-          "exports.b"
+          {
+            "line": 2,
+            "name": "a"
+          },
+          {
+            "line": 3,
+            "name": "b"
+          },
+          {
+            "line": 3,
+            "name": "exports"
+          },
+          {
+            "line": 3,
+            "name": "exports.b"
+          }
         ]
       },
       "tags": 0,
@@ -158,14 +179,29 @@ expression: json
         ],
         "heirs": [],
         "on_load": [
-          "helper",
-          "other",
-          "run"
+          {
+            "line": 5,
+            "name": "helper"
+          },
+          {
+            "line": 5,
+            "name": "other"
+          },
+          {
+            "line": 3,
+            "name": "run"
+          }
         ],
         "overrides": [],
         "reads": [
-          "exports",
-          "for"
+          {
+            "line": 3,
+            "name": "exports"
+          },
+          {
+            "line": 5,
+            "name": "for"
+          }
         ]
       },
       "tags": 0,
@@ -193,7 +229,10 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "key"
+          {
+            "line": 2,
+            "name": "key"
+          }
         ],
         "overrides": [],
         "reads": []

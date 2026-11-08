@@ -66,16 +66,28 @@ expression: json
             "line": 4,
             "name": "AppModule",
             "uses": [
-              "Module",
-              "UsersController"
+              {
+                "line": 4,
+                "name": "Module"
+              },
+              {
+                "line": 4,
+                "name": "UsersController"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Module",
-          "UsersController"
+          {
+            "line": 4,
+            "name": "Module"
+          },
+          {
+            "line": 4,
+            "name": "UsersController"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -131,21 +143,39 @@ expression: json
             "line": 4,
             "name": "bootstrap",
             "uses": [
-              "AppModule",
-              "NestFactory.create",
-              "NestFactory.listen",
-              "NestFactory.setGlobalPrefix"
+              {
+                "line": 5,
+                "name": "AppModule"
+              },
+              {
+                "line": 5,
+                "name": "NestFactory.create"
+              },
+              {
+                "line": 7,
+                "name": "NestFactory.listen"
+              },
+              {
+                "line": 6,
+                "name": "NestFactory.setGlobalPrefix"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "bootstrap"
+          {
+            "line": 10,
+            "name": "bootstrap"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create"
+          {
+            "line": 5,
+            "name": "create"
+          }
         ]
       },
       "tags": 0,
@@ -233,8 +263,14 @@ expression: json
             "line": 4,
             "name": "UsersController",
             "uses": [
-              "Controller",
-              "USERS"
+              {
+                "line": 4,
+                "name": "Controller"
+              },
+              {
+                "line": 4,
+                "name": "USERS"
+              }
             ]
           },
           {
@@ -242,16 +278,28 @@ expression: json
             "line": 6,
             "name": "UsersController.x",
             "uses": [
-              "Get"
+              {
+                "line": 6,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get",
-          "USERS"
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "Get"
+          },
+          {
+            "line": 4,
+            "name": "USERS"
+          }
         ],
         "overrides": [],
         "reads": []

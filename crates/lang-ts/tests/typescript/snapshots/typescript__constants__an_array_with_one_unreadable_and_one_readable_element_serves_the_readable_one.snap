@@ -107,9 +107,18 @@ expression: json
             "line": 4,
             "name": "UsersController",
             "uses": [
-              "Controller",
-              "OTHER",
-              "USERS"
+              {
+                "line": 4,
+                "name": "Controller"
+              },
+              {
+                "line": 4,
+                "name": "OTHER"
+              },
+              {
+                "line": 4,
+                "name": "USERS"
+              }
             ]
           },
           {
@@ -117,17 +126,32 @@ expression: json
             "line": 6,
             "name": "UsersController.x",
             "uses": [
-              "Get"
+              {
+                "line": 6,
+                "name": "Get"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Get",
-          "OTHER",
-          "USERS"
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "Get"
+          },
+          {
+            "line": 4,
+            "name": "OTHER"
+          },
+          {
+            "line": 4,
+            "name": "USERS"
+          }
         ],
         "overrides": [],
         "reads": []

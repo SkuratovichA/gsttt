@@ -109,6 +109,10 @@ pub struct ImpactArgs {
     #[arg(long)]
     pub no_tests: bool,
 
+    /// List the files a tool wrote, which the answer counts apart otherwise: a header that says so, a `linguist-generated` attribute in `.gitattributes`, or a name such as `*.pb.go` or `__generated__`
+    #[arg(long)]
+    pub generated: bool,
+
     /// Ask about a name that the paths declare, such as `getHash` or `Runner.start`, and get its direct callers and the tests among them. May be repeated, and needs paths
     #[arg(long = "name", value_name = "NAME")]
     pub names: Vec<String>,

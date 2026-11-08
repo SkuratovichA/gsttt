@@ -67,8 +67,14 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "fetch",
-          "http.get"
+          {
+            "line": 4,
+            "name": "fetch"
+          },
+          {
+            "line": 5,
+            "name": "http.get"
+          }
         ],
         "overrides": [],
         "reads": []

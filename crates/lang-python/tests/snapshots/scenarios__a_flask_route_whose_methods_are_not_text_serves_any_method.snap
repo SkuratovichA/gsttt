@@ -61,8 +61,14 @@ expression: "tree.file_json(\"app.py\")"
         "line": 3,
         "end": 3,
         "uses": [
-          "Flask",
-          "Flask.__init__"
+          {
+            "name": "Flask",
+            "line": 3
+          },
+          {
+            "name": "Flask.__init__",
+            "line": 3
+          }
         ]
       },
       {
@@ -76,8 +82,14 @@ expression: "tree.file_json(\"app.py\")"
         "line": 7,
         "end": 9,
         "uses": [
-          "METHODS",
-          "app.route"
+          {
+            "name": "METHODS",
+            "line": 7
+          },
+          {
+            "name": "app.route",
+            "line": 7
+          }
         ]
       },
       {
@@ -85,7 +97,10 @@ expression: "tree.file_json(\"app.py\")"
         "line": 12,
         "end": 14,
         "uses": [
-          "app.route"
+          {
+            "name": "app.route",
+            "line": 12
+          }
         ]
       },
       {
@@ -93,15 +108,30 @@ expression: "tree.file_json(\"app.py\")"
         "line": 17,
         "end": 19,
         "uses": [
-          "app.route"
+          {
+            "name": "app.route",
+            "line": 17
+          }
         ]
       }
     ],
     "on_load": [
-      "Flask",
-      "Flask.__init__",
-      "METHODS",
-      "app.route"
+      {
+        "name": "Flask",
+        "line": 3
+      },
+      {
+        "name": "Flask.__init__",
+        "line": 3
+      },
+      {
+        "name": "METHODS",
+        "line": 7
+      },
+      {
+        "name": "app.route",
+        "line": 7
+      }
     ],
     "exports": [],
     "heirs": [

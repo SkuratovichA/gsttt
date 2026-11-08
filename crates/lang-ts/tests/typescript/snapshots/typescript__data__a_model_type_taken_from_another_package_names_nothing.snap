@@ -81,7 +81,10 @@ expression: json
             "line": 3,
             "name": "Row",
             "uses": [
-              "Tenant"
+              {
+                "line": 3,
+                "name": "Tenant"
+              }
             ]
           }
         ],
@@ -129,7 +132,10 @@ expression: json
             "line": 3,
             "name": "Row",
             "uses": [
-              "Booking"
+              {
+                "line": 3,
+                "name": "Booking"
+              }
             ]
           }
         ],

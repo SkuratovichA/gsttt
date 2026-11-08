@@ -81,7 +81,10 @@ expression: json
             "line": 4,
             "name": "HooksController",
             "uses": [
-              "Controller"
+              {
+                "line": 4,
+                "name": "Controller"
+              }
             ]
           },
           {
@@ -89,17 +92,32 @@ expression: json
             "line": 6,
             "name": "HooksController.receive",
             "uses": [
-              "Post",
-              "dynamic"
+              {
+                "line": 6,
+                "name": "Post"
+              },
+              {
+                "line": 6,
+                "name": "dynamic"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "Controller",
-          "Post",
-          "dynamic"
+          {
+            "line": 4,
+            "name": "Controller"
+          },
+          {
+            "line": 6,
+            "name": "Post"
+          },
+          {
+            "line": 6,
+            "name": "dynamic"
+          }
         ],
         "overrides": [],
         "reads": []

@@ -40,8 +40,14 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
           "line": 3,
           "end": 3,
           "uses": [
-            "Blueprint",
-            "Blueprint.__init__"
+            {
+              "name": "Blueprint",
+              "line": 3
+            },
+            {
+              "name": "Blueprint.__init__",
+              "line": 3
+            }
           ]
         },
         {
@@ -49,14 +55,26 @@ expression: "json!({ \"app\": tree.file_json(\"app.py\"), \"linked\": tree.json[
           "line": 6,
           "end": 8,
           "uses": [
-            "bp.route"
+            {
+              "name": "bp.route",
+              "line": 6
+            }
           ]
         }
       ],
       "on_load": [
-        "Blueprint",
-        "Blueprint.__init__",
-        "bp.route"
+        {
+          "name": "Blueprint",
+          "line": 3
+        },
+        {
+          "name": "Blueprint.__init__",
+          "line": 3
+        },
+        {
+          "name": "bp.route",
+          "line": 6
+        }
       ],
       "exports": [],
       "heirs": [

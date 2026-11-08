@@ -101,7 +101,10 @@ expression: json
             "line": 1,
             "name": "USERS",
             "uses": [
-              "BASE"
+              {
+                "line": 1,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -109,19 +112,31 @@ expression: json
             "line": 2,
             "name": "ORDERS",
             "uses": [
-              "ROOT"
+              {
+                "line": 2,
+                "name": "ROOT"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "ORDERS",
-          "USERS"
+          {
+            "line": 5,
+            "name": "ORDERS"
+          },
+          {
+            "line": 4,
+            "name": "USERS"
+          }
         ],
         "overrides": [],
         "reads": [
-          "ROOT"
+          {
+            "line": 8,
+            "name": "ROOT"
+          }
         ]
       },
       "tags": 0,

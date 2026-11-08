@@ -98,8 +98,14 @@ expression: "tree.file_json(\"app/named.py\")"
   "symbols": {
     "declared": [],
     "on_load": [
-      "importlib.import_module",
-      "load"
+      {
+        "name": "importlib.import_module",
+        "line": 4
+      },
+      {
+        "name": "load",
+        "line": 5
+      }
     ],
     "exports": [],
     "heirs": [],

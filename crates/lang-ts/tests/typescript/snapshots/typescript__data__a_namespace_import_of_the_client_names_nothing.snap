@@ -133,9 +133,18 @@ expression: json
             "line": 10,
             "name": "all",
             "uses": [
-              "client",
-              "clientDefault",
-              "other"
+              {
+                "line": 10,
+                "name": "client"
+              },
+              {
+                "line": 10,
+                "name": "clientDefault"
+              },
+              {
+                "line": 10,
+                "name": "other"
+              }
             ]
           }
         ],

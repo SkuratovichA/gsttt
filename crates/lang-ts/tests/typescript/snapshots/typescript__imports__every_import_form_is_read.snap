@@ -239,7 +239,10 @@ expression: json
             "line": 13,
             "name": "Kept",
             "uses": [
-              "T"
+              {
+                "line": 13,
+                "name": "T"
+              }
             ]
           },
           {
@@ -247,13 +250,34 @@ expression: json
             "line": 14,
             "name": "used",
             "uses": [
-              "a",
-              "c",
-              "cjs",
-              "def",
-              "lazy",
-              "legacy",
-              "ns"
+              {
+                "line": 14,
+                "name": "a"
+              },
+              {
+                "line": 14,
+                "name": "c"
+              },
+              {
+                "line": 14,
+                "name": "cjs"
+              },
+              {
+                "line": 14,
+                "name": "def"
+              },
+              {
+                "line": 14,
+                "name": "lazy"
+              },
+              {
+                "line": 14,
+                "name": "legacy"
+              },
+              {
+                "line": 14,
+                "name": "ns"
+              }
             ]
           }
         ],

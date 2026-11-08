@@ -42,7 +42,10 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "a"
+          {
+            "line": 2,
+            "name": "a"
+          }
         ]
       },
       "tags": 0,

@@ -64,8 +64,14 @@ expression: json
         "on_load": [],
         "overrides": [],
         "reads": [
-          "doMock",
-          "unstable_mockModule"
+          {
+            "line": 1,
+            "name": "doMock"
+          },
+          {
+            "line": 3,
+            "name": "unstable_mockModule"
+          }
         ]
       },
       "tags": 1,

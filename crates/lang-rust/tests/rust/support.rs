@@ -166,10 +166,38 @@ impl Indexed {
             .unwrap_or_else(|| panic!("{path} does not declare {name}: {:?}", self.declared(path)))
             .uses
             .iter()
-            .map(String::as_str)
+            .map(|used| used.name.as_str())
             .collect();
         uses.sort_unstable();
         uses
+    }
+
+    /// What the declaration `name` of a file uses, each with the line the code names it on, in byte order.
+    pub(crate) fn use_lines(&self, path: &str, name: &str) -> Vec<(String, u32)> {
+        let mut uses: Vec<(String, u32)> = self
+            .symbols(path)
+            .declared
+            .iter()
+            .find(|declared| declared.name == name)
+            .unwrap_or_else(|| panic!("{path} does not declare {name}: {:?}", self.declared(path)))
+            .uses
+            .iter()
+            .map(|used| (used.name.clone(), used.line))
+            .collect();
+        uses.sort_unstable();
+        uses
+    }
+
+    /// The member names a file reads on a value of an unknown type, each with its line, in byte order.
+    pub(crate) fn read_lines(&self, path: &str) -> Vec<(String, u32)> {
+        let mut reads: Vec<(String, u32)> = self
+            .symbols(path)
+            .reads
+            .iter()
+            .map(|used| (used.name.clone(), used.line))
+            .collect();
+        reads.sort_unstable();
+        reads
     }
 
     /// What `path` uses as it loads.
@@ -177,7 +205,7 @@ impl Indexed {
         self.symbols(path)
             .on_load
             .iter()
-            .map(String::as_str)
+            .map(|used| used.name.as_str())
             .collect()
     }
 
@@ -187,7 +215,7 @@ impl Indexed {
             .symbols(path)
             .reads
             .iter()
-            .map(String::as_str)
+            .map(|used| used.name.as_str())
             .collect();
         reads.sort_unstable();
         reads

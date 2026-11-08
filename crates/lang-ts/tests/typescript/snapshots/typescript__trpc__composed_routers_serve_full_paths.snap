@@ -65,10 +65,22 @@ expression: json
             "line": 6,
             "name": "bookingRouter",
             "uses": [
-              "f",
-              "publicProcedure.input",
-              "router",
-              "s"
+              {
+                "line": 7,
+                "name": "f"
+              },
+              {
+                "line": 7,
+                "name": "publicProcedure.input"
+              },
+              {
+                "line": 6,
+                "name": "router"
+              },
+              {
+                "line": 7,
+                "name": "s"
+              }
             ]
           }
         ],
@@ -80,16 +92,37 @@ expression: json
           }
         ],
         "on_load": [
-          "f",
-          "publicProcedure.input",
-          "router",
-          "s"
+          {
+            "line": 7,
+            "name": "f"
+          },
+          {
+            "line": 7,
+            "name": "publicProcedure.input"
+          },
+          {
+            "line": 6,
+            "name": "router"
+          },
+          {
+            "line": 7,
+            "name": "s"
+          }
         ],
         "overrides": [],
         "reads": [
-          "input",
-          "input.query",
-          "query"
+          {
+            "line": 7,
+            "name": "input"
+          },
+          {
+            "line": 7,
+            "name": "input.query"
+          },
+          {
+            "line": 7,
+            "name": "query"
+          }
         ]
       },
       "tags": 0,
@@ -145,8 +178,14 @@ expression: json
             "line": 4,
             "name": "appRouter",
             "uses": [
-              "bookingRouter",
-              "router"
+              {
+                "line": 5,
+                "name": "bookingRouter"
+              },
+              {
+                "line": 4,
+                "name": "router"
+              }
             ]
           }
         ],
@@ -158,8 +197,14 @@ expression: json
           }
         ],
         "on_load": [
-          "bookingRouter",
-          "router"
+          {
+            "line": 5,
+            "name": "bookingRouter"
+          },
+          {
+            "line": 4,
+            "name": "router"
+          }
         ],
         "overrides": [],
         "reads": []
@@ -203,7 +248,10 @@ expression: json
             "line": 3,
             "name": "t",
             "uses": [
-              "initTRPC.create"
+              {
+                "line": 3,
+                "name": "initTRPC.create"
+              }
             ]
           },
           {
@@ -211,7 +259,10 @@ expression: json
             "line": 5,
             "name": "router",
             "uses": [
-              "t"
+              {
+                "line": 5,
+                "name": "t"
+              }
             ]
           },
           {
@@ -219,20 +270,35 @@ expression: json
             "line": 6,
             "name": "publicProcedure",
             "uses": [
-              "t"
+              {
+                "line": 6,
+                "name": "t"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "initTRPC.create"
+          {
+            "line": 3,
+            "name": "initTRPC.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "procedure",
-          "router"
+          {
+            "line": 3,
+            "name": "create"
+          },
+          {
+            "line": 6,
+            "name": "procedure"
+          },
+          {
+            "line": 5,
+            "name": "router"
+          }
         ]
       },
       "tags": 0,

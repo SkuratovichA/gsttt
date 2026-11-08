@@ -89,7 +89,10 @@ expression: json
             "line": 3,
             "name": "list",
             "uses": [
-              "BASE"
+              {
+                "line": 4,
+                "name": "BASE"
+              }
             ]
           },
           {
@@ -97,14 +100,20 @@ expression: json
             "line": 10,
             "name": "items",
             "uses": [
-              "BASE"
+              {
+                "line": 11,
+                "name": "BASE"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "BASE"
+          {
+            "line": 7,
+            "name": "BASE"
+          }
         ],
         "overrides": [],
         "reads": []

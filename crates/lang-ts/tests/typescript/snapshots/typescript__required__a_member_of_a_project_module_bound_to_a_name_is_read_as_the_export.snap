@@ -51,19 +51,31 @@ expression: json
             "line": 3,
             "name": "client",
             "uses": [
-              "axios.create"
+              {
+                "line": 3,
+                "name": "axios.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "axios.create"
+          {
+            "line": 3,
+            "name": "axios.create"
+          }
         ],
         "overrides": [],
         "reads": [
-          "client",
-          "create"
+          {
+            "line": 3,
+            "name": "client"
+          },
+          {
+            "line": 3,
+            "name": "create"
+          }
         ]
       },
       "tags": 0,
@@ -100,12 +112,21 @@ expression: json
         "exports": [],
         "heirs": [],
         "on_load": [
-          "client.get"
+          {
+            "line": 3,
+            "name": "client.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "client",
-          "get"
+          {
+            "line": 1,
+            "name": "client"
+          },
+          {
+            "line": 3,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

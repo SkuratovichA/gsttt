@@ -388,7 +388,7 @@ pub(crate) fn edges(json: &Value, path: &str) -> Vec<String> {
         .flat_map(|symbols| items(symbols, "declared"))
         .filter(|declared| items(declared, "uses").next().is_some())
         .map(|declared| {
-            let used: Vec<&str> = items(declared, "uses").filter_map(Value::as_str).collect();
+            let used: Vec<&str> = items(declared, "uses").filter_map(used_name).collect();
             format!(
                 "{} -> {}",
                 text(declared, "name").unwrap_or("?"),
@@ -402,14 +402,34 @@ pub(crate) fn edges(json: &Value, path: &str) -> Vec<String> {
 pub(crate) fn uses<'a>(json: &'a Value, path: &str, name: &str) -> Option<Vec<&'a str>> {
     let declared = items(symbols(json, path)?, "declared")
         .find(|declared| text(declared, "name") == Some(name))?;
-    Some(items(declared, "uses").filter_map(Value::as_str).collect())
+    Some(items(declared, "uses").filter_map(used_name).collect())
+}
+
+/// What the declaration `name` of the file at `path` uses, each with the line of its first use, `None` when the file records no such declaration.
+pub(crate) fn use_lines<'a>(
+    json: &'a Value,
+    path: &str,
+    name: &str,
+) -> Option<Vec<(&'a str, u64)>> {
+    let declared = items(symbols(json, path)?, "declared")
+        .find(|declared| text(declared, "name") == Some(name))?;
+    Some(
+        items(declared, "uses")
+            .filter_map(|used| Some((used_name(used)?, used.get("line")?.as_u64()?)))
+            .collect(),
+    )
+}
+
+/// The name of one use, which the facts write as `{ "name": …, "line": … }`.
+fn used_name(used: &Value) -> Option<&str> {
+    text(used, "name")
 }
 
 /// What the file at `path` refers to as it loads, `None` when the file records no declarations.
 pub(crate) fn on_load<'a>(json: &'a Value, path: &str) -> Option<Vec<&'a str>> {
     Some(
         items(symbols(json, path)?, "on_load")
-            .filter_map(Value::as_str)
+            .filter_map(used_name)
             .collect(),
     )
 }
@@ -645,6 +665,6 @@ fn read_names(json: &Value, path: &str) -> Vec<String> {
     symbols(json, path)
         .into_iter()
         .flat_map(|symbols| items(symbols, "reads"))
-        .filter_map(|name| name.as_str().map(str::to_owned))
+        .filter_map(|used| used_name(used).map(str::to_owned))
         .collect()
 }

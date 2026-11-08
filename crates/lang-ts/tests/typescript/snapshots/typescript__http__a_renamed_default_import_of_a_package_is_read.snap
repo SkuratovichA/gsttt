@@ -62,21 +62,39 @@ expression: json
             "line": 4,
             "name": "api",
             "uses": [
-              "http.create"
+              {
+                "line": 4,
+                "name": "http.create"
+              }
             ]
           }
         ],
         "exports": [],
         "heirs": [],
         "on_load": [
-          "api",
-          "http.create",
-          "http.get"
+          {
+            "line": 5,
+            "name": "api"
+          },
+          {
+            "line": 4,
+            "name": "http.create"
+          },
+          {
+            "line": 3,
+            "name": "http.get"
+          }
         ],
         "overrides": [],
         "reads": [
-          "create",
-          "get"
+          {
+            "line": 4,
+            "name": "create"
+          },
+          {
+            "line": 3,
+            "name": "get"
+          }
         ]
       },
       "tags": 0,

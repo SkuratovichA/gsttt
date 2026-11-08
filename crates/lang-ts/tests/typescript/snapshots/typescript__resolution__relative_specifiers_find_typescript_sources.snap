@@ -81,9 +81,18 @@ expression: json
             "line": 5,
             "name": "all",
             "uses": [
-              "Panel",
-              "again",
-              "util"
+              {
+                "line": 5,
+                "name": "Panel"
+              },
+              {
+                "line": 5,
+                "name": "again"
+              },
+              {
+                "line": 5,
+                "name": "util"
+              }
             ]
           }
         ],

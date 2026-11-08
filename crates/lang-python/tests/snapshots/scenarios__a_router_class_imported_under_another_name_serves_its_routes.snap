@@ -65,8 +65,14 @@ expression: "json!({\n    \"file\": tree.file_json(\"fastapi_router.py\"), \"lin
           "line": 4,
           "end": 4,
           "uses": [
-            "fa.FastAPI",
-            "fa.FastAPI.__init__"
+            {
+              "name": "fa.FastAPI",
+              "line": 4
+            },
+            {
+              "name": "fa.FastAPI.__init__",
+              "line": 4
+            }
           ]
         },
         {
@@ -74,8 +80,14 @@ expression: "json!({\n    \"file\": tree.file_json(\"fastapi_router.py\"), \"lin
           "line": 5,
           "end": 5,
           "uses": [
-            "R",
-            "R.__init__"
+            {
+              "name": "R",
+              "line": 5
+            },
+            {
+              "name": "R.__init__",
+              "line": 5
+            }
           ]
         },
         {
@@ -83,7 +95,10 @@ expression: "json!({\n    \"file\": tree.file_json(\"fastapi_router.py\"), \"lin
           "line": 8,
           "end": 10,
           "uses": [
-            "app.get"
+            {
+              "name": "app.get",
+              "line": 8
+            }
           ]
         },
         {
@@ -91,17 +106,38 @@ expression: "json!({\n    \"file\": tree.file_json(\"fastapi_router.py\"), \"lin
           "line": 13,
           "end": 15,
           "uses": [
-            "router.get"
+            {
+              "name": "router.get",
+              "line": 13
+            }
           ]
         }
       ],
       "on_load": [
-        "R",
-        "R.__init__",
-        "app.get",
-        "fa.FastAPI",
-        "fa.FastAPI.__init__",
-        "router.get"
+        {
+          "name": "R",
+          "line": 5
+        },
+        {
+          "name": "R.__init__",
+          "line": 5
+        },
+        {
+          "name": "app.get",
+          "line": 8
+        },
+        {
+          "name": "fa.FastAPI",
+          "line": 4
+        },
+        {
+          "name": "fa.FastAPI.__init__",
+          "line": 4
+        },
+        {
+          "name": "router.get",
+          "line": 13
+        }
       ],
       "exports": [],
       "heirs": [

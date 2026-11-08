@@ -126,12 +126,30 @@ expression: json
             "line": 8,
             "name": "all",
             "uses": [
-              "createRoot",
-              "join",
-              "leftPad",
-              "missing",
-              "readFileSync",
-              "useState"
+              {
+                "line": 8,
+                "name": "createRoot"
+              },
+              {
+                "line": 8,
+                "name": "join"
+              },
+              {
+                "line": 8,
+                "name": "leftPad"
+              },
+              {
+                "line": 8,
+                "name": "missing"
+              },
+              {
+                "line": 8,
+                "name": "readFileSync"
+              },
+              {
+                "line": 8,
+                "name": "useState"
+              }
             ]
           }
         ],
