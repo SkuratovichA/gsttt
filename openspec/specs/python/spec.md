@@ -1000,3 +1000,10 @@ An attribute read right on another SHALL be recorded as a read of both and of th
 #### Scenario: A chain on a builtin value records no read of one on another
 - **WHEN** a file reads a member of a member on a value it shows is a builtin
 - **THEN** it records no pair
+
+### Requirement: A use carries its line
+Every name the connector records as used SHALL carry the line of the node that makes the use, in the uses of a declaration, in those of the code that runs as the file loads and in the members read on a value of unknown class. A call chain broken over lines SHALL take the line of the member, and a name used on several lines SHALL keep the first.
+
+#### Scenario: A use keeps the line it is written on
+- **WHEN** a python file declares a function that uses two names on two lines, and a chained call whose member stands on a line after its receiver
+- **THEN** each name is recorded with the line it is written on, and the chained member with the line of the member

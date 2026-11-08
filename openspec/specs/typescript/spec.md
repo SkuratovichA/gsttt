@@ -2192,3 +2192,10 @@ A member read right on another member, or on what a method call gives, SHALL be 
 #### Scenario: A chain through an interface property reaches the file that reads it
 - **WHEN** a file reads `ctx.logger.error()` for a parameter `ctx` of an interface whose property `logger` is a class
 - **THEN** impact of `error` of that class lists the file, and not one that reads `ctx.logger` and calls `error` on a value nothing types
+
+### Requirement: A use carries its line
+Every name the connector records as used SHALL carry the line of the node that makes the use, in the uses of a declaration, in those of the code that runs as the file loads and in the members read on a value of unknown class. A call chain broken over lines SHALL take the line of the member, and a name used on several lines SHALL keep the first.
+
+#### Scenario: A use keeps the line it is written on
+- **WHEN** a typescript file declares a function that uses two names on two lines, and a chained call whose member stands on a line after its receiver
+- **THEN** each name is recorded with the line it is written on, and the chained member with the line of the member

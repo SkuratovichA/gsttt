@@ -545,3 +545,10 @@ With the `axum` pack, a `Router` that a `use` brings in from `axum::routing` SHA
 #### Scenario: A router of another crate serves nothing
 - **WHEN** a file has `use axum::routing::get;`, `use other_web::routing::Router;` and `router.route("/other_module", get(show))`, and `router` is a parameter of type `Router`
 - **THEN** the file serves nothing
+
+### Requirement: A use carries its line
+Every name the connector records as used SHALL carry the line of the node that makes the use, in the uses of a declaration, in those of the code that runs as the file loads and in the members read on a value of unknown class. A call chain broken over lines SHALL take the line of the member, and a name used on several lines SHALL keep the first.
+
+#### Scenario: A use keeps the line it is written on
+- **WHEN** a rust file declares a function that uses two names on two lines, and a chained call whose member stands on a line after its receiver
+- **THEN** each name is recorded with the line it is written on, and the chained member with the line of the member
